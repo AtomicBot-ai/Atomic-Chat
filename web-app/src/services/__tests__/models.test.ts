@@ -45,13 +45,6 @@ vi.mock('@tauri-apps/plugin-http', () => ({
 // Mock fetch
 global.fetch = vi.fn()
 
-// Mock MODEL_CATALOG_URL
-Object.defineProperty(global, 'MODEL_CATALOG_URL', {
-  value: 'https://example.com/models',
-  writable: true,
-  configurable: true,
-})
-
 describe('DefaultModelsService', () => {
   let modelsService: DefaultModelsService
 
@@ -97,64 +90,20 @@ describe('DefaultModelsService', () => {
   })
 
   describe('fetchModelCatalog', () => {
-    // `fetchModelCatalog` now delegates to the failure-safe
-    // `getCatalogOrFallback()` registry: on success it returns the
-    // manifest's `models[]`; on network / HTTP / schema failure it returns
-    // the bundled baseline and never throws. These tests assert that
-    // contract.
+    // `fetchModelCatalog` delegates to the failure-safe `getCatalogOrFallback()`
+    // registry. Its remote path is covered by model-catalog-registry.test.ts.
 
     beforeEach(async () => {
       await clearCatalogCache()
     })
 
-    it('should fetch model catalog successfully', async () => {
-      const mockModels: CatalogModel[] = [
-        {
-          model_name: 'OpenAI/GPT-4',
-          description: 'Large language model',
-          developer: 'OpenAI',
-          downloads: 1000,
-          num_quants: 5,
-          quants: [],
-        },
-      ]
-      const mockManifest = {
-        manifest_version: 1,
-        schema_version: 1,
-        updated_at: '2026-05-27T00:00:00Z',
-        models: mockModels,
-      }
-
-      ;(fetch as any).mockResolvedValue({
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-        json: vi.fn().mockResolvedValue(mockManifest),
-      })
-
+    it('serves the bundled catalog without a network round-trip', async () => {
       const result = await modelsService.fetchModelCatalog()
 
-      expect(result).toEqual(mockModels)
-    })
-
-    it('should fall back to baseline on HTTP error', async () => {
-      ;(fetch as any).mockResolvedValue({
-        ok: false,
-        status: 404,
-        statusText: 'Not Found',
-      })
-
-      const result = await modelsService.fetchModelCatalog()
-
+      // No catalog override in this build, and no DecompressionStream to read
+      // the bundled seed in this environment, so the baseline answers.
       expect(result).toEqual(BASELINE_MODEL_CATALOG)
-    })
-
-    it('should fall back to baseline on network error', async () => {
-      ;(fetch as any).mockRejectedValue(new Error('Network error'))
-
-      const result = await modelsService.fetchModelCatalog()
-
-      expect(result).toEqual(BASELINE_MODEL_CATALOG)
+      expect(fetch).not.toHaveBeenCalled()
     })
   })
 

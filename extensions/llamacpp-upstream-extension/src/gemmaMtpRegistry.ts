@@ -16,9 +16,9 @@
  * Head files were verified against the live Hugging Face API (sha256 + size
  * pinned so the downloader validates them):
  *   - 31B     → am17an/Gemma4-31B-it-GGUF (the PR author's reference head).
- *   - 26B-A4B → AtomicChat/gemma-4-26B-A4B-it-assistant-GGUF (first-party;
- *               am17an published no 26B repo, this head is model-identical to
- *               the upstream reference and guaranteed-stable as our own org).
+ *   - 26B-A4B → unsloth/gemma-4-26B-A4B-it-GGUF `mtp-gemma-4-26B-A4B-it.gguf`
+ *               (Q8_0, `general.architecture = gemma4-assistant`; am17an
+ *               published no 26B repo). Verified 2026-10-16.
  */
 
 export interface GemmaMtpDraft {
@@ -59,14 +59,13 @@ const REGISTRY: readonly GemmaMtpRegistryEntry[] = [
       id.includes('4') &&
       id.includes('26b') &&
       id.includes('a4b'),
-    repo: 'AtomicChat/gemma-4-26B-A4B-it-assistant-GGUF',
-    draftFilename: 'gemma-4-26B-A4B-it-assistant.Q8_0.gguf',
-    // 2026-07-23: assistant repos were regenerated in the post-b10018
-    // gemma4-assistant format (the old heads no longer load on engine
-    // b10018-1.1.1+), so the pin tracks the re-uploaded file.
+    repo: 'unsloth/gemma-4-26B-A4B-it-GGUF',
+    // The post-b10018 `gemma4-assistant` format: heads in the older format
+    // no longer load on engine b10018-1.1.1+.
+    draftFilename: 'mtp-gemma-4-26B-A4B-it.gguf',
     draftSha256:
-      '918d48b5c219035561e0ff791f2926c939cd367d71ee21b002e99222bdecab8b',
-    draftSize: 461766880,
+      '6326fb9f5e487aa8dcdd313a091e3c67724cb2a666ec3b7d2895b5b26d93ed1b',
+    draftSize: 461766816,
   },
 ]
 

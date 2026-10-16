@@ -22,7 +22,6 @@ import {
   isSubscriptionProvider,
   takesApiKey,
 } from '@/lib/cloud-providers'
-import { isOnboardingPending } from '@/lib/onboarding'
 import { buildApiKeyUpdate, saveProviderApiKey } from '@/lib/provider-api-key'
 import { getProviderTitle } from '@/lib/utils'
 import { getLocalApiServerUrl } from '@/utils/localApiServerControl'
@@ -111,7 +110,6 @@ export function CloudConnectionCard({
     saveProviderApiKey({
       provider: selected,
       apiKey,
-      duringOnboarding: isOnboardingPending(providers),
       updateProvider,
       serviceHub,
     })

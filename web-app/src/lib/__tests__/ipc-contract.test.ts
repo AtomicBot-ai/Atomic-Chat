@@ -75,9 +75,6 @@ const EXPECTED_DESKTOP_ONLY = new Set([
   'ollama_stop',
   'ollama_take_over',
   'ollama_unload_model',
-  'set_telemetry_consent',
-  'set_telemetry_context',
-  'set_telemetry_user',
   'stream_local_http',
 ])
 const EXPECTED_MOBILE_ONLY = new Set(['abort_remote_stream'])

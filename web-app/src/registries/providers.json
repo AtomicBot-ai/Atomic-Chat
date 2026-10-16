@@ -1,0 +1,1890 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-09-28T13:39:59Z",
+  "providers": [
+    {
+      "active": true,
+      "api_key": "",
+      "base_url": "https://api.openai.com/v1",
+      "explore_models_url": "https://platform.openai.com/docs/models",
+      "provider": "openai",
+      "settings": [
+        {
+          "key": "api-key",
+          "title": "API Key",
+          "description": "The OpenAI API uses API keys for authentication. Visit your [API Keys](https://platform.openai.com/account/api-keys) page to retrieve the API key you'll use in your requests.",
+          "controller_type": "input",
+          "controller_props": {
+            "placeholder": "Insert API Key",
+            "value": "",
+            "type": "password",
+            "input_actions": [
+              "unobscure",
+              "copy"
+            ]
+          }
+        },
+        {
+          "key": "base-url",
+          "title": "Base URL",
+          "description": "The base endpoint to use. See the [OpenAI API documentation](https://platform.openai.com/docs/api-reference/chat/create) for more information.",
+          "controller_type": "input",
+          "controller_props": {
+            "placeholder": "https://api.openai.com/v1",
+            "value": "https://api.openai.com/v1"
+          }
+        }
+      ],
+      "models": [
+        {
+          "id": "gpt-5.5",
+          "name": "GPT-5.5",
+          "version": "1.0",
+          "description": "Next-generation OpenAI flagship. Stronger reasoning, broader knowledge, multimodal input with tool calling.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision",
+            "reasoning"
+          ]
+        },
+        {
+          "id": "gpt-5.4",
+          "name": "GPT-5.4",
+          "version": "1.0",
+          "description": "OpenAI flagship for complex reasoning, coding, and agentic tasks. Multimodal with vision and tools.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "gpt-5.4-mini",
+          "name": "GPT-5.4 Mini",
+          "version": "1.0",
+          "description": "Cost-efficient sibling of GPT-5.4 for high-throughput workloads. Vision + tools.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "gpt-5.4-nano",
+          "name": "GPT-5.4 Nano",
+          "version": "1.0",
+          "description": "Smallest GPT-5.4 variant — ultra-fast and cheap for simple multimodal tasks.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "gpt-5",
+          "name": "GPT-5",
+          "version": "1.0",
+          "description": "Previous-generation OpenAI flagship. Strong reasoning, vision, and tool use.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "gpt-5-mini",
+          "name": "GPT-5 Mini",
+          "version": "1.0",
+          "description": "Compact GPT-5 variant for cost-sensitive multimodal use.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "gpt-4.5-preview",
+          "name": "GPT-4.5 Preview",
+          "version": "1.0",
+          "description": "Preview of GPT-4.5 — improved instruction following and broader knowledge.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "gpt-4.1",
+          "name": "GPT-4.1",
+          "version": "1.0",
+          "description": "GPT-4.1 with strong tool use and long-context support.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "gpt-4o",
+          "name": "GPT-4o",
+          "version": "1.0",
+          "description": "Multimodal GPT-4 omni model — text, vision, and tool calling.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "gpt-4o-mini",
+          "name": "GPT-4o Mini",
+          "version": "1.0",
+          "description": "Cost-efficient GPT-4o variant. Vision + tools.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "o3-mini",
+          "name": "o3-mini",
+          "version": "1.0",
+          "description": "Reasoning-focused text-only model. No vision.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "reasoning"
+          ]
+        },
+        {
+          "id": "gpt-4-turbo",
+          "name": "GPT-4 Turbo",
+          "version": "1.0",
+          "description": "GPT-4 Turbo — long-context multimodal predecessor.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        }
+      ]
+    },
+    {
+      "active": true,
+      "api_key": "",
+      "base_url": "https://api.anthropic.com/v1",
+      "explore_models_url": "https://docs.anthropic.com/en/docs/about-claude/models",
+      "provider": "anthropic",
+      "settings": [
+        {
+          "key": "api-key",
+          "title": "API Key",
+          "description": "The Anthropic API uses API keys for authentication. Visit your [API Keys](https://console.anthropic.com/settings/keys) page to retrieve the API key you'll use in your requests.",
+          "controller_type": "input",
+          "controller_props": {
+            "placeholder": "Insert API Key",
+            "value": "",
+            "type": "password",
+            "input_actions": [
+              "unobscure",
+              "copy"
+            ]
+          }
+        },
+        {
+          "key": "base-url",
+          "title": "Base URL",
+          "description": "The base endpoint to use. See the [Anthropic API documentation](https://docs.anthropic.com/en/api/messages) for more information.",
+          "controller_type": "input",
+          "controller_props": {
+            "placeholder": "https://api.anthropic.com/v1",
+            "value": "https://api.anthropic.com/v1"
+          }
+        }
+      ],
+      "models": [
+        {
+          "id": "claude-opus-4-7",
+          "name": "Claude Opus 4.7",
+          "version": "1.0",
+          "description": "Anthropic flagship — most capable Claude for complex reasoning and agentic tasks.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision",
+            "reasoning"
+          ]
+        },
+        {
+          "id": "claude-sonnet-4-6",
+          "name": "Claude Sonnet 4.6",
+          "version": "1.0",
+          "description": "Best balance of speed and intelligence. Strong tool use and vision.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "claude-haiku-4-5",
+          "name": "Claude Haiku 4.5",
+          "version": "1.0",
+          "description": "Fastest, most cost-effective Claude model. Vision + tools.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "claude-opus-4-6",
+          "name": "Claude Opus 4.6",
+          "version": "1.0",
+          "description": "Previous-generation Opus — strong reasoning and agentic coding.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision",
+            "reasoning"
+          ]
+        },
+        {
+          "id": "claude-opus-4-5",
+          "name": "Claude Opus 4.5",
+          "version": "1.0",
+          "description": "Stable Opus 4.5 release with vision and tool calling.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "claude-opus-4-1",
+          "name": "Claude Opus 4.1",
+          "version": "1.0",
+          "description": "Earlier Opus generation. Vision + tools.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "claude-sonnet-4-5",
+          "name": "Claude Sonnet 4.5",
+          "version": "1.0",
+          "description": "Sonnet 4.5 — balanced cost/quality with multimodal input.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        }
+      ],
+      "custom_header": [
+        {
+          "header": "anthropic-version",
+          "value": "2023-06-01"
+        },
+        {
+          "header": "anthropic-dangerous-direct-browser-access",
+          "value": "true"
+        }
+      ]
+    },
+    {
+      "active": true,
+      "api_key": "",
+      "base_url": "https://openrouter.ai/api/v1",
+      "explore_models_url": "https://openrouter.ai/models",
+      "provider": "openrouter",
+      "settings": [
+        {
+          "key": "api-key",
+          "title": "API Key",
+          "description": "The OpenRouter API uses API keys for authentication. Visit your [API Keys](https://openrouter.ai/settings/keys) page to retrieve the API key you'll use in your requests.",
+          "controller_type": "input",
+          "controller_props": {
+            "placeholder": "Insert API Key",
+            "value": "",
+            "type": "password",
+            "input_actions": [
+              "unobscure",
+              "copy"
+            ]
+          }
+        },
+        {
+          "key": "base-url",
+          "title": "Base URL",
+          "description": "The base endpoint to use. See the [OpenRouter API documentation](https://openrouter.ai/docs/api-reference/overview) for more information.",
+          "controller_type": "input",
+          "controller_props": {
+            "placeholder": "https://openrouter.ai/api/v1",
+            "value": "https://openrouter.ai/api/v1"
+          }
+        }
+      ],
+      "models": [
+        {
+          "id": "anthropic/claude-sonnet-4.6",
+          "name": "Claude Sonnet 4.6",
+          "version": "1.0",
+          "description": "Best balance of speed and intelligence from Anthropic. 1M ctx, vision + tools.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "anthropic/claude-opus-4.6",
+          "name": "Claude Opus 4.6",
+          "version": "1.0",
+          "description": "Anthropic flagship for complex reasoning and agentic coding. 1M ctx, vision + tools.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "deepseek/deepseek-v4-pro",
+          "name": "DeepSeek V4 Pro",
+          "version": "1.0",
+          "description": "DeepSeek flagship MoE (1.6T total / 49B active) for advanced reasoning, coding, and long-horizon agents. 1M ctx.",
+          "capabilities": [
+            "completion",
+            "tools"
+          ]
+        },
+        {
+          "id": "deepseek/deepseek-v4-flash",
+          "name": "DeepSeek V4 Flash",
+          "version": "1.0",
+          "description": "Efficiency-optimized MoE (284B total / 13B active) for fast, cost-effective reasoning and coding. 1M ctx.",
+          "capabilities": [
+            "completion",
+            "tools"
+          ]
+        },
+        {
+          "id": "deepseek/deepseek-v3.2",
+          "name": "DeepSeek V3.2",
+          "version": "1.0",
+          "description": "High-performance open-weight reasoning model with strong tool use.",
+          "capabilities": [
+            "completion",
+            "tools"
+          ]
+        },
+        {
+          "id": "google/gemini-3-flash-preview",
+          "name": "Gemini 3 Flash Preview",
+          "version": "1.0",
+          "description": "Google's frontier-class Flash model. Low-latency multimodal reasoning.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "google/gemini-2.5-flash-lite",
+          "name": "Gemini 2.5 Flash Lite",
+          "version": "1.0",
+          "description": "Most budget-friendly stable Gemini model. Multimodal, tool-capable.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "openai/gpt-5.4",
+          "name": "GPT-5.4",
+          "version": "1.0",
+          "description": "OpenAI's flagship for complex reasoning and coding. 1M ctx, vision + tools.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "minimax/minimax-m2.7",
+          "name": "MiniMax M2.7",
+          "version": "1.0",
+          "description": "Latest MiniMax flagship with enhanced reasoning and coding abilities.",
+          "capabilities": [
+            "completion",
+            "tools"
+          ]
+        },
+        {
+          "id": "minimax/minimax-m2.5",
+          "name": "MiniMax M2.5",
+          "version": "1.0",
+          "description": "High-performance long-context model from MiniMax. 204K ctx.",
+          "capabilities": [
+            "completion",
+            "tools"
+          ]
+        },
+        {
+          "id": "xiaomi/mimo-v2-pro",
+          "name": "Xiaomi MiMo V2 Pro",
+          "version": "1.0",
+          "description": "Xiaomi's frontier open-weight model for reasoning and coding.",
+          "capabilities": [
+            "completion",
+            "tools"
+          ]
+        }
+      ]
+    },
+    {
+      "active": true,
+      "api_key": "",
+      "base_url": "https://api.mistral.ai/v1",
+      "explore_models_url": "https://docs.mistral.ai/getting-started/models/models_overview/",
+      "provider": "mistral",
+      "settings": [
+        {
+          "key": "api-key",
+          "title": "API Key",
+          "description": "The Mistral API uses API keys for authentication. Visit your [API Keys](https://console.mistral.ai/api-keys/) page to retrieve the API key you'll use in your requests.",
+          "controller_type": "input",
+          "controller_props": {
+            "placeholder": "Insert API Key",
+            "value": "",
+            "type": "password",
+            "input_actions": [
+              "unobscure",
+              "copy"
+            ]
+          }
+        },
+        {
+          "key": "base-url",
+          "title": "Base URL",
+          "description": "The base endpoint to use. See the [Mistral documentation](https://docs.mistral.ai/getting-started/models/models_overview/) for more information.",
+          "controller_type": "input",
+          "controller_props": {
+            "placeholder": "https://api.mistral.ai/v1",
+            "value": "https://api.mistral.ai/v1"
+          }
+        }
+      ],
+      "models": [
+        {
+          "id": "mistral-large-2411",
+          "name": "Mistral Large 2411",
+          "version": "1.0",
+          "description": "Mistral flagship — strong reasoning and tool use.",
+          "capabilities": [
+            "completion",
+            "tools"
+          ]
+        },
+        {
+          "id": "magistral-medium-2509",
+          "name": "Magistral Medium 2509",
+          "version": "1.0",
+          "description": "Magistral medium — multimodal reasoning model with vision.",
+          "capabilities": [
+            "completion",
+            "vision"
+          ]
+        },
+        {
+          "id": "magistral-small-2509",
+          "name": "Magistral Small 2509",
+          "version": "1.0",
+          "description": "Smaller Magistral variant. Fast multimodal inference.",
+          "capabilities": [
+            "completion",
+            "vision"
+          ]
+        },
+        {
+          "id": "pixtral-large-2411",
+          "name": "Pixtral Large 2411",
+          "version": "1.0",
+          "description": "Pixtral Large — vision-language model from Mistral.",
+          "capabilities": [
+            "completion",
+            "vision"
+          ]
+        },
+        {
+          "id": "pixtral-12b-2409",
+          "name": "Pixtral 12B",
+          "version": "1.0",
+          "description": "Compact vision-language model based on the 12B Mistral foundation.",
+          "capabilities": [
+            "completion",
+            "vision"
+          ]
+        },
+        {
+          "id": "codestral-2508",
+          "name": "Codestral 2508",
+          "version": "1.0",
+          "description": "Code-specialized Mistral model with structured output support.",
+          "capabilities": [
+            "completion"
+          ]
+        },
+        {
+          "id": "mistral-small-2506",
+          "name": "Mistral Small 2506",
+          "version": "1.0",
+          "description": "Compact Mistral model with multimodal input and tool calling.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "mistral-nemo-2407",
+          "name": "Mistral Nemo 2407",
+          "version": "1.0",
+          "description": "Mistral Nemo — efficient general-purpose chat model.",
+          "capabilities": [
+            "completion"
+          ]
+        }
+      ]
+    },
+    {
+      "active": true,
+      "api_key": "",
+      "base_url": "https://api.groq.com/openai/v1",
+      "explore_models_url": "https://console.groq.com/docs/models",
+      "provider": "groq",
+      "settings": [
+        {
+          "key": "api-key",
+          "title": "API Key",
+          "description": "The Groq API uses API keys for authentication. Visit your [API Keys](https://console.groq.com/keys) page to retrieve the API key you'll use in your requests.",
+          "controller_type": "input",
+          "controller_props": {
+            "placeholder": "Insert API Key",
+            "value": "",
+            "type": "password",
+            "input_actions": [
+              "unobscure",
+              "copy"
+            ]
+          }
+        },
+        {
+          "key": "base-url",
+          "title": "Base URL",
+          "description": "The base OpenAI-compatible endpoint to use. See the [Groq documentation](https://console.groq.com/docs) for more information.",
+          "controller_type": "input",
+          "controller_props": {
+            "placeholder": "https://api.groq.com/openai/v1",
+            "value": "https://api.groq.com/openai/v1"
+          }
+        }
+      ],
+      "models": [
+        {
+          "id": "meta-llama/llama-4-maverick-17b-128e-instruct",
+          "name": "Llama 4 Maverick 17B",
+          "version": "1.0",
+          "description": "Meta Llama 4 Maverick — multimodal MoE model on Groq's fast inference.",
+          "capabilities": [
+            "completion",
+            "vision"
+          ]
+        },
+        {
+          "id": "meta-llama/llama-4-scout-17b-16e-instruct",
+          "name": "Llama 4 Scout 17B",
+          "version": "1.0",
+          "description": "Meta Llama 4 Scout — compact multimodal MoE on Groq.",
+          "capabilities": [
+            "completion",
+            "vision"
+          ]
+        },
+        {
+          "id": "llama-3.3-70b-versatile",
+          "name": "Llama 3.3 70B Versatile",
+          "version": "1.0",
+          "description": "Meta Llama 3.3 70B — versatile general-purpose model.",
+          "capabilities": [
+            "completion"
+          ]
+        },
+        {
+          "id": "llama-3.1-8b-instant",
+          "name": "Llama 3.1 8B Instant",
+          "version": "1.0",
+          "description": "Meta Llama 3.1 8B tuned for ultra-fast Groq inference.",
+          "capabilities": [
+            "completion"
+          ]
+        },
+        {
+          "id": "moonshotai/kimi-k2-instruct-0905",
+          "name": "Kimi K2 Instruct",
+          "version": "1.0",
+          "description": "Moonshot AI Kimi K2 — large-context tool-aware chat model.",
+          "capabilities": [
+            "completion"
+          ]
+        },
+        {
+          "id": "qwen/qwen3-32b",
+          "name": "Qwen 3 32B",
+          "version": "1.0",
+          "description": "Alibaba Qwen 3 32B — strong multilingual general-purpose model.",
+          "capabilities": [
+            "completion"
+          ]
+        },
+        {
+          "id": "openai/gpt-oss-120b",
+          "name": "GPT-OSS 120B",
+          "version": "1.0",
+          "description": "OpenAI open-weights model on Groq inference.",
+          "capabilities": [
+            "completion"
+          ]
+        },
+        {
+          "id": "whisper-large-v3-turbo",
+          "name": "Whisper Large v3 Turbo",
+          "version": "1.0",
+          "description": "OpenAI Whisper Large v3 Turbo — speech-to-text on Groq.",
+          "capabilities": [
+            "completion"
+          ]
+        }
+      ]
+    },
+    {
+      "active": true,
+      "api_key": "",
+      "base_url": "https://api.x.ai/v1",
+      "explore_models_url": "https://docs.x.ai/overview",
+      "provider": "xai",
+      "settings": [
+        {
+          "key": "api-key",
+          "title": "API Key",
+          "description": "The xAI API uses API keys for authentication. Visit your [API Keys](https://console.x.ai/) page to retrieve the API key you'll use in your requests.",
+          "controller_type": "input",
+          "controller_props": {
+            "placeholder": "Insert API Key",
+            "value": "",
+            "type": "password",
+            "input_actions": [
+              "unobscure",
+              "copy"
+            ]
+          }
+        },
+        {
+          "key": "base-url",
+          "title": "Base URL",
+          "description": "The base endpoint to use. See the [xAI API documentation](https://docs.x.ai/overview) for more information.",
+          "controller_type": "input",
+          "controller_props": {
+            "placeholder": "https://api.x.ai/v1",
+            "value": "https://api.x.ai/v1"
+          }
+        }
+      ],
+      "models": [
+        {
+          "id": "grok-4.20-0309-reasoning",
+          "name": "Grok 4.20 Reasoning",
+          "version": "1.0",
+          "description": "xAI Grok 4.20 in reasoning mode — flagship for complex tasks.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision",
+            "reasoning"
+          ]
+        },
+        {
+          "id": "grok-4.20-0309-non-reasoning",
+          "name": "Grok 4.20 Non-Reasoning",
+          "version": "1.0",
+          "description": "xAI Grok 4.20 in standard chat mode. Vision + tools.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "grok-4-1-fast-reasoning",
+          "name": "Grok 4.1 Fast Reasoning",
+          "version": "1.0",
+          "description": "Cost-efficient Grok 4.1 in reasoning mode.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision",
+            "reasoning"
+          ]
+        },
+        {
+          "id": "grok-4-1-fast-non-reasoning",
+          "name": "Grok 4.1 Fast Non-Reasoning",
+          "version": "1.0",
+          "description": "Cost-efficient Grok 4.1 in standard chat mode.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "grok-code-fast-1",
+          "name": "Grok Code Fast 1",
+          "version": "1.0",
+          "description": "Code-specialized Grok variant. Tools-capable.",
+          "capabilities": [
+            "completion",
+            "tools"
+          ]
+        },
+        {
+          "id": "grok-3",
+          "name": "Grok 3",
+          "version": "1.0",
+          "description": "Previous-generation Grok flagship.",
+          "capabilities": [
+            "completion",
+            "tools"
+          ]
+        },
+        {
+          "id": "grok-3-mini",
+          "name": "Grok 3 Mini",
+          "version": "1.0",
+          "description": "Compact Grok 3 variant.",
+          "capabilities": [
+            "completion",
+            "tools"
+          ]
+        },
+        {
+          "id": "grok-2-vision-1212",
+          "name": "Grok 2 Vision",
+          "version": "1.0",
+          "description": "Legacy Grok 2 vision-language model. Kept for thread back-compat.",
+          "capabilities": [
+            "completion",
+            "vision"
+          ]
+        }
+      ]
+    },
+    {
+      "active": true,
+      "api_key": "",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "explore_models_url": "https://ai.google.dev/gemini-api/docs/models/gemini",
+      "provider": "gemini",
+      "settings": [
+        {
+          "key": "api-key",
+          "title": "API Key",
+          "description": "The Google API uses API keys for authentication. Visit your [API Keys](https://aistudio.google.com/apikey) page to retrieve the API key you'll use in your requests.",
+          "controller_type": "input",
+          "controller_props": {
+            "placeholder": "Insert API Key",
+            "value": "",
+            "type": "password",
+            "input_actions": [
+              "unobscure",
+              "copy"
+            ]
+          }
+        },
+        {
+          "key": "base-url",
+          "title": "Base URL",
+          "description": "The base OpenAI-compatible endpoint to use. See the [Gemini documentation](https://ai.google.dev/gemini-api/docs/openai) for more information.",
+          "controller_type": "input",
+          "controller_props": {
+            "placeholder": "https://generativelanguage.googleapis.com/v1beta/openai",
+            "value": "https://generativelanguage.googleapis.com/v1beta/openai"
+          }
+        }
+      ],
+      "models": [
+        {
+          "id": "gemini-3.1-pro-preview",
+          "name": "Gemini 3.1 Pro Preview",
+          "version": "1.0",
+          "description": "Google Gemini 3.1 Pro preview — frontier multimodal reasoning.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision",
+            "reasoning"
+          ]
+        },
+        {
+          "id": "gemini-3-flash-preview",
+          "name": "Gemini 3 Flash Preview",
+          "version": "1.0",
+          "description": "Gemini 3 Flash preview — fast multimodal inference.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "gemini-3.1-flash-lite-preview",
+          "name": "Gemini 3.1 Flash Lite Preview",
+          "version": "1.0",
+          "description": "Most budget-friendly Gemini 3.1 preview. Multimodal.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "gemini-2.5-pro",
+          "name": "Gemini 2.5 Pro",
+          "version": "1.0",
+          "description": "Stable Gemini 2.5 Pro — balanced cost and quality.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "gemini-2.5-flash",
+          "name": "Gemini 2.5 Flash",
+          "version": "1.0",
+          "description": "Fast Gemini 2.5 multimodal variant.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "gemini-2.5-flash-lite",
+          "name": "Gemini 2.5 Flash Lite",
+          "version": "1.0",
+          "description": "Lightweight Gemini 2.5 Flash for cost-sensitive use.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        }
+      ]
+    },
+    {
+      "active": true,
+      "api_key": "",
+      "base_url": "https://api.meta.ai/v1",
+      "explore_models_url": "https://dev.meta.ai/docs/models/",
+      "provider": "meta",
+      "settings": [
+        {
+          "key": "api-key",
+          "title": "API Key",
+          "description": "The Meta Model API uses API keys for authentication. Sign in at [dev.meta.ai](https://dev.meta.ai) and create a key under **API keys → Create API key**.",
+          "controller_type": "input",
+          "controller_props": {
+            "placeholder": "Insert API Key",
+            "value": "",
+            "type": "password",
+            "input_actions": [
+              "unobscure",
+              "copy"
+            ]
+          }
+        },
+        {
+          "key": "base-url",
+          "title": "Base URL",
+          "description": "The base OpenAI-compatible endpoint to use. See the [Meta Model API documentation](https://dev.meta.ai/docs) for more information.",
+          "controller_type": "input",
+          "controller_props": {
+            "placeholder": "https://api.meta.ai/v1",
+            "value": "https://api.meta.ai/v1"
+          }
+        }
+      ],
+      "models": [
+        {
+          "id": "muse-spark-1.2",
+          "name": "Muse Spark 1.2",
+          "version": "1.0",
+          "description": "Meta's flagship multimodal model and the engine behind Muse Code. 1M-token context, text/image/video/PDF input, tools and structured output.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision",
+            "reasoning"
+          ]
+        },
+        {
+          "id": "muse-spark-1.2-contributor",
+          "name": "Muse Spark 1.2 (Contributor)",
+          "version": "1.0",
+          "description": "Same weights as Muse Spark 1.2 at roughly a twelfth of the input price, in exchange for letting Meta train on your data.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision",
+            "reasoning"
+          ]
+        },
+        {
+          "id": "muse-spark-1.1",
+          "name": "Muse Spark 1.1",
+          "version": "1.0",
+          "description": "Previous Muse Spark generation. 1M-token context, multimodal input with tool calling.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision",
+            "reasoning"
+          ]
+        }
+      ]
+    },
+    {
+      "active": true,
+      "api_key": "",
+      "base_url": "https://api.minimax.io/v1",
+      "explore_models_url": "https://platform.minimax.io/docs/api-reference/text-openai-api",
+      "provider": "minimax",
+      "settings": [
+        {
+          "key": "api-key",
+          "title": "API Key",
+          "description": "The MiniMax API uses API keys for authentication. Visit your [API Keys](https://platform.minimax.io/user-center/basic-information/interface-key) page to retrieve the API key you'll use in your requests.",
+          "controller_type": "input",
+          "controller_props": {
+            "placeholder": "Insert API Key",
+            "value": "",
+            "type": "password",
+            "input_actions": [
+              "unobscure",
+              "copy"
+            ]
+          }
+        },
+        {
+          "key": "base-url",
+          "title": "Base URL",
+          "description": "The base endpoint to use. Use `https://api.minimax.io/v1` for global access or `https://api.minimaxi.com/v1` for users in China. See the [MiniMax API documentation](https://platform.minimax.io/docs/api-reference/text-openai-api) for more information.",
+          "controller_type": "input",
+          "controller_props": {
+            "placeholder": "https://api.minimax.io/v1",
+            "value": "https://api.minimax.io/v1"
+          }
+        }
+      ],
+      "models": [
+        {
+          "id": "MiniMax-M3",
+          "name": "MiniMax-M3",
+          "version": "1.0",
+          "description": "Latest M-series flagship for agentic reasoning, tool use, coding, and long-context tasks. 1M context window with image and video input.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision",
+            "reasoning"
+          ]
+        },
+        {
+          "id": "MiniMax-M2.7",
+          "name": "MiniMax-M2.7",
+          "version": "1.0",
+          "description": "Latest flagship model with enhanced reasoning and coding.",
+          "capabilities": [
+            "completion",
+            "tools"
+          ]
+        },
+        {
+          "id": "MiniMax-M2.7-highspeed",
+          "name": "MiniMax-M2.7-highspeed",
+          "version": "1.0",
+          "description": "High-speed version of M2.7 for low-latency scenarios.",
+          "capabilities": [
+            "completion",
+            "tools"
+          ]
+        },
+        {
+          "id": "MiniMax-M2.5",
+          "name": "MiniMax-M2.5",
+          "version": "1.0",
+          "description": "Peak Performance. Ultimate Value. Master the Complex. 204K context window.",
+          "capabilities": [
+            "completion",
+            "tools"
+          ]
+        },
+        {
+          "id": "MiniMax-M2.5-highspeed",
+          "name": "MiniMax-M2.5-highspeed",
+          "version": "1.0",
+          "description": "Same performance, faster and more agile. 204K context window.",
+          "capabilities": [
+            "completion",
+            "tools"
+          ]
+        }
+      ]
+    },
+    {
+      "active": true,
+      "api_key": "",
+      "base_url": "https://router.huggingface.co/v1",
+      "explore_models_url": "https://huggingface.co/models?pipeline_tag=text-generation&inference_provider=all",
+      "provider": "huggingface",
+      "settings": [
+        {
+          "key": "api-key",
+          "title": "API Key",
+          "description": "The Hugging Face API uses tokens for authentication. Visit your [Access Tokens](https://huggingface.co/settings/tokens) page to retrieve the token you'll use in your requests.",
+          "controller_type": "input",
+          "controller_props": {
+            "placeholder": "Insert API Token",
+            "value": "",
+            "type": "password",
+            "input_actions": [
+              "unobscure",
+              "copy"
+            ]
+          }
+        },
+        {
+          "key": "base-url",
+          "title": "Base URL",
+          "description": "The base endpoint to use. See the [Hugging Face Inference Providers documentation](https://huggingface.co/docs/inference-providers) for more information.",
+          "controller_type": "input",
+          "controller_props": {
+            "placeholder": "https://router.huggingface.co/v1",
+            "value": "https://router.huggingface.co/v1"
+          }
+        }
+      ],
+      "models": [
+        {
+          "id": "moonshotai/Kimi-K2-Instruct:groq",
+          "name": "Kimi-K2-Instruct",
+          "version": "1.0",
+          "description": "1T parameters Moonshot chat model tuned for tool-aware, nuanced responses.",
+          "capabilities": [
+            "completion",
+            "tools"
+          ]
+        },
+        {
+          "id": "deepseek-ai/DeepSeek-R1-0528",
+          "name": "DeepSeek-R1-0528",
+          "version": "1.0",
+          "description": "DeepSeek's flagship reasoning engine with open weights and advanced tool control.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "reasoning"
+          ]
+        },
+        {
+          "id": "deepseek-ai/DeepSeek-V3-0324",
+          "name": "DeepSeek-V3-0324",
+          "version": "1.0",
+          "description": "Streamlined DeepSeek model focused on fast, high-quality completions and tool use.",
+          "capabilities": [
+            "completion",
+            "tools"
+          ]
+        }
+      ]
+    },
+    {
+      "active": true,
+      "api_key": "",
+      "base_url": "https://integrate.api.nvidia.com/v1",
+      "explore_models_url": "https://build.nvidia.com/models",
+      "provider": "nvidia",
+      "settings": [
+        {
+          "key": "api-key",
+          "title": "API Key",
+          "description": "The NVIDIA NIM API uses API keys for authentication. Visit [NVIDIA NGC API Keys](https://org.ngc.nvidia.com/setup/api-keys) to create an API key for your requests.",
+          "controller_type": "input",
+          "controller_props": {
+            "placeholder": "Insert API Key",
+            "value": "",
+            "type": "password",
+            "input_actions": [
+              "unobscure",
+              "copy"
+            ]
+          }
+        },
+        {
+          "key": "base-url",
+          "title": "Base URL",
+          "description": "The NVIDIA NIM OpenAI-compatible endpoint to use. See the [NVIDIA NIM API documentation](https://docs.api.nvidia.com/nim/reference/llm-apis) for more information.",
+          "controller_type": "input",
+          "controller_props": {
+            "placeholder": "https://integrate.api.nvidia.com/v1",
+            "value": "https://integrate.api.nvidia.com/v1"
+          }
+        }
+      ],
+      "models": [
+        {
+          "id": "meta/llama-3.1-8b-instruct",
+          "name": "Llama 3.1 8B Instruct",
+          "version": "1.0",
+          "description": "Meta Llama 3.1 8B Instruct hosted on NVIDIA NIM.",
+          "capabilities": [
+            "completion",
+            "tools"
+          ]
+        },
+        {
+          "id": "meta/llama-3.3-70b-instruct",
+          "name": "Llama 3.3 70B Instruct",
+          "version": "1.0",
+          "description": "Meta Llama 3.3 70B Instruct hosted on NVIDIA NIM.",
+          "capabilities": [
+            "completion",
+            "tools"
+          ]
+        },
+        {
+          "id": "openai/gpt-oss-120b",
+          "name": "GPT-OSS 120B",
+          "version": "1.0",
+          "description": "OpenAI GPT-OSS 120B hosted on NVIDIA NIM. Emits chain-of-thought as reasoning_content.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "reasoning"
+          ]
+        }
+      ]
+    },
+    {
+      "active": true,
+      "api_key": "",
+      "base_url": "https://api.moonshot.ai/v1",
+      "explore_models_url": "https://platform.moonshot.ai/docs/pricing/chat",
+      "provider": "moonshot",
+      "settings": [
+        {
+          "key": "api-key",
+          "title": "API Key",
+          "description": "The Moonshot AI (Kimi) API uses API keys for authentication. Visit your [API Keys](https://platform.moonshot.ai/console/api-keys) page to retrieve the API key you'll use in your requests.",
+          "controller_type": "input",
+          "controller_props": {
+            "placeholder": "Insert API Key",
+            "value": "",
+            "type": "password",
+            "input_actions": [
+              "unobscure",
+              "copy"
+            ]
+          }
+        },
+        {
+          "key": "base-url",
+          "title": "Base URL",
+          "description": "The base OpenAI-compatible endpoint to use. Use `https://api.moonshot.ai/v1` for global access or `https://api.moonshot.cn/v1` for users in China. See the [Moonshot AI documentation](https://platform.moonshot.ai/docs/guide/migrating-from-openai-to-kimi) for more information.",
+          "controller_type": "input",
+          "controller_props": {
+            "placeholder": "https://api.moonshot.ai/v1",
+            "value": "https://api.moonshot.ai/v1"
+          }
+        }
+      ],
+      "models": [
+        {
+          "id": "kimi-k2.6",
+          "name": "Kimi K2.6",
+          "version": "1.0",
+          "description": "Moonshot flagship — 1T-param MoE (32B active), 256K context, native vision via MoonViT, agent swarms, toggleable extended thinking. Ties GPT-5.5 on SWE-Bench Pro.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision",
+            "reasoning"
+          ]
+        },
+        {
+          "id": "kimi-k2.5",
+          "name": "Kimi K2.5",
+          "version": "1.0",
+          "description": "Previous-generation Kimi flagship — multimodal MoE with vision and tool calling.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "kimi-k2-thinking-turbo",
+          "name": "Kimi K2 Thinking Turbo",
+          "version": "1.0",
+          "description": "Faster variant of Kimi K2 Thinking — structured reasoning with lower latency.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "reasoning"
+          ]
+        },
+        {
+          "id": "kimi-k2-thinking",
+          "name": "Kimi K2 Thinking",
+          "version": "1.0",
+          "description": "Kimi K2 in extended-thinking mode — structured reasoning for complex tasks.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "reasoning"
+          ]
+        },
+        {
+          "id": "moonshot-v1-128k",
+          "name": "Moonshot v1 128K",
+          "version": "1.0",
+          "description": "Moonshot v1 with 128K context window for long-document chat.",
+          "capabilities": [
+            "completion",
+            "tools"
+          ]
+        },
+        {
+          "id": "moonshot-v1-32k",
+          "name": "Moonshot v1 32K",
+          "version": "1.0",
+          "description": "Moonshot v1 with 32K context — balanced cost and context size.",
+          "capabilities": [
+            "completion",
+            "tools"
+          ]
+        },
+        {
+          "id": "moonshot-v1-8k",
+          "name": "Moonshot v1 8K",
+          "version": "1.0",
+          "description": "Compact Moonshot v1 for low-cost, short-context chat.",
+          "capabilities": [
+            "completion",
+            "tools"
+          ]
+        },
+        {
+          "id": "moonshot-v1-128k-vision-preview",
+          "name": "Moonshot v1 128K Vision Preview",
+          "version": "1.0",
+          "description": "Moonshot v1 128K with vision input — preview multimodal variant.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "moonshot-v1-32k-vision-preview",
+          "name": "Moonshot v1 32K Vision Preview",
+          "version": "1.0",
+          "description": "Moonshot v1 32K with vision input — preview multimodal variant.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "moonshot-v1-8k-vision-preview",
+          "name": "Moonshot v1 8K Vision Preview",
+          "version": "1.0",
+          "description": "Moonshot v1 8K with vision input — preview multimodal variant.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        }
+      ]
+    },
+    {
+      "active": true,
+      "api_key": "",
+      "base_url": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+      "explore_models_url": "https://www.alibabacloud.com/help/en/model-studio/getting-started/models",
+      "provider": "qwen",
+      "settings": [
+        {
+          "key": "api-key",
+          "title": "API Key",
+          "description": "The Qwen (Alibaba DashScope) API uses API keys for authentication. Visit your [API Keys](https://bailian.console.alibabacloud.com/?apiKey=1) page in Alibaba Cloud Model Studio to retrieve the API key you'll use in your requests.",
+          "controller_type": "input",
+          "controller_props": {
+            "placeholder": "Insert API Key",
+            "value": "",
+            "type": "password",
+            "input_actions": [
+              "unobscure",
+              "copy"
+            ]
+          }
+        },
+        {
+          "key": "base-url",
+          "title": "Base URL",
+          "description": "The base OpenAI-compatible endpoint to use. Use `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` for international (Singapore) access or `https://dashscope.aliyuncs.com/compatible-mode/v1` for users in mainland China. See the [DashScope OpenAI-compatible API documentation](https://www.alibabacloud.com/help/en/model-studio/compatibility-of-openai-with-dashscope) for more information.",
+          "controller_type": "input",
+          "controller_props": {
+            "placeholder": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+            "value": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+          }
+        }
+      ],
+      "models": [
+        {
+          "id": "qwen3.7-max",
+          "name": "Qwen3.7 Max",
+          "version": "1.0",
+          "description": "Alibaba's newest flagship agent model — sustained autonomous execution over 1000+ tool calls and 35-hour task horizons. Strong coding, debugging, and long-horizon agentic workflows. Toggle deep thinking with `enable_thinking`.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "reasoning"
+          ]
+        },
+        {
+          "id": "qwen3.7-plus",
+          "name": "Qwen3.7 Plus",
+          "version": "1.0",
+          "description": "Open-source-track sibling of Qwen3.7 Max — balanced cost/quality with hybrid thinking and tool use.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "reasoning"
+          ]
+        },
+        {
+          "id": "qwen3-max",
+          "name": "Qwen3 Max",
+          "version": "1.0",
+          "description": "Stable Qwen3 Max — previous-gen flagship for complex reasoning, coding, and agentic tasks.",
+          "capabilities": [
+            "completion",
+            "tools"
+          ]
+        },
+        {
+          "id": "qwen3.5-plus",
+          "name": "Qwen3.5 Plus",
+          "version": "1.0",
+          "description": "Qwen3.5 Plus — balanced cost/quality with hybrid thinking mode and tool use.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "reasoning"
+          ]
+        },
+        {
+          "id": "qwen3.5-flash",
+          "name": "Qwen3.5 Flash",
+          "version": "1.0",
+          "description": "Qwen3.5 Flash — fast, cost-efficient general-purpose chat with tool calling.",
+          "capabilities": [
+            "completion",
+            "tools"
+          ]
+        },
+        {
+          "id": "qwen3-vl-plus",
+          "name": "Qwen3-VL Plus",
+          "version": "1.0",
+          "description": "Qwen3 vision-language flagship — multimodal reasoning with tool use.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "qwen3-coder-plus",
+          "name": "Qwen3 Coder Plus",
+          "version": "1.0",
+          "description": "Qwen3 Coder Plus — code-specialized model with strong tool use and long context.",
+          "capabilities": [
+            "completion",
+            "tools"
+          ]
+        },
+        {
+          "id": "qwen3-coder-flash",
+          "name": "Qwen3 Coder Flash",
+          "version": "1.0",
+          "description": "Fast, cost-efficient Qwen3 Coder variant for high-throughput code tasks.",
+          "capabilities": [
+            "completion",
+            "tools"
+          ]
+        },
+        {
+          "id": "qwq-plus",
+          "name": "QwQ Plus",
+          "version": "1.0",
+          "description": "QwQ Plus — Alibaba's open reasoning model exposing structured reasoning traces.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "reasoning"
+          ]
+        },
+        {
+          "id": "qwen-plus",
+          "name": "Qwen Plus",
+          "version": "1.0",
+          "description": "Stable Qwen Plus generation — balanced general-purpose chat with tool calling.",
+          "capabilities": [
+            "completion",
+            "tools"
+          ]
+        },
+        {
+          "id": "qwen-flash",
+          "name": "Qwen Flash",
+          "version": "1.0",
+          "description": "Qwen Flash — fast, cost-efficient general-purpose chat.",
+          "capabilities": [
+            "completion",
+            "tools"
+          ]
+        },
+        {
+          "id": "qwen-turbo",
+          "name": "Qwen Turbo",
+          "version": "1.0",
+          "description": "Qwen Turbo — fastest, most budget-friendly Qwen tier.",
+          "capabilities": [
+            "completion",
+            "tools"
+          ]
+        }
+      ]
+    },
+    {
+      "active": true,
+      "api_key": "",
+      "base_url": "https://api.deepseek.com/v1",
+      "explore_models_url": "https://api-docs.deepseek.com/quick_start/pricing",
+      "provider": "deepseek",
+      "settings": [
+        {
+          "key": "api-key",
+          "title": "API Key",
+          "description": "The DeepSeek API uses API keys for authentication. Visit your [API Keys](https://platform.deepseek.com/api_keys) page to retrieve the API key you'll use in your requests.",
+          "controller_type": "input",
+          "controller_props": {
+            "placeholder": "Insert API Key",
+            "value": "",
+            "type": "password",
+            "input_actions": [
+              "unobscure",
+              "copy"
+            ]
+          }
+        },
+        {
+          "key": "base-url",
+          "title": "Base URL",
+          "description": "The base OpenAI-compatible endpoint to use. See the [DeepSeek API documentation](https://api-docs.deepseek.com/) for more information.",
+          "controller_type": "input",
+          "controller_props": {
+            "placeholder": "https://api.deepseek.com/v1",
+            "value": "https://api.deepseek.com/v1"
+          }
+        }
+      ],
+      "models": [
+        {
+          "id": "deepseek-chat",
+          "name": "DeepSeek Chat",
+          "version": "1.0",
+          "description": "Stable alias for the current DeepSeek flagship in non-thinking mode. Points at V4 Pro today and follows the platform default as it moves.",
+          "capabilities": [
+            "completion",
+            "tools"
+          ]
+        },
+        {
+          "id": "deepseek-reasoner",
+          "name": "DeepSeek Reasoner",
+          "version": "1.0",
+          "description": "The same flagship in thinking mode — streams its chain of thought in `reasoning_content` before the answer.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "reasoning"
+          ]
+        },
+        {
+          "id": "deepseek-v4-pro",
+          "name": "DeepSeek V4 Pro",
+          "version": "1.0",
+          "description": "DeepSeek flagship MoE (1.6T total / 49B active) for advanced reasoning, coding, and long-horizon agents. 1M ctx.",
+          "capabilities": [
+            "completion",
+            "tools"
+          ]
+        },
+        {
+          "id": "deepseek-v4-flash",
+          "name": "DeepSeek V4 Flash",
+          "version": "1.0",
+          "description": "Efficiency-optimized MoE (284B total / 13B active) for fast, cost-effective reasoning and coding. 1M ctx.",
+          "capabilities": [
+            "completion",
+            "tools"
+          ]
+        },
+        {
+          "id": "deepseek-v3.2",
+          "name": "DeepSeek V3.2",
+          "version": "1.0",
+          "description": "Previous-generation open-weight flagship with strong tool use and long-context retrieval.",
+          "capabilities": [
+            "completion",
+            "tools"
+          ]
+        }
+      ]
+    },
+    {
+      "active": true,
+      "api_key": "",
+      "base_url": "http://localhost:11434/v1",
+      "explore_models_url": "https://ollama.com/library",
+      "provider": "ollama",
+      "settings": [
+        {
+          "key": "api-key",
+          "title": "API Key",
+          "description": "Ollama runs locally and needs no API key by default. Leave this empty unless you put Ollama behind an authenticating proxy.",
+          "controller_type": "input",
+          "controller_props": {
+            "placeholder": "Optional",
+            "value": "",
+            "type": "password",
+            "input_actions": [
+              "unobscure",
+              "copy"
+            ]
+          }
+        },
+        {
+          "key": "base-url",
+          "title": "Base URL",
+          "description": "The OpenAI-compatible endpoint exposed by your local Ollama server. Defaults to `http://localhost:11434/v1`. See the [Ollama OpenAI compatibility docs](https://github.com/ollama/ollama/blob/main/docs/openai.md) for more information.",
+          "controller_type": "input",
+          "controller_props": {
+            "placeholder": "http://localhost:11434/v1",
+            "value": "http://localhost:11434/v1"
+          }
+        }
+      ],
+      "models": []
+    },
+    {
+      "active": true,
+      "api_key": "",
+      "base_url": "https://api.aimlapi.com/v1",
+      "explore_models_url": "https://aimlapi.com/models",
+      "provider": "aimlapi",
+      "supports_model_listing": false,
+      "settings": [
+        {
+          "key": "api-key",
+          "title": "API Key",
+          "description": "The AI/ML API uses API keys for authentication. Visit your [API Keys](https://aimlapi.com/app/keys) page to retrieve the API key you'll use in your requests.",
+          "controller_type": "input",
+          "controller_props": {
+            "placeholder": "Insert API Key",
+            "value": "",
+            "type": "password",
+            "input_actions": [
+              "unobscure",
+              "copy"
+            ]
+          }
+        },
+        {
+          "key": "base-url",
+          "title": "Base URL",
+          "description": "The base OpenAI-compatible endpoint to use. See the [AI/ML API documentation](https://docs.aimlapi.com/) for more information.",
+          "controller_type": "input",
+          "controller_props": {
+            "placeholder": "https://api.aimlapi.com/v1",
+            "value": "https://api.aimlapi.com/v1"
+          }
+        }
+      ],
+      "models": [
+        {
+          "id": "anthropic/claude-fable-5.1",
+          "name": "Claude Fable 5.1",
+          "version": "1.0",
+          "description": "Anthropic's most capable model for demanding reasoning and long-horizon agentic work. 1M ctx, vision + tools.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "anthropic/claude-opus-5",
+          "name": "Claude Opus 5",
+          "version": "1.0",
+          "description": "Anthropic flagship for complex agentic coding and enterprise work. 1M ctx, vision + tools.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "anthropic/claude-sonnet-5",
+          "name": "Claude Sonnet 5",
+          "version": "1.0",
+          "description": "Near-Opus quality at Sonnet cost for coding and agentic workflows. 1M ctx, vision + tools.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "openai/gpt-6-astra",
+          "name": "GPT-6 Astra",
+          "version": "1.0",
+          "description": "OpenAI's flagship GPT-6 with reasoning and function calling. 1.05M ctx, vision + tools.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "google/gemini-3.8-flash",
+          "name": "Gemini 3.8 Flash",
+          "version": "1.0",
+          "description": "Google's most intelligent Flash model, built for agents and long-horizon coding. 1M ctx, vision + tools.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "deepseek/deepseek-v4.1-flash",
+          "name": "DeepSeek V4.1 Flash",
+          "version": "1.0",
+          "description": "The current DeepSeek Flash build for fast, cost-effective reasoning and coding. 1M ctx.",
+          "capabilities": [
+            "completion",
+            "tools"
+          ]
+        },
+        {
+          "id": "deepseek/deepseek-v4-pro",
+          "name": "DeepSeek V4 Pro",
+          "version": "1.0",
+          "description": "DeepSeek flagship MoE for advanced reasoning, coding, and long-horizon agents. 1M ctx.",
+          "capabilities": [
+            "completion",
+            "tools"
+          ]
+        },
+        {
+          "id": "x-ai/grok-4-6",
+          "name": "Grok 4.6",
+          "version": "1.0",
+          "description": "xAI's latest Grok for text generation and reasoning. 500K ctx, vision + tools.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "alibaba/qwen3.8-max",
+          "name": "Qwen3.8 Max",
+          "version": "1.0",
+          "description": "Alibaba's highest-capability tier for multi-step reasoning, coding, and agents. 1M ctx.",
+          "capabilities": [
+            "completion",
+            "tools"
+          ]
+        },
+        {
+          "id": "zhipu/glm-5.3",
+          "name": "GLM 5.3",
+          "version": "1.0",
+          "description": "Zhipu AI flagship MoE for advanced text generation and deep reasoning. 1M ctx.",
+          "capabilities": [
+            "completion",
+            "tools"
+          ]
+        },
+        {
+          "id": "moonshot/kimi-k2-6",
+          "name": "Kimi K2.6",
+          "version": "1.0",
+          "description": "Moonshot's multimodal Kimi for agentic coding and tool use. 262K ctx, vision + tools.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "minimax/minimax-m3",
+          "name": "MiniMax M3",
+          "version": "1.0",
+          "description": "Large-context reasoning model from MiniMax, optimized for long-document understanding. 512K ctx.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "meta/muse-spark-1.3",
+          "name": "Muse Spark 1.3",
+          "version": "1.0",
+          "description": "The latest Muse Spark from Meta. 1M ctx, vision + tools.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        }
+      ]
+    },
+    {
+      "active": true,
+      "api_key": "",
+      "base_url": "https://api.edenai.run/v3",
+      "explore_models_url": "https://app.edenai.run",
+      "provider": "edenai",
+      "settings": [
+        {
+          "key": "api-key",
+          "title": "API Key",
+          "description": "The Eden AI API uses API keys for authentication. Visit your [Eden AI dashboard](https://app.edenai.run) to retrieve the API key you'll use in your requests.",
+          "controller_type": "input",
+          "controller_props": {
+            "placeholder": "Insert API Key",
+            "value": "",
+            "type": "password",
+            "input_actions": [
+              "unobscure",
+              "copy"
+            ]
+          }
+        },
+        {
+          "key": "base-url",
+          "title": "Base URL",
+          "description": "The base OpenAI-compatible endpoint to use. See the [Eden AI API documentation](https://www.edenai.co/docs/v3/llms/chat-completions) for more information.",
+          "controller_type": "input",
+          "controller_props": {
+            "placeholder": "https://api.edenai.run/v3",
+            "value": "https://api.edenai.run/v3"
+          }
+        }
+      ],
+      "models": [
+        {
+          "id": "openai/gpt-latest",
+          "name": "GPT Latest",
+          "version": "1.0",
+          "description": "Current OpenAI GPT model via Eden AI.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "anthropic/claude-sonnet-latest",
+          "name": "Claude Sonnet Latest",
+          "version": "1.0",
+          "description": "Current Anthropic Claude Sonnet model via Eden AI.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "google/gemini-flash-latest",
+          "name": "Gemini Flash Latest",
+          "version": "1.0",
+          "description": "Current Google Gemini Flash model via Eden AI.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "mistral/mistral-large-latest",
+          "name": "Mistral Large Latest",
+          "version": "1.0",
+          "description": "Current Mistral Large model via Eden AI.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        },
+        {
+          "id": "databricks/databricks-gpt-6-luna@eu",
+          "name": "GPT-6 Luna (EU)",
+          "version": "1.0",
+          "description": "GPT-6 Luna via the Databricks EU route on Eden AI.",
+          "capabilities": [
+            "completion",
+            "tools",
+            "vision"
+          ]
+        }
+      ],
+      "supports_model_listing": true
+    }
+  ]
+}

@@ -1,13 +1,14 @@
 /**
- * Provider Registry — remote configuration loader.
+ * Provider Registry — the cloud-provider catalog.
  *
- * Fetches the cloud-provider catalog from a public git-hosted JSON manifest at
- * runtime so that adding/updating providers does not require an app release.
+ * The catalog ships inside the app (`src/registries/providers.json`), merged
+ * with the hand-written {@link BASELINE_PROVIDERS}. Nothing is fetched unless
+ * the build sets `VITE_PROVIDER_REGISTRY_URL` (see `lib/registry-source.ts`);
+ * then that URL is tried first, cached for an hour, and the bundled snapshot
+ * remains the fallback when it is unreachable, too new, or malformed.
  *
- * Failure-safe: when the network is unreachable, the schema_version is too
- * high, or the payload is malformed, callers fall back to a locally bundled
- * baseline ({@link BASELINE_PROVIDERS}). API keys are never read from the
- * registry — the `api_key` field is always coerced to "" on load.
+ * API keys are never read from the registry — the `api_key` field is always
+ * coerced to "" on load, bundled or remote.
  *
  * Designed to be importable from both React components (via the Zustand store
  * in `@/stores/provider-registry-store`) and non-React code (e.g. the Tauri
@@ -16,25 +17,17 @@
 
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 import { BASELINE_PROVIDERS } from '@/constants/providers'
+import { REGISTRY_OVERRIDES } from '@/lib/registry-source'
+import bundledRegistry from '@/registries/providers.json'
 
 /**
- * Why we use the standard `fetch` instead of the Tauri HTTP plugin here:
- * the registry is served by GitHub's raw CDN with `Access-Control-Allow-Origin: *`,
- * so a normal browser-side fetch works in both the desktop WebView and the
- * web-only build. The Tauri plugin has been observed to hang under macOS for
- * this specific endpoint; standard fetch resolves quickly and uniformly.
+ * The build-time override, or `null` for the bundled snapshot only.
  *
- * `fetchTauri` is still imported so we can fall back to it if the standard
- * fetch fails (e.g. an air-gapped corporate proxy that intercepts WebView
- * traffic but lets the Rust HTTP client through).
+ * When set, the standard `fetch` is tried first and `fetchTauri` second: a
+ * CORS-enabled static host resolves fastest through the WebView, and the Rust
+ * client gets through proxies that intercept WebView traffic.
  */
-
-export const DEFAULT_REGISTRY_URL =
-  'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/providers/registry.json'
-
-export const REGISTRY_URL: string =
-  (import.meta.env.VITE_PROVIDER_REGISTRY_URL as string | undefined) ??
-  DEFAULT_REGISTRY_URL
+export const REGISTRY_URL: string | null = REGISTRY_OVERRIDES.providers
 
 /** Highest registry schema_version this client understands. */
 export const SUPPORTED_SCHEMA_VERSION = 1
@@ -53,9 +46,11 @@ export type RegistryManifest = {
   providers: ModelProvider[]
 }
 
+export type RegistrySource = 'remote' | 'cache' | 'bundled'
+
 export type RegistryFetchResult = {
   providers: ModelProvider[]
-  source: 'remote' | 'cache' | 'baseline'
+  source: RegistrySource
   fetchedAt: number | null
   manifestUpdatedAt: string | null
   error?: string
@@ -183,6 +178,14 @@ const fetchManifest = async (
     data = await fetchOnce(fetchTauri as typeof fetch, url, signal)
   }
 
+  return parseManifest(data)
+}
+
+/**
+ * Validate and sanitize a manifest, from the network or the bundle alike, so
+ * both pass through exactly the same checks.
+ */
+export const parseManifest = (data: unknown): RegistryManifest => {
   if (!isManifest(data)) {
     throw new Error('Registry payload is not a valid manifest')
   }
@@ -193,10 +196,23 @@ const fetchManifest = async (
     )
   }
   return {
-    ...data,
+    schema_version: data.schema_version,
+    updated_at: data.updated_at,
     providers: data.providers.map(sanitizeProvider),
   }
 }
+
+/** The snapshot shipped with this build. Parsed once; never fetched. */
+export const BUNDLED_MANIFEST: RegistryManifest = parseManifest(bundledRegistry)
+
+/** The bundled snapshot as a fetch result, merged with the baseline. */
+export const bundledResult = (error?: string): RegistryFetchResult => ({
+  providers: mergeWithBaseline(BUNDLED_MANIFEST.providers),
+  source: 'bundled',
+  fetchedAt: null,
+  manifestUpdatedAt: BUNDLED_MANIFEST.updated_at,
+  ...(error ? { error } : {}),
+})
 
 /**
  * Hard timeout wrapper. Tauri's HTTP plugin does not always honour
@@ -220,7 +236,9 @@ const withHardTimeout = <T>(
       })
   })
 
-const mergeWithBaseline = (remote: ModelProvider[]): ModelProvider[] => {
+export const mergeWithBaseline = (
+  remote: ModelProvider[]
+): ModelProvider[] => {
   const remoteIds = new Set(remote.map((p) => p.provider))
   const baselineExtras = BASELINE_PROVIDERS.filter(
     (p) => !remoteIds.has(p.provider)
@@ -231,19 +249,22 @@ const mergeWithBaseline = (remote: ModelProvider[]): ModelProvider[] => {
 export type FetchOptions = {
   /** Bypass cache freshness check and force a network round-trip. */
   force?: boolean
-  /** Override URL (for tests). */
-  url?: string
+  /** Registry URL; defaults to the build-time override. `null` = bundled only. */
+  url?: string | null
   /** Abort the network request after this many ms. Default: 5000. */
   timeoutMs?: number
 }
 
 /**
- * Resolve the effective list of providers using the priority chain:
+ * Resolve the effective list of providers.
+ *
+ * Without a registry URL (the default build) this is the bundled snapshot,
+ * immediately, with no I/O. With one, the priority chain is:
  *
  *   1. Fresh cache (when not forcing).
  *   2. Network fetch (writes a new cache entry on success).
  *   3. Stale cache (used after a network failure).
- *   4. Baseline fallback bundled in the app.
+ *   4. The bundled snapshot.
  *
  * Always returns a result — never throws — so UI code can render unconditionally.
  */
@@ -252,6 +273,8 @@ export const getProvidersOrFallback = async (
 ): Promise<RegistryFetchResult> => {
   const { force = false, url = REGISTRY_URL, timeoutMs = FETCH_TIMEOUT_MS } =
     options
+
+  if (!url) return bundledResult()
 
   const cached = getCachedManifest()
   if (!force && isCacheFresh(cached) && cached) {
@@ -265,9 +288,8 @@ export const getProvidersOrFallback = async (
 
   const controller = new AbortController()
   // When the caller is explicitly forcing a fetch (e.g. the manual Refresh
-  // button), append a cache-busting timestamp to bypass the GitHub raw CDN
-  // cache (which can hold the previous payload for a few minutes after a
-  // push) and any intermediate proxy/browser caches.
+  // button), append a cache-busting timestamp to bypass CDN, proxy and
+  // browser caches that can hold the previous payload for a few minutes.
   const fetchUrl = force
     ? `${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`
     : url
@@ -310,12 +332,6 @@ export const getProvidersOrFallback = async (
         error: message,
       }
     }
-    return {
-      providers: BASELINE_PROVIDERS.slice(),
-      source: 'baseline',
-      fetchedAt: null,
-      manifestUpdatedAt: null,
-      error: message,
-    }
+    return bundledResult(message)
   }
 }

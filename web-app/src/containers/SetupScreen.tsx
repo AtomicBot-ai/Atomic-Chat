@@ -63,19 +63,6 @@ import { useStaffPicksStore } from '@/stores/staff-picks-store'
 import type { StaffPick } from '@/services/staff-picks-registry'
 import { ChatGptMark } from '@/components/icons/chatgpt-mark'
 import { prettyModelName } from '@/lib/model-display-name'
-import {
-  buildRecommendedImpressions,
-  captureOnboardingCompleted,
-  captureRecommendedModelClicked,
-  captureRecommendedModelsShown,
-  captureSetupLocalModelAutostarted,
-  captureSetupLocalModelRun,
-  captureSetupScreenShown,
-  captureSetupSkipped,
-  markOnboardingInFlight,
-  type OnboardingStep,
-} from '@/lib/onboarding-telemetry'
-import { describeProviderState } from '@/lib/onboarding'
 import { extractModelErrorMessage } from '@/lib/modelErrorMessage'
 //* Формат прогресса общий с панелью закачек (ATO-462), чтобы не разъезжался
 import { formatProgressPair } from '@/lib/downloadFormat'
@@ -142,8 +129,8 @@ const recommendedSetupModelIconSrc = modelFamilyLogoSrc
  * Who a row is "from", for the purpose of not seating two of them together:
  * the brand mark the row wears (so `gemma`/`google` and `llama`/`meta`/`muse`
  * are one publisher each), else the repo owner. The repo owner alone would
- * not do — most picks are our own `AtomicChat/…` repacks of other people's
- * models.
+ * not do — many picks are quantizer repacks (`unsloth/…`, `lmstudio-community/…`)
+ * of other people's models.
  */
 export function publisherKey(modelName: string, iconKey?: string): string {
   return (
@@ -312,6 +299,8 @@ export function describeRecommendationFit(args: {
   }
 }
 
+export type OnboardingStep = 'backend' | 'model'
+
 export function getInitialStep(): OnboardingStep {
   if (typeof window === 'undefined') return 'model'
   // Windows and Linux both install on a CPU build and both have a GPU build
@@ -332,10 +321,6 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     useModelProvider()
 
   const [step, setStep] = useState<OnboardingStep>(getInitialStep)
-  // Read at exit rather than derived from `step`, so an exit that races a step
-  // transition still reports the screen the user was actually on.
-  const stepReachedRef = useRef<OnboardingStep>(step)
-  stepReachedRef.current = step
 
   const handleBackendStepDone = useCallback(
     (status: 'downloaded' | 'skipped') => {
@@ -388,9 +373,6 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     Map<string, LocalLlamacppProvider | 'mlx'>
   >(new Map())
   const hasNavigatedRef = useRef(false)
-  // Wall clock for `onboarding_completed.duration_ms` — how long the user spent
-  // in the flow before whichever exit they took.
-  const onboardingStartedAtRef = useRef(Date.now())
   // Imported only after the chosen model is handled (see handleImportedId), so
   // their fast imports can't flip the route before a large pick finishes.
   const pendingBackgroundImportsRef = useRef<LocalModelCandidate[]>([])
@@ -536,13 +518,6 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     [detectedRunnable]
   )
   autoRunTargetRef.current = autoRunTarget
-
-  // A window close gives the renderer nothing to hang an exit event on, so the
-  // run is recorded here and reported as abandoned at the next launch if it is
-  // still there. Re-runs on step change so `step_reached` is the real one.
-  useEffect(() => {
-    markOnboardingInFlight(step, onboardingStartedAtRef.current)
-  }, [step])
 
   const downloadProcesses = useMemo(
     () =>
@@ -746,94 +721,6 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     getMlxModelId,
   ])
 
-  // `recommended_model_shown.position` is the row's index in the painted list:
-  // the offer at 0, the picks after it. Clicks report the same index.
-  const pickPositionOffset = heroRecommendation ? 1 : 0
-
-  //* P0 онбординг-аналитика: фиксируем показ экрана выбора модели один раз,
-  //* дождавшись резолва списка рекомендаций (иначе recommended_count = 0).
-  const setupShownFiredRef = useRef(false)
-  // State, not only the ref: the impressions effect below has to run once the
-  // screen has been reported, whatever its own inputs did in that render.
-  const [setupShownReported, setSetupShownReported] = useState(false)
-  useEffect(() => {
-    if (step !== 'model' || setupShownFiredRef.current) return
-    if (pickerInputsPending) return
-    // A pending auto-start means the picker is never rendered. It used to
-    // suppress the event entirely, which dropped those sessions out of the
-    // funnel; now it is reported with `rendered: false`.
-    const rendered = !(autoRunTarget && autoRunState !== 'failed')
-    if (rendered && recommendedItems.length === 0 && sourcesLoading) return
-    setupShownFiredRef.current = true
-    captureSetupScreenShown({
-      recommendedCount: recommendedItems.length,
-      rendered,
-      hardwareTier,
-      hardwareTierResolved: hardwareTierReady,
-      memoryKind: hardwareProfile?.memoryKind ?? null,
-      memoryBudgetMib: hardwareProfile?.budgetMib ?? null,
-      primaryModelId: heroRecommendation?.startId ?? null,
-      // Reported on every session, found or not: `detected_count` on the
-      // autostart event only ever counted the installs where the scan hit.
-      detectedLocalModelsCount: detectedRunnable.length,
-      detectedSources: [...new Set(detectedRunnable.map((c) => c.source))],
-    })
-    setSetupShownReported(true)
-  }, [
-    step,
-    pickerInputsPending,
-    autoRunTarget,
-    autoRunState,
-    recommendedItems.length,
-    sourcesLoading,
-    hardwareTier,
-    hardwareTierReady,
-    hardwareProfile,
-    heroRecommendation,
-    installedRecommended,
-    detectedRunnable,
-  ])
-
-  // Clicks have always carried a `position`; impressions never did, so a row's
-  // conversion — and whether the list is read past the first entry — could not
-  // be computed at all. Every row the screen paints gets one, once per
-  // position: a pick whose card resolves after the first paint is reported
-  // when it appears, and since it slots into the Hub's order above rows
-  // already reported, those rows are reported again at the index a click on
-  // them would now carry. A row nobody saw never gets a denominator.
-  //
-  // Painted, not merely reported: the auto-start of a model found on disk
-  // replaces the picker with a status line (`setup_screen_shown` says so with
-  // `rendered: false`), and a row behind a status line was not seen.
-  const pickerRendered =
-    !pickerInputsPending && !(autoRunTarget && autoRunState !== 'failed')
-  const reportedImpressionsRef = useRef(new Set<string>())
-  useEffect(() => {
-    if (step !== 'model' || !setupShownReported || !pickerRendered) return
-    const fresh = buildRecommendedImpressions({
-      pending: [
-        ...(heroRecommendation ? [heroRecommendation] : []),
-        ...popularPicks,
-      ],
-      installed: installedRecommended,
-      detected: detectedRunnable,
-    }).filter((item) => {
-      const key = `${item.section}:${item.modelId}:${item.position}`
-      if (reportedImpressionsRef.current.has(key)) return false
-      reportedImpressionsRef.current.add(key)
-      return true
-    })
-    if (fresh.length > 0) captureRecommendedModelsShown(fresh)
-  }, [
-    step,
-    setupShownReported,
-    pickerRendered,
-    heroRecommendation,
-    popularPicks,
-    installedRecommended,
-    detectedRunnable,
-  ])
-
   const startDownload = useCallback(
     (catalog: CatalogModel, variant: ModelQuant, mmprojPath?: string) => {
       trackedImportIdsRef.current.set(
@@ -934,15 +821,6 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     ) => {
       if (hasNavigatedRef.current) return
       hasNavigatedRef.current = true
-      captureOnboardingCompleted({
-        exitPath: 'imported',
-        hadAnyModel: true,
-        providerState: describeProviderState(
-          useModelProvider.getState().providers
-        ),
-        stepReached: stepReachedRef.current,
-        startedAtMs: onboardingStartedAtRef.current,
-      })
       trackedImportIdsRef.current.delete(importedId)
 
       const providers = await serviceHub.providers().getProviders()
@@ -1041,15 +919,6 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       if (hasNavigatedRef.current) return
 
       hasNavigatedRef.current = true
-      captureOnboardingCompleted({
-        exitPath: 'download_started',
-        hadAnyModel: true,
-        providerState: describeProviderState(
-          useModelProvider.getState().providers
-        ),
-        stepReached: stepReachedRef.current,
-        startedAtMs: onboardingStartedAtRef.current,
-      })
       localStorage.setItem(localStorageKey.setupCompleted, 'true')
       window.dispatchEvent(new Event('app:setup-completed'))
       localStorage.setItem(
@@ -1195,12 +1064,6 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
 
     autoRunFiredRef.current = true
     setAutoRunState('running')
-    captureSetupLocalModelAutostarted({
-      scanSource: autoRunTarget.source,
-      format: autoRunTarget.format,
-      sizeBytes: autoRunTarget.sizeBytes,
-      detectedCount: detectedRunnable.length,
-    })
 
     void onRunLocalModel(autoRunTarget).then((started) => {
       if (!started) setAutoRunState('failed')
@@ -1222,18 +1085,6 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       if (hasNavigatedRef.current) return
       hasNavigatedRef.current = true
 
-      captureOnboardingCompleted({
-        exitPath: 'cloud_provider',
-        hadAnyModel: true,
-        providerState: describeProviderState(
-          useModelProvider.getState().providers
-        ),
-        // Without this a ChatGPT subscription and a pasted API key are the
-        // same exit.
-        exitProvider: providerName,
-        stepReached: stepReachedRef.current,
-        startedAtMs: onboardingStartedAtRef.current,
-      })
 
       // Same courtesy as every other exit: models found on disk still land in
       // the library even though the user chose a cloud provider.
@@ -1317,27 +1168,12 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
   // widget already recommends the same model at the moment of the blocked
   // send, and two surfaces offering one download is nagging, not help.
   const leaveWithoutModel = useCallback(
-    (reason: 'dismissed') => {
+    () => {
       if (hasNavigatedRef.current) return
       hasNavigatedRef.current = true
 
       // Still import every detected model (no launch) before leaving onboarding.
       importCandidatesInBackground(localCandidates ?? [])
-      // Legacy predicate, kept verbatim so `had_any_model` stays comparable
-      // with its own history. It means "the picker had something to show" —
-      // `providerState` below is what actually answers "did they leave with a
-      // model", and the two disagreeing is itself worth seeing.
-      const hadAnyModel = providers.some(
-        (p) => (p.models?.length ?? 0) > 0 || !!p.api_key
-      )
-      captureSetupSkipped({ hadAnyModel, reason })
-      captureOnboardingCompleted({
-        exitPath: reason,
-        hadAnyModel,
-        providerState: describeProviderState(providers),
-        stepReached: stepReachedRef.current,
-        startedAtMs: onboardingStartedAtRef.current,
-      })
       localStorage.setItem(localStorageKey.setupCompleted, 'true')
       // Same-tab signal — see useSetupCompleted in routes/__root.tsx.
       window.dispatchEvent(new Event('app:setup-completed'))
@@ -1354,13 +1190,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
         search: {},
       })
     },
-    [
-      navigate,
-      onSkipped,
-      providers,
-      importCandidatesInBackground,
-      localCandidates,
-    ]
+    [navigate, onSkipped, importCandidatesInBackground, localCandidates]
   )
 
   // Unlike the previous full-screen onboarding, the model step lives inside the
@@ -1370,12 +1200,14 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     useLeftPanel.getState().setLeftPanel(true)
   }, [step])
 
-  // The registry's one-hour cache is served without touching the network, which
-  // is fine everywhere except here: onboarding is the one screen whose whole
-  // content is the recommendation list, and showing a list the manifest no
-  // longer contains is worse than a 5s fetch. Fires once per mount; the store
-  // keeps the previous list meanwhile and falls back on its own if the fetch
-  // fails, so there is nothing to await and nothing to unwind.
+  // Only a build with a registry override (`VITE_*_URL`) has anything to
+  // refresh; otherwise both stores answer from the bundled snapshot at once.
+  // With one, the one-hour cache is served without touching the network,
+  // which is fine everywhere except here: onboarding is the one screen whose
+  // whole content is the recommendation list, and showing a list the manifest
+  // no longer contains is worse than a 5s fetch. Fires once per mount; the
+  // store keeps the previous list meanwhile and falls back on its own if the
+  // fetch fails, so there is nothing to await and nothing to unwind.
   const forcedRegistryRefreshRef = useRef(false)
   useEffect(() => {
     if (step !== 'model' || forcedRegistryRefreshRef.current) return
@@ -1423,13 +1255,9 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
    * fits this machine rather than what the model is for, and its button is
    * the primary one, a size up. A pick brings the Hub's own title, summary
    * and mark, and gets a secondary button.
-   *
-   * `index` is the row's position in the painted list, which is what
-   * `recommended_model_shown` reports, so clicks and impressions divide.
    */
   const renderPendingRow = (
     item: PendingRow & { pick?: StaffPick },
-    index: number,
     hero = false
   ) => {
     const { rec, model, pick } = item
@@ -1484,21 +1312,9 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
       // downloads a catalog model instead of running them.
       importCandidatesInBackground(localCandidates ?? [])
       if (isMlx) {
-        captureRecommendedModelClicked({
-          modelId: getMlxModelId(model),
-          format: 'MLX',
-          sizeGb: sizeStringToGb(downloadSize),
-          position: index,
-        })
         void startMlxDownload(model)
         enterChatAfterDownloadStart(getMlxModelId(model), 'mlx')
       } else if (variant) {
-        captureRecommendedModelClicked({
-          modelId: variant.model_id,
-          format: 'GGUF',
-          sizeGb: sizeStringToGb(downloadSize),
-          position: index,
-        })
         startDownload(model, variant, mmproj?.path)
         enterChatAfterDownloadStart(
           variant.model_id,
@@ -1791,13 +1607,6 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                 size="sm"
                                 disabled={importingLocalId !== null}
                                 onClick={() => {
-                                  captureSetupLocalModelRun({
-                                    trigger: 'manual',
-                                    scanSource: cand.source,
-                                    format: cand.format,
-                                    sizeBytes: cand.sizeBytes,
-                                    detectedCount: detectedRunnable.length,
-                                  })
                                   void onRunLocalModel(cand)
                                 }}
                                 className="shrink-0 rounded-full px-4"
@@ -1867,11 +1676,6 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                                   size="sm"
                                   disabled={importingLocalId !== null}
                                   onClick={() => {
-                                    captureSetupLocalModelRun({
-                                      trigger: 'installed_recommended',
-                                      providerId: provider,
-                                      format: model.is_mlx ? 'mlx' : 'gguf',
-                                    })
                                     importCandidatesInBackground(
                                       localCandidates ?? []
                                     )
@@ -1912,10 +1716,8 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                     >
                       <div className="flex flex-col divide-y divide-border/60">
                         {heroRecommendation &&
-                          renderPendingRow(heroRecommendation, 0, true)}
-                        {popularPicks.map((item, index) =>
-                          renderPendingRow(item, index + pickPositionOffset)
-                        )}
+                          renderPendingRow(heroRecommendation, true)}
+                        {popularPicks.map((item) => renderPendingRow(item))}
                       </div>
                     </div>
                   </div>
@@ -1968,7 +1770,7 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
                     type="button"
                     variant="link"
                     size="sm"
-                    onClick={() => leaveWithoutModel('dismissed')}
+                    onClick={leaveWithoutModel}
                     className="text-muted-foreground hover:text-foreground h-auto py-1 text-xs hover:no-underline"
                   >
                     {t('setup:skip')}

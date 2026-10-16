@@ -87,13 +87,13 @@ export function LlamacppMtpUnsupportedDialog({
             </a>
             <span> {t('common:and', { defaultValue: 'and' })} </span>
             <a
-              href="https://huggingface.co/AtomicChat/gemma-4-26B-A4B-it-assistant-GGUF"
+              href="https://huggingface.co/unsloth/gemma-4-26B-A4B-it-GGUF"
               target="_blank"
               rel="noopener noreferrer"
               style={{ color: '#1F7CFF' }}
               className="underline underline-offset-2 whitespace-nowrap"
             >
-              AtomicChat/gemma-4-26B-A4B-it-assistant-GGUF
+              unsloth/gemma-4-26B-A4B-it-GGUF
             </a>
             <span>
               {t('settings:llamacppMtpGemmaSupportedSuffix', {

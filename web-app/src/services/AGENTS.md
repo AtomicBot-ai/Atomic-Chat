@@ -1,15 +1,25 @@
-# Remote Registries — Agent Notes
+# Registries — Agent Notes
 
-This file documents two parallel remote-configuration features:
+This file documents the curated lists the app shows:
 
 1. **Provider registry** — cloud-provider catalog (OpenAI, Anthropic, …).
 2. **Recommended-models registry** — Hub + onboarding recommendation list.
+3. **Model catalog** — the searchable Hub catalog.
+4. **Media registry** — media providers.
 
-Both follow the same architecture (loader → cache → store → consumers, with a
-bundled baseline fallback) and are published from the same upstream repo
-[`AtomicBot-ai/atomic-chat-conf`](https://github.com/AtomicBot-ai/atomic-chat-conf).
-Section 1 below covers the provider registry; **section 2** covers the
-recommended-models registry.
+> **Where the data comes from (ADR 2026-10-16-only-runtimes-sync-from-upstream).**
+> Every list is a reviewed snapshot committed to this repository —
+> [`../registries/`](../registries/README.md) and
+> `public/seed-catalog*.json.gz`. The app reads those and makes **no network
+> request** for them unless a build sets the matching `VITE_*_URL` override
+> (see [`../lib/registry-source.ts`](../lib/registry-source.ts)); every
+> override defaults to empty. Nothing is fetched from the upstream
+> project's repositories any more, and
+> `tests/no-atomic-sources.test.mjs` fails the build if a reference returns.
+> The loader → cache → store → consumer machinery described below is kept so
+> an override behaves exactly as the old remote did; where this file says
+> "remote", read "the override URL, when one is set", and where it says
+> "baseline", read "the bundled snapshot" (source `bundled`).
 
 # 1. Provider Registry
 
@@ -30,18 +40,16 @@ recommended-models registry.
 
 Most cloud providers (OpenAI, Anthropic, OpenRouter, Mistral, Groq, xAI,
 Gemini, MiniMax, Hugging Face, NVIDIA, …) are no longer hard-coded in the
-TypeScript source. They live in a public Git registry,
-[AtomicBot-ai/atomic-chat-conf](https://github.com/AtomicBot-ai/atomic-chat-conf),
-under `providers/registry.json`. The desktop client fetches that file at
-startup, caches it for one hour, and falls back to a small bundled baseline
-when the network is unreachable. Adding a new provider or model now means
-opening a Pull Request against the registry repo — no app release required.
+TypeScript source. They used to live in the upstream project's public registry,
+under `providers/registry.json`. That is history: the list now ships as
+[`../registries/providers.json`](../registries/providers.json), and changing it
+is a commit to this repository.
 
 ## Data flow
 
 ```mermaid
 flowchart LR
-    subgraph confRepo [AtomicBot-ai/atomic-chat-conf]
+    subgraph confRepo [VITE_PROVIDER_REGISTRY_URL - optional, unset by default]
         regJson[providers/registry.json]
         schemaJson[providers/schema.json]
         ciAction[.github/workflows/validate.yml]
@@ -70,8 +78,7 @@ flowchart LR
 
 | Concern                                  | File                                                                                                |
 | ---------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Remote manifest                          | `AtomicBot-ai/atomic-chat-conf/providers/registry.json`                                             |
-| JSON Schema for the manifest             | `AtomicBot-ai/atomic-chat-conf/providers/schema.json`                                               |
+| Bundled manifest                         | [../registries/providers.json](../registries/providers.json)                                           |
 | Loader (fetch, cache, sanitize, fallback)| [provider-registry.ts](./provider-registry.ts)                                                      |
 | Zustand store + auto-bootstrap           | [../stores/provider-registry-store.ts](../stores/provider-registry-store.ts)                        |
 | Sync helper for non-React code           | `getRegistryProvidersSync()` in the same store                                                      |
@@ -138,20 +145,16 @@ not wrap it in `try/catch` for control flow.
 
 ### For non-developers (preferred path)
 
-1. Open `providers/registry.json` in `AtomicBot-ai/atomic-chat-conf` on GitHub.
-2. Click **Edit**, append a new entry, bump `updated_at`, open a PR.
-3. CI (`ajv validate` + the integrity script) must be green before merge.
-4. After merge, every Jan client picks up the change within an hour, or
-   immediately on Settings → Providers → **Refresh catalog**.
+1. Edit `web-app/src/registries/providers.json`, bump `updated_at`, open a PR.
+2. `make verify` must be green (the registry tests read the bundled file).
+3. The change ships with the next release.
 
 ### For developers (only when shape changes)
 
 1. Update [./provider-registry.ts](./provider-registry.ts):
    - Bump `SUPPORTED_SCHEMA_VERSION` if breaking.
    - Add new field handling in `sanitizeProvider` / `isManifest`.
-2. Update `providers/schema.json` in the registry repo.
-3. Ship the client first (so deployed clients can read the new shape).
-4. Then publish the registry change.
+2. Update `registries/providers.json` in the same commit.
 
 ## Do NOT
 
@@ -168,8 +171,8 @@ not wrap it in `try/catch` for control flow.
 - **Do not** call `getProvidersOrFallback()` from render-critical code paths
   on every render. Use the store (`useProviderRegistryStore(s => s.providers)`)
   so a single fetch backs every component.
-- **Do not** edit `registry.json` inside `Atomic-Chat`. It does not exist
-  here. The single source of truth is the `atomic-chat-conf` repo.
+- **Do not** point a default at a remote URL. Remote sources are opt-in
+  build overrides; the single source of truth is `registries/providers.json`.
 - **Do not** widen the cache TTL beyond 24h without coordinating with
   release/communications — users expect changes within an hour.
 
@@ -204,9 +207,10 @@ screen used to read from a hard-coded `HUB_RECOMMENDED_MODELS` array in
 `constants/models.ts`. Adding or rotating a recommendation required a full
 release. The recommended-models registry moves that list into a public
 manifest at
-[`AtomicBot-ai/atomic-chat-conf/models/recommended.json`](https://github.com/AtomicBot-ai/atomic-chat-conf/blob/main/models/recommended.json),
-fetched at startup and cached for one hour. Adding a new model = open a PR
-against that repo.
+that was fetched from upstream at startup. It now ships as
+[`../registries/recommended-models.json`](../registries/recommended-models.json);
+its `tiers` must agree with `RECOMMENDATION_LADDER` in `constants/models.ts`
+(`constants/__tests__/recommendation-ladder.test.ts` checks this).
 
 ## Manifest shape
 
@@ -236,7 +240,7 @@ against that repo.
 
 ```mermaid
 flowchart LR
-    subgraph confRepo [atomic-chat-conf]
+    subgraph confRepo [VITE_RECOMMENDED_MODELS_REGISTRY_URL - optional, unset by default]
         modelsJson[models/recommended.json]
         modelsSchema[models/schema.json]
     end
@@ -302,34 +306,29 @@ it as a separate concern.
 
 ### For non-developers (preferred path)
 
-1. Open `models/recommended.json` in `AtomicBot-ai/atomic-chat-conf` on
-   GitHub, click **Edit**, append (or modify) an entry, bump `updated_at`.
-2. CI runs `ajv validate` and a duplicate-entry check; both must be green.
-3. After merge, every Radium client picks up the change within an
-   hour, or immediately on next launch.
+1. Edit `web-app/src/registries/recommended-models.json`, bump `updated_at`.
+   Changing a tier also means changing `RECOMMENDATION_LADDER` and its
+   `RECOMMENDED_MODEL_FALLBACKS` card, with sizes read from Hugging Face.
+2. `make verify` must be green; the change ships with the next release.
 
 ### For developers (only when the entry shape changes)
 
 1. Update `recommended-models-registry.ts`:
    - Bump `SUPPORTED_SCHEMA_VERSION` if breaking.
    - Extend `sanitizeRecommendation` / `Recommendation` for the new field.
-2. Update `models/schema.json` in the registry repo.
-3. Ship the client first, **then** publish the registry change.
-4. Mirror the new shape in `BASELINE_RECOMMENDED_MODELS` so first-launch
-   parity is preserved.
+2. Update `registries/recommended-models.json` in the same commit.
 
 ## Do NOT
 
 - **Do not** restore the old `HUB_RECOMMENDED_MODELS` constant. Read from
   `useRecommendedModelsRegistryStore` (React) or
   `getRecommendationsForCurrentPlatformSync()` (non-React).
-- **Do not** inline `IS_MACOS` ternaries inside `BASELINE_RECOMMENDED_MODELS`
-  — keep `platforms: ["macos"]` declarative so the baseline mirrors the
-  manifest verbatim.
+- **Do not** inline `IS_MACOS` ternaries in the bundled manifest — keep
+  `platforms: ["macos"]` declarative.
 - **Do not** move `RECOMMENDED_MODEL_FALLBACKS` into the manifest.
 - **Do not** share cache keys with the provider registry.
-- **Do not** edit `models/recommended.json` inside `Atomic-Chat`. It does
-  not exist here. The single source of truth is the `atomic-chat-conf` repo.
+- **Do not** recommend a repository owned by the upstream project; the guard
+  test rejects it.
 
 ## Tests
 
@@ -363,13 +362,11 @@ discipline) and Fuse's small-corpus scoring scaled badly past a few
 thousand entries — long-tail queries (`"qwen3.5 mlx 4bit"`) routinely
 ranked irrelevant matches first.
 
-The new pipeline owns a curated catalog at
-[`AtomicBot-ai/atomic-chat-model-catalog`](https://github.com/AtomicBot-ai/atomic-chat-model-catalog).
-A scheduled scraper enumerates a whitelist of trusted Hugging Face orgs
-(GGUF quantizers + MLX contributors), emits `catalog.json` mirroring the
-client's `CatalogModel` shape and a pre-built MiniSearch snapshot
-`catalog.idx.json`, and publishes both to a GitHub Release tagged
-`latest`. The client loads the snapshot via `MiniSearch.loadJSON(...)`
+The pipeline was built around a curated catalog published by the upstream
+project. Radium now ships a reviewed snapshot of it as the seed in `public/`.
+The seed is `seed-catalog.json.gz` (entries in the client's `CatalogModel`
+shape) plus `seed-catalog.idx.json.gz`, a pre-built MiniSearch index. The
+client loads the index via `MiniSearch.loadJSON(...)`
 and answers BM25 / fuzzy / prefix queries instantly — no per-launch
 indexing cost.
 
@@ -447,7 +444,7 @@ supported one and falls back to on-the-fly indexing.
 
 ```mermaid
 flowchart LR
-    subgraph catalogRepo [AtomicBot-ai/atomic-chat-model-catalog]
+    subgraph catalogRepo [VITE_MODEL_CATALOG_URL - optional, unset by default]
         orgs[config/orgs.json]
         scrape[scripts/scrape.py]
         build[scripts/build_index.mjs]
@@ -554,22 +551,19 @@ Two independent version dials:
 
 ### For non-developers (preferred path)
 
-1. Open `config/orgs.json` in the catalog repo, click **Edit**, append
-   or modify an entry, bump `updated_at`. CI runs `ajv validate` plus
-   integrity checks; both must be green.
-2. After merge, the next 12-hour cron run (or a manual
-   `workflow_dispatch`) refreshes the catalog Release. Radium
-   clients pick up the change within an hour, or immediately on next
-   launch.
+1. Regenerate the seed with `node scripts/snapshot-registries.mjs catalog
+   <url>` from a source you choose (see `registries/README.md`), review the
+   diff, commit `public/seed-catalog*.json.gz`.
+2. The change ships with the next release. A build that sets
+   `VITE_MODEL_CATALOG_URL` / `VITE_MODEL_CATALOG_INDEX_URL` refreshes from
+   there instead.
 
 ### For developers (only when the entry shape changes)
 
 1. Update [model-catalog-registry.ts](./model-catalog-registry.ts):
    bump `SUPPORTED_SCHEMA_VERSION` if breaking.
-2. Update `scripts/scrape.py` and `config/schema.catalog.json` in the
-   catalog repo to emit the new shape.
-3. Ship the client first, then publish the catalog change.
-4. Mirror the new shape in `BASELINE_MODEL_CATALOG` so first-launch
+2. Regenerate the seed in the new shape.
+3. Mirror the new shape in `BASELINE_MODEL_CATALOG` so first-launch
    parity is preserved.
 
 ## Do NOT
@@ -578,10 +572,9 @@ Two independent version dials:
   `useModelSources` — `model-catalog-store` owns the localStorage cache
   via `model-catalog-registry`. Double-writing a multi-MB catalog hits
   `QuotaExceededError` fast.
-- **Do not** reach for the old `MODEL_CATALOG_URL` global. It still
-  exists in `vite.config.ts` as a transitional alias but new code must
-  read from `useModelCatalogStore` (React) or `getCatalogSync()`
-  (non-React).
+- **Do not** reintroduce a `MODEL_CATALOG_URL` global. Read from
+  `useModelCatalogStore` (React) or `getCatalogSync()` (non-React); the URL,
+  when there is one, is `REGISTRY_OVERRIDES.modelCatalog`.
 - **Do not** introduce another search library on top of MiniSearch.
   The Hub UI used to keep Fuse.js around for this; it is now removed
   from `package.json` and must not return.
@@ -589,9 +582,8 @@ Two independent version dials:
   search field — read-only by convention.
 - **Do not** widen the cache TTL beyond 24h without coordinating with
   release/communications. Users expect catalog changes within an hour.
-- **Do not** edit `catalog.json` inside Atomic-Chat. It does not exist
-  here. The single source of truth is the `atomic-chat-model-catalog`
-  repo + its Releases.
+- **Do not** fetch the catalog from a default URL. The seed in `public/` is the
+  source of truth; remote refresh is an opt-in build override.
 
 ## Tests
 
@@ -609,14 +601,16 @@ shim test covers compatibility with the legacy `useModelSources` API.
 
 ---
 
-# 3. Media Registry
+# 4. Media Registry
 
 > **Scope**: [media-registry.ts](./media-registry.ts) — the network loader —
 > and [../stores/media-provider-store.ts](../stores/media-provider-store.ts).
 
-A structural clone of §1, published from the same repo
-[`AtomicBot-ai/atomic-chat-conf`](https://github.com/AtomicBot-ai/atomic-chat-conf),
-at `media/registry.json`. Cache keys `atomic_media_registry_cache_v1` /
+A structural clone of §1. The bundled
+[`../registries/media.json`](../registries/media.json) is empty — the built-in
+providers in `constants/mediaProviders.ts` are the whole list — and
+`VITE_MEDIA_REGISTRY_URL` is the only way to add a remote one. With no override
+the Settings page shows no "check for new providers" action. Cache keys `atomic_media_registry_cache_v1` /
 `..._ts_v1`, TTL one hour, `clearMediaRegistryCache()` to drop it.
 
 `getMediaProvidersOrFallback()` is documented as **never throwing** — UI code
@@ -676,6 +670,4 @@ has — including one they disabled or re-pointed — is left exactly as it is.
 ```
 
 `adapter` must be one of `atomic-media-worker`, `comfyui`, `openai-images`,
-`custom-http`. `auth.setting_key` is ignored if present. **The companion PR
-against `atomic-chat-conf` has not been opened** — that is a second repository
-and outside this plan's gate.
+`custom-http`. `auth.setting_key` is ignored if present.

@@ -17,6 +17,8 @@ vi.mock('@tauri-apps/plugin-http', () => ({
   fetch: vi.fn(),
 }))
 
+import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
+
 import {
   CACHE_TTL_MS,
   clearRegistryCache,
@@ -26,12 +28,10 @@ import {
   isCacheFresh,
   selectTierRecommendations,
   SUPPORTED_SCHEMA_VERSION,
+  BUNDLED_MANIFEST,
   type Recommendation,
 } from '../recommended-models-registry'
-import {
-  BASELINE_RECOMMENDED_MODELS,
-  BASELINE_TIER_RECOMMENDATIONS,
-} from '@/constants/models'
+import { BASELINE_TIER_RECOMMENDATIONS } from '@/constants/models'
 import { HARDWARE_TIERS } from '@/lib/hardware-tier'
 
 const REMOTE_URL = 'https://example.test/recommended.json'
@@ -144,14 +144,28 @@ describe('recommended-models-registry loader', () => {
     ).toBeDefined()
   })
 
-  it('falls back to baseline when no cache and the network fails', async () => {
+  it('serves the bundled snapshot without any network I/O when no override is set', async () => {
+    const fetchSpy = vi.fn()
+    globalThis.fetch = fetchSpy as unknown as typeof fetch
+
+    const result = await getRecommendationsOrFallback({ url: null, force: true })
+
+    expect(fetchSpy).not.toHaveBeenCalled()
+    expect(fetchTauri).not.toHaveBeenCalled()
+    expect(result.source).toBe('bundled')
+    expect(result.error).toBeUndefined()
+    expect(result.recommendations.length).toBeGreaterThan(0)
+    expect(getCachedManifest()).toBeNull()
+  })
+
+  it('falls back to the bundled snapshot when no cache and the network fails', async () => {
     mockFetchFailure(new Error('boom'))
 
     const result = await getRecommendationsOrFallback({ url: REMOTE_URL })
 
-    expect(result.source).toBe('baseline')
+    expect(result.source).toBe('bundled')
     expect(result.recommendations.map((r) => r.model_name)).toEqual(
-      BASELINE_RECOMMENDED_MODELS.map((r) => r.model_name)
+      BUNDLED_MANIFEST.recommendations.map((r) => r.model_name)
     )
     expect(result.error).toBe('boom')
   })
@@ -162,7 +176,7 @@ describe('recommended-models-registry loader', () => {
     )
 
     const result = await getRecommendationsOrFallback({ url: REMOTE_URL })
-    expect(result.source).toBe('baseline')
+    expect(result.source).toBe('bundled')
     expect(result.error).toMatch(/schema_version/)
   })
 
@@ -170,7 +184,7 @@ describe('recommended-models-registry loader', () => {
     mockFetchSuccess({ not: 'a manifest' })
 
     const result = await getRecommendationsOrFallback({ url: REMOTE_URL })
-    expect(result.source).toBe('baseline')
+    expect(result.source).toBe('bundled')
     expect(result.error).toMatch(/not a valid manifest/)
   })
 
@@ -447,7 +461,7 @@ describe('per-tier recommendations and quant pins', () => {
     expect(result.recommendations).toHaveLength(2)
   })
 
-  it('falls back to the bundled baseline with no tier overrides', async () => {
+  it('falls back to the bundled snapshot, tier lists included', async () => {
     const fetchMock = vi.fn(async () => {
       throw new Error('offline')
     })
@@ -455,14 +469,13 @@ describe('per-tier recommendations and quant pins', () => {
 
     const result = await getRecommendationsOrFallback({ url: REMOTE_URL })
 
-    expect(result.source).toBe('baseline')
+    expect(result.source).toBe('bundled')
     expect(result.recommendations.map((r) => r.model_name)).toEqual(
-      BASELINE_RECOMMENDED_MODELS.map((r) => r.model_name)
+      BUNDLED_MANIFEST.recommendations.map((r) => r.model_name)
     )
-    // Empty rather than a copy of the ladder: `selectTierRecommendations` is
-    // where the bundled ladder is applied, per tier, so a partial manifest can
-    // override one rung and inherit the rest.
-    expect(result.tiers).toEqual({})
+    // The snapshot's own tier lists; `selectTierRecommendations` still fills
+    // any rung the snapshot omits from the hard-coded ladder.
+    expect(result.tiers).toEqual(BUNDLED_MANIFEST.tiers ?? {})
   })
 })
 

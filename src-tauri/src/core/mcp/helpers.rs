@@ -134,9 +134,8 @@ pub async fn run_mcp_commands<R: Runtime>(
 
             // If initial startup failed, we still want to continue with other
             // servers. Reported at `warn`: the failure is already logged with
-            // its captured stderr where it happened, and the Sentry log bridge
-            // turns every `error!` into an event — re-reporting the same string
-            // at three levels filed one failure as four separate issues.
+            // its captured stderr where it happened, and re-reporting the same
+            // string at three levels made one failure read as four.
             if let Err(e) = &result {
                 log::warn!("Initial startup failed for MCP server {name_clone}: {e}");
             }
@@ -740,8 +739,8 @@ async fn schedule_mcp_start_task<R: Runtime>(
                 // Log the service error alone. `error` additionally carries the
                 // server's captured stderr, which is what the UI needs but is
                 // also different for every user — pasting it into the log
-                // message made Sentry group one failure into a fresh issue per
-                // host. The stderr goes out as a preceding breadcrumb instead.
+                // message made one failure look different on every host. The
+                // stderr is logged on its own line just before instead.
                 if !stderr_context.trim().is_empty() {
                     log::warn!("MCP server {name} stderr (context):\n{stderr_context}");
                 }

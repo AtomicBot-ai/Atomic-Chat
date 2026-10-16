@@ -22,6 +22,8 @@ vi.mock('@tauri-apps/plugin-http', () => ({
   fetch: vi.fn(),
 }))
 
+import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
+
 import {
   CACHE_TTL_MS,
   clearRegistryCache,
@@ -29,6 +31,7 @@ import {
   getProvidersOrFallback,
   isCacheFresh,
   SUPPORTED_SCHEMA_VERSION,
+  bundledResult,
 } from '../provider-registry'
 import { BASELINE_PROVIDERS } from '@/constants/providers'
 
@@ -142,13 +145,27 @@ describe('provider-registry loader', () => {
     ).toBeDefined()
   })
 
-  it('falls back to baseline when no cache and the network fails', async () => {
+  it('serves the bundled snapshot without any network I/O when no override is set', async () => {
+    const fetchSpy = vi.fn()
+    globalThis.fetch = fetchSpy as unknown as typeof fetch
+
+    const result = await getProvidersOrFallback({ url: null, force: true })
+
+    expect(fetchSpy).not.toHaveBeenCalled()
+    expect(fetchTauri).not.toHaveBeenCalled()
+    expect(result.source).toBe('bundled')
+    expect(result.error).toBeUndefined()
+    expect(result.providers.length).toBeGreaterThan(0)
+    expect(getCachedManifest()).toBeNull()
+  })
+
+  it('falls back to the bundled snapshot when no cache and the network fails', async () => {
     mockFetchFailure(new Error('boom'))
 
     const result = await getProvidersOrFallback({ url: REMOTE_URL })
-    expect(result.source).toBe('baseline')
+    expect(result.source).toBe('bundled')
     expect(result.providers.map((p) => p.provider)).toEqual(
-      BASELINE_PROVIDERS.map((p) => p.provider)
+      bundledResult().providers.map((p) => p.provider)
     )
   })
 
@@ -179,7 +196,7 @@ describe('provider-registry loader', () => {
     )
 
     const result = await getProvidersOrFallback({ url: REMOTE_URL })
-    expect(result.source).toBe('baseline')
+    expect(result.source).toBe('bundled')
     expect(result.error).toMatch(/schema_version/)
   })
 
@@ -187,7 +204,7 @@ describe('provider-registry loader', () => {
     mockFetchSuccess({ not: 'a manifest' })
 
     const result = await getProvidersOrFallback({ url: REMOTE_URL })
-    expect(result.source).toBe('baseline')
+    expect(result.source).toBe('bundled')
     expect(result.error).toMatch(/not a valid manifest/)
   })
 

@@ -207,19 +207,6 @@
     "proxyTimeout": "Timeout de Requisição",
     "proxyTimeoutDesc": "Tempo para aguardar uma resposta do modelo local, segundos."
   },
-  "privacy": {
-    "analytics": "Analytics",
-    "helpUsImprove": "Ajude-nos a melhorar",
-    "helpUsImproveDesc": "Para nos ajudar a melhorar, você pode compartilhar dados anônimos como uso de recursos e contagem de usuários. Nunca coletamos seus chats ou informações pessoais.",
-    "privacyPolicy": "Você tem controle total sobre seus dados. Saiba mais em nossa Política de Privacidade.",
-    "analyticsDesc": "Para melhorar o Radium, precisamos entender como é usado—mas apenas com sua ajuda. Você pode alterar esta configuração a qualquer momento.",
-    "privacyPromises": "Sua escolha aqui não mudará nossas promessas básicas de privacidade:",
-    "promise1": "Suas conversas permanecem privadas e no seu dispositivo",
-    "promise2": "Nunca coletamos suas informações pessoais ou conteúdo de chat",
-    "promise3": "Todo compartilhamento de dados é anônimo e agregado",
-    "promise4": "Você pode optar por sair a qualquer momento sem perder funcionalidade",
-    "promise5": "Somos transparentes sobre o que coletamos e por quê"
-  },
   "general": {
     "showInFinder": "Mostrar no Finder",
     "showInFileExplorer": "Mostrar no Explorador de Arquivos",

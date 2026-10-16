@@ -5,10 +5,6 @@ import {
   saveProviderApiKey,
 } from '../provider-api-key'
 
-vi.mock('@/lib/onboarding-telemetry', () => ({
-  captureProviderKeyConfigured: vi.fn(),
-}))
-
 const makeProvider = (
   overrides: Partial<ModelProvider> = {}
 ): ModelProvider => ({
@@ -90,7 +86,6 @@ describe('saveProviderApiKey', () => {
     saveProviderApiKey({
       provider: makeProvider(),
       apiKey: 'sk-test',
-      duringOnboarding: true,
       updateProvider,
       serviceHub: makeHub(),
     })
@@ -109,7 +104,6 @@ describe('saveProviderApiKey', () => {
     saveProviderApiKey({
       provider: makeProvider({ active: false }),
       apiKey: 'sk-test',
-      duringOnboarding: false,
       updateProvider,
       serviceHub: {
         providers: () => ({ updateSettings: vi.fn().mockResolvedValue(undefined) }),
@@ -132,7 +126,6 @@ describe('saveProviderApiKey', () => {
       saveProviderApiKey({
         provider: makeProvider(),
         apiKey: 'sk-test',
-        duringOnboarding: false,
         updateProvider,
         serviceHub: makeHub(failing),
       })

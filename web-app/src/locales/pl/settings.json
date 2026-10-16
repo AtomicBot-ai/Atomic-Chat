@@ -207,19 +207,6 @@
     "proxyTimeout": "Przekroczenie limitu czasu żądania",
     "proxyTimeoutDesc": "Czas oczekiwania na odpowiedź od lokalnego modelu w sekundach."
   },
-  "privacy": {
-    "analytics": "Dane Analityczne",
-    "helpUsImprove": "Pomóż nam poprawiać aplikację",
-    "helpUsImproveDesc": "Aby pomóc nam w ulepszaniu, możesz włączyć wysyłanie anonimowych danych analitycznych, takich jak użycie funkcji i liczba użytkowników. Nigdy nie zbieramy Twoich czatów lub danych osobowych.",
-    "privacyPolicy": "Masz pełną kontrolę nad swoimi danymi. Dowiedz się więcej w naszej Polityce Prywatności.",
-    "analyticsDesc": "Aby usprawnić Radium, musimy dowiedzieć się jak jest używany - ale to tylko z Twoją pomocą. Możesz zmienić to ustawienie w dowolnym momencie.",
-    "privacyPromises": "Twój wybór tutaj nie będzie miał wpływu na nasze kluczowe obietnice prywatności:",
-    "promise1": "Twoje rozmowy zostają prywatne i na Twoim urządzeniu",
-    "promise2": "Nigdy nie zbieramy Twoich danych osobowych lub treści czatów",
-    "promise3": "Wszystkie dane są anonimowe i zagregowane",
-    "promise4": "W dowolnym momencie możesz zrezygnować z wysyłania danych analitycznych bez obniżenia funkcjonalności aplikacji",
-    "promise5": "Jesteśmy transparentni na temat tego, jakie dane zbieramy i dlaczego"
-  },
   "general": {
     "showInFinder": "Pokaż w Finderze",
     "showInFileExplorer": "Pokaż w Explorerze",

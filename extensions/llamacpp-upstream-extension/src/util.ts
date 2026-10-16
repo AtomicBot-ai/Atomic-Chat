@@ -79,7 +79,7 @@ export function cpuHasAvx(extensions: string[] | undefined | null): boolean {
  * AVX instructions unconditionally, so an x86 CPU with no AVX at all dies with
  * SIGILL (Unix signal 4 / Windows STATUS_ILLEGAL_INSTRUCTION) the moment it
  * starts — leaving empty stderr that only surfaced as the opaque generic
- * LLAMA_CPP_PROCESS_ERROR (PostHog 30d: cpu_avx='none' fails 31.6% vs avx
+ * LLAMA_CPP_PROCESS_ERROR (upstream telemetry, 30d: cpu_avx='none' fails 31.6% vs avx
  * 0.39%). We block only when we have a POSITIVE no-AVX signal: x86 arch, a
  * CPU backend, and a non-empty extension list that lacks AVX. An empty list
  * (non-x86 host or a hardware-probe failure) is never treated as "no AVX", so
@@ -108,7 +108,7 @@ export function matchesMtpLoadFailure(text: string): boolean {
   return (
     /failed to create MTP context/i.test(text) ||
     /context type MTP requested/i.test(text) ||
-    /doesn'?t contain MTP layers/i.test(text)
+    /does(?:n't|nt) contain MTP layers/i.test(text)
   )
 }
 

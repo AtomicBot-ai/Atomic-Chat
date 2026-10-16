@@ -207,19 +207,6 @@
     "proxyTimeout": "請求逾時",
     "proxyTimeoutDesc": "等待本地模型回應的時間（秒）。"
   },
-  "privacy": {
-    "analytics": "分析",
-    "helpUsImprove": "幫助我們改進",
-    "helpUsImproveDesc": "為了幫助我們改進，您可以分享匿名資料，如功能使用情況和使用者數量。我們絕不會收集您的聊天記錄或個人資訊。",
-    "privacyPolicy": "您完全控制您的資料。在我們的隱私權政策中了解更多資訊。",
-    "analyticsDesc": "為了改進 Radium，我們需要了解它的使用方式——但這需要您的幫助。您可以隨時變更此設定。",
-    "privacyPromises": "您在此處的選擇不會改變我們的核心隱私承諾：",
-    "promise1": "您的對話保持私密並保留在您的裝置上",
-    "promise2": "我們絕不會收集您的個人資訊或聊天內容",
-    "promise3": "所有資料共用都是匿名和匯總的",
-    "promise4": "您可以隨時選擇退出而不會遺失功能",
-    "promise5": "我們對收集的內容和原因保持透明"
-  },
   "general": {
     "showInFinder": "在 Finder 中顯示",
     "showInFileExplorer": "在檔案總管中顯示",

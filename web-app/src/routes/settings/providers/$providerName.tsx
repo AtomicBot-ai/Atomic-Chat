@@ -3,8 +3,6 @@ import { Card, CardItem } from '@/containers/Card'
 import HeaderPage from '@/containers/HeaderPage'
 import SettingsMenu from '@/containers/SettingsMenu'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { isOnboardingPending } from '@/lib/onboarding'
-import { captureProviderKeyConfigured } from '@/lib/onboarding-telemetry'
 import { buildApiKeyUpdate } from '@/lib/provider-api-key'
 import { isLocalEngineProvider } from '@/lib/cloud-providers'
 import { refreshProviderModels } from '@/lib/refresh-provider-models'
@@ -2260,19 +2258,6 @@ function ProviderDetail() {
                                   updateObj,
                                   buildApiKeyUpdate(provider, newValue)
                                 )
-                                // Configuring a key satisfies the onboarding
-                                // gate, so this is a real exit from the flow
-                                // that previously bypassed all telemetry.
-                                // Only the presence of a key is reported —
-                                // never the key itself.
-                                if (newValue.length > 0) {
-                                  captureProviderKeyConfigured({
-                                    provider: provider.provider,
-                                    duringOnboarding: isOnboardingPending(
-                                      useModelProvider.getState().providers
-                                    ),
-                                  })
-                                }
                               } else if (
                                 settingKey === 'base-url' &&
                                 typeof newValue === 'string'
@@ -2475,7 +2460,7 @@ function ProviderDetail() {
                                     providers resolve their catalog from an
                                     index they can refetch: turboquant from
                                     the fork's release index, upstream from
-                                    the atomic-chat-conf manifest. */}
+                                    its backend manifest. */}
                                 {(provider?.provider === 'llamacpp' ||
                                   provider?.provider ===
                                     LOCAL_LLAMACPP_PROVIDER) && (

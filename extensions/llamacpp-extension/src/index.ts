@@ -274,12 +274,11 @@ function codedLoadError(
 
 /**
  * Load failures that describe a recoverable user or environment condition
- * rather than a backend crash. Mirrors `RECOVERABLE_MODEL_LOAD_CODES` in the
- * web-app's `telemetry.ts`, which gates the same codes out of Sentry.
+ * rather than a backend crash.
  *
  * The extension logger writes through `@tauri-apps/plugin-log` into the Rust
- * logger, so an `error` here becomes a Sentry event regardless of the web-app
- * gates — these have to be classified at the call site.
+ * logger, so an `error` here lands in the app log as an error — these have to
+ * be classified at the call site.
  */
 const RECOVERABLE_LOAD_ERROR_CODES = new Set<string>([
   ERR_MODEL_FILE_NOT_FOUND,
@@ -3188,9 +3187,8 @@ export default class llamacpp_extension extends AIEngine {
           errorMessage.includes('Failed to verify file')
 
         // Classify before logging: the extension logger writes through to the
-        // Rust logger, where an `error` becomes a Sentry event. Logging first
-        // meant every user who pressed Cancel filed a crash report — and since
-        // the model id is part of the message, a separate issue per model.
+        // Rust logger, where an `error` is recorded as a failure. Logging first
+        // meant every Cancel was logged as a crash, one per model id.
         if (!isCancellationError) {
           logger.error('Error downloading model:', modelId, errorMessage)
         }

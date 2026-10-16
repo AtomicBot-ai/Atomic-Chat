@@ -7,15 +7,8 @@
  * on the top-level `api_key` mirror (what the chat, the onboarding gate and
  * `switchToModel` read). Writing one without the other yields a provider that
  * looks configured but cannot send a request, or vice versa.
- *
- * `duringOnboarding` is a required parameter rather than being derived here on
- * purpose: `isOnboardingPending` pulls in `provider-registry-store`, which
- * kicks off a network fetch at import time. Keeping that out of this module
- * lets onboarding components import it without dragging a fetch into their
- * import graph.
  */
 
-import { captureProviderKeyConfigured } from '@/lib/onboarding-telemetry'
 import type { ServiceHub } from '@/services'
 
 /**
@@ -66,21 +59,11 @@ export function buildApiKeyUpdate(
 export function saveProviderApiKey(params: {
   provider: ModelProvider
   apiKey: string
-  duringOnboarding: boolean
   updateProvider: (name: string, data: Partial<ModelProvider>) => void
   serviceHub: Pick<ServiceHub, 'providers'>
 }): void {
-  const { provider, apiKey, duringOnboarding, updateProvider, serviceHub } =
-    params
+  const { provider, apiKey, updateProvider, serviceHub } = params
   const update = buildApiKeyUpdate(provider, apiKey)
-
-  // Only the presence of a key is reported — never the key itself.
-  if (apiKey.length > 0) {
-    captureProviderKeyConfigured({
-      provider: provider.provider,
-      duringOnboarding,
-    })
-  }
 
   // Saving a key is an explicit "I want to use this provider", so it also
   // clears `active: false`. Without this a provider left disabled by an older

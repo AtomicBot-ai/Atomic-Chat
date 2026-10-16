@@ -5,7 +5,10 @@
  *  - Holds the manifest in memory for synchronous access from React
  *    components and non-React modules.
  *  - Exposes loading status / last-fetch metadata for UI.
- *  - Bootstraps once when first imported.
+ *
+ * The store starts out holding the bundled snapshot, already initialized.
+ * Importing it performs no I/O; only a build with a registry override has
+ * anything to refresh, and `lib/registry-bootstrap.ts` starts that once.
  *
  * The store keeps the platform-neutral list. Use
  * {@link getStaffPicksForCurrentPlatformSync} (or the
@@ -15,6 +18,8 @@
 
 import { create } from 'zustand'
 import {
+  STAFF_PICKS_URL,
+  bundledResult,
   filterStaffPicksForPlatform,
   getCachedManifest,
   getStaffPicksOrFallback,
@@ -24,7 +29,6 @@ import {
   type StaffPicksFetchResult,
   type StaffPicksSource,
 } from '@/services/staff-picks-registry'
-import { BASELINE_STAFF_PICKS } from '@/constants/staff-picks'
 
 export type StaffPicksStatus = 'idle' | 'loading' | 'success' | 'error'
 
@@ -40,28 +44,39 @@ type StaffPicksState = {
   refresh: (options?: FetchOptions) => Promise<void>
 }
 
-const seedPicks = (): StaffPick[] => {
-  const cached = getCachedManifest()
-  if (cached) return cached.manifest.picks.slice()
-  return BASELINE_STAFF_PICKS.slice()
+/**
+ * First paint: a cached remote copy when this build has a registry override
+ * and one is on disk, otherwise the bundled snapshot. Without an override the
+ * bundled snapshot is the final answer, so the store starts initialized.
+ */
+const seedState = (): Pick<
+  StaffPicksState,
+  'picks' | 'source' | 'fetchedAt' | 'manifestUpdatedAt' | 'hasInitialized'
+> => {
+  const cached = STAFF_PICKS_URL ? getCachedManifest() : null
+  if (cached) {
+    return {
+      picks: cached.manifest.picks.slice(),
+      source: 'cache',
+      fetchedAt: cached.fetchedAt,
+      manifestUpdatedAt: cached.manifest.updated_at,
+      hasInitialized: false,
+    }
+  }
+  const bundled = bundledResult()
+  return {
+    picks: bundled.picks,
+    source: bundled.source,
+    fetchedAt: null,
+    manifestUpdatedAt: bundled.manifestUpdatedAt,
+    hasInitialized: STAFF_PICKS_URL === null,
+  }
 }
 
-const baselineFallback = (message: string): StaffPicksFetchResult => ({
-  picks: BASELINE_STAFF_PICKS.slice(),
-  source: 'baseline',
-  fetchedAt: null,
-  manifestUpdatedAt: null,
-  error: message,
-})
-
 export const useStaffPicksStore = create<StaffPicksState>()((set) => ({
-  picks: seedPicks(),
+  ...seedState(),
   status: 'idle',
-  source: getCachedManifest() ? 'cache' : 'baseline',
-  fetchedAt: getCachedManifest()?.fetchedAt ?? null,
-  manifestUpdatedAt: getCachedManifest()?.manifest.updated_at ?? null,
   error: null,
-  hasInitialized: false,
   refresh: async (options?: FetchOptions) => {
     set({ status: 'loading', error: null })
 
@@ -77,7 +92,7 @@ export const useStaffPicksStore = create<StaffPicksState>()((set) => ({
           ? error.message
           : 'Unknown staff-picks registry error'
       console.warn('[staff-picks-store] refresh threw:', message)
-      result = baselineFallback(message)
+      result = bundledResult(message)
     }
 
     set({
@@ -121,17 +136,4 @@ export const ensureStaffPicksLoaded = async (): Promise<StaffPick[]> => {
   if (state.hasInitialized) return state.picks
   await state.refresh()
   return useStaffPicksStore.getState().picks
-}
-
-/**
- * Kick off the initial fetch in the background. Importing this module is
- * enough to start loading; tests can override or skip via mocking.
- */
-if (typeof window !== 'undefined') {
-  void useStaffPicksStore
-    .getState()
-    .refresh()
-    .catch((error) => {
-      console.warn('[staff-picks-store] initial refresh failed:', error)
-    })
 }

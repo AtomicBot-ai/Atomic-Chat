@@ -8,8 +8,6 @@ import { ExtensionManager } from '@/lib/extension'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { useThreadReadStatus } from '@/stores/thread-read-store'
 import { LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
-import { normalizeModelId } from '@/lib/telemetry'
-import { queuedCapture } from '@/lib/telemetry-queue'
 
 type ThreadState = {
   threads: Record<string, Thread>
@@ -379,14 +377,6 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       .threads()
       .createThread(newThread)
       .then((createdThread) => {
-        queuedCapture('thread_created', {
-          thread_id: createdThread.id,
-          model_id: normalizeModelId(model.id),
-          provider: model.provider,
-          has_assistant: Boolean(assistant),
-          has_project: Boolean(projectMetadata),
-        })
-
         set((state) => {
           const nextThreads = { ...state.threads }
 

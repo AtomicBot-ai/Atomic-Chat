@@ -43,7 +43,7 @@ automatically; both read the same folder.",
 \x20 atomic-chat-cli models list\n\n\
 \x20 # Expose one at localhost:6767/v1 (--fit auto-fits context to VRAM,\n\
 \x20 # --detach runs it in the background)\n\
-\x20 atomic-chat-cli serve AtomicChat/Qwen3.5-9B-GGUF --fit\n\n\
+\x20 atomic-chat-cli serve unsloth/Qwen3.5-9B-GGUF --fit\n\n\
 \x20 # Start a model and drop into a coding agent wired to it\n\
 \x20 atomic-chat-cli launch claude\n\n\
 \x20 # Is the desktop app's Local API Server up?\n\

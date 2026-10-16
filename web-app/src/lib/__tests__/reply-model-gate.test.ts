@@ -6,7 +6,6 @@ import {
   estimateParamsB,
   estimateQuantBits,
   replyGateBranch,
-  replyGateContext,
   resolveReplyModel,
 } from '@/lib/reply-model-gate'
 
@@ -171,31 +170,6 @@ describe('replyGateBranch', () => {
     expect(
       replyGateBranch(collectReplyModels([local([model('a'), model('b')])]))
     ).toBe('auto_start')
-  })
-})
-
-describe('replyGateContext', () => {
-  it('counts local models and connected cloud providers separately', () => {
-    const context = replyGateContext([
-      local([model('a'), model('b'), model(EMBEDDING_MODEL_ID)]),
-      cloud('openai', [model('gpt-a'), model('gpt-b')]),
-      provider('anthropic', [model('claude')]),
-    ])
-
-    expect(context).toEqual({
-      localModelCount: 2,
-      // The unconnected provider does not count; the connected one counts once
-      // however many models it lists.
-      cloudProviderCount: 1,
-      hasCloudConnection: true,
-    })
-  })
-
-  it('reports no cloud connection when nothing is configured', () => {
-    expect(replyGateContext([local([model('a')])])).toMatchObject({
-      cloudProviderCount: 0,
-      hasCloudConnection: false,
-    })
   })
 })
 

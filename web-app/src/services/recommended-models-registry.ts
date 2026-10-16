@@ -1,13 +1,12 @@
 /**
- * Recommended-models registry — remote configuration loader.
+ * Recommended-models registry — the Hub and onboarding recommendation list.
  *
- * Fetches the recommended-models manifest from a public git-hosted JSON file
- * at runtime so that adding/updating recommendations does not require an app
- * release.
- *
- * Failure-safe: when the network is unreachable, the schema_version is too
- * high, or the payload is malformed, callers fall back to a locally bundled
- * baseline ({@link BASELINE_RECOMMENDED_MODELS}).
+ * The manifest ships inside the app (`src/registries/recommended-models.json`).
+ * Nothing is fetched unless the build sets
+ * `VITE_RECOMMENDED_MODELS_REGISTRY_URL` (see `lib/registry-source.ts`); then
+ * that URL is tried first, cached for an hour, and the bundled snapshot remains
+ * the fallback when it is unreachable, too new, or malformed. Tiers the
+ * manifest does not name fall back to {@link RECOMMENDATION_LADDER}.
  *
  * Mirrors the architecture of `provider-registry.ts` and is intentionally
  * isolated from it (separate cache keys, separate URL, separate schema).
@@ -15,10 +14,9 @@
 
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 import { isHardwareTier, type HardwareTier } from '@/lib/hardware-tier'
-import {
-  BASELINE_RECOMMENDED_MODELS,
-  BASELINE_TIER_RECOMMENDATIONS,
-} from '@/constants/models'
+import { BASELINE_TIER_RECOMMENDATIONS } from '@/constants/models'
+import { REGISTRY_OVERRIDES } from '@/lib/registry-source'
+import bundledRegistry from '@/registries/recommended-models.json'
 
 export type RecommendationPlatform = 'macos' | 'windows' | 'linux'
 
@@ -38,13 +36,8 @@ export type Recommendation = {
   mmproj_quant?: string
 }
 
-export const DEFAULT_REGISTRY_URL =
-  'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/models/recommended.json'
-
-export const REGISTRY_URL: string =
-  (import.meta.env.VITE_RECOMMENDED_MODELS_REGISTRY_URL as
-    | string
-    | undefined) ?? DEFAULT_REGISTRY_URL
+/** The build-time override, or `null` for the bundled snapshot only. */
+export const REGISTRY_URL: string | null = REGISTRY_OVERRIDES.recommendedModels
 
 /** Highest manifest schema_version this client understands. */
 export const SUPPORTED_SCHEMA_VERSION = 1
@@ -95,7 +88,7 @@ export type RegistryManifest = {
   tiers?: Partial<Record<HardwareTier, Recommendation[]>>
 }
 
-export type RegistrySource = 'remote' | 'cache' | 'baseline'
+export type RegistrySource = 'remote' | 'cache' | 'bundled'
 
 export type RegistryFetchResult = {
   recommendations: Recommendation[]
@@ -287,6 +280,14 @@ const fetchManifest = async (
     data = await fetchOnce(fetchTauri as typeof fetch, url, signal)
   }
 
+  return parseManifest(data)
+}
+
+/**
+ * Validate and sanitize a manifest, from the network or the bundle alike, so
+ * both pass through exactly the same checks.
+ */
+export const parseManifest = (data: unknown): RegistryManifest => {
   if (!isManifestShape(data)) {
     throw new Error('Recommended-models payload is not a valid manifest')
   }
@@ -313,6 +314,19 @@ const fetchManifest = async (
   }
 }
 
+/** The snapshot shipped with this build. Parsed once; never fetched. */
+export const BUNDLED_MANIFEST: RegistryManifest = parseManifest(bundledRegistry)
+
+/** The bundled snapshot as a fetch result. */
+export const bundledResult = (error?: string): RegistryFetchResult => ({
+  recommendations: BUNDLED_MANIFEST.recommendations.slice(),
+  tiers: { ...(BUNDLED_MANIFEST.tiers ?? {}) },
+  source: 'bundled',
+  fetchedAt: null,
+  manifestUpdatedAt: BUNDLED_MANIFEST.updated_at,
+  ...(error ? { error } : {}),
+})
+
 /**
  * Hard timeout wrapper. Tauri's HTTP plugin does not always honour
  * `AbortSignal`, so we race against a timer to guarantee resolution.
@@ -338,19 +352,22 @@ const withHardTimeout = <T>(
 export type FetchOptions = {
   /** Bypass cache freshness check and force a network round-trip. */
   force?: boolean
-  /** Override URL (for tests). */
-  url?: string
+  /** Registry URL; defaults to the build-time override. `null` = bundled only. */
+  url?: string | null
   /** Abort the network request after this many ms. Default: 5000. */
   timeoutMs?: number
 }
 
 /**
- * Resolve the effective list of recommendations using the priority chain:
+ * Resolve the effective list of recommendations.
+ *
+ * Without a registry URL (the default build) this is the bundled snapshot,
+ * immediately, with no I/O. With one, the priority chain is:
  *
  *   1. Fresh cache (when not forcing).
  *   2. Network fetch (writes a new cache entry on success).
  *   3. Stale cache (used after a network failure).
- *   4. Baseline fallback bundled in the app.
+ *   4. The bundled snapshot.
  *
  * Always returns a result — never throws — so UI code can render unconditionally.
  */
@@ -362,6 +379,8 @@ export const getRecommendationsOrFallback = async (
     url = REGISTRY_URL,
     timeoutMs = FETCH_TIMEOUT_MS,
   } = options
+
+  if (!url) return bundledResult()
 
   const cached = getCachedManifest()
   if (!force && isCacheFresh(cached) && cached) {
@@ -375,7 +394,7 @@ export const getRecommendationsOrFallback = async (
   }
 
   const controller = new AbortController()
-  // Cache-bust the GitHub raw CDN when the caller is explicitly forcing a
+  // Cache-bust CDN and proxy caches when the caller is explicitly forcing a
   // fetch (e.g. a manual Refresh button).
   const fetchUrl = force
     ? `${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`
@@ -421,14 +440,7 @@ export const getRecommendationsOrFallback = async (
         error: message,
       }
     }
-    return {
-      recommendations: BASELINE_RECOMMENDED_MODELS.slice(),
-      tiers: {},
-      source: 'baseline',
-      fetchedAt: null,
-      manifestUpdatedAt: null,
-      error: message,
-    }
+    return bundledResult(message)
   }
 }
 

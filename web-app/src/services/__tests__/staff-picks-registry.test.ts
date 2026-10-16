@@ -1,10 +1,11 @@
 /**
- * Tests for the remote staff-picks registry loader.
+ * Tests for the staff-picks registry loader (bundled snapshot plus an
+ * optional `VITE_STAFF_PICKS_URL` override).
  *
  * Covers the public surface in `services/staff-picks-registry.ts`:
  *   - Successful fetch caches the manifest.
  *   - Fresh cache is preferred over a network round-trip.
- *   - Network failures fall back to cached / baseline data.
+ *   - Network failures fall back to cached / bundled data.
  *   - schema_version mismatches are rejected.
  *   - Malformed payloads and malformed entries are rejected.
  *   - Stale cache is eligible only as a network-failure fallback.
@@ -19,7 +20,10 @@ vi.mock('@tauri-apps/plugin-http', () => ({
   fetch: vi.fn(),
 }))
 
+import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
+
 import {
+  BUNDLED_MANIFEST,
   CACHE_TTL_MS,
   clearStaffPicksCache,
   filterStaffPicksForPlatform,
@@ -30,7 +34,6 @@ import {
   SUPPORTED_SCHEMA_VERSION,
   type StaffPick,
 } from '../staff-picks-registry'
-import { BASELINE_STAFF_PICKS } from '@/constants/staff-picks'
 import { iconKeyLogoSrc } from '@/lib/model-logo'
 
 const REMOTE_URL = 'https://example.test/staff-picks.json'
@@ -40,7 +43,7 @@ const buildManifest = (overrides: Record<string, unknown> = {}) => ({
   updated_at: '2026-08-06T00:00:00Z',
   picks: [
     {
-      model_name: 'AtomicChat/Qwen3.5-4B-GGUF',
+      model_name: 'unsloth/Qwen3.5-4B-GGUF',
       title: 'Qwen3.5 4B',
       summary: 'Compact all-rounder.',
       description_key: 'hub:recEverydayUse',
@@ -93,7 +96,7 @@ describe('staff-picks-registry loader', () => {
 
     expect(result.source).toBe('remote')
     expect(result.picks.map((p) => p.model_name)).toEqual([
-      'AtomicChat/Qwen3.5-4B-GGUF',
+      'unsloth/Qwen3.5-4B-GGUF',
       'mlx-community/Qwen3.5-9B-MLX-4bit',
     ])
     expect(result.picks[0].title).toBe('Qwen3.5 4B')
@@ -194,18 +197,32 @@ describe('staff-picks-registry loader', () => {
     expect(result.source).toBe('cache')
     expect(result.error).toBe('offline')
     expect(
-      result.picks.find((p) => p.model_name === 'AtomicChat/Qwen3.5-4B-GGUF')
+      result.picks.find((p) => p.model_name === 'unsloth/Qwen3.5-4B-GGUF')
     ).toBeDefined()
   })
 
-  it('falls back to baseline when no cache and the network fails', async () => {
+  it('serves the bundled snapshot without any network I/O when no override is set', async () => {
+    const fetchSpy = vi.fn()
+    globalThis.fetch = fetchSpy as unknown as typeof fetch
+
+    const result = await getStaffPicksOrFallback({ url: null, force: true })
+
+    expect(fetchSpy).not.toHaveBeenCalled()
+    expect(fetchTauri).not.toHaveBeenCalled()
+    expect(result.source).toBe('bundled')
+    expect(result.error).toBeUndefined()
+    expect(result.picks.length).toBeGreaterThan(0)
+    expect(getCachedManifest()).toBeNull()
+  })
+
+  it('falls back to the bundled snapshot when no cache and the network fails', async () => {
     mockFetchFailure(new Error('boom'))
 
     const result = await getStaffPicksOrFallback({ url: REMOTE_URL })
 
-    expect(result.source).toBe('baseline')
+    expect(result.source).toBe('bundled')
     expect(result.picks.map((p) => p.model_name)).toEqual(
-      BASELINE_STAFF_PICKS.map((p) => p.model_name)
+      BUNDLED_MANIFEST.picks.map((p) => p.model_name)
     )
     expect(result.error).toBe('boom')
   })
@@ -216,7 +233,7 @@ describe('staff-picks-registry loader', () => {
     )
 
     const result = await getStaffPicksOrFallback({ url: REMOTE_URL })
-    expect(result.source).toBe('baseline')
+    expect(result.source).toBe('bundled')
     expect(result.error).toMatch(/schema_version/)
   })
 
@@ -224,7 +241,7 @@ describe('staff-picks-registry loader', () => {
     mockFetchSuccess({ not: 'a manifest' })
 
     const result = await getStaffPicksOrFallback({ url: REMOTE_URL })
-    expect(result.source).toBe('baseline')
+    expect(result.source).toBe('bundled')
     expect(result.error).toMatch(/not a valid manifest/)
   })
 
@@ -232,7 +249,7 @@ describe('staff-picks-registry loader', () => {
     mockFetchSuccess(buildManifest({ picks: { nope: true } }))
 
     const result = await getStaffPicksOrFallback({ url: REMOTE_URL })
-    expect(result.source).toBe('baseline')
+    expect(result.source).toBe('bundled')
     expect(result.error).toMatch(/not a valid manifest/)
   })
 
@@ -296,7 +313,7 @@ describe('staff-picks-registry loader', () => {
       timeoutMs: 10,
     })
 
-    expect(result.source).toBe('baseline')
+    expect(result.source).toBe('bundled')
     expect(result.error).toMatch(/timed out/)
   })
 
@@ -324,15 +341,15 @@ describe('staff-picks-registry loader', () => {
   })
 })
 
-describe('BASELINE_STAFF_PICKS', () => {
+describe('bundled staff picks', () => {
   it('survives the sanitizer unchanged, field for field', () => {
-    for (const pick of BASELINE_STAFF_PICKS) {
+    for (const pick of BUNDLED_MANIFEST.picks) {
       expect(sanitizePick(pick), pick.model_name).toEqual(pick)
     }
   })
 
   it('gives every model an MLX twin that is macOS-only', () => {
-    const mlx = BASELINE_STAFF_PICKS.filter((p) => p.format === 'mlx')
+    const mlx = BUNDLED_MANIFEST.picks.filter((p) => p.format === 'mlx')
     expect(mlx.length).toBeGreaterThan(0)
     for (const pick of mlx) {
       expect(pick.platforms, pick.model_name).toEqual(['macos'])
@@ -341,9 +358,9 @@ describe('BASELINE_STAFF_PICKS', () => {
   })
 
   it('never lists the same repo or the same order twice', () => {
-    const names = BASELINE_STAFF_PICKS.map((p) => p.model_name)
+    const names = BUNDLED_MANIFEST.picks.map((p) => p.model_name)
     expect(new Set(names).size).toBe(names.length)
-    const orders = BASELINE_STAFF_PICKS.map((p) => p.order)
+    const orders = BUNDLED_MANIFEST.picks.map((p) => p.order)
     expect(new Set(orders).size).toBe(orders.length)
   })
 
@@ -355,7 +372,7 @@ describe('BASELINE_STAFF_PICKS', () => {
       CAPABILITIES.filter((cap) => pick.categories?.includes(cap))
 
     const byModel = new Map<string, Map<string, string[]>>()
-    for (const pick of BASELINE_STAFF_PICKS) {
+    for (const pick of BUNDLED_MANIFEST.picks) {
       const model = (pick.title ?? pick.model_name).replace(/ \(MLX\)$/, '')
       if (!byModel.has(model)) byModel.set(model, new Map())
       byModel.get(model)!.set(pick.model_name, capsOf(pick))
@@ -370,7 +387,7 @@ describe('BASELINE_STAFF_PICKS', () => {
   })
 
   it('references only icon keys that resolve to a bundled asset', () => {
-    for (const pick of BASELINE_STAFF_PICKS) {
+    for (const pick of BUNDLED_MANIFEST.picks) {
       if (!pick.icon) continue
       expect(iconKeyLogoSrc(pick.icon), pick.icon).toBeTruthy()
     }
@@ -392,7 +409,7 @@ describe('BASELINE_STAFF_PICKS', () => {
     // Both format lists are curated as one sequence, so each is checked in the
     // order the Hub renders it.
     const listed = (format: 'gguf' | 'mlx') =>
-      filterStaffPicksForPlatform(BASELINE_STAFF_PICKS, 'macos', format).filter(
+      filterStaffPicksForPlatform(BUNDLED_MANIFEST.picks, 'macos', format).filter(
         (pick) =>
           (pick.order ?? Number.POSITIVE_INFINITY) >= FAMILY_SEQUENCE_START
       )

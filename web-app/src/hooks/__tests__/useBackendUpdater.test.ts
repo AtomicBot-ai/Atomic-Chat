@@ -41,10 +41,6 @@ vi.mock('@janhq/core', () => {
   }
 })
 
-vi.mock('posthog-js', () => ({
-  default: { capture: vi.fn(), has_opted_in_capturing: () => true },
-}))
-
 vi.mock('@/lib/extension', () => ({
   ExtensionManager: {
     getInstance: () => ({

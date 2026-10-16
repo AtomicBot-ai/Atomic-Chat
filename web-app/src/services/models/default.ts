@@ -30,15 +30,6 @@ import type {
 } from './types'
 import { getCatalogOrFallback } from '@/services/model-catalog-registry'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
-import {
-  isHfUrl,
-  markDownloadStart,
-  normalizeModelId,
-  quantFromModelId,
-  sizeBucket,
-  urlHost,
-} from '@/lib/telemetry'
-import { queuedCapture } from '@/lib/telemetry-queue'
 
 // Platform-active llama.cpp provider id. Windows registers only the
 // upstream extension ('llamacpp-upstream') after the 2026-05-22 ADR;
@@ -211,11 +202,10 @@ export class DefaultModelsService implements ModelsService {
   }
 
   async fetchModelCatalog(): Promise<ModelCatalog> {
-    // Primary source: the Radium curated catalog (`atomic-chat-model-catalog`
-    // GitHub Releases) loaded via the registry abstraction so the same
-    // localStorage cache + baseline fallback machinery is shared with
-    // `useModelCatalogStore`. The loader never throws — on hard failure it
-    // returns the bundled baseline so callers always get *something*.
+    // The catalog registry: the seed bundled with the app, or — only in a
+    // build that sets `VITE_MODEL_CATALOG_URL` — that URL with the bundled
+    // seed as its fallback. Shared with `useModelCatalogStore`. The loader
+    // never throws; at worst it returns the hard-coded baseline.
     try {
       const result = await getCatalogOrFallback()
       return result.manifest.models
@@ -507,31 +497,6 @@ export class DefaultModelsService implements ModelsService {
       hfToken,
       skipVerification,
     })
-
-    // ATO-109: model_download funnel entry. Terminal events are emitted from
-    // DownloadManagement listeners; this records the start (+ duration anchor).
-    try {
-      markDownloadStart(id)
-      queuedCapture('model_download', {
-        // NOT `status` — globally typed numeric in PostHog by
-        // `api_server_request.status`, which silently nulls string values.
-        // Must stay in sync with the terminal event in DownloadManagement.
-        download_status: 'started',
-        download_kind: 'model',
-        model_id: normalizeModelId(id),
-        quant: quantFromModelId(id),
-        // Usually `unknown` here: the byte count comes from HuggingFace
-        // metadata that is only fetched when `skipVerification` is false, and
-        // it defaults to true. The terminal event carries the real size from
-        // the downloader, so read `size_bucket` off that.
-        size_bucket: sizeBucket(modelSize),
-        is_hf_url: isHfUrl(modelPath),
-        resolved_asset_url_host: urlHost(modelPath),
-        hf_token_present: !!hfToken,
-      })
-    } catch (telemetryError) {
-      console.debug('model_download started telemetry failed:', telemetryError)
-    }
 
     // Call the original pullModel with the fetched metadata
     try {

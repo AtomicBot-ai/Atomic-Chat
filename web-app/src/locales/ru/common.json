@@ -83,7 +83,6 @@
   "deleteSkill": "Удалить навык",
   "deleteSkillDescription": "Удалить пользовательский навык «{{name}}»? Это действие нельзя отменить.",
   "helpSupport": "Справка и поддержка",
-  "helpUsImproveJan": "Помогите нам улучшить Radium",
   "unstarAll": "Очистить избранное",
   "unstar": "Удалить из избранного",
   "deleteAll": "Удалить все",

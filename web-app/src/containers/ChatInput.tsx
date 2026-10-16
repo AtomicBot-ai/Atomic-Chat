@@ -52,8 +52,6 @@ import {
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { captureChatSendBlocked } from '@/lib/chat-telemetry'
-import { describeProviderState } from '@/lib/onboarding'
 
 import { modelStopKey, useAppState } from '@/hooks/useAppState'
 import { switchToModel } from '@/utils/switchModel'
@@ -61,7 +59,6 @@ import {
   ReplyModelGate,
   type ReplyModelGateResolution,
 } from '@/containers/ReplyModelGate'
-import { captureReplyGateReady } from '@/lib/reply-gate-telemetry'
 import { useReplyModelAutoStart } from '@/hooks/useReplyModelAutoStart'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
@@ -936,22 +933,6 @@ const ChatInput = memo(function ChatInput({
       }
       // Nothing to decide with: ask.
       setReplyGateOpen(true)
-      // Everything downstream captures a turn; this returns before any of it,
-      // so the most common first-run dead end produced no event at all. Now
-      // that ATO-453 answers it with a widget, this is also the baseline the
-      // widget's effect is measured against.
-      // Mapped by hand: `describeProviderState` is camelCase and a spread
-      // would ship its keys verbatim, leaving the documented snake_case
-      // properties permanently empty in PostHog.
-      const providerState = describeProviderState(
-        useModelProvider.getState().providers
-      )
-      captureChatSendBlocked({
-        reason: 'no_model',
-        is_agent_mode: agentRouteActive,
-        had_local_model_on_disk: providerState.hadLocalModelOnDisk,
-        had_cloud_key: providerState.hadCloudKey,
-      })
       return
     }
     if (resumesStoppedModel && !mediaMode) {
@@ -968,8 +949,6 @@ const ChatInput = memo(function ChatInput({
       setQueuedSend({
         outcome: 'auto_start',
         branch: 'auto_start',
-        decidedInMs: 0,
-        openedAtMs: Date.now(),
         modelLabel: getModelDisplayName(selectedModel),
         resumesStoppedModel: true,
       })
@@ -1267,15 +1246,6 @@ const ChatInput = memo(function ChatInput({
     // Whatever is in it now is what they meant; an empty field means they
     // changed their mind, and re-sending the old text would put words in.
     const pending = usePrompt.getState().prompt
-    if (!queuedSend.resumesStoppedModel) {
-      captureReplyGateReady({
-        branch: queuedSend.branch,
-        outcome: queuedSend.outcome,
-        readyInMs: Date.now() - queuedSend.openedAtMs,
-        queuedMessageSent: pending.trim().length > 0,
-        resolution: queuedSend.resolution,
-      })
-    }
     if (!pending.trim()) return
     void sendMessageRef.current(pending)
   }, [queuedSend, canSendToSelectedModel])

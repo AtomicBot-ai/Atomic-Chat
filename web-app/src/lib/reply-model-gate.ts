@@ -179,33 +179,6 @@ export function replyGateBranch(
 }
 
 /**
- * Telemetry context for the widget's impression: how much of each kind was
- * found, and whether a cloud connection already exists.
- *
- * Counted over the raw provider list rather than over {@link collectReplyModels}
- * so the cloud figure is "providers the user connected", not "rows we chose to
- * render" — the latter is a presentation decision that could change.
- */
-export function replyGateContext(providers: ModelProvider[]): {
-  localModelCount: number
-  cloudProviderCount: number
-  hasCloudConnection: boolean
-} {
-  const localModelCount = localOptions(providers).length
-  const cloudProviderCount = providers.filter(
-    (provider) =>
-      !isLocalProvider(provider.provider) &&
-      provider.active !== false &&
-      isProviderConnected(provider)
-  ).length
-  return {
-    localModelCount,
-    cloudProviderCount,
-    hasCloudConnection: cloudProviderCount > 0,
-  }
-}
-
-/**
  * How a send with nothing selected was answered without asking.
  *
  *  - `last_used` — the model from the previous session, local or cloud. For a

@@ -1,13 +1,10 @@
 import { useCallback } from 'react'
 
 import type { ReplyModelGateResolution } from '@/containers/ReplyModelGate'
-import { useHardwareTier } from '@/hooks/useHardwareTier'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { captureReplyModelAutoResolved } from '@/lib/reply-gate-telemetry'
 import {
   collectReplyModels,
-  replyGateContext,
   resolveReplyModel,
 } from '@/lib/reply-model-gate'
 import { getLastUsedModel } from '@/utils/getModelToStart'
@@ -37,7 +34,6 @@ export function useReplyModelAutoStart(): {
   tryAutoStart: () => ReplyModelGateResolution | null
 } {
   const serviceHub = useServiceHub()
-  const { tier } = useHardwareTier()
 
   const tryAutoStart = useCallback((): ReplyModelGateResolution | null => {
     const { providers, selectModelProvider } = useModelProvider.getState()
@@ -48,15 +44,7 @@ export function useReplyModelAutoStart(): {
     )
     if (!resolved) return null
 
-    const { option, resolution } = resolved
-    const context = replyGateContext(providers)
-    captureReplyModelAutoResolved({
-      resolution,
-      localModelCount: context.localModelCount,
-      cloudProviderCount: context.cloudProviderCount,
-      hasCloudConnection: context.hasCloudConnection,
-      hardwareTier: tier,
-    })
+    const { option } = resolved
 
     // Selected up front so the composer and the model dropdown reflect the
     // choice at once; the switch below is what actually brings it up.
@@ -69,16 +57,12 @@ export function useReplyModelAutoStart(): {
       console.error('[useReplyModelAutoStart] failed to start model', error)
     })
 
-    const now = Date.now()
     return {
       outcome: 'auto_start',
       branch: 'auto_start',
-      decidedInMs: 0,
-      openedAtMs: now,
-      resolution,
       modelLabel: option.label,
     }
-  }, [serviceHub, tier])
+  }, [serviceHub])
 
   return { tryAutoStart }
 }

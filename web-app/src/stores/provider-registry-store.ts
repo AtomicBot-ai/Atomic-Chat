@@ -5,7 +5,10 @@
  *  - Hold the merged list of providers (remote + baseline) for synchronous
  *    access from both React components and non-React modules.
  *  - Expose loading status / last-fetch metadata for UI.
- *  - Bootstrap once when first imported.
+ *
+ * The store starts out holding the bundled snapshot, already initialized.
+ * Importing it performs no I/O; only a build with a registry override has
+ * anything to refresh, and `lib/registry-bootstrap.ts` starts that once.
  *
  * Design notes:
  *  The refresh action is intentionally simple — every call awaits
@@ -19,15 +22,18 @@
 
 import { create } from 'zustand'
 import {
+  REGISTRY_URL,
+  bundledResult,
   getCachedManifest,
   getProvidersOrFallback,
+  mergeWithBaseline,
   type FetchOptions,
   type RegistryFetchResult,
+  type RegistrySource,
 } from '@/services/provider-registry'
-import { BASELINE_PROVIDERS } from '@/constants/providers'
 
 export type RegistryStatus = 'idle' | 'loading' | 'success' | 'error'
-export type RegistrySource = 'remote' | 'cache' | 'baseline'
+export type { RegistrySource }
 
 type RegistryState = {
   providers: ModelProvider[]
@@ -41,34 +47,39 @@ type RegistryState = {
   refresh: (options?: FetchOptions) => Promise<void>
 }
 
-const seedProviders = (): ModelProvider[] => {
-  const cached = getCachedManifest()
+/**
+ * First paint: a cached remote copy when this build has a registry override
+ * and one is on disk, otherwise the bundled snapshot. Without an override the
+ * bundled snapshot is the final answer, so the store starts initialized.
+ */
+const seedState = (): Pick<
+  RegistryState,
+  'providers' | 'source' | 'fetchedAt' | 'manifestUpdatedAt' | 'hasInitialized'
+> => {
+  const cached = REGISTRY_URL ? getCachedManifest() : null
   if (cached) {
-    const remoteIds = new Set(cached.manifest.providers.map((p) => p.provider))
-    return [
-      ...cached.manifest.providers,
-      ...BASELINE_PROVIDERS.filter((p) => !remoteIds.has(p.provider)),
-    ]
+    return {
+      providers: mergeWithBaseline(cached.manifest.providers),
+      source: 'cache',
+      fetchedAt: cached.fetchedAt,
+      manifestUpdatedAt: cached.manifest.updated_at,
+      hasInitialized: false,
+    }
   }
-  return BASELINE_PROVIDERS.slice()
+  const bundled = bundledResult()
+  return {
+    providers: bundled.providers,
+    source: bundled.source,
+    fetchedAt: null,
+    manifestUpdatedAt: bundled.manifestUpdatedAt,
+    hasInitialized: REGISTRY_URL === null,
+  }
 }
 
-const baselineFallback = (message: string): RegistryFetchResult => ({
-  providers: BASELINE_PROVIDERS.slice(),
-  source: 'baseline',
-  fetchedAt: null,
-  manifestUpdatedAt: null,
-  error: message,
-})
-
 export const useProviderRegistryStore = create<RegistryState>()((set) => ({
-  providers: seedProviders(),
+  ...seedState(),
   status: 'idle',
-  source: getCachedManifest() ? 'cache' : 'baseline',
-  fetchedAt: getCachedManifest()?.fetchedAt ?? null,
-  manifestUpdatedAt: getCachedManifest()?.manifest.updated_at ?? null,
   error: null,
-  hasInitialized: false,
   refresh: async (options?: FetchOptions) => {
     set({ status: 'loading', error: null })
 
@@ -82,7 +93,7 @@ export const useProviderRegistryStore = create<RegistryState>()((set) => ({
       const message =
         error instanceof Error ? error.message : 'Unknown registry error'
       console.warn('[provider-registry-store] refresh threw:', message)
-      result = baselineFallback(message)
+      result = bundledResult(message)
     }
 
     set({
@@ -126,17 +137,4 @@ export const ensureRegistryLoaded = async (): Promise<ModelProvider[]> => {
   if (state.hasInitialized) return state.providers
   await state.refresh()
   return useProviderRegistryStore.getState().providers
-}
-
-/**
- * Kick off the initial fetch in the background. Importing this module is
- * enough to start loading; tests can override or skip via mocking.
- */
-if (typeof window !== 'undefined') {
-  void useProviderRegistryStore
-    .getState()
-    .refresh()
-    .catch((error) => {
-      console.warn('[provider-registry-store] initial refresh failed:', error)
-    })
 }

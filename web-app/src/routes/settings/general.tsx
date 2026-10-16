@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router'
 import { invoke } from '@tauri-apps/api/core'
 import { isEnabled as isAutostartEnabled } from '@tauri-apps/plugin-autostart'
 import { route } from '@/constants/routes'
+import { RADIUM_GITHUB_REPO, RADIUM_GITHUB_URL } from '@/constants/project'
 import SettingsMenu from '@/containers/SettingsMenu'
 import HeaderPage from '@/containers/HeaderPage'
 import { Switch } from '@/components/ui/switch'
@@ -33,8 +34,6 @@ import { Input } from '@/components/ui/input'
 import { useHardware } from '@/hooks/useHardware'
 import LanguageSwitcher from '@/containers/LanguageSwitcher'
 import { isRootDir } from '@/utils/path'
-import { useAnalytic } from '@/hooks/useAnalytic'
-import posthog from 'posthog-js'
 import { setLaunchAtStartup } from '@/lib/launchAtStartup'
 const TOKEN_VALIDATION_TIMEOUT_MS = 10_000
 const ATOMIC_CLI_COMMAND = 'atomic-chat-cli'
@@ -71,7 +70,6 @@ function General() {
     (state) => state.setGloballyEnabled
   )
   const serviceHub = useServiceHub()
-  const { setProductAnalytic, productAnalytic } = useAnalytic()
 
   const openFileTitle = (): string => {
     if (IS_MACOS) {
@@ -358,56 +356,20 @@ function General() {
 
             <Card title="Contact Us">
               <CardItem
-                title="Email"
-                description="Reach Radium support by email."
-                actions={
-                  <a
-                    href="mailto:support@atomic.chat"
-                    onClick={(event) => {
-                      event.preventDefault()
-                      void handleOpenContactLink('mailto:support@atomic.chat')
-                    }}
-                    className="text-foreground font-medium hover:underline"
-                  >
-                    support@atomic.chat
-                  </a>
-                }
-              />
-              <CardItem
-                title="X"
-                description="Follow Radium on X."
-                actions={
-                  <a
-                    href="https://x.com/atomic_chat_hq"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(event) => {
-                      event.preventDefault()
-                      void handleOpenContactLink('https://x.com/atomic_chat_hq')
-                    }}
-                    className="text-foreground font-medium hover:underline"
-                  >
-                    @atomic_chat_hq
-                  </a>
-                }
-              />
-              <CardItem
                 title="GitHub"
-                description="View the Radium repository on GitHub."
+                description="Report an issue or view the Radium repository on GitHub."
                 actions={
                   <a
-                    href="https://github.com/AtomicBot-ai/Atomic-Chat"
+                    href={RADIUM_GITHUB_URL}
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={(event) => {
                       event.preventDefault()
-                      void handleOpenContactLink(
-                        'https://github.com/AtomicBot-ai/Atomic-Chat'
-                      )
+                      void handleOpenContactLink(RADIUM_GITHUB_URL)
                     }}
                     className="text-foreground font-medium hover:underline"
                   >
-                    AtomicBot-ai/Atomic-Chat
+                    {RADIUM_GITHUB_REPO}
                   </a>
                 }
               />
@@ -449,35 +411,6 @@ function General() {
               />
             </Card>
 
-            {/* Privacy / Analytics */}
-            <Card
-              header={
-                <div className="flex items-center justify-between mb-4">
-                  <h1 className="font-medium text-foreground text-base">
-                    {t('settings:privacy.analytics')}
-                  </h1>
-                  <div className="flex items-center gap-2">
-                    <Switch
-                      checked={productAnalytic}
-                      onCheckedChange={(state) => {
-                        if (state) {
-                          posthog.opt_in_capturing()
-                        } else {
-                          posthog.opt_out_capturing()
-                        }
-                        setProductAnalytic(state)
-                      }}
-                    />
-                  </div>
-                </div>
-              }
-            >
-              <CardItem
-                title={t('settings:privacy.helpUsImprove')}
-                description={<p>{t('settings:privacy.helpUsImproveDesc')}</p>}
-                align="start"
-              />
-            </Card>
 
             {/* Data folder - Desktop only */}
             <Card title={t('common:dataFolder')}>
@@ -807,7 +740,7 @@ function General() {
                   description={t('settings:general.releaseNotesDesc')}
                   actions={
                     <a
-                      href="https://github.com/AtomicBot-ai/Atomic-Chat/releases"
+                      href={`${RADIUM_GITHUB_URL}/releases`}
                       target="_blank"
                       rel="noopener noreferrer"
                     >
@@ -829,7 +762,7 @@ function General() {
                   description={t('settings:general.githubDesc')}
                   actions={
                     <a
-                      href="https://github.com/AtomicBot-ai/Atomic-Chat"
+                      href={RADIUM_GITHUB_URL}
                       target="_blank"
                       rel="noopener noreferrer"
                     >
@@ -867,8 +800,9 @@ function General() {
                   description={t('settings:general.reportAnIssueDesc')}
                   actions={
                     <a
-                      href="https://github.com/AtomicBot-ai/Atomic-Chat/issues/new"
+                      href={`${RADIUM_GITHUB_URL}/issues/new`}
                       target="_blank"
+                      rel="noopener noreferrer"
                     >
                       <div className="flex items-center gap-1">
                         <span>{t('settings:general.reportIssue')}</span>

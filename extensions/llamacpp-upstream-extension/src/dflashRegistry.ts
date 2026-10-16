@@ -13,10 +13,10 @@
  * are deliberately excluded.
  *
  * Draft files were verified against the live Hugging Face API (sha256 + size
- * pinned so the downloader validates them). AtomicChat's verified Q8_0
- * conversions are the default for every target-model quantization when
- * available; compatible community conversions provide the remaining draft
- * choices and cover families without an AtomicChat conversion.
+ * pinned so the downloader validates them, 2026-10-16). The default Q8_0
+ * draft for each family is Anbeeld's conversion of the z-lab reference
+ * drafter (`general.architecture = dflash`, the mainline architecture);
+ * compatible community conversions provide the remaining quantizations.
  */
 
 export interface DflashDraft {
@@ -61,7 +61,7 @@ function isBaseQwen3(normalizedId: string): boolean {
   )
 }
 
-function atomicQ8Draft(
+function q8Draft(
   repo: string,
   draftFilename: string,
   draftSha256: string,
@@ -80,10 +80,10 @@ const REGISTRY: readonly DflashRegistryEntry[] = [
   {
     matches: (id) => compactId(id).includes('qwen3codernext'),
     drafts: [
-      atomicQ8Draft(
-        'AtomicChat/Qwen3-Coder-Next-DFlash-GGUF',
-        'Qwen3-Coder-Next-DFlash.Q8_0.gguf',
-        '139081af2f9f634b3b8bce8f75a0449f92bcb75ae7a2e32abaf1bcdf6f4a7952',
+      q8Draft(
+        'Anbeeld/Qwen3-Coder-Next-DFlash-GGUF',
+        'Qwen3-Coder-Next-DFlash-Q8_0.gguf',
+        '30815c3b14e46857df9248fe1ba49685f24fe5af5b08f8c98d847378eac79d59',
         509674720
       ),
     ],
@@ -98,33 +98,33 @@ const REGISTRY: readonly DflashRegistryEntry[] = [
       )
     },
     drafts: [
-      atomicQ8Draft(
-        'AtomicChat/Qwen3-Coder-30B-A3B-DFlash-GGUF',
-        'Qwen3-Coder-30B-A3B-DFlash.Q8_0.gguf',
-        'abd0e078f1e5683ba83c4ced92836b136d9e2e6b2626715b699088fd5c3a51fc',
-        509674848
+      q8Draft(
+        'Anbeeld/Qwen3-Coder-30B-A3B-DFlash-GGUF',
+        'Qwen3-Coder-30B-A3B-DFlash-Q8_0.gguf',
+        '2e6c77ed2635ce49802c7f17c02e2446a107ad042d1fd52a06eea0e18d4b8a49',
+        509674944
       ),
     ],
   },
   {
     matches: (id) => compactId(id).includes('qwen3527b'),
     drafts: [
-      atomicQ8Draft(
-        'AtomicChat/Qwen3.5-27B-DFlash-GGUF',
-        'Qwen3.5-27B-DFlash.Q8_0.gguf',
-        'e24126896291f03a8dd6da7da8678ea4d7b019d6fc3719ecf6136e392f361645',
-        2272886944
+      q8Draft(
+        'Anbeeld/Qwen3.5-27B-DFlash-GGUF',
+        'Qwen3.5-27B-DFlash-Q8_0.gguf',
+        '14a0cb7dd25b4427db44037ee291f835defa42c2bc05fb4be3e1519b6f4b644e',
+        2272887104
       ),
     ],
   },
   {
     matches: (id) => compactId(id).includes('qwen354b'),
     drafts: [
-      atomicQ8Draft(
-        'AtomicChat/Qwen3.5-4B-DFlash-GGUF',
-        'Qwen3.5-4B-DFlash.Q8_0.gguf',
-        'f0689eadab0d46468bc2629bb2706f4aba7f794b63e1c9f6eb291269d572a52b',
-        685133984
+      q8Draft(
+        'Anbeeld/Qwen3.5-4B-DFlash-GGUF',
+        'qwen35-4b-dflash-Q8_0.gguf',
+        '9b6ffdd36bd9cb88a694461fe0aef68f6983ea1c3a79d63e0da552b326013a02',
+        685133504
       ),
     ],
   },
@@ -132,11 +132,11 @@ const REGISTRY: readonly DflashRegistryEntry[] = [
     matches: (id) =>
       isBaseQwen3(id) && compactId(id).includes('qwen38b'),
     drafts: [
-      atomicQ8Draft(
-        'AtomicChat/Qwen3-8B-DFlash-GGUF',
-        'Qwen3-8B-DFlash.Q8_0.gguf',
-        '5be4f6b1bfd5c2c1aa753d4c03e30700114654fefbbf29f02257ef37adb00bf0',
-        1120250336
+      q8Draft(
+        'Anbeeld/Qwen3-8B-DFlash-b16-GGUF',
+        'Qwen3-8B-DFlash-b16-Q8_0.gguf',
+        '7c5fca508175db711106de9826742661382f30c8d937670918ae6970655c4738',
+        1120250432
       ),
     ],
   },
@@ -144,11 +144,11 @@ const REGISTRY: readonly DflashRegistryEntry[] = [
     matches: (id) =>
       isBaseQwen3(id) && compactId(id).includes('qwen34b'),
     drafts: [
-      atomicQ8Draft(
-        'AtomicChat/Qwen3-4B-DFlash-GGUF',
-        'Qwen3-4B-DFlash.Q8_0.gguf',
-        '2913a8a5619b30233c0745ccd58de8fbe144b831b54770eb04d4a371221ca273',
-        577047008
+      q8Draft(
+        'Anbeeld/Qwen3-4B-DFlash-b16-GGUF',
+        'Qwen3-4B-DFlash-b16-Q8_0.gguf',
+        '84b096744606212b63a33324eed795bd2c24d4acb242062c3bc696356ec6d0b3',
+        577047104
       ),
     ],
   },
@@ -182,11 +182,11 @@ const REGISTRY: readonly DflashRegistryEntry[] = [
       },
       {
         quant: 'Q8_0',
-        repo: 'AtomicChat/Qwen3.5-9B-DFlash-GGUF',
-        draftFilename: 'Qwen3.5-9B-DFlash.Q8_0.gguf',
+        repo: 'Anbeeld/Qwen3.5-9B-DFlash-GGUF',
+        draftFilename: 'qwen35-9b-dflash-Q8_0.gguf',
         draftSha256:
-          '27b9d18e605aea9c50ef506e4b63921e0dc624cc91c63c60617a8295f153d436',
-        draftSize: 1383768224,
+          'a745a9cbad9a9869954643aa24fb800068003c452c5b85c91958b8008aa44957',
+        draftSize: 1383767744,
       },
       {
         quant: 'BF16',
@@ -292,11 +292,11 @@ const REGISTRY: readonly DflashRegistryEntry[] = [
       },
       {
         quant: 'Q8_0',
-        repo: 'AtomicChat/Qwen3.6-27B-DFlash-GGUF',
-        draftFilename: 'Qwen3.6-27B-DFlash.Q8_0.gguf',
+        repo: 'Anbeeld/Qwen3.6-27B-DFlash-GGUF',
+        draftFilename: 'Qwen3.6-27B-DFlash-Q8_0.gguf',
         draftSha256:
-          'b9be52167d0b4f5cbaffba6658bcb20dd814ad4e5846532353c165ccf97e47a1',
-        draftSize: 1849481472,
+          '1a13e32db05bac10ce6d060370f5c5006178f19c60955ab619c669bfb67c760d',
+        draftSize: 1849481312,
       },
       {
         quant: 'F16',

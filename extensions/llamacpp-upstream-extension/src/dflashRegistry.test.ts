@@ -6,14 +6,14 @@ import {
 } from './dflashRegistry'
 
 describe('DFlash registry', () => {
-  it('defaults to AtomicChat Q8_0 across target quantizations', () => {
+  it('defaults to the Q8_0 reference conversion across target quantizations', () => {
     const draft = resolveDflashDraft(
       'unsloth/Qwen3_5-9B-GGUF-Qwen3_5-9B-IQ4_XS'
     )
 
-    expect(draft?.repo).toBe('AtomicChat/Qwen3.5-9B-DFlash-GGUF')
+    expect(draft?.repo).toBe('Anbeeld/Qwen3.5-9B-DFlash-GGUF')
     expect(draft?.quant).toBe('Q8_0')
-    expect(draft?.draftFilename).toBe('Qwen3.5-9B-DFlash.Q8_0.gguf')
+    expect(draft?.draftFilename).toBe('qwen35-9b-dflash-Q8_0.gguf')
   })
 
   it('lists every published compatible draft quantization', () => {
@@ -32,9 +32,9 @@ describe('DFlash registry', () => {
   it('resolves a specifically selected quantization', () => {
     const draft = resolveDflashDraft('Qwen3.5-9B-Instruct', 'Q8_0')
 
-    expect(draft?.repo).toBe('AtomicChat/Qwen3.5-9B-DFlash-GGUF')
-    expect(draft?.draftFilename).toBe('Qwen3.5-9B-DFlash.Q8_0.gguf')
-    expect(draft?.draftSize).toBe(1383768224)
+    expect(draft?.repo).toBe('Anbeeld/Qwen3.5-9B-DFlash-GGUF')
+    expect(draft?.draftFilename).toBe('qwen35-9b-dflash-Q8_0.gguf')
+    expect(draft?.draftSize).toBe(1383767744)
   })
 
   it('matches supported Qwen families across common separators', () => {
@@ -50,21 +50,21 @@ describe('DFlash registry', () => {
     expect(checkDflashSupport('Qwen3-Coder-Next-GGUF')).toBe(true)
   })
 
-  it('uses AtomicChat Q8_0 drafts when published', () => {
+  it('uses the Anbeeld Q8_0 reference conversion for every family', () => {
     const expectedRepos = new Map([
-      ['Qwen3-4B-Instruct', 'AtomicChat/Qwen3-4B-DFlash-GGUF'],
-      ['Qwen3-8B-Instruct', 'AtomicChat/Qwen3-8B-DFlash-GGUF'],
-      ['Qwen3.5-4B-Instruct', 'AtomicChat/Qwen3.5-4B-DFlash-GGUF'],
-      ['Qwen3.5-9B-Instruct', 'AtomicChat/Qwen3.5-9B-DFlash-GGUF'],
-      ['Qwen3.5-27B-Instruct', 'AtomicChat/Qwen3.5-27B-DFlash-GGUF'],
-      ['Qwen3.6-27B-Instruct', 'AtomicChat/Qwen3.6-27B-DFlash-GGUF'],
+      ['Qwen3-4B-Instruct', 'Anbeeld/Qwen3-4B-DFlash-b16-GGUF'],
+      ['Qwen3-8B-Instruct', 'Anbeeld/Qwen3-8B-DFlash-b16-GGUF'],
+      ['Qwen3.5-4B-Instruct', 'Anbeeld/Qwen3.5-4B-DFlash-GGUF'],
+      ['Qwen3.5-9B-Instruct', 'Anbeeld/Qwen3.5-9B-DFlash-GGUF'],
+      ['Qwen3.5-27B-Instruct', 'Anbeeld/Qwen3.5-27B-DFlash-GGUF'],
+      ['Qwen3.6-27B-Instruct', 'Anbeeld/Qwen3.6-27B-DFlash-GGUF'],
       [
         'Qwen3-Coder-30B-A3B-Instruct',
-        'AtomicChat/Qwen3-Coder-30B-A3B-DFlash-GGUF',
+        'Anbeeld/Qwen3-Coder-30B-A3B-DFlash-GGUF',
       ],
       [
         'Qwen3-Coder-Next-Instruct',
-        'AtomicChat/Qwen3-Coder-Next-DFlash-GGUF',
+        'Anbeeld/Qwen3-Coder-Next-DFlash-GGUF',
       ],
     ])
 

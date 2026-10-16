@@ -15,20 +15,7 @@ import {
   markDownloadCancellationRequested,
   wasDownloadCancellationRequested,
 } from '@/lib/downloadCancellation'
-import {
-  classifyDownloadFailure,
-  downloadKind,
-  finalizeDownloadOnce,
-  markModelDownloaded,
-  normalizeModelId,
-  parseHttpStatus,
-  quantFromModelId,
-  scrubPii,
-  sizeBucket,
-  takeDownloadDuration,
-} from '@/lib/telemetry'
-import { queuedCapture } from '@/lib/telemetry-queue'
-import { captureHandledError } from '@/lib/sentry'
+import { classifyDownloadFailure } from '@/lib/download-errors'
 
 function isCancellationLikeError(error?: string): boolean {
   if (!error) return false
@@ -37,58 +24,9 @@ function isCancellationLikeError(error?: string): boolean {
   )
 }
 
-/**
- * ATO-109: emit the terminal `model_download` event. Deduplicated so the two
- * success events don't double-count. PII contract: only ids/enums/buckets.
- */
-function captureDownloadTerminal(
-  status: 'completed' | 'failed' | 'cancelled',
-  id: string,
-  opts: { downloadType?: string; error?: string; totalBytes?: number } = {}
-): void {
-  if (!finalizeDownloadOnce(id)) return
-
-  const kind = downloadKind(id, opts.downloadType)
-  if (status === 'completed' && kind === 'model') {
-    markModelDownloaded(id)
-  }
-
-  try {
-    queuedCapture('model_download', {
-      // NOT `status` — that name is globally typed numeric in PostHog by
-      // `api_server_request.status` (an HTTP code), so string values read back
-      // as null. See the same note in `switchModel.ts`.
-      download_status: status,
-      download_kind: kind,
-      model_id: normalizeModelId(id),
-      quant: quantFromModelId(id),
-      size_bucket: sizeBucket(opts.totalBytes),
-      duration_ms: takeDownloadDuration(id),
-      failure_reason:
-        status === 'completed'
-          ? undefined
-          : classifyDownloadFailure(opts.error),
-      http_status: parseHttpStatus(opts.error),
-    })
-  } catch (telemetryError) {
-    console.debug('model_download terminal telemetry failed:', telemetryError)
-  }
-}
-
 export function DownloadManagement() {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const prevDownloadCount = useRef(0)
-  // ATO-462 verification: how long the panel actually stayed expanded while
-  // something was downloading. Accumulated here (the panel owns the collapsed
-  // flag but not the download lifecycle) and reported once per download run.
-  const panelTiming = useRef({
-    collapsed: false,
-    since: 0,
-    expandedMs: 0,
-    collapsedMs: 0,
-    peakDownloads: 0,
-  })
   const serviceHub = useServiceHub()
   const {
     downloads,
@@ -206,63 +144,6 @@ export function DownloadManagement() {
     return [...downloadsWithProgress, ...localDownloadsWithoutProgress]
   }, [downloads, localDownloadingModels])
 
-  const downloadCount = useMemo(() => {
-    const modelDownloads = downloadProcesses.length
-    const appUpdateDownload = appUpdateState.isDownloading ? 1 : 0
-    const total = modelDownloads + appUpdateDownload
-    return total
-  }, [downloadProcesses, appUpdateState.isDownloading])
-
-  // ATO-462: the panel no longer opens itself and no longer hides itself. What
-  // is measured instead is how much of a download run the user actually kept it
-  // expanded, which is the number this redesign is meant to move.
-  const settlePanelTiming = useCallback(() => {
-    const timing = panelTiming.current
-    if (!timing.since) return
-    const elapsed = Date.now() - timing.since
-    if (timing.collapsed) timing.collapsedMs += elapsed
-    else timing.expandedMs += elapsed
-    timing.since = Date.now()
-  }, [])
-
-  const onPanelCollapsedChange = useCallback(
-    (collapsed: boolean) => {
-      settlePanelTiming()
-      panelTiming.current.collapsed = collapsed
-    },
-    [settlePanelTiming]
-  )
-
-  useEffect(() => {
-    const prev = prevDownloadCount.current
-    prevDownloadCount.current = downloadCount
-
-    const timing = panelTiming.current
-    timing.peakDownloads = Math.max(timing.peakDownloads, downloadCount)
-
-    if (downloadCount > 0 && prev === 0) {
-      timing.since = Date.now()
-      timing.expandedMs = 0
-      timing.collapsedMs = 0
-      timing.peakDownloads = downloadCount
-      return
-    }
-
-    if (downloadCount === 0 && prev > 0) {
-      settlePanelTiming()
-      queuedCapture('download_panel_visibility', {
-        expanded_ms: Math.round(timing.expandedMs),
-        collapsed_ms: Math.round(timing.collapsedMs),
-        collapsed_at_end: timing.collapsed,
-        peak_downloads: timing.peakDownloads,
-      })
-      timing.since = 0
-      timing.expandedMs = 0
-      timing.collapsedMs = 0
-      timing.peakDownloads = 0
-    }
-  }, [downloadCount, settlePanelTiming])
-
   const onFileDownloadUpdate = useCallback(
     async (state: DownloadState) => {
       updateProgress(
@@ -294,37 +175,12 @@ export function DownloadManagement() {
       const cancelled =
         wasDownloadCancellationRequested(state.modelId) ||
         isCancellationLikeError(err)
-      captureDownloadTerminal(
-        cancelled ? 'cancelled' : 'failed',
-        state.modelId,
-        {
-          downloadType: anyState?.downloadType,
-          error: err,
-          totalBytes: state.size?.total,
-        }
-      )
 
       if (cancelled) {
         markResumableDownload(state.modelId)
         toast.dismiss('download-failed')
         return
       }
-
-      // ATO-113: report genuine download failures to Sentry with zero-PII tags
-      // (classification enums + http status only; the raw error string carries
-      // URLs/tokens and is scrubbed by beforeSend before leaving the device).
-      captureHandledError(
-        anyState?.error ? new Error(scrubPii(err)) : 'model_download failed',
-        'error',
-        {
-          feature: 'model_download',
-          failure_reason: classifyDownloadFailure(err),
-          http_status: parseHttpStatus(err),
-          download_kind: downloadKind(state.modelId, anyState?.downloadType),
-          model_id: normalizeModelId(state.modelId),
-          quant: quantFromModelId(state.modelId),
-        }
-      )
 
       if (err.includes('HTTP status 401')) {
         clearResumableDownload(state.modelId)
@@ -430,15 +286,6 @@ export function DownloadManagement() {
       // Dismiss the validation started toast
       toast.dismiss(`model-validation-started-${event.modelId}`)
 
-      captureDownloadTerminal('failed', event.modelId, {
-        downloadType: 'Model',
-        error: event.error || event.reason,
-        // The only terminal site that reported no size, so every
-        // validation failure landed in `size_bucket: 'unknown'` — and size is
-        // exactly what a hash/size mismatch is about. The transfer finished
-        // before validation ran, so the store still has the total.
-        totalBytes: useDownloadStore.getState().downloads[event.modelId]?.total,
-      })
 
       clearResumableDownload(event.modelId)
       clearPausedDownload(event.modelId)
@@ -482,11 +329,6 @@ export function DownloadManagement() {
         return
       }
 
-      captureDownloadTerminal('cancelled', state.modelId, {
-        downloadType: (state as unknown as { downloadType?: string })
-          ?.downloadType,
-        totalBytes: state.size?.total,
-      })
       clearPausedDownload(state.modelId)
       clearResumeParams(state.modelId)
       removeDownload(state.modelId)
@@ -518,11 +360,6 @@ export function DownloadManagement() {
     async (state: DownloadState) => {
       console.debug('onFileDownloadSuccess', state)
 
-      captureDownloadTerminal('completed', state.modelId, {
-        downloadType: (state as unknown as { downloadType?: string })
-          ?.downloadType,
-        totalBytes: state.size?.total,
-      })
 
       // Dismiss any validation started toast when download completes successfully
       toast.dismiss(`model-validation-started-${state.modelId}`)
@@ -556,11 +393,6 @@ export function DownloadManagement() {
     async (state: DownloadState) => {
       console.debug('onFileDownloadAndVerificationSuccess', state)
 
-      captureDownloadTerminal('completed', state.modelId, {
-        downloadType: (state as unknown as { downloadType?: string })
-          ?.downloadType,
-        totalBytes: state.size?.total,
-      })
 
       // Dismiss any validation started toast when download and verification complete successfully
       toast.dismiss(`model-validation-started-${state.modelId}`)
@@ -765,7 +597,6 @@ export function DownloadManagement() {
   return (
     <DownloadPanel
       items={panelItems}
-      onCollapsedChange={onPanelCollapsedChange}
     />
   )
 }

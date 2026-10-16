@@ -41,7 +41,7 @@
  * descriptor and never held on this module. It is written to exactly one place,
  * the `Authorization` header, and deliberately never interpolated into an error
  * message or any string this adapter constructs - an error object is the single
- * most likely thing to reach a log line or a Sentry breadcrumb.
+ * most likely thing to reach a log line.
  */
 
 import { MEDIA_CONTRACT_VERSION, MEDIA_TASK } from '../contract'

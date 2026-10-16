@@ -15,7 +15,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   MEDIA_REGISTRY_SCHEMA_VERSION,
+  bundledMediaResult,
   clearMediaRegistryCache,
+  getCachedMediaManifest,
   getMediaProvidersOrFallback,
 } from '../media-registry'
 import { BASELINE_MEDIA_PROVIDERS } from '@/constants/mediaProviders'
@@ -122,7 +124,22 @@ describe('the seven failure modes', () => {
     expect(result.providers.some((p) => p.id === 'hosted-images')).toBe(true)
   })
 
-  it('fetch fails with no cache: falls back to the bundled baseline', async () => {
+  it('no override: serves the bundled snapshot without any network I/O', async () => {
+    const fetchSpy = vi.fn()
+    vi.stubGlobal('fetch', fetchSpy as unknown as typeof fetch)
+
+    const result = await getMediaProvidersOrFallback({ url: null, force: true })
+
+    expect(fetchSpy).not.toHaveBeenCalled()
+    expect(result.source).toBe('bundled')
+    expect(result.error).toBeUndefined()
+    expect(result.providers.length).toBeGreaterThanOrEqual(
+      BASELINE_MEDIA_PROVIDERS.length
+    )
+    expect(getCachedMediaManifest()).toBeNull()
+  })
+
+  it('fetch fails with no cache: falls back to the bundled snapshot', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => {
@@ -132,8 +149,8 @@ describe('the seven failure modes', () => {
 
     const result = await getMediaProvidersOrFallback({ url: URL })
 
-    expect(result.source).toBe('baseline')
-    expect(result.providers).toHaveLength(BASELINE_MEDIA_PROVIDERS.length)
+    expect(result.source).toBe('bundled')
+    expect(result.providers).toHaveLength(bundledMediaResult().providers.length)
   })
 
   it('schema_version above support: refuses the payload entirely', async () => {
@@ -148,7 +165,7 @@ describe('the seven failure modes', () => {
 
     const result = await getMediaProvidersOrFallback({ url: URL })
 
-    expect(result.source).toBe('baseline')
+    expect(result.source).toBe('bundled')
     expect(result.providers.some((p) => p.id === 'hosted-images')).toBe(false)
   })
 
@@ -157,7 +174,7 @@ describe('the seven failure modes', () => {
 
     const result = await getMediaProvidersOrFallback({ url: URL })
 
-    expect(result.source).toBe('baseline')
+    expect(result.source).toBe('bundled')
   })
 
   it('never throws, whatever the network does', async () => {

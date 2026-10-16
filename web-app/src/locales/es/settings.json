@@ -220,19 +220,6 @@
     "defaultModelDesc": "Modelo local a cargar automáticamente cuando el servidor se inicia.",
     "defaultModelPlaceholder": "Selecciona un modelo local"
   },
-  "privacy": {
-    "analytics": "Analíticas",
-    "helpUsImprove": "Ayúdanos a mejorar",
-    "helpUsImproveDesc": "Para ayudarnos a mejorar, puedes compartir datos anónimos como el uso de funciones y la cantidad de usuarios. Nunca recopilamos tus chats ni información personal.",
-    "privacyPolicy": "Tienes control total sobre tus datos. Obtén más información en nuestra Política de privacidad.",
-    "analyticsDesc": "Para mejorar Radium, necesitamos entender cómo se usa, pero solo con tu ayuda. Puedes cambiar esta configuración en cualquier momento.",
-    "privacyPromises": "Tu elección aquí no cambiará nuestras promesas de privacidad fundamentales:",
-    "promise1": "Tus conversaciones son privadas y permanecen en tu dispositivo",
-    "promise2": "Nunca recopilamos tu información personal ni el contenido de tus chats",
-    "promise3": "Todo el intercambio de datos es anónimo y agregado",
-    "promise4": "Puedes desactivarlo en cualquier momento sin perder funcionalidad",
-    "promise5": "Somos transparentes sobre lo que recopilamos y por qué"
-  },
   "general": {
     "showInFinder": "Mostrar en Finder",
     "showInFileExplorer": "Mostrar en el Explorador de archivos",

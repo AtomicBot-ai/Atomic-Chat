@@ -1364,7 +1364,7 @@ mod tests {
                 "script": "inspect.ts",
                 "args": [
                     "--repo",
-                    "AtomicBot-ai/Atomic-Chat",
+                    "walladanger/Radium",
                     "Authorization: Bearer secret",
                     "https://user:password@example.com/path?token=secret"
                 ],
@@ -1373,7 +1373,7 @@ mod tests {
         });
 
         assert_eq!(preview["args"][0], "--repo");
-        assert_eq!(preview["args"][1], "AtomicBot-ai/Atomic-Chat");
+        assert_eq!(preview["args"][1], "walladanger/Radium");
         assert_eq!(preview["args"][2], "<redacted>");
         assert_eq!(preview["args"][3], "https://example.com/path");
         assert_eq!(preview["argument_count"], 4);

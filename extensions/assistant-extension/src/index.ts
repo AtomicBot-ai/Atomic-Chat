@@ -50,11 +50,36 @@ export function renameProductInAssistantName(
 }
 
 /**
+ * The second sentence of the default instructions. Earlier builds attributed
+ * the assistant to the upstream project's website; this is what replaces it.
+ */
+const ATTRIBUTION = `${PRODUCT_NAME} is an open-source desktop app that runs models on the user's own computer or through the providers they connect.`
+
+/**
+ * The attribution sentence earlier builds shipped, under each product name the
+ * default instructions have carried.
+ */
+const LEGACY_ATTRIBUTION =
+  /(?:Atomic Chat|Radium Chat|Radium) is trained by (?:Atomic Chat|Radium Chat|Radium) \(https:\/\/atomic\.chat\)\./g
+
+/**
+ * Replace the legacy attribution sentence inside an assistant's instructions.
+ * A targeted substitution like {@link renameProductInInstructions}: every other
+ * character, including the user's own edits, is left as it was found.
+ */
+export function replaceLegacyAttribution(
+  instructions: string | undefined
+): string | undefined {
+  if (!instructions) return instructions
+  return instructions.replace(LEGACY_ATTRIBUTION, ATTRIBUTION)
+}
+
+/**
  * JanAssistantExtension is an AssistantExtension implementation that provides
  * functionality for managing assistants.
  */
 export default class JanAssistantExtension extends AssistantExtension {
-  private readonly CURRENT_MIGRATION_VERSION = 4
+  private readonly CURRENT_MIGRATION_VERSION = 5
   private readonly MIGRATION_FILE = 'file://assistants/.migration_version'
 
   /**
@@ -125,7 +150,7 @@ export default class JanAssistantExtension extends AssistantExtension {
 
     if (currentVersion < 2) {
       console.log('Running migration v2: Update to Radium instructions')
-      await this.migrateToAtomicChatInstructions()
+      await this.migrateToDefaultInstructions()
       await this.saveMigrationVersion(2)
     }
 
@@ -142,6 +167,12 @@ export default class JanAssistantExtension extends AssistantExtension {
       console.log(`Running migration v4: rename the product to ${PRODUCT_NAME}`)
       await this.migrateProductName()
       await this.saveMigrationVersion(4)
+    }
+
+    if (currentVersion < 5) {
+      console.log('Running migration v5: replace the legacy attribution line')
+      await this.migrateLegacyAttribution()
+      await this.saveMigrationVersion(5)
     }
 
     console.log(
@@ -187,6 +218,39 @@ export default class JanAssistantExtension extends AssistantExtension {
         } catch (error) {
           console.error(`Failed to migrate assistant ${assistant.id}:`, error)
         }
+      }
+    }
+  }
+
+  /**
+   * Migration v5: replace the legacy attribution sentence, which pointed at the
+   * upstream project's website, in every stored assistant. Assistants without
+   * it are skipped without a write.
+   */
+  private async migrateLegacyAttribution(): Promise<void> {
+    if (!(await fs.existsSync('file://assistants'))) {
+      return
+    }
+
+    for (const assistant of await this.getAssistants()) {
+      const instructions = replaceLegacyAttribution(assistant.instructions)
+      if (instructions === assistant.instructions) continue
+
+      const assistantPath = await joinPath([
+        'file://assistants',
+        assistant.id,
+        'assistant.json',
+      ])
+
+      try {
+        await fs.writeFileSync(
+          assistantPath,
+          JSON.stringify({ ...assistant, instructions }, null, 2)
+        )
+        console.log(`Replaced the attribution for assistant: ${assistant.id}`)
+      } catch (error) {
+        // Non-fatal, as in migrateProductName.
+        console.error(`Failed to migrate assistant ${assistant.id}:`, error)
       }
     }
   }
@@ -239,9 +303,9 @@ export default class JanAssistantExtension extends AssistantExtension {
   /**
    * Migration v2: Update assistant instructions to Radium format and set default parameters
    */
-  private async migrateToAtomicChatInstructions(): Promise<void> {
+  private async migrateToDefaultInstructions(): Promise<void> {
     const OLD_INSTRUCTION_PREFIX = 'You are Jan, a helpful AI assistant.'
-    const NEW_INSTRUCTION = `You are Radium, a helpful AI assistant who assists users with their requests. Radium is trained by Radium (https://atomic.chat).
+    const NEW_INSTRUCTION = `You are Radium, a helpful AI assistant who assists users with their requests. ${ATTRIBUTION}
 
 You must output your response in the exact language used in the latest user message. Do not provide translations or switch languages unless explicitly instructed to do so. If the input is mostly English, respond in English.
 
@@ -370,7 +434,7 @@ Current date: {{current_date}}`
     description:
       'Radium is a helpful desktop assistant that can reason through complex tasks and use tools to complete them on the user’s behalf.',
     model: '*',
-    instructions: `You are Radium, a helpful AI assistant who assists users with their requests. Radium is trained by Radium (https://atomic.chat).
+    instructions: `You are Radium, a helpful AI assistant who assists users with their requests. ${ATTRIBUTION}
 
 You must output your response in the exact language used in the latest user message. Do not provide translations or switch languages unless explicitly instructed to do so. If the input is mostly English, respond in English.
 

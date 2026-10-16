@@ -1,13 +1,7 @@
-import { useEffect } from 'react'
-
 import { Button } from '@/components/ui/button'
 import { Card, CardItem } from '@/containers/Card'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import type { ChatGptConnectionState } from '@/hooks/useChatGptAuth'
-import {
-  captureSubscriptionCardShown,
-  type SubscriptionSurface,
-} from '@/lib/subscription-telemetry'
 
 export type CloudSubscriptionCardProps = {
   state?: ChatGptConnectionState
@@ -20,8 +14,6 @@ export type CloudSubscriptionCardProps = {
   onConnectBrowser?: () => void
   onCancel?: () => void
   onDisconnect?: () => void
-  /** Where this card is rendered, for the impression event. */
-  surface?: SubscriptionSurface
 }
 
 /**
@@ -44,14 +36,8 @@ export function CloudSubscriptionCard({
   onConnectBrowser,
   onCancel,
   onDisconnect,
-  surface = 'settings',
 }: CloudSubscriptionCardProps) {
   const { t } = useTranslation()
-  // The denominator: without it, "nobody connects a subscription" cannot be
-  // told apart from "nobody is ever shown one".
-  useEffect(() => {
-    captureSubscriptionCardShown({ provider: 'chatgpt', surface })
-  }, [surface])
   const available = state !== 'unavailable'
   const connected = state === 'connected'
   const connecting = state === 'connecting'

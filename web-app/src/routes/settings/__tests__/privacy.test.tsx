@@ -45,13 +45,6 @@ vi.mock('@/containers/Card', () => ({
   ),
 }))
 
-vi.mock('@/hooks/useAnalytic', () => ({
-  useAnalytic: () => ({
-    productAnalytic: false,
-    setProductAnalytic: vi.fn(),
-  }),
-}))
-
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({
     t: (key: string) => key,
@@ -61,25 +54,23 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 vi.mock('@/components/ui/switch', () => ({
   Switch: ({
     checked,
+    disabled,
     onCheckedChange,
+    'data-testid': testId,
   }: {
-    checked: boolean
-    onCheckedChange: (checked: boolean) => void
+    'checked': boolean
+    'disabled'?: boolean
+    'onCheckedChange': (checked: boolean) => void
+    'data-testid'?: string
   }) => (
     <input
-      data-testid="switch"
+      data-testid={testId ?? 'switch'}
       type="checkbox"
       checked={checked}
+      disabled={disabled}
       onChange={(e) => onCheckedChange(e.target.checked)}
     />
   ),
-}))
-
-vi.mock('posthog-js', () => ({
-  default: {
-    opt_in_capturing: vi.fn(),
-    opt_out_capturing: vi.fn(),
-  },
 }))
 
 vi.mock('@/constants/routes', () => ({
@@ -97,16 +88,21 @@ vi.mock('@tanstack/react-router', () => ({
   }),
 }))
 
+const dsn = vi.hoisted(() => ({ value: '' }))
+vi.mock('@/lib/crash-reporting', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/crash-reporting')>()),
+  buildDsn: () => dsn.value,
+}))
+
+import { useCrashReporting } from '@/lib/crash-reporting'
+
 describe('Privacy Settings Route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.clear()
+    dsn.value = ''
+    useCrashReporting.setState({ enabled: false })
   })
-
-  const getAnalyticsSwitch = () => {
-    const switches = screen.getAllByTestId('switch')
-    return switches[switches.length - 1]
-  }
 
   it('should render the privacy settings page', () => {
     const Component = PrivacyRoute.component as React.ComponentType
@@ -117,101 +113,60 @@ describe('Privacy Settings Route', () => {
     expect(screen.getByText('common:settings')).toBeInTheDocument()
   })
 
-  it('should render analytics card with header', () => {
+  it('shows crash reports and the privacy gate, and no analytics opt-in', () => {
     const Component = PrivacyRoute.component as React.ComponentType
     render(<Component />)
 
     expect(screen.getAllByTestId('card')).toHaveLength(2)
-    expect(screen.getAllByTestId('card-header')).toHaveLength(2)
+    expect(
+      screen.getByText('settings:privacy.crashReports')
+    ).toBeInTheDocument()
     expect(screen.getByText('Cloud privacy gate')).toBeInTheDocument()
-    expect(screen.getByText('settings:privacy.analytics')).toBeInTheDocument()
+    expect(screen.queryByText(/privacy\.analytics/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/helpUsImprove/)).not.toBeInTheDocument()
   })
 
-  it('should render analytics switch', () => {
+  it('crash reports are off and unavailable in a build without a DSN', () => {
     const Component = PrivacyRoute.component as React.ComponentType
     render(<Component />)
 
-    const analyticsSwitch = getAnalyticsSwitch()
-    expect(analyticsSwitch).toBeInTheDocument()
-    expect(analyticsSwitch).not.toBeChecked()
+    const toggle = screen.getByTestId(
+      'crash-reports-switch'
+    ) as HTMLInputElement
+    expect(toggle.checked).toBe(false)
+    expect(toggle.disabled).toBe(true)
+    expect(
+      screen.getByText('settings:privacy.crashReportsUnavailable')
+    ).toBeInTheDocument()
   })
 
-  it('should handle analytics toggle when enabling', () => {
+  it('crash reports start off and the toggle persists the choice', () => {
+    dsn.value = 'https://k@o1.ingest.sentry.io/1'
     const Component = PrivacyRoute.component as React.ComponentType
     render(<Component />)
 
-    const analyticsSwitch = getAnalyticsSwitch()
-    expect(analyticsSwitch).toBeInTheDocument()
-
-    // Test that switch is interactive
-    fireEvent.click(analyticsSwitch)
-    expect(analyticsSwitch).toBeInTheDocument()
+    const toggle = screen.getByTestId(
+      'crash-reports-switch'
+    ) as HTMLInputElement
+    expect(toggle.checked).toBe(false)
+    expect(toggle.disabled).toBe(false)
+    fireEvent.click(toggle)
+    expect(useCrashReporting.getState().enabled).toBe(true)
+    expect(
+      JSON.parse(localStorage.getItem('crash-reporting')!).state.enabled
+    ).toBe(true)
   })
 
-  it('should handle analytics toggle when disabling', () => {
+  it('persists the gate switch', () => {
     const Component = PrivacyRoute.component as React.ComponentType
     render(<Component />)
 
-    const analyticsSwitch = getAnalyticsSwitch()
-    expect(analyticsSwitch).toBeInTheDocument()
-
-    // Test that switch is interactive
-    fireEvent.click(analyticsSwitch)
-    expect(analyticsSwitch).toBeInTheDocument()
-  })
-
-  it('should have proper layout structure', () => {
-    const Component = PrivacyRoute.component as React.ComponentType
-    render(<Component />)
-
-    const headerPage = screen.getByTestId('header-page')
-    expect(headerPage).toBeInTheDocument()
-
-    const settingsMenu = screen.getByTestId('settings-menu')
-    expect(settingsMenu).toBeInTheDocument()
-  })
-
-  it('should render switch in correct checked state based on productAnalytic', () => {
-    const Component = PrivacyRoute.component as React.ComponentType
-    render(<Component />)
-
-    const analyticsSwitch = getAnalyticsSwitch()
-    expect(analyticsSwitch).toBeInTheDocument()
-    // Test that switch has some state
-    expect(analyticsSwitch).toHaveAttribute('type', 'checkbox')
-  })
-
-  it('should render switch in unchecked state when productAnalytic is false', () => {
-    const Component = PrivacyRoute.component as React.ComponentType
-    render(<Component />)
-
-    const analyticsSwitch = getAnalyticsSwitch()
-    expect(analyticsSwitch).toBeInTheDocument()
-    expect(analyticsSwitch).toHaveAttribute('type', 'checkbox')
-  })
-
-  it('should call translation function with correct keys', () => {
-    const Component = PrivacyRoute.component as React.ComponentType
-    render(<Component />)
-
-    // Test that translations are rendered
-    expect(screen.getByText('common:settings')).toBeInTheDocument()
-    expect(screen.getByText('settings:privacy.analytics')).toBeInTheDocument()
-  })
-
-  it('should handle switch state change properly', () => {
-    const Component = PrivacyRoute.component as React.ComponentType
-    render(<Component />)
-
-    const analyticsSwitch = getAnalyticsSwitch()
-
-    // Test that switch can be toggled
-    fireEvent.click(analyticsSwitch)
-    expect(analyticsSwitch).toBeInTheDocument()
-
-    // Test that switch can be toggled again
-    fireEvent.click(analyticsSwitch)
-    expect(analyticsSwitch).toBeInTheDocument()
+    const gateSwitch = screen.getAllByTestId('switch')[0]
+    const before = (gateSwitch as HTMLInputElement).checked
+    fireEvent.click(gateSwitch)
+    expect(JSON.parse(localStorage.getItem('privacy-gate')!).enabled).toBe(
+      !before
+    )
   })
 
   it('keeps draft whitespace while persisting normalized custom terms', () => {
@@ -221,16 +176,16 @@ describe('Privacy Settings Route', () => {
 
     fireEvent.change(terms, { target: { value: '  Falcon  \n\n' } })
     expect(terms).toHaveValue('  Falcon  \n\n')
-    expect(JSON.parse(localStorage.getItem('privacy-gate')!).customTerms).toEqual(
-      ['Falcon']
-    )
+    expect(
+      JSON.parse(localStorage.getItem('privacy-gate')!).customTerms
+    ).toEqual(['Falcon'])
 
     fireEvent.change(terms, {
       target: { value: '  Falcon  \n\n Northstar ' },
     })
     expect(terms).toHaveValue('  Falcon  \n\n Northstar ')
-    expect(JSON.parse(localStorage.getItem('privacy-gate')!).customTerms).toEqual(
-      ['Falcon', 'Northstar']
-    )
+    expect(
+      JSON.parse(localStorage.getItem('privacy-gate')!).customTerms
+    ).toEqual(['Falcon', 'Northstar'])
   })
 })

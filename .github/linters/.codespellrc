@@ -1,5 +1,7 @@
 [codespell]
 # Generated lockfiles contain exact dependency names, not editable prose.
-skip = *.lock
+# Non-English locale files are translations: codespell's dictionary is English,
+# so every Spanish "limite" or Polish "serwer" reads as a typo.
+skip = *.lock,*/locales/cs/*,*/locales/de-DE/*,*/locales/es/*,*/locales/fr/*,*/locales/id/*,*/locales/ja/*,*/locales/ko/*,*/locales/pl/*,*/locales/pt-BR/*,*/locales/ru/*,*/locales/vn/*,*/locales/zh-CN/*,*/locales/zh-TW/*
 # `afterAll` is the vitest/jest hook, not a misspelling of "after all".
 ignore-words-list = afterall
