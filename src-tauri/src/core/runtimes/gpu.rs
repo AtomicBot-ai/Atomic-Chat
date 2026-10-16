@@ -185,7 +185,7 @@ impl GpuLedger {
             Profile::Pinned { uuid } => {
                 if !self.gpus.iter().any(|gpu| &gpu.uuid == uuid) {
                     return Err(PlacementError {
-                        message: format!("GPU {uuid} is not present"),
+                        message: format!("GPU {} is not present", gpu_label(uuid)),
                         suggestion: Some(Profile::Auto),
                     });
                 }
@@ -197,7 +197,7 @@ impl GpuLedger {
                     })
                 } else {
                     Err(PlacementError {
-                        message: format!("Needs {need_mib} MiB but GPU {uuid} has {free} MiB free"),
+                        message: format!("Needs {need_mib} MiB but GPU {} has {free} MiB free", gpu_label(uuid)),
                         suggestion: if need_mib <= best_single.1 {
                             Some(Profile::Pinned {
                                 uuid: best_single.0.clone(),
@@ -239,7 +239,7 @@ impl GpuLedger {
                     Some(gpu) => Err(PlacementError {
                         message: format!(
                             "Tensor parallelism needs {each} MiB on every GPU; {} has {} MiB free",
-                            gpu.uuid,
+                            gpu_label(&gpu.uuid),
                             self.free_mib(&gpu.uuid)
                         ),
                         suggestion: (need_mib <= total_free).then_some(Profile::SplitLayer),
@@ -292,7 +292,8 @@ impl GpuLedger {
             let free = self.free_mib(uuid);
             if *mib > free {
                 return Err(format!(
-                    "Needs {mib} MiB on GPU {uuid} but only {free} MiB is free"
+                    "Needs {mib} MiB on GPU {} but only {free} MiB is free",
+                    gpu_label(uuid)
                 ));
             }
         }
@@ -319,6 +320,14 @@ fn too_big(need_mib: Mib, total_free: Mib) -> PlacementError {
         ),
         suggestion: None,
     }
+}
+
+/// A short, stable, non-reversible label for a GPU. The raw hardware UUID is a
+/// device fingerprint, so it is never written into logs or error text.
+fn gpu_label(uuid: &str) -> String {
+    use sha2::Digest;
+    let digest = sha2::Sha256::digest(uuid.as_bytes());
+    hex::encode(&digest[..3])
 }
 
 /// The KV cache of a transformer decoder, in MiB, for `context` tokens:
