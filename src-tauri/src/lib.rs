@@ -286,6 +286,8 @@ pub fn run() {
         // credential-store.md. Desktop only, and deliberately no enumeration
         // command: the caller always knows the key it is asking about.
         core::media::commands::media_secret_set,
+        core::media::stitch::media_ffmpeg_available,
+        core::media::stitch::media_stitch_videos,
         core::media::commands::media_secret_get,
         core::media::commands::media_secret_delete,
         core::media::commands::media_secret_available,

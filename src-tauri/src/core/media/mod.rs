@@ -20,3 +20,7 @@ pub mod commands;
 /// Desktop only: installs and runs the built-in engine for the Media page.
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod runtime;
+
+/// Desktop only: stitches continuous-session clips with the system ffmpeg.
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub mod stitch;

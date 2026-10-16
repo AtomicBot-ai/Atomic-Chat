@@ -3,7 +3,7 @@
   "web-app/src/containers/media/MediaJobStatus.tsx": "98d5df63254b0b16eee2c6f271773a08dfd5dfb4fd01505f31e4552978cbe3da",
   "web-app/src/containers/media/MediaPreview.tsx": "02b795d98c60de32e691379f94d953231fcb335fa1f9770828f5b656bb8461e1",
   "web-app/src/containers/media/MediaStudio.test.tsx": "208f14a1301de8d396e91fea1bbed6e33322e59c2f46e9b88bd68001ac741a72",
-  "web-app/src/containers/media/MediaStudio.tsx": "118c207b0d6241838d294e44072a8705410442fc71add492f3949f3c50d7fedb",
+  "web-app/src/containers/media/MediaStudio.tsx": "c1ca2821c0ec9c67669513ab177be2425de34ba4e58b8aa39de97735e262d693",
   "web-app/src/routes/media.tsx": "47de5ed307608294657f4af8b48d9eac27ddae602ef052c7fa31f3369b1f2cf8",
   "web-app/src/services/atomicMedia/client.test.ts": "e51009e8936cd5cab27d39bb379c2b51de56da1bf43ed84cb0f78cbe876ddac3",
   "web-app/src/services/atomicMedia/client.ts": "84cdba38d633e9008ef63160838942d434f21077375980eafab14c4d7885e761",
