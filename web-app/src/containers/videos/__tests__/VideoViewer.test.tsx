@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   makeFakeDiffusion,
@@ -46,6 +46,22 @@ vi.mock('@/lib/video/poster', async (importOriginal) => ({
         else resolve('UE5H')
       })
   ),
+}))
+
+// What the webview may do: everywhere but Linux it loads clips itself, over
+// the asset protocol; on Linux only on Play, from a blob: URL of the bytes.
+const playback = vi.hoisted(() => ({
+  autoloads: true,
+  readsAsset: true,
+  canPlay: true,
+  blobUrl: vi.fn(async (_path: string) => 'blob:clip'),
+}))
+vi.mock('@/lib/video/webview-playback', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/video/webview-playback')>()),
+  webviewAutoloadsVideo: () => playback.autoloads,
+  webviewReadsAssetMedia: () => playback.readsAsset,
+  webviewCanPlay: () => playback.canPlay,
+  clipBlobUrl: (path: string) => playback.blobUrl(path),
 }))
 
 import { useVideoGallery } from '@/hooks/useVideoGallery'
@@ -134,6 +150,11 @@ describe('VideoViewer', () => {
     useVideoGenerationStore.getState().reset()
     poster.hold = false
     poster.release = null
+    playback.autoloads = true
+    playback.readsAsset = true
+    playback.canPlay = true
+    playback.blobUrl.mockReset()
+    playback.blobUrl.mockResolvedValue('blob:clip')
     fake = makeFakeDiffusion()
     // The core answers with the same clip, now carrying its poster.
     fake.setVideoPoster.mockImplementation(async (id) => ({
@@ -315,6 +336,90 @@ describe('VideoViewer', () => {
     expect(useVideoGalleryStore.getState().selectedId).toBe('vjob-1')
     fireEvent.keyDown(document, { key: 'Delete' })
     expect(await screen.findByTestId('gallery-delete-confirm')).toBeInTheDocument()
+  })
+
+  describe('where the player cannot read the asset protocol (Linux)', () => {
+    const revoke = vi.fn()
+    const originalRevoke = URL.revokeObjectURL
+    beforeEach(() => {
+      playback.autoloads = false
+      playback.readsAsset = false
+      revoke.mockClear()
+      URL.revokeObjectURL = revoke
+    })
+    afterEach(() => {
+      URL.revokeObjectURL = originalRevoke
+    })
+
+    it('opens on the poster with no player, plays a blob: URL of the bytes on Play, and revokes it on the next clip', async () => {
+      poster.hold = true
+      render(<Gallery />)
+      const gate = await screen.findByTestId('video-play-gate')
+      expect(gate.querySelector('img')?.getAttribute('src')).toMatch(/vjob-1\.thumb\.png$/)
+      expect(document.querySelector('video')).toBeNull()
+      expect(playback.blobUrl).not.toHaveBeenCalled()
+      // The tile without a poster still asks for one.
+      await waitFor(() => expect(poster.release).not.toBeNull())
+
+      await act(async () => {
+        await userEvent.click(screen.getByTestId('video-play'))
+      })
+      expect(playback.blobUrl).toHaveBeenCalledWith('/data/videos/vjob-1.webm')
+      const player = (await screen.findByTestId('video-player')) as HTMLVideoElement
+      expect(player.getAttribute('src')).toBe('blob:clip')
+      expect(player.autoplay).toBe(true)
+
+      // Another clip opens on its poster again, and the old URL is let go.
+      await act(async () => {
+        await userEvent.click(screen.getByTestId('video-tile-vjob-2'))
+      })
+      expect(document.querySelector('video')).toBeNull()
+      expect(screen.getByTestId('video-play-gate')).toBeInTheDocument()
+      expect(revoke).toHaveBeenCalledWith('blob:clip')
+    })
+
+    it('offers the system player when the webview cannot decode the clip, without reading it', async () => {
+      playback.canPlay = false
+      render(<Gallery />)
+      await act(async () => {
+        await userEvent.click(await screen.findByTestId('video-play'))
+      })
+      expect(playback.blobUrl).not.toHaveBeenCalled()
+      expect(document.querySelector('video')).toBeNull()
+      expect(screen.getByTestId('video-playback-unsupported')).toBeInTheDocument()
+      await act(async () => {
+        await userEvent.click(screen.getByTestId('video-open-in-player'))
+      })
+      expect(openPath).toHaveBeenCalledWith('/data/videos/vjob-1.webm')
+    })
+
+    it('offers the system player when the clip cannot be read', async () => {
+      playback.blobUrl.mockRejectedValue(new Error('File is too large'))
+      render(<Gallery />)
+      await act(async () => {
+        await userEvent.click(await screen.findByTestId('video-play'))
+      })
+      expect(await screen.findByTestId('video-playback-unsupported')).toBeInTheDocument()
+      expect(document.querySelector('video')).toBeNull()
+    })
+  })
+
+  it('revokes the blob: URL when the viewer goes away', async () => {
+    playback.autoloads = false
+    playback.readsAsset = false
+    const originalRevoke = URL.revokeObjectURL
+    const revoke = vi.fn()
+    URL.revokeObjectURL = revoke
+    const { unmount } = render(<Gallery />)
+    await act(async () => {
+      await userEvent.click(await screen.findByTestId('video-play'))
+    })
+    // The URL let go on unmount is the one the player was playing.
+    const player = await screen.findByTestId('video-player')
+    expect(player.getAttribute('src')).toBe('blob:clip')
+    unmount()
+    expect(revoke).toHaveBeenCalledWith('blob:clip')
+    URL.revokeObjectURL = originalRevoke
   })
 
   it('shows an empty state without a clip', () => {

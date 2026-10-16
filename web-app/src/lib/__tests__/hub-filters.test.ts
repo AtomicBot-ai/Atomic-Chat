@@ -216,6 +216,14 @@ describe('hubFormats', () => {
     expect(HUB_FORMAT_LABELS.vllm).toBe('vLLM')
   })
 
+  it('offers vLLM, SGLang, TensorRT-LLM in that order (spec sglang-desktop "Порядок трёх движков")', () => {
+    expect(
+      hubFormats({ mlx: false, managed: ['tensorrt-llm', 'sglang', 'vllm'] })
+    ).toEqual(['gguf', 'vllm', 'sglang', 'tensorrt-llm'])
+    expect(hubFormats({ mlx: false, managed: ['sglang'] })).toEqual(['gguf', 'sglang'])
+    expect(HUB_FORMAT_LABELS.sglang).toBe('SGLang')
+  })
+
   it('offers PrismML only where its provider is', () => {
     expect(hubFormats({ mlx: true, managed: [], prism: true })).toEqual([
       'gguf',
@@ -226,6 +234,30 @@ describe('hubFormats', () => {
       'gguf',
       'mlx',
     ])
+  })
+
+  it('offers Foundry Local exactly where its provider is shown, last (change add-foundry-local)', () => {
+    expect(hubFormats({ mlx: true, managed: [], prism: false, foundryLocal: true })).toEqual([
+      'gguf',
+      'mlx',
+      'foundry-local',
+    ])
+    expect(hubFormats({ mlx: false, managed: ['vllm'], prism: true, foundryLocal: true })).toEqual([
+      'gguf',
+      'vllm',
+      'atomic-prism',
+      'foundry-local',
+    ])
+    expect(hubFormats({ mlx: true, managed: [], foundryLocal: false })).not.toContain('foundry-local')
+    expect(HUB_FORMAT_LABELS['foundry-local']).toBe('Foundry Local')
+  })
+
+  it('keeps GGUF the format the Hub opens on where Foundry Local is offered (spec "Первое открытие Hub на ноутбуке с NPU")', () => {
+    const offered = hubFormats({ mlx: false, managed: [], foundryLocal: true })
+    expect(normalizeHubFilters({}, offered).formats).toEqual(['gguf'])
+    expect(readHubFilters().formats).toEqual(['gguf'])
+    expect(normalizeHubFilters({ formats: ['foundry-local'] }, offered).formats).toEqual(['foundry-local'])
+    expect(normalizeHubFilters({ formats: ['foundry-local'] }, ['gguf']).formats).toEqual(['gguf'])
   })
 
   it('lists PrismML after the managed engines', () => {
@@ -241,7 +273,9 @@ describe('engine in the Hub URL', () => {
     expect(parseHubEngine('mlx')).toBe('mlx')
     expect(parseHubEngine('tensorrt-llm')).toBe('tensorrt-llm')
     expect(parseHubEngine('vllm')).toBe('vllm')
+    expect(parseHubEngine('sglang')).toBe('sglang')
     expect(parseHubEngine('atomic-prism')).toBe('atomic-prism')
+    expect(parseHubEngine('foundry-local')).toBe('foundry-local')
     expect(parseHubEngine('onnx')).toBeUndefined()
     expect(parseHubEngine(undefined)).toBeUndefined()
     expect(parseHubEngine(['gguf'])).toBeUndefined()

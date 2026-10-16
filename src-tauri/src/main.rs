@@ -7,6 +7,27 @@ fn main() {
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
     }
 
+    // The AppImage carries its own GStreamer, older than a rolling distro's.
+    // Both default to ~/.cache/gstreamer-1.0/registry.<arch>.bin and rewrite
+    // each other's cache in their own format, so ours gets a file of its own.
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("APPIMAGE").is_some()
+        && std::env::var_os("GST_REGISTRY_1_0").is_none()
+        && std::env::var_os("GST_REGISTRY").is_none()
+    {
+        let cache_home = std::env::var_os("XDG_CACHE_HOME")
+            .filter(|dir| !dir.is_empty())
+            .map(std::path::PathBuf::from)
+            .or_else(|| {
+                std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".cache"))
+            });
+        if let Some(cache_home) = cache_home {
+            let dir = cache_home.join("chat.atomic.app").join("gstreamer-1.0");
+            let _ = std::fs::create_dir_all(&dir);
+            std::env::set_var("GST_REGISTRY_1_0", dir.join("registry.bin"));
+        }
+    }
+
     let _ = fix_path_env::fix();
 
     // ATO-113: bring up Sentry as early as possible so the panic hook is armed

@@ -68,7 +68,8 @@ export function toolActivityLabel(
         presentation.deniedReason === 'tool-loop'
         ? 'skipped'
         : 'denied'
-      : state === 'output-error'
+      : state === 'output-error' ||
+          (presentation.kind === 'chat_exec' && presentation.failed)
         ? 'error'
         : state === 'input-streaming' || state === 'input-available'
           ? 'running'
@@ -78,18 +79,22 @@ export function toolActivityLabel(
       ? 'search'
       : presentation.kind === 'web_fetch_exa'
         ? 'fetch'
-        : (
-            {
-              'os.fs.write': 'write',
-              'os.fs.read': 'read',
-              'os.fs.list': 'list',
-              'os.fs.glob': 'list',
-              'os.fs.mkdir': 'mkdir',
-              'os.shell.run': 'shell',
-              'os.web.search': 'search',
-              'os.web.fetch': 'fetch',
-            } as Record<string, string>
-          )[toolName]
+        : presentation.kind === 'chat_exec'
+          ? presentation.language
+            ? 'script'
+            : 'shell'
+          : (
+              {
+                'os.fs.write': 'write',
+                'os.fs.read': 'read',
+                'os.fs.list': 'list',
+                'os.fs.glob': 'list',
+                'os.fs.mkdir': 'mkdir',
+                'os.shell.run': 'shell',
+                'os.web.search': 'search',
+                'os.web.fetch': 'fetch',
+              } as Record<string, string>
+            )[toolName]
   if (!action) {
     const title =
       humanTitle(presentation.title) ||
@@ -101,7 +106,9 @@ export function toolActivityLabel(
     target:
       action === 'write' || action === 'read'
         ? fileTarget(presentation, t, action === 'write')
-        : '',
+        : action === 'script' && presentation.kind === 'chat_exec'
+          ? presentation.language
+          : '',
   })
   const genericInput =
     presentation.kind === 'generic' &&

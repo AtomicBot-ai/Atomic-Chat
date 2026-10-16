@@ -1,7 +1,7 @@
 /**
  * Default Model Setup Service — the no-op used on web and mobile, where there
- * is no core to set a model up. `isSupported()` is false so the Hub downloads
- * the way it always did, and every call rejects in case something reaches it.
+ * is no core to ask. `isSupported()` is false so the Hub downloads the way it
+ * always did, and every call rejects in case something reaches it.
  */
 
 /* eslint-disable @typescript-eslint/no-unused-vars */
@@ -9,13 +9,10 @@
 import type {
   CompatibilityVerdict,
   ModelCompatibilityRequest,
-  ModelSetup,
-  ModelSetupEvent,
-  ModelSetupPlan,
-  ModelSetupPlanRequest,
   ModelSetupService,
-  ModelSetupStartRequest,
+  PrismCatalog,
   PrismFamiliesResponse,
+  PrismPack,
 } from './types'
 
 export const MODEL_SETUP_UNSUPPORTED =
@@ -32,31 +29,27 @@ export class DefaultModelSetupService implements ModelSetupService {
     throw new Error(MODEL_SETUP_UNSUPPORTED)
   }
 
-  async plan(_request: ModelSetupPlanRequest): Promise<ModelSetupPlan> {
-    throw new Error(MODEL_SETUP_UNSUPPORTED)
-  }
-
   async families(): Promise<PrismFamiliesResponse> {
     throw new Error(MODEL_SETUP_UNSUPPORTED)
   }
 
-  async start(_request: ModelSetupStartRequest): Promise<ModelSetup> {
+  async prismCatalog(): Promise<PrismCatalog> {
     throw new Error(MODEL_SETUP_UNSUPPORTED)
   }
 
-  async list(): Promise<ModelSetup[]> {
+  async diskAvailable(): Promise<number | null> {
     throw new Error(MODEL_SETUP_UNSUPPORTED)
   }
 
-  async cancel(_setupId: string): Promise<ModelSetup> {
+  async installPrismBuild(_pack: PrismPack, _taskId: string): Promise<void> {
     throw new Error(MODEL_SETUP_UNSUPPORTED)
   }
 
-  async resume(_setupId: string): Promise<ModelSetup> {
+  async activatePrismBuild(_pack: PrismPack): Promise<void> {
     throw new Error(MODEL_SETUP_UNSUPPORTED)
   }
 
-  subscribe(_handler: (event: ModelSetupEvent) => void): () => void {
+  onCoreReset(_handler: () => void): () => void {
     return () => {}
   }
 }

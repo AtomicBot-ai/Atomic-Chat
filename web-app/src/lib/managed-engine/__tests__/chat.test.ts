@@ -27,6 +27,19 @@ describe('agentModelBlockReason', () => {
   })
 })
 
+describe('Foundry Local models in chat (change add-foundry-local)', () => {
+  it('keeps a variant without tool calling out of Agent mode, and lets one with it in', () => {
+    // spec foundry-local-desktop "Модель без tool calling".
+    expect(agentModelBlockReason('foundry-local', model([]))).toBe('model-without-tools')
+    expect(agentModelBlockReason('foundry-local', model(['tools', 'reasoning']))).toBeNull()
+  })
+
+  it('never attaches images, and never grows the variant’s fixed context', () => {
+    expect(imageAttachmentsAllowed('foundry-local', model(['vision']))).toBe(false)
+    expect(canGrowContext('foundry-local')).toBe(false)
+  })
+})
+
 describe('canGrowContext', () => {
   it('never grows a TensorRT-LLM context: it is fixed when the container starts', () => {
     expect(canGrowContext('tensorrt-llm')).toBe(false)
@@ -139,5 +152,32 @@ describe('chatting with a vLLM model (spec vllm-desktop "Чат с модель�
     expect(guidance?.engine.id).toBe('vllm')
     expect(guidance?.limit).toBe(8192)
     expect(contextOverflowMessage(guidance!)).toContain('Settings → Providers → vLLM')
+  })
+})
+
+describe('chatting with an SGLang model (spec sglang-desktop "Чат с моделью SGLang")', () => {
+  it('a model without tool calling is kept out of Agent mode, with a reason', () => {
+    // "Модель без tools в Agent-режиме".
+    expect(agentModelBlockReason('sglang', model([]))).toBe('model-without-tools')
+    expect(agentModelBlockReason('sglang', model(['tools']))).toBeNull()
+  })
+
+  it('takes no images, keeps its context fixed and outlasts its longest load timeout', () => {
+    expect(imageAttachmentsAllowed('sglang', model(['vision']))).toBe(false)
+    expect(canGrowContext('sglang')).toBe(false)
+    // `load_timeout_seconds` of the SGLang schema goes up to 3600.
+    expect(loadWatchdogMs('sglang', 35 * 60_000)).toBeGreaterThan(3600 * 1000)
+  })
+
+  it('on an overflow names the limit and the SGLang settings that raise it', () => {
+    // What the core's gateway answers for SGLang's overflow (`mapSglangContextLengthError`).
+    const overflow = new Error(
+      "This model's maximum context length is 8192 tokens, but the request has 9000 tokens. Shorten the conversation or the requested output. [context_length_exceeded]"
+    )
+    const guidance = contextOverflowGuidance('sglang', overflow)
+    expect(guidance?.engine.id).toBe('sglang')
+    expect(guidance?.limit).toBe(8192)
+    expect(contextOverflowMessage(guidance!)).toContain('Settings → Providers → SGLang')
+    expect(contextOverflowMessage(guidance!)).toContain('9000 tokens')
   })
 })

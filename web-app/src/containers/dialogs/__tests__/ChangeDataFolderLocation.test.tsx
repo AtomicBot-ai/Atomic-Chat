@@ -10,7 +10,7 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 }))
 
 import ChangeDataFolderLocation from '../ChangeDataFolderLocation'
-import { setManagedEnginesForTests, TENSORRT_LLM_ENGINE } from '@/lib/managed-engines'
+import { setManagedEnginesForTests, TENSORRT_LLM_ENGINE, VLLM_ENGINE } from '@/lib/managed-engines'
 import { useManagedEnvironmentStore } from '@/stores/managed-environment-store'
 import type { EnvironmentSnapshot } from '@/services/managed-environment/types'
 
@@ -54,13 +54,18 @@ describe('ChangeDataFolderLocation', () => {
   beforeEach(() => useManagedEnvironmentStore.getState().reset())
 
   it('says the managed engines\' models stay in the WSL distribution and are not moved (change add-tensorrt-llm-windows)', () => {
-    // spec "Смена папки данных".
-    seed(environment({ distribution: { name: 'AtomicChat', path: 'C:\\wsl\\AtomicChat', size_bytes: 1 } }))
-    open()
+    // spec "Смена папки данных". Pinned to the two engines this test was written for; the three-engine list has its own test (change add-sglang-runtime).
+    setManagedEnginesForTests([VLLM_ENGINE, TENSORRT_LLM_ENGINE])
+    try {
+      seed(environment({ distribution: { name: 'AtomicChat', path: 'C:\\wsl\\AtomicChat', size_bytes: 1 } }))
+      open()
 
-    const line = screen.getByText(/settings:dialogs.changeDataFolder.managedModels/)
-    expect(line).toHaveTextContent('AtomicChat')
-    expect(line).toHaveTextContent('"engines":"vLLM, TensorRT-LLM"')
+      const line = screen.getByText(/settings:dialogs.changeDataFolder.managedModels/)
+      expect(line).toHaveTextContent('AtomicChat')
+      expect(line).toHaveTextContent('"engines":"vLLM, TensorRT-LLM"')
+    } finally {
+      setManagedEnginesForTests(undefined)
+    }
   })
 
   it('names every managed engine whose models live there (change add-vllm-runtime)', () => {

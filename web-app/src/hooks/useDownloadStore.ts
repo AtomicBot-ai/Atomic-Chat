@@ -4,6 +4,7 @@ import {
   newSpeedSample,
   type SpeedSample,
 } from '@/lib/downloadFormat'
+import type { PullModelOptions } from '@/services/models/types'
 
 /**
  * What the Rust downloader is doing while it has no bytes to report. Mirrors
@@ -49,7 +50,8 @@ export interface DownloadProgressProps {
 // records them here. Only the resumable GGUF (`llamacpp`) path stores these;
 // MLX (`mlx-community/*`) and backend-binary downloads are pause/resume-gated
 // out and never populate this map.
-export interface DownloadResumeParams {
+/** What a paused download resumes with; `provider` and the hashes as the pull was given them. */
+export interface DownloadResumeParams extends PullModelOptions {
   modelPath: string
   mmprojPath?: string
   hfToken?: string

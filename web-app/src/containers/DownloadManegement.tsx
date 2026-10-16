@@ -6,7 +6,11 @@ import {
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useProxyConfig } from '@/hooks/useProxyConfig'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { useModelSetupDownloads } from '@/hooks/useModelSetup'
+import { PRISM_PROVIDER } from '@/lib/model-setup'
+import {
+  prismSetupDeps,
+  verifyPrismDownload,
+} from '@/services/model-setup/prism-setup'
 import { DownloadEvent, DownloadState, events } from '@janhq/core'
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
@@ -55,6 +59,7 @@ import {
   isEmbeddingDownloadTaskId,
 } from '@/lib/embedding/models'
 import { isManagedDownloadId } from '@/lib/managed-engine/download-id'
+import { isFoundryLocalDownloadId } from '@/lib/foundry-local/download-id'
 import { useDecisionStore } from '@/stores/decision-store'
 import { useEmbeddingStore } from '@/stores/embedding-store'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
@@ -65,7 +70,6 @@ import {
   describeFinishedDownload,
 } from '@/lib/downloadNotification'
 import type { DiffusionCatalog } from '@/services/diffusion-catalog-registry'
-import { useModelSetupStore } from '@/stores/model-setup-store'
 
 /**
  * ATO-109: emit the terminal `model_download` event. Deduplicated so the two
@@ -189,6 +193,7 @@ export function DownloadManagement() {
     // shows the model's name instead.
     const rowName = (id: string) =>
       (isManagedDownloadId(id) && downloadOriginByModelId[id]) ||
+      (isFoundryLocalDownloadId(id) && downloadOriginByModelId[id]) ||
       (isEmbeddingDownloadTaskId(id) &&
         embeddingCatalog.models.find(
           (model) => embeddingDownloadTaskId(model.id) === id
@@ -241,16 +246,9 @@ export function DownloadManagement() {
     embeddingCatalog,
   ])
 
-  // A PrismML model setup runs its downloads in the core, which sends no
-  // download events, so its rows come from the setups themselves.
-  const setupDownloads = useModelSetupDownloads()
-
   // The app update is not counted: its progress lives in the update banner
   // itself, the one place that offered it.
-  const downloadCount = useMemo(
-    () => downloadProcesses.length + setupDownloads.length,
-    [downloadProcesses, setupDownloads]
-  )
+  const downloadCount = downloadProcesses.length
 
   // ATO-462: each download run starts expanded and stays present while active;
   // a deliberate collapse lasts for that run. Measure how much of the run the
@@ -796,7 +794,8 @@ export function DownloadManagement() {
   // not from here.
   // Engine updates (`engine-update-*`) are the core's to stop, cancel-only.
   // Managed models are cancel-only too: Download again in the Hub resumes
-  // from the files on disk (change add-tensorrt-llm-model-hub, design D6).
+  // from the files on disk (change add-tensorrt-llm-model-hub, design D6);
+  // so are Foundry Local variants (change add-foundry-local).
   const isPausableDownload = (id: string): boolean =>
     !id.startsWith('llamacpp') &&
     !isDiffusionEngineTaskId(id) &&
@@ -805,7 +804,8 @@ export function DownloadManagement() {
     !id.startsWith('mlx') &&
     !isDecisionDownloadTaskId(id) &&
     !isEmbeddingDownloadTaskId(id) &&
-    !isManagedDownloadId(id)
+    !isManagedDownloadId(id) &&
+    !isFoundryLocalDownloadId(id)
 
   const handlePauseDownload = useCallback(
     (download: { id: string; name: string }) => {
@@ -881,16 +881,39 @@ export function DownloadManagement() {
       clearPausedDownload(download.id)
       if (download.id !== download.name) clearPausedDownload(download.name)
       markResumableDownload(download.id)
+      const {
+        modelPath,
+        mmprojPath,
+        hfToken,
+        skipVerification,
+        ...pullOptions
+      } = params
       void serviceHub
         .models()
         .pullModelWithMetadata(
           download.id,
-          params.modelPath,
-          params.mmprojPath,
-          params.hfToken,
-          params.skipVerification ?? true,
-          true
+          modelPath,
+          mmprojPath,
+          hfToken,
+          skipVerification ?? true,
+          true,
+          pullOptions
         )
+        .then(async (refusal) => {
+          // A Bonsai file ends as the Hub's download does: kept only if the
+          // core says PrismML runs the file now on disk.
+          if (pullOptions.provider !== PRISM_PROVIDER || refusal) return
+          if (useDownloadStore.getState().pausedDownloads.has(download.id))
+            return
+          const result = await verifyPrismDownload(
+            download.id,
+            prismSetupDeps(serviceHub)
+          )
+          if (result.outcome === 'rejected')
+            toast.error(t('hub:prismModelRejected'), {
+              description: result.reason,
+            })
+        })
         .catch((error) => {
           console.error('[DownloadManagement] resume failed:', error)
         })
@@ -914,29 +937,6 @@ export function DownloadManagement() {
     [serviceHub]
   )
 
-  // A setup cancels and resumes in the core: Cancel keeps what it downloaded,
-  // and one the app closed on waits, paused, for Resume. The store hears the
-  // outcome, which also ends the row and says how it ended.
-  const handleSetupAction = useCallback(
-    (setupId: string, action: 'cancel' | 'resume') => {
-      const service = serviceHub.modelSetup()
-      service[action](setupId)
-        .then((setup) =>
-          useModelSetupStore.getState().apply({ type: 'changed', setup })
-        )
-        .catch((error) => {
-          console.error(`[DownloadManagement] setup ${action} failed:`, error)
-          toast.error(t('common:toast.downloadFailed.title'), {
-            id: 'download-failed',
-            description:
-              (error as { message?: string } | undefined)?.message ??
-              String(error),
-          })
-        })
-    },
-    [serviceHub, t]
-  )
-
   const panelItems = useMemo<DownloadRowProps[]>(() => {
     const rows: DownloadRowProps[] = []
 
@@ -951,32 +951,13 @@ export function DownloadManagement() {
       })
     }
 
-    for (const { setup, bytes, bytesPerSecond } of setupDownloads) {
-      const interrupted = setup.stage === 'interrupted'
-      rows.push({
-        id: setup.plan.model_id,
-        progress: bytes.total > 0 ? bytes.transferred / bytes.total : 0,
-        current: bytes.transferred,
-        total: bytes.total,
-        bytesPerSecond,
-        // Cancel-only while it runs, like a TensorRT-LLM download; Resume only
-        // for one the app closed on.
-        paused: interrupted,
-        pausable: interrupted,
-        onResume: () => handleSetupAction(setup.setup_id, 'resume'),
-        onCancel: () => handleSetupAction(setup.setup_id, 'cancel'),
-      })
-    }
-
     return rows
   }, [
     downloadProcesses,
-    setupDownloads,
     pausedDownloads,
     handlePauseDownload,
     handleResumeDownload,
     handleCancelDownload,
-    handleSetupAction,
   ])
 
   return (

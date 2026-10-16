@@ -9,6 +9,7 @@ import { useVideoSetting } from '@/hooks/useVideoSetting'
 import fixture from '@/lib/__tests__/media-catalog.fixture.json'
 import type { MediaCatalogView } from '@/services/media/types'
 import { useMediaCatalog } from '@/stores/media-catalog-store'
+import { useProviderRegistryStore } from '@/stores/provider-registry-store'
 
 const navigate = vi.fn()
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigate }))
@@ -60,6 +61,14 @@ describe('RemoteModelSections', () => {
     navigate.mockReset()
     useMediaCatalog.setState({ catalog, available: true, status: 'ready', listings: {} })
     useModelProvider.setState({ providers })
+    // The catalogue these providers come from. Importing the store starts a
+    // registry load that, offline, settles on the baseline list, which has no
+    // OpenAI; a provider the catalogue does not know reads as one the user
+    // added, so the badge would say Self-hosted.
+    useProviderRegistryStore.setState({
+      hasInitialized: true,
+      providers: providers as unknown as ModelProvider[],
+    })
     useImageSetting.setState({ selectedRemote: null, selectedArtifactId: null })
     useVideoSetting.setState({ selectedRemote: null })
   })

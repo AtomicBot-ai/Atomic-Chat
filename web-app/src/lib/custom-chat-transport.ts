@@ -78,6 +78,14 @@ import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ttftMark } from '@/lib/ttft-timing'
 import { settleMcpActivationsBeforeSend } from '@/lib/mcp-activation'
 import {
+  chatExecOutputsForModel,
+  chatExecTools,
+  isChatExecOffered,
+  isChatExecTool,
+} from '@/lib/chat-exec-tools'
+import { ensureChatExecStatus } from '@/hooks/useChatExecStatus'
+import type { ChatExecStatus } from '@/services/chat-exec/types'
+import {
   growModelContext,
   readAutoIncreaseCtx,
   readModelCtxLen,
@@ -131,6 +139,7 @@ const LOCAL_INFERENCE_PROVIDERS = new Set<string>([
   'llamacpp-upstream',
   'atomic-prism',
   'foundation-models',
+  'foundry-local',
 ])
 
 const isLocalInferenceProvider = (provider: string): boolean =>
@@ -509,7 +518,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     disabledToolKeys: string[],
     hasDocuments: boolean,
     ragFeatureAvailable: boolean,
-    modelSupportsTools: boolean
+    modelSupportsTools: boolean,
+    chatExec: ChatExecStatus | null
   ): string {
     const mcp = [...useAppState.getState().mcpToolNames].sort().join(',')
     const rag = [...useAppState.getState().ragToolNames].sort().join(',')
@@ -532,6 +542,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       ctxLen ?? '',
       mcp,
       rag,
+      // The run_command / run_script descriptions name the shell, the
+      // languages and whether a sandbox is in use.
+      chatExec ? JSON.stringify(chatExec) : '',
     ].join('|')
   }
 
@@ -571,11 +584,22 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       ragFeatureAvailable = Boolean(useAttachments.getState().enabled)
     }
 
+    // Commands and scripts (`run_command` / `run_script`) when the composer's
+    // "Run commands" item is on and this machine can run them. The status is
+    // probed once per session; useTools starts that early.
+    const chatExecStatus =
+      modelSupportsTools && useGeneralSetting.getState().chatExecEnabled
+        ? await ensureChatExecStatus().then((status) =>
+            isChatExecOffered(status) ? status : null
+          )
+        : null
+
     const cacheKey = this.buildToolsCacheKey(
       disabledToolKeys,
       hasDocuments,
       ragFeatureAvailable,
-      modelSupportsTools
+      modelSupportsTools,
+      chatExecStatus
     )
     if (!force && this.toolsCacheValid && cacheKey === this.toolsCacheKey) {
       return
@@ -657,7 +681,18 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       )
     })
 
-    this.tools = buildToolsRecord(ragTools, audibleMcpTools, disabledToolKeys)
+    // Built-in tools win a name clash: a call is routed by name.
+    const execTools = chatExecStatus ? chatExecTools(chatExecStatus) : []
+    this.tools = buildToolsRecord(
+      ragTools,
+      [
+        ...audibleMcpTools.filter(
+          (tool) => !(execTools.length > 0 && isChatExecTool(tool.name))
+        ),
+        ...execTools,
+      ],
+      disabledToolKeys
+    )
     this.toolsCacheKey = cacheKey
     this.toolsCacheValid = true
 
@@ -1075,7 +1110,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         supportsVision,
       })
     }
-    const baseMessages = convertToModelMessages(preparedMessages)
+    const baseMessages = convertToModelMessages(
+      chatExecOutputsForModel(preparedMessages)
+    )
 
     // If continuing a truncated response, append the partial assistant content as a
     // prefill so the model resumes from where it left off rather than regenerating.

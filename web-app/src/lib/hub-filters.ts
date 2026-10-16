@@ -53,8 +53,10 @@ const ALL_FORMATS: readonly ModelFormat[] = [
   'gguf',
   'mlx',
   'vllm',
+  'sglang',
   'tensorrt-llm',
   'atomic-prism',
+  'foundry-local',
 ]
 
 const isFormat = (value: unknown): value is ModelFormat =>
@@ -65,8 +67,10 @@ export const HUB_FORMAT_LABELS: Record<ModelFormat, string> = {
   'gguf': 'GGUF',
   'mlx': 'MLX',
   'vllm': 'vLLM',
+  'sglang': 'SGLang',
   'tensorrt-llm': 'TensorRT-LLM',
   'atomic-prism': 'PrismML',
+  'foundry-local': 'Foundry Local',
 }
 
 /** Whether the format is a managed engine's (its provider id): a safetensors checkpoint's. */
@@ -77,13 +81,16 @@ export function isManagedFormat(format: ModelFormat | undefined): boolean {
 /**
  * The formats this machine can use: GGUF everywhere, MLX on Apple Silicon, each managed engine
  * where its provider is shown and a card is new enough (`useManagedHubStates()[…].hub.visible`),
- * in registry order — vLLM before TensorRT-LLM — then PrismML where its provider is shown
- * (`usePrismHubVisible()`): the core hides it where PrismML publishes no build.
+ * in registry order — vLLM, SGLang, TensorRT-LLM — then PrismML where its provider is shown
+ * (`usePrismHubVisible()`): the core hides it where PrismML publishes no build. Foundry Local last,
+ * exactly where its provider is shown (change add-foundry-local): the core registers it only on the
+ * hosts it runs on, and the format never becomes the default.
  */
 export function hubFormats(options: {
   mlx: boolean
   managed: readonly string[]
   prism?: boolean
+  foundryLocal?: boolean
 }): ModelFormat[] {
   return [
     'gguf',
@@ -92,6 +99,7 @@ export function hubFormats(options: {
       .map((engine) => engine.id)
       .filter((id): id is ModelFormat => options.managed.includes(id) && isFormat(id)),
     ...(options.prism ? (['atomic-prism'] as const) : []),
+    ...(options.foundryLocal ? (['foundry-local'] as const) : []),
   ]
 }
 

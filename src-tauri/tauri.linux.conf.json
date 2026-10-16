@@ -41,7 +41,7 @@
     "externalBin": ["resources/bin/uv", "resources/bin/cloudflared"],
     "linux": {
       "appimage": {
-        "bundleMediaFramework": false,
+        "bundleMediaFramework": true,
         "files": {}
       }
     }

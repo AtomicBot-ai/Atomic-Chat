@@ -32,7 +32,13 @@ vi.mock('@/services/managed-models/models', async (importOriginal) => ({
 }))
 
 import { ManagedDownloadOptions } from '../ManagedDownloadOptions'
-import { setManagedEnginesForTests, TENSORRT_LLM_ENGINE, type ManagedEngine } from '@/lib/managed-engines'
+import {
+  setManagedEnginesForTests,
+  SGLANG_ENGINE,
+  TENSORRT_LLM_ENGINE,
+  VLLM_ENGINE,
+  type ManagedEngine,
+} from '@/lib/managed-engines'
 import type { ManagedHubStatus } from '@/lib/managed-engine/hub-state'
 import type { ModelCompatibility } from '@/services/managed-environment/types'
 import { useAppState } from '@/hooks/useAppState'
@@ -282,5 +288,96 @@ describe('a card under several managed engines (spec vllm-desktop)', () => {
     expect(switching.switchToModel).toHaveBeenLastCalledWith(
       expect.objectContaining({ providerName: 'second-engine' })
     )
+  })
+})
+
+describe('a card under the three managed engines (spec sglang-desktop)', () => {
+  // The app's own registry: vLLM, SGLang, TensorRT-LLM.
+  const notDownloaded = { ...card, model_name: 'someone/Qwen3-8B-W4A16', developer: 'someone' }
+  const refusedBy = (engine: string): ModelCompatibility => ({
+    ...accepts,
+    verdict: { ok: false, error: { code: 'MODEL_INCOMPATIBLE', message: `${engine} does not support this checkpoint.` } },
+  })
+  const hidden = (engine: ManagedEngine) => ({
+    engine,
+    hub: { visible: false, state: 'unknown' as ManagedHubStatus, blockers: [], descriptorId: null },
+  })
+
+  beforeEach(() => {
+    useModelProvider.setState({
+      providers: [providerOf('vllm', []), providerOf('sglang', []), providerOf('tensorrt-llm', [])],
+      deletedModels: [],
+    })
+  })
+
+  it('the model only SGLang takes: vLLM’s refusal and SGLang’s ok, Download, and New chat opens on SGLang without a choice', async () => {
+    hubStates.value = [hub(VLLM_ENGINE, 'ready'), hub(SGLANG_ENGINE, 'ready'), hidden(TENSORRT_LLM_ENGINE)]
+    answers({ 'vllm': refusedBy('vllm'), 'sglang': accepts })
+    const { unmount } = render(<ManagedDownloadOptions model={notDownloaded} />)
+
+    expect(await screen.findByText('vllm does not support this checkpoint.')).toBeInTheDocument()
+    expect(await screen.findByText(/hub:sglang.models.fits/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'hub:download' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /installEngine/ })).not.toBeInTheDocument()
+    unmount()
+
+    // Downloaded: the one engine that takes it opens the chat.
+    useModelProvider.setState({
+      providers: [providerOf('vllm', [REPO]), providerOf('sglang', [REPO]), providerOf('tensorrt-llm', [])],
+      deletedModels: [],
+    })
+    const user = userEvent.setup()
+    render(<ManagedDownloadOptions model={card} />)
+
+    await screen.findByText('vllm does not support this checkpoint.')
+    expect(screen.queryByRole('button', { name: 'vLLM' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'SGLang' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'hub:newChat' }))
+    expect(switching.switchToModel).toHaveBeenLastCalledWith(
+      expect.objectContaining({ modelId: REPO, providerName: 'sglang' })
+    )
+  })
+
+  it('New chat when all three take the model: a choice of vLLM, SGLang or TensorRT-LLM, vLLM chosen', async () => {
+    hubStates.value = [hub(VLLM_ENGINE, 'ready'), hub(SGLANG_ENGINE, 'ready'), hub(TENSORRT_LLM_ENGINE, 'ready')]
+    answers({ 'vllm': accepts, 'sglang': accepts, 'tensorrt-llm': accepts })
+    useModelProvider.setState({
+      providers: [providerOf('vllm', [REPO]), providerOf('sglang', [REPO]), providerOf('tensorrt-llm', [REPO])],
+      deletedModels: [],
+    })
+    const user = userEvent.setup()
+    render(<ManagedDownloadOptions model={card} />)
+
+    const choice = await screen.findByRole('button', { name: 'vLLM' })
+    await user.click(choice)
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual([
+      'vLLM',
+      'SGLang',
+      'TensorRT-LLM',
+    ])
+    await user.click(screen.getByRole('menuitem', { name: 'SGLang' }))
+    await user.click(screen.getByRole('button', { name: 'hub:newChat' }))
+    expect(switching.switchToModel).toHaveBeenLastCalledWith(
+      expect.objectContaining({ modelId: REPO, providerName: 'sglang' })
+    )
+  })
+
+  it('SGLang not installed, only TensorRT-LLM, which refuses: its refusal and Install SGLang, no download', async () => {
+    // vLLM is shown but not installed either, and would refuse: only SGLang is offered.
+    hubStates.value = [
+      hub(VLLM_ENGINE, 'not-installed'),
+      hub(SGLANG_ENGINE, 'not-installed'),
+      hub(TENSORRT_LLM_ENGINE, 'ready'),
+    ]
+    answers({ 'vllm': refusedBy('vllm'), 'sglang': accepts, 'tensorrt-llm': refusedBy('tensorrt-llm') })
+    render(<ManagedDownloadOptions model={notDownloaded} />)
+
+    expect(await screen.findByText('tensorrt-llm does not support this checkpoint.')).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'hub:sglang.installEngine' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'hub:vllm.installEngine' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'hub:download' })).not.toBeInTheDocument()
+
+    await userEvent.setup().click(screen.getByRole('button', { name: 'hub:sglang.installEngine' }))
+    expect(navigate).toHaveBeenCalledWith(expect.objectContaining({ params: { providerName: 'sglang' } }))
   })
 })

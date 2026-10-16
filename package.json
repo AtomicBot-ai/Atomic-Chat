@@ -54,7 +54,7 @@
     "build:core": "cd core && yarn build && yarn pack",
     "build:web": "yarn workspace @janhq/web-app build",
     "build:extensions": "rimraf ./pre-install/*.tgz || true && yarn workspace @janhq/core build && cd extensions && yarn install && cd .. && run-script-os",
-    "build:extensions:darwin": "cd extensions && yarn workspaces foreach -Apt --exclude @janhq/tensorrt-llm-extension --exclude @janhq/vllm-extension run build:publish",
+    "build:extensions:darwin": "cd extensions && yarn workspaces foreach -Apt --exclude @janhq/tensorrt-llm-extension --exclude @janhq/vllm-extension --exclude @janhq/sglang-extension run build:publish",
     "build:extensions:win32": "cd extensions && yarn workspaces foreach -Apt --exclude @janhq/mlx-extension --exclude @janhq/foundation-models-extension run build:publish",
     "build:extensions:linux": "cd extensions && yarn workspaces foreach -Apt --exclude @janhq/mlx-extension --exclude @janhq/foundation-models-extension run build:publish",
     "prepare": "husky"
@@ -74,7 +74,7 @@
   },
   "version": "0.0.0",
   "atomicCore": {
-    "version": "0.15.0",
+    "version": "0.18.2",
     "repo": "AtomicBot-ai/atomic-chat-core"
   },
   "installConfig": {

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  ENGINE_OVERHEAD_BYTES,
   estimateWeightBytes,
+  foundryLocalRows,
   hubListSources,
   passesManagedPrefilter,
   managedBrowseRows,
@@ -9,6 +11,9 @@ import {
 } from '../hub-feed'
 import type { GpuFacts } from '@/services/managed-environment/types'
 import type { CatalogModel } from '@/services/models/types'
+import { catalogHubCard, curatedHubCard } from '@/lib/foundry-local/hub'
+import type { FoundryLocalModel } from '@/services/foundry-local/curated'
+import type { CatalogModel as MicrosoftModel } from '@/services/foundry-local/microsoft-catalog'
 
 const GB = 1e9
 
@@ -143,6 +148,15 @@ describe('passesManagedPrefilter by engine', () => {
     expect(passesManagedPrefilter(model, { engineId: 'vllm', supportedArchitectures: supported, gpus })).toBe(false)
   })
 
+  it("counts SGLang's own overhead: 2 GiB, core SGLANG_ENGINE_OVERHEAD_BYTES (change add-sglang-runtime)", () => {
+    expect(ENGINE_OVERHEAD_BYTES['sglang']).toBe(2 * 1024 ** 3)
+    // 22 GB of weights on a 24 GB card: as for vLLM, the 2 GiB do not fit beside them.
+    const model = entry({ architectures: ['Qwen3ForCausalLM'], parameters: { BF16: 11 * GB } })
+    expect(passesManagedPrefilter(model, { engineId: 'sglang', supportedArchitectures: supported, gpus: [card(24 * GB)] })).toBe(
+      false
+    )
+  })
+
   it("narrows by the engine's own descriptor architectures (spec vllm-desktop 'Архитектура не поддерживается vLLM')", () => {
     const model = entry({ architectures: ['NemotronHForCausalLM'], parameters: { BF16: 1 * GB } })
     const gpus = [card(24 * GB)]
@@ -173,6 +187,105 @@ describe('hubListSources', () => {
 
   it('vLLM lists like TensorRT-LLM: its curated models and the same narrowed safetensors feed', () => {
     expect(hubListSources('vllm')).toEqual(hubListSources('tensorrt-llm'))
+  })
+
+  it('SGLang lists like vLLM: its curated models and the same narrowed safetensors feed', () => {
+    expect(hubListSources('sglang')).toEqual(hubListSources('vllm'))
+  })
+
+  it('Foundry Local: conf’s curated list, then the Microsoft catalog; no picks, no catalog, no Hugging Face', () => {
+    expect(hubListSources('foundry-local')).toEqual({
+      staffPicks: false,
+      catalog: false,
+      curated: true,
+      feedFormat: 'gguf',
+      prefilter: false,
+    })
+  })
+})
+
+describe('foundryLocalRows (change add-foundry-local)', () => {
+  const curatedModel = (id: string, name: string): FoundryLocalModel => ({
+    id,
+    name,
+    description: `${name}, checked by Atomic Chat`,
+    task: 'chat',
+    license: 'apache-2.0',
+    context_length: 32768,
+    tools: true,
+    reasoning: false,
+    variants: [
+      {
+        id: `${id}-generic-cpu`,
+        device: 'cpu',
+        execution_provider: 'cpu',
+        platforms: ['win-x64', 'macos-arm64', 'linux-x64'],
+        source: {
+          kind: 'azureml',
+          asset_id: `azureml://registries/azureml/models/${id}-generic-cpu/versions/1`,
+          version: '1',
+          path_prefix: 'v1',
+        },
+        files: [{ path: 'model.onnx', size: 5, sha256: 'a'.repeat(64) }],
+      },
+    ],
+  })
+  const microsoftModel = (id: string): MicrosoftModel => ({
+    id,
+    name: id,
+    license: 'apache-2.0',
+    vision: false,
+    variants: [
+      {
+        id: `${id}-generic-gpu`,
+        name: `${id}-generic-gpu`,
+        asset_id: `azureml://registries/azureml/models/${id}-generic-gpu/versions/1`,
+        version: '1',
+        device: 'gpu',
+        execution_provider: 'webgpu',
+        platforms: ['win-x64', 'win-arm64', 'macos-arm64'],
+        size_bytes: 4e9,
+        license: 'apache-2.0',
+      },
+    ],
+  })
+  const curated = [curatedHubCard(curatedModel('qwen2.5-7b-instruct', 'Qwen2.5 7B Instruct'))]
+  const catalog = [catalogHubCard(microsoftModel('olmo-3-7b-instruct')), catalogHubCard(microsoftModel('mistral-nemo-12b-instruct'))]
+
+  const shape = (rows: ReturnType<typeof foundryLocalRows>) =>
+    rows.map((row) => [row.section, row.model.foundry_local?.model_id])
+
+  it('lists the curated models first, then the Microsoft catalog’s, marked as such', () => {
+    const rows = foundryLocalRows({ curated, catalog, query: '' })
+    expect(shape(rows)).toEqual([
+      ['curated', 'qwen2.5-7b-instruct'],
+      ['microsoft', 'olmo-3-7b-instruct'],
+      ['microsoft', 'mistral-nemo-12b-instruct'],
+    ])
+    expect(rows.every((row) => row.model.is_foundry_local)).toBe(true)
+    expect(rows[1].model.foundry_local?.origin).toBe('microsoft')
+  })
+
+  it('searches both by name (spec "Поиск по каталогу Microsoft": olmo)', () => {
+    expect(shape(foundryLocalRows({ curated, catalog, query: 'OLMO' }))).toEqual([
+      ['microsoft', 'olmo-3-7b-instruct'],
+    ])
+    expect(shape(foundryLocalRows({ curated, catalog, query: 'qwen2.5 7b' }))).toEqual([
+      ['curated', 'qwen2.5-7b-instruct'],
+    ])
+  })
+
+  it('shows the curated list alone while the catalog is unavailable', () => {
+    expect(shape(foundryLocalRows({ curated, catalog: [], query: '' }))).toEqual([
+      ['curated', 'qwen2.5-7b-instruct'],
+    ])
+  })
+
+  it('shows the catalog alone when the curated list is empty (spec "Курированный список пуст")', () => {
+    expect(shape(foundryLocalRows({ curated: [], catalog, query: '' }))).toEqual([
+      ['microsoft', 'olmo-3-7b-instruct'],
+      ['microsoft', 'mistral-nemo-12b-instruct'],
+    ])
   })
 })
 

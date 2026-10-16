@@ -998,10 +998,10 @@ async fn download_single_file(
         && tmp_save_path.exists()
         && tokio::fs::read_to_string(&url_save_path)
             .await
-            .map(|url| url == item.url) // check if we resume the same URL
+            .map(|saved| saved == item.resume_identity()) // the same file, by key or URL
             .unwrap_or(false);
 
-    tokio::fs::write(&url_save_path, item.url.clone())
+    tokio::fs::write(&url_save_path, item.resume_identity())
         .await
         .map_err(|error| disk_err_to_string(&error))?;
 

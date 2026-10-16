@@ -29,6 +29,7 @@ import {
 import { Model as CoreModel } from '@janhq/core'
 import type {
   DownloadRefusal,
+  PullModelOptions,
   ModelsService,
   ModelCatalog,
   HuggingFaceRepo,
@@ -106,12 +107,14 @@ const isTauriRuntime = (): boolean => {
 // `getActiveModels()` reports and what `stopAllModels()` / `stopAllModelsExcept()`
 // unload. An engine missing here is invisible to the provider page's Stop, which
 // then shows its model stopped while it keeps running (task 3.14, F-9).
-// The managed engines (`lib/managed-engines.ts`: vLLM, TensorRT-LLM) are local too.
+// The managed engines (`lib/managed-engines.ts`: vLLM, SGLang, TensorRT-LLM) and Foundry Local
+// (change add-foundry-local) are local too.
 const localProviders = (): string[] => [
   'llamacpp',
   'llamacpp-upstream',
   'atomic-prism',
   'mlx',
+  'foundry-local',
   ...managedEngines().map((engine) => engine.id),
 ]
 type LocalProviderName = string
@@ -656,9 +659,10 @@ export class DefaultModelsService implements ModelsService {
     mmprojPath?: string,
     mmprojSha256?: string,
     mmprojSize?: number,
-    resume: boolean = false
+    resume: boolean = false,
+    provider?: string
   ): Promise<void> {
-    return this.getEngine()?.import(id, {
+    return this.getEngine(provider)?.import(id, {
       modelPath,
       mmprojPath,
       modelSha256,
@@ -675,12 +679,10 @@ export class DefaultModelsService implements ModelsService {
     mmprojPath?: string,
     hfToken?: string,
     skipVerification: boolean = true,
-    resume: boolean = false
+    resume: boolean = false,
+    options: PullModelOptions = {}
   ): Promise<DownloadRefusal | undefined> {
-    let modelSha256: string | undefined
-    let modelSize: number | undefined
-    let mmprojSha256: string | undefined
-    let mmprojSize: number | undefined
+    let { modelSha256, modelSize, mmprojSha256, mmprojSize } = options
 
     // Extract repo ID from model URL
     // URL format: https://huggingface.co/{repo}/resolve/main/{filename}
@@ -767,6 +769,7 @@ export class DefaultModelsService implements ModelsService {
     // (it only knows the model id, not these HF paths/token). MLX downloads go
     // through `engine.import` directly and are pause/resume-gated out.
     useDownloadStore.getState().setResumeParams(id, {
+      ...options,
       modelPath,
       mmprojPath,
       hfToken,
@@ -808,7 +811,8 @@ export class DefaultModelsService implements ModelsService {
         mmprojPath,
         mmprojSha256,
         mmprojSize,
-        resume
+        resume,
+        options.provider
       )
       return undefined
     } catch (error) {
@@ -831,13 +835,14 @@ export class DefaultModelsService implements ModelsService {
   }
 
   async abortDownload(id: string): Promise<void> {
-    const llamacppEngine = this.getEngine(LOCAL_LLAMACPP_PROVIDER)
-    const mlxEngine = this.getEngine('mlx')
+    // A Bonsai file downloads under PrismML's own task id: every engine that
+    // may hold `id` is asked, and the ones that do not hold it ignore it.
+    const engines = [LOCAL_LLAMACPP_PROVIDER, 'atomic-prism', 'mlx'].map(
+      (provider) => this.getEngine(provider)
+    )
     try {
       await Promise.allSettled(
-        [llamacppEngine?.abortImport(id), mlxEngine?.abortImport(id)].filter(
-          Boolean
-        )
+        engines.map((engine) => engine?.abortImport(id)).filter(Boolean)
       )
     } finally {
       events.emit(DownloadEvent.onFileDownloadStopped, {

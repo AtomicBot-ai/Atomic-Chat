@@ -79,6 +79,7 @@ import {
   createEngineErrorFetch,
   managedRequestBody,
 } from '@/lib/managed-engine/request'
+import { foundryLocalRequestBody } from '@/lib/foundry-local/request'
 
 /**
  * Inactivity budget (seconds) handed to `stream_local_http` on this generic
@@ -360,11 +361,13 @@ type CachedLocalProvider =
   | 'llamacpp-upstream'
   | 'atomic-prism'
   | 'mlx'
+  | 'foundry-local'
   | ManagedProviderId
 
 /** How an error about a missing session names the engine, e.g. "No running MLX session". */
 function sessionEngineLabel(providerName: CachedLocalProvider): string {
   if (providerName === 'mlx') return 'MLX '
+  if (providerName === 'foundry-local') return 'Foundry Local '
   const managed = managedEngine(providerName)
   return managed ? `${managed.label} ` : ''
 }
@@ -1015,6 +1018,9 @@ export class ModelFactory {
       case 'mlx':
         return this.createMlxModel(modelId, provider, localInjected, audioParts)
 
+      case 'foundry-local':
+        return this.createFoundryModel(modelId, provider, localInjected)
+
       case 'foundation-models':
         return this.createFoundationModelsModel(
           modelId,
@@ -1235,6 +1241,55 @@ export class ModelFactory {
 
     const model = new OpenAICompatibleChatLanguageModel(modelId, {
       provider: engineId,
+      headers: () => ({
+        Authorization: `Bearer ${sessionInfo.api_key}`,
+        Origin: 'tauri://localhost',
+      }),
+      url: ({ path }) =>
+        new URL(`http://localhost:${sessionInfo.port}/v1${path}`).toString(),
+      includeUsage: true,
+      fetch: liveFetch,
+      metadataExtractor: providerMetadataExtractor,
+    })
+
+    return wrapLanguageModel({
+      model,
+      middleware: extractReasoningMiddleware({
+        tagName: 'think',
+        separator: '\n',
+      }),
+    })
+  }
+
+  /**
+   * Create a Foundry Local model (change `add-foundry-local`). The core runs the model in a host
+   * process and serves the session on a loopback gateway that checks the session's Bearer key, so
+   * from here it is one more OpenAI-compatible local session, re-resolved on every request like a
+   * managed engine's: each load gets a new gateway port and key. The body is cut down to the OpenAI
+   * fields (`foundryLocalRequestBody`).
+   */
+  private static async createFoundryModel(
+    modelId: string,
+    provider?: ProviderObject,
+    parameters: Record<string, unknown> = {}
+  ): Promise<LanguageModel> {
+    const sessionInfo = await ModelFactory.resolveLocalSession(
+      'foundry-local',
+      modelId,
+      provider
+    )
+    const liveFetch = createLiveSessionFetch(
+      createEngineErrorFetch(
+        createLocalStreamingFetch(httpFetch, parameters, async (body) =>
+          foundryLocalRequestBody(body)
+        )
+      ),
+      () =>
+        ModelFactory.resolveFreshLocalSession('foundry-local', modelId, provider)
+    )
+
+    const model = new OpenAICompatibleChatLanguageModel(modelId, {
+      provider: 'foundry-local',
       headers: () => ({
         Authorization: `Bearer ${sessionInfo.api_key}`,
         Origin: 'tauri://localhost',

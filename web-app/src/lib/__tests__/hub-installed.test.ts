@@ -11,6 +11,7 @@ import {
   managedProviderIds,
   quantModelIds,
   withStaffPicks,
+  FOUNDRY_LOCAL_PROVIDER,
 } from '../hub-installed'
 import { setManagedEnginesForTests, TENSORRT_LLM_ENGINE } from '@/lib/managed-engines'
 
@@ -210,6 +211,46 @@ describe('collectInstalledModels — TensorRT-LLM', () => {
     expect(findInstalledLocalModel(providers, ['nvidia/Qwen3-8B-FP8'])).toEqual({
       modelId: 'nvidia/Qwen3-8B-FP8',
       provider: 'llamacpp',
+    })
+  })
+})
+
+describe('collectInstalledModels — Foundry Local (change add-foundry-local)', () => {
+  const foundry = (models: Array<{ id: string; name?: string; sizeBytes?: number }>): ModelProvider =>
+    ({ active: true, provider: 'foundry-local', settings: [], models }) as unknown as ModelProvider
+
+  it('lists a downloaded variant once, as a Foundry Local entry named as its model.yml names it', () => {
+    const rows = collectInstalledModels(
+      [],
+      [foundry([{ id: 'qwen3-4b-generic-gpu', name: 'Qwen3 4B (WebGPU)', sizeBytes: 2_500_000_000 }])]
+    )
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({
+      model_name: 'foundry-local/qwen3-4b-generic-gpu',
+      is_foundry_local: true,
+      foundry_local: { origin: 'installed', model_id: 'qwen3-4b-generic-gpu', name: 'Qwen3 4B (WebGPU)' },
+    })
+    expect(modelFormat(rows[0])).toBe('foundry-local')
+  })
+
+  it('keeps it apart from a GGUF row whose quant is spelled like the variant', () => {
+    const rows = collectInstalledModels(
+      [gguf('someone/qwen3-4b-GGUF', ['qwen3-4b-generic-gpu'])],
+      [provider('llamacpp', ['someone/other-Q4_K_M']), foundry([{ id: 'qwen3-4b-generic-gpu' }])]
+    )
+
+    expect(rows.map((row) => [row.model_name, modelFormat(row)])).toEqual([
+      ['someone/other-Q4_K_M', 'gguf'],
+      ['foundry-local/qwen3-4b-generic-gpu', 'foundry-local'],
+    ])
+  })
+
+  it('finds the downloaded variant only under its own provider', () => {
+    const providers = [provider('llamacpp', ['qwen3-4b-generic-gpu']), foundry([{ id: 'qwen3-4b-generic-gpu' }])]
+    expect(findInstalledLocalModel(providers, ['qwen3-4b-generic-gpu'], [FOUNDRY_LOCAL_PROVIDER])).toEqual({
+      modelId: 'qwen3-4b-generic-gpu',
+      provider: 'foundry-local',
     })
   })
 })

@@ -4,6 +4,7 @@ import { isDecisionDownloadTaskId } from '@/lib/decision/models'
 import { isEmbeddingDownloadTaskId } from '@/lib/embedding/models'
 import { isDiffusionModelDownloadTaskId } from '@/lib/diffusion/models'
 import { isManagedDownloadId } from '@/lib/managed-engine/download-id'
+import { isFoundryLocalDownloadId } from '@/lib/foundry-local/download-id'
 import { isDiffusionEngineTaskId } from '@/services/diffusion/engine'
 import { cancelTransfer } from '@/services/diffusion/transfer'
 import { cancelEngineBuildDownload } from '@/services/engine-builds/core'
@@ -50,6 +51,7 @@ export function clearDownloadCancellationRequested(id: string) {
  * binaries (`llamacpp*`), MLX repos (`mlx*`) and diffusion artifacts run
  * through the download extension and are cancelled there; chat-model files
  * go through the model service's abort; managed models (`managed-*`, TensorRT-LLM and vLLM),
+ * Foundry Local variants (`foundry-local-*`),
  * decision models (`decision-*`) and embedding models (`embedding-*`) are a
  * plain transfer of their files, stopped by task id. The media engine
  * (`diffusion-backend-*`) is downloaded by the core, which stops it by task id
@@ -84,7 +86,8 @@ export function cancelDownload(
     isDiffusionModelDownloadTaskId(download.id) ||
     isDecisionDownloadTaskId(download.id) ||
     isEmbeddingDownloadTaskId(download.id) ||
-    isManagedDownloadId(download.id)
+    isManagedDownloadId(download.id) ||
+    isFoundryLocalDownloadId(download.id)
   ) {
     void cancelTransfer(download.id)
   } else if (

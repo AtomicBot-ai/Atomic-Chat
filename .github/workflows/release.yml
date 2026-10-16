@@ -865,7 +865,7 @@ jobs:
           yarn build:core
           yarn build:extensions
 
-      - name: Download binaries (bun, uv, cloudflared)
+      - name: Download binaries (bun, uv, cloudflared, MXC)
         run: yarn download:bin
 
       - name: Download the pinned atomic-chat-core release
@@ -926,6 +926,29 @@ jobs:
           # that contains a comma (O="Cloudflare, Inc.").
           if ($subject -notmatch 'Cloudflare,? Inc') {
             Write-Host "::error::cloudflared is signed by an unexpected publisher: $subject"
+            exit 1
+          }
+
+      - name: Verify the MXC sandbox executor is Microsoft's signed binary
+        # wxc-exec.exe runs chat commands in a Windows sandbox and ships with
+        # Microsoft's own Authenticode signature, which we keep. download-bin.mjs
+        # pinned its sha256; this checks the signature and the publisher.
+        shell: pwsh
+        run: |
+          $executor = 'src-tauri/resources/bin/mxc/wxc-exec.exe'
+          if (-not (Test-Path $executor)) {
+            Write-Host "::error::$executor not found after yarn download:bin."
+            exit 1
+          }
+          $signature = Get-AuthenticodeSignature -FilePath $executor
+          $subject = $signature.SignerCertificate.Subject
+          Write-Host "wxc-exec signature: $($signature.Status); signer: $subject"
+          if ($signature.Status -ne 'Valid') {
+            Write-Host "::error::wxc-exec Authenticode status is $($signature.Status), expected Valid."
+            exit 1
+          }
+          if ($subject -notmatch 'O=Microsoft Corporation') {
+            Write-Host "::error::wxc-exec is signed by an unexpected publisher: $subject"
             exit 1
           }
 
@@ -1335,10 +1358,33 @@ jobs:
           yarn build:core
           yarn build:extensions
 
-      # On an arm64 host download-bin.mjs fetches the arm64 bun and uv and
-      # skips cloudflared, which has no Windows arm64 build.
-      - name: Download binaries (bun, uv)
+      # On an arm64 host download-bin.mjs fetches the arm64 bun, uv and MXC
+      # executor and skips cloudflared, which has no Windows arm64 build.
+      - name: Download binaries (bun, uv, MXC)
         run: yarn download:bin
+
+      - name: Verify the MXC sandbox executor is Microsoft's signed binary
+        # wxc-exec.exe runs chat commands in a Windows sandbox and ships with
+        # Microsoft's own Authenticode signature, which we keep. download-bin.mjs
+        # pinned its sha256; this checks the signature and the publisher.
+        shell: pwsh
+        run: |
+          $executor = 'src-tauri/resources/bin/mxc/wxc-exec.exe'
+          if (-not (Test-Path $executor)) {
+            Write-Host "::error::$executor not found after yarn download:bin."
+            exit 1
+          }
+          $signature = Get-AuthenticodeSignature -FilePath $executor
+          $subject = $signature.SignerCertificate.Subject
+          Write-Host "wxc-exec signature: $($signature.Status); signer: $subject"
+          if ($signature.Status -ne 'Valid') {
+            Write-Host "::error::wxc-exec Authenticode status is $($signature.Status), expected Valid."
+            exit 1
+          }
+          if ($subject -notmatch 'O=Microsoft Corporation') {
+            Write-Host "::error::wxc-exec is signed by an unexpected publisher: $subject"
+            exit 1
+          }
 
       - name: Download the pinned atomic-chat-core release
         run: yarn download:core
@@ -1572,6 +1618,10 @@ jobs:
       - name: Install Linux system dependencies
         # WebKitGTK 4.1 stack + Tauri AppImage build deps. Ubuntu 22.04
         # ships `libwebkit2gtk-4.1-dev` as expected by Tauri 2.x.
+        # The GStreamer plugins are what `bundleMediaFramework` copies into
+        # the AppImage: without them on this machine it ships the Ubuntu
+        # libgstreamer alone, which looks for plugins under Ubuntu's path and
+        # finds none on Arch/Fedora, so <video> hangs (tauri-apps/tauri#4642).
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -1588,6 +1638,8 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libjavascriptcoregtk-4.1-dev \
             libasound2-dev \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
             pkg-config \
             patchelf \
             squashfs-tools \
@@ -1905,6 +1957,8 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libjavascriptcoregtk-4.1-dev \
             libasound2-dev \
+            gstreamer1.0-plugins-base \
+            gstreamer1.0-plugins-good \
             pkg-config \
             patchelf \
             squashfs-tools \

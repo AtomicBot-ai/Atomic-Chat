@@ -91,6 +91,17 @@ describe('cancelDownload', () => {
     expect(wasDownloadCancellationRequested(id)).toBe(true)
   })
 
+  it('stops a Foundry Local variant’s transfer by its task id (change add-foundry-local)', () => {
+    const id = 'foundry-local-qwen3-0_6b-generic-gpu'
+
+    cancelDownload({ id, name: id }, serviceHub)
+
+    // `cancelTransfer`: the download extension's task, not the chat-model abort.
+    expect(extensionCancel).toHaveBeenCalledWith(id)
+    expect(abortDownload).not.toHaveBeenCalled()
+    expect(wasDownloadCancellationRequested(id)).toBe(true)
+  })
+
   it('stops an engine update in the core by its task id', () => {
     const id = 'engine-update-llamacpp-upstream-b11500'
 

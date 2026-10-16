@@ -19,8 +19,10 @@ export const ENGINE_IDS = [
   'atomic-prism',
   'sd-cpp',
   'mlx',
+  'foundry-local',
   'tensorrt-llm',
   'vllm',
+  'sglang',
 ] as const
 export type EngineId = (typeof ENGINE_IDS)[number]
 
@@ -34,8 +36,10 @@ export const ENGINE_KINDS: Readonly<Record<EngineId, EngineKind>> = {
   'atomic-prism': 'llamacpp',
   'sd-cpp': 'engine-build',
   'mlx': 'engine-build',
+  'foundry-local': 'engine-build',
   'tensorrt-llm': 'managed',
   'vllm': 'managed',
+  'sglang': 'managed',
 }
 
 /**

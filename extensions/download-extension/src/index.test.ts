@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { invoke } from '@tauri-apps/api/core'
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))
+vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => {}) }))
 
 import DownloadManager, { buildAuthHeaders, isHuggingFaceUrl } from './index'
 
@@ -108,5 +109,42 @@ describe('cancelDownload', () => {
     await expect(manager.cancelDownload('qwen3-4b')).resolves.toBeUndefined()
     expect(invoke).toHaveBeenCalledWith('cancel_download_task', { taskId: 'qwen3-4b' })
     expect(invoke).not.toHaveBeenCalledWith('atomic_core_call', expect.anything())
+  })
+})
+
+describe('DownloadManager.downloadFiles', () => {
+  it('hands each item to the Rust downloader with its resume_key', async () => {
+    const manager = Object.create(DownloadManager.prototype) as DownloadManager
+    vi.mocked(invoke).mockResolvedValue(undefined)
+    await manager.downloadFiles(
+      [
+        {
+          url: 'https://acct.blob.core.windows.net/c/v5/model.onnx?sig=fresh',
+          save_path: '/data/foundry-local/models/v/model.onnx',
+          size: 6,
+          model_id: 'foundry-local-v',
+          resume_key: 'foundry-local/v/model.onnx',
+        },
+      ],
+      'foundry-local-v',
+      undefined,
+      true
+    )
+    // What the Rust command receives: the item exactly as given, key included.
+    const sent = vi.mocked(invoke).mock.calls.find(([command]) => command === 'download_files')?.[1]
+    expect(sent).toEqual({
+      items: [
+        {
+          url: 'https://acct.blob.core.windows.net/c/v5/model.onnx?sig=fresh',
+          save_path: '/data/foundry-local/models/v/model.onnx',
+          size: 6,
+          model_id: 'foundry-local-v',
+          resume_key: 'foundry-local/v/model.onnx',
+        },
+      ],
+      taskId: 'foundry-local-v',
+      headers: {},
+      resume: true,
+    })
   })
 })

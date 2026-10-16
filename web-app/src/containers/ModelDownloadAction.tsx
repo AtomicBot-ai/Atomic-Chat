@@ -8,11 +8,7 @@ import { useTranslation } from '@/i18n'
 import { DeleteModelAction } from '@/containers/hub/DeleteModelAction'
 import { LargeModelWarningDialog } from '@/containers/hub/LargeModelWarningDialog'
 import { ModelSetupSheet } from '@/containers/hub/ModelSetupSheet'
-import {
-  useCompatibilityVerdict,
-  useHubFileSetup,
-  useModelSetupBytes,
-} from '@/hooks/useModelSetup'
+import { useCompatibilityVerdict } from '@/hooks/useModelSetup'
 import {
   isDownloadCancellationError,
   markDownloadCancellationRequested,
@@ -24,18 +20,22 @@ import {
   quantModelIds,
 } from '@/lib/hub-installed'
 import {
-  isDownloadOnlyPlan,
-  isDownloadOnlySetup,
-  isFinalSetup,
-  isRunningSetup,
+  isPrismDownloadOnly,
   parseHubFileUrl,
   PRISM_PROVIDER,
   requiresPrism,
   routeForVerdict,
   setupErrorText,
 } from '@/lib/model-setup'
+import {
+  loadPrismSetupPlan,
+  prismSetupDeps,
+  runPrismSetup,
+  type PrismSetupStage,
+} from '@/services/model-setup/prism-setup'
+import type { PrismSetupPlan } from '@/services/model-setup/types'
 import { CatalogModel } from '@/services/models/types'
-import { useModelSetupStore } from '@/stores/model-setup-store'
+import { useModelCompatibilityStore } from '@/stores/model-compatibility-store'
 import { switchToModel } from '@/utils/switchModel'
 import { IconDownload, IconLoader2, IconX } from '@tabler/icons-react'
 import { useNavigate } from '@tanstack/react-router'
@@ -226,59 +226,117 @@ export const ModelDownloadAction = ({
 
   const hubFile = useMemo(() => parseHubFileUrl(variant.path), [variant.path])
   const verdict = useCompatibilityVerdict(variant.path)
-  const setup = useHubFileSetup(hubFile)
-  const setupBytes = useModelSetupBytes(setup)
   const [setupOpen, setSetupOpen] = useState(false)
   const [setupStarting, setSetupStarting] = useState(false)
+  // Where a Bonsai setup is before its model download has a row of its own.
+  const [prismStage, setPrismStage] = useState<PrismSetupStage | null>(null)
+  const [engineProgress, setEngineProgress] = useState(0)
   const setupModelId = quantModelIds(model, variant.model_id)[1]
+  const [sheetPlan, setSheetPlan] = useState<PrismSetupPlan | null>(null)
+  // A file only PrismML runs downloads under the id the old core setup
+  // registered it as, so a model set up before reads as downloaded. A
+  // download already running under that id keeps the row on it even while
+  // the verdict is being asked again (a new core generation forgets them).
+  const prismDownloadRunning =
+    localDownloadingModels.has(setupModelId) || setupModelId in downloads
+  const rowModelId =
+    requiresPrism(verdict) || prismDownloadRunning || prismStage !== null
+      ? setupModelId
+      : variant.model_id
+
+  // Install the build when it is missing, make it active, download the model
+  // and its projector under PrismML with the app's own downloader, then keep
+  // the file only if the core says PrismML runs it.
+  const runSetup = useCallback(
+    async (plan: PrismSetupPlan) => {
+      const id = plan.model_id
+      let downloading = false
+      setEngineProgress(0)
+      try {
+        const result = await runPrismSetup(
+          plan,
+          prismSetupDeps(serviceHub, {
+            hfToken: huggingfaceToken,
+            resume: resumableDownloads.has(id),
+            onEngineProgress: ({ transferred, total }) =>
+              setEngineProgress(total > 0 ? transferred / total : 0),
+          }),
+          (stage) => {
+            setPrismStage(stage)
+            if (stage !== 'downloading') return
+            downloading = true
+            clearResumableDownload(id)
+            addLocalDownloadingModel(id)
+            setDownloadOrigin(id, model.model_name)
+          }
+        )
+        if (result.outcome === 'rejected')
+          toast.error(t('hub:prismModelRejected'), {
+            description: result.reason,
+          })
+      } catch (error) {
+        console.error('[ModelDownloadAction] Bonsai setup failed:', error)
+        if (downloading) {
+          removeLocalDownloadingModel(id)
+          clearDownloadOrigin(id)
+          markResumableDownload(id)
+        }
+        if (
+          wasDownloadCancellationRequested(id) ||
+          isDownloadCancellationError(error) ||
+          (error as { code?: unknown } | null)?.code === 'CANCELLED'
+        )
+          return
+        toast.error(t('hub:downloadFailed'), {
+          description: setupErrorText(error),
+        })
+      } finally {
+        setPrismStage(null)
+      }
+    },
+    [
+      serviceHub,
+      huggingfaceToken,
+      resumableDownloads,
+      model.model_name,
+      clearResumableDownload,
+      addLocalDownloadingModel,
+      setDownloadOrigin,
+      removeLocalDownloadingModel,
+      clearDownloadOrigin,
+      markResumableDownload,
+      t,
+    ]
+  )
 
   // With PrismML already on disk the setup is only a download, so it starts
   // like one: no sheet, its progress on this row and in the download panel.
-  // A plan that needs the engine, a newer one, or the user's say opens the
+  // A plan that installs the engine, a newer one, or is blocked opens the
   // sheet instead.
   const startSetup = useCallback(async () => {
     if (!hubFile) return
-    const service = serviceHub.modelSetup()
-    const request = {
-      ...hubFile,
-      model_id: setupModelId,
-      include_projector: true,
-    }
     setSetupStarting(true)
     try {
-      const plan = await service.plan(request)
-      if (!isDownloadOnlyPlan(plan)) {
+      const plan = await loadPrismSetupPlan(serviceHub.modelSetup(), {
+        ...hubFile,
+        model_id: setupModelId,
+        include_projector: true,
+      })
+      if (!isPrismDownloadOnly(plan)) {
+        setSheetPlan(plan)
         setSetupOpen(true)
         return
       }
-      const started = await service.start({
-        ...request,
-        request_id: crypto.randomUUID(),
-        plan_digest: plan.digest,
-      })
-      useModelSetupStore.getState().apply({ type: 'changed', setup: started })
+      void runSetup(plan)
     } catch (error) {
-      console.error('[ModelDownloadAction] model setup failed to start:', error)
+      console.error('[ModelDownloadAction] Bonsai plan failed:', error)
       toast.error(t('hub:downloadFailed'), {
         description: setupErrorText(error),
       })
     } finally {
       setSetupStarting(false)
     }
-  }, [hubFile, serviceHub, setupModelId, t])
-
-  const handleCancelSetup = useCallback(() => {
-    if (!setup) return
-    serviceHub
-      .modelSetup()
-      .cancel(setup.setup_id)
-      .then((next) =>
-        useModelSetupStore.getState().apply({ type: 'changed', setup: next })
-      )
-      .catch((error) =>
-        console.error('[ModelDownloadAction] setup cancel failed:', error)
-      )
-  }, [serviceHub, setup])
+  }, [hubFile, serviceHub, setupModelId, runSetup, t])
 
   const requestDownload = useCallback(async () => {
     // The core's verdict decides the path when the Hub row has one; a row
@@ -290,6 +348,8 @@ export const ModelDownloadAction = ({
       judged = await service
         .checkCompatibility({ ...hubFile, provider: 'llamacpp-upstream' })
         .catch(() => null)
+      // The row follows the answer: a PrismML file's download has its own id.
+      useModelCompatibilityStore.getState().setVerdict(variant.path, judged)
     }
     const route = judged ? routeForVerdict(judged) : 'download'
     if (route === 'refuse' && judged) {
@@ -310,6 +370,7 @@ export const ModelDownloadAction = ({
     verdict,
     serviceHub,
     hubFile,
+    variant.path,
     warnTooLarge,
     handleDownloadModel,
     startSetup,
@@ -317,22 +378,22 @@ export const ModelDownloadAction = ({
   ])
 
   const handleCancelDownload = useCallback(() => {
-    markResumableDownload(variant.model_id)
-    markDownloadCancellationRequested(variant.model_id)
-    void serviceHub.models().abortDownload(variant.model_id)
-  }, [markResumableDownload, serviceHub, variant.model_id])
+    markResumableDownload(rowModelId)
+    markDownloadCancellationRequested(rowModelId)
+    void serviceHub.models().abortDownload(rowModelId)
+  }, [markResumableDownload, serviceHub, rowModelId])
 
   // See ``DownloadButton.tsx`` for the rationale -- defensive UI guard
   // against catalog-level ``quant.model_id`` collisions across repos.
-  const downloadOrigin = downloadOriginByModelId[variant.model_id]
+  const downloadOrigin = downloadOriginByModelId[rowModelId]
   const isOriginConflict =
     downloadOrigin !== undefined && downloadOrigin !== model.model_name
   const isDownloading =
     !isOriginConflict &&
-    (localDownloadingModels.has(variant.model_id) ||
-      downloadProcesses.some((e) => e.id === variant.model_id))
+    (localDownloadingModels.has(rowModelId) ||
+      downloadProcesses.some((e) => e.id === rowModelId))
   const downloadProgress =
-    downloadProcesses.find((e) => e.id === variant.model_id)?.progress || 0
+    downloadProcesses.find((e) => e.id === rowModelId)?.progress || 0
   // Inspect BOTH local llama.cpp providers — the turboquant `llamacpp` fork
   // AND the vanilla `llamacpp-upstream` build. On Windows/Linux the downloaded
   // model is registered under `llamacpp-upstream` (the default), so checking
@@ -356,75 +417,40 @@ export const ModelDownloadAction = ({
       file={hubFile}
       modelName={model.model_name}
       modelId={setupModelId}
-      installed={isDownloaded}
-      onReady={(modelId) => {
-        setSetupOpen(false)
-        handleUseModel(modelId, PRISM_PROVIDER)
-      }}
+      initialPlan={sheetPlan}
+      onStart={(plan) => void runSetup(plan)}
     />
   ) : null
 
-  // A setup the core is still running (or that waits for `resume`) is this
-  // row's download: the button follows it. One that only downloads cancels
-  // like an ordinary download; one that installs the engine, or waits for
-  // `resume`, opens the sheet.
-  if (setup && !isFinalSetup(setup) && !isDownloaded) {
+  // The PrismML build installs (its row is in the download panel, which
+  // cancels it) and becomes active before the model download has a row.
+  if (prismStage === 'installing_engine' || prismStage === 'activating_engine') {
     const percent =
-      setupBytes.total > 0
-        ? Math.round((setupBytes.transferred / setupBytes.total) * 100)
-        : 0
-    if (isDownloadOnlySetup(setup) && isRunningSetup(setup)) {
-      return (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={handleCancelSetup}
-          title={t('common:cancelDownload')}
-          aria-label={t('common:cancelDownload')}
-          className="group relative w-24 justify-center overflow-hidden font-semibold"
-          data-testid="model-setup-progress"
-        >
-          <span
-            aria-hidden
-            className="absolute inset-y-0 left-0 z-0 bg-primary/20 transition-[width] duration-200"
-            style={{ width: `${percent}%` }}
-          />
-          <span className="relative z-1 tabular-nums transition-opacity group-hover:opacity-0">
-            {percent}%
-          </span>
-          <span className="absolute inset-0 z-1 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
-            <IconX size={14} />
-          </span>
-        </Button>
-      )
-    }
+      prismStage === 'installing_engine' ? Math.round(engineProgress * 100) : 100
     return (
-      <>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => setSetupOpen(true)}
-          title={t('hub:prismSetupOpen')}
-          aria-label={t('hub:prismSetupOpen')}
-          className="relative w-24 justify-center overflow-hidden font-semibold"
-          data-testid="model-setup-progress"
-        >
-          <span
-            aria-hidden
-            className="absolute inset-y-0 left-0 z-0 bg-primary/20 transition-[width] duration-200"
-            style={{ width: `${percent}%` }}
-          />
-          <span className="relative z-1 tabular-nums">{percent}%</span>
-        </Button>
-        {setupSheet}
-      </>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled
+        title={t('hub:prismStage_installing_engine')}
+        aria-label={t('hub:prismStage_installing_engine')}
+        className="relative w-24 justify-center overflow-hidden font-semibold"
+        data-testid="model-setup-progress"
+      >
+        <span
+          aria-hidden
+          className="absolute inset-y-0 left-0 z-0 bg-primary/20 transition-[width] duration-200"
+          style={{ width: `${percent}%` }}
+        />
+        <span className="relative z-1 tabular-nums">{percent}%</span>
+      </Button>
     )
   }
 
-  // Asking the core for the plan, before the setup has a record to follow.
-  if (setupStarting) {
+  // Building the plan from the core's answers, or checking the downloaded
+  // file before it stays.
+  if (setupStarting || prismStage === 'verifying') {
     return (
       <Button
         type="button"

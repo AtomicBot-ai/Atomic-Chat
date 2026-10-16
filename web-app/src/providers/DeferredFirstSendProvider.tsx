@@ -17,7 +17,6 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { usePrompt } from '@/hooks/usePrompt'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useThreads } from '@/hooks/useThreads'
-import { useToolApproval } from '@/hooks/useToolApproval'
 import { newUserThreadContent } from '@/lib/completion'
 import {
   executeChatToolCalls,
@@ -29,7 +28,11 @@ import { renderInstructions } from '@/lib/instructionTemplate'
 import { extractContentPartsFromUIMessage } from '@/lib/messages'
 import { downscaleToolResultContent } from '@/lib/toolResultImages'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
-import { resolveMcpAutoApprove } from '@/lib/mcp-approval'
+import { approveChatToolCall } from '@/lib/mcp-approval'
+import {
+  offeredChatExecToolNames,
+  runChatExecToolCall,
+} from '@/lib/chat-exec-tools'
 import { useDeferredFirstSend } from '@/stores/deferred-first-send-store'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { switchToModel } from '@/utils/switchModel'
@@ -137,16 +140,12 @@ export function DeferredFirstSendProvider() {
         threadId: current.threadId,
         ragToolNames: useAppState.getState().ragToolNames,
         mcpToolNames: useAppState.getState().mcpToolNames,
-        approve: (toolName, threadId, input) =>
-          resolveMcpAutoApprove(threadId)
-            ? Promise.resolve(true)
-            : useToolApproval
-                .getState()
-                .showApprovalModal(toolName, threadId, input, {
-                  bypassGlobalAutoApprove: true,
-                }),
+        execToolNames: offeredChatExecToolNames(),
+        approve: approveChatToolCall,
         callRagTool: (args) => serviceHub.rag().callTool(args),
         callMcpTool: (args) => serviceHub.mcp().callTool(args),
+        callExecTool: (args) =>
+          runChatExecToolCall({ service: serviceHub.chatExec(), ...args }),
         getProjectId: () => undefined,
         processOutput: (content) =>
           downscaleToolResultContent(

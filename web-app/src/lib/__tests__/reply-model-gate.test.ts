@@ -334,6 +334,21 @@ describe('resolveReplyModel', () => {
     })
   })
 
+  it('starts a Foundry Local model when neither llama.cpp nor MLX holds one, before the fork', () => {
+    // change add-foundry-local: a Windows NPU laptop may hold only Foundry Local variants.
+    const options = collectReplyModels([
+      provider('llamacpp', [model('LFM2.5-1.2B-Q4_K_M')]),
+      provider('foundry-local', [model('qwen2.5-7b-instruct-openvino-npu')]),
+    ])
+
+    expect(resolveReplyModel(options)).toMatchObject({
+      option: {
+        providerName: 'foundry-local',
+        modelId: 'qwen2.5-7b-instruct-openvino-npu',
+      },
+    })
+  })
+
   it('uses the fork when it is the only engine holding a model', () => {
     const options = collectReplyModels([
       provider('llamacpp', [

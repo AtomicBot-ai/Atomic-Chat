@@ -1,0 +1,403 @@
+import { useNavigate } from '@tanstack/react-router'
+import { IconX } from '@tabler/icons-react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode, type RefObject } from 'react'
+
+import { Button } from '@/components/ui/button'
+import { route } from '@/constants/routes'
+import { DeleteModelAction } from '@/containers/hub/DeleteModelAction'
+import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { useModelProvider } from '@/hooks/useModelProvider'
+import { useServiceHub } from '@/hooks/useServiceHub'
+import { useTranslation } from '@/i18n/react-i18next-compat'
+import {
+  cancelDownload,
+  isDownloadCancellationError,
+  wasDownloadCancellationRequested,
+} from '@/lib/downloadCancellation'
+import { foundryLocalDownloadId } from '@/lib/foundry-local/download-id'
+import {
+  foundryLocalOf,
+  hostFoundryLocalPlatform,
+  pickDefaultVariant,
+  variantLabel,
+} from '@/lib/foundry-local/hub'
+import { cn, formatBytes } from '@/lib/utils'
+import { checkFoundryLocalVariant } from '@/services/foundry-local/core'
+import { fetchFoundryLocalList } from '@/services/foundry-local/curated'
+import { installFoundryLocalVariant } from '@/services/foundry-local/install'
+import type {
+  FoundryLocalCheckResult,
+  FoundryLocalHubModel,
+  FoundryLocalHubVariant,
+} from '@/services/foundry-local/types'
+import type { CatalogModel } from '@/services/models/types'
+import { switchToModel } from '@/utils/switchModel'
+
+const PROVIDER = 'foundry-local'
+
+type Verdicts = Record<string, FoundryLocalCheckResult | { error: string }>
+
+const verdictOf = (verdicts: Verdicts, variant: FoundryLocalHubVariant): string | undefined => {
+  const entry = verdicts[variant.id]
+  return entry && 'verdict' in entry ? entry.verdict : undefined
+}
+
+/**
+ * The download part of a Foundry Local card (spec "Model Hub предлагает модели Foundry Local",
+ * "Вариант по умолчанию выбирается под железо"): the variants this platform runs, each with the
+ * core's verdict, one chosen by default — NPU, then GPU, then CPU among those that run here or will
+ * once their accelerator is prepared — and the action for the chosen one:
+ *
+ * - "Download" when the core says it runs (`ok`): the installer, under one row of the download panel;
+ * - "Install Foundry" / "Prepare the accelerator" when the engine or the accelerator is
+ *   missing: the provider page, rather than downloading a model that cannot run;
+ * - "New chat" and delete once the variant is on disk.
+ *
+ * A model of Microsoft's catalog says it is not verified by Atomic Chat: its files are checked by
+ * size only.
+ */
+export function FoundryLocalDownloadOptions({
+  model,
+  sectionRef,
+  platform = hostFoundryLocalPlatform(),
+}: {
+  model: CatalogModel
+  sectionRef?: RefObject<HTMLElement | null>
+  /** This machine's platform, as conf's lists name it; the build's own by default. */
+  platform?: string
+}) {
+  const { t } = useTranslation()
+  const fields = foundryLocalOf(model) as FoundryLocalHubModel
+  const variants = useMemo(
+    () => fields.variants.filter((variant) => variant.platforms.includes(platform)),
+    [fields, platform]
+  )
+  const [verdicts, setVerdicts] = useState<Verdicts>({})
+  const [picked, setPicked] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setVerdicts({})
+    setPicked(null)
+    void Promise.all(
+      variants.map(async (variant) => {
+        try {
+          const check = await checkFoundryLocalVariant({
+            execution_provider: variant.execution_provider,
+            device: variant.device,
+          })
+          return [variant.id, check] as const
+        } catch (error) {
+          const message = (error as { message?: unknown } | null)?.message
+          return [variant.id, { error: typeof message === 'string' ? message : String(error) }] as const
+        }
+      })
+    ).then((entries) => {
+      if (!cancelled) setVerdicts(Object.fromEntries(entries))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [variants])
+
+  const providers = useModelProvider((state) => state.providers)
+  const downloadedIds = useMemo(
+    () =>
+      new Set(
+        providers
+          .find((provider) => provider.provider === PROVIDER)
+          ?.models.map((entry) => entry.id) ?? []
+      ),
+    [providers]
+  )
+  const downloaded = variants.find((variant) => downloadedIds.has(variant.id))
+  const selected =
+    variants.find((variant) => variant.id === picked) ??
+    downloaded ??
+    pickDefaultVariant(variants, (variant) => verdictOf(verdicts, variant)) ??
+    variants[0]
+
+  // A variant found on disk in "Downloaded": nothing to choose or check, only chat and delete.
+  if (fields.origin === 'installed') {
+    return (
+      <section ref={sectionRef} className="scroll-mt-4 rounded-lg border border-border bg-card p-4">
+        <h2 className="mb-3 text-sm font-medium">{t('hub:downloadOptions')}</h2>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-sm">{fields.name}</span>
+          <ActionColumn trash={<DeleteModelAction modelId={fields.model_id} provider={PROVIDER} />}>
+            <NewChatButton modelId={fields.model_id} />
+          </ActionColumn>
+        </div>
+      </section>
+    )
+  }
+
+  return (
+    <section ref={sectionRef} className="scroll-mt-4 rounded-lg border border-border bg-card p-4">
+      <h2 className="mb-3 text-sm font-medium">{t('hub:downloadOptions')}</h2>
+      {fields.origin === 'microsoft' && (
+        <p className="mb-3 text-xs text-muted-foreground">{t('hub:foundryLocal.notVerified')}</p>
+      )}
+      {variants.length === 0 ? (
+        <p className="text-sm text-muted-foreground">{t('hub:foundryLocal.noVariantHere')}</p>
+      ) : (
+        <div className="flex items-start justify-between gap-3">
+          <div role="radiogroup" className="flex min-w-0 flex-1 flex-col gap-1">
+            {variants.map((variant) => {
+              const entry = verdicts[variant.id]
+              const checked = selected?.id === variant.id
+              return (
+                <button
+                  key={variant.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={checked}
+                  aria-label={`${variantLabel(variant)} ${variant.id}`}
+                  onClick={() => setPicked(variant.id)}
+                  className={cn(
+                    'flex w-full min-w-0 flex-col items-start rounded-md border border-transparent px-2 py-1.5 text-left hover:bg-accent',
+                    checked && 'border-border bg-accent'
+                  )}
+                >
+                  <span className="flex w-full items-center justify-between gap-2 text-sm">
+                    <span className="font-medium">{variantLabel(variant)}</span>
+                    {variant.size_bytes !== null && (
+                      <span className="text-xs text-muted-foreground">{formatBytes(variant.size_bytes)}</span>
+                    )}
+                  </span>
+                  <VerdictLine entry={entry} downloaded={downloadedIds.has(variant.id)} />
+                </button>
+              )
+            })}
+          </div>
+          {selected && (
+            // One width whatever the chosen variant offers (Download, or New chat and delete):
+            // sized by content, the column resized the list on every pick.
+            <ActionColumn
+              // The 32 px button centred on the first variant's name line: its border, its `py-1.5`
+              // and half a `text-sm` line (1.25 × the app's font size, which a person can raise
+              // while rem stays). Pinned to the top, the button rode up as the font grew.
+              className="pt-[max(0px,calc(1px_+_0.375rem_+_var(--text-sm)_*_0.625_/_0.875_-_1rem))]"
+              trash={
+                downloadedIds.has(selected.id) ? (
+                  <DeleteModelAction modelId={selected.id} provider={PROVIDER} />
+                ) : null
+              }
+            >
+              <Action
+                fields={fields}
+                variant={selected}
+                verdict={verdicts[selected.id]}
+                downloaded={downloadedIds.has(selected.id)}
+              />
+            </ActionColumn>
+          )}
+        </div>
+      )}
+    </section>
+  )
+}
+
+function VerdictLine({
+  entry,
+  downloaded,
+}: {
+  entry: Verdicts[string] | undefined
+  downloaded: boolean
+}) {
+  const { t } = useTranslation()
+  const text = downloaded
+    ? t('hub:foundryLocal.downloaded')
+    : !entry
+      ? t('hub:foundryLocal.checking')
+      : 'error' in entry
+        ? entry.error
+        : entry.verdict === 'ok'
+          ? t('hub:foundryLocal.runsHere')
+          : (entry.reason ?? entry.verdict)
+  // The core's reasons carry long library names (`WebGpuExecutionProvider`): break inside them.
+  return <span className="text-xs text-muted-foreground [overflow-wrap:anywhere]">{text}</span>
+}
+
+function Action({
+  fields,
+  variant,
+  verdict,
+  downloaded,
+}: {
+  fields: FoundryLocalHubModel
+  variant: FoundryLocalHubVariant
+  verdict: Verdicts[string] | undefined
+  downloaded: boolean
+}) {
+  const { t } = useTranslation()
+  const navigate = useNavigate()
+  const toProviderPage = () =>
+    navigate({ to: route.settings.providers, params: { providerName: PROVIDER } })
+
+  if (downloaded) return <NewChatButton modelId={variant.id} />
+  if (!verdict || 'error' in verdict) return null
+  if (verdict.verdict === 'engine-not-installed') {
+    return (
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={toProviderPage}
+        // The column is fixed; a long label wraps inside it rather than spilling over the list.
+        className="h-auto max-w-full whitespace-normal py-1.5 text-center"
+      >
+        {t('hub:foundryLocal.installEngine')}
+      </Button>
+    )
+  }
+  if (verdict.verdict === 'accelerator-not-prepared') {
+    return (
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={toProviderPage}
+        // The column is fixed; a long label wraps inside it rather than spilling over the list.
+        className="h-auto max-w-full whitespace-normal py-1.5 text-center"
+      >
+        {t('hub:foundryLocal.prepareAccelerator')}
+      </Button>
+    )
+  }
+  if (verdict.verdict !== 'ok') return null
+  return <DownloadButton fields={fields} variant={variant} />
+}
+
+function DownloadButton({
+  fields,
+  variant,
+}: {
+  fields: FoundryLocalHubModel
+  variant: FoundryLocalHubVariant
+}) {
+  const { t } = useTranslation()
+  const serviceHub = useServiceHub()
+  const downloadId = foundryLocalDownloadId(variant.id)
+  const transfer = useDownloadStore((state) => state.downloads[downloadId]?.progress)
+  const isDownloading = useDownloadStore(
+    (state) => state.localDownloadingModels.has(downloadId) || downloadId in state.downloads
+  )
+  // From the click until the variant is listed. The download panel drops its row and the
+  // in-progress mark when the files are in, while `model.yml` is still written and the list read
+  // again (a second): without this the card offered Download again in between.
+  const [installing, setInstalling] = useState(false)
+  const busy = isDownloading || installing
+  // Past the transfer there is no row: what is left is the finishing step.
+  const progress = transfer ?? (installing && !isDownloading ? 1 : 0)
+  const [failure, setFailure] = useState<string | null>(null)
+
+  const download = useCallback(async () => {
+    const store = useDownloadStore.getState()
+    setInstalling(true)
+    setFailure(null)
+    store.clearResumableDownload(downloadId)
+    // The download panel names the row after this, not after the id.
+    store.setDownloadOrigin(downloadId, `${fields.name} (${variantLabel(variant)})`)
+    store.addLocalDownloadingModel(downloadId)
+    try {
+      const { list } = await fetchFoundryLocalList()
+      if (!list) throw new Error(t('hub:foundryLocal.sourceUnavailable'))
+      await installFoundryLocalVariant({ model: fields, variant, list })
+      // A variant is a model once `model.yml` is written: list it, so the card offers a chat.
+      useModelProvider.getState().setProviders(await serviceHub.providers().getProviders())
+    } catch (error) {
+      // A cancel is the person's own doing, not a failure to report.
+      if (!wasDownloadCancellationRequested(downloadId) && !isDownloadCancellationError(error)) {
+        setFailure(error instanceof Error ? error.message : String(error))
+      }
+    } finally {
+      useDownloadStore.getState().removeLocalDownloadingModel(downloadId)
+      setInstalling(false)
+    }
+  }, [downloadId, fields, variant, serviceHub, t])
+
+  return (
+    <div className="flex w-full flex-col items-end gap-2">
+      {busy ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => cancelDownload({ id: downloadId, name: downloadId }, serviceHub)}
+          title={t('common:cancelDownload')}
+          aria-label={t('common:cancelDownload')}
+          className="group relative w-24 justify-center overflow-hidden font-semibold"
+        >
+          <span
+            aria-hidden
+            className="absolute inset-y-0 left-0 z-0 bg-primary/20 transition-[width] duration-200"
+            style={{ width: `${Math.round(progress * 100)}%` }}
+          />
+          <span className="relative z-1 tabular-nums transition-opacity group-hover:opacity-0">
+            {Math.round(progress * 100)}%
+          </span>
+          <span className="absolute inset-0 z-1 flex items-center justify-center opacity-0 transition-opacity group-hover:opacity-100">
+            <IconX size={14} />
+          </span>
+        </Button>
+      ) : (
+        <Button size="sm" onClick={() => void download()}>
+          {t('hub:download')}
+        </Button>
+      )}
+      {failure && <p className="text-right text-xs text-destructive">{failure}</p>}
+    </div>
+  )
+}
+
+/**
+ * The card's action column: one width whatever the chosen variant offers (Download, New chat, the
+ * provider page), and a slot for the trash that is there even when empty, so the main button keeps
+ * its place when another variant is chosen. Sized by content, the column resized the variant list
+ * on every pick, and without the slot the button jumped by the trash's width.
+ */
+function ActionColumn({
+  children,
+  trash,
+  className,
+}: {
+  children: ReactNode
+  trash: ReactNode
+  className?: string
+}) {
+  return (
+    <div
+      data-testid="foundry-local-actions"
+      className={cn('flex w-44 shrink-0 items-start justify-end gap-1', className)}
+    >
+      <div data-testid="foundry-local-main-action" className="flex min-w-0 justify-end">
+        {children}
+      </div>
+      <div className="size-8 shrink-0">{trash}</div>
+    </div>
+  )
+}
+
+/** "New chat" on `foundry-local` with the variant; the delete sits in the column's trash slot. */
+function NewChatButton({ modelId }: { modelId: string }) {
+  const { t } = useTranslation()
+  const navigate = useNavigate()
+  const serviceHub = useServiceHub()
+
+  const newChat = useCallback(() => {
+    useModelProvider.getState().selectModelProvider(PROVIDER, modelId)
+    switchToModel({ modelId, providerName: PROVIDER, serviceHub }).catch((error) => {
+      console.error('[FoundryLocalDownloadOptions] switchToModel failed:', error)
+    })
+    navigate({
+      to: route.home,
+      params: {},
+      search: { threadModel: { id: modelId, provider: PROVIDER } },
+    })
+  }, [modelId, navigate, serviceHub])
+
+  return (
+    <Button size="sm" onClick={newChat}>
+      {t('hub:newChat')}
+    </Button>
+  )
+}

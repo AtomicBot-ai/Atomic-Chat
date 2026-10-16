@@ -368,7 +368,8 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
             (p.provider === 'llamacpp-upstream' ||
               p.provider === 'llamacpp' ||
               p.provider === 'atomic-prism' ||
-              p.provider === 'mlx') &&
+              p.provider === 'mlx' ||
+              p.provider === 'foundry-local') &&
             isPickerSection(p) &&
             p.models.length > 0
         )

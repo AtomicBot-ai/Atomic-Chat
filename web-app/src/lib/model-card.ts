@@ -186,7 +186,14 @@ export async function fetchModelStats(modelId: string): Promise<ModelStats> {
  * `atomic-prism` is a list rather than a file format: the Bonsai GGUF files only PrismML's
  * llama.cpp runs, which `modelFormat` reads as GGUF.
  */
-export type ModelFormat = 'mlx' | 'gguf' | 'vllm' | 'tensorrt-llm' | 'atomic-prism'
+export type ModelFormat =
+  | 'mlx'
+  | 'gguf'
+  | 'vllm'
+  | 'sglang'
+  | 'tensorrt-llm'
+  | 'atomic-prism'
+  | 'foundry-local'
 
 /**
  * The format a card is shown under. A managed engine's checkpoint is one for every managed engine
@@ -196,6 +203,7 @@ export function modelFormat(
   model: CatalogModel,
   managedFormat: ModelFormat = 'tensorrt-llm'
 ): ModelFormat {
+  if (model.is_foundry_local) return 'foundry-local'
   if (model.is_managed) return managedFormat
   if (model.is_mlx || model.library_name?.toLowerCase() === 'mlx') return 'mlx'
   return 'gguf'

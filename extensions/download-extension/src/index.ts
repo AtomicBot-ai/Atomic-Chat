@@ -13,6 +13,11 @@ interface DownloadItem {
   sha256?: string
   size?: number
   model_id?: string
+  /**
+   * Matched against a partial on resume instead of `url` (see `DownloadItem`
+   * in `src-tauri/src/core/downloads/models.rs`): for signed links that expire.
+   */
+  resume_key?: string
 }
 
 /**

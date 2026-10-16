@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-407 records, 2026-05-19 → 2026-10-13.
+414 records, 2026-05-19 → 2026-10-16.
 
 ---
 
@@ -85,8 +85,13 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-02** — [Add a `/v1/responses` translation shim to the local proxy so Codex CLI works on llama.cpp models](2026-06-02-add-a-v1-responses-translation-shim-to-the-local-proxy-so-codex.md)
 - **2026-06-01** — [Add a "Launch" page to install + configure external coding agents / assistants against the local OpenAI-compatible API](2026-06-01-add-a-launch-page-to-install-configure-external-coding-agents.md)
 
-## Agent mode — autonomous loop, tools, skills, workspace (46)
+## Agent mode — autonomous loop, tools, skills, workspace (51)
 
+- **2026-10-15** — [Grant directory enumeration and decode Windows chat output](2026-10-15-fix-windows-chat-directory-enumeration-and-output.md)
+- **2026-10-15** — [Let chat commands reach the user's Desktop, Documents and Downloads](2026-10-15-let-chat-commands-reach-the-users-own-folders.md)
+- **2026-10-15** — [Hide Agent mode; every turn runs on the chat pipeline](2026-10-15-hide-agent-mode.md)
+- **2026-10-15** — [Run terminal commands and scripts from chat](2026-10-15-run-commands-and-scripts-from-chat.md)
+- **2026-10-15** — [Sandbox chat commands with Microsoft MXC on Windows](2026-10-15-sandbox-chat-commands-with-mxc-on-windows.md)
 - **2026-09-17** — [Fall back to keyless search when hosted Exa is unavailable](2026-09-17-fallback-to-keyless-search-when-hosted-exa-is-unavailable.md)
 - **2026-09-16** — [Reserve the thinking budget on top of the tool-call budget](2026-09-16-reserve-the-thinking-budget-on-top-of-the-tool-call-budget.md)
 - **2026-09-15** — [Restore loaded skills from disk, not from the session copy](2026-09-15-restore-loaded-skills-from-disk-not-from-the-session.md)
@@ -224,8 +229,10 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Ship `janhq/llama.cpp` cudart DLLs with every Windows CUDA backend](2026-05-22-ship-janhq-llama-cpp-cudart-dlls-with-every-windows-cuda-backend.md)
 - **2026-05-19** — [Windows uses upstream `ggml-org/llama.cpp`, not the TurboQuant fork](2026-05-19-windows-uses-upstream-ggml-org-llama-cpp-not-the-turboquant-fork.md)
 
-## Models, Hub & downloads (40)
+## Models, Hub & downloads (42)
 
+- **2026-10-16** — [Run Foundry Local through the core; download its models in the app](2026-10-16-run-foundry-local-through-the-core-and-download-its-models-in-the-app.md)
+- **2026-10-15** — [Download Bonsai with the app's own downloader, not the core's model setup](2026-10-15-download-bonsai-with-the-apps-own-downloader.md)
 - **2026-10-06** — [List Bonsai models under a PrismML format in the Hub, and install the engine from its row](2026-10-06-list-bonsai-models-under-a-prismml-format-in-the-hub.md)
 - **2026-10-06** — [List PrismML model setups in the download panel, and set a deleted Bonsai up again](2026-10-06-list-prismml-model-setups-in-the-download-panel.md)
 - **2026-10-03** — [Choose TensorRT-LLM models in the Model Hub, as its third format](2026-10-03-choose-tensorrt-llm-models-in-the-model-hub.md)

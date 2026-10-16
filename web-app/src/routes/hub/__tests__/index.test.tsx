@@ -43,9 +43,18 @@ const vllmHub = vi.hoisted(() => ({
     descriptorId: null as string | null,
   },
 }))
+const sglangHub = vi.hoisted(() => ({
+  value: {
+    visible: false,
+    state: 'unknown',
+    blockers: [] as Array<Record<string, unknown>>,
+    descriptorId: null as string | null,
+  },
+}))
 vi.mock('@/hooks/useManagedHubState', () => ({
   useManagedHubStates: () => [
     { engine: { id: 'vllm', label: 'vLLM', i18n: 'vllm' }, hub: vllmHub.value },
+    { engine: { id: 'sglang', label: 'SGLang', i18n: 'sglang' }, hub: sglangHub.value },
     { engine: { id: 'tensorrt-llm', label: 'TensorRT-LLM', i18n: 'tensorrt' }, hub: tensorrtHub.value },
   ],
 }))
@@ -64,9 +73,20 @@ const vllmCurated = vi.hoisted(() => ({
     loading: false,
   },
 }))
+const sglangCurated = vi.hoisted(() => ({
+  value: {
+    models: [] as CatalogModel[],
+    supportedArchitectures: null as string[] | null,
+    loading: false,
+  },
+}))
 vi.mock('@/hooks/useManagedCurated', () => ({
   useManagedCurated: (engineId: string) =>
-    engineId === 'vllm' ? vllmCurated.value : tensorrtCurated.value,
+    engineId === 'vllm'
+      ? vllmCurated.value
+      : engineId === 'sglang'
+        ? sglangCurated.value
+        : tensorrtCurated.value,
 }))
 
 vi.mock('@tanstack/react-router', () => ({
@@ -296,7 +316,7 @@ vi.mock('@/stores/model-catalog-store', () => ({
 
 import { Route } from '../index'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { useModelSetupStore } from '@/stores/model-setup-store'
+import { useModelCompatibilityStore } from '@/stores/model-compatibility-store'
 import { HUB_FILTERS_STORAGE_KEY, serializeHubFilters } from '@/lib/hub-filters'
 import { getHubFormat, setHubFormat, setHubSearchQuery } from '../hub-session'
 import { resetHuggingFaceFeedForTest } from '@/hooks/useHuggingFaceFeed'
@@ -340,6 +360,8 @@ describe('/hub route', () => {
     tensorrtCurated.value = { models: [], supportedArchitectures: null, loading: false }
     vllmHub.value = { visible: false, state: 'unknown', blockers: [], descriptorId: null }
     vllmCurated.value = { models: [], supportedArchitectures: null, loading: false }
+    sglangHub.value = { visible: false, state: 'unknown', blockers: [], descriptorId: null }
+    sglangCurated.value = { models: [], supportedArchitectures: null, loading: false }
     mocks.mediaSupported = false
     mocks.decisionSupported = false
     mocks.embeddingSupported = false
@@ -1010,6 +1032,83 @@ describe('/hub route', () => {
     })
   })
 
+  describe('under the SGLang format (spec sglang-desktop "SGLang — формат Model Hub по состоянию провайдера")', () => {
+    const managedEntry = (name: string, architectures: string[]): CatalogModel => ({
+      model_name: name,
+      developer: name.split('/')[0],
+      description: '',
+      downloads: 10,
+      is_managed: true,
+      managed: { architectures, parameters: { BF16: 4e9 } },
+    })
+    const sglangReady = () => {
+      sglangHub.value = { visible: true, state: 'ready', blockers: [], descriptorId: 'sglang-0.5.21-r1' }
+      sglangCurated.value = {
+        models: [
+          {
+            model_name: 'Qwen/Qwen3.5-2B',
+            developer: 'Qwen',
+            description: '',
+            downloads: 0,
+            is_managed: true,
+            managed: { curated: true, curatedBy: 'sglang', revision: 'rev-s' },
+          },
+        ],
+        supportedArchitectures: ['Qwen3ForCausalLM'],
+        loading: false,
+      }
+    }
+
+    it('lists its curated models first, then the feed narrowed by its descriptor', async () => {
+      sglangReady()
+      mocks.listHuggingFaceFeed.mockResolvedValue({
+        models: [managedEntry('someone/Qwen3-4B-AWQ', ['Qwen3ForCausalLM'])],
+        nextCursor: null,
+      })
+      mocks.search = { engine: 'sglang' }
+
+      render(<HubPage />)
+
+      expect(await screen.findByText('Qwen3-4B-AWQ')).toBeInTheDocument()
+      const headings = screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)
+      expect(headings).toEqual(['hub:sglang.curated', 'hub:feedTitle'])
+      expect(screen.getByText('Qwen3.5-2B')).toBeInTheDocument()
+    })
+
+    it('an architecture SGLang does not support: that repository is not in the SGLang list', async () => {
+      sglangReady()
+      mocks.listHuggingFaceFeed.mockResolvedValue({
+        models: [
+          managedEntry('someone/Qwen3-4B-AWQ', ['Qwen3ForCausalLM']),
+          managedEntry('someone/Nemotron-H-8B', ['NemotronHForCausalLM']),
+        ],
+        nextCursor: null,
+      })
+      setHubFormat('sglang')
+
+      render(<HubPage />)
+
+      expect(await screen.findByText('Qwen3-4B-AWQ')).toBeInTheDocument()
+      expect(screen.queryByText('Nemotron-H-8B')).not.toBeInTheDocument()
+      expect(mocks.listHuggingFaceFeed).toHaveBeenCalledWith(
+        expect.objectContaining({ format: 'safetensors' })
+      )
+    })
+
+    it('the SGLang descriptor not published yet: no SGLang format, an SGLang link reads as GGUF, vLLM and TensorRT-LLM as before', () => {
+      // The core hides the provider until conf publishes runtimes/sglang.json (design D9).
+      vllmHub.value = { visible: true, state: 'ready', blockers: [], descriptorId: 'vllm-0.31.0-cu129-r1' }
+      tensorrtHub.value = { visible: true, state: 'ready', blockers: [], descriptorId: 'tensorrt-llm-1.3.0rc29-r3' }
+      mocks.search = { engine: 'sglang' }
+
+      render(<HubPage />)
+
+      expect(screen.getByText('Qwen3.5 4B')).toBeInTheDocument()
+      expect(screen.queryByText('hub:sglang.checking')).not.toBeInTheDocument()
+      expect(screen.queryByText('hub:sglang.curated')).not.toBeInTheDocument()
+    })
+  })
+
   describe('under the PrismML format', () => {
     const family = (
       id: string,
@@ -1042,7 +1141,7 @@ describe('/hub route', () => {
     }
 
     beforeEach(() => {
-      useModelSetupStore.setState({ families: null })
+      useModelCompatibilityStore.setState({ families: null })
       providers(['llamacpp-upstream', 'atomic-prism'])
       mocks.prismFamilies.mockResolvedValue({
         rules_version: 1,

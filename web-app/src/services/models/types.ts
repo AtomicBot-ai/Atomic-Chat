@@ -10,6 +10,7 @@ import {
   type ModelLoadOptions,
 } from '@janhq/core'
 import { Model as CoreModel } from '@janhq/core'
+import type { FoundryLocalHubModel } from '@/services/foundry-local/types'
 
 // Types for model catalog
 export interface ModelQuant {
@@ -57,6 +58,12 @@ export interface CatalogModel {
   is_managed?: boolean
   /** What the Hub knows of a managed entry before the engines' verdicts. */
   managed?: ManagedCatalogFields
+  /**
+   * A Foundry Local model (change `add-foundry-local`), listed under the "Foundry Local" format from
+   * conf's curated list or Microsoft's catalog; never a Hugging Face repository.
+   */
+  is_foundry_local?: boolean
+  foundry_local?: FoundryLocalHubModel
 }
 
 export interface ManagedCatalogFields {
@@ -86,6 +93,21 @@ export interface DownloadRefusal {
   needed: number
   /** Bytes the drive has free. */
   available: number
+}
+
+/**
+ * What a caller of `pullModelWithMetadata` already knows: the llama.cpp
+ * provider that imports and lists the model (the platform's default when
+ * absent) and the files' expected hashes and sizes, which the downloader then
+ * verifies. A Bonsai file downloads under `atomic-prism`, with the hashes and
+ * sizes of the core's Bonsai families.
+ */
+export interface PullModelOptions {
+  provider?: string
+  modelSha256?: string
+  modelSize?: number
+  mmprojSha256?: string
+  mmprojSize?: number
 }
 
 /** Hugging Face's own orders for a listing (`sort=` on `/api/models`). */
@@ -222,7 +244,8 @@ export interface ModelsService {
     mmprojPath?: string,
     mmprojSha256?: string,
     mmprojSize?: number,
-    resume?: boolean
+    resume?: boolean,
+    provider?: string
   ): Promise<void>
   pullModelWithMetadata(
     id: string,
@@ -230,7 +253,8 @@ export interface ModelsService {
     mmprojPath?: string,
     hfToken?: string,
     skipVerification?: boolean,
-    resume?: boolean
+    resume?: boolean,
+    options?: PullModelOptions
   ): Promise<DownloadRefusal | undefined>
   abortDownload(id: string): Promise<void>
   /** Resolves with what the delete freed when the engine measures it (TensorRT-LLM does). */

@@ -22,6 +22,11 @@ export type TransferItem = {
   size?: number
   /** Surfaces in the validation toasts; keep it equal to the panel's row id. */
   model_id?: string
+  /**
+   * What a partial file is matched against on resume, in place of `url`: a
+   * fresh signed link to the same file keeps the bytes already on disk.
+   */
+  resume_key?: string
 }
 
 export type TransferProgress = (transferred: number, total: number) => void

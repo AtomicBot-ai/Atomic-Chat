@@ -139,12 +139,34 @@
     },
     "installEngine": "Установить vLLM"
   },
+  "sglang": {
+    "checking": "Проверяем, может ли SGLang работать на этом компьютере…",
+    "blocked": {
+      "title": "SGLang пока нельзя установить на этом компьютере",
+      "body": "Устраните то, что указано ниже, и проверьте снова. Страница настроек SGLang проведёт по каждому шагу.",
+      "openProvider": "Открыть настройки SGLang",
+      "checkAgain": "Проверить снова"
+    },
+    "blocker": {
+      "driver-too-old": "SGLang нужен драйвер NVIDIA {{required}} или новее; на этом компьютере {{actual}}.",
+      "driver-too-old-fix": "Установите более новый драйвер для вашей карты с сайта NVIDIA или из обновлений системы, перезагрузите компьютер и проверьте снова.",
+      "compute-capability-too-low": "SGLang в Atomic Chat нужна видеокарта NVIDIA поколения Ampere (RTX 30xx) или новее: compute capability {{required}} или выше. У этой карты {{actual}}."
+    },
+    "curated": "Проверено с SGLang",
+    "models": {
+      "fits": "Эта модель запустится здесь на SGLang (веса — {{size}}).",
+      "checking": "Проверяем, запустится ли эта модель на этом компьютере с SGLang…",
+      "otherCard": "Она поместилась бы на: {{cards}}. Выберите эту карту в настройках SGLang.",
+      "gated": "Hugging Face отказал в доступе. Откройте страницу модели, примите её условия (и при необходимости укажите токен Hugging Face в настройках), затем попробуйте снова: {{url}}",
+      "noSpace": "Недостаточно свободного места для этой модели в {{path}}: нужно {{needed}}, свободно {{free}}. Освободите место и попробуйте снова."
+    },
+    "installEngine": "Установить SGLang"
+  },
   "prismRequired": "Нужен PrismML",
   "prismRequiredHint": "Эта модель работает только на llama.cpp от PrismML. Кнопка загрузки установит движок вместе с моделью.",
   "prismEngineUpdateRequired": "Этой модели нужен более новый движок PrismML. Установка поставит его рядом с текущим.",
   "prismRefusedTitle": "Этот файл нельзя загрузить",
   "prismRefusedReplacement": "Он в старом формате, который больше не поддерживает ни один движок. Загрузите {{file}}.",
-  "prismSetupOpen": "Показать установку",
   "prismSetupTitle": "Установка {{model}}",
   "prismSetupDescription": "Эта модель работает на llama.cpp от PrismML — отдельном движке. Atomic Chat установит его один раз, рядом с остальными движками, и загрузит модель.",
   "prismSetupPlanning": "Проверяем, что нужно этому компьютеру…",
@@ -158,22 +180,12 @@
   "prismSetupFree": "свободно {{size}}",
   "prismSetupVision": "Также загрузить поддержку изображений",
   "prismSetupReplacement": "Используйте {{file}}.",
+  "prismBlocker_no_engine_build": "Для этого компьютера пока нет одобренной сборки PrismML, которая запускает эту модель.",
+  "prismBlocker_insufficient_disk_space": "Для загрузки нужно {{needed}}, свободно {{free}}.",
+  "prismModelRejected": "Скачанная модель не запускается в PrismML, поэтому она удалена",
   "prismSetupPlanChanged": "План изменился, пока вы его смотрели. Проверьте его и начните снова.",
-  "prismSetupInterrupted": "Установка остановилась, когда Atomic Chat закрылся. «Продолжить» продолжит с того же места.",
-  "prismSetupFailed": "Установка не удалась: {{error}}",
   "prismSetupStart": "Установить",
-  "prismSetupRetry": "Повторить",
-  "prismSetupResume": "Продолжить",
-  "prismStage_queued": "Ожидает начала",
   "prismStage_installing_engine": "Установка движка PrismML",
-  "prismStage_downloading_model": "Загрузка модели",
-  "prismStage_downloading_projector": "Загрузка поддержки изображений",
-  "prismStage_verifying": "Проверка файлов",
-  "prismStage_registering": "Добавление модели",
-  "prismStage_ready": "Готово",
-  "prismStage_failed": "Ошибка",
-  "prismStage_cancelled": "Отменено",
-  "prismStage_interrupted": "Прервано",
   "prismCurated": "Модели Bonsai для PrismML",
   "tensorrt": {
     "checking": "Проверяем, может ли TensorRT-LLM работать на этом компьютере…",
@@ -197,5 +209,18 @@
       "noSpace": "Недостаточно свободного места для этой модели в {{path}}: нужно {{needed}}, свободно {{free}}. Освободите место и попробуйте снова."
     },
     "installEngine": "Установить движок"
+  },
+  "foundryLocal": {
+    "curated": "Отобрано Atomic Chat",
+    "microsoftCatalog": "Каталог Microsoft",
+    "catalogUnavailable": "Каталог Microsoft сейчас недоступен. Показаны только модели, отобранные Atomic Chat.",
+    "notVerified": "Из каталога Microsoft, не проверено Atomic Chat: файлы проверяются только по размеру.",
+    "noVariantHere": "У этой модели нет варианта для этого компьютера.",
+    "downloaded": "Скачано",
+    "checking": "Проверка…",
+    "runsHere": "Работает на этом компьютере",
+    "installEngine": "Установить Foundry",
+    "prepareAccelerator": "Подготовить ускоритель",
+    "sourceUnavailable": "Источник моделей Foundry Local недоступен."
   }
 }

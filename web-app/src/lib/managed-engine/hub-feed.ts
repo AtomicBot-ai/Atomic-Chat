@@ -6,6 +6,7 @@
  * It is not a verdict: the quantization format is never looked at, and the card asks the core.
  */
 
+import { foundryLocalMatches } from '@/lib/foundry-local/hub'
 import { isManagedProvider } from '@/lib/managed-engines'
 import type { ModelFormat } from '@/lib/model-card'
 import type { GpuFacts } from '@/services/managed-environment/types'
@@ -51,13 +52,15 @@ export function estimateWeightBytes(parameters: Record<string, number> | undefin
  * What each engine holds beyond the weights on any card, the low end the core's check counts too:
  * `trtllm-serve` its CUDA context and cuBLAS workspaces (core 0.9.3,
  * `TENSORRT_LLM_RUNTIME_OVERHEAD_BYTES`), `vllm serve` its engine overhead (core
- * `VLLM_ENGINE_OVERHEAD_BYTES`). The activation peak and the KV-cache are left out: they need what
+ * `VLLM_ENGINE_OVERHEAD_BYTES`), `sglang.launch_server` its own (core
+ * `SGLANG_ENGINE_OVERHEAD_BYTES`). The activation peak and the KV-cache are left out: they need what
  * the listing does not carry, and the estimate may only ever be low. An engine not listed counts
  * none.
  */
 export const ENGINE_OVERHEAD_BYTES: Readonly<Record<string, number>> = {
   'tensorrt-llm': 1.5 * 1024 ** 3,
   'vllm': 2 * 1024 ** 3,
+  'sglang': 2 * 1024 ** 3,
 }
 
 export interface ManagedPrefilterContext {
@@ -104,6 +107,11 @@ export function hubListSources(format: ModelFormat): HubListSources {
   // Every managed engine lists the same safetensors feed, narrowed by its own descriptor.
   if (isManagedProvider(format)) {
     return { staffPicks: false, catalog: false, curated: true, feedFormat: 'safetensors', prefilter: true }
+  }
+  // Foundry Local lists conf's curated models, then Microsoft's catalog (`foundryLocalRows`); the
+  // route asks Hugging Face nothing under it, as under PrismML.
+  if (format === 'foundry-local') {
+    return { staffPicks: false, catalog: false, curated: true, feedFormat: 'gguf', prefilter: false }
   }
   // PrismML lists the Bonsai families of the core's model rules, and nothing else.
   if (format === 'atomic-prism') {
@@ -159,4 +167,28 @@ export function managedSearchRows(options: {
 }): ManagedRow[] {
   const rows: ManagedRow[] = options.exact ? [{ model: options.exact, section: 'exact' }] : []
   return narrowed(rows, options.candidates, options.context)
+}
+
+export interface FoundryLocalRow {
+  model: CatalogModel
+  /** `curated` — conf's checked list; `microsoft` — Microsoft's catalog, not verified by Atomic Chat. */
+  section: 'curated' | 'microsoft'
+}
+
+/**
+ * The Foundry Local list (change add-foundry-local): conf's curated models first, then the chat
+ * models of Microsoft's catalog, each narrowed by name when `query` is set. The catalog's part is
+ * empty while it cannot be read; the curated part may be empty too.
+ */
+export function foundryLocalRows(options: {
+  curated: readonly CatalogModel[]
+  catalog: readonly CatalogModel[]
+  query: string
+}): FoundryLocalRow[] {
+  const query = options.query.trim()
+  const pick = (models: readonly CatalogModel[], section: FoundryLocalRow['section']) =>
+    models
+      .filter((model) => foundryLocalMatches(model, query))
+      .map((model): FoundryLocalRow => ({ model, section }))
+  return [...pick(options.curated, 'curated'), ...pick(options.catalog, 'microsoft')]
 }

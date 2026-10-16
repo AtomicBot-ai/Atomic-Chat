@@ -42,6 +42,7 @@ const WRITE_BUFFER_BYTES: usize = 1024 * 1024;
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
 pub(super) struct SegmentMap {
     version: u32,
+    /// The item's resume identity: its `resume_key`, or its URL without one.
     url: String,
     size: u64,
     /// `[start, written, end)` per range: `start..written` is on disk.
@@ -514,7 +515,8 @@ pub(super) struct FileJob<'a, R: Runtime> {
     pub save_path: &'a Path,
     pub file_id: &'a str,
     pub size: u64,
-    /// Resume was asked for, a `.tmp` exists and the `.url` matches.
+    /// Resume was asked for, a `.tmp` exists and the `.url` matches
+    /// [`DownloadItem::resume_identity`].
     pub resume: bool,
     pub header_map: &'a HeaderMap,
     pub cancel_token: &'a CancellationToken,
@@ -570,7 +572,7 @@ pub(super) async fn download<R: Runtime>(job: FileJob<'_, R>) -> Result<Segmente
     // What is on disk decides where the ranges start.
     let saved_plan = if job.resume && map_path.exists() {
         read_map(job.save_path)
-            .filter(|map| map.url == item.url)
+            .filter(|map| map.url == item.resume_identity())
             .filter(|_| std::fs::metadata(&tmp_path).is_ok_and(|meta| meta.len() == job.size))
             .and_then(|map| Plan::from_map(&map, job.size, tuning.min_segment_size))
     } else {
@@ -642,7 +644,11 @@ pub(super) async fn download<R: Runtime>(job: FileJob<'_, R>) -> Result<Segmente
 
     // The map goes down before the `.tmp` grows to full size: a full-size
     // `.tmp` is never on disk without the map that explains it.
-    write_map(job.save_path, &plan.to_map(&item.url, job.size)).await?;
+    write_map(
+        job.save_path,
+        &plan.to_map(item.resume_identity(), job.size),
+    )
+    .await?;
     let file = std::fs::OpenOptions::new()
         .write(true)
         .create(true)
@@ -715,7 +721,7 @@ pub(super) async fn download<R: Runtime>(job: FileJob<'_, R>) -> Result<Segmente
             _ = ticker.tick() => {
                 let (transferred, map) = {
                     let plan = shared.plan();
-                    (plan.transferred(), plan.to_map(&item.url, job.size))
+                    (plan.transferred(), plan.to_map(item.resume_identity(), job.size))
                 };
                 let now = tokio::time::Instant::now();
                 if transferred != last_transferred {
@@ -742,7 +748,7 @@ pub(super) async fn download<R: Runtime>(job: FileJob<'_, R>) -> Result<Segmente
         (
             plan.is_complete(),
             plan.transferred(),
-            plan.to_map(&item.url, job.size),
+            plan.to_map(item.resume_identity(), job.size),
         )
     };
     // Every writer is gone; the handle must close before the rename (Windows).

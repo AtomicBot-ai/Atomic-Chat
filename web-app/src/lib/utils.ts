@@ -97,6 +97,13 @@ export function getProviderLogo(provider: string) {
       return '/images/model-provider/nvidia.svg'
     case 'vllm':
       return '/images/model-provider/vllm.svg'
+    // A monogram until there is an approved mark, like vLLM's (change add-sglang-runtime, D7).
+    case 'sglang':
+      return '/images/model-provider/sglang.svg'
+    // Our own mark in Fluent's palette (a chip with a spark): neither Microsoft's four-square logo
+    // nor the Foundry product icon, which are their trademarks (change add-foundry-local).
+    case 'foundry-local':
+      return '/images/model-provider/foundry-local.svg'
     case 'anthropic':
       return '/images/model-provider/anthropic.svg'
     case 'huggingface':
@@ -225,6 +232,10 @@ export const getProviderTitle = (provider: string) => {
       return 'TensorRT-LLM'
     case 'vllm':
       return 'vLLM'
+    case 'sglang':
+      return 'SGLang'
+    case 'foundry-local':
+      return 'Foundry Local'
     // The media engine, named on the engine-update banner. Not a chat provider.
     case 'sd-cpp':
       return 'stable-diffusion.cpp'

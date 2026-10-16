@@ -1,6 +1,6 @@
 import type { UIMessage } from '@ai-sdk/react'
 import type { LanguageModel } from 'ai'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { localStorageKey } from '@/constants/localStorage'
 import { useMCPServers } from '@/hooks/useMCPServers'
@@ -17,6 +17,7 @@ import { loadChatSkillDetails } from '../chat-skill-injection'
 import { bumpAgentSkillRevision } from '../agent-skill-revision'
 import { ModelFactory } from '../model-factory'
 import { trackMcpActivation } from '../mcp-activation'
+import { useChatExecStatus } from '@/hooks/useChatExecStatus'
 
 // The skill-body loader is Tauri-only (IS_TAURI is false under vitest), so it
 // is mocked at the boundary; the pure collect/render/compose helpers run real.
@@ -32,6 +33,17 @@ vi.mock('../chat-skill-injection', async (importOriginal) => {
   const actual =
     await importOriginal<typeof import('../chat-skill-injection')>()
   return { ...actual, loadChatSkillDetails: vi.fn().mockResolvedValue([]) }
+})
+
+// Commands from chat are a desktop feature; on here so the transport offers
+// them when a test seeds a status that supports them.
+vi.mock('@/lib/platform/const', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/lib/platform/const')>()
+  return {
+    ...actual,
+    PlatformFeatures: { ...actual.PlatformFeatures, chatExec: true },
+  }
 })
 
 // Readiness for a remote provider pings the backend over Tauri, which vitest
@@ -1298,5 +1310,71 @@ describe('CustomChatTransport grammar-safe tool schemas', () => {
     useProvider('anthropic')
 
     expect(await sendAndCaptureSchema()).toEqual(boundedTool.inputSchema)
+  })
+})
+
+describe('CustomChatTransport commands and scripts', () => {
+  const idle: ModelStreamPart[] = [
+    { type: 'stream-start', warnings: [] },
+    {
+      type: 'finish',
+      finishReason: 'stop',
+      usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+    },
+  ]
+
+  beforeEach(() => {
+    useChatExecStatus.setState({ status: null })
+    useGeneralSetting.setState({ chatExecEnabled: true })
+    seedServiceHub({
+      rag: { getTools: vi.fn().mockResolvedValue([]) } as never,
+      chatExec: {
+        status: vi.fn().mockResolvedValue({
+          supported: true,
+          os: 'macos',
+          shell: 'sh',
+          languages: ['python'],
+          sandbox: { kind: 'none', reason: null },
+          userFolders: [],
+        }),
+      } as never,
+    })
+    useModelProvider.setState((state) => ({
+      selectedModel: { ...state.selectedModel!, capabilities: ['tools'] },
+    }))
+  })
+
+  afterEach(() => {
+    useChatExecStatus.setState({ status: null })
+  })
+
+  async function sentToolNames(): Promise<string[] | undefined> {
+    const model = fakeStreamingModel(idle)
+    vi.spyOn(ModelFactory, 'createModel').mockResolvedValue(model)
+    const transport = new CustomChatTransport('', 'thread-exec')
+    await readChunks(
+      (await transport.sendMessages({
+        chatId: 'chat-1',
+        messages: [userMessage],
+        abortSignal: undefined,
+        trigger: 'submit-message',
+        messageId: undefined,
+      })) as ReadableStream<Record<string, unknown>>
+    )
+    const doStream = (
+      model as unknown as { doStream: ReturnType<typeof vi.fn> }
+    ).doStream
+    return (
+      doStream.mock.calls[0][0] as { tools?: Array<{ name: string }> }
+    ).tools?.map((tool) => tool.name)
+  }
+
+  it('offers run_command and run_script to a model that calls tools', async () => {
+    expect(await sentToolNames()).toEqual(['run_command', 'run_script'])
+  })
+
+  it('offers neither once the composer toggle is off', async () => {
+    useGeneralSetting.setState({ chatExecEnabled: false })
+    expect(await sentToolNames()).toBeUndefined()
   })
 })

@@ -117,6 +117,100 @@ describe('executeChatToolCalls', () => {
   })
 })
 
+describe('executeChatToolCalls with commands', () => {
+  const runCall: ChatToolCall = {
+    toolCallId: 'call-run',
+    toolName: 'run_command',
+    input: { command: 'ls' },
+  }
+
+  it('runs an approved command itself, even when an MCP tool has the same name', async () => {
+    const controller = new AbortController()
+    const callMcpTool = vi.fn()
+    const callExecTool = vi.fn().mockResolvedValue({
+      output: { kind: 'chat-exec', text: 'Exit code: 0' },
+    })
+    const outputs: ChatToolOutput[] = []
+
+    await executeChatToolCalls({
+      ...baseOptions(),
+      mcpToolNames: new Set(['run_command']),
+      execToolNames: new Set(['run_command', 'run_script']),
+      toolCalls: [runCall],
+      signal: controller.signal,
+      callMcpTool,
+      callExecTool,
+      addToolOutput: (output) => outputs.push(output),
+    })
+
+    expect(callMcpTool).not.toHaveBeenCalled()
+    expect(callExecTool).toHaveBeenCalledWith({
+      toolCallId: 'call-run',
+      toolName: 'run_command',
+      input: { command: 'ls' },
+      threadId: 'thread-1',
+      signal: controller.signal,
+    })
+    expect(outputs).toEqual([
+      {
+        tool: 'run_command',
+        toolCallId: 'call-run',
+        output: { kind: 'chat-exec', text: 'Exit code: 0' },
+      },
+    ])
+  })
+
+  it('reports a command the backend refused as a tool error', async () => {
+    const outputs: ChatToolOutput[] = []
+
+    await executeChatToolCalls({
+      ...baseOptions(),
+      execToolNames: new Set(['run_command']),
+      toolCalls: [runCall],
+      signal: new AbortController().signal,
+      callMcpTool: vi.fn(),
+      callExecTool: vi.fn().mockResolvedValue({ error: 'Nothing to run' }),
+      addToolOutput: (output) => outputs.push(output),
+    })
+
+    expect(outputs).toEqual([
+      {
+        state: 'output-error',
+        tool: 'run_command',
+        toolCallId: 'call-run',
+        errorText: 'Error: Nothing to run',
+      },
+    ])
+  })
+
+  it('never runs a denied command', async () => {
+    const options = baseOptions()
+    options.approve.mockResolvedValue(false)
+    const callExecTool = vi.fn()
+    const outputs: ChatToolOutput[] = []
+
+    await executeChatToolCalls({
+      ...options,
+      execToolNames: new Set(['run_command']),
+      toolCalls: [runCall],
+      signal: new AbortController().signal,
+      callMcpTool: vi.fn(),
+      callExecTool,
+      addToolOutput: (output) => outputs.push(output),
+    })
+
+    expect(callExecTool).not.toHaveBeenCalled()
+    expect(outputs).toEqual([
+      {
+        state: 'output-error',
+        tool: 'run_command',
+        toolCallId: 'call-run',
+        errorText: 'Tool execution denied by user',
+      },
+    ])
+  })
+})
+
 describe('shouldSendToolFollowUp', () => {
   const completedToolMessage = {
     id: 'assistant-1',

@@ -18,6 +18,7 @@ import {
   type ModelStats,
 } from '@/lib/model-card'
 import { extractModelName } from '@/lib/models'
+import { foundryLocalOf } from '@/lib/foundry-local/hub'
 import { cn } from '@/lib/utils'
 import type { CatalogModel } from '@/services/models/types'
 import type { StaffPick } from '@/services/staff-picks-registry'
@@ -74,9 +75,11 @@ export function ModelDetailPanel({
   const [stats, setStats] = useState<ModelStats>({})
 
   const modelName = model?.model_name
+  // A Foundry Local entry is not a Hugging Face repository: nothing is asked of Hugging Face for it.
+  const foundry = foundryLocalOf(model)
 
   useEffect(() => {
-    if (!modelName) return
+    if (!modelName || foundry) return
     let active = true
     setStats({})
     void fetchModelStats(modelName).then((next) => {
@@ -85,7 +88,7 @@ export function ModelDetailPanel({
     return () => {
       active = false
     }
-  }, [modelName])
+  }, [modelName, foundry])
 
   const caps = useMemo(
     () => (model ? deriveCapabilities(model, pick?.categories) : []),
@@ -106,12 +109,21 @@ export function ModelDetailPanel({
   }
 
   const name =
-    pick?.title || extractModelName(model.model_name) || model.model_name
-  const repoId = model.model_name.includes('/')
-    ? model.model_name
-    : `${model.developer ? `${model.developer}/` : ''}${model.model_name}`
+    foundry?.name ||
+    pick?.title ||
+    extractModelName(model.model_name) ||
+    model.model_name
+  const repoId = foundry
+    ? foundry.model_id
+    : model.model_name.includes('/')
+      ? model.model_name
+      : `${model.developer ? `${model.developer}/` : ''}${model.model_name}`
   const params = stats.params ?? deriveParams(model)
-  const context = stats.context ?? deriveContext(model)
+  const context =
+    stats.context ??
+    (foundry?.context_length
+      ? `${Math.round(foundry.context_length / 1024)}K`
+      : deriveContext(model))
   const updated = relativeTime(model.last_modified ?? model.created_at)
 
   return (
@@ -130,17 +142,19 @@ export function ModelDetailPanel({
           </div>
           <p className="truncate text-xs text-muted-foreground">{repoId}</p>
         </div>
-        <a
-          href={`https://huggingface.co/${repoId}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="shrink-0"
-        >
-          <Button variant="outline" size="sm" className="gap-1.5">
-            <IconExternalLink size={14} />
-            {t('hub:openOnWeb')}
-          </Button>
-        </a>
+        {!foundry && (
+          <a
+            href={`https://huggingface.co/${repoId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="shrink-0"
+          >
+            <Button variant="outline" size="sm" className="gap-1.5">
+              <IconExternalLink size={14} />
+              {t('hub:openOnWeb')}
+            </Button>
+          </a>
+        )}
       </header>
 
       <DownloadOptionsSelect model={model} budgetBytes={budgetBytes} />

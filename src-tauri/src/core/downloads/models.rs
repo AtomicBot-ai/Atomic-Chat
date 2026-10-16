@@ -61,6 +61,19 @@ pub struct DownloadItem {
     pub sha256: Option<String>,
     pub size: Option<u64>,
     pub model_id: Option<String>,
+    /// What a partial file is matched against on resume, in place of `url`.
+    /// For sources whose links are signed and expire (Foundry Local's Azure
+    /// SAS links): a fresh link to the same file carries the same key, so the
+    /// bytes already on disk are kept. Without it the URL itself is the key.
+    #[serde(default)]
+    pub resume_key: Option<String>,
+}
+
+impl DownloadItem {
+    /// The identity a partial is saved under (`.url`, the segment map).
+    pub fn resume_identity(&self) -> &str {
+        self.resume_key.as_deref().unwrap_or(&self.url)
+    }
 }
 
 /// What a download task is doing while it has no bytes to report.

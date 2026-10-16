@@ -20,6 +20,7 @@ const LOCAL_MODEL_PROVIDERS = new Set([
   'llamacpp-upstream',
   'atomic-prism',
   'mlx',
+  'foundry-local',
   'jan',
 ])
 

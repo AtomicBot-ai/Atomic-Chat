@@ -2168,7 +2168,7 @@ fn agent_install_spec(
 /// A sentinel wraps the value so rc files that echo to stdout don't corrupt it.
 /// Returns `None` on probe failure; callers then fall back to the inherited PATH.
 #[cfg(not(windows))]
-fn login_shell_path() -> Option<String> {
+pub(crate) fn login_shell_path() -> Option<String> {
     use std::sync::OnceLock;
     static CACHE: OnceLock<Option<String>> = OnceLock::new();
     CACHE
@@ -2304,31 +2304,33 @@ fn apply_runtime_path(_cmd: &mut std::process::Command) {}
 /// Node-based CLIs like Cline already emit UTF-8, so try UTF-8 first and only
 /// fall back to the OEM codepage when the bytes are not valid UTF-8.
 #[cfg(windows)]
-fn decode_console_bytes(bytes: &[u8]) -> String {
+pub(crate) fn decode_console_bytes(bytes: &[u8]) -> String {
     match std::str::from_utf8(bytes) {
         Ok(s) => s.to_string(),
-        Err(_) => decode_oem(bytes).unwrap_or_else(|| String::from_utf8_lossy(bytes).into_owned()),
+        Err(_) => {
+            let code_page = unsafe { windows_sys::Win32::Globalization::GetOEMCP() };
+            decode_oem(bytes, code_page).unwrap_or_else(|| String::from_utf8_lossy(bytes).into_owned())
+        }
     }
 }
 
-/// Decode a byte buffer using the current Windows OEM codepage.
+/// Decode a byte buffer using a Windows code page (the current OEM page in production).
 #[cfg(windows)]
-fn decode_oem(bytes: &[u8]) -> Option<String> {
-    use windows_sys::Win32::Globalization::{GetOEMCP, MultiByteToWideChar};
+fn decode_oem(bytes: &[u8], code_page: u32) -> Option<String> {
+    use windows_sys::Win32::Globalization::MultiByteToWideChar;
     if bytes.is_empty() {
         return Some(String::new());
     }
-    let cp = unsafe { GetOEMCP() };
     let len = bytes.len() as i32;
     // First pass: required wide-char count.
     let needed =
-        unsafe { MultiByteToWideChar(cp, 0, bytes.as_ptr(), len, std::ptr::null_mut(), 0) };
+        unsafe { MultiByteToWideChar(code_page, 0, bytes.as_ptr(), len, std::ptr::null_mut(), 0) };
     if needed <= 0 {
         return None;
     }
     let mut buf: Vec<u16> = vec![0; needed as usize];
     let written =
-        unsafe { MultiByteToWideChar(cp, 0, bytes.as_ptr(), len, buf.as_mut_ptr(), needed) };
+        unsafe { MultiByteToWideChar(code_page, 0, bytes.as_ptr(), len, buf.as_mut_ptr(), needed) };
     if written <= 0 {
         return None;
     }
@@ -2337,7 +2339,7 @@ fn decode_oem(bytes: &[u8]) -> Option<String> {
 }
 
 #[cfg(not(windows))]
-fn decode_console_bytes(bytes: &[u8]) -> String {
+pub(crate) fn decode_console_bytes(bytes: &[u8]) -> String {
     String::from_utf8_lossy(bytes).into_owned()
 }
 
@@ -6026,6 +6028,24 @@ pub fn migrate_macos_autostart_launchagent<R: Runtime>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn preserves_utf8_console_output() {
+        let text = "Привет, café, 日本語\r\n";
+        assert_eq!(decode_console_bytes(text.as_bytes()), text);
+        assert_eq!(decode_console_bytes(b""), "");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn decodes_russian_cmd_diagnostics_in_oem_866() {
+        // The native stderr bytes behind the unreadable chat error report.
+        let bytes = b"\x8e\xe2\xaa\xa0\xa7\xa0\xad\xae \xa2 \xa4\xae\xe1\xe2\xe3\xaf\xa5.\r\n";
+        assert_eq!(
+            decode_oem(bytes, 866).as_deref(),
+            Some("Отказано в доступе.\r\n")
+        );
+    }
 
     /// A file in a throwaway directory that is removed when the guard drops,
     /// so repeated test runs don't pile up directories under `target/`.

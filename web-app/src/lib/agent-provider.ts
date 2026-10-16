@@ -18,6 +18,10 @@ import {
  * in front of the container); whether a given model can call tools is a
  * model-level check made before the run.
  *
+ * `foundry-local` is driven over its session's OpenAI-compatible endpoint, the core's gateway in
+ * front of the model's host process, like a managed engine; a variant that cannot call tools is
+ * kept out by the model-level check (`agentModelBlockReason`).
+ *
  * `foundation-models` is deliberately absent: Apple's on-device runtime exposes
  * no endpoint the agent can drive.
  */
@@ -26,6 +30,7 @@ export const AGENT_LOCAL_PROVIDERS = [
   'llamacpp-upstream',
   'atomic-prism',
   'mlx',
+  'foundry-local',
 ] as const
 
 /** Why Agent mode is unavailable. `null` from the helpers below means it is. */

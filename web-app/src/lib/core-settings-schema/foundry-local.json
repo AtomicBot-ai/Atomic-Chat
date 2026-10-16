@@ -1,0 +1,14 @@
+[
+  {
+    "key": "timeout",
+    "title": "Timeout for Foundry Local",
+    "description": "How long a Foundry Local model may take to load, in seconds: registering it, building its ONNX Runtime session and starting the host's server.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 600,
+      "placeholder": "e.g 600",
+      "type": "number",
+      "textAlign": "right"
+    }
+  }
+]

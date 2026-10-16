@@ -18,6 +18,7 @@ $files = @(
   'src-tauri/resources/bin/bun-aarch64-pc-windows-msvc.exe',
   'src-tauri/resources/bin/uv-aarch64-pc-windows-msvc.exe',
   'src-tauri/resources/bin/cloudflared-aarch64-pc-windows-msvc.exe',
+  'src-tauri/resources/bin/mxc/wxc-exec.exe',
   'src-tauri/resources/llamacpp-backend/test-placeholder',
   'src-tauri/resources/llamacpp-backend-upstream/test-placeholder'
 )

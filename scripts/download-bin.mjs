@@ -56,6 +56,35 @@ const CLOUDFLARED = {
   },
 }
 
+// ----- MXC (Windows sandbox for chat commands) -----
+// Microsoft's `wxc-exec.exe`, which chat's `run_command` / `run_script` run
+// under on Windows (src-tauri/src/core/chat_exec/mxc.rs). Taken from the
+// `@microsoft/mxc-sdk` npm package: its tarball (37 MB) carries the same
+// Microsoft-signed executors as the 536 MB GitHub release zip. Pinned like
+// cloudflared — the tarball against the size and sha256 of the published one,
+// the executor inside it against its own hash. Only the executor and the
+// license are unpacked; `wxc-host-prep.exe` is not shipped, because the app
+// never uses the administrator-prepared tier that rewrites folder ACLs.
+//
+// To update: change `version`, then the tarball and both executor hashes.
+const MXC = {
+  version: '1.0.0',
+  tarball: {
+    size: 37746375,
+    sha256: '39e59ffd9d0832334889b0cd583d0beb43b1bbbe9f783dd7c6980203d23e9602',
+  },
+  executors: {
+    x64: {
+      member: 'package/bin/x64/wxc-exec.exe',
+      sha256: '8a6d1db4dd1846981127d9014741be18b094d07be967765dff6754bda1d40259',
+    },
+    arm64: {
+      member: 'package/bin/arm64/wxc-exec.exe',
+      sha256: 'a1dc1218e26dfae2e463ebede99591ab9b4adcc4efe5d09cc3302b053997244e',
+    },
+  },
+}
+
 function sha256Of(filePath) {
   return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex')
 }
@@ -124,6 +153,59 @@ async function fetchCloudflaredAsset(key, tempBinDir) {
   }
   fs.renameSync(partial, cached)
   return cached
+}
+
+// Puts the pinned executor for this Windows machine's architecture at
+// `resources/bin/mxc/wxc-exec.exe` (listed in tauri.windows*.conf.json).
+async function installMxc(binDir, tempBinDir) {
+  if (os.platform() !== 'win32') return
+  const executor = MXC.executors[os.arch() === 'arm64' ? 'arm64' : 'x64']
+  const targetDir = path.join(binDir, 'mxc')
+  const target = path.join(targetDir, 'wxc-exec.exe')
+  if (fs.existsSync(target) && sha256Of(target) === executor.sha256) {
+    console.log(`MXC ${MXC.version} already installed and verified, skipping download`)
+    return
+  }
+  fs.mkdirSync(targetDir, { recursive: true })
+  fs.mkdirSync(tempBinDir, { recursive: true })
+
+  const archive = path.join(tempBinDir, `mxc-sdk-${MXC.version}.tgz`)
+  if (!(fs.existsSync(archive) && sha256Of(archive) === MXC.tarball.sha256)) {
+    const url = `https://registry.npmjs.org/@microsoft/mxc-sdk/-/mxc-sdk-${MXC.version}.tgz`
+    const partial = `${archive}.part`
+    fs.rmSync(partial, { force: true })
+    console.log(`Downloading ${url}`)
+    try {
+      await downloadFollowingRedirects(url, partial)
+      const size = fs.statSync(partial).size
+      const actual = sha256Of(partial)
+      if (size !== MXC.tarball.size || actual !== MXC.tarball.sha256) {
+        throw new Error(
+          `mxc-sdk ${MXC.version} failed verification: expected ${MXC.tarball.size} bytes ` +
+            `sha256 ${MXC.tarball.sha256}, got ${size} bytes sha256 ${actual}`
+        )
+      }
+    } catch (err) {
+      fs.rmSync(partial, { force: true })
+      throw err
+    }
+    fs.renameSync(partial, archive)
+  }
+
+  const extractDir = path.join(tempBinDir, `mxc-sdk-${MXC.version}`)
+  fs.rmSync(extractDir, { recursive: true, force: true })
+  fs.mkdirSync(extractDir, { recursive: true })
+  await tar.x({ file: archive, cwd: extractDir }, [executor.member, 'package/LICENSE.md'])
+  const extracted = path.join(extractDir, executor.member)
+  const actual = fs.existsSync(extracted) ? sha256Of(extracted) : 'missing'
+  if (actual !== executor.sha256) {
+    throw new Error(
+      `${executor.member} in mxc-sdk ${MXC.version} failed verification: ` +
+        `expected sha256 ${executor.sha256}, got ${actual}`
+    )
+  }
+  fs.copyFileSync(extracted, target)
+  console.log(`MXC ${MXC.version} installed at ${target}`)
 }
 
 function installBinary(source, target) {
@@ -615,6 +697,9 @@ async function main() {
   // Fatal on purpose (see `CLOUDFLARED` above): the bundle lists it as an
   // `externalBin`, and an unverified tunnel binary must not ship.
   await installCloudflared(binDir, tempBinDir)
+
+  // Fatal for the same reason: an unverified sandbox executor must not ship.
+  await installMxc(binDir, tempBinDir)
 
   // ----- sqlite-vec (optional, ANN acceleration) -----
   try {

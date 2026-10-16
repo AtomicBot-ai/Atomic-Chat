@@ -10,19 +10,26 @@ import type { CatalogModel } from '@/services/models/types'
 import { DefaultModelSetupService } from '@/services/model-setup/default'
 import type {
   CompatibilityVerdict,
-  ModelSetup,
-  ModelSetupPlan,
+  PrismCatalog,
+  PrismFamiliesResponse,
 } from '@/services/model-setup/types'
-import { useModelSetupStore } from '@/stores/model-setup-store'
+import { useModelCompatibilityStore } from '@/stores/model-compatibility-store'
 
 const mocks = vi.hoisted(() => ({
   pullModelWithMetadata: vi.fn(() => Promise.resolve()),
   switchToModel: vi.fn(() => Promise.resolve()),
   toastError: vi.fn(),
   checkCompatibility: vi.fn(),
-  plan: vi.fn(),
-  start: vi.fn(),
-  cancel: vi.fn(),
+  prismCatalog: vi.fn(),
+  installPrismBuild: vi.fn(),
+  activatePrismBuild: vi.fn(),
+  deleteModel: vi.fn(),
+  abortDownload: vi.fn(),
+  getProviders: vi.fn(),
+}))
+
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: vi.fn(async () => () => {}),
 }))
 
 vi.mock('@/utils/switchModel', () => ({
@@ -194,6 +201,10 @@ describe('ModelDownloadAction', () => {
       developer: 'prism-ml',
       quants: [bonsai],
     } as unknown as CatalogModel
+    /** The id the Bonsai file registers under. */
+    const prismId = 'prism-ml/Bonsai-8B-PQ2_0'
+    const pinned = (file: string) =>
+      `https://huggingface.co/prism-ml/Bonsai-8B-gguf/resolve/b072e1d/${file}`
     const verdict = (
       outcome: CompatibilityVerdict['outcome'],
       provider: string | null = 'atomic-prism'
@@ -205,75 +216,99 @@ describe('ModelDownloadAction', () => {
       rules_version: 1,
       reason: 'needs PQ2_0',
     })
-
-    const plan = (engineInstalled: boolean): ModelSetupPlan => ({
-      digest: 'digest-1',
-      model_id: 'prism-ml/Bonsai-8B-PQ2_0',
-      provider: 'atomic-prism',
-      verdict: verdict(engineInstalled ? 'compatible' : 'engine_required'),
-      engine: {
-        provider: 'atomic-prism',
-        version: 'prism-b9000-abcdef0',
-        backend: 'macos-arm64',
-        installed: engineInstalled,
-        download_size: engineInstalled ? 0 : 20_000_000,
-      },
-      model: {
-        repo: 'prism-ml/Bonsai-8B-gguf',
-        file: 'Bonsai-8B-PQ2_0.gguf',
-        revision: 'main',
-        size: 100,
-      },
-      projector: null,
-      total_download_bytes: 100,
-      free_bytes: null,
-      blockers: [],
+    const families: PrismFamiliesResponse = {
+      rules_version: 1,
+      families: [
+        {
+          id: 'bonsai-8b',
+          title: 'Bonsai 8B',
+          repo: 'prism-ml/Bonsai-8B-gguf',
+          revision: 'b072e1d',
+          files: [
+            {
+              file: 'Bonsai-8B-PQ2_0.gguf',
+              size: 100,
+              sha256: 'a'.repeat(64),
+              treatment: 'prism_required',
+              default: true,
+            },
+          ],
+          projectors: [
+            {
+              file: 'mmproj-Q8_0.gguf',
+              size: 10,
+              sha256: 'c'.repeat(64),
+              default: true,
+            },
+          ],
+        },
+      ],
+    }
+    const prismBuild = { version: 'prism-b9000-abcdef0', backend: 'macos-arm64' }
+    const catalog = (installed: boolean): PrismCatalog => ({
+      installed: installed ? [prismBuild] : [],
+      available: [prismBuild],
+      recommended: 'prism-b9000-abcdef0/macos-arm64',
+      releases: [
+        { tag: prismBuild.version, variants: [{ id: prismBuild.backend, size: 20 }] },
+      ],
     })
 
-    const running = (engineInstalled: boolean, stage = 'downloading_model') =>
-      ({
-        setup_id: 's1',
-        revision: 1,
-        stage,
-        request: {
-          repo: 'prism-ml/Bonsai-8B-gguf',
-          file: 'Bonsai-8B-PQ2_0.gguf',
-        },
-        plan: plan(engineInstalled),
-        task_ids: { model: 'tm' },
-        updated_at: 1,
-      }) as unknown as ModelSetup
+    /** The verdicts: the Hub row's, the plan's, and the one on the file on disk. */
+    let rowVerdict: CompatibilityVerdict
+    let planVerdict: CompatibilityVerdict
+    let diskVerdict: CompatibilityVerdict
 
     class FakeService extends DefaultModelSetupService {
       override isSupported() {
         return true
       }
       override checkCompatibility = mocks.checkCompatibility
-      override plan = mocks.plan
-      override start = mocks.start
-      override cancel = mocks.cancel
+      override families = async () => families
+      override prismCatalog = mocks.prismCatalog
+      override diskAvailable = async () => null
+      override installPrismBuild = mocks.installPrismBuild
+      override activatePrismBuild = mocks.activatePrismBuild
     }
 
     beforeEach(() => {
-      useModelSetupStore.setState({ setups: {}, progress: {}, verdicts: {} })
-      mocks.checkCompatibility.mockResolvedValue(verdict('compatible', null))
-      mocks.plan.mockResolvedValue(plan(false))
-      mocks.start.mockResolvedValue(running(true, 'queued'))
-      mocks.cancel.mockResolvedValue({
-        ...running(true),
-        stage: 'cancelled',
-        revision: 2,
-      })
+      useModelCompatibilityStore.setState({ verdicts: {} })
+      rowVerdict = verdict('compatible', null)
+      planVerdict = verdict('engine_required')
+      diskVerdict = verdict('compatible')
+      mocks.checkCompatibility.mockImplementation(
+        async (request: { model_id?: string; inspect_remote?: boolean }) =>
+          request.model_id
+            ? diskVerdict
+            : request.inspect_remote
+              ? planVerdict
+              : rowVerdict
+      )
+      mocks.prismCatalog.mockResolvedValue(catalog(false))
+      mocks.installPrismBuild.mockResolvedValue(undefined)
+      mocks.activatePrismBuild.mockResolvedValue(undefined)
+      mocks.deleteModel.mockResolvedValue(undefined)
+      mocks.abortDownload.mockResolvedValue(undefined)
+      mocks.getProviders.mockResolvedValue([])
       seedServiceHub({
-        models: { pullModelWithMetadata: mocks.pullModelWithMetadata } as never,
+        models: {
+          pullModelWithMetadata: mocks.pullModelWithMetadata,
+          deleteModel: mocks.deleteModel,
+          abortDownload: mocks.abortDownload,
+        } as never,
+        providers: { getProviders: mocks.getProviders } as never,
         modelSetup: new FakeService(),
       })
     })
 
-    it('is marked "Requires PrismML" and opens the setup instead of downloading', async () => {
-      useModelSetupStore.setState({
-        verdicts: { [bonsai.path]: verdict('engine_required') },
+    /** The row's verdict as the Hub already asked it. */
+    const known = (outcome: CompatibilityVerdict['outcome']) =>
+      useModelCompatibilityStore.setState({
+        verdicts: { [bonsai.path]: verdict(outcome) },
       })
+
+    it('is marked "Requires PrismML" and opens the setup when the engine is missing', async () => {
+      known('engine_required')
       render(
         <ModelDownloadAction variant={bonsai} model={bonsaiModel} asButton />
       )
@@ -285,10 +320,11 @@ describe('ModelDownloadAction', () => {
 
       expect(await screen.findByTestId('model-setup-sheet')).toBeInTheDocument()
       expect(mocks.pullModelWithMetadata).not.toHaveBeenCalled()
+      expect(mocks.installPrismBuild).not.toHaveBeenCalled()
     })
 
     it('asks the core on click when the verdict has not arrived yet', async () => {
-      mocks.checkCompatibility.mockResolvedValue(verdict('engine_required'))
+      rowVerdict = verdict('engine_required')
       render(
         <ModelDownloadAction variant={bonsai} model={bonsaiModel} asButton />
       )
@@ -305,7 +341,7 @@ describe('ModelDownloadAction', () => {
     })
 
     it('refuses a file no engine runs and names the replacement', async () => {
-      useModelSetupStore.setState({
+      useModelCompatibilityStore.setState({
         verdicts: {
           [bonsai.path]: {
             ...verdict('legacy_artifact', null),
@@ -334,91 +370,184 @@ describe('ModelDownloadAction', () => {
       fireEvent.click(downloadButton())
 
       await waitFor(() =>
-        expect(mocks.pullModelWithMetadata).toHaveBeenCalled()
+        expect(mocks.pullModelWithMetadata).toHaveBeenCalledWith(
+          'Bonsai-8B-PQ2_0',
+          bonsai.path,
+          undefined,
+          '',
+          true,
+          false
+        )
       )
       expect(screen.queryByTestId('model-setup-sheet')).toBeNull()
     })
 
-    it('downloads without the sheet when PrismML is already installed', async () => {
-      useModelSetupStore.setState({
-        verdicts: { [bonsai.path]: verdict('compatible') },
-      })
-      mocks.plan.mockResolvedValue(plan(true))
-      render(
-        <ModelDownloadAction variant={bonsai} model={bonsaiModel} asButton />
-      )
-      fireEvent.click(downloadButton())
-
-      await waitFor(() => expect(mocks.start).toHaveBeenCalled())
-      const [request] = mocks.start.mock.calls[0] as unknown as [
-        Record<string, unknown>,
-      ]
-      expect(request).toMatchObject({
-        repo: 'prism-ml/Bonsai-8B-gguf',
-        file: 'Bonsai-8B-PQ2_0.gguf',
-        include_projector: true,
-        plan_digest: 'digest-1',
-      })
-      expect(await screen.findByTestId('model-setup-progress')).toBeEnabled()
-      expect(screen.queryByTestId('model-setup-sheet')).toBeNull()
-      expect(mocks.pullModelWithMetadata).not.toHaveBeenCalled()
-    })
-
-    it('says so when the setup cannot start, as a failed download does', async () => {
-      useModelSetupStore.setState({
-        verdicts: { [bonsai.path]: verdict('compatible') },
-      })
-      mocks.plan.mockResolvedValue(plan(true))
-      mocks.start.mockRejectedValue({ code: 'X', message: 'core is down' })
+    it('downloads under PrismML with the app\'s own downloader when the build is installed, and keeps a file PrismML runs', async () => {
+      known('compatible')
+      planVerdict = verdict('compatible')
+      mocks.prismCatalog.mockResolvedValue(catalog(true))
       render(
         <ModelDownloadAction variant={bonsai} model={bonsaiModel} asButton />
       )
       fireEvent.click(downloadButton())
 
       await waitFor(() =>
-        expect(mocks.toastError).toHaveBeenCalledWith('hub:downloadFailed', {
-          description: 'core is down',
+        expect(mocks.pullModelWithMetadata).toHaveBeenCalledWith(
+          prismId,
+          pinned('Bonsai-8B-PQ2_0.gguf'),
+          pinned('mmproj-Q8_0.gguf'),
+          '',
+          true,
+          false,
+          {
+            provider: 'atomic-prism',
+            modelSha256: 'a'.repeat(64),
+            modelSize: 100,
+            mmprojSha256: 'c'.repeat(64),
+            mmprojSize: 10,
+          }
+        )
+      )
+      await waitFor(() =>
+        expect(mocks.checkCompatibility).toHaveBeenCalledWith({
+          model_id: prismId,
+          provider: 'atomic-prism',
         })
       )
-      expect(
-        await screen.findByRole('button', { name: 'hub:download' })
-      ).toBeEnabled()
       expect(screen.queryByTestId('model-setup-sheet')).toBeNull()
+      expect(mocks.installPrismBuild).not.toHaveBeenCalled()
+      expect(mocks.activatePrismBuild).not.toHaveBeenCalled()
+      expect(mocks.deleteModel).not.toHaveBeenCalled()
     })
 
-    it('cancels a running download-only setup from the row, like a download', async () => {
-      useModelSetupStore.setState({
-        setups: { s1: running(true) },
-        progress: { tm: { transferred: 25, total: 100 } },
+    it('removes a downloaded file PrismML cannot run, so it is not listed, and says why', async () => {
+      known('compatible')
+      planVerdict = verdict('compatible')
+      mocks.prismCatalog.mockResolvedValue(catalog(true))
+      diskVerdict = {
+        ...verdict('engine_required', 'llamacpp-upstream'),
+        reason: 'The header names another packing.',
+      }
+      // The import lists the model, as the providers' refresh after a download does.
+      mocks.pullModelWithMetadata.mockImplementationOnce(async () => {
+        useModelProvider.setState({
+          providers: [
+            { provider: 'atomic-prism', settings: [], models: [{ id: prismId }] } as never,
+          ],
+        })
+      })
+      mocks.getProviders.mockResolvedValue([
+        { provider: 'atomic-prism', settings: [], models: [{ id: prismId }] },
+      ])
+      render(
+        <ModelDownloadAction variant={bonsai} model={bonsaiModel} asButton />
+      )
+      fireEvent.click(downloadButton())
+
+      await waitFor(() =>
+        expect(mocks.deleteModel).toHaveBeenCalledWith(prismId, 'atomic-prism')
+      )
+      await waitFor(() =>
+        expect(mocks.toastError).toHaveBeenCalledWith(
+          'hub:prismModelRejected',
+          { description: 'The header names another packing.' }
+        )
+      )
+      const listed = useModelProvider
+        .getState()
+        .providers.flatMap((provider) => provider.models.map((m) => m.id))
+      expect(listed).not.toContain(prismId)
+    })
+
+    it('installs the engine, makes it active and only then downloads, from the sheet', async () => {
+      known('engine_required')
+      render(
+        <ModelDownloadAction variant={bonsai} model={bonsaiModel} asButton />
+      )
+      fireEvent.click(downloadButton())
+      const start = await screen.findByTestId('model-setup-start')
+      await waitFor(() => expect(start).toBeEnabled())
+      fireEvent.click(start)
+
+      await waitFor(() =>
+        expect(mocks.pullModelWithMetadata).toHaveBeenCalled()
+      )
+      expect(mocks.installPrismBuild).toHaveBeenCalledWith(
+        expect.objectContaining(prismBuild),
+        'engine-build-atomic-prism-prism-b9000-abcdef0'
+      )
+      expect(mocks.activatePrismBuild).toHaveBeenCalledWith(
+        expect.objectContaining(prismBuild)
+      )
+      const [installed] = mocks.installPrismBuild.mock.invocationCallOrder
+      const [activated] = mocks.activatePrismBuild.mock.invocationCallOrder
+      const [pulled] = mocks.pullModelWithMetadata.mock.invocationCallOrder
+      expect(installed).toBeLessThan(activated)
+      expect(activated).toBeLessThan(pulled)
+    })
+
+    it('shows a refused engine install and downloads nothing', async () => {
+      known('engine_required')
+      mocks.installPrismBuild.mockRejectedValue({
+        code: 'ENGINE_INSTALL_IN_PROGRESS',
+        message: 'Another install of atomic-prism is running.',
+      })
+      render(
+        <ModelDownloadAction variant={bonsai} model={bonsaiModel} asButton />
+      )
+      fireEvent.click(downloadButton())
+      const start = await screen.findByTestId('model-setup-start')
+      await waitFor(() => expect(start).toBeEnabled())
+      fireEvent.click(start)
+
+      await waitFor(() =>
+        expect(mocks.toastError).toHaveBeenCalledWith('hub:downloadFailed', {
+          description: 'Another install of atomic-prism is running.',
+        })
+      )
+      expect(mocks.activatePrismBuild).not.toHaveBeenCalled()
+      expect(mocks.pullModelWithMetadata).not.toHaveBeenCalled()
+      expect(await screen.findByRole('button', { name: 'hub:download' })).toBeEnabled()
+    })
+
+    it('keeps following a running Bonsai download when the verdict is forgotten', async () => {
+      // A new core generation cleared the verdicts; the download goes on.
+      useDownloadStore.setState({
+        localDownloadingModels: new Set([prismId]),
       })
       render(
         <ModelDownloadAction variant={bonsai} model={bonsaiModel} asButton />
       )
 
-      const progress = screen.getByTestId('model-setup-progress')
-      expect(progress).toHaveTextContent('25%')
-      expect(progress).toHaveAccessibleName('common:cancelDownload')
-      fireEvent.click(progress)
+      fireEvent.click(
+        screen.getByRole('button', { name: 'common:cancelDownload' })
+      )
 
-      await waitFor(() => expect(mocks.cancel).toHaveBeenCalledWith('s1'))
-      expect(screen.queryByTestId('model-setup-sheet')).toBeNull()
+      await waitFor(() =>
+        expect(mocks.abortDownload).toHaveBeenCalledWith(prismId)
+      )
+      expect(screen.queryByRole('button', { name: 'hub:download' })).toBeNull()
     })
 
-    it('opens the sheet from the progress of a setup that installs the engine', async () => {
-      useModelSetupStore.setState({
-        setups: { s1: running(false) },
-        progress: { tm: { transferred: 25, total: 100 } },
+    it('cancels a running Bonsai download from the row, like any download', async () => {
+      known('compatible')
+      useDownloadStore.setState({
+        localDownloadingModels: new Set([prismId]),
       })
       render(
         <ModelDownloadAction variant={bonsai} model={bonsaiModel} asButton />
       )
 
-      const progress = screen.getByTestId('model-setup-progress')
-      expect(progress).toHaveAccessibleName('hub:prismSetupOpen')
-      fireEvent.click(progress)
+      fireEvent.click(
+        screen.getByRole('button', { name: 'common:cancelDownload' })
+      )
 
-      expect(await screen.findByTestId('model-setup-sheet')).toBeInTheDocument()
-      expect(mocks.cancel).not.toHaveBeenCalled()
+      await waitFor(() =>
+        expect(mocks.abortDownload).toHaveBeenCalledWith(prismId)
+      )
+      expect(useDownloadStore.getState().resumableDownloads.has(prismId)).toBe(
+        true
+      )
     })
   })
 })

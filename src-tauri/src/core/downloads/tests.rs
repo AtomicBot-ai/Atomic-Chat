@@ -152,6 +152,7 @@ async fn a_resume_waits_for_the_cancelled_writer_and_cancellation_does_not_wait_
         sha256: None,
         size: Some(6),
         model_id: Some("test/model".to_string()),
+        resume_key: None,
     };
     let app = mock_app();
 
@@ -268,6 +269,7 @@ fn preflight_test_item(url: String, size: Option<u64>) -> DownloadItem {
         sha256: None,
         size,
         model_id: None,
+        resume_key: None,
     }
 }
 
@@ -442,6 +444,7 @@ async fn download_succeeds_when_preflight_head_always_fails() {
         sha256: None,
         size: None,
         model_id: Some("test/ato-302".to_string()),
+        resume_key: None,
     };
     let app = mock_app();
 
@@ -533,6 +536,7 @@ async fn run_interrupted_download_test(
         sha256: None,
         size: Some(6),
         model_id: Some("test/model".to_string()),
+        resume_key: None,
     };
     let app = mock_app();
     download_single_file_for_test(app.handle().clone(), &item, &save_path, 6)
@@ -738,6 +742,7 @@ fn test_download_item_with_ssl_proxy() {
         sha256: None,
         size: None,
         model_id: None,
+        resume_key: None,
     };
 
     assert!(download_item.proxy.is_some());
@@ -758,6 +763,7 @@ fn test_client_creation_with_ssl_settings() {
         sha256: None,
         size: None,
         model_id: None,
+        resume_key: None,
     };
 
     let header_map = HeaderMap::new();
@@ -806,6 +812,7 @@ fn test_download_item_creation() {
         sha256: None,
         size: None,
         model_id: None,
+        resume_key: None,
     };
 
     assert_eq!(item.url, "https://example.com/file.tar.gz");
@@ -874,6 +881,7 @@ async fn downloads_model_fixture_and_enforces_size_and_hash_contract() {
         ),
         size: Some(6),
         model_id: Some("fixture/tiny-model".to_string()),
+        resume_key: None,
     };
     let app = mock_app();
 
@@ -1160,6 +1168,7 @@ fn test_item(url: String, save_path: &std::path::Path, size: u64) -> DownloadIte
         sha256: None,
         size: Some(size),
         model_id: Some("test/model".to_string()),
+        resume_key: None,
     }
 }
 
@@ -1697,4 +1706,248 @@ async fn a_cancelled_multi_connection_download_keeps_its_map_and_resumes_from_it
 
     server.handle.abort();
     let _ = tokio::fs::remove_dir_all(save_path.parent().unwrap()).await;
+}
+
+// Foundry Local: links are signed and expire, so a resumed file comes from
+// another URL. `resume_key` is what the partial is matched against then.
+
+fn keyed_item(url: String, save_path: &std::path::Path, key: Option<&str>) -> DownloadItem {
+    DownloadItem {
+        resume_key: key.map(str::to_string),
+        ..test_item(url, save_path, SEGMENTED_TEST_SIZE as u64)
+    }
+}
+
+async fn download_item_for_test(
+    item: &DownloadItem,
+    save_path: &std::path::Path,
+    resume: bool,
+    cancel_token: CancellationToken,
+    tuning: TransferTuning,
+) -> Result<std::path::PathBuf, String> {
+    download_single_file_with_tuning_for_test(
+        mock_app().handle().clone(),
+        item,
+        save_path,
+        SEGMENTED_TEST_SIZE as u64,
+        resume,
+        cancel_token,
+        tuning,
+    )
+    .await
+}
+
+/// A half-done partial with its map, saved under `identity`.
+async fn seed_half_partial(save_path: &std::path::Path, body: &[u8], identity: &str) -> usize {
+    tokio::fs::create_dir_all(save_path.parent().unwrap())
+        .await
+        .unwrap();
+    let half = SEGMENTED_TEST_SIZE / 2;
+    let mut partial = body[..half].to_vec();
+    partial.resize(SEGMENTED_TEST_SIZE, 0);
+    tokio::fs::write(sidecar_path(save_path, "tmp"), &partial)
+        .await
+        .unwrap();
+    tokio::fs::write(sidecar_path(save_path, "url"), identity)
+        .await
+        .unwrap();
+    let map = serde_json::json!({
+        "version": 1,
+        "url": identity,
+        "size": SEGMENTED_TEST_SIZE,
+        "segments": [[0, half, half], [half, half, SEGMENTED_TEST_SIZE]],
+    });
+    tokio::fs::write(sidecar_path(save_path, "parts"), map.to_string())
+        .await
+        .unwrap();
+    half
+}
+
+#[tokio::test]
+async fn a_resume_key_resumes_a_segmented_partial_from_another_url() {
+    let body = segmented_test_body();
+    let server = spawn_range_server(body.clone(), true).await;
+    let save_path = test_download_path("model.onnx");
+    let key = "foundry-local/qwen/model.onnx";
+    let half = seed_half_partial(&save_path, &body, key).await;
+
+    let item = keyed_item(format!("{}?sig=fresh", server.url), &save_path, Some(key));
+    download_item_for_test(
+        &item,
+        &save_path,
+        true,
+        CancellationToken::new(),
+        segmented_test_tuning(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(tokio::fs::read(&save_path).await.unwrap(), *body);
+    let starts = server.starts.lock().unwrap().clone();
+    assert!(
+        starts
+            .iter()
+            .all(|start| start.is_some_and(|start| start >= half as u64)),
+        "bytes already on disk were fetched again: {starts:?}"
+    );
+    assert_no_sidecars(&save_path);
+
+    server.handle.abort();
+    let _ = tokio::fs::remove_dir_all(save_path.parent().unwrap()).await;
+}
+
+#[tokio::test]
+async fn a_resume_key_resumes_a_single_stream_partial_from_another_url() {
+    let body = segmented_test_body();
+    let server = spawn_range_server(body.clone(), true).await;
+    let save_path = test_download_path("model.onnx");
+    tokio::fs::create_dir_all(save_path.parent().unwrap())
+        .await
+        .unwrap();
+    let key = "foundry-local/qwen/model.onnx";
+    let prefix = 100 * 1024;
+    tokio::fs::write(sidecar_path(&save_path, "tmp"), &body[..prefix])
+        .await
+        .unwrap();
+    tokio::fs::write(sidecar_path(&save_path, "url"), key)
+        .await
+        .unwrap();
+
+    let item = keyed_item(format!("{}?sig=fresh", server.url), &save_path, Some(key));
+    let one_connection = TransferTuning {
+        max_connections: 1,
+        ..segmented_test_tuning()
+    };
+    download_item_for_test(
+        &item,
+        &save_path,
+        true,
+        CancellationToken::new(),
+        one_connection,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(tokio::fs::read(&save_path).await.unwrap(), *body);
+    let starts = server.starts.lock().unwrap().clone();
+    assert_eq!(
+        starts,
+        vec![Some(prefix as u64)],
+        "the partial was fetched again"
+    );
+    assert_no_sidecars(&save_path);
+
+    server.handle.abort();
+    let _ = tokio::fs::remove_dir_all(save_path.parent().unwrap()).await;
+}
+
+#[tokio::test]
+async fn without_a_resume_key_a_partial_from_another_url_starts_over() {
+    let body = segmented_test_body();
+    let server = spawn_range_server(body.clone(), true).await;
+    let save_path = test_download_path("model.gguf");
+    seed_half_partial(&save_path, &body, &format!("{}?sig=old", server.url)).await;
+
+    let item = keyed_item(format!("{}?sig=new", server.url), &save_path, None);
+    download_item_for_test(
+        &item,
+        &save_path,
+        true,
+        CancellationToken::new(),
+        segmented_test_tuning(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(tokio::fs::read(&save_path).await.unwrap(), *body);
+    let starts = server.starts.lock().unwrap().clone();
+    assert!(
+        starts.contains(&Some(0)),
+        "a partial saved under another URL was kept: {starts:?}"
+    );
+    assert_no_sidecars(&save_path);
+
+    server.handle.abort();
+    let _ = tokio::fs::remove_dir_all(save_path.parent().unwrap()).await;
+}
+
+/// The spec scenario "Докачка на следующий день": cancelled under one link,
+/// resumed under a fresh one with the same key.
+#[tokio::test]
+async fn a_download_cancelled_under_one_link_resumes_under_a_fresh_one_with_the_same_key() {
+    let body = segmented_test_body();
+    let server = spawn_range_server(body.clone(), true).await;
+    server.stall_next.store(usize::MAX, Ordering::SeqCst);
+    let save_path = test_download_path("model.onnx");
+    let key = "foundry-local/qwen/model.onnx";
+    let tuning = TransferTuning {
+        idle_timeout: Duration::from_secs(30),
+        stall_notice: Duration::from_secs(30),
+        ..segmented_test_tuning()
+    };
+
+    let cancel_token = CancellationToken::new();
+    let running = tokio::spawn({
+        let item = keyed_item(format!("{}?sig=today", server.url), &save_path, Some(key));
+        let (save_path, token, tuning) = (save_path.clone(), cancel_token.clone(), tuning.clone());
+        async move { download_item_for_test(&item, &save_path, false, token, tuning).await }
+    });
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while server.served.load(Ordering::SeqCst) < SEGMENTED_TEST_SIZE as u64 / 2 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the connections never delivered their first halves");
+    cancel_token.cancel();
+    let cancelled = tokio::time::timeout(Duration::from_secs(5), running)
+        .await
+        .expect("cancellation waited on a quiet connection")
+        .unwrap();
+    assert_eq!(cancelled.unwrap_err(), "Download cancelled");
+    assert_eq!(
+        std::fs::read_to_string(sidecar_path(&save_path, "url")).unwrap(),
+        key,
+        "the partial is not saved under its key"
+    );
+
+    server.stall_next.store(0, Ordering::SeqCst);
+    let requests_before = server.starts.lock().unwrap().len();
+    let item = keyed_item(
+        format!("{}?sig=tomorrow", server.url),
+        &save_path,
+        Some(key),
+    );
+    download_item_for_test(
+        &item,
+        &save_path,
+        true,
+        CancellationToken::new(),
+        segmented_test_tuning(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(tokio::fs::read(&save_path).await.unwrap(), *body);
+    let resumed = server.starts.lock().unwrap()[requests_before..].to_vec();
+    assert!(
+        !resumed.contains(&Some(0)),
+        "the resume under a fresh link started over: {resumed:?}"
+    );
+    assert_no_sidecars(&save_path);
+
+    server.handle.abort();
+    let _ = tokio::fs::remove_dir_all(save_path.parent().unwrap()).await;
+}
+
+#[test]
+fn a_download_item_without_a_resume_key_still_deserializes() {
+    let item: DownloadItem =
+        serde_json::from_str(r#"{"url":"https://h/m.gguf","save_path":"/m.gguf"}"#).unwrap();
+    assert_eq!(item.resume_key, None);
+    let keyed: DownloadItem = serde_json::from_str(
+        r#"{"url":"https://h/m.onnx?sig=1","save_path":"/m.onnx","resume_key":"foundry-local/v/m.onnx"}"#,
+    )
+    .unwrap();
+    assert_eq!(keyed.resume_key.as_deref(), Some("foundry-local/v/m.onnx"));
 }

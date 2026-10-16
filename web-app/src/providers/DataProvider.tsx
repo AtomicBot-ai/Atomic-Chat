@@ -12,7 +12,7 @@ import {
 } from '@/constants/localStorage'
 
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { useModelSetupSync } from '@/hooks/useModelSetup'
+import { useModelCompatibilitySync } from '@/hooks/useModelSetup'
 import { useEffect } from 'react'
 import { useMCPServers, DEFAULT_MCP_SETTINGS } from '@/hooks/useMCPServers'
 import { useAssistant, defaultAssistant } from '@/hooks/useAssistant'
@@ -102,6 +102,7 @@ const SESSION_CACHED_PROVIDERS = [
   'llamacpp-upstream',
   'atomic-prism',
   'mlx',
+  'foundry-local',
 ] as const
 
 /** Those, and every managed engine (`isManagedProvider`). */
@@ -261,7 +262,7 @@ export function DataProvider() {
   const navigate = useNavigate()
   const serviceHub = useServiceHub()
   const { checkForUpdate } = useAppUpdater()
-  useModelSetupSync()
+  useModelCompatibilitySync()
 
   const setServerStatus = useAppState((state) => state.setServerStatus)
 

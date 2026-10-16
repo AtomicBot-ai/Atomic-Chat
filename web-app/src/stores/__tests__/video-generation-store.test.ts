@@ -495,5 +495,6 @@ describe('video-generation-store', () => {
       expect(poster.capture).toHaveBeenCalledTimes(1)
       warn.mockRestore()
     })
+
   })
 })

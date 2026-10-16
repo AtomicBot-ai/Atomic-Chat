@@ -395,4 +395,22 @@ describe('ModelLoadSnackbar for a container-backed engine', () => {
       expect(snackbar()).toHaveTextContent('Preparing the engine · 4:05')
     )
   })
+
+  it('shows the same for an SGLang load: "starting the engine" with the stage and time (spec sglang-desktop)', async () => {
+    // "Первый старт большой модели": kernel compilation and graph capture read as a stage.
+    seed({}, 'sglang')
+    renderSnackbar()
+    startLoad()
+
+    act(() =>
+      useAppState.getState().setLoadingModelProgress({
+        kind: 'startingEngine',
+        stage: 'initializing-engine',
+        elapsedMs: 312_000,
+      })
+    )
+    await waitFor(() =>
+      expect(snackbar()).toHaveTextContent('Preparing the engine · 5:12')
+    )
+  })
 })
