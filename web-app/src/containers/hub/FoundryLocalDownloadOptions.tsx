@@ -174,6 +174,10 @@ export function FoundryLocalDownloadOptions({
             // One width whatever the chosen variant offers (Download, or New chat and delete):
             // sized by content, the column resized the list on every pick.
             <ActionColumn
+              // The 32 px button centred on the first variant's name line: its border, its `py-1.5`
+              // and half a `text-sm` line (1.25 × the app's font size, which a person can raise
+              // while rem stays). Pinned to the top, the button rode up as the font grew.
+              className="pt-[max(0px,calc(1px_+_0.375rem_+_var(--text-sm)_*_0.625_/_0.875_-_1rem))]"
               trash={
                 downloadedIds.has(selected.id) ? (
                   <DeleteModelAction modelId={selected.id} provider={PROVIDER} />
@@ -342,9 +346,20 @@ function DownloadButton({
  * its place when another variant is chosen. Sized by content, the column resized the variant list
  * on every pick, and without the slot the button jumped by the trash's width.
  */
-function ActionColumn({ children, trash }: { children: ReactNode; trash: ReactNode }) {
+function ActionColumn({
+  children,
+  trash,
+  className,
+}: {
+  children: ReactNode
+  trash: ReactNode
+  className?: string
+}) {
   return (
-    <div data-testid="foundry-local-actions" className="flex w-44 shrink-0 items-start justify-end gap-1">
+    <div
+      data-testid="foundry-local-actions"
+      className={cn('flex w-44 shrink-0 items-start justify-end gap-1', className)}
+    >
       <div data-testid="foundry-local-main-action" className="flex min-w-0 justify-end">
         {children}
       </div>
