@@ -1,3 +1,5 @@
 [codespell]
 # Generated lockfiles contain exact dependency names, not editable prose.
 skip = *.lock
+# `afterAll` is the vitest/jest hook, not a misspelling of "after all".
+ignore-words-list = afterall

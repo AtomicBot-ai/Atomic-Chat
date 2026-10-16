@@ -41,6 +41,15 @@ const MAX_STREAM_RETRIES: u32 = 5;
 #[cfg(not(test))]
 const RETRY_BASE_DELAY_MS: u64 = 1_000;
 const RETRY_RESET_PROGRESS_BYTES: u64 = 1024 * 1024;
+/// How long a transfer may go without receiving a single byte before it is
+/// treated as a stream error and resumed with a Range request. reqwest 0.11 has
+/// no read timeout, and a whole-request `timeout` would cut off every large
+/// model download, so without this a CDN that stops sending mid-transfer left
+/// the download - and anything awaiting it - waiting forever.
+#[cfg(not(test))]
+const STREAM_STALL_TIMEOUT: Duration = Duration::from_secs(60);
+#[cfg(test)]
+const STREAM_STALL_TIMEOUT: Duration = Duration::from_millis(200);
 
 #[derive(Debug)]
 enum DownloadRequestError {
@@ -918,12 +927,16 @@ async fn download_single_file(
 
     // write chunk to file
     loop {
-        let stream_error = match stream.next().await {
-            None if expected_size > 0 && total_transferred < expected_size => Some(format!(
+        let stream_error = match tokio::time::timeout(STREAM_STALL_TIMEOUT, stream.next()).await {
+            Err(_) => Some(format!(
+                "no data received for {}s",
+                STREAM_STALL_TIMEOUT.as_secs_f32()
+            )),
+            Ok(None) if expected_size > 0 && total_transferred < expected_size => Some(format!(
                 "stream ended after {total_transferred} of {expected_size} bytes"
             )),
-            None => break,
-            Some(Ok(chunk)) => {
+            Ok(None) => break,
+            Ok(Some(Ok(chunk))) => {
                 if cancel_token.is_cancelled() {
                     if !keep_partial_on_cancel && !should_resume {
                         tokio::fs::remove_dir_all(&save_path.parent().unwrap())
@@ -966,7 +979,7 @@ async fn download_single_file(
                 }
                 None
             }
-            Some(Err(error)) => Some(error.to_string()),
+            Ok(Some(Err(error))) => Some(error.to_string()),
         };
 
         if let Some(stream_error) = stream_error {

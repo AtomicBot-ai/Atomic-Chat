@@ -1,182 +1,22 @@
-import { useEffect, useState } from 'react'
-import {
-  IconPlayerPause,
-  IconPlayerPlay,
-  IconX,
-} from '@tabler/icons-react'
+import { IconX } from '@tabler/icons-react'
 import { DownloadIcon } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { Progress } from '@/components/ui/progress'
 import { useSidebar } from '@/components/ui/sidebar'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn } from '@/lib/utils'
 import {
+  engineBuildName,
+  isEngineDownload,
   overallDownloadProgress,
   useDownloadDrawer,
 } from '@/stores/download-drawer-store'
 import {
-  formatEta,
-  formatProgressPair,
-  formatSpeed,
-  shortModelName,
-} from '@/lib/downloadFormat'
-import { quantFromModelId } from '@/lib/telemetry'
-import type { DownloadRowProps } from './DownloadProgressRow'
-import { hueFor, pruneBlockFields } from '@/lib/downloadBlockFields'
-import { FallingBlocks } from './FallingBlocks'
-
-const accent = (hue: number, alpha = 1) => `hsl(${hue} 70% 55% / ${alpha})`
-
-/** One coloured button per download; the figures on it are real. */
-function DownloadTab({
-  item,
-  hue,
-  selected,
-  onSelect,
-}: {
-  item: DownloadRowProps
-  hue: number
-  selected: boolean
-  onSelect: () => void
-}) {
-  const { t } = useTranslation()
-  const percent = Math.round(item.progress * 100)
-  const speed = item.paused ? null : formatSpeed(item.bytesPerSecond)
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={selected}
-      data-testid="download-tab"
-      data-no-hover-glow
-      onClick={onSelect}
-      title={item.id}
-      className={cn(
-        'flex min-w-0 flex-1 flex-col rounded-lg border px-2 py-1 text-left transition-colors',
-        selected ? 'shadow-md' : 'opacity-75 hover:opacity-100'
-      )}
-      style={{
-        borderColor: accent(hue, selected ? 0.9 : 0.4),
-        background: accent(hue, selected ? 0.22 : 0.1),
-      }}
-    >
-      <span className="truncate text-[11px] font-medium">
-        {shortModelName(item.name || item.id)}
-      </span>
-      <span className="truncate font-mono text-[10px] tabular-nums text-muted-foreground">
-        {item.paused
-          ? t('common:downloadPanel.paused')
-          : item.total > 0
-            ? `${percent}%${speed ? ` · ${speed}` : ''}`
-            : t('common:downloadPanel.preparing')}
-      </span>
-    </button>
-  )
-}
-
-/** The picture plus the real numbers for the selected download. */
-function DownloadStage({
-  item,
-  hue,
-}: {
-  item: DownloadRowProps
-  hue: number
-}) {
-  const { t } = useTranslation()
-  const known = item.total > 0
-  const percent = Math.round(item.progress * 100)
-  const speed = item.paused ? null : formatSpeed(item.bytesPerSecond)
-  const eta = item.paused
-    ? null
-    : formatEta(item.total - item.current, item.bytesPerSecond)
-  const quant = quantFromModelId(item.id)
-
-  return (
-    <div
-      className="flex min-h-0 flex-1 flex-col gap-3 rounded-xl border p-3"
-      style={{ borderColor: accent(hue, 0.35) }}
-      role="tabpanel"
-    >
-      <div className="relative min-h-0 flex-1 overflow-hidden rounded-lg bg-black/30">
-        <FallingBlocks
-          id={item.id}
-          hue={hue}
-          paused={item.paused}
-          progress={item.progress}
-          className="absolute inset-0 size-full"
-        />
-      </div>
-
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium" title={item.id}>
-            {shortModelName(item.name || item.id)}
-          </p>
-          {quant && (
-            <p className="truncate text-xs text-muted-foreground">{quant}</p>
-          )}
-        </div>
-        <div className="flex shrink-0 gap-0.5">
-          {item.pausable &&
-            (item.paused ? (
-              <Button
-                variant="secondary"
-                size="icon-xs"
-                onClick={item.onResume}
-                aria-label={t('common:resumeDownload')}
-              >
-                <IconPlayerPlay size={16} />
-              </Button>
-            ) : (
-              <Button
-                variant="secondary"
-                size="icon-xs"
-                onClick={item.onPause}
-                aria-label={t('common:pauseDownload')}
-              >
-                <IconPlayerPause size={16} />
-              </Button>
-            ))}
-          <Button
-            variant="secondary"
-            size="icon-xs"
-            onClick={item.onCancel}
-            aria-label={t('common:cancelDownload')}
-          >
-            <IconX size={16} />
-          </Button>
-        </div>
-      </div>
-
-      <dl className="grid grid-cols-2 gap-x-3 gap-y-1 font-mono text-xs tabular-nums">
-        <dt className="text-muted-foreground">
-          {t('common:downloadPanel.progress', { defaultValue: 'Progress' })}
-        </dt>
-        <dd className="text-right">
-          {item.paused
-            ? t('common:downloadPanel.paused')
-            : known
-              ? `${percent}%`
-              : t('common:downloadPanel.preparing')}
-        </dd>
-        <dt className="text-muted-foreground">
-          {t('common:downloadPanel.size', { defaultValue: 'Downloaded' })}
-        </dt>
-        <dd className="text-right">
-          {known ? formatProgressPair(item.current, item.total) : '–'}
-        </dd>
-        <dt className="text-muted-foreground">
-          {t('common:downloadPanel.speed', { defaultValue: 'Speed' })}
-        </dt>
-        <dd className="text-right">{speed ?? '–'}</dd>
-        <dt className="text-muted-foreground">
-          {t('common:downloadPanel.timeLeft', { defaultValue: 'Time left' })}
-        </dt>
-        <dd className="text-right">{eta ?? '–'}</dd>
-      </dl>
-    </div>
-  )
-}
+  DOWNLOAD_PROGRESS_INDICATOR,
+  DownloadProgressRow,
+  type DownloadRowProps,
+} from './DownloadProgressRow'
 
 /**
  * The sidebar entry for downloads: a progress ring with a count. It is absent
@@ -230,35 +70,51 @@ export function DownloadRailButton() {
   )
 }
 
-/** Tabs of coloured buttons, one per download, above the selected one's stage. */
-function DownloadTabs({ items }: { items: DownloadRowProps[] }) {
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const selected = items.find((item) => item.id === selectedId) ?? items[0]
-
-  useEffect(() => {
-    pruneBlockFields(items.map((item) => item.id))
-  }, [items])
-
-  if (!selected) return null
+/**
+ * One line for an engine build the app is fetching on its own. The user did
+ * not start it, so it gets a name, a thin bar, a percentage and Cancel - not a
+ * full card competing with their own downloads.
+ */
+function EngineDownloadRow({ item }: { item: DownloadRowProps }) {
+  const { t } = useTranslation()
+  const known = item.total > 0
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-2">
-      <div role="tablist" className="flex gap-1.5">
-        {items.map((item, index) => (
-          <DownloadTab
-            key={item.id}
-            item={item}
-            hue={hueFor(index)}
-            selected={item.id === selected.id}
-            onSelect={() => setSelectedId(item.id)}
-          />
-        ))}
+    <li data-testid="engine-download-row" className="py-1">
+      <div className="flex items-center gap-2 text-xs">
+        <span className="min-w-0 flex-1 truncate" title={item.id}>
+          {t('common:downloadPanel.engineName', {
+            name: engineBuildName(item.id),
+          })}
+        </span>
+        <span className="shrink-0 tabular-nums text-muted-foreground">
+          {known
+            ? `${Math.round(item.progress * 100)}%`
+            : t('common:downloadPanel.preparing')}
+        </span>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          onClick={item.onCancel}
+          aria-label={t('common:cancelDownload')}
+        >
+          <IconX size={14} className="text-muted-foreground" />
+        </Button>
       </div>
-      <DownloadStage item={selected} hue={hueFor(items.indexOf(selected))} />
-    </div>
+      <Progress
+        value={item.progress * 100}
+        indicatorClassName={DOWNLOAD_PROGRESS_INDICATOR}
+        className="mt-1 h-1 rounded-full bg-muted-foreground/15 dark:bg-muted-foreground/20"
+      />
+    </li>
   )
 }
 
-/** Slides out beside the sidebar; every transfer with its pause and cancel. */
+/**
+ * Opens beside the sidebar's Downloads button, only when the user opens it.
+ * A plain list: each download the user started is a row with its name, a
+ * thin bar, size, speed, time left, and Pause/Cancel; engine builds the app
+ * fetches by itself sit below as single quiet lines. Nothing animates.
+ */
 export function DownloadDrawer() {
   const { t } = useTranslation()
   const { state } = useSidebar()
@@ -267,6 +123,9 @@ export function DownloadDrawer() {
   const setOpen = useDownloadDrawer((s) => s.setOpen)
   const shown = open && items.length > 0
 
+  const userItems = items.filter((item) => !isEngineDownload(item.id))
+  const engineItems = items.filter((item) => isEngineDownload(item.id))
+
   return (
     <aside
       aria-label={t('common:downloads')}
@@ -274,11 +133,11 @@ export function DownloadDrawer() {
       inert={!shown}
       data-testid="download-drawer"
       className={cn(
-        'fixed inset-y-2 z-40 flex w-[22rem] max-w-[calc(100vw-5rem)] flex-col gap-3 rounded-2xl border bg-background p-3 shadow-xl',
-        'transition-[transform,opacity] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none',
+        'fixed bottom-2 z-40 flex max-h-[min(34rem,calc(100svh-3.5rem))] w-[22rem] max-w-[calc(100vw-5rem)] flex-col gap-3 rounded-2xl border bg-background p-3 shadow-xl',
+        'transition-[transform,opacity] duration-200 ease-out motion-reduce:transition-none',
         shown
           ? 'translate-x-0 opacity-100'
-          : 'pointer-events-none -translate-x-6 opacity-0'
+          : 'pointer-events-none -translate-x-3 opacity-0'
       )}
       style={{
         left:
@@ -303,7 +162,28 @@ export function DownloadDrawer() {
           <IconX size={16} className="text-muted-foreground" />
         </Button>
       </header>
-      <DownloadTabs items={items} />
+
+      <div className="-mx-1 min-h-0 flex-1 overflow-y-auto px-1">
+        {userItems.length > 0 && (
+          <ul data-testid="download-list" className="flex flex-col gap-2">
+            {userItems.map((item) => (
+              <DownloadProgressRow key={item.id} {...item} />
+            ))}
+          </ul>
+        )}
+        {engineItems.length > 0 && (
+          <section className={cn(userItems.length > 0 && 'mt-3 border-t pt-2')}>
+            <h3 className="mb-0.5 text-xs font-medium text-muted-foreground">
+              {t('common:downloadPanel.engines')}
+            </h3>
+            <ul>
+              {engineItems.map((item) => (
+                <EngineDownloadRow key={item.id} item={item} />
+              ))}
+            </ul>
+          </section>
+        )}
+      </div>
     </aside>
   )
 }

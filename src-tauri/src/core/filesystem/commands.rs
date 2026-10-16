@@ -482,17 +482,34 @@ pub fn read_yaml<R: Runtime>(
     Ok(data)
 }
 
+/// Unpacks a backend archive. Async on purpose: a synchronous Tauri command
+/// runs on the main thread, so the window stopped repainting and answering for
+/// as long as an archive took to unpack - a fraction of a second for a CPU
+/// build, much longer for a CUDA one. The work itself runs on a blocking
+/// thread.
 #[tauri::command]
-pub fn decompress<R: Runtime>(
+pub async fn decompress<R: Runtime>(
     app: tauri::AppHandle<R>,
+    path: String,
+    output_dir: String,
+) -> Result<(), String> {
+    let jan_data_folder = crate::core::app::commands::get_jan_data_folder_path(app.clone());
+    tauri::async_runtime::spawn_blocking(move || {
+        decompress_in(&jan_data_folder, &path, &output_dir)
+    })
+    .await
+    .map_err(|e| format!("decompress task failed: {e}"))?
+}
+
+fn decompress_in(
+    jan_data_folder: &std::path::Path,
     path: &str,
     output_dir: &str,
 ) -> Result<(), String> {
-    let jan_data_folder = crate::core::app::commands::get_jan_data_folder_path(app.clone());
     let path_buf = jan_utils::normalize_path(&jan_data_folder.join(path));
 
     let output_dir_buf = jan_utils::normalize_path(&jan_data_folder.join(output_dir));
-    if !jan_utils::is_within(&output_dir_buf, &jan_data_folder) {
+    if !jan_utils::is_within(&output_dir_buf, jan_data_folder) {
         return Err(format!(
             "Error: output directory {} is not under jan_data_folder {}",
             output_dir_buf.to_string_lossy(),

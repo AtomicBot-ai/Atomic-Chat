@@ -127,33 +127,99 @@ pub fn get_app_configurations<R: Runtime>(app_handle: tauri::AppHandle<R>) -> Ap
             }
         }
 
-        if let Err(err) = fs::write(
-            &configuration_file,
-            serde_json::to_string(&app_default_configuration).unwrap(),
-        ) {
+        if let Err(err) = write_configuration_file(&configuration_file, &app_default_configuration)
+        {
             log::error!("Failed to create default config: {err}");
         }
 
         return app_default_configuration;
     }
 
-    match fs::read_to_string(&configuration_file) {
-        Ok(content) => {
-            match serde_json::from_str::<AppConfiguration>(&content) {
-                Ok(app_configurations) => app_configurations,
-                Err(err) => {
-                    log::error!("Failed to parse app config, returning default config instead. Error: {err}");
-                    app_default_configuration
-                }
-            }
-        }
+    load_configuration_file(&configuration_file, &default_data_folder)
+}
+
+/// Reads `settings.json`, and copes when it is unusable.
+///
+/// It used to fall back to `AppConfiguration::default()`, whose data folder is
+/// the *relative* path `./data`: resolved against whatever directory the app
+/// was started from. A blue screen seconds after the file was written left it
+/// as zero bytes on the owner's machine (2026-10-14), and from then on every
+/// launch silently used a second, empty data folder - inside the install
+/// folder when started from the Start menu (where `decompress` then refused
+/// every engine archive and the window hung), or `C:\Windows\system32\data`
+/// when started from an elevated shell (where the log folder could not be
+/// created and the process died before writing a line).
+///
+/// Now an unparsable file is moved aside to `settings.json.corrupt-<secs>` and
+/// replaced with a valid one that points at the default data folder, which is
+/// absolute. A file that cannot be read at all (locked, permissions) is left
+/// alone, and the default data folder is used for this call.
+fn load_configuration_file(
+    configuration_file: &Path,
+    default_data_folder: &str,
+) -> AppConfiguration {
+    let fallback = || AppConfiguration {
+        data_folder: default_data_folder.to_string(),
+        ..AppConfiguration::default()
+    };
+
+    let content = match fs::read_to_string(configuration_file) {
+        Ok(content) => content,
         Err(err) => {
             log::error!(
-                "Failed to read app config, returning default config instead. Error: {err}"
+                "Failed to read app config {configuration_file:?}; using the default data folder {default_data_folder} for now. Error: {err}"
             );
-            app_default_configuration
+            return fallback();
+        }
+    };
+
+    match serde_json::from_str::<AppConfiguration>(&content) {
+        Ok(configuration) => configuration,
+        Err(err) => {
+            let repaired = fallback();
+            let stamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|elapsed| elapsed.as_secs())
+                .unwrap_or_default();
+            let mut aside = configuration_file.as_os_str().to_owned();
+            aside.push(format!(".corrupt-{stamp}"));
+            let aside = PathBuf::from(aside);
+            // Another caller may have repaired it a moment ago; that is fine.
+            let moved = fs::rename(configuration_file, &aside);
+            let rewritten = write_configuration_file(configuration_file, &repaired);
+            log::error!(
+                "App config {configuration_file:?} is unreadable ({err}); kept it as {aside:?} ({}), wrote a new one pointing at {default_data_folder} ({})",
+                if moved.is_ok() { "moved" } else { "could not move it" },
+                match &rewritten {
+                    Ok(()) => "ok".to_string(),
+                    Err(write_err) => format!("failed: {write_err}"),
+                }
+            );
+            repaired
         }
     }
+}
+
+/// Writes `settings.json` so that a crash can never leave it half-written:
+/// the new content goes to a temporary file that is flushed to disk, then
+/// renamed over the old one. A plain `fs::write` was what a blue screen turned
+/// into a file of zero bytes.
+fn write_configuration_file(
+    configuration_file: &Path,
+    configuration: &AppConfiguration,
+) -> Result<(), String> {
+    use std::io::Write;
+
+    let json = serde_json::to_string(configuration).map_err(|e| e.to_string())?;
+    let mut temporary = configuration_file.as_os_str().to_owned();
+    temporary.push(".tmp");
+    let temporary = PathBuf::from(temporary);
+    {
+        let mut file = fs::File::create(&temporary).map_err(|e| e.to_string())?;
+        file.write_all(json.as_bytes()).map_err(|e| e.to_string())?;
+        file.sync_all().map_err(|e| e.to_string())?;
+    }
+    fs::rename(&temporary, configuration_file).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -170,11 +236,7 @@ pub fn update_app_configuration<R: Runtime>(
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
 
-    fs::write(
-        configuration_file,
-        serde_json::to_string(&configuration).map_err(|e| e.to_string())?,
-    )
-    .map_err(|e| e.to_string())
+    write_configuration_file(&configuration_file, &configuration)
 }
 
 #[tauri::command]
@@ -381,6 +443,78 @@ mod tests {
             build_default_data_folder(root.path(), "Radium"),
             root.path().join("Radium").join("data")
         );
+    }
+
+    /// A blue screen seconds after `settings.json` was written left it as 102
+    /// zero bytes (2026-10-14). The app then used the relative `./data` and
+    /// built a second, broken data folder wherever it was started from.
+    #[test]
+    fn a_zeroed_settings_file_is_set_aside_and_replaced_with_the_default_folder() {
+        let root = tempdir().unwrap();
+        let config_file = root.path().join(CONFIGURATION_FILE_NAME);
+        fs::write(&config_file, [0u8; 102]).unwrap();
+        let default = root.path().join("Radium").join("data");
+        let default = default.to_string_lossy().into_owned();
+
+        let loaded = load_configuration_file(&config_file, &default);
+
+        assert_eq!(loaded.data_folder, default);
+        let rewritten: AppConfiguration =
+            serde_json::from_str(&fs::read_to_string(&config_file).unwrap()).unwrap();
+        assert_eq!(rewritten.data_folder, default);
+        let kept: Vec<_> = fs::read_dir(root.path())
+            .unwrap()
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .filter(|name| name.starts_with("settings.json.corrupt-"))
+            .collect();
+        assert_eq!(kept.len(), 1, "the damaged file is kept beside the new one");
+        assert_eq!(
+            fs::read(root.path().join(&kept[0])).unwrap(),
+            vec![0u8; 102]
+        );
+        // The next launch reads the repaired file as it is.
+        assert_eq!(
+            load_configuration_file(&config_file, "unused").data_folder,
+            default
+        );
+    }
+
+    #[test]
+    fn an_unreadable_settings_file_is_left_alone_and_the_default_folder_used() {
+        let root = tempdir().unwrap();
+        // A directory where the file should be cannot be read as one.
+        let config_file = root.path().join(CONFIGURATION_FILE_NAME);
+        fs::create_dir_all(&config_file).unwrap();
+        let default = root.path().join("Radium").join("data");
+        let default = default.to_string_lossy().into_owned();
+
+        assert_eq!(
+            load_configuration_file(&config_file, &default).data_folder,
+            default
+        );
+        assert!(config_file.is_dir());
+    }
+
+    #[test]
+    fn settings_are_written_through_a_flushed_temporary_file() {
+        let root = tempdir().unwrap();
+        let config_file = root.path().join(CONFIGURATION_FILE_NAME);
+        fs::write(&config_file, "{\"data_folder\":\"old\"}").unwrap();
+        let configuration = AppConfiguration {
+            data_folder: "new".to_string(),
+            ..AppConfiguration::default()
+        };
+
+        write_configuration_file(&config_file, &configuration).unwrap();
+
+        let written: AppConfiguration =
+            serde_json::from_str(&fs::read_to_string(&config_file).unwrap()).unwrap();
+        assert_eq!(written.data_folder, "new");
+        assert!(!root
+            .path()
+            .join(format!("{CONFIGURATION_FILE_NAME}.tmp"))
+            .exists());
     }
 
     #[test]

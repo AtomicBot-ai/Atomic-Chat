@@ -457,6 +457,17 @@ export default class llamacpp_extension extends AIEngine {
   /// In-flight first-run download of the hardware-optimal backend. Awaited by
   /// `reconcileBackendReleaseTag` so the two never fetch the same archive.
   private firstRunAdoption: Promise<void> | null = null
+  /// Engine downloads nobody asked for (first-run adoption of the
+  /// hardware-optimal build, a newer release tag of the same build) no longer
+  /// start from `onLoad`. On a fresh install they ran even though this
+  /// provider ships switched off, before the user had picked anything, and
+  /// popped the download drawer over onboarding. The app starts them through
+  /// `runDeferredBackendMaintenance()` once it is on screen, onboarding is
+  /// finished and this provider is active.
+  private deferredMaintenanceStarted = false
+  /// The first-run adoption `configureBackends()` would have started, parked
+  /// until `runDeferredBackendMaintenance()` runs.
+  private pendingFirstRunAdoption: (() => Promise<void>) | null = null
   private loadingModels = new Map<string, Promise<SessionInfo>>() // Track loading promises
   /// Which GPUs each loaded model occupies, for the GPU Placement setting.
   private gpuAssignments = new Map<string, string[]>()
@@ -614,11 +625,36 @@ export default class llamacpp_extension extends AIEngine {
         //! Раньше отклонённый промис терялся; без лога сложно понять вечный «loading» в настройках.
         logger.error('configureBackends failed:', err)
       })
-      .then(() => this.reconcileBackendReleaseTag())
+      // Moving to a newer release tag waits for runDeferredBackendMaintenance.
       .finally(() => {
         this.isInitializing = false
         this.configureBackendsPromise = null
       })
+  }
+
+  /**
+   * Starts the engine downloads `onLoad` no longer starts by itself: the
+   * first-run adoption of the hardware-optimal build, then the move to the
+   * newest release tag. Called by the app (`StartupBackendCoordinator`) once it
+   * is on screen, onboarding is done and this provider is active. Runs once
+   * per process; later calls are no-ops.
+   */
+  async runDeferredBackendMaintenance(): Promise<void> {
+    if (this.deferredMaintenanceStarted) return
+    this.deferredMaintenanceStarted = true
+    if (this.configureBackendsPromise) {
+      await this.configureBackendsPromise
+    }
+    const adopt = this.pendingFirstRunAdoption
+    this.pendingFirstRunAdoption = null
+    if (adopt) {
+      try {
+        await adopt()
+      } catch (err) {
+        logger.warn('runDeferredBackendMaintenance: first-run adoption failed:', err)
+      }
+    }
+    await this.reconcileBackendReleaseTag()
   }
 
   private getStoredBackendType(): string | null {
@@ -1382,12 +1418,20 @@ export default class llamacpp_extension extends AIEngine {
 
       // Detection still does not run on every launch (see the comment near the
       // top of this function) — only when the user has never made a choice.
-      await this.adoptOptimalBackendOnFirstRun(
-        storedBackendType,
-        effectiveBackendString,
-        bundledBackendString,
-        version_backends
-      )
+      // At startup it waits for `runDeferredBackendMaintenance()`; once that
+      // has run (e.g. "Install from file" later), it runs straight away.
+      const adopt = () =>
+        this.adoptOptimalBackendOnFirstRun(
+          storedBackendType,
+          effectiveBackendString,
+          bundledBackendString,
+          version_backends
+        )
+      if (this.deferredMaintenanceStarted) {
+        await adopt()
+      } else {
+        this.pendingFirstRunAdoption = adopt
+      }
     } finally {
       this.isConfiguringBackends = false
     }

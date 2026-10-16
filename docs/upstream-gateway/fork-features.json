@@ -517,5 +517,58 @@
     ],
     "decision": "docs/decisions/2026-10-10-give-the-agent-network-tools-behind-a-tool-pack-with-blast-radius-approvals.md",
     "status": "pending"
+  },
+  {
+    "id": "boot-screen",
+    "feature": "Boot screen that stays until the app has drawn",
+    "forUsers": "While Radium starts, a static logo with one line of status sits on a frosted, semi-transparent panel. It stays until the app has actually drawn, can always be moved, minimised and closed on Windows, and if startup stalls it says where and offers Keep waiting, Restart, Open the log and Quit. One extension that fails or hangs no longer keeps the whole app from opening.",
+    "paths": [
+      "web-app/public/boot.js",
+      "web-app/index.html",
+      "web-app/src/loader.css",
+      "web-app/src/lib/boot.ts",
+      "web-app/src/components/BootReady.tsx",
+      "web-app/src/lib/extension.ts",
+      "web-app/src/providers/ExtensionProvider.tsx",
+      "web-app/src/routes/__root.tsx"
+    ],
+    "checks": [
+      {
+        "cwd": "web-app",
+        "files": [
+          "web-app/src/lib/__tests__/boot-screen.test.ts",
+          "web-app/src/lib/__tests__/extension-load-isolation.test.ts"
+        ],
+        "run": "npx vitest run src/lib/__tests__/boot-screen.test.ts src/lib/__tests__/extension-load-isolation.test.ts"
+      }
+    ],
+    "decision": "docs/decisions/2026-10-15-boot-screen-stays-until-the-app-has-drawn.md",
+    "status": "checked"
+  },
+  {
+    "id": "deferred-engine-downloads",
+    "feature": "No unrequested engine downloads at startup; plain download list",
+    "forUsers": "A fresh install downloads nothing before you have chosen something, and never for an engine that is switched off; engine updates start a little after the app is up. Downloads show as a plain list beside the sidebar's Downloads button, which opens only when you open it; a download you start shows a toast with a View button.",
+    "paths": [
+      "extensions/llamacpp-extension/src/index.ts",
+      "extensions/llamacpp-upstream-extension/src/index.ts",
+      "web-app/src/providers/StartupBackendCoordinator.tsx",
+      "web-app/src/lib/startupBackendRecommendations.ts",
+      "web-app/src/containers/downloads/DownloadDrawer.tsx",
+      "web-app/src/containers/downloads/DownloadPanel.tsx",
+      "web-app/src/stores/download-drawer-store.ts"
+    ],
+    "checks": [
+      {
+        "cwd": "web-app",
+        "files": [
+          "web-app/src/containers/downloads/__tests__/DownloadDrawer.test.tsx",
+          "web-app/src/providers/__tests__/StartupBackendCoordinator.test.ts"
+        ],
+        "run": "npx vitest run src/containers/downloads/__tests__/DownloadDrawer.test.tsx src/providers/__tests__/StartupBackendCoordinator.test.ts src/stores/__tests__/saved-prompts-store.test.ts"
+      }
+    ],
+    "decision": "docs/decisions/2026-10-15-start-unrequested-engine-downloads-after-onboarding.md",
+    "status": "checked"
   }
 ]

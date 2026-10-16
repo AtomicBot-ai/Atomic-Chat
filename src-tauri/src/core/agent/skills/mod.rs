@@ -28,6 +28,16 @@ pub fn global_skills_dir(data_folder: &Path) -> PathBuf {
     data_folder.join(AGENT_SKILLS_DIR)
 }
 
+/// Whether the bundled skills have been copied into this data folder before.
+/// Startup re-seeds only when this is false or the app version changed:
+/// copying every bundled skill on every launch held the window back for
+/// seconds before it could appear.
+pub fn bundled_skills_seeded(data_folder: &Path) -> bool {
+    global_skills_dir(data_folder)
+        .join(BUNDLED_SKILLS_STATE_FILE)
+        .is_file()
+}
+
 pub fn ensure_global_skills_dir(data_folder: &Path) -> Result<PathBuf, String> {
     let root = global_skills_dir(data_folder);
     std::fs::create_dir_all(&root).map_err(|error| {

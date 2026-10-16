@@ -18,18 +18,33 @@ type DownloadDrawerState = {
   setOpen: (open: boolean) => void
 }
 
-export const useDownloadDrawer = create<DownloadDrawerState>()((set, get) => ({
+export const useDownloadDrawer = create<DownloadDrawerState>()((set) => ({
   items: [],
   open: false,
   setItems: (items) => {
-    const hadNone = get().items.length === 0
-    // The drawer opens by itself when the first download starts, which is the
-    // moment the file name and size are worth reading; after that it is the
-    // user's to open and close. It closes when the queue empties.
-    set({ items, ...(hadNone && items.length > 0 ? { open: true } : {}), ...(items.length === 0 ? { open: false } : {}) })
+    // The drawer is the user's to open; it never opens by itself. It used to
+    // open on the first download, which on a fresh install meant engine
+    // downloads nobody had asked for popped it over the onboarding screen.
+    // A new download the user started shows a toast with a "View" button
+    // instead (`DownloadPanel`). It still closes when the queue empties.
+    set({ items, ...(items.length === 0 ? { open: false } : {}) })
   },
   setOpen: (open) => set({ open }),
 }))
+
+/**
+ * A llama.cpp engine build rather than something the user picked. Their task
+ * ids start with `llamacpp` (`llamacpp-backend-<version>/<build>`), the same
+ * test `DownloadManagement` uses to route cancel and to withhold pause.
+ */
+export function isEngineDownload(id: string): boolean {
+  return id.startsWith('llamacpp')
+}
+
+/** The build part of an engine task id, e.g. `win-cuda-12.4-x64`. */
+export function engineBuildName(id: string): string {
+  return id.split('/').pop() || id
+}
 
 /** Overall progress, 0-1, over the transfers whose size is known. */
 export function overallDownloadProgress(items: DownloadRowProps[]): number {

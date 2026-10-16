@@ -1736,6 +1736,66 @@ describe('llamacpp_extension', () => {
         ).resolves.toBeUndefined()
         expect(extension['config'].version_backend).toBe(current)
       })
+
+      // Startup no longer moves anyone to a newer release tag: on a fresh
+      // install that download began before onboarding had asked anything.
+      it('does not fetch a newer release tag during startup', async () => {
+        extension['config'] = {
+          version_backend: 'b10431/win-cpu-x64',
+        } as any
+        extension.checkBackendForUpdates = vi.fn().mockResolvedValue({
+          updateNeeded: true,
+          newVersion: 'b11463',
+          targetBackend: 'b11463/win-cpu-x64',
+        })
+        extension.downloadRecommendedBackend = vi
+          .fn()
+          .mockResolvedValue(undefined)
+
+        await extension['reconcileBackendReleaseTag']({ allowUpgrade: false })
+
+        expect(extension.downloadRecommendedBackend).not.toHaveBeenCalled()
+        expect(extension.checkBackendForUpdates).not.toHaveBeenCalled()
+      })
+
+      it('still resolves a parked sentinel during startup', async () => {
+        extension['config'] = {
+          version_backend: 'latest/win-cpu-x64',
+        } as any
+        extension.downloadRecommendedBackend = vi
+          .fn()
+          .mockResolvedValue(undefined)
+
+        await extension['reconcileBackendReleaseTag']({ allowUpgrade: false })
+
+        expect(extension.downloadRecommendedBackend).toHaveBeenCalledWith(
+          'latest/win-cpu-x64'
+        )
+      })
+
+      it('moves to the newest release once the app asks, and only once', async () => {
+        extension['config'] = {
+          version_backend: 'b10431/win-cpu-x64',
+        } as any
+        extension['configureBackendsPromise'] = null
+        extension['deferredMaintenanceStarted'] = false
+        extension.checkBackendForUpdates = vi.fn().mockResolvedValue({
+          updateNeeded: true,
+          newVersion: 'b11463',
+          targetBackend: 'b11463/win-cpu-x64',
+        })
+        extension.downloadRecommendedBackend = vi
+          .fn()
+          .mockResolvedValue(undefined)
+
+        await extension.runDeferredBackendMaintenance()
+        await extension.runDeferredBackendMaintenance()
+
+        expect(extension.downloadRecommendedBackend).toHaveBeenCalledTimes(1)
+        expect(extension.downloadRecommendedBackend).toHaveBeenCalledWith(
+          'b11463/win-cpu-x64'
+        )
+      })
     })
 
     describe('checkForEngineUpdate', () => {

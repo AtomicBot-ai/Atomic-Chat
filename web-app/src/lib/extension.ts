@@ -1,6 +1,42 @@
 import { AIEngine, BaseExtension, ExtensionTypeEnum } from '@janhq/core'
 
 import { getServiceHub } from '@/hooks/useServiceHub'
+import { BootLogLevel, bootLog, bootStep } from '@/lib/boot'
+
+/**
+ * How long one extension's `onLoad` may take before startup carries on
+ * without it. Generous: on the slowest machine seen so far every bundled
+ * extension finished inside a few seconds.
+ */
+export const EXTENSION_LOAD_TIMEOUT_MS = 15_000
+
+export type ExtensionLoadFailure = {
+  /** Extension name, e.g. `@janhq/llamacpp-upstream-extension`. */
+  name: string
+  /** It threw or rejected, or it had not finished in time. */
+  reason: 'error' | 'timeout'
+  message: string
+}
+
+function describeError(error: unknown): string {
+  if (error instanceof Error) return error.message || error.name
+  if (typeof error === 'string') return error
+  try {
+    return JSON.stringify(error)
+  } catch {
+    return String(error)
+  }
+}
+
+/** Status-line text naming what startup is still waiting for. */
+function startingLabel(pending: Set<string>): string {
+  const names = [...pending].map((name) =>
+    name.replace(/^@janhq\//, '').replace(/-extension$/, '')
+  )
+  if (names.length === 0) return 'Starting extensions…'
+  if (names.length > 3) return `Starting extensions… (${names.length} left)`
+  return `Starting extensions… waiting for ${names.join(', ')}`
+}
 
 /**
  * Extension manifest object.
@@ -67,6 +103,9 @@ export class ExtensionManager {
   // Registered inference engines
   private engines = new Map<string, AIEngine>()
 
+  // Extensions that failed to register or load during this startup
+  private failures: ExtensionLoadFailure[] = []
+
   /**
    * Registers an extension.
    * @param extension - The extension to register.
@@ -121,10 +160,96 @@ export class ExtensionManager {
   }
 
   /**
-   * Loads all registered extension.
+   * Loads all registered extensions.
+   *
+   * Each `onLoad` is isolated: one that throws, or that has not finished
+   * within {@link EXTENSION_LOAD_TIMEOUT_MS}, is recorded in
+   * {@link getLoadFailures} and startup carries on without waiting for it.
+   * This used to be a bare `Promise.all`, so a single extension that threw
+   * left the whole app undrawn, and one that never resolved held it there
+   * for good. A timed-out `onLoad` keeps running; app.log says if it finishes
+   * late. Never rejects.
    */
   async load() {
-    await Promise.all(this.listExtensions().map((ext) => ext.onLoad()))
+    const pending = new Set(this.extensions.keys())
+    bootStep('extensions:load', startingLabel(pending))
+    await Promise.all(
+      [...this.extensions.entries()].map(async ([name, extension]) => {
+        await this.loadOne(name, extension)
+        pending.delete(name)
+        if (pending.size > 0) {
+          bootStep(`extensions:loaded:${name}`, startingLabel(pending))
+        }
+      })
+    )
+  }
+
+  private async loadOne(name: string, extension: BaseExtension) {
+    const startedAt = Date.now()
+    // `onLoad` is typed as returning void; most return a promise, and one that
+    // throws synchronously must be caught just the same.
+    const loading = Promise.resolve().then(() => extension.onLoad())
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const outcome = await Promise.race([
+      loading.then(
+        () => ({ status: 'loaded' as const }),
+        (error: unknown) => ({ status: 'error' as const, error })
+      ),
+      new Promise<{ status: 'timeout' }>((resolve) => {
+        timer = setTimeout(
+          () => resolve({ status: 'timeout' }),
+          EXTENSION_LOAD_TIMEOUT_MS
+        )
+      }),
+    ])
+    clearTimeout(timer)
+    const ms = Date.now() - startedAt
+
+    if (outcome.status === 'loaded') {
+      bootLog(`extension ${name} loaded in ${ms} ms`)
+      return
+    }
+    if (outcome.status === 'error') {
+      const message = describeError(outcome.error)
+      console.error(`Extension '${name}' failed to load:`, outcome.error)
+      bootLog(
+        `extension ${name} failed to load after ${ms} ms: ${message}`,
+        BootLogLevel.error
+      )
+      this.failures.push({ name, reason: 'error', message })
+      return
+    }
+    console.warn(
+      `Extension '${name}' has not finished loading after ${ms} ms; continuing without it`
+    )
+    bootLog(
+      `extension ${name} still loading after ${ms} ms; startup continues without it`,
+      BootLogLevel.warn
+    )
+    this.failures.push({
+      name,
+      reason: 'timeout',
+      message: `did not finish loading within ${Math.round(EXTENSION_LOAD_TIMEOUT_MS / 1000)} s`,
+    })
+    void loading.then(
+      () =>
+        bootLog(
+          `extension ${name} finished loading late, after ${Date.now() - startedAt} ms`
+        ),
+      (error: unknown) =>
+        bootLog(
+          `extension ${name} failed late, after ${Date.now() - startedAt} ms: ${describeError(error)}`,
+          BootLogLevel.error
+        )
+    )
+  }
+
+  /**
+   * Extensions that failed to register or to load during this startup, or
+   * that were still loading when startup carried on without them.
+   */
+  getLoadFailures(): ExtensionLoadFailure[] {
+    return [...this.failures]
   }
 
   /**
@@ -210,12 +335,42 @@ export class ExtensionManager {
    * @returns {void}
    */
   async registerActive() {
-    // Get active extensions
-    const activeExtensions = (await this.getActive()) ?? []
-    // Activate all
-    await Promise.all(
+    // Get active extensions. If the list itself cannot be read, the app still
+    // starts - with no extensions - instead of staying undrawn.
+    let activeExtensions: Extension[] = []
+    try {
+      activeExtensions = (await this.getActive()) ?? []
+    } catch (error) {
+      const message = describeError(error)
+      console.error('Could not read the active extensions:', error)
+      bootLog(
+        `could not read the active extensions: ${message}`,
+        BootLogLevel.error
+      )
+      this.failures.push({ name: 'extensions.json', reason: 'error', message })
+      return
+    }
+    bootLog(
+      `registering ${activeExtensions.length} extension(s): ${activeExtensions
+        .map((ext) => ext.name)
+        .join(', ')}`
+    )
+    // Activate all. One that fails to import is recorded and skipped; it used
+    // to reject the whole batch, so no extension at all got registered.
+    const results = await Promise.allSettled(
       activeExtensions.map((ext: Extension) => this.activateExtension(ext))
     )
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') return
+      const name = activeExtensions[index]?.name ?? `extension #${index}`
+      const message = describeError(result.reason)
+      console.error(`Extension '${name}' failed to register:`, result.reason)
+      bootLog(
+        `extension ${name} failed to register: ${message}`,
+        BootLogLevel.error
+      )
+      this.failures.push({ name, reason: 'error', message })
+    })
   }
 
   /**

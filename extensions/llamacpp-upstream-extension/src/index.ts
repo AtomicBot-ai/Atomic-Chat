@@ -527,6 +527,13 @@ export default class llamacpp_upstream_extension extends AIEngine {
   private isUpdatingBackend: boolean = false
   private isInitializing: boolean = true
   private configureBackendsPromise: Promise<void> | null = null
+  /// Set once `runDeferredBackendMaintenance()` has been asked to run. Engine
+  /// downloads that nobody asked for (a newer release tag of the same build)
+  /// no longer start from `onLoad`: on a first launch they used to begin
+  /// before the user had picked anything, during onboarding, and popped the
+  /// download drawer over it. The app starts them once it is on screen,
+  /// onboarding is finished and this provider is switched on.
+  private deferredMaintenanceStarted = false
   private loadingModels = new Map<string, Promise<SessionInfo>>() // Track loading promises
   /// Which GPUs each loaded model occupies, for the GPU Placement setting.
   private gpuAssignments = new Map<string, string[]>()
@@ -812,9 +819,9 @@ export default class llamacpp_upstream_extension extends AIEngine {
         //! Раньше отклонённый промис терялся; без лога сложно понять вечный «loading» в настройках.
         logger.error('configureBackends failed:', err)
       })
-      // Reconcile the selected backend after configureBackends has resolved
-      // legacy/latest values to a concrete version/backend pair.
-      .then(() => this.reconcileBackendReleaseTag())
+      // Resolve a parked `latest/<variant>` sentinel to a concrete pair now;
+      // moving to a newer release tag waits for `runDeferredBackendMaintenance`.
+      .then(() => this.reconcileBackendReleaseTag({ allowUpgrade: false }))
       .finally(() => {
         this.isInitializing = false
         this.configureBackendsPromise = null
@@ -1680,7 +1687,26 @@ export default class llamacpp_upstream_extension extends AIEngine {
    * backend remains active because `downloadRecommendedBackend` only persists
    * after a successful download.
    */
-  private async reconcileBackendReleaseTag(): Promise<void> {
+  /**
+   * Starts the engine downloads that `onLoad` no longer starts by itself:
+   * moving the selected build to the newest release tag. Called by the app
+   * (`StartupBackendCoordinator`) once it is on screen, onboarding is done
+   * and this provider is active. Runs once per process; later calls are
+   * no-ops.
+   */
+  async runDeferredBackendMaintenance(): Promise<void> {
+    if (this.deferredMaintenanceStarted) return
+    this.deferredMaintenanceStarted = true
+    if (this.configureBackendsPromise) {
+      await this.configureBackendsPromise
+    }
+    await this.reconcileBackendReleaseTag()
+  }
+
+  private async reconcileBackendReleaseTag(
+    options: { allowUpgrade?: boolean } = {}
+  ): Promise<void> {
+    const allowUpgrade = options.allowUpgrade ?? true
     try {
       const current = stripBom(this.config.version_backend || '')
 
@@ -1704,6 +1730,8 @@ export default class llamacpp_upstream_extension extends AIEngine {
         )
         return
       }
+
+      if (!allowUpgrade) return
 
       const currentType = current.slice(current.indexOf('/') + 1)
 

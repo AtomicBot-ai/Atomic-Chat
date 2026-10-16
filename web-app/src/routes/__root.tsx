@@ -28,8 +28,8 @@ import VoiceSetupDialog from '@/containers/dialogs/VoiceSetupDialog'
 import { TranslationProvider } from '@/i18n/TranslationContext'
 import AttachmentIngestionDialog from '@/containers/dialogs/AttachmentIngestionDialog'
 import WhatsNewDialog from '@/containers/dialogs/WhatsNewDialog'
-import { useEffect } from 'react'
 import { useSetupCompleted } from '@/hooks/useSetupCompleted'
+import { BootReady } from '@/components/BootReady'
 import GlobalError from '@/containers/GlobalError'
 import * as Sentry from '@sentry/react'
 import { GlobalEventHandler } from '@/providers/GlobalEventHandler'
@@ -131,28 +131,11 @@ function RootLayout() {
     )
   }
 
-  useEffect(() => {
-    // Wait for the UI to be fully rendered before hiding the loader
-    const hideLoader = () => {
-      requestAnimationFrame(() => {
-        // Hide the HTML loader
-        document.body.classList.add('loaded')
-
-        // Remove the HTML loader element after transition
-        const loader = document.getElementById('initial-loader')
-        if (loader) {
-          setTimeout(() => {
-            loader.remove()
-          }, 300)
-        }
-      })
-    }
-
-    // Give providers time to initialize and paint
-    const timer = setTimeout(hideLoader, 200)
-
-    return () => clearTimeout(timer)
-  }, [])
+  // The boot screen in index.html is no longer removed on a timer here. It
+  // used to go 200 ms after this component mounted - before ServiceHubProvider
+  // and ExtensionProvider had rendered anything - which left a blank window
+  // for as long as extensions took to load, and for good if one never did.
+  // <BootReady /> below dismisses it once the layout has actually painted.
 
   const IS_LOGS_ROUTE = getInitialLayoutType()
 
@@ -168,6 +151,7 @@ function RootLayout() {
             <GlobalEventHandler />
             <StartupBackendCoordinator />
             {IS_LOGS_ROUTE ? <LogsLayout /> : <AppLayout />}
+            <BootReady />
           </ExtensionProvider>
           {/* <TanStackRouterDevtools position="bottom-right" /> */}
           <ToolApproval />

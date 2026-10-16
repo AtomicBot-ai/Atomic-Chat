@@ -8,6 +8,7 @@ import {
   isOptimalBackendCacheFresh,
   planStartupBackendUpgrade,
   refreshStartupBackendCaches,
+  runDeferredBackendMaintenance,
 } from '@/lib/startupBackendRecommendations'
 
 const NOW = 1_800_000_000_000
@@ -317,5 +318,52 @@ describe('startup tier upgrade', () => {
       )
     ).toBe('b10405/win-cuda-12.4-x64')
     expect(download).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('deferred engine maintenance', () => {
+  const extensionsWith = (calls: string[], failing?: string) => ({
+    getByName: (name: string) => ({
+      runDeferredBackendMaintenance: vi.fn(async () => {
+        calls.push(name)
+        if (name === failing) throw new Error('offline')
+      }),
+    }),
+  })
+
+  it('runs for every llama.cpp provider that is switched on', async () => {
+    const calls: string[] = []
+    const started = await runDeferredBackendMaintenance(
+      extensionsWith(calls),
+      () => true
+    )
+    expect(started.sort()).toEqual(['llamacpp', 'llamacpp-upstream'])
+    expect(calls.sort()).toEqual([
+      '@janhq/llamacpp-extension',
+      '@janhq/llamacpp-upstream-extension',
+    ])
+  })
+
+  it('never downloads for a provider that is switched off (TurboQuant on a fresh install)', async () => {
+    const calls: string[] = []
+    const started = await runDeferredBackendMaintenance(
+      extensionsWith(calls),
+      (provider) => provider !== 'llamacpp'
+    )
+    expect(started).toEqual(['llamacpp-upstream'])
+    expect(calls).toEqual(['@janhq/llamacpp-upstream-extension'])
+  })
+
+  it('skips an extension without the method and never rejects', async () => {
+    const calls: string[] = []
+    const extensions = {
+      getByName: (name: string) =>
+        name.includes('upstream')
+          ? {}
+          : extensionsWith(calls, '@janhq/llamacpp-extension').getByName(name),
+    }
+    await expect(
+      runDeferredBackendMaintenance(extensions, () => true)
+    ).resolves.toEqual(['llamacpp'])
   })
 })

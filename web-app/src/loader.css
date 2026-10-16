@@ -1,56 +1,233 @@
-/* Critical CSS for initial loader - loaded inline to prevent FOUC */
+/*
+ * The boot screen (index.html, driven by public/boot.js).
+ *
+ * A static logo and one line of status - nothing spins. The panel is
+ * semi-transparent and frosted, so the app shows through, blurred, as it draws
+ * underneath; it fades out once the app says it has drawn.
+ *
+ * The see-through is inside the window only. Making the Windows window itself
+ * transparent (to show the desktop behind it) brings back the softbuffer panic
+ * that kills the process when the window is minimised - see
+ * docs/decisions/2026-07-31-disable-transparent-windows-window-to-stop-softbuffer-panic.md.
+ */
+
 #initial-loader {
+  --boot-bg: rgb(255 255 255 / 64%);
+  --boot-fg: rgb(23 23 23);
+  --boot-muted: rgb(82 82 82);
+  --boot-card: rgb(255 255 255 / 86%);
+  --boot-border: rgb(0 0 0 / 10%);
+  --boot-button: rgb(0 0 0 / 6%);
+  --boot-button-hover: rgb(0 0 0 / 11%);
+  --boot-primary: rgb(23 23 23);
+  --boot-primary-fg: rgb(250 250 250);
+
   position: fixed;
   inset: 0;
+
+  /* Above everything the app can draw except its own title-bar strip
+     (WindowFrame, one higher), which sits exactly over this screen's strip.
+     Until the app has drawn, this screen's Minimize and Close are the window
+     buttons; the moment the app's strip exists, it covers them seamlessly.
+     tests/window-controls.test.mjs keeps the app's strip the highest. */
+  z-index: 2147483645;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1rem;
-  background: hsl(0, 0%, 100%);
-  z-index: 9999;
+  color: var(--boot-fg);
+  background: var(--boot-bg);
+  backdrop-filter: blur(22px) saturate(140%);
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
   opacity: 1;
-  transition: opacity 0.3s ease-in-out;
+  transition: opacity 0.3s ease-out;
 }
 
-/* Light mode (default) */
-@media (prefers-color-scheme: light) {
-  #initial-loader {
-    background: rgb(255, 255, 255);
-  }
-}
-
-/* Dark mode */
-@media (prefers-color-scheme: dark) {
-  #initial-loader {
-    background: rgb(25, 25, 25);
-  }
-}
-
-/* Вращение логотипа (без «помахивания»); инверсия только на img внутри */
-#initial-loader .loader-logo-spin {
-  width: 5rem;
-  height: 5rem;
-  animation: loader-logo-rotate 1.1s linear infinite;
-}
-
-#initial-loader .loader-logo-spin img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  display: block;
-}
-
-@keyframes loader-logo-rotate {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+#initial-loader[data-theme="dark"] {
+  --boot-bg: rgb(20 20 22 / 60%);
+  --boot-fg: rgb(245 245 245);
+  --boot-muted: rgb(163 163 163);
+  --boot-card: rgb(32 32 36 / 88%);
+  --boot-border: rgb(255 255 255 / 10%);
+  --boot-button: rgb(255 255 255 / 8%);
+  --boot-button-hover: rgb(255 255 255 / 14%);
+  --boot-primary: rgb(245 245 245);
+  --boot-primary-fg: rgb(23 23 23);
 }
 
 .loaded #initial-loader {
   opacity: 0;
   pointer-events: none;
+}
+
+/* Title-bar strip: only where the window has no native one (Windows). */
+#initial-loader .boot-chrome {
+  display: none;
+  flex: none;
+  height: 2rem;
+}
+
+#initial-loader[data-chrome="custom"] .boot-chrome {
+  display: flex;
+}
+
+#initial-loader .boot-drag {
+  flex: 1;
+}
+
+#initial-loader .boot-window-button {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 100%;
+  border: 0;
+  color: var(--boot-muted);
+  background: transparent;
+  cursor: default;
+}
+
+#initial-loader .boot-window-button:hover {
+  color: var(--boot-fg);
+  background: var(--boot-button-hover);
+}
+
+#initial-loader .boot-window-close:hover {
+  color: #fff;
+  background: #c42b1c;
+}
+
+#initial-loader .boot-window-button svg {
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 1.2;
+}
+
+#initial-loader .boot-center {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 1.5rem;
+  min-height: 0;
+}
+
+#initial-loader .boot-logo {
+  display: block;
+  width: 4.5rem;
+  height: 4.5rem;
+  object-fit: contain;
+  filter: drop-shadow(0 6px 18px rgb(0 0 0 / 25%));
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+#initial-loader .boot-status {
+  margin: 0;
+  color: var(--boot-muted);
+  font-size: 0.8125rem;
+  letter-spacing: 0.01em;
+}
+
+#initial-loader[data-state="problem"] .boot-status {
+  display: none;
+}
+
+/* Shown by boot.js when startup stalls or fails. */
+#initial-loader .boot-problem {
+  box-sizing: border-box;
+  width: min(32rem, 100%);
+  padding: 1.25rem 1.25rem 1rem;
+  border: 1px solid var(--boot-border);
+  border-radius: 0.875rem;
+  background: var(--boot-card);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 25%);
+}
+
+#initial-loader .boot-problem[hidden] {
+  display: none;
+}
+
+#initial-loader .boot-problem-title {
+  margin: 0 0 0.375rem;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+#initial-loader .boot-problem-detail {
+  margin: 0;
+  color: var(--boot-muted);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+#initial-loader .boot-problem-errors {
+  max-height: 8rem;
+  margin: 0.75rem 0 0;
+  padding: 0.5rem 0.625rem;
+  overflow: auto;
+  border-radius: 0.5rem;
+  background: var(--boot-button);
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.6875rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+
+#initial-loader .boot-problem-errors[hidden] {
+  display: none;
+}
+
+#initial-loader .boot-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+#initial-loader .boot-button {
+  padding: 0.4375rem 0.875rem;
+  border: 1px solid var(--boot-border);
+  border-radius: 0.5rem;
+  color: var(--boot-fg);
+  background: var(--boot-button);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+#initial-loader .boot-button:hover {
+  background: var(--boot-button-hover);
+}
+
+#initial-loader .boot-button-primary {
+  border-color: transparent;
+  color: var(--boot-primary-fg);
+  background: var(--boot-primary);
+}
+
+#initial-loader .boot-button-primary:hover {
+  background: var(--boot-primary);
+  opacity: 0.9;
+}
+
+#initial-loader .boot-button[hidden],
+#initial-loader .boot-quit {
+  display: none;
+}
+
+/* Closing the window quits only where the app draws its own title bar. */
+#initial-loader[data-chrome="custom"] .boot-quit {
+  display: inline-block;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #initial-loader {
+    transition: none;
+  }
 }

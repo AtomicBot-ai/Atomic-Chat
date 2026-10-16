@@ -2011,6 +2011,46 @@ describe('llamacpp_extension', () => {
     })
   })
 
+  /// Engine downloads nobody asked for no longer start from `onLoad`: on a
+  /// fresh install they ran although this provider ships switched off, before
+  /// onboarding had asked anything. The app starts them, once, through
+  /// `runDeferredBackendMaintenance()`.
+  describe('runDeferredBackendMaintenance', () => {
+    beforeEach(() => {
+      extension['configureBackendsPromise'] = null
+      extension['deferredMaintenanceStarted'] = false
+      extension['pendingFirstRunAdoption'] = null
+    })
+
+    it('runs the parked first-run adoption, then the release-tag check, once', async () => {
+      const order: string[] = []
+      extension['pendingFirstRunAdoption'] = vi.fn(async () => {
+        order.push('adopt')
+      })
+      extension['reconcileBackendReleaseTag'] = vi.fn(async () => {
+        order.push('reconcile')
+      })
+
+      await extension.runDeferredBackendMaintenance()
+      await extension.runDeferredBackendMaintenance()
+
+      expect(order).toEqual(['adopt', 'reconcile'])
+    })
+
+    it('still checks for a newer release when the adoption fails', async () => {
+      extension['pendingFirstRunAdoption'] = vi
+        .fn()
+        .mockRejectedValue(new Error('offline'))
+      const reconcile = vi.fn().mockResolvedValue(undefined)
+      extension['reconcileBackendReleaseTag'] = reconcile
+
+      await expect(
+        extension.runDeferredBackendMaintenance()
+      ).resolves.toBeUndefined()
+      expect(reconcile).toHaveBeenCalledOnce()
+    })
+  })
+
   /// The version list and the release index are both snapshots taken at load,
   /// so without an explicit refetch a release published mid-session is
   /// invisible until the app restarts.

@@ -675,18 +675,29 @@ pub fn run() {
             if let Err(e) = core::agent::workspace::ensure_default_agent_workspace(&data_folder) {
                 log::error!("{e}");
             }
-            match app.path().resolve(
-                core::agent::skills::BUNDLED_AGENT_SKILLS_RESOURCE_DIR,
-                BaseDirectory::Resource,
-            ) {
-                Ok(bundled_skills) => {
-                    if let Err(error) =
-                        core::agent::skills::initialize_skills(&data_folder, &bundled_skills)
-                    {
-                        log::error!("{error}");
+            // Copying every bundled skill takes seconds and runs before the
+            // window can appear, so it only happens when this version has not
+            // seeded this data folder yet (IS_CLEAN forces it, as it does the
+            // extension reinstall above).
+            let reseed_skills = stored_version != app_version
+                || std::env::var("IS_CLEAN").is_ok()
+                || !core::agent::skills::bundled_skills_seeded(&data_folder);
+            if reseed_skills {
+                match app.path().resolve(
+                    core::agent::skills::BUNDLED_AGENT_SKILLS_RESOURCE_DIR,
+                    BaseDirectory::Resource,
+                ) {
+                    Ok(bundled_skills) => {
+                        if let Err(error) =
+                            core::agent::skills::initialize_skills(&data_folder, &bundled_skills)
+                        {
+                            log::error!("{error}");
+                        }
                     }
+                    Err(error) => log::error!("Failed to resolve bundled Agent skills: {error}"),
                 }
-                Err(error) => log::error!("Failed to resolve bundled Agent skills: {error}"),
+            } else {
+                log::info!("Bundled Agent skills already seeded for {app_version}; skipping");
             }
 
             // Store the new app version

@@ -24,12 +24,75 @@
     <link rel="stylesheet" href="/src/loader.css" />
   </head>
   <body>
-    <div id="initial-loader">
-      <div class="loader-logo-spin" aria-hidden="true">
-        <img src="/images/transparent-logo.png" alt="" />
+    <!-- The boot screen. public/boot.js drives it and keeps it up until the app
+         has drawn; see docs/decisions/2026-10-15-boot-screen-stays-until-the-app-has-drawn.md -->
+    <div id="initial-loader" data-state="booting" data-theme="dark">
+      <div class="boot-chrome">
+        <div class="boot-drag" data-tauri-drag-region></div>
+        <button
+          type="button"
+          class="boot-window-button"
+          data-boot-action="minimize"
+          aria-label="Minimize"
+        >
+          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+            <path d="M3 8h10" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          class="boot-window-button boot-window-close"
+          data-boot-action="close"
+          aria-label="Close"
+        >
+          <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+            <path d="M4 4l8 8M12 4l-8 8" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="boot-center">
+        <img class="boot-logo" src="/images/transparent-logo.png" alt="" />
+        <p id="boot-status" class="boot-status" role="status" aria-live="polite">
+          Starting Radium…
+        </p>
+
+        <section
+          id="boot-problem"
+          class="boot-problem"
+          aria-labelledby="boot-problem-title"
+          hidden
+        >
+          <h1 id="boot-problem-title" class="boot-problem-title"></h1>
+          <p id="boot-problem-detail" class="boot-problem-detail"></p>
+          <pre id="boot-problem-errors" class="boot-problem-errors" hidden></pre>
+          <div class="boot-actions">
+            <button type="button" class="boot-button" data-boot-action="wait">
+              Keep waiting
+            </button>
+            <button
+              type="button"
+              class="boot-button boot-button-primary"
+              data-boot-action="restart"
+            >
+              Restart Radium
+            </button>
+            <button type="button" class="boot-button" data-boot-action="log">
+              Open the log
+            </button>
+            <button
+              type="button"
+              class="boot-button boot-quit"
+              data-boot-action="close"
+            >
+              Quit
+            </button>
+          </div>
+        </section>
       </div>
     </div>
     <div id="root"></div>
+    <script src="/boot.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

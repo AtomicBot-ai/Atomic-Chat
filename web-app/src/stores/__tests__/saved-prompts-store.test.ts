@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 
 import { STARTER_PROMPTS, useSavedPrompts } from '../saved-prompts-store'
-import { overallDownloadProgress, useDownloadDrawer } from '../download-drawer-store'
+import {
+  engineBuildName,
+  isEngineDownload,
+  overallDownloadProgress,
+  useDownloadDrawer,
+} from '../download-drawer-store'
 import { promptVariables } from '@/lib/promptVariables'
 
 describe('saved prompts', () => {
@@ -49,14 +54,21 @@ describe('download drawer store', () => {
   beforeEach(() => useDownloadDrawer.setState({ items: [], open: false }))
   const row = (id: string, current: number, total: number) => ({ id, progress: total ? current / total : 0, current, total })
 
-  it('opens when the first download starts and closes when the queue empties', () => {
+  it('never opens by itself, and closes when the queue empties', () => {
     useDownloadDrawer.getState().setItems([row('a', 1, 10)])
-    expect(useDownloadDrawer.getState().open).toBe(true)
-    useDownloadDrawer.getState().setOpen(false)
-    useDownloadDrawer.getState().setItems([row('a', 2, 10), row('b', 0, 10)])
     expect(useDownloadDrawer.getState().open).toBe(false)
+    useDownloadDrawer.getState().setOpen(true)
+    useDownloadDrawer.getState().setItems([row('a', 2, 10), row('b', 0, 10)])
+    expect(useDownloadDrawer.getState().open).toBe(true)
     useDownloadDrawer.getState().setItems([])
     expect(useDownloadDrawer.getState().open).toBe(false)
+  })
+
+  it('tells engine builds from downloads the user started', () => {
+    expect(isEngineDownload('llamacpp-backend-b11463/win-cpu-x64')).toBe(true)
+    expect(isEngineDownload('unsloth/Qwen3-8B-GGUF')).toBe(false)
+    expect(isEngineDownload('mlx-community/Qwen3-8B-4bit')).toBe(false)
+    expect(engineBuildName('llamacpp-backend-b11463/win-cuda-12.4-x64')).toBe('win-cuda-12.4-x64')
   })
 
   it('weights overall progress by size and ignores unknown sizes', () => {

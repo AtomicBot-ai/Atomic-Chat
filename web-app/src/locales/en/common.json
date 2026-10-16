@@ -723,6 +723,15 @@
     "preparing": "Starting…",
     "paused": "Paused",
     "left": "{{eta}} left",
-    "appUpdate": "App update"
+    "appUpdate": "App update",
+    "started": "Downloading {{name}}",
+    "view": "View",
+    "engines": "Engine updates",
+    "engineName": "llama.cpp engine ({{name}})"
+  },
+  "startup": {
+    "extensionsFailedTitle": "Part of Radium didn't start",
+    "extensionsFailedDescription": "{{names}} failed or took too long to load. Radium is running without it; the log has the details.",
+    "restart": "Restart"
   }
 }

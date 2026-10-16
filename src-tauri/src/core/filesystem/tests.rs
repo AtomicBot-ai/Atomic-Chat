@@ -88,3 +88,35 @@ fn test_readdir_sync() {
 
     let _ = fs::remove_dir_all(dir_path);
 }
+
+/// `decompress` became async (the work moved off the main thread, which it
+/// used to freeze while an engine archive unpacked). It must still unpack a
+/// zip into the data folder and still refuse to write outside it.
+#[tokio::test]
+async fn decompress_unpacks_a_zip_off_the_main_thread() {
+    let app = mock_app();
+    let data = get_jan_data_folder_path(app.handle().clone());
+    let dir = format!("test_decompress_{}", uuid::Uuid::new_v4());
+    fs::create_dir_all(data.join(&dir)).unwrap();
+    let archive = format!("{dir}/backend.zip");
+    {
+        let file = File::create(data.join(&archive)).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        zip.start_file("llama-server.exe", zip::write::FileOptions::default())
+            .unwrap();
+        zip.write_all(b"binary").unwrap();
+        zip.finish().unwrap();
+    }
+
+    decompress(app.handle().clone(), archive.clone(), format!("{dir}/out"))
+        .await
+        .unwrap();
+    assert_eq!(
+        fs::read(data.join(&dir).join("out").join("llama-server.exe")).unwrap(),
+        b"binary"
+    );
+
+    let outside = decompress(app.handle().clone(), archive, "../outside".to_string()).await;
+    assert!(outside.is_err());
+    let _ = fs::remove_dir_all(data.join(&dir));
+}

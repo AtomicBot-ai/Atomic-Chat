@@ -3,6 +3,9 @@ import { APIs } from '@/lib/service'
 import { EventEmitter } from '@/services/events/EventEmitter'
 import { EngineManager, ModelManager } from '@janhq/core'
 import { PropsWithChildren, useCallback, useEffect, useState } from 'react'
+import { toast } from 'sonner'
+import { BootLogLevel, bootLog, bootStep } from '@/lib/boot'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 
 /**
  * Module-level guard so extension setup runs exactly once for the lifetime
@@ -22,7 +25,11 @@ import { PropsWithChildren, useCallback, useEffect, useState } from 'react'
  */
 let extensionsSetupPromise: Promise<void> | null = null
 
+/** The "some extensions didn't start" notice is shown once per process. */
+let failureNoticeShown = false
+
 export function ExtensionProvider({ children }: PropsWithChildren) {
+  const { t } = useTranslation()
   const [finishedSetup, setFinishedSetup] = useState(false)
   const setupExtensions = useCallback(() => {
     if (!extensionsSetupPromise) {
@@ -38,10 +45,22 @@ export function ExtensionProvider({ children }: PropsWithChildren) {
         window.core.modelManager = new ModelManager()
 
         // Register extensions - same pattern for both platforms
+        bootStep('extensions', 'Loading extensions…')
         await ExtensionManager.getInstance()
           .registerActive()
           .then(() => ExtensionManager.getInstance().load())
-      })()
+      })().catch((error: unknown) => {
+        // `registerActive` and `load` do not reject, but anything else in
+        // here might. The app is drawn either way: before, a rejection here
+        // meant `finishedSetup` never turned true and the window stayed blank.
+        console.error('Extension setup failed:', error)
+        bootLog(
+          `extension setup failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+          BootLogLevel.error
+        )
+      })
     }
     return extensionsSetupPromise.then(() => setFinishedSetup(true))
   }, [])
@@ -57,6 +76,31 @@ export function ExtensionProvider({ children }: PropsWithChildren) {
     // to reinitialize, leaving the app running with no active
     // extensions. A real process exit doesn't need this cleanup either.
   }, [setupExtensions])
+
+  // Say so, once, when an extension failed or was still loading when startup
+  // carried on without it - the app is up, but part of it may be missing.
+  useEffect(() => {
+    if (!finishedSetup || failureNoticeShown) return
+    const failures = ExtensionManager.getInstance()?.getLoadFailures?.() ?? []
+    if (failures.length === 0) return
+    failureNoticeShown = true
+    const names = failures
+      .map((failure) =>
+        failure.name.replace(/^@janhq\//, '').replace(/-extension$/, '')
+      )
+      .join(', ')
+    toast.warning(t('common:startup.extensionsFailedTitle'), {
+      id: 'extensions-failed-to-start',
+      duration: Infinity,
+      description: t('common:startup.extensionsFailedDescription', { names }),
+      action: {
+        label: t('common:startup.restart'),
+        onClick: () => {
+          void window.core?.api?.relaunch?.()
+        },
+      },
+    })
+  }, [finishedSetup, t])
 
   return <>{finishedSetup && children}</>
 }
