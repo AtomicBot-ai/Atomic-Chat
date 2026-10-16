@@ -277,14 +277,22 @@ function DownloadButton({
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
   const downloadId = foundryLocalDownloadId(variant.id)
-  const progress = useDownloadStore((state) => state.downloads[downloadId]?.progress ?? 0)
+  const transfer = useDownloadStore((state) => state.downloads[downloadId]?.progress)
   const isDownloading = useDownloadStore(
     (state) => state.localDownloadingModels.has(downloadId) || downloadId in state.downloads
   )
+  // From the click until the variant is listed. The download panel drops its row and the
+  // in-progress mark when the files are in, while `model.yml` is still written and the list read
+  // again (a second): without this the card offered Download again in between.
+  const [installing, setInstalling] = useState(false)
+  const busy = isDownloading || installing
+  // Past the transfer there is no row: what is left is the finishing step.
+  const progress = transfer ?? (installing && !isDownloading ? 1 : 0)
   const [failure, setFailure] = useState<string | null>(null)
 
   const download = useCallback(async () => {
     const store = useDownloadStore.getState()
+    setInstalling(true)
     setFailure(null)
     store.clearResumableDownload(downloadId)
     // The download panel names the row after this, not after the id.
@@ -303,12 +311,13 @@ function DownloadButton({
       }
     } finally {
       useDownloadStore.getState().removeLocalDownloadingModel(downloadId)
+      setInstalling(false)
     }
   }, [downloadId, fields, variant, serviceHub, t])
 
   return (
     <div className="flex w-full flex-col items-end gap-2">
-      {isDownloading ? (
+      {busy ? (
         <Button
           type="button"
           variant="outline"

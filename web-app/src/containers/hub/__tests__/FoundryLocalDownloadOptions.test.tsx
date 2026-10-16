@@ -188,6 +188,42 @@ describe('FoundryLocalDownloadOptions', () => {
     )
   })
 
+  it('shows the finished download, never Download again, from the end of the transfer until the model is listed', async () => {
+    verdicts({})
+    const id = 'foundry-local-qwen2_5-7b-instruct-openvino-npu'
+    let release: () => void = () => {}
+    installer.installFoundryLocalVariant.mockImplementationOnce(async () => {
+      // The download panel's success handler runs as soon as the files are in: it drops the row and
+      // the in-progress mark, while the installer still writes model.yml and the list is read again.
+      useDownloadStore.getState().removeDownload(id)
+      useDownloadStore.getState().removeLocalDownloadingModel(id)
+      await new Promise<void>((resolve) => (release = resolve))
+      return { modelId: 'qwen2.5-7b-instruct-openvino-npu' }
+    })
+    seedServiceHub({
+      providers: {
+        getProviders: vi.fn(async () => [
+          { active: true, provider: 'foundry-local', settings: [], models: [{ id: 'qwen2.5-7b-instruct-openvino-npu' }] },
+        ]),
+      } as unknown as ProvidersService,
+    })
+    const user = userEvent.setup()
+
+    render(<FoundryLocalDownloadOptions model={model()} platform="win-x64" />)
+    await waitFor(() => expect(option('openvino-npu')).toHaveAttribute('aria-checked', 'true'))
+    await user.click(screen.getByRole('button', { name: 'hub:download' }))
+    await waitFor(() => expect(installer.installFoundryLocalVariant).toHaveBeenCalled())
+
+    expect(screen.queryByRole('button', { name: 'hub:download' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'common:cancelDownload' })).toHaveTextContent('100%')
+
+    release()
+    expect(
+      await within(screen.getByTestId('foundry-local-actions')).findByRole('button', { name: /hub:newChat|common:newChat/ })
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'hub:download' })).not.toBeInTheDocument()
+  })
+
   it('offers no download for a variant already on disk', async () => {
     verdicts({})
     useModelProvider.setState({
