@@ -168,10 +168,11 @@ pub struct AgentTurnRequest {
     /// Expose the user's connected MCP servers as dynamic `mcp.*` tools.
     #[serde(default = "default_true")]
     pub mcp_enabled: bool,
-    /// Auto-approve MCP-origin tools regardless of their annotations. Carries
-    /// the legacy chat `allowAllMCPPermissions` setting; never widens approval
-    /// for built-in tools.
-    #[serde(default = "default_true")]
+    /// The user's explicit opt-in to run MCP-origin tools without asking
+    /// (chat's `allowAllMCPPermissions`, or the composer's per-thread "skip").
+    /// Absent means ask: MCP tools are third-party code. Never widens approval
+    /// for built-in tools or skill scripts.
+    #[serde(default)]
     pub auto_approve_mcp: bool,
     /// Per-thread disabled MCP tools as `server::tool` keys (the frontend's
     /// `useToolAvailable` format). Filtered out of the turn's catalog.
@@ -481,4 +482,34 @@ pub struct AgentTurnUsage {
     /// Milliseconds from turn start to the first streamed or completed output.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ttft_ms: Option<f64>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AgentTurnRequest;
+
+    fn minimal_request() -> serde_json::Value {
+        serde_json::json!({
+            "run_id": "run",
+            "session_id": "session",
+            "model_id": "model",
+            "user_message": "hello",
+        })
+    }
+
+    /// Wire contract with the frontend: a caller that does not state the MCP
+    /// opt-in gets the approval gate, never a silent bypass.
+    #[test]
+    fn mcp_tools_ask_unless_the_request_opts_in() {
+        let request: AgentTurnRequest =
+            serde_json::from_value(minimal_request()).expect("minimal request");
+        assert!(!request.auto_approve_mcp);
+        assert!(!request.auto_approve);
+        assert!(request.mcp_enabled);
+
+        let mut opted_in = minimal_request();
+        opted_in["auto_approve_mcp"] = serde_json::Value::Bool(true);
+        let request: AgentTurnRequest = serde_json::from_value(opted_in).expect("opted-in request");
+        assert!(request.auto_approve_mcp);
+    }
 }

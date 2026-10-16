@@ -11,11 +11,6 @@ import type { DownloadRowProps } from './DownloadProgressRow'
 
 export type DownloadPanelProps = {
   items: DownloadRowProps[]
-  /**
-   * Reports whether the drawer is closed, so the owner can measure how long it
-   * stayed open without also owning the flag.
-   */
-  onCollapsedChange?: (collapsed: boolean) => void
 }
 
 /**
@@ -23,17 +18,16 @@ export type DownloadPanelProps = {
  *
  * This used to be a floating panel in the bottom-right corner that had to dodge
  * the composer. The downloads now live in a drawer opened from the sidebar
- * (`DownloadDrawer`), so this renders nothing itself: it hands the rows over,
- * reports the drawer's open state, and announces each download the user
- * starts with a toast whose "View" button opens the drawer. The drawer no
+ * (`DownloadDrawer`), so this renders nothing itself: it hands the rows over
+ * and announces each download the user starts with a toast whose "View"
+ * button opens the drawer. The drawer no
  * longer opens by itself, and engine builds the app fetches on its own are
  * not announced at all.
  */
-export function DownloadPanel({ items, onCollapsedChange }: DownloadPanelProps) {
+export function DownloadPanel({ items }: DownloadPanelProps) {
   const { t } = useTranslation()
   const setItems = useDownloadDrawer((state) => state.setItems)
   const setOpen = useDownloadDrawer((state) => state.setOpen)
-  const open = useDownloadDrawer((state) => state.open)
   const announced = useRef(new Set<string>())
 
   useEffect(() => {
@@ -62,10 +56,6 @@ export function DownloadPanel({ items, onCollapsedChange }: DownloadPanelProps) 
       )
     }
   }, [items, setOpen, t])
-
-  useEffect(() => {
-    onCollapsedChange?.(!open)
-  }, [open, onCollapsedChange])
 
   return null
 }

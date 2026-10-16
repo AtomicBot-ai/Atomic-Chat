@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { RADIUM_GITHUB_REPO as GITHUB_REPO } from '@/constants/project'
 import { useLastSeenVersion } from './useLastSeenVersion'
-
-const GITHUB_REPO = 'AtomicBot-ai/Atomic-Chat'
 
 type GithubRelease = {
   tag_name: string

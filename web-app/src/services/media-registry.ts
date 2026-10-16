@@ -1,17 +1,19 @@
 /**
- * The remote media registry.
+ * The media-provider registry.
  *
  * A structural clone of `provider-registry.ts` — deliberately, so there is one
- * remote-config pattern in this app rather than two differently-shaped ones.
- * See `services/AGENTS.md` §3 and the ADR
- * `docs/decisions/2026-09-10-media-models-and-providers-come-from-atomic-chat-conf.md`.
+ * registry pattern in this app rather than two differently-shaped ones. See
+ * `services/AGENTS.md` §3.
  *
- * Priority chain, identical to the provider registry:
+ * The registry ships inside the app (`src/registries/media.json`) on top of
+ * the built-in {@link BASELINE_MEDIA_PROVIDERS}. Nothing is fetched unless the
+ * build sets `VITE_MEDIA_REGISTRY_URL` (see `lib/registry-source.ts`); then the
+ * priority chain is the provider registry's:
  *
  *   1. Fresh cache (unless forced)
  *   2. Network fetch (writes a new cache entry on success)
  *   3. Stale cache (after a network failure)
- *   4. The bundled baseline
+ *   4. The bundled snapshot
  *
  * `getMediaProvidersOrFallback()` NEVER THROWS. UI code renders
  * unconditionally and must not wrap it in try/catch for control flow.
@@ -32,6 +34,8 @@
  */
 
 import { BASELINE_MEDIA_PROVIDERS } from '@/constants/mediaProviders'
+import { REGISTRY_OVERRIDES } from '@/lib/registry-source'
+import bundledRegistry from '@/registries/media.json'
 import { mediaSecretKey } from './media/secrets'
 import type {
   MediaProviderAdapterId,
@@ -39,8 +43,8 @@ import type {
   MediaProviderKind,
 } from './media/contract'
 
-export const DEFAULT_MEDIA_REGISTRY_URL =
-  'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/media/registry.json'
+/** The build-time override, or `null` for the bundled snapshot only. */
+export const MEDIA_REGISTRY_URL: string | null = REGISTRY_OVERRIDES.media
 
 export const MEDIA_REGISTRY_SCHEMA_VERSION = 1
 
@@ -77,9 +81,11 @@ export type MediaRegistryManifest = {
   providers: MediaProviderDescriptor[]
 }
 
+export type MediaRegistrySource = 'remote' | 'cache' | 'bundled'
+
 export type MediaRegistryFetchResult = {
   providers: MediaProviderDescriptor[]
-  source: 'remote' | 'cache' | 'baseline'
+  source: MediaRegistrySource
   fetchedAt: number | null
   manifestUpdatedAt: string | null
   error?: string
@@ -233,12 +239,31 @@ function mergeWithBaseline(
   ]
 }
 
-function baselineResult(error?: string): MediaRegistryFetchResult {
+function sanitizeProviders(
+  providers: readonly unknown[]
+): MediaProviderDescriptor[] {
+  return providers
+    .map(sanitizeEntry)
+    .filter((entry): entry is MediaProviderDescriptor => entry !== null)
+}
+
+/**
+ * The snapshot shipped with this build. It goes through the same
+ * {@link sanitizeEntry} as a remote payload: bundled entries are not trusted
+ * more than downloaded ones.
+ */
+export const BUNDLED_MEDIA_MANIFEST: MediaRegistryManifest = (() => {
+  const data: unknown = bundledRegistry
+  if (!isManifest(data)) throw new Error('Bundled media registry is malformed.')
+  return { ...data, providers: sanitizeProviders(data.providers) }
+})()
+
+export function bundledMediaResult(error?: string): MediaRegistryFetchResult {
   return {
-    providers: BASELINE_MEDIA_PROVIDERS.map((provider) => ({ ...provider })),
-    source: 'baseline',
+    providers: mergeWithBaseline(BUNDLED_MEDIA_MANIFEST.providers),
+    source: 'bundled',
     fetchedAt: null,
-    manifestUpdatedAt: null,
+    manifestUpdatedAt: BUNDLED_MEDIA_MANIFEST.updated_at,
     ...(error ? { error } : {}),
   }
 }
@@ -272,7 +297,8 @@ async function fetchManifest(
 
 export type MediaFetchOptions = {
   force?: boolean
-  url?: string
+  /** Registry URL; defaults to the build-time override. `null` = bundled only. */
+  url?: string | null
   timeoutMs?: number
 }
 
@@ -281,17 +307,17 @@ export async function getMediaProvidersOrFallback(
 ): Promise<MediaRegistryFetchResult> {
   const {
     force = false,
-    url = DEFAULT_MEDIA_REGISTRY_URL,
+    url = MEDIA_REGISTRY_URL,
     timeoutMs = FETCH_TIMEOUT_MS,
   } = options
+
+  if (!url) return bundledMediaResult()
 
   const cached = getCachedMediaManifest()
   if (!force && isMediaCacheFresh(cached) && cached) {
     return {
       providers: mergeWithBaseline(
-        cached.manifest.providers
-          .map(sanitizeEntry)
-          .filter((entry): entry is MediaProviderDescriptor => entry !== null)
+        sanitizeProviders(cached.manifest.providers)
       ),
       source: 'cache',
       fetchedAt: cached.fetchedAt,
@@ -308,9 +334,7 @@ export async function getMediaProvidersOrFallback(
 
     return {
       providers: mergeWithBaseline(
-        manifest.providers
-          .map(sanitizeEntry)
-          .filter((entry): entry is MediaProviderDescriptor => entry !== null)
+        sanitizeProviders(manifest.providers)
       ),
       source: 'remote',
       fetchedAt,
@@ -325,9 +349,7 @@ export async function getMediaProvidersOrFallback(
     if (cached) {
       return {
         providers: mergeWithBaseline(
-          cached.manifest.providers
-            .map(sanitizeEntry)
-            .filter((entry): entry is MediaProviderDescriptor => entry !== null)
+          sanitizeProviders(cached.manifest.providers)
         ),
         source: 'cache',
         fetchedAt: cached.fetchedAt,
@@ -336,7 +358,7 @@ export async function getMediaProvidersOrFallback(
       }
     }
 
-    return baselineResult(detail)
+    return bundledMediaResult(detail)
   } finally {
     clearTimeout(timer)
   }

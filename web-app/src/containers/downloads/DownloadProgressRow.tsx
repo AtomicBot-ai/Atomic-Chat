@@ -6,7 +6,7 @@ import {
   formatSpeed,
   shortModelName,
 } from '@/lib/downloadFormat'
-import { quantFromModelId } from '@/lib/telemetry'
+import { quantFromModelId } from '@/lib/model-id'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { IconPlayerPause, IconPlayerPlay, IconX } from '@tabler/icons-react'
 

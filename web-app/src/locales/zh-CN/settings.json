@@ -207,19 +207,6 @@
     "proxyTimeout": "请求超时",
     "proxyTimeoutDesc": "等待本地模型响应的时间（单位：秒）。"
   },
-  "privacy": {
-    "analytics": "分析",
-    "helpUsImprove": "帮助我们改进",
-    "helpUsImproveDesc": "为了帮助我们改进，您可以共享匿名数据，如功能使用情况和用户数量。我们绝不会收集您的聊天记录或个人信息。",
-    "privacyPolicy": "您完全控制您的数据。在我们的隐私政策中了解更多信息。",
-    "analyticsDesc": "为了改进 Radium，我们需要了解它的使用方式——但这需要您的帮助。您可以随时更改此设置。",
-    "privacyPromises": "您在此处的选择不会改变我们的核心隐私承诺：",
-    "promise1": "您的对话保持私密并保留在您的设备上",
-    "promise2": "我们绝不会收集您的个人信息或聊天内容",
-    "promise3": "所有数据共享都是匿名和聚合的",
-    "promise4": "您可以随时选择退出而不会丢失功能",
-    "promise5": "我们对收集的内容和原因保持透明"
-  },
   "general": {
     "showInFinder": "在 Finder 中显示",
     "showInFileExplorer": "在文件资源管理器中显示",

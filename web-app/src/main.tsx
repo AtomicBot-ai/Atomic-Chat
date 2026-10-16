@@ -4,7 +4,6 @@ import './lib/freshInstallBoot'
 import { StrictMode } from 'react'
 import ReactDOM from 'react-dom/client'
 import { RouterProvider, createRouter } from '@tanstack/react-router'
-import * as Sentry from '@sentry/react'
 
 // Import the generated route tree
 import { routeTree } from './routeTree.gen'
@@ -15,17 +14,17 @@ import { installCodeBlockDownloadHandler } from './lib/codeBlockDownload'
 import { runWindowsLlamacppProviderMigration } from './lib/windowsProviderMigration'
 import { runMacosLlamacppDefaultMigration } from './lib/macosLlamacppDefaultMigration'
 import { runTurboquantDefaultMigration } from './lib/turboquantDefaultMigration'
-import { initSentryFrontend } from './lib/sentry'
 import { resetForcedOnboardingRun } from './lib/onboarding'
 import { useGeneralSetting } from './hooks/useGeneralSetting'
 import { useModelProvider } from './hooks/useModelProvider'
 import { isLocalProvider } from '@/utils/registerRemoteProvider'
-import GlobalError from './containers/GlobalError'
+import { AppErrorBoundary } from './components/AppErrorBoundary'
+import { bootstrapRegistries } from './lib/registry-bootstrap'
+import { initCrashReporting } from './lib/crash-reporting'
 
-// ATO-113: arm Sentry before anything else so the React ErrorBoundary and the
-// global window.onerror / unhandledrejection handlers catch the earliest
-// errors. No-op when no DSN was baked in or outside Tauri.
-initSentryFrontend()
+// Opt-in crash reporting. Inert unless the build carries a DSN, and sends
+// nothing until the user turns it on in Settings → Privacy.
+initCrashReporting()
 
 // Mobile-specific viewport and styling setup
 const setupMobileViewport = () => {
@@ -200,6 +199,10 @@ if (IS_TAURI) {
   installCodeBlockDownloadHandler()
 }
 
+// Configuration registries ship with the app; this only refreshes the ones a
+// build pointed at a remote copy, and loads the bundled model catalog.
+bootstrapRegistries()
+
 // Create a new router instance
 const router = createRouter({ routeTree })
 
@@ -216,11 +219,9 @@ if (!rootElement.innerHTML) {
   const root = ReactDOM.createRoot(rootElement)
   root.render(
     <StrictMode>
-      <Sentry.ErrorBoundary
-        fallback={({ error }) => <GlobalError error={error} />}
-      >
+      <AppErrorBoundary>
         <RouterProvider router={router} />
-      </Sentry.ErrorBoundary>
+      </AppErrorBoundary>
     </StrictMode>
   )
 }

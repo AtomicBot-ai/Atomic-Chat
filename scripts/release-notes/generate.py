@@ -7,7 +7,7 @@ Reads env vars:
     OPENAI_BASE_URL  default "https://api.openai.com/v1"
     CURR_TAG         required, e.g. "v1.1.64"
     PREV_TAG         optional, resolved from git history if absent
-    REPO             optional, e.g. "AtomicBot-ai/Atomic-Chat"
+    REPO             optional, e.g. "walladanger/Radium"
     GH_TOKEN         optional; enables GitHub API lookups for PR authors
                      (Contributors section) and for fetching recent published
                      releases used as few-shot style exemplars.

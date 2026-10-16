@@ -4,10 +4,9 @@
  *
  * Pre-2026-05-27, this store fetched the legacy `janhq/model-catalog`
  * directly via `serviceHub.models().fetchModelCatalog()` and persisted the
- * result through `zustand/middleware:persist`. After the migration to the
- * curated `AtomicBot-ai/atomic-chat-model-catalog` source, persistence and
- * caching are handled by `model-catalog-store` (which writes its own
- * localStorage cache keyed `atomic_model_catalog_cache_v1`). This module
+ * result through `zustand/middleware:persist`. The catalog now comes from
+ * the registry behind `model-catalog-store` (the bundled seed, or a build's
+ * `VITE_MODEL_CATALOG_URL` override), which owns loading and caching. This module
  * keeps the original API surface (`sources`, `fetchSources`, `loading`,
  * `error`) so the dozens of existing consumers do not need to change in
  * lockstep, but every reactive read now flows through the new store.

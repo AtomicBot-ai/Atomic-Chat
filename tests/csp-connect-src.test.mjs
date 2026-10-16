@@ -1,5 +1,6 @@
 /**
- * Every host the renderer fetches directly is allowed by `connect-src`.
+ * Every host the renderer fetches directly is allowed by `connect-src`, and
+ * nothing else is.
  *
  * Requests made through `@tauri-apps/plugin-http` go out via the Rust HTTP
  * client, so the webview's CSP never sees them. Requests made with the
@@ -7,19 +8,19 @@
  * not loud — it surfaces as a rejected promise that the call site usually
  * treats as "the network is down".
  *
- * That is how this broke. A commit that tightened `connect-src` to the two
- * PostHog hosts removed the hosts the renderer actually calls:
- *
- *   - `raw.githubusercontent.com` is the *primary* transport for the model
- *     catalog, the recommended-model list, staff picks and the provider
- *     registry. Those modules fall back to `plugin-http`, so the app still
- *     worked — but every load first took a CSP rejection, and the fallback is
- *     documented in `model-catalog-registry.ts` as having "occasionally hung
- *     when used as the primary transport for large gzipped payloads".
  *   - `huggingface.co` is called by `fetchModelStats` in `lib/model-card.ts`
  *     with no fallback at all, inside a `try { } catch { }` that ignores the
  *     error. Blocked, it silently degrades every Hub model card to name-based
  *     guesses for parameter count and context length.
+ *   - `raw.githubusercontent.com` is allowed for one path only: the llama.cpp
+ *     backend manifests the engine extensions read with the WebView fetch
+ *     (runtimes keep their own update channel). The configuration registries
+ *     no longer come from there — they are bundled (ADR
+ *     2026-10-16-only-runtimes-sync-from-upstream) — so the host as a whole
+ *     is not.
+ *   - Sentry's ingest hosts are allowed for Radium's own opt-in crash reports
+ *     (`lib/crash-reporting.ts`; inert without a build-time DSN). They are
+ *     the only telemetry hosts, and there is no analytics host at all.
  *
  * So rather than pin a hand-written list that drifts, this derives the
  * requirement from the source: any absolute `https://` literal passed to a
@@ -36,10 +37,14 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import test from 'node:test'
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const repoRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..'
+)
 const read = (rel) => readFileSync(path.join(repoRoot, rel), 'utf8')
 
-const connectSrc = JSON.parse(read('src-tauri/tauri.conf.json')).app.security.csp['connect-src']
+const csp = JSON.parse(read('src-tauri/tauri.conf.json')).app.security.csp
+const connectSrc = csp['connect-src']
 
 /** Hosts reached by a bare `fetch('https://…')` in shipped renderer code. */
 function directlyFetchedHosts() {
@@ -48,7 +53,13 @@ function directlyFetchedHosts() {
   try {
     out = execFileSync(
       'git',
-      ['grep', '-hoE', "fetch\\(\\s*['\"`]https://[a-zA-Z0-9.-]+", '--', 'web-app/src'],
+      [
+        'grep',
+        '-hoE',
+        'fetch\\(\\s*[\'"`]https://[a-zA-Z0-9.-]+',
+        '--',
+        'web-app/src',
+      ],
       { cwd: repoRoot, encoding: 'utf8' }
     )
   } catch (error) {
@@ -62,7 +73,8 @@ function directlyFetchedHosts() {
   }
   // Test fixtures use example.com and friends; they never run in a webview.
   for (const placeholder of [...hosts]) {
-    if (/(^|\.)example\.(com|org|net)$/.test(placeholder)) hosts.delete(placeholder)
+    if (/(^|\.)example\.(com|org|net)$/.test(placeholder))
+      hosts.delete(placeholder)
   }
   return [...hosts].sort()
 }
@@ -94,4 +106,41 @@ test('connect-src still admits loopback for the local model servers', () => {
       `connect-src no longer allows ${required}; local inference needs it`
     )
   }
+})
+
+test('no analytics host is allowed anywhere in the CSP', () => {
+  const all = JSON.stringify(csp)
+  for (const host of ['posthog', 'google-analytics', 'googletagmanager']) {
+    assert.ok(!all.includes(host), `the CSP still allows ${host}: ${all}`)
+  }
+})
+
+test('Sentry is reachable only through its ingest hosts, and only for connect', () => {
+  const isSentry = (s) => /(^|\.)sentry\.io$/.test(sourceHost(s) ?? '')
+  const sentry = connectSrc.split(/\s+/).filter(isSentry)
+  assert.deepEqual(sentry, [
+    'https://*.ingest.sentry.io',
+    'https://*.ingest.us.sentry.io',
+    'https://*.ingest.de.sentry.io',
+  ])
+  for (const [directive, value] of Object.entries(csp)) {
+    if (directive === 'connect-src') continue
+    const sources = [value].flat().join(' ').split(/\s+/)
+    assert.deepEqual(sources.filter(isSentry), [], `${directive} allows Sentry`)
+  }
+})
+
+/** The host of a CSP source expression, or null for keywords and schemes. */
+function sourceHost(source) {
+  const m = /^[a-z][a-z0-9+.-]*:\/\/([^/:]+)/i.exec(source)
+  return m ? m[1].toLowerCase() : null
+}
+
+test('raw.githubusercontent.com is allowed only for the backend manifests', () => {
+  const sources = connectSrc
+    .split(/\s+/)
+    .filter((s) => sourceHost(s) === 'raw.githubusercontent.com')
+  assert.deepEqual(sources, [
+    'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/',
+  ])
 })

@@ -1,71 +1,16 @@
-import { defineConfig, loadEnv, Plugin } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
 import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
 import { nodePolyfills } from 'vite-plugin-node-polyfills'
-import { sentryVitePlugin } from '@sentry/vite-plugin'
 import packageJson from './package.json'
 const host = process.env.TAURI_DEV_HOST
-
-// Plugin to inject GA scripts in HTML
-function injectGoogleAnalytics(gaMeasurementId?: string): Plugin {
-  return {
-    name: 'inject-google-analytics',
-    transformIndexHtml(html) {
-      // Only inject GA scripts if GA_MEASUREMENT_ID is set
-      if (!gaMeasurementId) {
-        // Remove placeholder if no GA ID
-        return html.replace(/\s*<!-- INJECT_GOOGLE_ANALYTICS -->\n?/g, '')
-      }
-
-      const gaScripts = `<!-- Google Analytics -->
-    <script async src="https://www.googletagmanager.com/gtag/js?id=${gaMeasurementId}"></script>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag(){ dataLayer.push(arguments); }
-      gtag('consent','default',{
-        ad_storage:'denied',
-        analytics_storage:'denied',
-        ad_user_data:'denied',
-        ad_personalization:'denied',
-        wait_for_update:500
-      });
-      gtag('js', new Date());
-      gtag('config', '${gaMeasurementId}', {
-        debug_mode: (location.hostname === 'localhost'),
-        send_page_view: false
-      });
-    </script>`
-
-      return html.replace('<!-- INJECT_GOOGLE_ANALYTICS -->', gaScripts)
-    },
-  }
-}
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   // Load env file based on `mode` in the current working directory.
   const env = loadEnv(mode, process.cwd(), '')
-
-  // ATO-113: only run the Sentry source-map upload plugin when CI provides the
-  // auth token + org/project (release builds). It uploads the maps, associates
-  // them with the git-SHA release, and deletes them from `dist` so they are not
-  // shipped. Local/dev builds skip it entirely.
-  const sentryUpload =
-    env.SENTRY_AUTH_TOKEN && env.SENTRY_ORG && env.SENTRY_PROJECT_FRONTEND
-      ? sentryVitePlugin({
-          authToken: env.SENTRY_AUTH_TOKEN,
-          org: env.SENTRY_ORG,
-          project: env.SENTRY_PROJECT_FRONTEND,
-          release: {
-            name: env.SENTRY_RELEASE || packageJson.version,
-          },
-          sourcemaps: {
-            filesToDeleteAfterUpload: ['./dist/**/*.map'],
-          },
-        })
-      : undefined
 
   return {
     plugins: [
@@ -84,8 +29,6 @@ export default defineConfig(({ mode }) => {
           process: false,
         },
       }),
-      injectGoogleAnalytics(env.GA_MEASUREMENT_ID),
-      ...(sentryUpload ? [sentryUpload] : []),
     ],
     resolve: {
       alias: {
@@ -97,6 +40,11 @@ export default defineConfig(({ mode }) => {
     define: {
       IS_TAURI: JSON.stringify(process.env.IS_TAURI),
       IS_DEV: JSON.stringify(process.env.IS_DEV),
+      // Crash reporting is Radium's own and opt-in. The DSN comes only from
+      // the build environment (the optional `SENTRY_DSN` CI secret); with none
+      // set, `lib/crash-reporting.ts` never initialises the SDK.
+      SENTRY_DSN: JSON.stringify(env.SENTRY_DSN ?? ''),
+      SENTRY_RELEASE: JSON.stringify(env.SENTRY_RELEASE ?? ''),
       IS_WEB_APP: JSON.stringify(false),
       IS_MACOS: JSON.stringify(
         process.env.TAURI_ENV_PLATFORM?.includes('darwin') ?? false
@@ -117,31 +65,6 @@ export default defineConfig(({ mode }) => {
 
       VERSION: JSON.stringify(packageJson.version),
 
-      POSTHOG_KEY: JSON.stringify(env.POSTHOG_KEY),
-      POSTHOG_HOST: JSON.stringify(env.POSTHOG_HOST),
-      GA_MEASUREMENT_ID: JSON.stringify(env.GA_MEASUREMENT_ID),
-
-      // ATO-113: Sentry frontend DSN + release/environment (build-time, like
-      // POSTHOG_KEY). SENTRY_RELEASE is the git commit SHA injected by CI so
-      // the frontend and the Rust desktop project share one release id.
-      SENTRY_DSN: JSON.stringify(env.SENTRY_DSN),
-      SENTRY_ENVIRONMENT: JSON.stringify(
-        env.SENTRY_ENVIRONMENT ||
-          (process.env.IS_DEV === 'true' ? 'development' : 'production')
-      ),
-      SENTRY_RELEASE: JSON.stringify(env.SENTRY_RELEASE || packageJson.version),
-      // Legacy compile-time constant: the original `janhq/model-catalog`
-      // CDN. Kept for one release window so any out-of-band code path that
-      // still reads `MODEL_CATALOG_URL` does not break. New runtime code
-      // (see `services/model-catalog-registry.ts`) reads the curated
-      // catalog from `AtomicBot-ai/atomic-chat-model-catalog`'s
-      // `dist/` folder on main via `raw.githubusercontent.com` (and the
-      // override `VITE_MODEL_CATALOG_URL` / `VITE_MODEL_CATALOG_INDEX_URL`).
-      // Once the legacy consumers are gone, this define block can be deleted.
-      MODEL_CATALOG_URL: JSON.stringify(
-        env.VITE_MODEL_CATALOG_URL ||
-          'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-model-catalog/main/dist/catalog.json'
-      ),
       // Hardcoded, not read from the environment: Radium never auto-updates.
       // The endpoint the updater checked is upstream's, so accepting an update
       // replaced this fork with Atomic Chat. There is deliberately no env var
@@ -169,13 +92,6 @@ export default defineConfig(({ mode }) => {
       UPDATE_CHECK_INTERVAL_MS: JSON.stringify(
         Number(env.UPDATE_CHECK_INTERVAL_MS) || 60 * 60 * 1000
       ),
-    },
-
-    // ATO-113: emit source maps only for release builds that will upload them
-    // to Sentry (the plugin deletes them from `dist` afterwards, so they are
-    // never shipped). Dev/local builds keep the default (no maps).
-    build: {
-      sourcemap: sentryUpload ? true : false,
     },
 
     // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`

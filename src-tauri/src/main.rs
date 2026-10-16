@@ -9,18 +9,10 @@ fn main() {
 
     let _ = fix_path_env::fix();
 
-    // ATO-113: bring up Sentry as early as possible so the panic hook is armed
-    // before any work happens. The guard must live for the whole process (it
-    // flushes pending events on drop), so it is held until `main` returns.
-    // No-op when no DSN was baked in (e.g. local dev builds).
-    #[cfg(not(any(target_os = "android", target_os = "ios")))]
-    let _sentry_guard = app_lib::core::telemetry::init();
-
-    // ATO-386: log panics to app.log before chaining to the previous hook
-    // (Sentry or the default Rust hook). The tauri-plugin-log logger is not yet
-    // installed here, but the hook is global, so once logging is set up in
-    // `setup()` every subsequent panic is written to the log file as well as
-    // sent to telemetry.
+    // ATO-386: log panics to app.log before chaining to the default Rust hook.
+    // The tauri-plugin-log logger is not yet installed here, but the hook is
+    // global, so once logging is set up in `setup()` every subsequent panic is
+    // written to the log file.
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         let default_hook = std::panic::take_hook();

@@ -3,7 +3,8 @@
  *
  * Mirrors `provider-registry-store.ts` and
  * `recommended-models-registry-store.ts`:
- *  - Bootstraps the catalog + index in the background on first import.
+ *  - Loads the catalog + index when `lib/registry-bootstrap.ts` starts it
+ *    (or lazily via `ensureCatalogLoaded`). Importing it performs no I/O.
  *  - Holds the in-memory list (and the pre-built MiniSearch payload) so
  *    React components and non-React modules read it synchronously.
  *  - Surfaces loading / source / last-fetch metadata for UI.
@@ -15,6 +16,7 @@
 
 import { create } from 'zustand'
 import {
+  CATALOG_URL,
   getBundledSeedCatalog,
   getBundledSeedIndex,
   getCatalogOrFallback,
@@ -95,10 +97,16 @@ export const useModelCatalogStore = create<ModelCatalogState>()((set) => ({
     const initialState = useModelCatalogStore.getState()
     set({ status: 'loading', error: null })
 
-    // Phase 1: hydrate from IndexedDB, or use the bundled seed on first run.
-    // We only read the seed once per session to avoid parsing the same large
-    // snapshot on every manual refresh.
-    if (!initialState.hasInitialized && initialState.source === 'baseline') {
+    // Phase 1 (builds with a catalog override only): hydrate from IndexedDB,
+    // or show the bundled seed while the network round-trip runs. Read once
+    // per session to avoid parsing the same large snapshot on every manual
+    // refresh. A default build has no network phase, so phase 2 reads the
+    // seed directly and this would only parse it twice.
+    if (
+      CATALOG_URL &&
+      !initialState.hasInitialized &&
+      initialState.source === 'baseline'
+    ) {
       try {
         const [cachedCatalog, cachedIndex] = await Promise.all([
           getCachedCatalog(),
@@ -145,9 +153,9 @@ export const useModelCatalogStore = create<ModelCatalogState>()((set) => ({
       }
     }
 
-    // Phase 2: network refresh — promotes `source` from 'bundled'/'cache'
-    // to 'remote' on success, or keeps the seed/cache when the remote
-    // call fails. Either way the user already sees a populated UI by now.
+    // Phase 2: resolve the catalog. In a default build this is the bundled
+    // seed. With an override it is the network refresh, which promotes
+    // `source` to 'remote' on success or keeps the seed/cache on failure.
     let catalogResult: CatalogFetchResult
     let indexResult: IndexFetchResult
     try {
@@ -216,17 +224,4 @@ export const ensureCatalogLoaded = async (): Promise<CatalogModel[]> => {
   if (state.hasInitialized) return state.catalog
   await state.refresh()
   return useModelCatalogStore.getState().catalog
-}
-
-/**
- * Kick off the initial fetch in the background. Importing this module is
- * enough to start loading; tests can override or skip via mocking.
- */
-if (typeof window !== 'undefined') {
-  void useModelCatalogStore
-    .getState()
-    .refresh()
-    .catch((error) => {
-      console.warn('[model-catalog-store] initial refresh failed:', error)
-    })
 }

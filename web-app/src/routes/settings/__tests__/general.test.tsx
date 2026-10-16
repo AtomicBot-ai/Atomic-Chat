@@ -484,19 +484,22 @@ describe('General Settings Route', () => {
     expect(links.length).toBeGreaterThan(0)
   })
 
-  it('should open support email through opener service', async () => {
+  it("opens Radium's own repository through the opener service", async () => {
     const Component = GeneralRoute.component as React.ComponentType
     await act(async () => {
       render(<Component />)
     })
 
-    const emailLink = screen.getByRole('link', { name: 'support@atomic.chat' })
+    const repoLink = screen.getByRole('link', { name: 'walladanger/Radium' })
 
     await act(async () => {
-      fireEvent.click(emailLink)
+      fireEvent.click(repoLink)
     })
 
-    expect(mockOpenerOpen).toHaveBeenCalledWith('mailto:support@atomic.chat')
+    expect(mockOpenerOpen).toHaveBeenCalledWith(
+      'https://github.com/walladanger/Radium'
+    )
+    expect(screen.queryByText(/atomic\.chat|atomic_chat_hq/)).toBeNull()
   })
 
   it('should handle logs window opening', async () => {

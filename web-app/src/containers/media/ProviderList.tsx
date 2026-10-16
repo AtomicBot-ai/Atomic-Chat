@@ -25,6 +25,7 @@ import {
   setMediaProviderSecret,
 } from '@/services/media/secrets'
 import { useMediaProviderStore } from '@/stores/media-provider-store'
+import { MEDIA_REGISTRY_URL } from '@/services/media-registry'
 import type {
   MediaProviderAdapterId,
   MediaProviderDescriptor,
@@ -293,16 +294,20 @@ export function ProviderList() {
             >
               {t('media:providers.refresh', { defaultValue: 'Refresh' })}
             </Button>
-            <Button
-              variant="link"
-              size="sm"
-              onClick={() => void refreshRegistry(true)}
-              disabled={registryLoading}
-            >
-              {t('media:providers.checkForNew', {
-                defaultValue: 'Check for new providers',
-              })}
-            </Button>
+            {/* Only a build with `VITE_MEDIA_REGISTRY_URL` has anywhere to
+                look; otherwise the list is the one shipped with the app. */}
+            {MEDIA_REGISTRY_URL && (
+              <Button
+                variant="link"
+                size="sm"
+                onClick={() => void refreshRegistry(true)}
+                disabled={registryLoading}
+              >
+                {t('media:providers.checkForNew', {
+                  defaultValue: 'Check for new providers',
+                })}
+              </Button>
+            )}
             <Button size="sm" onClick={() => setAdding(true)}>
               {t('media:providers.add', { defaultValue: 'Add provider' })}
             </Button>

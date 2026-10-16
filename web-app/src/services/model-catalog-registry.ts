@@ -1,54 +1,37 @@
 /**
- * Model catalog registry -- remote loader for the curated Radium
- * model catalog and its pre-built MiniSearch index.
+ * Model catalog registry -- loader for the curated Radium model catalog and
+ * its pre-built MiniSearch index.
  *
- * Mirrors the architecture of `provider-registry.ts` and
- * `recommended-models-registry.ts`: fetch from GitHub Releases, cache in
- * IndexedDB for one hour, fall back to a bundled baseline. The
- * cache holds two independent payloads (catalog + index) with separate
- * keys so each can be refreshed without invalidating the other.
+ * The catalog ships inside the app as two gzipped assets in `public/`
+ * (`seed-catalog.json.gz` and `seed-catalog.idx.json.gz`), produced and
+ * reviewed with `scripts/snapshot-registries.mjs`. Nothing is fetched unless
+ * the build sets `VITE_MODEL_CATALOG_URL` / `VITE_MODEL_CATALOG_INDEX_URL`
+ * (see `lib/registry-source.ts`); then the shape mirrors
+ * `provider-registry.ts`: fetch, cache in IndexedDB for one hour, fall back
+ * to the bundled snapshot. The cache holds two independent payloads
+ * (catalog + index) with separate keys so each can be refreshed without
+ * invalidating the other.
  *
  * Failure-safe by construction: `getCatalogOrFallback()` and
  * `getIndexOrFallback()` never throw — UI code can render unconditionally.
  *
- * The catalog payload is the strict JSON envelope produced by the
- * `atomic-chat-model-catalog` scraper (`{ manifest_version: 1, models:
- * CatalogModel[] }`). The shape of every `models[]` entry is a strict
- * superset of the client-side `CatalogModel` type, so the existing
- * download pipeline keeps working unchanged.
+ * The catalog payload is a strict JSON envelope (`{ manifest_version: 1,
+ * models: CatalogModel[] }`). Every `models[]` entry is a strict superset of
+ * the client-side `CatalogModel` type, so the download pipeline works
+ * unchanged.
  */
 
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 import { BASELINE_MODEL_CATALOG } from '@/constants/models'
+import { REGISTRY_OVERRIDES } from '@/lib/registry-source'
 import type { CatalogModel } from '@/services/models/types'
 
-// Why raw.githubusercontent.com and not GitHub Releases?
-//
-//   We tried `github.com/<owner>/<repo>/releases/latest/download/*` first.
-//   That endpoint responds with a 302 to a signed `objects.githubusercontent.com`
-//   URL, and the chain (HTTP/2 + Vary: Origin + Accept-Encoding) is not
-//   handled reliably by Tauri's `@tauri-apps/plugin-http` (fetch hangs
-//   past the 60 s timeout, despite curl -L completing in ~1 s). Browser
-//   fetch likewise refuses the redirect under CORS.
-//
-//   `raw.githubusercontent.com` serves git-tracked files directly with
-//   permissive CORS headers and no signed redirect. It is the same
-//   transport `recommended-models-registry.ts` already uses successfully
-//   for the smaller `recommended.json` payload.
-//
-// The cron in `atomic-chat-model-catalog` commits the gzipped artefacts
-// to `dist/` on main after each scrape; the latest snapshot is therefore
-// always one HTTP/2 hop away.
-export const DEFAULT_CATALOG_BASE_URL =
-  'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-model-catalog/main/dist'
+/** Build-time override for the catalog, or `null` for the bundled seed only. */
+export const CATALOG_URL: string | null = REGISTRY_OVERRIDES.modelCatalog
 
-export const CATALOG_URL: string =
-  (import.meta.env.VITE_MODEL_CATALOG_URL as string | undefined) ??
-  `${DEFAULT_CATALOG_BASE_URL}/catalog.json`
-
-export const CATALOG_INDEX_URL: string =
-  (import.meta.env.VITE_MODEL_CATALOG_INDEX_URL as string | undefined) ??
-  `${DEFAULT_CATALOG_BASE_URL}/catalog.idx.json`
+/** Build-time override for the index, or `null` for the bundled seed only. */
+export const CATALOG_INDEX_URL: string | null =
+  REGISTRY_OVERRIDES.modelCatalogIndex
 
 /** Highest manifest schema_version this client understands. */
 export const SUPPORTED_SCHEMA_VERSION = 1
@@ -68,8 +51,7 @@ const CACHE_DB_VERSION = 1
 const CACHE_STORE_NAME = 'snapshots'
 
 // 60 s for the catalog (~13 MB raw, ~3-4 MB gzipped) — covers users on
-// slow connections to GitHub Releases CDN (~300 KB/s in the worst case
-// we have measured). 30 s for the index (~2.4 MB raw, ~1 MB gzipped).
+// slow connections (~300 KB/s in the worst case we have measured). 30 s for the index (~2.4 MB raw, ~1 MB gzipped).
 const CATALOG_FETCH_TIMEOUT_MS = 60_000
 const INDEX_FETCH_TIMEOUT_MS = 30_000
 
@@ -94,15 +76,13 @@ export type CatalogIndexPayload = {
 /**
  * Where the manifest came from, in priority order:
  *
- *   - `remote`   — fresh GET against `raw.githubusercontent.com`.
+ *   - `remote`   — fresh GET against the build's override URL.
  *   - `cache`    — IndexedDB snapshot from a previous successful
  *                  remote fetch (TTL: 1 hour).
- *   - `bundled`  — gzipped catalog snapshot embedded in the app bundle
- *                  by `scripts/fetch-seed-catalog.mjs` at build time.
- *                  Used when neither cache nor remote is available
- *                  (offline first-launch, corporate proxy, blocked CDN).
- *   - `baseline` — five-model hard-coded `BASELINE_MODEL_CATALOG`,
- *                  truly defensive only.
+ *   - `bundled`  — the gzipped catalog snapshot committed in `public/`.
+ *                  The only source in a default build.
+ *   - `baseline` — the small hard-coded `BASELINE_MODEL_CATALOG`, used
+ *                  only if the bundled asset cannot be read.
  */
 export type RegistrySource = 'remote' | 'cache' | 'bundled' | 'baseline'
 
@@ -111,8 +91,8 @@ const SEED_INDEX_PATH = '/seed-catalog.idx.json.gz'
 
 /**
  * Best-effort read of the bundled seed catalog. Returns `null` if the
- * asset is missing (no prebuild ran, dev mode without seed, build
- * pipeline skipped) or unreadable (corrupt gzip, schema mismatch).
+ * asset is missing or unreadable (corrupt gzip, schema mismatch, no
+ * DecompressionStream).
  * Never throws.
  */
 export const getBundledSeedCatalog = async (): Promise<CatalogManifest | null> => {
@@ -527,19 +507,58 @@ const withHardTimeout = <T>(
 export type FetchOptions = {
   /** Bypass cache freshness check and force a network round-trip. */
   force?: boolean
-  /** Override URL (for tests). */
-  url?: string
-  /** Abort the network request after this many ms. Default: 15000. */
+  /** Registry URL; defaults to the build-time override. `null` = bundled only. */
+  url?: string | null
+  /** Abort the network request after this many ms. */
   timeoutMs?: number
 }
 
+/** The bundled seed, or the hard-coded baseline if it cannot be read. */
+export const bundledCatalogResult = async (
+  error?: string
+): Promise<CatalogFetchResult> => {
+  const seed = await getBundledSeedCatalog()
+  if (seed) {
+    return {
+      manifest: seed,
+      source: 'bundled',
+      fetchedAt: null,
+      manifestUpdatedAt: seed.updated_at,
+      ...(error ? { error } : {}),
+    }
+  }
+  return {
+    manifest: baselineManifest(),
+    source: 'baseline',
+    fetchedAt: null,
+    manifestUpdatedAt: null,
+    ...(error ? { error } : {}),
+  }
+}
+
+/** The bundled index, or `null` (the search service then indexes itself). */
+export const bundledIndexResult = async (
+  error?: string
+): Promise<IndexFetchResult> => {
+  const seed = await getBundledSeedIndex()
+  return {
+    payload: seed,
+    source: seed ? 'bundled' : 'baseline',
+    fetchedAt: null,
+    ...(error ? { error } : {}),
+  }
+}
+
 /**
- * Resolve the catalog manifest using the priority chain:
+ * Resolve the catalog manifest.
+ *
+ * Without a registry URL (the default build) this is the bundled seed, read
+ * from the app's own assets. With one, the priority chain is:
  *
  *   1. Fresh cache (when not forcing).
  *   2. Network fetch (writes a new cache entry on success).
  *   3. Stale cache (used after a network failure).
- *   4. Baseline manifest bundled in the app.
+ *   4. The bundled seed, then the hard-coded baseline.
  *
  * Always returns a result — never throws.
  */
@@ -551,6 +570,8 @@ export const getCatalogOrFallback = async (
     url = CATALOG_URL,
     timeoutMs = CATALOG_FETCH_TIMEOUT_MS,
   } = options
+
+  if (!url) return bundledCatalogResult()
 
   const cached = await getCachedCatalog()
   if (!force && isCacheFresh(cached) && cached) {
@@ -615,20 +636,15 @@ export const getCatalogOrFallback = async (
         error: message,
       }
     }
-    return {
-      manifest: baselineManifest(),
-      source: 'baseline',
-      fetchedAt: null,
-      manifestUpdatedAt: null,
-      error: message,
-    }
+    return bundledCatalogResult(message)
   }
 }
 
 /**
- * Resolve the pre-built MiniSearch index payload. Same priority chain
- * as the catalog: fresh cache → network → stale cache → null (the
- * search service falls back to indexing on the fly).
+ * Resolve the pre-built MiniSearch index payload. Same shape as the
+ * catalog: bundled only without a URL; otherwise fresh cache → network →
+ * stale cache → bundled seed → null (the search service falls back to
+ * indexing on the fly).
  */
 export const getIndexOrFallback = async (
   options: FetchOptions = {}
@@ -638,6 +654,8 @@ export const getIndexOrFallback = async (
     url = CATALOG_INDEX_URL,
     timeoutMs = INDEX_FETCH_TIMEOUT_MS,
   } = options
+
+  if (!url) return bundledIndexResult()
 
   const cached = await getCachedIndex()
   if (!force && isCacheFresh(cached) && cached) {
@@ -694,11 +712,6 @@ export const getIndexOrFallback = async (
         error: message,
       }
     }
-    return {
-      payload: null,
-      source: 'baseline',
-      fetchedAt: null,
-      error: message,
-    }
+    return bundledIndexResult(message)
   }
 }

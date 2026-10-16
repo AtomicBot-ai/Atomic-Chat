@@ -52,7 +52,10 @@ const mocks = vi.hoisted(() => ({
   cachedModels: null as CatalogModel[] | null,
 }))
 
+// These tests exercise a build with a catalog override, which is the only
+// build that has a network phase (and so a cache phase) to fold.
 vi.mock('@/services/model-catalog-registry', () => ({
+  CATALOG_URL: 'https://example.test/catalog.json',
   getBundledSeedCatalog: vi.fn(async () => null),
   getBundledSeedIndex: vi.fn(async () => null),
   getCachedIndex: vi.fn(async () => null),

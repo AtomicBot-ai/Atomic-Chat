@@ -1,23 +1,22 @@
 /**
- * Staff-picks registry — remote configuration loader.
+ * Staff-picks registry — the curated list the Hub shows by default (before
+ * the user types a search query).
  *
- * Fetches the curated Staff Picks manifest that the Hub shows by default
- * (before the user types a search query) from a public git-hosted JSON file,
- * so rotating the curated list does not require an app release.
+ * The manifest ships inside the app (`src/registries/staff-picks.json`).
+ * Nothing is fetched unless the build sets `VITE_STAFF_PICKS_REGISTRY_URL`
+ * (see `lib/registry-source.ts`); then that URL is tried first, cached for an
+ * hour, and the bundled snapshot remains the fallback.
  *
  * Deliberately a separate manifest from `recommended-models-registry.ts`:
  * shipped production clients reject a manifest whose `schema_version` exceeds
  * the one they were built against, so `models/recommended.json` is frozen at
  * version 1 with its original entry shape and keeps serving onboarding.
  * Staff picks get their own file, schema, cache keys and version dial.
- *
- * Failure-safe: when the network is unreachable, the schema_version is too
- * high, or the payload is malformed, callers fall back to a locally bundled
- * baseline ({@link BASELINE_STAFF_PICKS}).
  */
 
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
-import { BASELINE_STAFF_PICKS } from '@/constants/staff-picks'
+import { REGISTRY_OVERRIDES } from '@/lib/registry-source'
+import bundledRegistry from '@/registries/staff-picks.json'
 
 export type StaffPickPlatform = 'macos' | 'windows' | 'linux'
 
@@ -59,12 +58,8 @@ export type StaffPick = {
   active?: boolean
 }
 
-export const DEFAULT_STAFF_PICKS_URL =
-  'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/models/staff-picks.json'
-
-export const STAFF_PICKS_URL: string =
-  (import.meta.env.VITE_STAFF_PICKS_REGISTRY_URL as string | undefined) ??
-  DEFAULT_STAFF_PICKS_URL
+/** The build-time override, or `null` for the bundled snapshot only. */
+export const STAFF_PICKS_URL: string | null = REGISTRY_OVERRIDES.staffPicks
 
 /** Highest manifest schema_version this client understands. */
 export const SUPPORTED_SCHEMA_VERSION = 1
@@ -103,7 +98,7 @@ export type StaffPicksManifest = {
   picks: StaffPick[]
 }
 
-export type StaffPicksSource = 'remote' | 'cache' | 'baseline'
+export type StaffPicksSource = 'remote' | 'cache' | 'bundled'
 
 export type StaffPicksFetchResult = {
   picks: StaffPick[]
@@ -281,6 +276,14 @@ const fetchManifest = async (
     data = await fetchOnce(fetchTauri as typeof fetch, url, signal)
   }
 
+  return parseManifest(data)
+}
+
+/**
+ * Validate and sanitize a manifest, from the network or the bundle alike, so
+ * both pass through exactly the same checks.
+ */
+export const parseManifest = (data: unknown): StaffPicksManifest => {
   if (!isManifestShape(data)) {
     throw new Error('Staff-picks payload is not a valid manifest')
   }
@@ -301,6 +304,19 @@ const fetchManifest = async (
     picks,
   }
 }
+
+/** The snapshot shipped with this build. Parsed once; never fetched. */
+export const BUNDLED_MANIFEST: StaffPicksManifest =
+  parseManifest(bundledRegistry)
+
+/** The bundled snapshot as a fetch result. */
+export const bundledResult = (error?: string): StaffPicksFetchResult => ({
+  picks: BUNDLED_MANIFEST.picks.slice(),
+  source: 'bundled',
+  fetchedAt: null,
+  manifestUpdatedAt: BUNDLED_MANIFEST.updated_at,
+  ...(error ? { error } : {}),
+})
 
 /**
  * Hard timeout wrapper. Tauri's HTTP plugin does not always honour
@@ -327,19 +343,22 @@ const withHardTimeout = <T>(
 export type FetchOptions = {
   /** Bypass cache freshness check and force a network round-trip. */
   force?: boolean
-  /** Override URL (for tests). */
-  url?: string
+  /** Registry URL; defaults to the build-time override. `null` = bundled only. */
+  url?: string | null
   /** Abort the network request after this many ms. Default: 5000. */
   timeoutMs?: number
 }
 
 /**
- * Resolve the effective list of staff picks using the priority chain:
+ * Resolve the effective list of staff picks.
+ *
+ * Without a registry URL (the default build) this is the bundled snapshot,
+ * immediately, with no I/O. With one, the priority chain is:
  *
  *   1. Fresh cache (when not forcing).
  *   2. Network fetch (writes a new cache entry on success).
  *   3. Stale cache (used after a network failure).
- *   4. Baseline fallback bundled in the app.
+ *   4. The bundled snapshot.
  *
  * Always returns a result — never throws — so UI code can render unconditionally.
  */
@@ -352,6 +371,8 @@ export const getStaffPicksOrFallback = async (
     timeoutMs = FETCH_TIMEOUT_MS,
   } = options
 
+  if (!url) return bundledResult()
+
   const cached = getCachedManifest()
   if (!force && isCacheFresh(cached) && cached) {
     return {
@@ -363,7 +384,7 @@ export const getStaffPicksOrFallback = async (
   }
 
   const controller = new AbortController()
-  // Cache-bust the GitHub raw CDN when the caller is explicitly forcing a
+  // Cache-bust CDN and proxy caches when the caller is explicitly forcing a
   // fetch (e.g. a manual Refresh button).
   const fetchUrl = force
     ? `${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`
@@ -404,13 +425,7 @@ export const getStaffPicksOrFallback = async (
         error: message,
       }
     }
-    return {
-      picks: BASELINE_STAFF_PICKS.slice(),
-      source: 'baseline',
-      fetchedAt: null,
-      manifestUpdatedAt: null,
-      error: message,
-    }
+    return bundledResult(message)
   }
 }
 

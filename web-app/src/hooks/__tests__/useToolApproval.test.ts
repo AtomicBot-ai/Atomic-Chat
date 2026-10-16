@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { useToolApproval } from '../useToolApproval'
+import {
+  migrateToolApprovalState,
+  TOOL_APPROVAL_STORE_VERSION,
+  useToolApproval,
+} from '../useToolApproval'
 
 // Mock constants
 vi.mock('@/constants/localStorage', () => ({
@@ -22,11 +26,10 @@ vi.mock('zustand/middleware', () => ({
 describe('useToolApproval', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    // Reset store state to defaults (auto-approve is ON by default so the
-    // tool approval popup is hidden unless the user opts back in).
+    // Reset store state to the shipped defaults: MCP tools ask first.
     useToolApproval.setState({
       approvedTools: {},
-      allowAllMCPPermissions: true,
+      allowAllMCPPermissions: false,
       isModalOpen: false,
       modalProps: null,
     })
@@ -36,7 +39,9 @@ describe('useToolApproval', () => {
     const { result } = renderHook(() => useToolApproval())
 
     expect(result.current.approvedTools).toEqual({})
-    expect(result.current.allowAllMCPPermissions).toBe(true)
+    expect(result.current.allowAllMCPPermissions).toBe(false)
+    // The store's own initial state, not just this suite's reset.
+    expect(useToolApproval.getInitialState().allowAllMCPPermissions).toBe(false)
     expect(result.current.isModalOpen).toBe(false)
     expect(result.current.modalProps).toBe(null)
     expect(typeof result.current.approveToolForThread).toBe('function')
@@ -47,7 +52,29 @@ describe('useToolApproval', () => {
     expect(typeof result.current.setAllowAllMCPPermissions).toBe('function')
   })
 
-  it('should auto-approve every tool call while allowAllMCPPermissions is true', async () => {
+  it('prompts for a new tool call by default', async () => {
+    const { result } = renderHook(() => useToolApproval())
+
+    let approvalResult: boolean | undefined
+    act(() => {
+      void result.current
+        .showApprovalModal('new-tool', 'thread-default')
+        .then((value) => {
+          approvalResult = value
+        })
+    })
+
+    expect(result.current.isModalOpen).toBe(true)
+    expect(result.current.modalProps?.toolName).toBe('new-tool')
+
+    await act(async () => {
+      result.current.modalProps?.onApprove(true)
+    })
+    expect(approvalResult).toBe(true)
+  })
+
+  it('should auto-approve every tool call once the user opts in', async () => {
+    useToolApproval.setState({ allowAllMCPPermissions: true })
     const { result } = renderHook(() => useToolApproval())
 
     let approvalResult: boolean
@@ -70,6 +97,7 @@ describe('useToolApproval', () => {
   it('prompts despite allowAllMCPPermissions when the caller bypasses it', async () => {
     // An explicit "Manually approve" on the composer select outranks the
     // global switch — the call site passes bypassGlobalAutoApprove for that.
+    useToolApproval.setState({ allowAllMCPPermissions: true })
     const { result } = renderHook(() => useToolApproval())
     expect(result.current.allowAllMCPPermissions).toBe(true)
 
@@ -143,7 +171,11 @@ describe('useToolApproval', () => {
         result.current.approveToolForThread('thread-1', 'tool-c')
       })
 
-      expect(result.current.approvedTools['thread-1']).toEqual(['tool-a', 'tool-b', 'tool-c'])
+      expect(result.current.approvedTools['thread-1']).toEqual([
+        'tool-a',
+        'tool-b',
+        'tool-c',
+      ])
     })
 
     it('should approve tools for different threads independently', () => {
@@ -281,7 +313,10 @@ describe('useToolApproval', () => {
       // Then show approval modal
       let approvalResult: boolean
       await act(async () => {
-        approvalResult = await result.current.showApprovalModal('tool-a', 'thread-1')
+        approvalResult = await result.current.showApprovalModal(
+          'tool-a',
+          'thread-1'
+        )
       })
 
       expect(approvalResult!).toBe(true)
@@ -498,6 +533,50 @@ describe('useToolApproval', () => {
       const secondResult = await secondPromise!
       expect(secondResult).toBe(true)
       expect(result.current.isToolApproved('thread-1', 'tool-a')).toBe(true)
+    })
+  })
+
+  describe('persisted state migration', () => {
+    it('is at version 2', () => {
+      expect(TOOL_APPROVAL_STORE_VERSION).toBe(2)
+    })
+
+    it('resets the inherited auto-approve once for existing users', () => {
+      // v1 force-enabled the switch for everyone; it was never a choice.
+      const migrated = migrateToolApprovalState(
+        {
+          approvedTools: { 'thread-1': ['mcp-tool'] },
+          allowAllMCPPermissions: true,
+        },
+        1
+      )
+
+      expect(migrated.allowAllMCPPermissions).toBe(false)
+      // Deliberate per-tool approvals survive the reset.
+      expect(migrated.approvedTools).toEqual({ 'thread-1': ['mcp-tool'] })
+    })
+
+    it('resets pre-versioned state too', () => {
+      expect(
+        migrateToolApprovalState({ allowAllMCPPermissions: true }, 0)
+          .allowAllMCPPermissions
+      ).toBe(false)
+    })
+
+    it('keeps an explicit opt-in made after the reset', () => {
+      const migrated = migrateToolApprovalState(
+        { approvedTools: {}, allowAllMCPPermissions: true },
+        2
+      )
+
+      expect(migrated.allowAllMCPPermissions).toBe(true)
+    })
+
+    it('fills missing or empty persisted state with safe defaults', () => {
+      expect(migrateToolApprovalState(undefined, 0)).toEqual({
+        approvedTools: {},
+        allowAllMCPPermissions: false,
+      })
     })
   })
 })

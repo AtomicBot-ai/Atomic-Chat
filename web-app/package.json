@@ -4,9 +4,8 @@
   "version": "2.0.70",
   "type": "module",
   "scripts": {
-    "seed-catalog": "node scripts/fetch-seed-catalog.mjs",
-    "dev": "yarn seed-catalog && vite",
-    "build": "yarn seed-catalog && tsc -b && vite build",
+    "dev": "vite",
+    "build": "tsc -b && vite build",
     "lint": "eslint . --max-warnings 35",
     "preview": "vite preview",
     "test": "vitest --run",
@@ -80,7 +79,6 @@
     "minisearch": "^7.1.2",
     "motion": "^12.35.0",
     "next-themes": "0.4.6",
-    "posthog-js": "1.255.1",
     "radix-ui": "^1.4.3",
     "react": "19.0.0",
     "react-colorful": "5.6.1",
@@ -114,7 +112,6 @@
   },
   "devDependencies": {
     "@eslint/js": "8.57.0",
-    "@sentry/vite-plugin": "^5.3.0",
     "@tanstack/router-plugin": "1.121.34",
     "@testing-library/dom": "10.4.1",
     "@testing-library/jest-dom": "6.8.0",

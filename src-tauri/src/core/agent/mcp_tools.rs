@@ -53,8 +53,8 @@ pub struct McpToolDescriptor {
     pub tool: String,
     pub description: String,
     pub input_schema: Value,
-    /// MCP `readOnlyHint` annotation. A *hint* from a user-configured server:
-    /// read-only tools skip the approval gate but still run serialized.
+    /// MCP `readOnlyHint` annotation. An untrusted claim by the server: shown
+    /// to the model as `[read-only]`, but it never skips the approval gate.
     pub read_only: bool,
 }
 

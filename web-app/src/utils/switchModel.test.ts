@@ -113,32 +113,6 @@ vi.mock('@/utils/activeModelsSync', () => ({
   syncActiveModelsFromEngines: vi.fn(),
 }))
 
-// Partial mock: only the pieces this suite needs to pin down. Listing every
-// export instead meant each new telemetry property broke these tests with a
-// missing-export error rather than a real failure.
-vi.mock('@/lib/telemetry', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/telemetry')>()),
-  isRecoverableModelLoadCode: vi.fn(() => true),
-  loadBackendFromProvider: vi.fn(() => 'mlx'),
-  mmprojProjectorType: vi.fn(() => null),
-  modelLoadSource: vi.fn(() => 'local'),
-  oomSubtype: vi.fn(() => null),
-  quantFromModelId: vi.fn(() => null),
-  sanitizeStderrTail: vi.fn(() => ''),
-  shouldCaptureModelLoadSentry: vi.fn(() => false),
-  shouldEmitModelLoadFailure: vi.fn(() => false),
-}))
-
-vi.mock('@/lib/sentry', () => ({
-  captureHandledError: vi.fn(),
-}))
-
-vi.mock('posthog-js', () => ({
-  // `has_opted_in_capturing` is what `queuedCapture` checks before sending;
-  // without it every event would sit in the startup queue instead.
-  default: { capture: vi.fn(), has_opted_in_capturing: () => true },
-}))
-
 vi.mock('@/i18n/setup', () => ({
   default: { t: (key: string) => key },
 }))
@@ -563,17 +537,6 @@ describe('OOM retry ladder', () => {
     // 16384 → 8192 → 4096, persisted on the model so the next launch starts
     // from what worked.
     expect(modelSetting('ctx_len')).toBe(4096)
-    const posthog = (await import('posthog-js')).default
-    const retries = vi
-      .mocked(posthog.capture)
-      .mock.calls.filter(([event]) => event === 'model_load_retry')
-      .map(([, props]) => props as Record<string, unknown>)
-    expect(retries.map((r) => [r.retry_step, r.retry_outcome])).toEqual([
-      ['ctx', 'retrying'],
-      ['ctx', 'retrying'],
-      ['ctx', 'recovered'],
-    ])
-    expect(retries[0]).toMatchObject({ ctx_before: 16384, ctx_after: 8192 })
     const { toast } = await import('sonner')
     expect(toast.info).toHaveBeenCalledWith(
       'model-errors:oomRetryRecoveredTitle',

@@ -27,7 +27,10 @@ import {
   RETIRED_BUILTIN_PROVIDER_IDS,
 } from '@/constants/mediaProviders'
 import { createMediaAdapter } from '@/services/media/providerFactory'
-import { getMediaProvidersOrFallback } from '@/services/media-registry'
+import {
+  getMediaProvidersOrFallback,
+  type MediaRegistrySource,
+} from '@/services/media-registry'
 import type {
   MediaCapabilities,
   MediaModelDescriptor,
@@ -54,7 +57,7 @@ type MediaProviderState = {
   refreshing: boolean
 
   /** Last remote-registry outcome. Never persisted; re-derived per launch. */
-  registrySource: 'remote' | 'cache' | 'baseline' | null
+  registrySource: MediaRegistrySource | null
   registryError: string | null
   registryLoading: boolean
 

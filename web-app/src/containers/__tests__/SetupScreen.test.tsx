@@ -1,6 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import posthog from 'posthog-js'
 import SetupScreen from '../SetupScreen'
 import { localStorageKey } from '@/constants/localStorage'
 import { seedServiceHub } from '@/test/service-hub'
@@ -199,12 +198,6 @@ vi.mock('@/hooks/useOnboardingModelReminder', () => ({
 
 vi.mock('../HeaderPage', () => ({
   default: () => <header data-testid="setup-header" />,
-}))
-
-vi.mock('posthog-js', () => ({
-  // `has_opted_in_capturing` is what `queuedCapture` checks before sending;
-  // without it every event would sit in the startup queue instead.
-  default: { capture: vi.fn(), has_opted_in_capturing: () => true },
 }))
 
 vi.mock('sonner', () => ({
@@ -999,12 +992,6 @@ describe('SetupScreen', () => {
         expect(
           screen.getByText('setup:downloadStartedOpening')
         ).toBeInTheDocument()
-        // Position 1: the row after the offer, the same index its impression
-        // carried.
-        expect(vi.mocked(posthog.capture)).toHaveBeenCalledWith(
-          'recommended_model_clicked',
-          expect.objectContaining({ position: 1 })
-        )
 
         await act(async () => {
           vi.advanceTimersByTime(3_000)
@@ -1018,55 +1005,6 @@ describe('SetupScreen', () => {
       } finally {
         vi.useRealTimers()
       }
-    })
-
-    it('reports every row it paints as an impression, in the order painted', async () => {
-      const { unmount } = await renderPicker()
-
-      const shown = vi
-        .mocked(posthog.capture)
-        .mock.calls.filter(([event]) => event === 'recommended_model_shown')
-        .map(([, props]) => props as Record<string, unknown>)
-      expect(shown.map((props) => [props.position, props.section])).toEqual([
-        [0, 'pending'],
-        [1, 'pending'],
-        [2, 'pending'],
-      ])
-      unmount()
-    })
-
-    it('reports a pick that resolves after the first paint, once', async () => {
-      // The Hub resolves picks the seed catalog does not carry with one
-      // Hugging Face round-trip each, so a row can sit as a placeholder after
-      // the screen painted. It gets its impression when its card lands — a
-      // placeholder has no id to attribute a click to — and only then.
-      const lfm = staffPick('LiquidAI/LFM2.5-1.2B-Instruct-GGUF', {
-        title: 'LFM2.5 1.2B',
-        size: '697 MB',
-      })
-      mocks.staffPicks = [gemma, nemotron, { pick: lfm.pick, model: null }]
-      const { rerender, unmount } = await renderPicker()
-      expect(screen.getByText('LFM2.5 1.2B')).toBeInTheDocument()
-      vi.mocked(posthog.capture).mockClear()
-      const shown = () =>
-        vi
-          .mocked(posthog.capture)
-          .mock.calls.filter(([event]) => event === 'recommended_model_shown')
-          .map(([, props]) => props as Record<string, unknown>)
-
-      mocks.staffPicks = [gemma, nemotron, lfm]
-      rerender(<SetupScreen />)
-      await act(async () => {})
-
-      expect(shown().map((props) => [props.position, props.section])).toEqual([
-        [3, 'pending'],
-      ])
-
-      // Painting the same list again is not a new impression.
-      rerender(<SetupScreen />)
-      await act(async () => {})
-      expect(shown()).toHaveLength(1)
-      unmount()
     })
 
     it('lists the picks on their own when the registry has no offer', async () => {
@@ -1085,35 +1023,7 @@ describe('SetupScreen', () => {
       expect(buttons[0]).toHaveAttribute('data-variant', 'secondary')
       expect(buttons[1]).toHaveAttribute('data-variant', 'secondary')
 
-      // Positions start at 0: there is no offer to leave room for.
-      const positions = vi
-        .mocked(posthog.capture)
-        .mock.calls.filter(([event]) => event === 'recommended_model_shown')
-        .map(([, props]) => (props as Record<string, unknown>).position)
-      expect(positions).toEqual([0, 1])
-
       fireEvent.click(buttons[0])
-      expect(vi.mocked(posthog.capture)).toHaveBeenCalledWith(
-        'recommended_model_clicked',
-        expect.objectContaining({ position: 0 })
-      )
-      unmount()
-    })
-
-    it('reports no impressions while an auto-start hides the picker', async () => {
-      // A model found on disk is started without the picker ever painting.
-      // Rows behind the status line were not seen, so they get no impression
-      // for a click to divide by.
-      const finishLocalScan = deferLocalScan([detectedModel])
-      const { unmount } = render(<SetupScreen />)
-      await finishLocalScan()
-      expect(
-        await screen.findByText('setup:localStep.autoStarting')
-      ).toBeInTheDocument()
-
-      expect(
-        vi.mocked(posthog.capture).mock.calls.map(([event]) => event)
-      ).not.toContain('recommended_model_shown')
       unmount()
     })
 
@@ -1382,12 +1292,6 @@ describe('SetupScreen', () => {
       expect(localStorage.getItem(localStorageKey.setupCompleted)).toBe('true')
       expect(localStorage.getItem(localStorageKey.lastUsedModel)).toBeNull()
       expect(mocks.reminder.pending).toBe(false)
-      // Pressing a button and running out a clock are different acts; the
-      // legacy `skipped` and the retired `timeout` must not be reused.
-      expect(vi.mocked(posthog.capture)).toHaveBeenCalledWith(
-        'onboarding_completed',
-        expect.objectContaining({ exit_path: 'dismissed' })
-      )
       expect(mocks.leftPanel.open).toBe(true)
       expect(mocks.navigate.mock.calls).toEqual([
         [{ to: '/', replace: true, search: {} }],

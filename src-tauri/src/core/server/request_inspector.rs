@@ -1,8 +1,9 @@
 //! Live per-request telemetry for the Local API Server dashboard.
 //!
-//! The proxy already aggregates coarse observations into a three-minute
-//! PostHog window (`api_request_analytics`). That path is untouched here and
-//! must stay that way. This module is the *other* consumer: a bounded,
+//! The proxy also aggregates coarse observations into a three-minute summary
+//! window (`api_request_analytics`), emitted on the `analytics://` Tauri
+//! channels. That path is separate from this one and must stay that way. This
+//! module is the *other* consumer: a bounded,
 //! in-memory view of individual requests that the in-app API screen renders.
 //!
 //! # Privacy (ATO-113)
@@ -10,11 +11,11 @@
 //! `prompt_preview` and `reply_preview` carry user prompt text. They may
 //! travel **only** on the `api-inspector://` Tauri channels and live **only**
 //! in this module's in-memory ring buffer. They must never be written to the
-//! file log, never persisted to disk, and never included in a PostHog payload.
+//! file log, never persisted to disk, and never leave the device.
 //! Three structural guards enforce that:
 //!
-//!   * the channel constants deliberately avoid the `analytics://` namespace
-//!     that `AnalyticProvider.tsx` forwards to PostHog verbatim;
+//!   * the channel constants deliberately avoid the `analytics://` namespace,
+//!     which carries aggregate counters only and must never carry text;
 //!   * the record types are `Serialize` only, never `Deserialize`, and never
 //!     go near `state_file.rs`, so the previews never reach disk and never
 //!     outlive the process;
@@ -1630,8 +1631,8 @@ mod tests {
     }
 
     /// Guards against someone "tidying" these into the analytics namespace,
-    /// which `AnalyticProvider.tsx` forwards to PostHog verbatim — that would
-    /// pipe prompt text straight into telemetry.
+    /// which carries aggregate counters only — prompt text must never ride
+    /// it.
     #[test]
     fn inspector_channels_are_not_in_the_analytics_namespace() {
         for channel in [

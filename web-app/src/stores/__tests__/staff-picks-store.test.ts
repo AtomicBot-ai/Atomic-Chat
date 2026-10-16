@@ -44,14 +44,19 @@ describe('staff-picks-store', () => {
     mocks.getCachedManifest.mockReturnValue(null)
   })
 
-  it('seeds from the bundled baseline when no cache exists', async () => {
-    mocks.getStaffPicksOrFallback.mockResolvedValue(remoteResult([]))
-    const { useStaffPicksStore } = await loadStore()
-    const { BASELINE_STAFF_PICKS } = await import('@/constants/staff-picks')
+  it('starts on the bundled snapshot, initialized, with no I/O', async () => {
+    const { useStaffPicksStore, ensureStaffPicksLoaded } = await loadStore()
+    const { BUNDLED_MANIFEST } = await import('@/services/staff-picks-registry')
 
-    // The module-level bootstrap already ran; read the seeded source instead.
-    expect(BASELINE_STAFF_PICKS.length).toBeGreaterThan(0)
-    expect(useStaffPicksStore.getState().source).toBeDefined()
+    const state = useStaffPicksStore.getState()
+    expect(state.source).toBe('bundled')
+    expect(state.hasInitialized).toBe(true)
+    expect(state.picks).toHaveLength(BUNDLED_MANIFEST.picks.length)
+
+    // Without a registry override there is nothing to load.
+    await ensureStaffPicksLoaded()
+    expect(mocks.getStaffPicksOrFallback).not.toHaveBeenCalled()
+    expect(mocks.getCachedManifest).not.toHaveBeenCalled()
   })
 
   it('stores picks and metadata after a successful refresh', async () => {
@@ -74,7 +79,7 @@ describe('staff-picks-store', () => {
   it('reports an error status when the loader returns one', async () => {
     mocks.getStaffPicksOrFallback.mockResolvedValue({
       picks: [],
-      source: 'baseline',
+      source: 'bundled',
       fetchedAt: null,
       manifestUpdatedAt: null,
       error: 'offline',
@@ -87,17 +92,17 @@ describe('staff-picks-store', () => {
     expect(useStaffPicksStore.getState().error).toBe('offline')
   })
 
-  it('falls back to the baseline if the loader throws unexpectedly', async () => {
+  it('falls back to the bundled snapshot if the loader throws unexpectedly', async () => {
     mocks.getStaffPicksOrFallback.mockRejectedValue(new Error('kaboom'))
     const { useStaffPicksStore } = await loadStore()
-    const { BASELINE_STAFF_PICKS } = await import('@/constants/staff-picks')
+    const { BUNDLED_MANIFEST } = await import('@/services/staff-picks-registry')
 
     await useStaffPicksStore.getState().refresh()
 
     const state = useStaffPicksStore.getState()
-    expect(state.source).toBe('baseline')
+    expect(state.source).toBe('bundled')
     expect(state.error).toBe('kaboom')
-    expect(state.picks).toHaveLength(BASELINE_STAFF_PICKS.length)
+    expect(state.picks).toHaveLength(BUNDLED_MANIFEST.picks.length)
   })
 
   it('ensureStaffPicksLoaded only refreshes until initialized', async () => {

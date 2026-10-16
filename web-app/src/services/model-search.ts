@@ -20,9 +20,9 @@
  *   4. Exponential recency decay with a 180-day half-life on
  *      `created_at` (graceful when the field is absent).
  *
- * Field weights / tokenisation MUST stay in sync with
- * `scripts/build_index.mjs` in the `atomic-chat-model-catalog` repo.
- * When the bundle here changes, bump that file too and bump
+ * Field weights / tokenisation MUST stay in sync with the bundled index
+ * (`public/seed-catalog.idx.json.gz`). When the bundle here changes, rebuild
+ * that index too and bump
  * `SUPPORTED_INDEX_VERSION` in `model-catalog-registry.ts`.
  */
 
@@ -104,7 +104,6 @@ const ORG_BOOST: Record<string, number> = {
   'prince-canuma': IS_MACOS ? 1.5 : 0.7,
   apple: IS_MACOS ? 1.3 : 1.0,
   'Goekdeniz-Guelmez': IS_MACOS ? 1.2 : 0,
-  AtomicChat: 2.0,
   TheBloke: 0.3,
   janhq: 0.5,
 }

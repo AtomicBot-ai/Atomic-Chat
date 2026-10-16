@@ -20,7 +20,7 @@
       ],
       "csp": {
         "default-src": "'self' customprotocol: asset: http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*",
-        "connect-src": "'self' asset: ipc: data: http://asset.localhost http://ipc.localhost http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* https://raw.githubusercontent.com https://huggingface.co https://posthog.com https://eu-assets.i.posthog.com",
+        "connect-src": "'self' asset: ipc: data: http://asset.localhost http://ipc.localhost http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/backends/ https://huggingface.co https://*.ingest.sentry.io https://*.ingest.us.sentry.io https://*.ingest.de.sentry.io",
         "font-src": [
           "https://fonts.gstatic.com blob: data: tauri://localhost http://tauri.localhost"
         ],
@@ -29,7 +29,7 @@
         "frame-src": "'self' blob: data: artifact: http://artifact.localhost panel: http://panel.localhost",
         "child-src": "'self' blob: data: artifact: http://artifact.localhost panel: http://panel.localhost",
         "style-src": "'unsafe-inline' 'self' https://fonts.googleapis.com",
-        "script-src": "'self' asset: $APPDATA/**.* http://asset.localhost https://eu-assets.i.posthog.com https://posthog.com"
+        "script-src": "'self' asset: $APPDATA/**.* http://asset.localhost"
       },
       "assetProtocol": {
         "enable": true,

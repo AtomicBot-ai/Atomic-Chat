@@ -225,19 +225,6 @@
     "defaultModelPlaceholder": "デフォルトモデルを選択...",
     "currentModel": "現在のモデル"
   },
-  "privacy": {
-    "analytics": "分析",
-    "helpUsImprove": "改善にご協力ください",
-    "helpUsImproveDesc": "改善にご協力いただくため、機能の使用状況やユーザー数などの匿名データを共有していただけます。チャットや個人情報を収集することはありません。",
-    "privacyPolicy": "あなたは自分のデータを完全に管理できます。詳細はプライバシーポリシーをご覧ください。",
-    "analyticsDesc": "Radiumを改善するためには、どのように使用されているかを理解する必要がありますが、それはあなたの協力があってこそです。この設定はいつでも変更できます。",
-    "privacyPromises": "ここでの選択は、私たちの中心的なプライバシーの約束を変更するものではありません：",
-    "promise1": "あなたの会話はプライベートで、あなたのデバイス上に留まります",
-    "promise2": "私たちはあなたの個人情報やチャットの内容を収集しません",
-    "promise3": "すべてのデータ共有は匿名で集計されます",
-    "promise4": "機能を失うことなく、いつでもオプトアウトできます",
-    "promise5": "収集するものとその理由について透明性を保ちます"
-  },
   "general": {
     "showInFinder": "Finderで表示",
     "showInFileExplorer": "ファイルエクスプローラーで表示",
@@ -353,7 +340,7 @@
   "llamacppDflashBackendUnsupported": "選択された Llama.cpp バックエンドは DFlash サポート（--spec-type draft-dflash）をアドバタイズしていません。DFlash を有効にする前に、アップデートするか互換性のあるバックエンドに切り替えてください。",
   "llamacppDflashNoActiveModel": "最初に llama.cpp モデルを開始してください。",
   "llamacppDflashDraftTitle": "DFlash ドラフトの量子化を選択",
-  "llamacppDflashDraftDesc": "{{modelId}} とペアリングする追加のドラフト GGUF を選択してください。利用可能な場合は、AtomicChat Q8_0 がデフォルトで選択されます。",
+  "llamacppDflashDraftDesc": "{{modelId}} とペアリングする追加のドラフト GGUF を選択してください。利用可能な場合は、Q8_0 のドラフトがデフォルトで選択されます。",
   "llamacppDflashDraftQuantLabel": "ドラフト量子化",
   "llamacppDflashDraftDownload": "ダウンロードして有効化",
   "llamacppDflashDownloadingDraft": "{{quant}} DFlash ドラフトモデルをダウンロード中…",

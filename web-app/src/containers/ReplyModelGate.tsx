@@ -18,7 +18,6 @@ import {
   type CloudProviderSaveResult,
 } from '@/containers/dialogs/AddCloudProviderDialog'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
-import { useHardwareTier } from '@/hooks/useHardwareTier'
 import { useLocalScanFolder } from '@/hooks/useLocalScanFolder'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useRecommendedLocalModel } from '@/hooks/useRecommendedLocalModel'
@@ -33,18 +32,11 @@ import {
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import {
-  captureReplyGateOutcome,
-  captureReplyGateShown,
-  type ReplyGateOutcome,
-} from '@/lib/reply-gate-telemetry'
-import {
   collectReplyModels,
   replyGateBranch,
-  replyGateContext,
   resolveReplyModel,
   type ReplyGateBranch,
   type ReplyModelOption,
-  type ReplyResolution,
 } from '@/lib/reply-model-gate'
 import {
   collectImportedModelPaths,
@@ -57,17 +49,18 @@ import { switchToModel } from '@/utils/switchModel'
 /** The subscription this widget offers by name, beside the API-key route. */
 const SUBSCRIPTION_PROVIDER = 'chatgpt'
 
+/** How the widget, or the composer on its behalf, answered the question. */
+export type ReplyGateOutcome =
+  | 'auto_start'
+  | 'download'
+  | 'folder'
+  | 'cloud_key'
+  | 'subscription'
+  | 'dismissed'
+
 export type ReplyModelGateResolution = {
   outcome: ReplyGateOutcome
   branch: ReplyGateBranch
-  /** Widget open → this decision. */
-  decidedInMs: number
-  /** Wall clock of the opening, so the composer can time the wait that follows
-   *  the decision — a download outlives this component's state. */
-  openedAtMs: number
-  /** Set when the composer resolved the model itself, without this widget
-   *  (see `useReplyModelAutoStart`). */
-  resolution?: ReplyResolution
   /** The model being started, for the composer's status line. */
   modelLabel?: string
 }
@@ -91,8 +84,7 @@ type ReplyModelGateProps = {
  * "What do I reply with?" — asked at the moment the answer is missing.
  *
  * Replaces the red `Select a model to start chatting` line under the composer,
- * which named the problem, offered no way to solve it, and emitted no telemetry
- * because the early `return` that produced it sat in front of every capture.
+ * which named the problem and offered no way to solve it.
  *
  * One component, two shapes, decided by what is actually on the device (see
  * `lib/reply-model-gate.ts`):
@@ -124,14 +116,12 @@ export function ReplyModelGate({
   // provider list underneath it (a cloud sign-in adds a whole catalogue), and
   // re-deciding the branch mid-interaction would swap the screen out from under
   // the user. Retaken on each opening.
-  const openedAtRef = useRef(0)
   const [session, setSession] = useState<{
     branch: ReplyGateBranch
     target?: ReplyModelOption
   } | null>(null)
 
   const providers = useModelProvider((state) => state.providers)
-  const { tier } = useHardwareTier()
 
   // Read through a ref so the effects below depend on the opening alone. Both
   // callbacks are rebuilt on every parent render.
@@ -148,36 +138,16 @@ export function ReplyModelGate({
     const lastUsed = getLastUsedModel()
     const options = collectReplyModels(snapshotProviders, lastUsed)
     const branch = replyGateBranch(options)
-    const context = replyGateContext(snapshotProviders)
 
-    openedAtRef.current = Date.now()
     resolvedRef.current = false
     setSession({ branch, target: resolveReplyModel(options, lastUsed)?.option })
-    captureReplyGateShown({
-      branch,
-      localModelCount: context.localModelCount,
-      cloudProviderCount: context.cloudProviderCount,
-      hasCloudConnection: context.hasCloudConnection,
-      hardwareTier: tier,
-    })
-    // Deliberately keyed on the opening only — `tier` and the provider list
-    // change while the widget is up, and re-running would re-snapshot the
-    // branch and double-count the impression.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
   const resolve = useCallback(
     (outcome: ReplyGateOutcome) => {
       if (!session) return
       resolvedRef.current = true
-      const resolution = {
-        outcome,
-        branch: session.branch,
-        decidedInMs: Date.now() - openedAtRef.current,
-        openedAtMs: openedAtRef.current,
-      }
-      captureReplyGateOutcome(resolution)
-      callbacksRef.current.onResolved(resolution)
+      callbacksRef.current.onResolved({ outcome, branch: session.branch })
     },
     [session]
   )
@@ -188,14 +158,10 @@ export function ReplyModelGate({
   const handleOpenChange = useCallback(
     (next: boolean) => {
       if (!next && !resolvedRef.current && session) {
-        const resolution = {
-          outcome: 'dismissed' as const,
+        callbacksRef.current.onDismissed({
+          outcome: 'dismissed',
           branch: session.branch,
-          decidedInMs: Date.now() - openedAtRef.current,
-          openedAtMs: openedAtRef.current,
-        }
-        captureReplyGateOutcome(resolution)
-        callbacksRef.current.onDismissed(resolution)
+        })
       }
       onOpenChange(next)
     },
@@ -254,7 +220,6 @@ export function ReplyModelGate({
         initialProviderName={
           cloudEntry === 'subscription' ? SUBSCRIPTION_PROVIDER : undefined
         }
-        duringOnboarding={false}
       />
     </>
   )

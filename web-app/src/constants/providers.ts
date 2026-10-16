@@ -3,7 +3,8 @@
  *
  * Most cloud providers (OpenAI, Anthropic, OpenRouter, Mistral, Groq, xAI,
  * Gemini, MiniMax, Hugging Face, NVIDIA, ...) are no longer hard-coded here.
- * They are loaded at runtime from the `atomic-chat-conf` registry — see
+ * They come from the bundled provider registry (`src/registries/providers.json`)
+ * — see
  * `web-app/src/services/provider-registry.ts` and the
  * `web-app/src/services/AGENTS.md` feature notes.
  *
@@ -13,10 +14,10 @@
  *   3. The shape used to build a custom provider via `Settings > Providers`
  *      ({@link openAIProviderSettings}).
  *
- * Add a provider here ONLY if it cannot live in the remote registry
+ * Add a provider here ONLY if it cannot live in the registry
  * (e.g. it requires per-user resource configuration like Azure OpenAI).
  * Do NOT re-introduce providers that already exist in
- * `atomic-chat-conf/providers/registry.json`.
+ * `src/registries/providers.json`.
  */
 
 export const openAIProviderSettings = [

@@ -8,7 +8,6 @@ import type { CatalogModel } from '@/services/models/types'
 
 const mocks = vi.hoisted(() => ({
   switchToModel: vi.fn(() => Promise.resolve()),
-  capture: vi.fn(),
   pullModelWithMetadata: vi.fn(),
   fetchHuggingFaceRepo: vi.fn(),
   convertHfRepoToCatalogModel: vi.fn(),
@@ -41,10 +40,6 @@ vi.mock('@/lib/scanned-model-import', async () => {
 
 vi.mock('@/utils/switchModel', () => ({
   switchToModel: mocks.switchToModel,
-}))
-
-vi.mock('posthog-js', () => ({
-  default: { capture: mocks.capture },
 }))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
@@ -160,14 +155,6 @@ function renderGate(providers: ModelProvider[]) {
   return { ...result, onResolved, onDismissed, onOpenChange }
 }
 
-const capturedEvent = (name: string) =>
-  mocks.capture.mock.calls.find(([event]) => event === name)?.[1]
-
-const capturedEvents = (name: string) =>
-  mocks.capture.mock.calls
-    .filter(([event]) => event === name)
-    .map(([, props]) => props)
-
 describe('ReplyModelGate', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -243,12 +230,6 @@ describe('ReplyModelGate', () => {
       expect(onResolved).toHaveBeenCalledWith(
         expect.objectContaining({ outcome: 'download', branch: 'none' })
       )
-    )
-    await waitFor(() =>
-      expect(capturedEvent('reply_model_gate_outcome')).toMatchObject({
-        outcome: 'download',
-        branch: 'none',
-      })
     )
   })
 
@@ -358,24 +339,6 @@ describe('ReplyModelGate', () => {
     ).toBeNull()
   })
 
-  it('reports the impression with the device context that shaped it', async () => {
-    renderGate([localProvider([model('a'), model('b')]), cloudProvider()])
-
-    await waitFor(() =>
-      expect(capturedEvent('reply_model_gate_shown')).toBeDefined()
-    )
-    expect(capturedEvent('reply_model_gate_shown')).toMatchObject({
-      branch: 'auto_start',
-      local_model_count: 2,
-      cloud_provider_count: 1,
-      has_cloud_connection: true,
-      hardware_tier: 'vram_8',
-    })
-    // `status` is typed as a number globally in PostHog; a string written there
-    // is ingested as null.
-    expect(capturedEvent('reply_model_gate_shown')).not.toHaveProperty('status')
-  })
-
   it('records a give-up as a dismissal, not as a resolution', async () => {
     const { onDismissed, onResolved, onOpenChange } = renderGate([
       unconnectedCloud(),
@@ -389,17 +352,16 @@ describe('ReplyModelGate', () => {
     await waitFor(() => expect(onDismissed).toHaveBeenCalled())
     expect(onResolved).not.toHaveBeenCalled()
     expect(onOpenChange).toHaveBeenCalledWith(false)
-    expect(capturedEvent('reply_model_gate_outcome')).toMatchObject({
-      outcome: 'dismissed',
-      branch: 'none',
-    })
+    expect(onDismissed.mock.calls).toEqual([
+      [{ outcome: 'dismissed', branch: 'none' }],
+    ])
   })
 
   it('does not report a dismissal when it closes on a started model', async () => {
-    const { onDismissed } = renderGate([localProvider([model('only-one')])])
-    await waitFor(() =>
-      expect(capturedEvent('reply_model_gate_outcome')).toBeDefined()
-    )
+    const { onDismissed, onResolved } = renderGate([
+      localProvider([model('only-one')]),
+    ])
+    await waitFor(() => expect(onResolved).toHaveBeenCalled())
 
     fireEvent.keyDown(document.activeElement ?? document.body, {
       key: 'Escape',
@@ -408,7 +370,7 @@ describe('ReplyModelGate', () => {
     // Closing a widget whose work is already under way is not giving up: the
     // auto-start stays the one and only outcome on record.
     expect(
-      capturedEvents('reply_model_gate_outcome').map((event) => event.outcome)
+      onResolved.mock.calls.map(([resolution]) => resolution.outcome)
     ).toEqual(['auto_start'])
     expect(onDismissed).not.toHaveBeenCalled()
   })

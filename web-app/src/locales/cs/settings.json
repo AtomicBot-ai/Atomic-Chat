@@ -213,19 +213,6 @@
     "proxyTimeout": "Časový limit požadavku",
     "proxyTimeoutDesc": "Doba čekání na odpověď od lokálního modelu, sekundy."
   },
-  "privacy": {
-    "analytics": "Analytika",
-    "helpUsImprove": "Pomozte nám zlepšit",
-    "helpUsImproveDesc": "Abychom se mohli zlepšovat, můžete sdílet anonymní data jako použití funkcí a počty uživatelů. Nikdy neshromažďujeme vaše chaty nebo osobní údaje.",
-    "privacyPolicy": "Máte plnou kontrolu nad svými daty. Více informací najdete v našich Zásadách ochrany osobních údajů.",
-    "analyticsDesc": "Abychom mohli vylepšit Radium, potřebujeme pochopit, jak se používá—ale pouze s vaší pomocí. Toto nastavení můžete kdykoli změnit.",
-    "privacyPromises": "Vaše volba zde nezmění naše základní sliby ochrany soukromí:",
-    "promise1": "Vaše konverzace zůstávají soukromé a na vašem zařízení",
-    "promise2": "Nikdy neshromažďujeme vaše osobní údaje nebo obsah chatů",
-    "promise3": "Veškeré sdílení dat je anonymní a agregované",
-    "promise4": "Můžete se kdykoli odhlásit bez ztráty funkčnosti",
-    "promise5": "Jsme transparentní o tom, co shromažďujeme a proč"
-  },
   "general": {
     "showInFinder": "Zobrazit ve Finderu",
     "showInFileExplorer": "Zobrazit v Průzkumníku souborů",

@@ -224,19 +224,6 @@
     "defaultModelPlaceholder": "로컬 모델 선택",
     "currentModel": "현재 모델"
   },
-  "privacy": {
-    "analytics": "분석",
-    "helpUsImprove": "개선에 도움 주기",
-    "helpUsImproveDesc": "개선에 도움을 주시려면 기능 사용량 및 사용자 수와 같은 익명 데이터를 공유할 수 있습니다. 채팅이나 개인정보는 절대 수집하지 않습니다.",
-    "privacyPolicy": "데이터에 대한 완전한 통제권은 사용자에게 있습니다. 자세한 내용은 개인정보 처리방침에서 확인하세요.",
-    "analyticsDesc": "Radium을 개선하려면 어떻게 사용되는지 이해해야 하지만, 이는 사용자의 도움이 있어야만 가능합니다. 이 설정은 언제든지 변경할 수 있습니다.",
-    "privacyPromises": "여기서의 선택은 핵심 개인정보 약속을 변경하지 않습니다:",
-    "promise1": "대화는 비공개로 유지되며 사용자 기기에 머뭅니다",
-    "promise2": "개인정보나 채팅 내용을 절대 수집하지 않습니다",
-    "promise3": "모든 데이터 공유는 익명이며 집계됩니다",
-    "promise4": "기능 손실 없이 언제든지 옵트아웃할 수 있습니다",
-    "promise5": "무엇을 왜 수집하는지 투명하게 공개합니다"
-  },
   "general": {
     "showInFinder": "Finder에서 표시",
     "showInFileExplorer": "파일 탐색기에서 표시",

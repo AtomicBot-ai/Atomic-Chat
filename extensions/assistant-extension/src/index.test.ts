@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest'
 import {
   renameProductInAssistantName,
   renameProductInInstructions,
+  replaceLegacyAttribution,
 } from './index'
 
 describe('renameProductInInstructions', () => {
@@ -115,5 +116,39 @@ describe('renameProductInAssistantName', () => {
 
   it('handles an assistant with no name', () => {
     expect(renameProductInAssistantName(undefined)).toBeUndefined()
+  })
+})
+
+/**
+ * Migration v5 - the default instructions used to attribute the assistant to
+ * the upstream project's website.
+ */
+describe('replaceLegacyAttribution', () => {
+  const NEW =
+    "Radium is an open-source desktop app that runs models on the user's own computer or through the providers they connect."
+
+  it.each([
+    'Radium is trained by Radium (https://atomic.chat).',
+    'Radium Chat is trained by Radium Chat (https://atomic.chat).',
+    'Atomic Chat is trained by Atomic Chat (https://atomic.chat).',
+  ])('replaces %s', (legacy) => {
+    const before = `You are Radium, a helpful AI assistant. ${legacy}\n\nAlways answer in French.`
+
+    expect(replaceLegacyAttribution(before)).toBe(
+      `You are Radium, a helpful AI assistant. ${NEW}\n\nAlways answer in French.`
+    )
+  })
+
+  it('leaves instructions without the legacy line untouched', () => {
+    const own = 'You are my assistant. See https://example.org for context.'
+    expect(replaceLegacyAttribution(own)).toBe(own)
+    expect(replaceLegacyAttribution(undefined)).toBeUndefined()
+  })
+
+  it('is idempotent', () => {
+    const once = replaceLegacyAttribution(
+      'Radium is trained by Radium (https://atomic.chat).'
+    )
+    expect(replaceLegacyAttribution(once)).toBe(once)
   })
 })

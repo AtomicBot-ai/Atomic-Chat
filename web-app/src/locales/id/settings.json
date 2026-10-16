@@ -207,19 +207,6 @@
     "proxyTimeout": "Permintaan melebihi batas waktu",
     "proxyTimeoutDesc": "Waktu tunggu untuk respons dari model lokal dalam detik."
   },
-  "privacy": {
-    "analytics": "Analitik",
-    "helpUsImprove": "Bantu kami meningkatkan",
-    "helpUsImproveDesc": "Untuk membantu kami meningkatkan aplikasi, Anda dapat membagikan data anonim seperti penggunaan fitur dan jumlah pengguna. Kami tidak pernah mengumpulkan obrolan atau informasi pribadi Anda.",
-    "privacyPolicy": "Anda memiliki kendali penuh atas data Anda. Pelajari lebih lanjut di Kebijakan Privasi kami.",
-    "analyticsDesc": "Untuk meningkatkan Radium, kami perlu memahami bagaimana ia digunakan—tetapi hanya dengan bantuan Anda. Anda dapat mengubah pengaturan ini kapan saja.",
-    "privacyPromises": "Pilihan Anda di sini tidak akan mengubah janji privasi inti kami:",
-    "promise1": "Percakapan Anda tetap pribadi dan di perangkat Anda",
-    "promise2": "Kami tidak pernah mengumpulkan informasi pribadi atau konten obrolan Anda",
-    "promise3": "Semua pembagian data bersifat anonim dan diagregasi",
-    "promise4": "Anda dapat memilih keluar kapan saja tanpa kehilangan fungsionalitas",
-    "promise5": "Kami transparan tentang apa yang kami kumpulkan dan mengapa"
-  },
   "general": {
     "showInFinder": "Tampilkan di Finder",
     "showInFileExplorer": "Tampilkan di File Explorer",

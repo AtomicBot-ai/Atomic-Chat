@@ -1,9 +1,7 @@
 import { Button } from '@/components/ui/button'
 import { useOnboardingModelReminder } from '@/hooks/useOnboardingModelReminder'
 import { useRecommendedLocalModel } from '@/hooks/useRecommendedLocalModel'
-import { useEffect, useRef } from 'react'
 import { HUGGINGFACE_LOGO_SRC, modelFamilyLogoSrc } from '@/lib/model-logo'
-import { captureOnboardingModelReminder } from '@/lib/onboarding-telemetry'
 
 // The offer is about the model, not the app, so it carries the model's brand
 // mark. Derived from the repo id so it follows the recommendation.
@@ -23,23 +21,12 @@ export function PromptOnboardingModel() {
     startDownload,
   } = useRecommendedLocalModel()
 
-  // Impression, fired once the card is actually on screen. The ref guard keeps
-  // StrictMode's double-mount from counting it twice.
-  const shownFiredRef = useRef(false)
-  useEffect(() => {
-    if (isLoading || shownFiredRef.current) return
-    shownFiredRef.current = true
-    captureOnboardingModelReminder('shown')
-  }, [isLoading])
-
   const handleDismiss = () => {
-    captureOnboardingModelReminder('later')
     setPending(false)
   }
 
   const handleDownload = () => {
     if (!startDownload()) return
-    captureOnboardingModelReminder('download')
     setPending(false)
   }
 

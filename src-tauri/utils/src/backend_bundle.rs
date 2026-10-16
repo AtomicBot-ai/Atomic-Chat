@@ -100,14 +100,20 @@ fn extract_zip(path: &Path, output: &Path) -> Result<(), String> {
         let mut entry = archive
             .by_index(index)
             .map_err(|error| format!("read bundled ZIP entry: {error}"))?;
-        let relative = entry
-            .enclosed_name()
-            .ok_or_else(|| format!("unsafe ZIP entry path: {}", entry.name()))?;
+        let relative = entry.enclosed_name().ok_or_else(|| {
+            format!(
+                "unsafe ZIP entry path: {}",
+                entry.name().unwrap_or_default()
+            )
+        })?;
         if entry
             .unix_mode()
             .is_some_and(|mode| mode & 0o170000 == 0o120000)
         {
-            return Err(format!("unsafe ZIP entry type: {}", entry.name()));
+            return Err(format!(
+                "unsafe ZIP entry type: {}",
+                entry.name().unwrap_or_default()
+            ));
         }
         let destination = output.join(relative);
         if entry.is_dir() {

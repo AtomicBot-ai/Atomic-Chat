@@ -12,8 +12,6 @@ export const localStorageKey = {
   settingProxyConfig: 'setting-proxy-config',
   settingHardware: 'setting-hardware',
   settingVulkan: 'setting-vulkan',
-  productAnalyticPrompt: 'productAnalyticPrompt',
-  productAnalytic: 'productAnalytic',
   toolApproval: 'tool-approval',
   toolAvailability: 'tool-availability',
   mcpGlobalPermissions: 'mcp-global-permissions',

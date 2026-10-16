@@ -7,7 +7,6 @@ import {
   LOCAL_LLAMACPP_PROVIDER,
 } from '@/lib/utils'
 import { WINDOWS_RECHECK_PENDING_KEY } from '@/lib/windowsProviderMigration'
-import { captureBackendRecommendationDismissed } from '@/lib/backend-telemetry'
 
 /// Maximum time we wait for a `app:backend-hotswapped` window event after the
 /// backend archive download finishes. If the extension's `applyBackendLive()`
@@ -484,14 +483,7 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
   const dismissRecommendation = useCallback(() => {
     setRecommendationPhase('idle')
     snoozeRecommendation()
-    captureBackendRecommendationDismissed({
-      provider: providerId,
-      backendFrom: null,
-      backendTo: recommendation?.recommendedBackend ?? null,
-      trigger: 'dialog',
-      snoozedForDays: RECOMMENDATION_SNOOZE_DAYS,
-    })
-  }, [providerId, recommendation])
+  }, [])
 
   /// `overrideBackend` lets callers bypass the closure-captured
   /// `recommendation` state. Necessary when the trigger fires

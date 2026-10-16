@@ -207,19 +207,6 @@
     "proxyTimeout": "Hết thời gian chờ yêu cầu",
     "proxyTimeoutDesc": "Thời gian chờ phản hồi từ mô hình cục bộ (tính bằng giây)."
   },
-  "privacy": {
-    "analytics": "Phân tích",
-    "helpUsImprove": "Giúp chúng tôi cải thiện",
-    "helpUsImproveDesc": "Để giúp chúng tôi cải thiện, bạn có thể chia sẻ dữ liệu ẩn danh như việc sử dụng tính năng và số lượng người dùng. Chúng tôi không bao giờ thu thập các cuộc trò chuyện hoặc thông tin cá nhân của bạn.",
-    "privacyPolicy": "Bạn có toàn quyền kiểm soát dữ liệu của mình. Tìm hiểu thêm trong Chính sách Quyền riêng tư của chúng tôi.",
-    "analyticsDesc": "Để cải thiện Radium, chúng tôi cần hiểu cách sử dụng—nhưng chỉ với sự giúp đỡ của bạn. Bạn có thể thay đổi cài đặt này bất cứ lúc nào.",
-    "privacyPromises": "Lựa chọn của bạn ở đây sẽ không thay đổi các cam kết quyền riêng tư cốt lõi của chúng tôi:",
-    "promise1": "Các cuộc trò chuyện của bạn vẫn riêng tư và trên thiết bị của bạn",
-    "promise2": "Chúng tôi không bao giờ thu thập thông tin cá nhân hoặc nội dung trò chuyện của bạn",
-    "promise3": "Tất cả việc chia sẻ dữ liệu đều ẩn danh và được tổng hợp",
-    "promise4": "Bạn có thể từ chối bất cứ lúc nào mà không mất chức năng",
-    "promise5": "Chúng tôi minh bạch về những gì chúng tôi thu thập và tại sao"
-  },
   "general": {
     "showInFinder": "Hiển thị trong Finder",
     "showInFileExplorer": "Hiển thị trong File Explorer",

@@ -236,7 +236,7 @@ fn log_ttft_prefix_dump(json_body: &serde_json::Value) {
     }
     // Zero-PII (ATO-113): never log message/tool *text* (prompts are PII).
     // Emit only sizes/counts so the diagnostic stays useful for prefix-cache
-    // debugging without leaking conversation content into app.log / Sentry.
+    // debugging without leaking conversation content into app.log.
     if let Some(messages) = json_body.get("messages") {
         let bytes = serde_json::to_string(messages)
             .map(|s| s.len())
@@ -286,7 +286,7 @@ fn transform_anthropic_to_openai(body: &serde_json::Value) -> Option<serde_json:
 
     let openai_messages = convert_messages(messages, body.get("system"))?;
 
-    // Strict chat templates (e.g. AtomicChat/ornith-9b, Qwen3-family GGUFs)
+    // Strict chat templates (e.g. Qwen3-family GGUFs)
     // `raise` "System message must be at the beginning" whenever a request
     // carries more than one system message or a non-leading one. Claude Code
     // triggers this by combining its system prompt with developer/system items,
@@ -3826,8 +3826,8 @@ async fn inner_proxy_request<R: Runtime>(
             let error_msg = format!("Proxy request to model failed: {e}");
             // WS1.4: warn! (not error!) — a refused/failed proxy connection is a
             // downstream symptom of the model server not being up, not a root-cause
-            // crash, so it must not flood the SentryLogger bridge. The PostHog
-            // error_kind above still records it for analytics.
+            // crash, so it must not flood the error log. The error_kind above
+            // still records it.
             log::warn!("{error_msg}");
             // ATO-182: A transport error reaching a *local* model server means
             // the backend inference process is down / crashed / not yet

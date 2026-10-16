@@ -12,13 +12,6 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
-import { classifySubscriptionFailure } from '@/lib/telemetry'
-import {
-  captureSubscriptionConnectResult,
-  captureSubscriptionConnectStarted,
-  captureSubscriptionDisconnected,
-  type SubscriptionSurface,
-} from '@/lib/subscription-telemetry'
 import { ModelCapabilities } from '@/types/models'
 import type { ChatGptModel, ChatGptStatus } from '@/services/auth/types'
 
@@ -87,15 +80,7 @@ function formatAccount(status: ChatGptStatus): string | undefined {
   return email || plan || undefined
 }
 
-/**
- * @param surface Where the card driving this hook is rendered. Reaching the
- * subscription used to require navigating to /cloud and finding it there, so
- * which surface actually converts is the question the feature exists to
- * answer — and nothing could answer it while none of this was instrumented.
- */
-export function useChatGptAuth(
-  surface: SubscriptionSurface = 'settings'
-): UseChatGptAuth {
+export function useChatGptAuth(): UseChatGptAuth {
   const serviceHub = useServiceHub()
   const supported = PlatformFeatures[PlatformFeature.CHATGPT_SUBSCRIPTION]
 
@@ -169,41 +154,20 @@ export function useChatGptAuth(
   const connect = useCallback(async () => {
     setError(undefined)
     setConnecting(true)
-    const startedAt = Date.now()
-    captureSubscriptionConnectStarted({ provider: CHATGPT_PROVIDER, surface })
     try {
       const next = await serviceHub.auth().chatgptLogin()
-      const offered = await applyModels(next.connected)
+      await applyModels(next.connected)
       if (mounted.current) setStatus(next)
-      captureSubscriptionConnectResult({
-        provider: CHATGPT_PROVIDER,
-        surface,
-        connectResult: 'connected',
-        planType: next.plan_type,
-        modelCount: offered,
-        durationMs: Date.now() - startedAt,
-      })
     } catch (err) {
       // The backend's message is the actionable one (port busy, cancelled,
       // rejected by the provider) — surface it rather than a generic failure.
       if (mounted.current) {
         setError(err instanceof Error ? err.message : String(err))
       }
-      // A user cancelling in the browser rejects this same promise, so
-      // without the classifier "changed their mind" and "the flow is broken"
-      // would be one number.
-      const reason = classifySubscriptionFailure(err)
-      captureSubscriptionConnectResult({
-        provider: CHATGPT_PROVIDER,
-        surface,
-        connectResult: reason === 'cancelled' ? 'cancelled' : 'failed',
-        failureReason: reason,
-        durationMs: Date.now() - startedAt,
-      })
     } finally {
       if (mounted.current) setConnecting(false)
     }
-  }, [applyModels, serviceHub, surface])
+  }, [applyModels, serviceHub])
 
   const cancel = useCallback(async () => {
     try {
@@ -219,16 +183,12 @@ export function useChatGptAuth(
       const next = await serviceHub.auth().chatgptLogout()
       await applyModels(false)
       if (mounted.current) setStatus(next)
-      captureSubscriptionDisconnected({
-        provider: CHATGPT_PROVIDER,
-        surface,
-      })
     } catch (err) {
       if (mounted.current) {
         setError(err instanceof Error ? err.message : String(err))
       }
     }
-  }, [applyModels, serviceHub, surface])
+  }, [applyModels, serviceHub])
 
   const state: ChatGptConnectionState = !supported
     ? 'unavailable'

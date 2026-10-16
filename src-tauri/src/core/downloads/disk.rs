@@ -10,10 +10,10 @@
 //! byte is fetched instead of at 80% of a 20 GB transfer.
 //!
 //! The tag travels to the frontend inside the error string as a `[tag]`
-//! prefix (`classifyDownloadFailure` in `web-app/src/lib/telemetry.ts` reads
-//! it) because the download boundary is stringly-typed all the way to the
-//! `model_download` PostHog event. Tags are an enum, never free text, and
-//! carry no path or hostname — the PII contract for the event still holds.
+//! prefix (`classifyDownloadFailure` in `web-app/src/lib/download-errors.ts`
+//! reads it to pick the toast) because the download boundary is
+//! stringly-typed all the way to the UI. Tags are an enum, never free text,
+//! and carry no path or hostname.
 
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -276,8 +276,7 @@ mod tests {
     #[test]
     fn tags_are_stable() {
         // The frontend enum (`DownloadFailureReason`) is keyed off these exact
-        // strings, and so is every saved PostHog insight. Renaming one silently
-        // splits a metric in half.
+        // strings. Renaming one silently drops its user-facing message.
         assert_eq!(DiskFault::Full.tag(), "disk_full");
         assert_eq!(DiskFault::Permission.tag(), "disk_permission");
         assert_eq!(DiskFault::FileLocked.tag(), "disk_file_locked");

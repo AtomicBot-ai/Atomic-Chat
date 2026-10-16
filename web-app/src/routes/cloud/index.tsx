@@ -28,6 +28,7 @@ import {
 import { refreshProviderModels } from '@/lib/refresh-provider-models'
 import { validateCloudSearch } from '@/lib/cloud-search'
 import { cn } from '@/lib/utils'
+import { REGISTRY_URL as PROVIDER_REGISTRY_URL } from '@/services/provider-registry'
 import { useProviderRegistryStore } from '@/stores/provider-registry-store'
 
 /**
@@ -59,7 +60,7 @@ export function CloudPage() {
   const { providers, addProvider, updateProvider, setProviders } =
     useModelProvider()
 
-  const subscription = useChatGptAuth('settings')
+  const subscription = useChatGptAuth()
 
   const [customOpen, setCustomOpen] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
@@ -169,6 +170,9 @@ export function CloudPage() {
     <SettingsPageLayout
       title={t('cloud:title')}
       actions={
+        // The catalog ships with the app; refreshing only means something in
+        // a build that names a remote copy (`VITE_PROVIDER_REGISTRY_URL`).
+        PROVIDER_REGISTRY_URL && (
         <div className="relative z-50 flex shrink-0 items-center gap-2">
           <Button
             variant="outline"
@@ -194,6 +198,7 @@ export function CloudPage() {
             </span>
           </Button>
         </div>
+        )
       }
     >
       <div>
@@ -217,7 +222,6 @@ export function CloudPage() {
               onConnectBrowser={() => void subscription.connect()}
               onCancel={() => void subscription.cancel()}
               onDisconnect={() => void subscription.disconnect()}
-    surface="settings"
             />
           )}
 

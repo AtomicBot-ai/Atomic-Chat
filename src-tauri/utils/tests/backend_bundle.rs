@@ -4,13 +4,13 @@ use std::fs::{self, File};
 use std::io::Write;
 use std::path::Path;
 use tempfile::tempdir;
-use zip::write::FileOptions;
+use zip::write::SimpleFileOptions;
 
 fn write_zip(path: &Path, entries: &[(&str, &[u8])]) -> (u64, String) {
     let file = File::create(path).unwrap();
     let mut zip = zip::ZipWriter::new(file);
     for (name, contents) in entries {
-        zip.start_file(*name, FileOptions::default()).unwrap();
+        zip.start_file(*name, SimpleFileOptions::default()).unwrap();
         zip.write_all(contents).unwrap();
     }
     zip.finish().unwrap();

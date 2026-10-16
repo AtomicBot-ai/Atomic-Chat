@@ -213,19 +213,6 @@
     "proxyTimeout": "Délai d'attente de la requête",
     "proxyTimeoutDesc": "Temps d'attente pour une réponse du modèle local, en secondes."
   },
-  "privacy": {
-    "analytics": "Analytique",
-    "helpUsImprove": "Aidez-nous à nous améliorer",
-    "helpUsImproveDesc": "Pour nous aider à nous améliorer, vous pouvez partager des données anonymes comme l'utilisation des fonctionnalités et le nombre d'utilisateurs. Nous ne collectons jamais vos discussions ou informations personnelles.",
-    "privacyPolicy": "Vous avez un contrôle total sur vos données. En savoir plus dans notre politique de confidentialité.",
-    "analyticsDesc": "Pour améliorer Radium, nous devons comprendre comment il est utilisé, mais uniquement avec votre aide. Vous pouvez modifier ce paramètre à tout moment.",
-    "privacyPromises": "Votre choix ici ne changera pas nos promesses de confidentialité fondamentales :",
-    "promise1": "Vos conversations restent privées et sur votre appareil",
-    "promise2": "Nous ne collectons jamais vos informations personnelles ou le contenu de vos discussions",
-    "promise3": "Tout partage de données est anonyme et agrégé",
-    "promise4": "Vous pouvez vous désinscrire à tout moment sans perdre de fonctionnalités",
-    "promise5": "Nous sommes transparents sur ce que nous collectons et pourquoi"
-  },
   "general": {
     "showInFinder": "Afficher dans le Finder",
     "showInFileExplorer": "Afficher dans l'explorateur de fichiers",

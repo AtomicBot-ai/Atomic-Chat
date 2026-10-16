@@ -14,7 +14,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import { useChatGptAuth } from '@/hooks/useChatGptAuth'
-import { captureSubscriptionCardShown } from '@/lib/subscription-telemetry'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { PlatformFeatures } from '@/lib/platform/const'
@@ -168,12 +167,6 @@ type AddCloudProviderDialogProps = {
    * again. Ignored when the provider is not one the gallery offers.
    */
   initialProviderName?: string
-  /**
-   * Whether this connection is happening inside first-run onboarding. Only
-   * reaches `provider_key_configured` — the funnel needs to tell a key pasted
-   * during setup from one pasted later, at a blocked send.
-   */
-  duringOnboarding?: boolean
 }
 
 /**
@@ -194,23 +187,11 @@ function SubscriptionStep({
   onConnected: (result: CloudProviderSaveResult) => void
 }) {
   const { t } = useTranslation()
-  // The dialog is the onboarding entry point as well as the settings one; the
-  // whole point of ATO-456 is knowing which of them people actually use.
-  const { state, error, connect, cancel } = useChatGptAuth('onboarding')
+  const { state, error, connect, cancel } = useChatGptAuth()
 
   // Held in a ref so the effect below depends on the connection state alone.
   // The callback is rebuilt on every parent render, and re-running the exit for
   // that would navigate out of onboarding twice.
-  // This step renders its own UI rather than `CloudSubscriptionCard`, so the
-  // impression has to be emitted here or the onboarding surface would have a
-  // conversion rate with no denominator.
-  useEffect(() => {
-    captureSubscriptionCardShown({
-      provider: provider.provider,
-      surface: 'onboarding',
-    })
-  }, [provider.provider])
-
   const onConnectedRef = useRef(onConnected)
   useEffect(() => {
     onConnectedRef.current = onConnected
@@ -320,7 +301,6 @@ export function AddCloudProviderDialog({
   onOpenChange,
   onKeySaved,
   initialProviderName,
-  duringOnboarding = true,
 }: AddCloudProviderDialogProps) {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
@@ -412,7 +392,6 @@ export function AddCloudProviderDialog({
       saveProviderApiKey({
         provider: step.provider,
         apiKey: key,
-        duringOnboarding,
         updateProvider,
         serviceHub,
       })

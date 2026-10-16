@@ -5,7 +5,10 @@
  *  - Holds the manifest in memory for synchronous access from React
  *    components and non-React modules.
  *  - Exposes loading status / last-fetch metadata for UI.
- *  - Bootstraps once when first imported.
+ *
+ * The store starts out holding the bundled snapshot, already initialized.
+ * Importing it performs no I/O; only a build with a registry override has
+ * anything to refresh, and `lib/registry-bootstrap.ts` starts that once.
  *
  * The store keeps the platform-neutral list. Use the
  * {@link useRecommendedModelsForPlatform} selector (or
@@ -15,6 +18,8 @@
 
 import { create } from 'zustand'
 import {
+  REGISTRY_URL,
+  bundledResult,
   filterRecommendationsForPlatform,
   getCachedManifest,
   getRecommendationsOrFallback,
@@ -24,7 +29,6 @@ import {
   type RegistryFetchResult,
   type RegistrySource,
 } from '@/services/recommended-models-registry'
-import { BASELINE_RECOMMENDED_MODELS } from '@/constants/models'
 import type { HardwareTier } from '@/lib/hardware-tier'
 
 export type RegistryStatus = 'idle' | 'loading' | 'success' | 'error'
@@ -45,48 +49,49 @@ type RegistryState = {
   refresh: (options?: FetchOptions) => Promise<void>
 }
 
-const seedRecommendations = (): {
-  recommendations: Recommendation[]
-  tiers: Partial<Record<HardwareTier, Recommendation[]>>
-} => {
-  const cached = getCachedManifest()
+/**
+ * First paint: a cached remote copy when this build has a registry override
+ * and one is on disk, otherwise the bundled snapshot. Without an override the
+ * bundled snapshot is the final answer, so the store starts initialized.
+ */
+const seedState = (): Pick<
+  RegistryState,
+  | 'recommendations'
+  | 'tiers'
+  | 'source'
+  | 'fetchedAt'
+  | 'manifestUpdatedAt'
+  | 'hasInitialized'
+> => {
+  const cached = REGISTRY_URL ? getCachedManifest() : null
   if (cached) {
     return {
       recommendations: cached.manifest.recommendations.slice(),
       // A cache entry written before the manifest gained its tier lists has
       // none; `selectTierRecommendations` falls back to the bundled ladder.
       tiers: { ...(cached.manifest.tiers ?? {}) },
+      source: 'cache',
+      fetchedAt: cached.fetchedAt,
+      manifestUpdatedAt: cached.manifest.updated_at,
+      hasInitialized: false,
     }
   }
+  const bundled = bundledResult()
   return {
-    recommendations: BASELINE_RECOMMENDED_MODELS.slice(),
-    tiers: {},
+    recommendations: bundled.recommendations,
+    tiers: bundled.tiers,
+    source: bundled.source,
+    fetchedAt: null,
+    manifestUpdatedAt: bundled.manifestUpdatedAt,
+    hasInitialized: REGISTRY_URL === null,
   }
 }
 
-const baselineFallback = (message: string): RegistryFetchResult => ({
-  recommendations: BASELINE_RECOMMENDED_MODELS.slice(),
-  tiers: {},
-  source: 'baseline',
-  fetchedAt: null,
-  manifestUpdatedAt: null,
-  error: message,
-})
-
-// Read once: `seedRecommendations` parses localStorage, and calling it per
-// field would also let the two lists come from different cache reads.
-const seed = seedRecommendations()
-
 export const useRecommendedModelsRegistryStore = create<RegistryState>()(
   (set) => ({
-    recommendations: seed.recommendations,
-    tiers: seed.tiers,
+    ...seedState(),
     status: 'idle',
-    source: getCachedManifest() ? 'cache' : 'baseline',
-    fetchedAt: getCachedManifest()?.fetchedAt ?? null,
-    manifestUpdatedAt: getCachedManifest()?.manifest.updated_at ?? null,
     error: null,
-    hasInitialized: false,
     refresh: async (options?: FetchOptions) => {
       set({ status: 'loading', error: null })
 
@@ -105,7 +110,7 @@ export const useRecommendedModelsRegistryStore = create<RegistryState>()(
           '[recommended-models-registry-store] refresh threw:',
           message
         )
-        result = baselineFallback(message)
+        result = bundledResult(message)
       }
 
       set({
@@ -156,20 +161,4 @@ export const ensureRecommendedModelsLoaded = async (): Promise<
   if (state.hasInitialized) return state.recommendations
   await state.refresh()
   return useRecommendedModelsRegistryStore.getState().recommendations
-}
-
-/**
- * Kick off the initial fetch in the background. Importing this module is
- * enough to start loading; tests can override or skip via mocking.
- */
-if (typeof window !== 'undefined') {
-  void useRecommendedModelsRegistryStore
-    .getState()
-    .refresh()
-    .catch((error) => {
-      console.warn(
-        '[recommended-models-registry-store] initial refresh failed:',
-        error
-      )
-    })
 }

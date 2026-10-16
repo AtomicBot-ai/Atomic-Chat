@@ -163,10 +163,9 @@ impl Drop for StreamInFlight {
 
 /// A stream that stays silent for the whole inactivity budget leaves the user
 /// with a turn that just stops, and was reported nowhere: the error only
-/// travelled back to the webview as a string. `log::error!` makes it a Sentry
-/// event carrying the app log tail; the message stays fixed so every stall
-/// groups into one issue, and the in-flight count goes out just before it as a
-/// breadcrumb.
+/// travelled back to the webview as a string. `log::error!` puts it in
+/// `app.log`; the message stays fixed so every stall reads the same, and the
+/// in-flight count is logged just before it.
 fn report_stalled_stream(message: &str) {
     log::warn!(
         "[stream] {} local streams in flight (this one included) when it stalled",
