@@ -258,7 +258,9 @@ export function FoundryLocalAccelerators() {
             className="border-b border-border/40 py-3 first:pt-0 last:border-none last:pb-0"
           >
             <CardItem
-              align="start"
+              // The status on the name's baseline, whatever the fonts: pinned to the top or centred,
+              // the smaller text sat off the name's letters (by the font's metrics, on Windows more).
+              className="items-baseline"
               title={LABELS[accelerator.execution_provider]}
               description={
                 reason ? (

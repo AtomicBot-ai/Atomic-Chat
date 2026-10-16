@@ -67,10 +67,24 @@ for (const language of ['en', 'ru']) {
           const gap = rows[i].querySelector('h1')!.getBoundingClientRect().top - rows[i - 1].getBoundingClientRect().bottom
           expect(gap, `${NAMES[i - 1]} → ${NAMES[i]}`).toBeGreaterThanOrEqual(8)
         }
-        for (const [i, row] of rows.entries()) {
-          const name = row.querySelector('h1')!.getBoundingClientRect()
-          const status = within(row).getByTestId('foundry-accelerator-status').getBoundingClientRect()
-          expect(Math.abs(status.top - name.top), NAMES[i]).toBeLessThanOrEqual(4)
+        // "Ready", "Not prepared", the percent line: on the name's baseline. Centred on the name's
+        // line, the smaller text still sat higher than the name's letters.
+        const baseline = (element: Element) => {
+          // A zero-size inline block's bottom edge rests on the baseline of the line it is in.
+          const marker = document.createElement('span')
+          marker.style.cssText = 'display:inline-block;width:0;height:0'
+          element.appendChild(marker)
+          const y = marker.getBoundingClientRect().bottom
+          marker.remove()
+          return y
+        }
+        const offsets = rows.map((row) => {
+          const name = row.querySelector('h1')!
+          const text = within(row).getByTestId('foundry-accelerator-status').querySelector('span')!
+          return Math.abs(baseline(text) - baseline(name))
+        })
+        for (const [i, offset] of offsets.entries()) {
+          expect(offset, `${NAMES[i]} (all: ${offsets.join(', ')})`).toBeLessThanOrEqual(1)
         }
       })
     })
