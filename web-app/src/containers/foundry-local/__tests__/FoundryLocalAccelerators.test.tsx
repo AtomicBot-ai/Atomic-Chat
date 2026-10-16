@@ -177,6 +177,105 @@ describe('FoundryLocalAccelerators', () => {
     )
   })
 
+  it('follows a prepare it did not start (the page was opened again while one ran)', async () => {
+    core.foundryLocalAccelerators.mockResolvedValue(answer([cuda(), webgpu()]))
+
+    render(<FoundryLocalAccelerators />)
+    await screen.findByTestId('foundry-accelerator-CUDAExecutionProvider')
+    await waitFor(() => expect(events.handlers.has(PREPARE_EVENT)).toBe(true))
+
+    act(() => {
+      events.handlers.get(PREPARE_EVENT)?.({
+        payload: { accelerator: 'CUDAExecutionProvider', stage: 'downloading', fraction: 0.3 },
+      })
+    })
+
+    expect(within(row('CUDAExecutionProvider')).getByText('providers:foundryLocal.accelerators.downloading {"percent":30}')).toBeInTheDocument()
+    // Nothing to start while the core prepares: a click would only be refused.
+    expect(screen.queryByRole('button', { name: 'providers:foundryLocal.accelerators.prepare' })).not.toBeInTheDocument()
+    expect(core.prepareFoundryLocalAccelerators).not.toHaveBeenCalled()
+  })
+
+  it('shows an accelerator ready as soon as the core reports it done, before the prepare answers', async () => {
+    core.foundryLocalAccelerators.mockResolvedValue(answer([openvino(), cuda()]))
+    core.prepareFoundryLocalAccelerators.mockReturnValue(new Promise(() => {}))
+
+    render(<FoundryLocalAccelerators />)
+    await screen.findByTestId('foundry-accelerator-OpenVINOExecutionProvider')
+    fireEvent.click(screen.getByRole('button', { name: 'providers:foundryLocal.accelerators.prepare' }))
+    await waitFor(() => expect(core.prepareFoundryLocalAccelerators).toHaveBeenCalled())
+
+    act(() => {
+      events.handlers.get(PREPARE_EVENT)?.({
+        payload: { accelerator: 'OpenVINOExecutionProvider', stage: 'done', fraction: null },
+      })
+    })
+
+    expect(within(row('OpenVINOExecutionProvider')).getByText('providers:foundryLocal.accelerators.ready')).toBeInTheDocument()
+    expect(within(row('CUDAExecutionProvider')).getByText('providers:foundryLocal.accelerators.preparing')).toBeInTheDocument()
+  })
+
+  it('shows the reason and a retry for an accelerator the core reports failed', async () => {
+    core.foundryLocalAccelerators.mockResolvedValue(answer([cuda(), webgpu()]))
+    core.prepareFoundryLocalAccelerators.mockReturnValue(new Promise(() => {}))
+
+    render(<FoundryLocalAccelerators />)
+    await screen.findByTestId('foundry-accelerator-CUDAExecutionProvider')
+    fireEvent.click(screen.getByRole('button', { name: 'providers:foundryLocal.accelerators.prepare' }))
+    await waitFor(() => expect(core.prepareFoundryLocalAccelerators).toHaveBeenCalled())
+
+    act(() => {
+      events.handlers.get(PREPARE_EVENT)?.({
+        payload: { accelerator: 'CUDAExecutionProvider', stage: 'failed', fraction: null, reason: 'connection reset' },
+      })
+    })
+
+    const cudaRow = row('CUDAExecutionProvider')
+    expect(within(cudaRow).getByText('connection reset')).toBeInTheDocument()
+    // WebGPU is still being prepared: the retry waits for that prepare to end.
+    expect(within(cudaRow).getByRole('button', { name: 'providers:foundryLocal.accelerators.retry' })).toBeDisabled()
+  })
+
+  it('follows the running prepare when its own is refused as busy, and reads the answer when it ends', async () => {
+    core.foundryLocalAccelerators
+      .mockResolvedValueOnce(answer([openvino(), cuda()]))
+      .mockResolvedValue(answer([openvino({ prepared: true }), cuda({ prepared: true })]))
+    core.prepareFoundryLocalAccelerators.mockRejectedValue({
+      code: 'ENGINE_INSTALL_IN_PROGRESS',
+      message: 'A prepare is running.',
+    })
+
+    render(<FoundryLocalAccelerators />)
+    await screen.findByTestId('foundry-accelerator-OpenVINOExecutionProvider')
+    fireEvent.click(screen.getByRole('button', { name: 'providers:foundryLocal.accelerators.prepare' }))
+
+    expect(await screen.findByText('providers:foundryLocal.accelerators.busy')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'providers:foundryLocal.accelerators.prepare' })).not.toBeInTheDocument()
+    expect(within(row('OpenVINOExecutionProvider')).getByText('providers:foundryLocal.accelerators.preparing')).toBeInTheDocument()
+    expect(within(row('CUDAExecutionProvider')).getByText('providers:foundryLocal.accelerators.preparing')).toBeInTheDocument()
+
+    act(() => {
+      events.handlers.get(PREPARE_EVENT)?.({
+        payload: { accelerator: 'CUDAExecutionProvider', stage: 'downloading', fraction: 0.5 },
+      })
+    })
+    expect(within(row('CUDAExecutionProvider')).getByText('providers:foundryLocal.accelerators.downloading {"percent":50}')).toBeInTheDocument()
+
+    act(() => {
+      events.handlers.get(PREPARE_EVENT)?.({
+        payload: { accelerator: 'CUDAExecutionProvider', stage: 'done', fraction: null },
+      })
+      events.handlers.get(PREPARE_EVENT)?.({
+        payload: { accelerator: 'OpenVINOExecutionProvider', stage: 'done', fraction: null },
+      })
+    })
+
+    await waitFor(() => expect(screen.queryByText('providers:foundryLocal.accelerators.busy')).not.toBeInTheDocument())
+    expect(core.foundryLocalAccelerators).toHaveBeenCalledTimes(2)
+    expect(within(row('OpenVINOExecutionProvider')).getByText('providers:foundryLocal.accelerators.ready')).toBeInTheDocument()
+    expect(within(row('CUDAExecutionProvider')).getByText('providers:foundryLocal.accelerators.ready')).toBeInTheDocument()
+  })
+
   it('says why when another prepare is already running', async () => {
     core.foundryLocalAccelerators.mockResolvedValue(answer([openvino()]))
     core.prepareFoundryLocalAccelerators.mockRejectedValue({
@@ -216,7 +315,10 @@ describe('FoundryLocalAccelerators', () => {
   it('lets the person try again when the progress events cannot be followed', async () => {
     core.foundryLocalAccelerators.mockResolvedValue(answer([openvino()]))
     const { listen } = await import('@tauri-apps/api/event')
-    vi.mocked(listen).mockRejectedValueOnce(new Error('event plugin not ready'))
+    // Once when the block opens, once more when Prepare tries to follow again.
+    vi.mocked(listen)
+      .mockRejectedValueOnce(new Error('event plugin not ready'))
+      .mockRejectedValueOnce(new Error('event plugin not ready'))
 
     render(<FoundryLocalAccelerators />)
     await screen.findByTestId('foundry-accelerator-OpenVINOExecutionProvider')

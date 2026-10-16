@@ -440,7 +440,7 @@
       "retry": "Retry",
       "prepare": "Prepare",
       "sizeWarning": "Preparing downloads from Microsoft: CUDA is up to 2 GB, WebGPU about 10 MB; NPU plugins are installed by Windows and can take a few minutes.",
-      "busy": "Accelerators are already being prepared. Wait for that to finish.",
+      "busy": "Accelerators are already being prepared; their progress shows above.",
       "prepareFailed": "Preparing the accelerators failed: {{message}}",
       "checkAgain": "Check again",
       "none": "Foundry Local found no accelerator here. CPU models still run.",
