@@ -414,7 +414,9 @@ describe('VideoViewer', () => {
     await act(async () => {
       await userEvent.click(await screen.findByTestId('video-play'))
     })
-    await screen.findByTestId('video-player')
+    // The URL let go on unmount is the one the player was playing.
+    const player = await screen.findByTestId('video-player')
+    expect(player.getAttribute('src')).toBe('blob:clip')
     unmount()
     expect(revoke).toHaveBeenCalledWith('blob:clip')
     URL.revokeObjectURL = originalRevoke
