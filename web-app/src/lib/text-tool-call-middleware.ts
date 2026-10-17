@@ -11,8 +11,11 @@ import { generateId, type LanguageModelMiddleware } from 'ai'
  * ran nothing. llama.cpp does this conversion server-side; here it happens on
  * the way in.
  *
- * Recognised: the XML form above (Qwen3.5, Qwen3-Coder) and the JSON form
- * `<tool_call>{"name": …, "arguments": {…}}</tool_call>` (Hermes, Qwen2.5).
+ * Recognised: the XML form above (Qwen3.5, Qwen3-Coder), the JSON form
+ * `<tool_call>{"name": …, "arguments": {…}}</tool_call>` (Hermes, Qwen2.5) and
+ * Gemma 4's `call:run_command{command:dir}` — its `<|tool_call>` markers and
+ * `<|"|>` string quotes are special tokens Foundry Local drops, so the values
+ * arrive bare and are cut at the next argument name the tool's schema knows.
  * Only names among the request's tools become calls; text that does not parse
  * is passed through unchanged, so nothing the model wrote is lost.
  */
@@ -28,6 +31,11 @@ type GenerateResult = Awaited<
 type ContentPart = GenerateResult['content'][number]
 
 const MARKERS = ['<function=', '<tool_call>'] as const
+
+/** The markers that open a call to one of these tools (Gemma's name the tool). */
+function markersFor(schemas: ToolSchemas): string[] {
+  return [...MARKERS, ...[...schemas.keys()].map((name) => `call:${name}{`)]
+}
 
 type ToolSchemas = Map<string, Record<string, unknown> | undefined>
 
@@ -45,8 +53,8 @@ function toolSchemas(params: CallOptions): ToolSchemas {
 }
 
 /** Where a marker starts in `text`, or -1. */
-function markerIndex(text: string): number {
-  const hits = MARKERS.map((marker) => text.indexOf(marker)).filter(
+function markerIndex(text: string, markers: readonly string[]): number {
+  const hits = markers.map((marker) => text.indexOf(marker)).filter(
     (index) => index >= 0
   )
   return hits.length > 0 ? Math.min(...hits) : -1
@@ -56,9 +64,9 @@ function markerIndex(text: string): number {
  * How many trailing characters could still grow into a marker (`<func` at the
  * end of a delta): they are held back until the next delta decides.
  */
-function heldSuffixLength(text: string): number {
+function heldSuffixLength(text: string, markers: readonly string[]): number {
   let held = 0
-  for (const marker of MARKERS) {
+  for (const marker of markers) {
     for (let length = Math.min(marker.length - 1, text.length); length > held; length--) {
       if (text.endsWith(marker.slice(0, length))) {
         held = length
@@ -116,6 +124,59 @@ function parseJsonCall(json: string, schemas: ToolSchemas): ParsedToolCall | nul
   }
 }
 
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/**
+ * Gemma 4's arguments, `key:value,key:value`, with the values unquoted: each
+ * value runs up to the comma before the next key the schema names, so commas
+ * and colons inside a command or a script stay in it.
+ */
+function parseGemmaArgs(
+  body: string,
+  properties: Record<string, unknown>
+): Record<string, unknown> {
+  const keys = Object.keys(properties)
+  if (keys.length === 0) return {}
+  const key = new RegExp(`(^|,\\s*)(${keys.map(escapeRegExp).join('|')}):`, 'g')
+  const found = [...body.matchAll(key)]
+  const args: Record<string, unknown> = {}
+  found.forEach((match, index) => {
+    const start = (match.index ?? 0) + match[0].length
+    const end = index + 1 < found.length ? (found[index + 1].index ?? body.length) : body.length
+    const value = trimFormatNewlines(
+      body.slice(start, end).replace(/^<\|"\|>/, '').replace(/<\|"\|>$/, '')
+    )
+    args[match[2]] = coerce(value, properties[match[2]])
+  })
+  return args
+}
+
+/** Gemma 4 calls (`call:name{…}`) to offered tools, and the text around them. */
+function parseGemmaCalls(
+  text: string,
+  schemas: ToolSchemas
+): { calls: ParsedToolCall[]; text: string } {
+  const starts = [...text.matchAll(/call:([A-Za-z0-9_.-]+)\{/g)].filter((match) =>
+    schemas.has(match[1])
+  )
+  if (starts.length === 0) return { calls: [], text }
+  const calls: ParsedToolCall[] = []
+  let rest = text.slice(0, starts[0].index)
+  starts.forEach((match, index) => {
+    const bodyStart = (match.index ?? 0) + match[0].length
+    const end = index + 1 < starts.length ? (starts[index + 1].index ?? text.length) : text.length
+    const segment = text.slice(bodyStart, end)
+    // The last `}` closes the call; a call the model never closed runs to the end.
+    const close = segment.lastIndexOf('}')
+    const body = close >= 0 ? segment.slice(0, close) : segment
+    const properties =
+      (schemas.get(match[1])?.properties as Record<string, unknown> | undefined) ?? {}
+    calls.push({ toolName: match[1], input: JSON.stringify(parseGemmaArgs(body, properties)) })
+    if (close >= 0) rest += segment.slice(close + 1)
+  })
+  return { calls, text: rest }
+}
+
 /**
  * Split text that starts at a marker into the calls it holds and the text
  * around them. A block that does not parse (unknown tool, broken JSON) stays
@@ -128,7 +189,7 @@ export function parseTextToolCalls(
   const calls: ParsedToolCall[] = []
   const block =
     /<tool_call>\s*(\{[\s\S]*?\})\s*<\/tool_call>|(?:<tool_call>\s*)?<function=([^>\s]+)>([\s\S]*?)(?:<\/function>|$)(?:\s*<\/tool_call>)?/g
-  const rest = text.replace(block, (whole, json, name, body) => {
+  const replaced = text.replace(block, (whole, json, name, body) => {
     const call =
       json !== undefined
         ? parseJsonCall(json, schemas)
@@ -137,7 +198,9 @@ export function parseTextToolCalls(
     calls.push(call)
     return ''
   })
-  return { calls, text: calls.length > 0 ? rest.trim() : text }
+  const gemma = parseGemmaCalls(replaced, schemas)
+  calls.push(...gemma.calls)
+  return { calls, text: calls.length > 0 ? gemma.text.trim() : text }
 }
 
 export function textToolCallMiddleware(): LanguageModelMiddleware {
@@ -148,10 +211,11 @@ export function textToolCallMiddleware(): LanguageModelMiddleware {
       const result = await doGenerate()
       const schemas = toolSchemas(params)
       if (schemas.size === 0) return result
+      const markers = markersFor(schemas)
       const content: ContentPart[] = []
       let found = false
       for (const part of result.content) {
-        if (part.type !== 'text' || markerIndex(part.text) < 0) {
+        if (part.type !== 'text' || markerIndex(part.text, markers) < 0) {
           content.push(part)
           continue
         }
@@ -176,6 +240,7 @@ export function textToolCallMiddleware(): LanguageModelMiddleware {
       const result = await doStream()
       const schemas = toolSchemas(params)
       if (schemas.size === 0) return result
+      const markers = markersFor(schemas)
 
       // Per text part: what is held back, whether a call has started, and
       // whether its `text-start` went out yet (it waits for real text, so a
@@ -274,14 +339,14 @@ export function textToolCallMiddleware(): LanguageModelMiddleware {
                 }
                 state.pending += chunk.delta
                 if (state.capturing) return
-                const at = markerIndex(state.pending)
+                const at = markerIndex(state.pending, markers)
                 if (at >= 0) {
                   emitText(state, chunk.id, state.pending.slice(0, at), controller)
                   state.pending = state.pending.slice(at)
                   state.capturing = true
                   return
                 }
-                const held = heldSuffixLength(state.pending)
+                const held = heldSuffixLength(state.pending, markers)
                 emitText(
                   state,
                   chunk.id,

@@ -9,6 +9,7 @@ pub mod downloads;
 #[cfg(feature = "e2e")]
 pub mod e2e;
 pub mod extensions;
+pub mod foundry_template;
 pub mod filesystem;
 pub mod http;
 pub mod logs;

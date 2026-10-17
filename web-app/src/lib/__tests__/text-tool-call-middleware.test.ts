@@ -209,3 +209,63 @@ describe('parseTextToolCalls', () => {
     expect(rest).toBe('')
   })
 })
+
+const RUN_SCRIPT = {
+  type: 'function',
+  name: 'run_script',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      language: { type: 'string' },
+      code: { type: 'string' },
+      timeout_seconds: { type: 'integer' },
+    },
+  },
+}
+
+describe('Gemma 4 calls through Foundry Local', () => {
+  /** What Foundry Local streamed for a Gemma 4 call: its markers and quotes are dropped tokens. */
+  const GEMMA_DELTAS = ['', 'call', ':', 'run', '_', 'command', '{', 'command', ':', 'dir C:\\temp', '}']
+
+  it('turns the streamed call:name{…} into one real call and no text', async () => {
+    const parts = await run(GEMMA_DELTAS)
+
+    expect(calls(parts)).toEqual([{ toolName: 'run_command', input: { command: 'dir C:\\temp' } }])
+    expect(text(parts)).toBe('')
+    expect(finish(parts)).toBe('tool-calls')
+  })
+
+  it('keeps commas, colons and braces inside a value, and types it by the schema', () => {
+    const schemas = new Map([
+      ['run_script', RUN_SCRIPT.inputSchema],
+      ['run_command', RUN_COMMAND.inputSchema],
+    ])
+    const { calls: parsed, text: rest } = parseTextToolCalls(
+      "Running it.\ncall:run_script{language:python,code:print('a, b: c')\nx = {1: 2},timeout_seconds:30}",
+      schemas
+    )
+
+    expect(parsed).toEqual([
+      {
+        toolName: 'run_script',
+        input: JSON.stringify({ language: 'python', code: "print('a, b: c')\nx = {1: 2}", timeout_seconds: 30 }),
+      },
+    ])
+    expect(rest).toBe('Running it.')
+  })
+
+  it('drops <|"|> quotes when they come through', () => {
+    const schemas = new Map([['run_command', RUN_COMMAND.inputSchema]])
+    const { calls: parsed } = parseTextToolCalls('call:run_command{command:<|"|>echo a,b<|"|>}', schemas)
+
+    expect(JSON.parse(parsed[0].input)).toEqual({ command: 'echo a,b' })
+  })
+
+  it('leaves a call to a tool it was not offered, and an ordinary "call:", as text', async () => {
+    const parts = await run(['Please call: me later. ', 'call:other_tool{x:1}'])
+
+    expect(calls(parts)).toEqual([])
+    expect(text(parts)).toBe('Please call: me later. call:other_tool{x:1}')
+    expect(finish(parts)).toBe('stop')
+  })
+})

@@ -41,6 +41,10 @@ function core(routes: Record<string, (body: unknown) => unknown>, yaml: Record<s
       return yaml[path]
     }
     if (command === 'atomic_core_status') return { attached: { instance_id: 'i', generation: 1 } }
+    if (command === 'foundry_local_repair_chat_template') {
+      calls.push({ method: 'REPAIR', path: String(args?.['modelId']), body: undefined })
+      return false
+    }
     if (command === 'atomic_core_call') {
       const call = { method: String(args?.['method']), path: String(args?.['path']), body: args?.['body'] }
       calls.push(call)
@@ -263,6 +267,8 @@ describe('the Foundry Local extension', () => {
       'POST /settings/foundry-local/import',
       'GET /settings/foundry-local',
       'POST /settings/foundry-local/acknowledge',
+      // The template is made to take unwrapped tools before the host reads it.
+      'REPAIR qwen3-4b-generic-gpu',
       'POST /models/foundry-local/qwen3-4b-generic-gpu/load',
     ])
   })
