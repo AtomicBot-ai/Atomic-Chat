@@ -3410,6 +3410,7 @@ const ChatInput = memo(function ChatInput({
                           >
                             <DropdownPlugins
                               initialMessage={initialMessage}
+                              projectId={projectId}
                               skills={IS_TAURI ? agentSkills : undefined}
                               skillsLoading={agentSkillsLoading}
                               onToggleSkill={handleAgentSkillToggle}
@@ -3460,7 +3461,10 @@ const ChatInput = memo(function ChatInput({
                       switches the Exa (or equivalent) MCP server; agent turns
                       read the same state as their per-turn web_search flag. */}
                   {(supportsTools || agentRouteActive) && (
-                    <WebSearchToggle initialMessage={initialMessage} />
+                    <WebSearchToggle
+                      initialMessage={initialMessage}
+                      projectId={projectId}
+                    />
                   )}
                   {/* Agent mode chip — the toolbar face of the global toggle,
                       beside the connectors button. Last in the cluster on

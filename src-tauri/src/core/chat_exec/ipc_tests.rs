@@ -4,6 +4,7 @@ use serde_json::{json, Value};
 
 use super::commands::*;
 use super::ChatExecState;
+use crate::core::secure_env::*;
 use crate::core::threads::commands::*;
 use crate::test_support::IpcTestHarness;
 
@@ -15,7 +16,9 @@ fn harness() -> IpcTestHarness {
                 chat_exec_status,
                 chat_exec_run,
                 chat_exec_cancel,
-                delete_thread
+                delete_thread,
+                secure_env_list,
+                secure_env_set
             ])
     })
 }
@@ -40,6 +43,75 @@ fn reports_what_this_machine_can_run_without_a_sandbox() {
             .contains(&json!("shell")),
         "{status}"
     );
+}
+
+/// No MXC on this OS: a secure project's command is refused, never run on
+/// the host, while a thread of an ordinary project still runs.
+#[cfg(unix)]
+#[test]
+fn a_secure_projects_command_does_not_run_without_the_sandbox() {
+    let harness = harness();
+    let project_folder = tempfile::TempDir::new().unwrap();
+    harness
+        .invoke::<Value>(
+            "secure_env_set",
+            json!({
+                "projectId": "secure-project",
+                "environment": {
+                    "folders": [{ "path": project_folder.path(), "canEdit": true }],
+                    "network": false,
+                },
+            }),
+        )
+        .unwrap();
+    let listed: Value = harness.invoke("secure_env_list", json!({})).unwrap();
+    assert_eq!(listed["secure-project"]["network"], false);
+
+    for (thread_id, project_id) in [
+        ("secure-thread", "secure-project"),
+        ("plain-thread", "other"),
+    ] {
+        let dir = harness.data_root().join("threads").join(thread_id);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("thread.json"),
+            json!({ "id": thread_id, "metadata": { "project": { "id": project_id } } }).to_string(),
+        )
+        .unwrap();
+    }
+
+    let refused = run(
+        &harness,
+        json!({
+            "callId": "call-secure",
+            "threadId": "secure-thread",
+            "kind": "command",
+            "source": "echo ran > ran.txt",
+        }),
+    )
+    .unwrap_err();
+    assert!(
+        refused.to_string().contains("secure environment"),
+        "{refused}"
+    );
+    assert!(!harness
+        .data_root()
+        .join("agent-workspace")
+        .join("chat")
+        .join("secure-thread")
+        .exists());
+
+    let plain = run(
+        &harness,
+        json!({
+            "callId": "call-plain",
+            "threadId": "plain-thread",
+            "kind": "command",
+            "source": "echo ran",
+        }),
+    )
+    .unwrap();
+    assert_eq!(plain["exitCode"], 0);
 }
 
 #[cfg(unix)]

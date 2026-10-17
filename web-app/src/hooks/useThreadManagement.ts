@@ -3,6 +3,7 @@ import { getServiceHub } from '@/hooks/useServiceHub'
 import { useThreads } from '@/hooks/useThreads'
 import type { ThreadFolder } from '@/services/projects/types'
 import { useEffect } from 'react'
+import { saveSecureEnvironment } from '@/hooks/useSecureEnvironments'
 
 type ThreadManagementState = {
   folders: ThreadFolder[]
@@ -14,6 +15,15 @@ type ThreadManagementState = {
   deleteFolderWithThreads: (id: string) => Promise<void>
   getFolderById: (id: string) => ThreadFolder | undefined
   getProjectById: (id: string) => Promise<ThreadFolder | undefined>
+}
+
+/** A deleted project leaves no policy behind (a no-op for an ordinary one). */
+async function forgetSecureEnvironment(projectId: string): Promise<void> {
+  try {
+    await saveSecureEnvironment(projectId, null)
+  } catch (error) {
+    console.warn('Could not remove the project\'s secure environment:', error)
+  }
 }
 
 export const useThreadManagementStore = create<ThreadManagementState>()((set, get) => ({
@@ -73,6 +83,7 @@ export const useThreadManagementStore = create<ThreadManagementState>()((set, ge
 
     const projectsService = getServiceHub().projects()
     await projectsService.deleteProject(id)
+    await forgetSecureEnvironment(id)
     const updatedProjects = await projectsService.getProjects()
     set({ folders: updatedProjects })
   },
@@ -98,6 +109,7 @@ export const useThreadManagementStore = create<ThreadManagementState>()((set, ge
     // Delete the project from storage
     const projectsService = serviceHub.projects()
     await projectsService.deleteProject(id)
+    await forgetSecureEnvironment(id)
 
     const updatedProjects = await projectsService.getProjects()
     set({ folders: updatedProjects })

@@ -18,6 +18,7 @@ pub mod notifications;
 pub(crate) mod process_env;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod process_reaper;
+pub mod secure_env;
 pub mod server;
 pub mod sessions;
 pub mod setup;

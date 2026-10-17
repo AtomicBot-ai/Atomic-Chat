@@ -935,6 +935,7 @@ mod tests {
                     .clone(),
             ),
             Some("search-fixture".into()),
+            None,
         )
         .await
     }

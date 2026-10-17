@@ -100,30 +100,11 @@ describe('chatExecTools', () => {
     expect(command).toContain('inside quotes write "$HOME/…"')
   })
 
-  it('names the Windows folders by full path and says the sandbox reaches them', () => {
-    const command = description(windowsSandboxed, 'run_command')
-
-    expect(command).toContain('Desktop: C:\\Users\\me\\OneDrive\\Desktop')
-    expect(command).toContain('only the chat folder and those user folders')
-  })
-
-  it('describes cmd and the sandbox when Windows runs it in MXC', () => {
+  it('names the Windows folders by full path and says an ordinary chat runs on the computer, even where MXC works', () => {
     const command = description(windowsSandboxed, 'run_command')
 
     expect(command).toContain('cmd.exe, not bash')
-    expect(command).toContain('Windows sandbox')
-    expect(command).toContain('cannot be read')
-  })
-
-  it('says a Windows run is on the computer itself when there is no sandbox', () => {
-    const command = description(
-      {
-        ...windowsSandboxed,
-        sandbox: { kind: 'none', reason: 'Windows too old' },
-      },
-      'run_command'
-    )
-
+    expect(command).toContain('Desktop: C:\\Users\\me\\OneDrive\\Desktop')
     expect(command).toContain("directly on the user's Windows computer")
     expect(command).not.toContain('Windows sandbox')
   })
@@ -146,6 +127,43 @@ describe('chatExecTools', () => {
       chatExecTools({ ...macStatus, languages: [] }).map((tool) => tool.name)
     ).toEqual(['run_command'])
     expect(chatExecTools({ ...macStatus, supported: false })).toEqual([])
+  })
+})
+
+describe('chatExecTools in a secure environment project', () => {
+  const secure = {
+    folders: [
+      { path: 'D:\\Work\\Reports', canEdit: true },
+      { path: 'D:\\Work\\Reference', canEdit: false },
+    ],
+    network: false,
+    allowedMcpServers: [],
+  }
+
+  it("names the project's folders instead of the user's, each with what it allows", () => {
+    for (const tool of chatExecTools(windowsSandboxed, secure)) {
+      expect(tool.description).toContain(
+        'D:\\Work\\Reports (can be changed); D:\\Work\\Reference (read-only)'
+      )
+      expect(tool.description).toContain('blocked on purpose')
+      expect(tool.description).toContain('There is no internet access.')
+      // The sandbox grants no folder enumeration, so `dir` cannot list them.
+      expect(tool.description).toContain('`dir` and `cd` fail even on these folders')
+      expect(tool.description).toContain('do @echo %~nxf')
+      expect(tool.description).not.toContain('OneDrive')
+      // Not even as "blocked": a project folder may live inside one of them.
+      expect(tool.description).not.toMatch(/Desktop|Documents|Downloads/)
+    }
+  })
+
+  it('says only the chat folder is reachable when the project has no folders', () => {
+    const [command] = chatExecTools(windowsSandboxed, {
+      folders: [],
+      network: true,
+      allowedMcpServers: [],
+    })
+    expect(command.description).toContain('it can reach only the chat folder.')
+    expect(command.description).not.toContain('internet')
   })
 })
 

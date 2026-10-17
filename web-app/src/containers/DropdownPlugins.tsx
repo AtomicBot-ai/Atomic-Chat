@@ -41,6 +41,12 @@ import { useMCPServerToggle } from '@/hooks/useMCPServerToggle'
 import { useMCPServers, type MCPServerConfig } from '@/hooks/useMCPServers'
 import { useThreads } from '@/hooks/useThreads'
 import { createToolKey, useToolAvailable } from '@/hooks/useToolAvailable'
+import {
+  connectorBlock,
+  useComposerSecureEnvironment,
+  type ConnectorBlock,
+} from '@/hooks/useSecureEnvironments'
+import { isWebSearchServer } from '@/lib/web-search'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn } from '@/lib/utils'
 import { formatTokenCount, type ServerToolCost } from '@/lib/tool-cost'
@@ -55,6 +61,8 @@ interface DropdownPluginsProps {
     activeConnectors: number
   ) => React.ReactNode
   initialMessage?: boolean
+  // A project page's composer: that project's secure policy applies.
+  projectId?: string
   onOpenChange?: (isOpen: boolean) => void
   /**
    * Installed skills, owned by the composer so the slash menu and this menu
@@ -133,6 +141,7 @@ function SectionHeader({
 export default memo(function DropdownPlugins({
   children,
   initialMessage = false,
+  projectId,
   onOpenChange,
   skills,
   skillsLoading = false,
@@ -279,10 +288,21 @@ export default memo(function DropdownPlugins({
     hasActiveSystemServer &&
     !agentModeEnabled
 
+  // A secure project keeps the connectors it does not list (and web search
+  // while its internet is off) out of its chats; the chat drops their tools.
+  const secure = useComposerSecureEnvironment(initialMessage, projectId)
+  const blockOf = (entry: ConnectorEntry): ConnectorBlock =>
+    connectorBlock(
+      secure,
+      entry.key,
+      Boolean(entry.config && isWebSearchServer(entry.key, entry.config))
+    )
+
   const activeConnectors = entries.filter((entry) => entry.active).length
   // Connectors whose tools actually ride this chat's requests.
   const sentConnectors = entries.filter(
-    (entry) => entry.active && !mutedServers.includes(entry.key)
+    (entry) =>
+      entry.active && !mutedServers.includes(entry.key) && !blockOf(entry)
   ).length
 
   const goToConnectors = () => {
@@ -301,6 +321,25 @@ export default memo(function DropdownPlugins({
 
   const renderServerSwitch = (entry: ConnectorEntry) => {
     const label = entry.connector?.name ?? entry.key
+    const block = blockOf(entry)
+    if (block) {
+      // Off and locked here; the span carries the reason, since a disabled
+      // switch gets no pointer events.
+      return (
+        <span
+          className="inline-flex"
+          title={t(
+            block === 'network'
+              ? 'common:secureEnvironmentBlock.webSearchOffline'
+              : 'common:secureEnvironmentBlock.notAllowed'
+          )}
+          data-testid={`connector-blocked-${entry.key}`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <Switch checked={false} disabled aria-label={label} />
+        </span>
+      )
+    }
     // A tools-only server has no stored config to flip, so it stays read-only.
     if (!entry.config) {
       return <Switch checked disabled aria-label={label} />
