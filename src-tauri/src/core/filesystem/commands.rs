@@ -525,7 +525,8 @@ pub fn normalize_backend_layout<R: Runtime>(
 // rfd native file dialog
 #[tauri::command]
 #[cfg_attr(feature = "e2e", allow(unreachable_code, unused_variables, unused_mut))]
-pub async fn open_dialog(
+pub async fn open_dialog<R: Runtime>(
+    window: tauri::Window<R>,
     options: Option<DialogOpenOptions>,
 ) -> Result<Option<serde_json::Value>, String> {
     // A native file dialog cannot be driven from a test and would sit on the
@@ -534,7 +535,10 @@ pub async fn open_dialog(
     #[cfg(feature = "e2e")]
     return Ok(crate::core::e2e::take_dialog_answer(&crate::core::e2e::data_root()));
 
-    let mut dialog = AsyncFileDialog::new();
+    // Owned by the calling window: on Windows an ownerless picker opens
+    // behind the app (it cannot take the foreground from a worker thread), so
+    // a click looked like it did nothing while the dialog waited out of sight.
+    let mut dialog = AsyncFileDialog::new().set_parent(&window);
 
     if let Some(opts) = options {
         // Set default path
@@ -578,12 +582,16 @@ pub async fn open_dialog(
 
 #[tauri::command]
 #[cfg_attr(feature = "e2e", allow(unreachable_code, unused_variables, unused_mut))]
-pub async fn save_dialog(options: Option<DialogOpenOptions>) -> Result<Option<String>, String> {
+pub async fn save_dialog<R: Runtime>(
+    window: tauri::Window<R>,
+    options: Option<DialogOpenOptions>,
+) -> Result<Option<String>, String> {
     #[cfg(feature = "e2e")]
     return Ok(crate::core::e2e::take_dialog_answer(&crate::core::e2e::data_root())
         .and_then(|answer| answer.as_str().map(str::to_string)));
 
-    let mut dialog = AsyncFileDialog::new();
+    // Owned by the calling window, like `open_dialog`.
+    let mut dialog = AsyncFileDialog::new().set_parent(&window);
 
     if let Some(opts) = options {
         // `default_path` may be a bare filename ("file.py") or a full path.

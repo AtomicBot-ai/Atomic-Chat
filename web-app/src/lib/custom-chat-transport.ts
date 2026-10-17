@@ -56,6 +56,11 @@ const stripSpecialTokensTransform = () =>
 import { useServiceStore } from '@/hooks/useServiceHub'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { SYSTEM_SERVER_KEYS } from '@/constants/mcp-connectors'
+import {
+  ensureSecureEnvironmentsLoaded,
+  secureEnvironmentForThread,
+} from '@/hooks/useSecureEnvironments'
+import type { SecureEnvironment } from '@/services/chat-exec/types'
 import { ModelFactory } from './model-factory'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { getSamplingParamsForThread } from '@/lib/samplingParams'
@@ -519,7 +524,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     hasDocuments: boolean,
     ragFeatureAvailable: boolean,
     modelSupportsTools: boolean,
-    chatExec: ChatExecStatus | null
+    chatExec: ChatExecStatus | null,
+    secure: SecureEnvironment | undefined
   ): string {
     const mcp = [...useAppState.getState().mcpToolNames].sort().join(',')
     const rag = [...useAppState.getState().ragToolNames].sort().join(',')
@@ -545,6 +551,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       // The run_command / run_script descriptions name the shell, the
       // languages and whether a sandbox is in use.
       chatExec ? JSON.stringify(chatExec) : '',
+      // A secure environment project changes their descriptions and can
+      // switch web search off.
+      secure ? JSON.stringify(secure) : '',
     ].join('|')
   }
 
@@ -587,10 +596,18 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // Commands and scripts (`run_command` / `run_script`) when the composer's
     // "Run commands" item is on and this machine can run them. The status is
     // probed once per session; useTools starts that early.
+    // A secure environment project's chat: its commands reach only the
+    // project's folders, and only inside MXC (the backend refuses anything
+    // else, so without MXC they are not offered at all).
+    await ensureSecureEnvironmentsLoaded()
+    const secure = secureEnvironmentForThread(this.threadId)
     const chatExecStatus =
       modelSupportsTools && useGeneralSetting.getState().chatExecEnabled
         ? await ensureChatExecStatus().then((status) =>
-            isChatExecOffered(status) ? status : null
+            isChatExecOffered(status) &&
+            (!secure || status.sandbox.kind === 'mxc')
+              ? status
+              : null
           )
         : null
 
@@ -599,7 +616,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       hasDocuments,
       ragFeatureAvailable,
       modelSupportsTools,
-      chatExecStatus
+      chatExecStatus,
+      secure
     )
     if (!force && this.toolsCacheValid && cacheKey === this.toolsCacheKey) {
       return
@@ -673,6 +691,15 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     const audibleMcpTools = mcpTools.filter((tool) => {
       if (muted.has(tool.server)) return false
       const config = searchConfigs[tool.server]
+      if (secure) {
+        // A secure project offers only the servers it lists (they run
+        // outside its sandbox; the backend refuses the rest), and with the
+        // network off no web search either.
+        if (!secure.allowedMcpServers.includes(tool.server)) return false
+        if (!secure.network && config && isWebSearchServer(tool.server, config)) {
+          return false
+        }
+      }
       // Turning the globe off takes effect before asynchronous discovery catches up.
       return (
         !config ||
@@ -682,7 +709,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     })
 
     // Built-in tools win a name clash: a call is routed by name.
-    const execTools = chatExecStatus ? chatExecTools(chatExecStatus) : []
+    const execTools = chatExecStatus
+      ? chatExecTools(chatExecStatus, secure)
+      : []
     this.tools = buildToolsRecord(
       ragTools,
       [

@@ -66,6 +66,26 @@ describe('executeChatToolCalls', () => {
     ])
   })
 
+  it('tells the MCP call which thread it is for (a secure project restricts its servers)', async () => {
+    const callMcpTool = vi.fn(async () => ({
+      content: [{ type: 'text', text: 'result' }],
+    }))
+
+    await executeChatToolCalls({
+      ...baseOptions(),
+      toolCalls: [calls[0]],
+      signal: new AbortController().signal,
+      callMcpTool,
+      addToolOutput: vi.fn(),
+    })
+
+    expect(callMcpTool).toHaveBeenCalledWith({
+      toolName: 'search',
+      arguments: { query: 'alpha' },
+      threadId: 'thread-1',
+    })
+  })
+
   it('stops before the next tool when aborted after adding output', async () => {
     const controller = new AbortController()
     const completedToolCalls: string[] = []

@@ -80,6 +80,7 @@ import {
   managedRequestBody,
 } from '@/lib/managed-engine/request'
 import { foundryLocalRequestBody } from '@/lib/foundry-local/request'
+import { textToolCallMiddleware } from '@/lib/text-tool-call-middleware'
 
 /**
  * Inactivity budget (seconds) handed to `stream_local_http` on this generic
@@ -1303,10 +1304,16 @@ export class ModelFactory {
 
     return wrapLanguageModel({
       model,
-      middleware: extractReasoningMiddleware({
-        tagName: 'think',
-        separator: '\n',
-      }),
+      // Foundry Local streams a model's tool call back as text and never
+      // fills `tool_calls`; the outer middleware turns it into a real call
+      // once the inner one has taken `<think>` out.
+      middleware: [
+        textToolCallMiddleware(),
+        extractReasoningMiddleware({
+          tagName: 'think',
+          separator: '\n',
+        }),
+      ],
     })
   }
 

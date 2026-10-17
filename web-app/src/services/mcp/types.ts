@@ -35,12 +35,19 @@ export interface MCPService {
   getToolsWithStatus(): Promise<MCPToolsResponse>
   getConnectedServers(): Promise<string[]>
   getMCPServerStatuses(): Promise<MCPServerStatus[]>
-  callTool(args: { toolName: string; serverName?: string; arguments: object }): Promise<MCPToolCallResult>
+  /** `threadId`: the chat calling, so a secure project's allowlist applies. */
+  callTool(args: {
+    toolName: string
+    serverName?: string
+    arguments: object
+    threadId?: string
+  }): Promise<MCPToolCallResult>
   callToolWithCancellation(args: {
     toolName: string
     serverName?: string
     arguments: object
     cancellationToken?: string
+    threadId?: string
   }): ToolCallWithCancellationResult
   cancelToolCall(cancellationToken: string): Promise<void>
 

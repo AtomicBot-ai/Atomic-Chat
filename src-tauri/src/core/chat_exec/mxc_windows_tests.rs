@@ -33,7 +33,7 @@ fn wxc_exec() -> PathBuf {
     path
 }
 
-fn policy_for(workdir: &Path, user_folders: &[PathBuf], command: &str, timeout_ms: u64) -> String {
+fn policy_for(workdir: &Path, folders: &[PathBuf], command: &str, timeout_ms: u64) -> String {
     let cmd = system_root().join("System32").join("cmd.exe");
     let command_line = format!(
         "{} {}",
@@ -46,10 +46,11 @@ fn policy_for(workdir: &Path, user_folders: &[PathBuf], command: &str, timeout_m
         container_id: &container_id,
         command_line: &command_line,
         workdir,
-        user_folders,
+        writable_folders: folders,
         env: &env,
         readonly_paths: &[system_root()],
         timeout_ms,
+        network: true,
     }))
     .unwrap()
 }
@@ -60,13 +61,13 @@ async fn run_sandboxed(workdir: &Path, command: &str, timeout_ms: u64) -> RunOut
 
 async fn run_sandboxed_with(
     workdir: &Path,
-    user_folders: &[PathBuf],
+    folders: &[PathBuf],
     command: &str,
     timeout_ms: u64,
 ) -> RunOutput {
     let launch = executor_launch(
         &wxc_exec(),
-        policy_for(workdir, user_folders, command, timeout_ms),
+        policy_for(workdir, folders, command, timeout_ms),
     );
     runner::run(
         &launch,
@@ -184,10 +185,10 @@ async fn a_command_reaches_the_internet() {
     assert!(output.stdout.contains("reached"), "{}", explain(&output));
 }
 
-/// Stands in for the user's Desktop: a folder granted beside the chat folder.
+/// Stands in for a secure project's editable folder, granted beside the chat folder.
 #[tokio::test]
 #[ignore]
-async fn a_command_writes_into_a_granted_user_folder() {
+async fn a_command_writes_into_a_granted_project_folder() {
     let scratch = tempfile::tempdir().unwrap();
     let workdir = scratch.path().join("chat");
     let desktop = scratch.path().join("Desktop");
@@ -209,8 +210,9 @@ async fn a_command_writes_into_a_granted_user_folder() {
     assert!(desktop.join("note.txt").is_file(), "{}", explain(&output));
 }
 
-/// `dir` queries volume/ancestor metadata before listing the granted folder.
-/// Enumeration must fix that without allowing reads or writes next to it.
+/// A granted folder lists with `for` (the policy grants no enumeration, so
+/// `dir` cannot), and neither the folder around it nor a file next to it can
+/// be listed, read or written.
 #[tokio::test]
 #[ignore]
 async fn lists_a_granted_folder_without_opening_its_neighbors() {
@@ -228,9 +230,9 @@ async fn lists_a_granted_folder_without_opening_its_neighbors() {
         &workdir,
         &[downloads.clone()],
         &format!(
-            "dir \"{}\" && type \"{}\\sentinel.txt\"",
-            downloads.display(),
-            downloads.display()
+            "for %f in (\"{folder}\\*\") do @echo %~nxf & type \"{folder}\\sentinel.txt\" & for %f in (\"{around}\\*\") do @echo NEIGHBOR-%~nxf",
+            folder = downloads.display(),
+            around = scratch.path().display()
         ),
         20_000,
     )
@@ -246,6 +248,7 @@ async fn lists_a_granted_folder_without_opening_its_neighbors() {
         "{}",
         explain(&listed)
     );
+    assert!(!listed.stdout.contains("NEIGHBOR-"), "{}", explain(&listed));
     assert!(!listed.stdout.contains('\u{fffd}'), "{}", explain(&listed));
 
     let denied = run_sandboxed_with(

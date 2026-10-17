@@ -103,6 +103,7 @@ export function NavMain() {
       to: '/project/$projectId',
       params: { projectId: project.id },
     })
+    return project.id
   }
 
   return (

@@ -507,7 +507,25 @@
     "update": "Update",
     "searchProjects": "Search projects...",
     "noProjectsFound": "No projects found",
-    "tryDifferentSearch": "Try a different search term"
+    "tryDifferentSearch": "Try a different search term",
+    "secureEnvironment": {
+      "title": "Secure environment",
+      "description": "Commands and scripts in this project's chats can reach only the folders below and their own chat folder. Everything else on this computer is blocked by the Windows sandbox.",
+      "unavailable": "Not available on this computer: {{reason}}",
+      "unknownReason": "the Windows sandbox did not start",
+      "noFolders": "No folders yet: commands can use only their own chat folder.",
+      "addFolder": "Add folder",
+      "removeFolder": "Remove folder",
+      "canEdit": "Can change",
+      "network": "Internet access",
+      "networkDescription": "Lets commands download packages and reach websites. When off, commands cannot reach the internet and web search is turned off in this project's chats.",
+      "saveError": "Could not save the secure environment: {{error}}",
+      "createdWithoutIt": "Project \"{{projectName}}\" was created, but its secure environment could not be saved, so it is an ordinary project for now: {{error}}",
+      "connectors": "Connectors",
+      "connectorsDescription": "Off in this project's chats unless ticked. Connectors run outside the sandbox with your own access to files and the internet, so allow only those you trust with this project.",
+      "needsNetwork": "needs internet access",
+      "serverRemoved": "removed"
+    }
   },
   "attachmentsIngestion": {
     "title": "Choose how to ingest attachments",
@@ -777,5 +795,9 @@
     "engineReadyTitle": "Engine installed",
     "chatEngineReadyBody": "llama.cpp is ready to run models.",
     "mediaEngineReadyBody": "The image and video engine is ready."
+  },
+  "secureEnvironmentBlock": {
+    "notAllowed": "Not allowed in this secure project. Allow it in the project's settings under Connectors.",
+    "webSearchOffline": "This secure project has internet access turned off."
   }
 }
