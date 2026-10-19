@@ -381,8 +381,8 @@ Existing evidence:
   the pages' `install` error action starts the install the same way.
   `ImageSetupCard.layout.test.tsx` (browser layout suite) holds the button's
   width and the card's height through idle, installing and failed.
-- `NavMain.test.tsx` checks the Images row sits after Models and disappears
-  without the media-generation feature.
+- `LeftSidebar.test.tsx` checks the Images and Video rows in the Workspace
+  sidebar and that they disappear without the media-generation feature.
 - The endpoint's Local API Server comes up for an image model with no chat
   model (ADR 2026-09-25): `localApiServerControl.test.ts` reads a loaded or
   loading model as resident and raises a stopped server only with auto-start
@@ -485,7 +485,7 @@ Existing evidence:
   and clears.
 - `ImageSetupCard.test.tsx`, `ImageSetupDialog.test.tsx`,
   `ImageGenerationPlaceholder.test.tsx`, `ImageModelPicker.test.tsx`,
-  `ImageModelSelector.test.tsx`, `NavMain.test.tsx` and `media.test.tsx`
+  `ImageModelSelector.test.tsx`, `LeftSidebar.test.tsx` and `media.test.tsx`
   cover the shared components' video variants: the card's copy and install
   label, the dialog listing the Video page's models, the video
   progress words, a resident video model kept off the Images picker, the

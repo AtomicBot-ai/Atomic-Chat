@@ -301,9 +301,11 @@ const Sidebar = React.forwardRef<
         />
         <div
           className={cn(
-            'duration-200 fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] ease-linear md:flex',
+            // The app shell can reserve a title bar row above the panel and a
+            // navigation rail to its left; both default to 0 outside it.
+            'duration-200 fixed bottom-0 top-[var(--window-titlebar-height,0px)] z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] ease-linear md:flex',
             side === 'left'
-              ? 'left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]'
+              ? 'left-[var(--navigation-rail-width,0px)] group-data-[collapsible=offcanvas]:left-[calc(var(--navigation-rail-width,0px)-var(--sidebar-width))]'
               : 'right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]',
             // Adjust the padding for floating and inset variants.
             variant === 'floating' || variant === 'inset'
@@ -369,6 +371,9 @@ const SidebarRail = React.forwardRef<
 
   const { dragRef, handleMouseDown } = useSidebarResize({
     direction: 'right',
+    // The panel no longer starts at the window edge (the navigation rail sits
+    // to its left), so width follows the drag delta rather than clientX.
+    isNested: true,
     enableDrag,
     onResize: setWidth,
     onToggle: toggleSidebar,

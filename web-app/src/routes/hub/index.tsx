@@ -114,6 +114,11 @@ type SearchParams = {
   model?: string
   /** Absent means Chat: every link into the Hub from a chat asks for one. */
   category?: HubCategory
+  /**
+   * "Installed on this device" in the Text category. In the URL so the
+   * sidebar's Downloads row can open it and stay highlighted while it is on.
+   */
+  installed?: boolean
 }
 
 /** A row in the left column, plus the provenance the row needs to render. */
@@ -177,6 +182,8 @@ export const Route = createFileRoute(route.hub.index as any)({
     q: typeof search.q === 'string' ? search.q : undefined,
     model: typeof search.model === 'string' ? search.model : undefined,
     category: isHubCategory(search.category) ? search.category : undefined,
+    installed:
+      search.installed === true || search.installed === 'true' ? true : undefined,
   }),
 })
 
@@ -411,6 +418,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     model: modelSearchParam,
     repo: repoSearchParam,
     engine: engineSearchParam,
+    installed: installedSearchParam,
   } = Route.useSearch()
 
   const catalogSnapshot = useModelCatalogStore((s) => s.catalog)
@@ -480,7 +488,20 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     () => normalizeHubFilters(storedFilters, availableFormats),
     [storedFilters, availableFormats]
   )
-  const [showOnlyDownloaded, setShowOnlyDownloaded] = useState(false)
+  const showOnlyDownloaded = installedSearchParam === true
+  const setShowOnlyDownloaded = useCallback(
+    (checked: boolean) => {
+      void navigate({
+        to: route.hub.index,
+        search: (prev: SearchParams) => ({
+          ...prev,
+          installed: checked || undefined,
+        }),
+        replace: true,
+      })
+    },
+    [navigate]
+  )
   const [isSearching, setIsSearching] = useState(false)
   const [hfSearching, setHfSearching] = useState(false)
   const [huggingFaceRepo, setHuggingFaceRepo] = useState<CatalogModel | null>(

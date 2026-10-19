@@ -2,6 +2,8 @@ import { cn } from '@/lib/utils'
 import { ReactNode } from 'react'
 
 type CardProps = {
+  /** DOM id, so a link can scroll to the card (`/launch#<agent-id>`). */
+  id?: string
   title?: string
   children?: ReactNode
   header?: ReactNode
@@ -71,9 +73,10 @@ export function CardItem({
   )
 }
 
-export function Card({ title, children, header, className }: CardProps) {
+export function Card({ id, title, children, header, className }: CardProps) {
   return (
     <div
+      id={id}
       className={cn(
         'p-4 text-muted-foreground w-full',
         !className && 'bg-card rounded-lg',

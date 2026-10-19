@@ -26,16 +26,28 @@ import { cn } from '@/lib/utils'
 import { useMediaCatalog } from '@/stores/media-catalog-store'
 import { isKnownProvider, useProviderRegistryStore } from '@/stores/provider-registry-store'
 
+type CloudSearch = {
+  provider?: string
+  /**
+   * `custom` opens the "Custom (OpenAI-compatible)" dialog. In the URL so the
+   * sidebar's Custom Endpoint row can open it and stay highlighted meanwhile.
+   */
+  add?: 'custom'
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.cloud.index as any)({
   component: CloudPage,
-  validateSearch: (search: Record<string, unknown>): { provider?: string } => {
+  validateSearch: (search: Record<string, unknown>): CloudSearch => {
     // Absent must stay absent — `String(undefined)` would put the literal
     // "undefined" in the URL and then fail to match any provider.
     const provider = search?.provider
-    return typeof provider === 'string' && provider.length > 0
-      ? { provider }
-      : {}
+    return {
+      ...(typeof provider === 'string' && provider.length > 0
+        ? { provider }
+        : {}),
+      ...(search?.add === 'custom' ? { add: 'custom' as const } : {}),
+    }
   },
 })
 
@@ -54,13 +66,26 @@ export function CloudPage() {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
   const navigate = useNavigate()
-  const search = useSearch({ from: Route.id }) as { provider?: string }
+  const search = useSearch({ from: Route.id }) as CloudSearch
   const { providers, addProvider, updateProvider, setProviders } =
     useModelProvider()
 
   const subscription = useChatGptAuth('settings')
 
-  const [customOpen, setCustomOpen] = useState(false)
+  const customOpen = search.add === 'custom'
+  const setCustomOpen = useCallback(
+    (open: boolean) => {
+      navigate({
+        to: route.cloud.index,
+        search: (prev: CloudSearch) => ({
+          ...prev,
+          add: open ? ('custom' as const) : undefined,
+        }),
+        replace: true,
+      })
+    },
+    [navigate]
+  )
   const [refreshing, setRefreshing] = useState(false)
 
   // The provider catalog is a cloud concern, so its refresh moved here from
@@ -116,9 +141,19 @@ export function CloudPage() {
   // Canonicalise the implicit “first connected provider” choice into the URL.
   // Otherwise disconnecting it changes `isProviderConnected`, recomputes the
   // fallback and unexpectedly jumps the page to OpenRouter.
+  // An open Custom dialog (`add`) stays open across the pin.
   useEffect(() => {
-    if (!search.provider && selected) selectProvider(selected.provider)
-  }, [search.provider, selectProvider, selected])
+    if (!search.provider && selected) {
+      navigate({
+        to: route.cloud.index,
+        search: {
+          provider: selected.provider,
+          ...(search.add ? { add: search.add } : {}),
+        },
+        replace: true,
+      })
+    }
+  }, [navigate, search.provider, search.add, selected])
 
   const createProvider = useCallback(
     (name: string) => {

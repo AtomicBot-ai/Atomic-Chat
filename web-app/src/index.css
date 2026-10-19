@@ -289,3 +289,19 @@
     border: 0 !important;
   }
 }
+/* The window title bar is its own row above the navigation rail and the
+ * contextual sidebar, so every full-height surface inside the shell is the
+ * viewport minus that row. Pages size themselves with `h-svh`; remapping it
+ * here keeps them from running under the title bar without touching each one. */
+.app-shell {
+  padding-top: var(--window-titlebar-height);
+  height: 100svh;
+  overflow: hidden;
+  --app-content-height: calc(100svh - var(--window-titlebar-height));
+}
+.app-shell .h-svh {
+  height: var(--app-content-height);
+}
+.app-shell .min-h-svh {
+  min-height: var(--app-content-height);
+}

@@ -13,6 +13,7 @@ import { createServer, type Server } from 'node:https'
 import { join } from 'node:path'
 import { coreRequest } from './core.js'
 import { CORE_REPO } from './fixtures.js'
+import { openSection } from './navigation.js'
 import { listProcesses } from './platform.js'
 import type { Profile } from './profile.js'
 import type { Session } from './session.js'
@@ -160,12 +161,10 @@ export async function lanAddresses(dataFolder: string): Promise<string[]> {
   return ((await res.json()) as { addresses: string[] }).addresses
 }
 
-/** Opens Remote & LAN on the API screen the way a user does. */
+/** Opens Remote & LAN on the API screen (Server's overview) the way a user does. */
 export async function openRemoteLan(session: Session): Promise<void> {
   const browser = session.app.browser
-  const entry = browser.$('//a[normalize-space(.)="API"]')
-  await entry.waitForClickable({ timeout: 30_000 })
-  await entry.click()
+  await openSection(browser, 'server')
   await browser.$('section[aria-label="Remote access"]').waitForDisplayed({ timeout: 30_000 })
 }
 

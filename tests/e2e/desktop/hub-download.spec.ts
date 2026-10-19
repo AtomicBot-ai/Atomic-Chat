@@ -16,6 +16,7 @@ import { coreSessions, pageShows, send, waitForChat } from '../harness/chat.js'
 import { installFakeBackend, startHubFixture, type HubFixture } from '../harness/fixtures.js'
 import { CAN_RUN_FAKE_BACKEND } from '../harness/platform.js'
 import { endSession, startSession, withArtifacts, type Session } from '../harness/session.js'
+import { openSection } from '../harness/navigation.js'
 
 const MODEL_NAME = 'e2e/hub-fixture-GGUF'
 const QUANT_ID = 'e2e/hub-fixture-Q4_K_M'
@@ -52,7 +53,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('downloading a model from the Hub', () =>
       // No model yet, so the app opens on onboarding; the Hub is the way in here.
       await browser.$('button=Skip').click()
       await waitForChat(session)
-      await browser.$('//*[normalize-space(text())="Model Hub"]').click()
+      await openSection(browser, 'models')
 
       // The landing page shows the pick the fixture published.
       const card = browser.$(`//*[normalize-space(text())="${TITLE}"]`)
@@ -143,7 +144,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('cancelling a Hub download', () => {
 
       await browser.$('button=Skip').click()
       await waitForChat(session)
-      await browser.$('//*[normalize-space(text())="Model Hub"]').click()
+      await openSection(browser, 'models')
       const card = browser.$(`//*[normalize-space(text())="${TITLE}"]`)
       await card.waitForDisplayed({ timeout: 60_000 })
       await card.click()
@@ -207,7 +208,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('pausing a Hub download', () => {
 
       await browser.$('button=Skip').click()
       await waitForChat(session)
-      await browser.$('//*[normalize-space(text())="Model Hub"]').click()
+      await openSection(browser, 'models')
       const card = browser.$(`//*[normalize-space(text())="${TITLE}"]`)
       await card.waitForDisplayed({ timeout: 60_000 })
       await card.click()
@@ -260,7 +261,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a Hub download the server refuses', () =
     const browser = session.app.browser
     const card = browser.$(`//*[normalize-space(text())="${REFUSED_TITLE}"]`)
     if (!(await card.isDisplayed().catch(() => false))) {
-      await browser.$('//*[normalize-space(text())="Model Hub"]').click()
+      await openSection(browser, 'models')
       await card.waitForDisplayed({ timeout: 60_000 })
     }
     await card.click()
@@ -362,7 +363,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a Hub download that has to retry', () =>
       const dataFolder = session.profile.dataFolder
       await browser.$('button=Skip').click()
       await waitForChat(session)
-      await browser.$('//*[normalize-space(text())="Model Hub"]').click()
+      await openSection(browser, 'models')
       const card = browser.$(`//*[normalize-space(text())="${TITLE}"]`)
       await card.waitForDisplayed({ timeout: 60_000 })
       await card.click()

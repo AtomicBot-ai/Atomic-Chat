@@ -1,5 +1,5 @@
 /**
- * The image endpoint for outside clients: Settings → Media shows where it is
+ * The image endpoint for outside clients: Models Hub → Media shows where it is
  * and how to call it; an OpenAI-style client gets a picture through the local
  * API with the same key gate as chat; and the picture it made shows up in the
  * app's gallery without a restart. An image-only user — no chat model at all —
@@ -24,6 +24,7 @@ import {
 } from '../harness/images.js'
 import { CAN_RUN_FAKE_BACKEND } from '../harness/platform.js'
 import { endSession, startSession, withArtifacts, type Session } from '../harness/session.js'
+import { openSection } from '../harness/navigation.js'
 
 const LOCAL_API_KEY = 'e2e-images-api-key'
 
@@ -52,8 +53,8 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('the image endpoint for outside clients',
       const dataFolder = session.profile.dataFolder
       const endpoint = `http://127.0.0.1:${session.apiPort}/v1/images/generations`
 
-      // Settings → Media names the endpoint and gives a curl for it.
-      await browser.$('//*[normalize-space(text())="Settings"]').click()
+      // Models Hub → Media names the endpoint and gives a curl for it.
+      await openSection(browser, 'models')
       const media = browser.$('//a[normalize-space(.)="Media"]')
       await media.waitForClickable({ timeout: 30_000 })
       await media.click()

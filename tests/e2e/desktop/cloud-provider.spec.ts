@@ -15,6 +15,7 @@ import { coreRequest } from '../harness/core.js'
 import { startFakeCloud, type FakeCloud } from '../harness/fixtures.js'
 import { CAN_RUN_FAKE_BACKEND } from '../harness/platform.js'
 import { endSession, startSession, withArtifacts, type Session } from '../harness/session.js'
+import { openSection, openSidebarRow, startNewChat } from '../harness/navigation.js'
 
 const PROVIDER_NAME = 'e2e-cloud'
 const MODEL = 'e2e-cloud-model'
@@ -52,7 +53,8 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a cloud provider added in the UI', () =>
       await browser.$('button=Skip').click()
       await waitForChat(session)
 
-      await browser.$('//*[normalize-space(text())="Cloud"]').click()
+      await openSection(browser, 'models')
+      await openSidebarRow(browser, 'Cloud providers')
       await chooseFromMenu(session, '[data-test-id="cloud-provider-select"]', 'Custom (OpenAI-compatible)')
       await browser.$('input[placeholder="Enter name for provider"]').setValue(PROVIDER_NAME)
       await browser.$('button=Create').click()
@@ -80,7 +82,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a cloud provider added in the UI', () =>
       await browser.$('button=Add Model').click()
       await pageShows(session, '1 model', 15_000)
 
-      await browser.$('//*[normalize-space(text())="New Chat"]').click()
+      await startNewChat(browser)
       await waitForChat(session)
       await pickModel(session, MODEL)
       await send(session, 'hello, cloud')

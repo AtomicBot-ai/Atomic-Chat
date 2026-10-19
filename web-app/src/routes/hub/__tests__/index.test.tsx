@@ -141,7 +141,25 @@ vi.mock('@/containers/hub/ModelDetailPanel', () => ({
 }))
 
 vi.mock('@/containers/hub/HubFilters', () => ({
-  HubFilters: () => <div data-testid="hub-filters" />,
+  HubFilters: ({
+    showOnlyDownloaded,
+    onShowOnlyDownloadedChange,
+  }: {
+    showOnlyDownloaded?: boolean
+    onShowOnlyDownloadedChange?: (checked: boolean) => void
+  }) => (
+    <div
+      data-testid="hub-filters"
+      data-installed={String(Boolean(showOnlyDownloaded))}
+    >
+      <button
+        type="button"
+        onClick={() => onShowOnlyDownloadedChange?.(!showOnlyDownloaded)}
+      >
+        toggle-installed
+      </button>
+    </div>
+  ),
 }))
 
 vi.mock('@/containers/hub/DecisionHub', () => ({
@@ -625,6 +643,43 @@ describe('/hub route', () => {
       search: (prev: Record<string, unknown>) => Record<string, unknown>
     }
     expect(call.search({})).toEqual({ model: 'Qwen/Qwen3.5-4B-GGUF' })
+  })
+
+  // The sidebar's Downloads row links to `/hub?installed=true`.
+  it('reads the installed-only filter from the URL', () => {
+    mocks.search = { installed: true }
+    render(<HubPage />)
+
+    expect(screen.getByTestId('hub-filters')).toHaveAttribute(
+      'data-installed',
+      'true'
+    )
+  })
+
+  it('writes the installed-only filter into the URL', async () => {
+    const user = userEvent.setup()
+    render(<HubPage />)
+
+    await user.click(screen.getByText('toggle-installed'))
+
+    const call = mocks.navigate.mock.calls.at(-1)?.[0] as {
+      to: string
+      replace: boolean
+      search: (prev: Record<string, unknown>) => Record<string, unknown>
+    }
+    expect(call).toMatchObject({ to: '/hub/', replace: true })
+    expect(call.search({ model: 'x' })).toEqual({ model: 'x', installed: true })
+  })
+
+  it('accepts the installed flag in either URL spelling', () => {
+    const validate = (
+      Route as unknown as {
+        validateSearch: (s: Record<string, unknown>) => Record<string, unknown>
+      }
+    ).validateSearch
+    expect(validate({ installed: true }).installed).toBe(true)
+    expect(validate({ installed: 'true' }).installed).toBe(true)
+    expect(validate({ installed: 'no' }).installed).toBeUndefined()
   })
 
   it('opens the detail panel straight away for a deep link', () => {

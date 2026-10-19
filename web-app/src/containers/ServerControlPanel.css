@@ -1,0 +1,155 @@
+/* The Server sidebar's control surface: one tinted panel holding Start/Stop,
+ * Restart and the engine/model shortcuts, with a reduced-motion fallback. */
+.desktop-server-control {
+  --server-accent: #28786c;
+  --server-soft: #28786c14;
+  margin: 0 10px 12px;
+  padding: 12px;
+  border: 1px solid #28786c30;
+  border-radius: 14px;
+  background: linear-gradient(145deg, #28786c16, #28786c08);
+  flex-shrink: 0;
+}
+.dark .desktop-server-control {
+  --server-accent: #a0e7db;
+  --server-soft: #8de0d21a;
+  border-color: #8de0d22b;
+  background: linear-gradient(145deg, #29403d, #22302e);
+}
+.dsc-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.dsc-actions button {
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: 999px;
+  font-size: 13px;
+  cursor: pointer;
+  transition:
+    background 180ms ease,
+    color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+.dsc-actions button:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+.dsc-actions button:active:not(:disabled) {
+  transform: scale(0.96);
+}
+.dsc-actions button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.dsc-actions button.dsc-restarting {
+  opacity: 1;
+  cursor: progress;
+}
+.dsc-actions button:focus-visible,
+.dsc-detail:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.dsc-power {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  border: 1px solid transparent;
+  overflow: hidden;
+}
+.dsc-start {
+  background: #b8e5da;
+  color: #183d34;
+  animation: dsc-attention 1.6s ease-in-out 2;
+}
+.dsc-stop,
+.dsc-restart {
+  color: var(--server-accent);
+  background: var(--server-soft);
+  border: 1px solid #78baad40;
+}
+.dsc-restart {
+  width: 36px;
+  flex-shrink: 0;
+}
+.dsc-power-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  animation: dsc-label-in 220ms ease-out;
+}
+.dsc-restarting svg {
+  animation: dsc-spin 700ms linear infinite;
+}
+.dsc-power.dsc-restarting {
+  background: var(--server-soft);
+  color: var(--server-accent);
+  box-shadow: inset 0 0 0 1px var(--server-accent);
+}
+.dsc-details {
+  display: grid;
+  gap: 4px;
+  margin-inline: -4px;
+}
+.dsc-detail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 7px 8px;
+  border-radius: 8px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+.dsc-detail:hover,
+.dsc-detail:focus-visible {
+  background: var(--server-soft);
+}
+.dsc-detail > svg {
+  flex-shrink: 0;
+  color: var(--server-accent);
+}
+.dsc-detail > span {
+  flex: 1;
+}
+.dsc-detail > strong {
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--foreground);
+  font-size: 11px;
+  font-weight: 500;
+}
+@keyframes dsc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes dsc-label-in {
+  from {
+    opacity: 0.4;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes dsc-attention {
+  50% {
+    box-shadow: 0 0 0 4px #a0e7db25;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .desktop-server-control *,
+  .desktop-server-control *::before {
+    animation: none !important;
+    transition: none !important;
+  }
+}

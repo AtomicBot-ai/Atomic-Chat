@@ -20,7 +20,6 @@ import {
   selectInstallation,
   useManagedEnvironmentStore,
 } from '@/stores/managed-environment-store'
-import SettingsMenu from '@/containers/SettingsMenu'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { isOnboardingPending } from '@/lib/onboarding'
 import { captureProviderKeyConfigured } from '@/lib/onboarding-telemetry'
@@ -1990,7 +1989,6 @@ function ProviderDetail() {
         </div>
       </HeaderPage>
       <div className="flex h-[calc(100%-60px)]">
-        <SettingsMenu />
         <div className="p-4 pt-0 w-full overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             <div className="flex items-center justify-between">

@@ -12,7 +12,7 @@ const {
   auth,
 } = vi.hoisted(() => ({
   navigate: vi.fn(),
-  searchState: { current: {} as { provider?: string } },
+  searchState: { current: {} as { provider?: string; add?: 'custom' } },
   saveProviderApiKey: vi.fn(),
   refreshProviderModels: vi.fn().mockResolvedValue(undefined),
   auth: {
@@ -324,6 +324,42 @@ describe('CloudPage', () => {
       screen.getByDisplayValue('https://api.openai.com/v1')
     ).toBeInTheDocument()
     expect(screen.getByText('providers:models')).toBeInTheDocument()
+  })
+
+  // The sidebar's Custom Endpoint row links here with `?add=custom`.
+  it('opens the custom endpoint dialog from the URL and closes it there', () => {
+    searchState.current = { provider: 'openai', add: 'custom' }
+    render(<CloudPage />)
+
+    expect(screen.getByText('provider:addOpenAIProvider')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('common:cancel'))
+
+    const close = navigate.mock.calls.at(-1)![0]
+    expect(close).toMatchObject({ to: '/cloud/', replace: true })
+    expect(close.search({ provider: 'openai', add: 'custom' })).toEqual({
+      provider: 'openai',
+      add: undefined,
+    })
+  })
+
+  it('keeps the custom dialog open while pinning the implicit provider', async () => {
+    const openai = providers.find((p) => p.provider === 'openai')!
+    mockStore([
+      ...providers.filter((p) => p.provider !== 'openai'),
+      { ...openai, api_key: 'sk-live' },
+    ])
+    searchState.current = { add: 'custom' }
+    render(<CloudPage />)
+
+    expect(screen.getByText('provider:addOpenAIProvider')).toBeInTheDocument()
+    await waitFor(() =>
+      expect(navigate).toHaveBeenCalledWith({
+        to: '/cloud/',
+        search: { provider: 'openai', add: 'custom' },
+        replace: true,
+      })
+    )
   })
 
   it('opens on OpenRouter when nothing is connected and the URL names none', () => {

@@ -4,6 +4,7 @@ import {
   FolderOpenIcon,
   GripVertical,
   MoreHorizontal,
+  Plus,
   Trash2,
 } from 'lucide-react'
 
@@ -22,6 +23,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import {
   SidebarGroup,
+  SidebarGroupAction,
   SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuAction,
@@ -31,6 +33,7 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
+import { useSidebarLists } from '@/hooks/useSidebarLists'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
 import { useThreads } from '@/hooks/useThreads'
 import { Link, useNavigate } from '@tanstack/react-router'
@@ -198,8 +201,14 @@ const ProjectItem = memo(function ProjectItem({
   )
 })
 
-export function NavProjects() {
+/**
+ * "Projects": a collapsible group whose "+" is the way to start a project, so
+ * the group shows even before the first one exists.
+ */
+export function NavProjects({ onCreate }: { onCreate: () => void }) {
   const { t } = useTranslation()
+  const collapsed = useSidebarLists((state) => state.collapsed.projects)
+  const toggleGroup = useSidebarLists((state) => state.toggleGroup)
   const { isMobile } = useSidebar()
   const { folders, updateFolder, reorderFolders } = useThreadManagement()
   const threads = useThreads((state) => state.threads)
@@ -288,15 +297,34 @@ export function NavProjects() {
     }
   }
 
-  if (folders.length === 0) {
-    return null
-  }
-
   return (
     <>
       <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-        <SidebarGroupLabel>{t('common:projects.title')}</SidebarGroupLabel>
-        <SidebarMenu>
+        <SidebarGroupLabel asChild>
+          <button
+            type="button"
+            aria-expanded={!collapsed}
+            onClick={() => toggleGroup('projects')}
+          >
+            <ChevronRight
+              size={12}
+              className={cn(
+                'mr-1 transition-transform',
+                !collapsed && 'rotate-90'
+              )}
+            />
+            {t('common:projects.title')}
+          </button>
+        </SidebarGroupLabel>
+        <SidebarGroupAction
+          className="hover:bg-sidebar-foreground/8"
+          aria-label={t('common:projects.new')}
+          title={t('common:projects.new')}
+          onClick={onCreate}
+        >
+          <Plus className="text-muted-foreground" />
+        </SidebarGroupAction>
+        <SidebarMenu className={cn(collapsed && 'hidden')}>
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}

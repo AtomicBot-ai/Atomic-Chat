@@ -11,6 +11,7 @@ import { installFakeBackend, writeFakeModel } from '../harness/fixtures.js'
 import { installMcpServer, MCP_TOOL, type McpFixture } from '../harness/mcp-server.js'
 import { CAN_RUN_FAKE_BACKEND } from '../harness/platform.js'
 import { endSession, startSession, withArtifacts, type Session } from '../harness/session.js'
+import { startNewChat } from '../harness/navigation.js'
 
 const MODEL_ID = 'e2e/fake-model'
 const REPLY = 'ATOMIC-E2E-MCP 8e05'
@@ -37,7 +38,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('an MCP tool in a chat', () => {
 
   const APPROVAL_SELECT = 'button[aria-label="Ask for approval"]'
   const newChat = async () => {
-    await session.app.browser.$('//*[normalize-space(text())="New Chat"]').click()
+    await startNewChat(session.app.browser)
     await waitForChat(session)
   }
 

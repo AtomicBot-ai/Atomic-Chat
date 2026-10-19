@@ -20,6 +20,7 @@ import { clickWhenStill, coreSessions, pageShows, pickModel, waitForChat } from 
 import { writeFakeModel } from '../harness/fixtures.js'
 import { CAN_RUN_FAKE_BACKEND } from '../harness/platform.js'
 import { endSession, startSession, withArtifacts, type Session } from '../harness/session.js'
+import { openSection, openSidebarRow } from '../harness/navigation.js'
 
 const MODEL_ID = 'e2e/fake-model'
 const AGENT = 'Codex CLI'
@@ -77,7 +78,8 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('running a coding agent from the Integrat
       await pickModel(session, MODEL_ID)
       await expect.poll(async () => (await coreSessions(session.profile.dataFolder)).length, { timeout: 60_000 }).toBe(1)
 
-      await browser.$('//*[normalize-space(text())="Integrations"]').click()
+      await openSection(browser, 'server')
+      await openSidebarRow(browser, 'Integrations')
       await clickWhenStill(session, runButton)
       await pageShows(session, `${AGENT} configured`, 60_000)
 
@@ -183,7 +185,8 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('running ZCode from the Integrations page
       await pickModel(session, MODEL_ID)
       await expect.poll(async () => (await coreSessions(session.profile.dataFolder)).length, { timeout: 60_000 }).toBe(1)
 
-      await browser.$('//*[normalize-space(text())="Integrations"]').click()
+      await openSection(browser, 'server')
+      await openSidebarRow(browser, 'Integrations')
       await clickWhenStill(session, zcodeRun)
       await pageShows(session, `${ZCODE} configured`, 60_000)
 

@@ -19,7 +19,6 @@ vi.mock('sonner', () => ({
   },
 }))
 
-vi.mock('@/containers/SettingsMenu', () => ({ default: () => <div /> }))
 vi.mock('@/containers/HeaderPage', () => ({
   default: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }))

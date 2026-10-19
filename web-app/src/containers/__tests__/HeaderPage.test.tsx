@@ -12,7 +12,9 @@ import {
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import HeaderPage from '../HeaderPage'
 
-describe('HeaderPage sidebar restore control', () => {
+// The sidebar toggle and the traffic-light inset moved to the window title
+// bar row, so a page header is the same whether the sidebar is open or not.
+describe('HeaderPage', () => {
   beforeAll(() => {
     vi.stubGlobal('IS_MACOS', true)
   })
@@ -25,32 +27,34 @@ describe('HeaderPage sidebar restore control', () => {
     useLeftPanel.setState({ open: false })
   })
 
-  it('keeps the collapsed toggle and header content in one aligned macOS row', () => {
+  it('offers no sidebar toggle of its own, even with the sidebar collapsed', () => {
     render(
       <HeaderPage>
         <div data-testid="header-content">Search</div>
       </HeaderPage>
     )
 
-    const toggle = screen.getByRole('button', { name: 'Toggle sidebar' })
-    const content = screen.getByTestId('header-content')
-    const row = toggle.parentElement
-
-    expect(toggle).toHaveClass('shrink-0')
-    expect(toggle).not.toHaveClass('absolute')
-    expect(row).toHaveClass('items-center', 'gap-2')
-    expect(row).toContainElement(content)
-    expect(row?.parentElement).toHaveClass('pl-20')
-  })
-
-  it('returns to the regular inset when the sidebar is open', () => {
-    useLeftPanel.setState({ open: true })
-    const { container } = render(<HeaderPage>Search</HeaderPage>)
-
     expect(
       screen.queryByRole('button', { name: 'Toggle sidebar' })
     ).toBeNull()
-    expect(container.firstElementChild).toHaveClass('pl-4')
-    expect(container.firstElementChild).not.toHaveClass('pl-20')
+    expect(screen.getByTestId('header-content')).toBeInTheDocument()
+  })
+
+  it('keeps the regular inset whether the sidebar is open or not', () => {
+    const collapsed = render(<HeaderPage>Search</HeaderPage>)
+    expect(collapsed.container.firstElementChild).toHaveClass('pl-4')
+    expect(collapsed.container.firstElementChild).not.toHaveClass('pl-20')
+    collapsed.unmount()
+
+    useLeftPanel.setState({ open: true })
+    const open = render(<HeaderPage>Search</HeaderPage>)
+    expect(open.container.firstElementChild).toHaveClass('pl-4')
+  })
+
+  it('stays the window drag region on macOS', () => {
+    const { container } = render(<HeaderPage>Search</HeaderPage>)
+    expect(container.firstElementChild).toHaveAttribute(
+      'data-tauri-drag-region'
+    )
   })
 })
