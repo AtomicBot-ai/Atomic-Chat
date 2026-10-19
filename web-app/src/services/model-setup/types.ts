@@ -80,15 +80,34 @@ export type PrismFamiliesResponse = {
 export type PrismPack = { version: string; backend: string }
 
 /**
+ * What a Bonsai file asks of the PrismML catalog (atomic-chat-core 0.18.4):
+ * the engine capabilities and the build number from its verdict. With either
+ * set, the core picks `recommended` only among the builds that have them, and
+ * refuses with `BACKEND_BUILD_UNAVAILABLE` when none does.
+ */
+export type PrismCatalogRequest = {
+  requires?: string[]
+  min_build?: number
+}
+
+/** The core has no build this machine runs that meets a file's requirements. */
+export const BACKEND_BUILD_UNAVAILABLE = 'BACKEND_BUILD_UNAVAILABLE'
+
+/**
  * `POST /backends/atomic-prism/catalog`, the fields a Bonsai plan reads:
  * the packs on disk, the hardware-fit offer (`available`), the core's pick
- * for this machine and each offered release's download sizes.
+ * for this machine (for the file, when asked with its requirements) and each
+ * offered release's capabilities and download sizes.
  */
 export type PrismCatalog = {
   installed: PrismPack[]
   available: (PrismPack & { order?: number })[]
   recommended: string | null
-  releases?: { tag: string; variants: { id: string; size?: number }[] }[]
+  releases?: {
+    tag: string
+    capabilities?: string[]
+    variants: { id: string; size?: number }[]
+  }[]
 }
 
 /** What the Hub asks to set up: one file of a repository, under the id it registers as. */
@@ -147,8 +166,11 @@ export interface ModelSetupService {
   ): Promise<CompatibilityVerdict>
   /** The Bonsai models the Hub lists under PrismML. */
   families(): Promise<PrismFamiliesResponse>
-  /** The PrismML builds on disk and on offer for this machine. */
-  prismCatalog(): Promise<PrismCatalog>
+  /**
+   * The PrismML builds on disk and on offer for this machine; with a
+   * request, `recommended` is the core's pick for a file with those needs.
+   */
+  prismCatalog(request?: PrismCatalogRequest): Promise<PrismCatalog>
   /** Free bytes on the data drive; `null` when the platform cannot say. */
   diskAvailable(): Promise<number | null>
   /** Install a PrismML build under `taskId`; its bytes arrive as `download:progress`. */

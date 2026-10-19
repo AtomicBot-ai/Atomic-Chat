@@ -21,6 +21,7 @@ import type {
   CompatibilityVerdict,
   ModelCompatibilityRequest,
   PrismCatalog,
+  PrismCatalogRequest,
   PrismFamiliesResponse,
   PrismPack,
 } from './types'
@@ -56,11 +57,13 @@ export class TauriModelSetupService extends DefaultModelSetupService {
     )
   }
 
-  override async prismCatalog(): Promise<PrismCatalog> {
+  override async prismCatalog(
+    request: PrismCatalogRequest = {}
+  ): Promise<PrismCatalog> {
     return coreCall<PrismCatalog>(
       'POST',
       `/backends/${PRISM_PROVIDER}/catalog`,
-      { app_version: VERSION, proxy: engineBuildProxy() ?? null }
+      { app_version: VERSION, proxy: engineBuildProxy() ?? null, ...request }
     )
   }
 

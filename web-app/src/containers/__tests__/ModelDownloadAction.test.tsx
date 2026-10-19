@@ -323,6 +323,28 @@ describe('ModelDownloadAction', () => {
       expect(mocks.installPrismBuild).not.toHaveBeenCalled()
     })
 
+    it('installs and downloads nothing when the core has no build for the file', async () => {
+      known('engine_required')
+      planVerdict = { ...verdict('engine_required'), requires: ['pq2_0'] }
+      mocks.prismCatalog.mockRejectedValue({
+        code: 'BACKEND_BUILD_UNAVAILABLE',
+        message: 'No engine build this machine can run meets the model file',
+      })
+      render(
+        <ModelDownloadAction variant={bonsai} model={bonsaiModel} asButton />
+      )
+      fireEvent.click(downloadButton())
+
+      expect(
+        await screen.findByText('hub:prismBlocker_no_engine_build')
+      ).toBeInTheDocument()
+      expect(mocks.prismCatalog).toHaveBeenCalledWith({ requires: ['pq2_0'] })
+      expect(screen.getByTestId('model-setup-start')).toBeDisabled()
+      fireEvent.click(screen.getByTestId('model-setup-start'))
+      expect(mocks.installPrismBuild).not.toHaveBeenCalled()
+      expect(mocks.pullModelWithMetadata).not.toHaveBeenCalled()
+    })
+
     it('asks the core on click when the verdict has not arrived yet', async () => {
       rowVerdict = verdict('engine_required')
       render(
