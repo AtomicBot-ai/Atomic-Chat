@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-414 records, 2026-05-19 → 2026-10-16.
+415 records, 2026-05-19 → 2026-10-17.
 
 ---
 
@@ -85,8 +85,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-02** — [Add a `/v1/responses` translation shim to the local proxy so Codex CLI works on llama.cpp models](2026-06-02-add-a-v1-responses-translation-shim-to-the-local-proxy-so-codex.md)
 - **2026-06-01** — [Add a "Launch" page to install + configure external coding agents / assistants against the local OpenAI-compatible API](2026-06-01-add-a-launch-page-to-install-configure-external-coding-agents.md)
 
-## Agent mode — autonomous loop, tools, skills, workspace (51)
+## Agent mode — autonomous loop, tools, skills, workspace (52)
 
+- **2026-10-17** — [Confine a secure project's commands to its folders with MXC](2026-10-17-confine-secure-projects-commands-to-their-folders-with-mxc.md)
 - **2026-10-15** — [Grant directory enumeration and decode Windows chat output](2026-10-15-fix-windows-chat-directory-enumeration-and-output.md)
 - **2026-10-15** — [Let chat commands reach the user's Desktop, Documents and Downloads](2026-10-15-let-chat-commands-reach-the-users-own-folders.md)
 - **2026-10-15** — [Hide Agent mode; every turn runs on the chat pipeline](2026-10-15-hide-agent-mode.md)

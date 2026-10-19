@@ -14,6 +14,10 @@ import { useMCPServers } from '@/hooks/useMCPServers'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useThreads } from '@/hooks/useThreads'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
+import {
+  connectorBlock,
+  useComposerSecureEnvironment,
+} from '@/hooks/useSecureEnvironments'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   findWebSearchServer,
@@ -27,11 +31,14 @@ type WebSearchToggleProps = {
   className?: string
   // The index page edits the defaults for new threads instead of a thread.
   initialMessage?: boolean
+  // A project page's composer: that project's secure policy applies.
+  projectId?: string
 }
 
 const WebSearchToggle = memo(function WebSearchToggle({
   className,
   initialMessage = false,
+  projectId,
 }: WebSearchToggleProps) {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
@@ -56,6 +63,10 @@ const WebSearchToggle = memo(function WebSearchToggle({
   } = useToolAvailable()
 
   const server = useMemo(() => findWebSearchServer(mcpServers), [mcpServers])
+  const secure = useComposerSecureEnvironment(initialMessage, projectId)
+  // A secure project that keeps web search out of its chats: the globe shows
+  // off and cannot be switched (the chat would not send its tools anyway).
+  const block = server ? connectorBlock(secure, server.key, true) : null
   const threadId = initialMessage ? undefined : getCurrentThread()?.id
   const disabledTools = threadId
     ? getDisabledToolsForThread(threadId)
@@ -63,7 +74,8 @@ const WebSearchToggle = memo(function WebSearchToggle({
   const mutedServers = threadId
     ? getMutedServersForThread(threadId)
     : getDefaultMutedServers()
-  const enabled = isWebSearchEnabled(server, tools, disabledTools, mutedServers)
+  const enabled =
+    !block && isWebSearchEnabled(server, tools, disabledTools, mutedServers)
   const unavailable =
     (failed && !enabled) ||
     Boolean(server?.config.active && !hasWebSearchTool(server, tools))
@@ -143,6 +155,40 @@ const WebSearchToggle = memo(function WebSearchToggle({
     } finally {
       setPending(false)
     }
+  }
+
+  if (block) {
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          {/* A disabled button gets no pointer events, so the span carries
+              the tooltip. */}
+          <TooltipTrigger asChild>
+            <span tabIndex={0} className="inline-flex">
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className={className}
+                disabled
+                aria-label={t('common:webSearchToggleDisabled')}
+                aria-pressed={false}
+              >
+                <IconWorld size={18} className="text-muted-foreground" />
+              </Button>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>
+              {t(
+                block === 'network'
+                  ? 'common:secureEnvironmentBlock.webSearchOffline'
+                  : 'common:secureEnvironmentBlock.notAllowed'
+              )}
+            </p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    )
   }
 
   return (
