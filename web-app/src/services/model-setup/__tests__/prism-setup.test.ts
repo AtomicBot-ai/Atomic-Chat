@@ -352,9 +352,12 @@ describe('loadPrismSetupPlan', () => {
     }
     const service = new Service()
 
-    await loadPrismSetupPlan(service, bonsai)
+    const loaded = await loadPrismSetupPlan(service, bonsai)
 
     expect(service.prismCatalog).toHaveBeenCalledWith({})
+    // Nothing to install for a file PrismML runs: no build, and nothing blocks it.
+    expect(loaded.engine).toBeNull()
+    expect(loaded.blockers).toEqual([])
   })
 
   it('plans without the free space when the core cannot say', async () => {
