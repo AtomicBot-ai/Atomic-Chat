@@ -332,6 +332,29 @@ pub fn open_file_explorer(path: String) {
     }
 }
 
+/// Select a file or folder in the system file manager, from the blocking pool.
+///
+/// Do not call the opener plugin's own `reveal_item_in_dir` command from the
+/// webview. It is an async command, so it runs on a tokio runtime worker, and
+/// on Linux it asks the file manager over D-Bus through
+/// `zbus::blocking::Connection`. This crate enables zbus's `tokio` feature, so
+/// that blocking wrapper calls `Runtime::block_on` on the worker and panics
+/// ("Cannot start a runtime from within a runtime"). Release builds use
+/// `panic = "abort"`, so every "Show in folder" / "Open containing folder"
+/// click closed the app on Linux. Same mechanism as
+/// `show_desktop_notification` below. On a blocking-pool thread `block_on` is
+/// allowed. macOS and Windows already ran the call off the main thread, so a
+/// blocking-pool thread changes nothing for them.
+#[tauri::command]
+pub async fn reveal_in_file_manager(path: String) -> Result<(), String> {
+    let path = PathBuf::from(path);
+    tauri::async_runtime::spawn_blocking(move || {
+        tauri_plugin_opener::reveal_item_in_dir(&path).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("Reveal task failed: {e}"))?
+}
+
 /// Deliver a desktop notification from the blocking pool.
 ///
 /// On Linux, do not use the notification plugin: its builder `show()` is
@@ -6140,6 +6163,35 @@ mod tests {
             })
             .await
             .expect("notification task panicked");
+        });
+    }
+
+    /// Regression test for the abort on "Open containing folder" (Linux
+    /// AppImage, 2.2.14): the opener plugin's async `reveal_item_in_dir`
+    /// command opened a blocking zbus connection on a runtime worker and
+    /// panicked with "Cannot start a runtime from within a runtime". Linux
+    /// only: on macOS and Windows a successful call opens a real file manager
+    /// window.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn reveal_in_file_manager_is_safe_on_runtime_worker() {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .expect("failed to build runtime");
+
+        // An existing path, so the call gets past canonicalization and reaches
+        // the D-Bus code that used to panic.
+        let path = std::env::temp_dir().to_string_lossy().to_string();
+        rt.block_on(async move {
+            tokio::spawn(async move {
+                // CI has no session bus or file manager, so the reveal may
+                // fail; the test only asserts it does not panic.
+                let _ = reveal_in_file_manager(path).await;
+            })
+            .await
+            .expect("reveal task panicked");
         });
     }
 

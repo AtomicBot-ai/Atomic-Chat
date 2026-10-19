@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-414 records, 2026-05-19 → 2026-10-16.
+415 records, 2026-05-19 → 2026-10-19.
 
 ---
 
@@ -300,8 +300,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-10** — [Throttle crashloop `model_load` failure spam client-side; confirm `model_load.status` / api 404-noise are already-fixed-pending-rollout, not code bugs (ATO-130: ATO-133 + ATO-131 + ATO-132)](2026-06-10-throttle-crashloop-model-load-failure-spam-client-side-confirm.md)
 - **2026-06-09** — [Add zero-PII Sentry crash/error tracking to both the React frontend and the Rust/Tauri desktop, gated behind `productAnalytic` (ATO-113)](2026-06-09-add-zero-pii-sentry-crash-error-tracking-to-both-the-react.md)
 
-## Packaging, installers, autostart & platform policy (22)
+## Packaging, installers, autostart & platform policy (23)
 
+- **2026-10-19** — [Reveal files in the file manager from the blocking pool](2026-10-19-reveal-files-from-the-blocking-pool-on-linux.md) — the opener plugin's async reveal blocks on D-Bus inside tokio and aborts the Linux app.
 - **2026-10-09** — [Hide the CLI in the app, and stop installing it on launch](2026-10-09-hide-the-cli-in-the-app.md)
 - **2026-10-09** — [Gate releases beside the builds and warm their caches on main](2026-10-09-gate-releases-beside-the-builds-and-warm-caches-on-main.md) — installers reach the draft only after build and gate; caches are written on `main`, read by releases.
 - **2026-10-02** — [Publish releases with make release-prod and feed the landing page from conf](2026-10-02-publish-releases-with-make-release-prod-and-feed-the-landing-from-conf.md)
