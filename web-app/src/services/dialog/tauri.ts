@@ -3,6 +3,8 @@
  */
 
 import { invoke } from '@tauri-apps/api/core'
+import { toast } from 'sonner'
+import i18n from '@/i18n/setup'
 import type { DialogOpenOptions } from './types'
 import { DefaultDialogService } from './default'
 
@@ -25,7 +27,10 @@ export class TauriDialogService extends DefaultDialogService {
       console.log('TauriDialogService: Dialog result:', result)
       return result
     } catch (error) {
+      // The backend reports a picker that failed to open (it came back empty
+      // before it could be drawn); without this the click did nothing at all.
       console.error('Error opening dialog in Tauri:', error)
+      notifyDialogFailure()
       return null
     }
   }
@@ -35,7 +40,15 @@ export class TauriDialogService extends DefaultDialogService {
       return await invoke<string | null>('save_dialog', { options })
     } catch (error) {
       console.error('Error opening save dialog in Tauri:', error)
+      notifyDialogFailure()
       return null
     }
   }
+}
+
+function notifyDialogFailure() {
+  toast.error(i18n.t('common:toast.fileDialogFailed.title'), {
+    id: 'file-dialog-failed',
+    description: i18n.t('common:toast.fileDialogFailed.description'),
+  })
 }

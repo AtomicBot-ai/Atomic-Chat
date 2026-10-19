@@ -684,6 +684,10 @@
     "downloadNetworkUnreachable": {
       "title": "Could not reach the download server",
       "description": "The connection never got through. Check your internet connection, VPN or firewall, then start the download again."
+    },
+    "fileDialogFailed": {
+      "title": "Couldn't open the file dialog",
+      "description": "The system did not show the file or folder picker. Try again; if it keeps failing, restart Atomic Chat."
     }
   },
   "errors": {

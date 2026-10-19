@@ -187,3 +187,15 @@ fn model_yml_under_the_data_folder_needs_no_core_root() {
 
     assert_eq!(read["repository"], "m");
 }
+
+#[test]
+fn an_instantly_empty_picker_is_a_failure_not_a_cancel() {
+    use super::commands::dialog_outcome;
+    use std::time::Duration;
+
+    // Came back empty before it could even be drawn: it never opened.
+    assert!(dialog_outcome("open_dialog (folder)", Duration::from_millis(40), 0).is_err());
+    // The user closed it, or chose something, however fast.
+    assert!(dialog_outcome("open_dialog (folder)", Duration::from_secs(2), 0).is_ok());
+    assert!(dialog_outcome("open_dialog (files)", Duration::from_millis(40), 2).is_ok());
+}
