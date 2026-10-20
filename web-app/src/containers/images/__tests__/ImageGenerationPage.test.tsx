@@ -30,11 +30,6 @@ vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }))
 vi.mock('@/lib/telemetry-queue', () => ({ queuedCapture: vi.fn() }))
 
 // The page decides which blocks to show; the blocks have their own tests.
-vi.mock('@/containers/HeaderPage', () => ({
-  default: ({ children }: { children: React.ReactNode }) => (
-    <div>{children}</div>
-  ),
-}))
 vi.mock('../ImagePromptForm', () => ({
   ImagePromptForm: ({ modelsOpen }: { modelsOpen?: boolean }) => (
     <div data-testid="image-prompt-form" data-models-open={String(modelsOpen)} />
@@ -172,6 +167,8 @@ describe('ImageGenerationPage', () => {
     ).toBeInTheDocument()
     expect(screen.queryByTestId('image-empty-state')).not.toBeInTheDocument()
     expect(screen.queryByTestId('image-viewer')).not.toBeInTheDocument()
+    // No title row above the card: the sidebar row already names the page.
+    expect(screen.queryByText('images:page.title')).not.toBeInTheDocument()
   })
 
   it('never opens setup automatically on a first visit', async () => {
@@ -282,6 +279,8 @@ describe('ImageGenerationPage', () => {
     expect(screen.getByTestId('image-prompt-form')).toBeInTheDocument()
     expect(screen.getByTestId('image-empty-state')).toBeInTheDocument()
     expect(screen.queryByTestId('image-viewer')).not.toBeInTheDocument()
+    // The form's own heading names the page; there is no second title row.
+    expect(screen.queryByText('images:page.title')).not.toBeInTheDocument()
   })
 
   it('reserves animated canvas and gallery slots while generation is running', async () => {

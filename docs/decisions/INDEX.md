@@ -331,6 +331,7 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-10-20** — [Split the API screen into Overview, Activity, Connections and Engine & model](2026-10-20-split-the-api-screen-into-overview-activity-connections-and-model.md)
 - **2026-10-20** — [Give the server's configuration and remote access their own pages](2026-10-20-give-server-configuration-and-remote-access-their-own-pages.md)
 - **2026-10-20** — [Put every control on a 36 / 24 / 40 px scale](2026-10-20-put-every-control-on-a-36-24-40-px-scale.md)
+- **2026-10-20** — [Attach with one paperclip and gather what the model may do in the access menu](2026-10-20-attach-with-one-paperclip-and-gather-access-in-one-menu.md)
 - **2026-10-19** — [Navigate with an icon rail and a contextual sidebar](2026-10-19-navigate-with-an-icon-rail-and-a-contextual-sidebar.md)
 - **2026-10-09** — [Match file_ids by name, and tell the model documents are attached](2026-10-09-match-file-ids-by-name-and-tell-the-model-documents-are-attached.md)
 - **2026-10-09** — [A send waits for web search that is still connecting](2026-10-09-a-send-waits-for-web-search-that-is-still-connecting.md)

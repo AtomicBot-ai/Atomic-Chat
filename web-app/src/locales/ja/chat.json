@@ -67,8 +67,8 @@
     "providerKeyMissing": "エージェントモードを使うには、設定でこのプロバイダーの API キーを追加してください。"
   },
   "agentApprovals": {
-    "manualSelected": "承認を求める",
-    "manual": "承認を求める",
+    "manualSelected": "制限付き",
+    "manual": "制限付き",
     "manualDescription": "ツールがファイルを編集したりインターネットを使用したりする前に必ず確認します",
     "skipSelected": "フルアクセス",
     "skip": "フルアクセス",

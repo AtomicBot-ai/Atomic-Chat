@@ -289,6 +289,26 @@
     border: 0 !important;
   }
 }
+
+/* The empty chat's mark (components/LazyAtomicLogo.tsx) floats a few pixels
+ * on top of its own SVG displacement; reduced motion stills both. */
+.lazy-atomic-logo {
+  animation: lazy-atomic-float 9s ease-in-out infinite;
+}
+@keyframes lazy-atomic-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lazy-atomic-logo {
+    animation: none;
+  }
+}
 /* The window title bar is its own row above the navigation rail and the
  * contextual sidebar, so every full-height surface inside the shell is the
  * viewport minus that row. Pages size themselves with `h-svh`; remapping it

@@ -51,6 +51,10 @@ import { useVideoSetting } from '@/hooks/useVideoSetting'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 import { useVideoGenerationStore } from '@/stores/video-generation-store'
 import { VideoPromptForm } from '../VideoPromptForm'
+import enCommon from '@/locales/en/common.json'
+import enVideos from '@/locales/en/videos.json'
+import ruCommon from '@/locales/ru/common.json'
+import ruVideos from '@/locales/ru/videos.json'
 
 class MockResizeObserver {
   observe() {}
@@ -119,6 +123,11 @@ describe('VideoPromptForm', () => {
   it('heads the column like Images, with the same mode pill; image-to-video is listed as coming', async () => {
     render(<VideoPromptForm />)
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('videos:page.title')
+    // The heading and the sidebar row say the same plural word, like Images.
+    for (const [common, videos] of [[enCommon, enVideos], [ruCommon, ruVideos]] as const) {
+      expect(videos.page.title).toBe('Videos')
+      expect(common.video).toBe('Videos')
+    }
     expect(screen.getByTestId('video-page-subtitle')).toHaveTextContent('videos:page.subtitle')
     expect(screen.getByTestId('video-workflow-select')).toHaveAttribute('data-mode', 'create')
 

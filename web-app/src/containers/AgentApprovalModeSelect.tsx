@@ -1,11 +1,12 @@
 import type { LucideIcon } from 'lucide-react'
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Check, ChevronDown, CircleAlert, Hand } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import {
@@ -20,6 +21,21 @@ import {
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { AgentApprovalMode } from '@/hooks/useAgentMode'
+
+/**
+ * An on/off switch that rides the access menu under the approval modes: what
+ * the model may do at all (run commands, the agent loop), next to how its
+ * calls are approved.
+ */
+export type ApprovalMenuToggle = {
+  id: string
+  label: string
+  description?: string
+  icon: ReactNode
+  checked: boolean
+  onCheckedChange: (checked: boolean) => void
+  testId?: string
+}
 
 type AgentApprovalModeSelectProps = {
   compact?: boolean
@@ -36,6 +52,7 @@ type AgentApprovalModeSelectProps = {
   skipConfirmBody: string
   skipConfirmCancel: string
   skipConfirmAccept: string
+  toggles?: ApprovalMenuToggle[]
 }
 
 /**
@@ -64,6 +81,7 @@ export function AgentApprovalModeSelect({
   skipConfirmBody,
   skipConfirmCancel,
   skipConfirmAccept,
+  toggles = [],
 }: AgentApprovalModeSelectProps) {
   // Picking Full access asks first, every time: the mode only changes from
   // the dialog's accept button, and Cancel / Escape leave it as it was.
@@ -106,8 +124,10 @@ export function AgentApprovalModeSelect({
             aria-label={selectedLabel}
           >
             <SelectedIcon className="size-4" />
-            {!compact && <span>{selectedLabel}</span>}
-            {!compact && <ChevronDown className="size-3.5 opacity-60" />}
+            {/* The label stays in the compact composer too: an icon alone
+                did not say which mode the next tool call runs under. */}
+            <span className={cn(compact && 'ml-1.5')}>{selectedLabel}</span>
+            <ChevronDown className="size-3.5 opacity-60" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent
@@ -147,6 +167,40 @@ export function AgentApprovalModeSelect({
               </DropdownMenuItem>
             )
           })}
+          {toggles.length > 0 && <DropdownMenuSeparator />}
+          {toggles.map((toggle) => (
+            <DropdownMenuItem
+              key={toggle.id}
+              role="menuitemcheckbox"
+              aria-checked={toggle.checked}
+              data-testid={toggle.testId}
+              onSelect={() => toggle.onCheckedChange(!toggle.checked)}
+              className="gap-2.5 px-2 py-2"
+            >
+              {toggle.icon}
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm">{toggle.label}</span>
+                {toggle.description && (
+                  <span className="mt-0.5 block text-xs leading-4 text-muted-foreground">
+                    {toggle.description}
+                  </span>
+                )}
+              </span>
+              {/* Drawn like the app's Switch, but inert: the whole row is the
+                  control, and a button inside a menu item would be a second
+                  focus stop for the same action. */}
+              <span
+                aria-hidden
+                data-state={toggle.checked ? 'checked' : 'unchecked'}
+                className="inline-flex h-[18px] w-8.5 shrink-0 items-center rounded-full border shadow-xs transition-colors motion-reduce:transition-none data-[state=checked]:bg-primary data-[state=unchecked]:bg-input"
+              >
+                <span
+                  data-state={toggle.checked ? 'checked' : 'unchecked'}
+                  className="block size-4 rounded-full bg-background transition-transform motion-reduce:transition-none data-[state=checked]:translate-x-full"
+                />
+              </span>
+            </DropdownMenuItem>
+          ))}
         </DropdownMenuContent>
       </DropdownMenu>
       <Dialog open={confirmSkipOpen} onOpenChange={setConfirmSkipOpen}>
