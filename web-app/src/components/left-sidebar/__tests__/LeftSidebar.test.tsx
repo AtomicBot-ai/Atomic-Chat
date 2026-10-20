@@ -131,7 +131,6 @@ vi.mock('@/containers/ServerControlPanel', () => ({
 }))
 vi.mock('@/containers/SettingsMenu', () => ({
   SettingsNavigation: () => <section aria-label="settings navigation" />,
-  EngineNavigation: () => <section aria-label="engine navigation" />,
 }))
 vi.mock('@/containers/dialogs/SearchDialog', () => ({
   SearchDialog: () => null,
@@ -380,7 +379,36 @@ describe('LeftSidebar', () => {
         'data-search',
         JSON.stringify({ add: 'custom' })
       )
-      expect(screen.getByLabelText('engine navigation')).toBeInTheDocument()
+    })
+
+    it('lists the inference engines as one row, not one per engine', () => {
+      at('/hub/')
+      render(<LeftSidebar />)
+
+      expect(
+        screen.getByText('common:navigation.inferenceEngines').closest('a')
+      ).toHaveAttribute('href', '/settings/providers')
+      expect(screen.queryByText('common:media')).not.toBeInTheDocument()
+      expect(screen.queryByText('common:voice')).not.toBeInTheDocument()
+    })
+
+    it.each([
+      '/settings/providers',
+      '/settings/providers/llamacpp-upstream',
+      '/settings/media',
+      '/settings/voice',
+    ])('highlights Inference engines on %s', (pathname) => {
+      at(pathname)
+      render(<LeftSidebar />)
+
+      expect(rowFor('common:navigation.inferenceEngines')).toHaveAttribute(
+        'data-active',
+        'true'
+      )
+      expect(rowFor('common:navigation.localModels')).toHaveAttribute(
+        'data-active',
+        'false'
+      )
     })
 
     it('highlights Local models or Downloads by the installed filter', () => {

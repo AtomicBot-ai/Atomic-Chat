@@ -1,5 +1,5 @@
 /**
- * Models Hub → Media: the output folder moved to one the user picks (through
+ * Models Hub → Inference engines → Media: the output folder moved to one the user picks (through
  * the native folder dialog the e2e build answers), the next picture put there,
  * and the choice kept across a restart; and a picture deleted from the viewer
  * after the confirmation, gone from disk with its thumbnail.
@@ -24,15 +24,10 @@ import {
 } from '../harness/images.js'
 import { CAN_RUN_FAKE_BACKEND } from '../harness/platform.js'
 import { endSession, restartApp, startSession, withArtifacts, type Session } from '../harness/session.js'
-import { openSection } from '../harness/navigation.js'
+import { openMediaEngineSettings } from '../harness/navigation.js'
 
 async function openMediaSettings(session: Session): Promise<void> {
-  const browser = session.app.browser
-  await openSection(browser, 'models')
-  const media = browser.$('//a[normalize-space(.)="Media"]')
-  await media.waitForClickable({ timeout: 30_000 })
-  await media.click()
-  await browser.$('[data-testid="media-settings-panel"]').waitForDisplayed({ timeout: 30_000 })
+  await openMediaEngineSettings(session.app.browser)
 }
 
 describe.skipIf(!CAN_RUN_FAKE_BACKEND)('the output folder and the gallery', () => {

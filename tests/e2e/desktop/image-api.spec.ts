@@ -24,7 +24,7 @@ import {
 } from '../harness/images.js'
 import { CAN_RUN_FAKE_BACKEND } from '../harness/platform.js'
 import { endSession, startSession, withArtifacts, type Session } from '../harness/session.js'
-import { openSection, startServerFromSidebar, stopServerFromSidebar } from '../harness/navigation.js'
+import { openMediaEngineSettings, startServerFromSidebar, stopServerFromSidebar } from '../harness/navigation.js'
 
 const LOCAL_API_KEY = 'e2e-images-api-key'
 
@@ -53,11 +53,8 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('the image endpoint for outside clients',
       const dataFolder = session.profile.dataFolder
       const endpoint = `http://127.0.0.1:${session.apiPort}/v1/images/generations`
 
-      // Models Hub → Media names the endpoint and gives a curl for it.
-      await openSection(browser, 'models')
-      const media = browser.$('//a[normalize-space(.)="Media"]')
-      await media.waitForClickable({ timeout: 30_000 })
-      await media.click()
+      // Models Hub → Inference engines → Media names the endpoint and gives a curl for it.
+      await openMediaEngineSettings(browser)
       await browser.$('[data-testid="image-api-settings-card"]').waitForDisplayed({ timeout: 30_000 })
       expect(await browser.$('[data-testid="image-api-endpoint"]').getText()).toContain('/v1/images/generations')
       expect(await browser.$('[data-testid="image-api-endpoint"]').getText()).toContain(String(session.apiPort))

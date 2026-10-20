@@ -4,6 +4,7 @@ import {
   Blocks,
   Clapperboard,
   Cloud,
+  Cpu,
   Download,
   Image,
   MessageCircle,
@@ -35,7 +36,7 @@ import { useThreadManagement } from '@/hooks/useThreadManagement'
 import AddProjectDialog from '@/containers/dialogs/AddProjectDialog'
 import { SearchDialog } from '@/containers/dialogs/SearchDialog'
 import { ServerControlPanel } from '@/containers/ServerControlPanel'
-import { EngineNavigation, SettingsNavigation } from '@/containers/SettingsMenu'
+import { SettingsNavigation } from '@/containers/SettingsMenu'
 import { NavChats } from './NavChats'
 import { NavPinned } from './NavPinned'
 import { NavProjects } from './NavProjects'
@@ -168,6 +169,11 @@ function ModelsNavigation() {
   // in the URL so the row that opened them stays highlighted.
   const installedOnly = onHub && params.installed === true
   const addingCustom = onCloud && params.add === 'custom'
+  // The overview, each engine's page and the Media and Voice pages.
+  const onEngines =
+    isPathActive(pathname, route.settings.model_providers, true) ||
+    isPathActive(pathname, route.settings.media) ||
+    isPathActive(pathname, route.settings.voice)
 
   return (
     <>
@@ -201,8 +207,13 @@ function ModelsNavigation() {
           icon={<Network size={16} />}
           active={addingCustom}
         />
+        <NavRow
+          to={route.settings.model_providers}
+          label={t('common:navigation.inferenceEngines')}
+          icon={<Cpu size={16} />}
+          active={onEngines}
+        />
       </SidebarMenu>
-      <EngineNavigation />
     </>
   )
 }

@@ -524,5 +524,23 @@
     "installing": "Установка…",
     "installFailed": "Не удалось установить движок: {{error}}",
     "findModels": "Модели Bonsai"
+  },
+  "overview": {
+    "language": "Языковые модели",
+    "media": "Медиамодели",
+    "voice": "Голосовые модели",
+    "modelCountOne": "1 модель",
+    "modelCountOther": "Моделей: {{count}}",
+    "build": "Сборка {{version}}",
+    "mediaDescription": "Изображения и видео",
+    "voiceDescription": "{{model}} · распознавание речи",
+    "updateAvailable": "Есть обновление",
+    "enable": "Включить или выключить {{name}}",
+    "status": {
+      "running": "Работает",
+      "idle": "Ожидает",
+      "disabled": "Выключен",
+      "notInstalled": "Не установлен"
+    }
   }
 }
