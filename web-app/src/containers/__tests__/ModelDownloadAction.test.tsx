@@ -103,6 +103,14 @@ describe('ModelDownloadAction', () => {
     render(<ModelDownloadAction variant={variant} model={model} asButton />)
     fireEvent.click(screen.getByRole('button', { name: 'common:showDownloadProgress' }))
     expect(open).toHaveBeenCalledTimes(1)
+    const state = useDownloadStore.getState()
+    expect(Object.keys(state.downloads)).toEqual([variant.model_id])
+    expect(state.pausedDownloads.has(variant.model_id)).toBe(true)
+    expect(state.downloads[variant.model_id]).toMatchObject({
+      progress: 0.4,
+      current: 40,
+      total: 100,
+    })
     expect(mocks.pullModelWithMetadata).not.toHaveBeenCalled()
     expect(mocks.abortDownload).not.toHaveBeenCalled()
     window.removeEventListener('atomic-open-download-panel', open)
