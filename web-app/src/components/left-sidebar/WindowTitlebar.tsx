@@ -28,6 +28,7 @@ export function WindowTitlebar({ section }: { section: NavigationSection }) {
 
   return (
     <div
+      data-window-titlebar
       className={cn(
         'fixed inset-x-0 top-0 z-40 flex h-(--window-titlebar-height) items-center gap-1.5 border-b border-sidebar-border/60 bg-sidebar pr-3',
         // Clear the native traffic lights (x=20, three 12px buttons).

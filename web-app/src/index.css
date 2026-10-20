@@ -305,3 +305,48 @@
 .app-shell .min-h-svh {
   min-height: var(--app-content-height);
 }
+
+/* One control scale across the shell: regular actions, fields and selects are
+ * 36px, compact icon actions 24px, large actions 40px. These rules sit outside
+ * any layer on purpose, so they win over a call site's own `h-*`/`size-*` and
+ * every screen lines up. Icon buttons stay square. Overlays render in portals
+ * outside `.app-shell` and only get the Button variants' own heights. */
+:root {
+  --control-height: 2.25rem;
+  --control-height-compact: 1.5rem;
+  --control-height-large: 2.5rem;
+}
+.app-shell :is(button, a)[data-size='default'],
+.app-shell :is(button, a)[data-size='sm'],
+.app-shell :is(button, a)[data-size='icon'],
+.app-shell :is(button, a)[data-size='icon-sm'],
+.app-shell input[data-slot='input'],
+.app-shell select,
+.app-shell button[data-mode] {
+  height: var(--control-height);
+  min-height: var(--control-height);
+}
+.app-shell :is(button, a):is([data-size='icon'], [data-size='icon-sm']) {
+  width: var(--control-height);
+}
+.app-shell :is(button, a):is([data-size='xs'], [data-size='icon-xs']) {
+  height: var(--control-height-compact);
+  min-height: var(--control-height-compact);
+}
+.app-shell :is(button, a)[data-size='icon-xs'] {
+  width: var(--control-height-compact);
+}
+.app-shell :is(button, a):is([data-size='lg'], [data-size='icon-lg']) {
+  height: var(--control-height-large);
+  min-height: var(--control-height-large);
+}
+.app-shell :is(button, a)[data-size='icon-lg'] {
+  width: var(--control-height-large);
+}
+/* The title bar row is 42px; its sidebar toggle matches the 28px new-chat
+ * control beside it. */
+.app-shell [data-window-titlebar] [data-sidebar='trigger'][data-size] {
+  width: 1.75rem;
+  height: 1.75rem;
+  min-height: 1.75rem;
+}

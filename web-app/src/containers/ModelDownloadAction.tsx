@@ -571,11 +571,10 @@ export const ModelDownloadAction = ({
       <Button
         type="button"
         variant="ghost"
-        size="icon-sm"
+        size="icon-xs"
         aria-label={t('hub:downloadModel')}
         title={t('hub:downloadModel')}
         onClick={() => void requestDownload()}
-        className="size-6"
       >
         <IconDownload size={16} className="text-muted-foreground" />
       </Button>
