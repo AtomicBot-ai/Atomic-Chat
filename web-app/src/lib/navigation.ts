@@ -17,6 +17,7 @@ const SERVER_PATHS = [
 
 const MODELS_PATHS = [
   '/hub',
+  '/downloads',
   '/cloud',
   '/endpoints',
   '/settings/providers',

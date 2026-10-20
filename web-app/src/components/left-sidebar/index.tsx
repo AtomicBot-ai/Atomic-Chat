@@ -148,22 +148,17 @@ function ServerNavigation() {
 
 function ModelsNavigation() {
   const { t } = useTranslation()
-  const { pathname, search } = useLocation()
-  const params = search as Record<string, unknown>
+  const { pathname } = useLocation()
   const onHub = isPathActive(pathname, route.hub.index)
-  // Downloads is a view of the Hub page, kept in the URL so the row that
-  // opened it stays highlighted.
-  const installedOnly = onHub && params.installed === true
 
   return (
     <>
       <SidebarMenu className="px-2">
         <NavRow
-          to={route.hub.index}
-          search={{ installed: true }}
+          to={route.downloads}
           label={t('common:downloads')}
           icon={<Download size={16} />}
-          active={installedOnly}
+          active={isPathActive(pathname, route.downloads)}
         />
       </SidebarMenu>
       <NavGroupLabel>{t('common:navigation.discover')}</NavGroupLabel>
@@ -172,7 +167,7 @@ function ModelsNavigation() {
           to={route.hub.index}
           label={t('common:navigation.localModels')}
           icon={<Blocks size={16} />}
-          active={onHub && !installedOnly}
+          active={onHub}
         />
         <NavRow
           to={route.cloud.index}

@@ -35,6 +35,7 @@ export const route = {
     index: '/hub/',
     model: '/hub/$modelId',
   },
+  downloads: '/downloads',
   images: {
     index: '/images/',
     workflow: '/images/$workflow',
