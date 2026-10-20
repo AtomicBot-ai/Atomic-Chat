@@ -46,6 +46,8 @@
 
 .local-models-responsive {
   container: local-models / inline-size;
+  /* The table's own size: its column minimums and the steps below are in em of it. */
+  font-size: var(--text-xs);
 }
 .local-model-table-frame {
   width: 100%;
@@ -62,7 +64,11 @@
 .local-model-table thead tr,
 .local-model-table .local-model-summary {
   display: grid;
-  grid-template-columns: minmax(0, 2.5fr) repeat(9, minmax(0, 1fr));
+  /* Each data column keeps room for its heading on one line (in em, so it grows
+     with the font size); past that they share the width with the name. */
+  grid-template-columns:
+    minmax(0, 2.5fr) minmax(8.5em, 1fr) minmax(7em, 1fr) minmax(9em, 1fr)
+    minmax(10em, 1fr) minmax(7.5em, 1fr) minmax(7.5em, 1fr);
   width: 100%;
   align-items: center;
 }
@@ -113,55 +119,62 @@
   flex-shrink: 0;
 }
 
-@container local-models (max-width: 1100px) {
+/*
+ * Columns: 1 model, 2 parameters, 3 format, 4 capabilities, 5 download size,
+ * 6 this device, 7 engines. As the column narrows they go least useful first;
+ * the parameters and engines move under the name rather than disappear, and
+ * the download size and this device always stay. The steps are in em, so a
+ * larger font size gives way sooner.
+ */
+@container local-models (max-width: 91.5em) {
   .local-model-table thead tr,
   .local-model-table .local-model-summary {
-    grid-template-columns: minmax(0, 2.5fr) repeat(6, minmax(0, 1fr));
+    grid-template-columns:
+      minmax(0, 2.5fr) minmax(8.5em, 1fr) minmax(7em, 1fr)
+      minmax(10em, 1fr) minmax(7.5em, 1fr) minmax(7.5em, 1fr);
   }
   .local-model-table th:nth-child(4),
-  .local-model-summary td:nth-child(4),
-  .local-model-table th:nth-child(5),
-  .local-model-summary td:nth-child(5),
-  .local-model-table th:nth-child(9),
-  .local-model-summary td:nth-child(9) {
+  .local-model-summary td:nth-child(4) {
     display: none;
   }
 }
-@container local-models (max-width: 900px) {
+@container local-models (max-width: 75em) {
   .local-model-table thead tr,
   .local-model-table .local-model-summary {
-    grid-template-columns: minmax(0, 2.4fr) repeat(5, minmax(0, 1fr));
-  }
-  .local-model-table th:nth-child(2),
-  .local-model-summary td:nth-child(2) {
-    display: none;
-  }
-  .local-model-table .model-inline-meta {
-    display: block;
-  }
-}
-@container local-models (max-width: 700px) {
-  .local-model-table thead tr,
-  .local-model-table .local-model-summary {
-    grid-template-columns: minmax(0, 2.3fr) repeat(4, minmax(0, 1fr));
+    grid-template-columns:
+      minmax(0, 2.4fr) minmax(8.5em, 1fr) minmax(10em, 1fr)
+      minmax(7.5em, 1fr) minmax(7.5em, 1fr);
   }
   .local-model-table th:nth-child(3),
   .local-model-summary td:nth-child(3) {
     display: none;
   }
 }
-@container local-models (max-width: 520px) {
+@container local-models (max-width: 58.5em) {
   .local-model-table thead tr,
   .local-model-table .local-model-summary {
-    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns:
+      minmax(0, 2.3fr) minmax(8.5em, 1fr) minmax(10em, 1fr)
+      minmax(7.5em, 1fr);
   }
-  .local-model-table th:nth-child(6),
-  .local-model-summary td:nth-child(6),
-  .local-model-table th:nth-child(10),
-  .local-model-summary td:nth-child(10) {
+  .local-model-table th:nth-child(7),
+  .local-model-summary td:nth-child(7) {
     display: none;
   }
   .local-model-table .model-inline-engines {
+    display: block;
+  }
+}
+@container local-models (max-width: 43.5em) {
+  .local-model-table thead tr,
+  .local-model-table .local-model-summary {
+    grid-template-columns: minmax(0, 2fr) minmax(10em, 1fr) minmax(7.5em, 1fr);
+  }
+  .local-model-table th:nth-child(2),
+  .local-model-summary td:nth-child(2) {
+    display: none;
+  }
+  .local-model-table .model-inline-meta {
     display: block;
   }
   .local-model-table :is(th, td) {

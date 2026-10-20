@@ -3,22 +3,26 @@ import { ArrowUpDown, ChevronRight, Heart } from 'lucide-react'
 import { ModelLogo } from '@/containers/ModelLogo'
 import { FitBadge } from '@/containers/hub/FitBadge'
 import { ModelDetailPanel } from '@/containers/hub/ModelDetailPanel'
+import { PendingValue } from '@/containers/hub/PendingValue'
+import { isHuggingFaceCardFailed } from '@/hooks/useHuggingFaceFeed'
 import { useModelLikes } from '@/hooks/useModelLikes'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { HUB_FORMAT_LABELS } from '@/lib/hub-filters'
+import { HUB_FORMAT_LABELS, modelDownloadSizeText } from '@/lib/hub-filters'
 import { hubEngineLabel, type HubEngineId } from '@/lib/hub-model-engines'
 import {
   hubModelFacts,
   hubModelName,
+  hubRepoId,
   hubSortValue,
   type HubModelFacts,
   type HubSortableColumn,
 } from '@/lib/hub-model-facts'
 import { foundryLocalOf } from '@/lib/foundry-local/hub'
 import type { ModelFormat } from '@/lib/model-card'
-import { cn, formatBytes } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import type { CatalogModel } from '@/services/models/types'
 import type { StaffPick } from '@/services/staff-picks-registry'
+import { useHubModelParams } from '@/stores/hub-model-params-store'
 import './hub.css'
 
 /** A row of the table, plus the provenance it needs to render. */
@@ -46,12 +50,9 @@ const COLUMNS = [
   { key: 'model', sort: 'model' },
   { key: 'parameters', sort: 'parameters' },
   { key: 'format', sort: 'format' },
-  { key: 'context', sort: 'context' },
   { key: 'capabilities' },
   { key: 'downloadSize', sort: 'downloadSize' },
-  { key: 'estRam', sort: 'estRam' },
   { key: 'thisDevice' },
-  { key: 'uncensored' },
   { key: 'engines', sort: 'engines' },
 ] as const satisfies readonly { key: string; sort?: HubSortableColumn }[]
 
@@ -80,7 +81,26 @@ type Row = LocalModelTableItem & {
   name: string
   facts: HubModelFacts
   engines: HubEngineId[]
+  /** Hugging Face has not answered the parameter count for a name that carries none. */
+  paramsLoading: boolean
+  /** The Hugging Face card with the row's sizes and download options is on its way. */
+  cardLoading: boolean
 }
+
+/** Where Hugging Face's parameter count is asked for: a name that carries none. */
+const needsHubParams = (model: CatalogModel, facts: HubModelFacts) =>
+  !facts.params && !model.is_managed && !foundryLocalOf(model)
+
+/**
+ * A feed row lists only the repo; its sizes, fit and download options arrive with its card,
+ * fetched once the row is on screen or open, unless that fetch failed.
+ */
+const awaitsCard = (item: LocalModelTableItem) =>
+  !!item.fromHuggingFace &&
+  !item.model.is_managed &&
+  !foundryLocalOf(item.model) &&
+  modelDownloadSizeText(item.model) === undefined &&
+  !isHuggingFaceCardFailed(item.model.model_name)
 
 /**
  * The Hub's local models: one row per model with what the listing says about it, sortable by
@@ -112,6 +132,9 @@ export function LocalModelTable({
   const onEndVisibleChangeRef = useRef(onEndVisibleChange)
   onVisibleRowsChangeRef.current = onVisibleRowsChange
   onEndVisibleChangeRef.current = onEndVisibleChange
+  const hubParams = useHubModelParams((state) => state.params)
+  // Row id → the repo whose parameter count is asked for once the row is on screen.
+  const paramsToAskRef = useRef(new Map<string, string>())
 
   const columns: Column[] = COLUMNS.map((column) => ({
     ...column,
@@ -119,19 +142,32 @@ export function LocalModelTable({
   }))
 
   const rows = useMemo<Row[]>(() => {
+    const ask = new Map<string, string>()
     const built = items.map((item) => {
-      const facts = hubModelFacts(item.model, {
+      const listed = hubModelFacts(item.model, {
         format,
         budgetBytes,
         categories: item.pick?.categories,
       })
+      const repo = hubRepoId(item.model)
+      const needsParams = needsHubParams(item.model, listed)
+      if (needsParams && !(repo in hubParams)) {
+        ask.set(item.model.model_name, repo)
+      }
+      const facts = needsParams
+        ? { ...listed, params: hubParams[repo] ?? undefined }
+        : listed
       return {
         ...item,
         name: hubModelName(item.model, item.pick),
         facts,
         engines: facts.engines.filter((id) => availableEngines.has(id)),
+        // Until Hugging Face answers, rather than a "—" that turns into a number.
+        paramsLoading: needsParams && !(repo in hubParams),
+        cardLoading: awaitsCard(item),
       }
     })
+    paramsToAskRef.current = ask
     if (!sort) return built
     const value = (row: Row) =>
       hubSortValue(row.name, row.facts, sort.column, hubEngineLabel)
@@ -149,7 +185,7 @@ export function LocalModelTable({
         return order * sort.direction
       })
       .map((row) => ({ ...row, section: undefined }))
-  }, [items, format, budgetBytes, availableEngines, sort])
+  }, [items, format, budgetBytes, availableEngines, sort, hubParams])
 
   // The rows on screen are measured again only when the rows themselves change
   // (a page arrives, a sort, a row opens), not when a size fills in.
@@ -171,11 +207,14 @@ export function LocalModelTable({
     let frame = 0
     const flush = () => {
       frame = 0
-      onVisibleRowsChangeRef.current?.(
-        elements
-          .filter((element) => visible.has(element))
-          .map((element) => element.dataset.modelRow ?? '')
-      )
+      const onScreen = elements
+        .filter((element) => visible.has(element))
+        .map((element) => element.dataset.modelRow ?? '')
+      onVisibleRowsChangeRef.current?.(onScreen)
+      const ask = paramsToAskRef.current
+      useHubModelParams
+        .getState()
+        .ensure(onScreen.flatMap((id) => ask.get(id) ?? []))
     }
     const observer = new IntersectionObserver((entries) => {
       for (const entry of entries) {
@@ -248,18 +287,11 @@ export function LocalModelTable({
                               : 1,
                         }))
                       }}
-                      // Inline, so the arrow wraps with the last word.
                       className="max-w-full cursor-pointer text-left hover:text-foreground"
                     >
-                      {column.label}
-                      <ArrowUpDown
-                        size={11}
-                        className={cn(
-                          'ml-1 inline-block align-[-1px]',
-                          sort?.column === column.sort
-                            ? 'text-foreground'
-                            : 'opacity-40'
-                        )}
+                      <SortLabel
+                        label={column.label}
+                        active={sort?.column === column.sort}
                       />
                     </button>
                   ) : (
@@ -281,7 +313,7 @@ export function LocalModelTable({
                   {heading && (
                     <tr className="local-model-group border-t border-border first:border-t-0">
                       <th
-                        colSpan={10}
+                        colSpan={COLUMNS.length}
                         scope="colgroup"
                         className="px-3 pb-2 pt-4"
                       >
@@ -294,7 +326,7 @@ export function LocalModelTable({
                   {selected === id ? (
                     <tr data-model-row={id} className="local-model-expanded">
                       <td
-                        colSpan={10}
+                        colSpan={COLUMNS.length}
                         className="border-t border-border bg-secondary/10"
                       >
                         <ModelDetailPanel
@@ -302,6 +334,8 @@ export function LocalModelTable({
                           name={row.name}
                           pickIcon={row.pick?.icon}
                           facts={row.facts}
+                          paramsLoading={row.paramsLoading}
+                          cardLoading={row.cardLoading}
                           engines={row.engines}
                           budgetBytes={budgetBytes}
                           liked={isLiked}
@@ -331,6 +365,30 @@ export function LocalModelTable({
   )
 }
 
+/**
+ * A sortable column's heading. The arrow stays with the last word, so a narrow column wraps
+ * between words rather than leaving the arrow alone on a line.
+ */
+function SortLabel({ label, active }: { label: string; active: boolean }) {
+  const words = label.split(' ')
+  const last = words.pop()
+  return (
+    <>
+      {words.length > 0 && `${words.join(' ')} `}
+      <span className="whitespace-nowrap">
+        {last}
+        <ArrowUpDown
+          size={11}
+          className={cn(
+            'ml-1 inline-block align-[-1px]',
+            active ? 'text-foreground' : 'opacity-40'
+          )}
+        />
+      </span>
+    </>
+  )
+}
+
 type SummaryRowProps = {
   row: Row
   liked: boolean
@@ -345,7 +403,16 @@ const SummaryRow = memo(function SummaryRow({
   onExpand,
 }: SummaryRowProps) {
   const { t } = useTranslation()
-  const { model, pick, fromHuggingFace, name, facts, engines } = row
+  const {
+    model,
+    pick,
+    fromHuggingFace,
+    name,
+    facts,
+    engines,
+    paramsLoading,
+    cardLoading,
+  } = row
   const id = model.model_name
   const foundry = foundryLocalOf(model)
   const unknown = t('hub:table.unknown')
@@ -391,7 +458,12 @@ const SummaryRow = memo(function SummaryRow({
               </span>
             )}
             <span className="model-inline-meta mt-1 text-[10px] font-normal text-muted-foreground">
-              {facts.params ?? '—'} · {formatLabel}
+              {paramsLoading && !facts.params ? (
+                <PendingValue className="h-2.5 w-6" />
+              ) : (
+                (facts.params ?? '—')
+              )}{' '}
+              · {formatLabel}
             </span>
             <span className="model-inline-engines mt-1 text-[10px] font-normal text-muted-foreground">
               {engineText || unknown}
@@ -413,9 +485,10 @@ const SummaryRow = memo(function SummaryRow({
           />
         </button>
       </td>
-      <td className="px-2">{facts.params ?? '—'}</td>
+      <td className="px-2 tabular-nums">
+        {facts.params ?? (paramsLoading ? <PendingValue /> : '—')}
+      </td>
       <td className="px-2">{formatLabel}</td>
-      <td className="px-2">{facts.context ?? unknown}</td>
       <td className="px-2">
         <div className="flex min-w-0 flex-wrap gap-1">
           {facts.capabilities.map((capability) => (
@@ -429,10 +502,7 @@ const SummaryRow = memo(function SummaryRow({
         </div>
       </td>
       <td className="px-2 tabular-nums" title={t('hub:table.sizeHint')}>
-        {facts.sizeText ?? unknown}
-      </td>
-      <td className="px-2 tabular-nums" title={t('hub:table.ramHint')}>
-        {facts.sizeBytes ? `≈ ${formatBytes(facts.sizeBytes)}` : unknown}
+        {facts.sizeText ?? (cardLoading ? <PendingValue /> : unknown)}
       </td>
       <td
         className={cn('px-2', !facts.fit && 'text-muted-foreground')}
@@ -442,14 +512,11 @@ const SummaryRow = memo(function SummaryRow({
           <FitBadge fit={facts.fit} className="px-1.5 py-0.5 text-[10px]" />
         ) : verdictInCard ? (
           t('hub:table.deviceInCard')
+        ) : cardLoading ? (
+          <PendingValue className="h-4 w-14" />
         ) : (
           unknown
         )}
-      </td>
-      <td className="px-2">
-        {facts.uncensored
-          ? t('hub:table.uncensoredYes')
-          : t('hub:table.uncensoredNo')}
       </td>
       <td className="px-2 text-[11px]" title={engineText || undefined}>
         <span>{engines[0] ? hubEngineLabel(engines[0]) : unknown}</span>
@@ -478,7 +545,10 @@ function sameSummary(
     a.pick === b.pick &&
     a.fromHuggingFace === b.fromHuggingFace &&
     a.facts.format === b.facts.format &&
+    a.facts.params === b.facts.params &&
     a.facts.fit === b.facts.fit &&
+    a.paramsLoading === b.paramsLoading &&
+    a.cardLoading === b.cardLoading &&
     a.engines.join() === b.engines.join() &&
     previous.liked === next.liked &&
     previous.onToggleLike === next.onToggleLike &&

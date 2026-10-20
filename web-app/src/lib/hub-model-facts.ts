@@ -7,15 +7,13 @@
  */
 
 import { modelEngineIds, type HubEngineId } from '@/lib/hub-model-engines'
-import { isUncensoredModel, modelDownloadSizeText } from '@/lib/hub-filters'
+import { modelDownloadSizeText } from '@/lib/hub-filters'
 import { estimateWeightBytes } from '@/lib/managed-engine/hub-feed'
 import { isManagedProvider } from '@/lib/managed-engines'
 import {
   deriveCapabilities,
-  deriveContext,
   deriveParams,
   estimateFit,
-  formatContextLength,
   formatParamCount,
   modelFormat,
   parseFileSizeToBytes,
@@ -49,11 +47,12 @@ export const hubRepoId = (model: CatalogModel): string =>
     : `${model.developer ? `${model.developer}/` : ''}${model.model_name}`
 
 export type HubModelFacts = {
-  /** "9B"; from the name, or the safetensors listing's parameter counts. */
+  /**
+   * "9B"; from the name, or the safetensors listing's parameter counts. The table fills
+   * in Hugging Face's own count for a name that carries none (`useHubModelParams`).
+   */
   params?: string
   format: ModelFormat
-  /** "256K"; from the name, or a Foundry Local model's own context length. */
-  context?: string
   capabilities: Capability[]
   /** The representative download the row quotes ("5.2 GB"). */
   sizeText?: string
@@ -65,7 +64,6 @@ export type HubModelFacts = {
    * Foundry Local variant.
    */
   fit?: HardwareFit
-  uncensored: boolean
   engines: HubEngineId[]
 }
 
@@ -111,14 +109,10 @@ export function hubModelFacts(
       model,
       isManagedProvider(options.format) ? options.format : undefined
     ),
-    context: foundry?.context_length
-      ? formatContextLength(foundry.context_length)
-      : deriveContext(model),
     capabilities: deriveCapabilities(model, options.categories),
     sizeText,
     sizeBytes,
     fit,
-    uncensored: isUncensoredModel(model),
     engines: modelEngineIds(model, options.format),
   }
 }
@@ -128,9 +122,7 @@ export type HubSortableColumn =
   | 'model'
   | 'parameters'
   | 'format'
-  | 'context'
   | 'downloadSize'
-  | 'estRam'
   | 'engines'
 
 const parseScaled = (
@@ -155,10 +147,7 @@ export function hubSortValue(
       return parseScaled(facts.params, { B: 1e9, M: 1e6 })
     case 'format':
       return facts.format
-    case 'context':
-      return parseScaled(facts.context, { K: 1e3, M: 1e6 })
     case 'downloadSize':
-    case 'estRam':
       return facts.sizeBytes
     case 'engines':
       return facts.engines.map(engineLabel).join(', ') || undefined

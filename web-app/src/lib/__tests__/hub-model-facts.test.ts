@@ -105,7 +105,7 @@ describe('modelEngineIds', () => {
 })
 
 describe('hubModelFacts', () => {
-  it('judges the fit as the download card does, and quotes the weights as the RAM', () => {
+  it('judges the fit of the download as the download card does', () => {
     // estimateFit: up to 70% of the budget fits well, up to all of it might.
     const budget = 10 * GB
     expect(
@@ -148,12 +148,11 @@ describe('hubModelFacts', () => {
     })
   })
 
-  it("reads a Foundry Local model's own context and leaves size and fit to its variants", () => {
+  it('leaves the size and fit of a Foundry Local model to its variants', () => {
     expect(
       hubModelFacts(foundry, { format: 'foundry-local', budgetBytes: 64 * GB })
     ).toMatchObject({
       format: 'foundry-local',
-      context: '128K',
       sizeText: undefined,
       fit: undefined,
       engines: ['foundry-local'],
@@ -170,13 +169,6 @@ describe('hubModelFacts', () => {
       'Tool Use',
     ])
   })
-
-  it('tags uncensored builds by their repo name', () => {
-    expect(
-      hubModelFacts(gguf('a/Qwen3-abliterated-GGUF'), { budgetBytes: 0 })
-        .uncensored
-    ).toBe(true)
-  })
 })
 
 describe('hubSortValue', () => {
@@ -191,20 +183,19 @@ describe('hubSortValue', () => {
       hubEngineLabel
     )
 
-  it('compares parameters and context as numbers, unknown as undefined', () => {
+  it('compares parameters as numbers, unknown as undefined', () => {
     expect(value(gguf('a/Model-1.5B-GGUF'), 'parameters')).toBe(1.5e9)
-    expect(value(gguf('a/Model-128K-GGUF'), 'context')).toBe(128e3)
     expect(value(gguf('a/Model-GGUF'), 'parameters')).toBeUndefined()
-    expect(
-      value(gguf('a/Model-GGUF', '4.00 GB', { quants: [] }), 'estRam')
-    ).toBeUndefined()
   })
 
-  it('compares the download and the RAM by bytes', () => {
+  it('compares the download by bytes, unknown as undefined', () => {
     expect(value(gguf('a/x-GGUF', '512 MB'), 'downloadSize')).toBe(
       512 * 1024 ** 2
     )
-    expect(value(gguf('a/x-GGUF', '2.00 GB'), 'estRam')).toBe(2 * GB)
+    expect(value(gguf('a/x-GGUF', '2.00 GB'), 'downloadSize')).toBe(2 * GB)
+    expect(
+      value(gguf('a/Model-GGUF', '4.00 GB', { quants: [] }), 'downloadSize')
+    ).toBeUndefined()
   })
 })
 

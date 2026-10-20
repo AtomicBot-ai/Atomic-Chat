@@ -120,25 +120,20 @@
     "unlike": "Unlike {{name}}",
     "unknown": "Unknown",
     "notSpecified": "Not specified",
-    "uncensoredYes": "Tagged yes",
-    "uncensoredNo": "Not tagged",
     "sizeHint": "Representative download: the median quantization with its companion files, or the complete MLX weights.",
-    "ramHint": "The memory the weights take once loaded, which this device is judged by. Context length, cache precision and engine settings add to it.",
     "deviceInCard": "In the download options",
     "deviceInCardHint": "This engine checks the model against this computer when you open it.",
-    "footnote": "RAM is estimated for the listed download. Context length and engine settings affect memory use.",
+    "footnote": "This device compares the listed download with this computer’s memory. Context length and engine settings add to the memory a model uses.",
     "column": {
       "model": "Model",
       "parameters": "Parameters",
       "format": "Format",
-      "context": "Context",
       "capabilities": "Capabilities",
       "downloadSize": "Download size",
-      "estRam": "Est. RAM",
       "thisDevice": "This device",
-      "uncensored": "Uncensored",
       "engines": "Engines"
-    }
+    },
+    "loading": "Loading"
   },
   "source": {
     "huggingFace": "Hugging Face"

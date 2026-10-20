@@ -1,21 +1,19 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { ChevronDown, ExternalLink, Heart } from 'lucide-react'
 import { IconDownload, IconHeart } from '@tabler/icons-react'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import { ModelLogo } from '@/containers/ModelLogo'
 import { DownloadOptionsSelect } from '@/containers/hub/DownloadOptionsSelect'
+import { PendingValue } from '@/containers/hub/PendingValue'
 import { FitBadge } from '@/containers/hub/FitBadge'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { HUB_FORMAT_LABELS } from '@/lib/hub-filters'
 import { hubEngineLabel, type HubEngineId } from '@/lib/hub-model-engines'
 import { hubRepoId, type HubModelFacts } from '@/lib/hub-model-facts'
 import { foundryLocalOf } from '@/lib/foundry-local/hub'
-import {
-  fetchModelStats,
-  formatDownloads,
-  type ModelStats,
-} from '@/lib/model-card'
-import { cn, formatBytes } from '@/lib/utils'
+import { formatDownloads } from '@/lib/model-card'
+import { cn } from '@/lib/utils'
 import type { CatalogModel } from '@/services/models/types'
 
 const relativeTime = (dateString?: string): string | undefined => {
@@ -86,6 +84,10 @@ export type ModelDetailPanelProps = {
   /** Curated metadata when the row came from staff picks. */
   pickIcon?: string
   facts: HubModelFacts
+  /** Hugging Face's parameter count is on its way: the row's own, shown the same here. */
+  paramsLoading?: boolean
+  /** The Hugging Face card with the sizes and download options is on its way. */
+  cardLoading?: boolean
   /** The row's engines this machine offers. */
   engines: readonly HubEngineId[]
   /** Memory budget in bytes; 0 hides the fit indicators. */
@@ -100,14 +102,18 @@ export type ModelDetailPanelProps = {
  * The open row of the Hub's local models table: the model's name with its
  * heart and source, what is known about it, and what can be downloaded.
  *
- * Parameters and context prefer Hugging Face's own numbers for the repo, which
- * arrive once the row is open; a Foundry Local model asks Hugging Face nothing.
+ * Its facts are the row's, so opening a row changes no number. What is still
+ * on its way (Hugging Face's parameter count, a feed row's card with sizes and
+ * download options) shows as a placeholder of its size rather than appearing
+ * later and moving the rest.
  */
 export function ModelDetailPanel({
   model,
   name,
   pickIcon,
   facts,
+  paramsLoading = false,
+  cardLoading = false,
   engines,
   budgetBytes,
   liked,
@@ -116,41 +122,29 @@ export function ModelDetailPanel({
   className,
 }: ModelDetailPanelProps) {
   const { t } = useTranslation()
-  const [stats, setStats] = useState<ModelStats>({})
-
-  const modelName = model.model_name
   const foundry = foundryLocalOf(model)
-
-  useEffect(() => {
-    if (foundry) return
-    let active = true
-    setStats({})
-    void fetchModelStats(modelName).then((next) => {
-      if (active) setStats(next)
-    })
-    return () => {
-      active = false
-    }
-  }, [modelName, foundry])
-
   const unknown = t('hub:table.unknown')
+  const pending = (width: string) => (
+    <PendingValue className={cn('h-4', width)} />
+  )
   const engineText = engines.map(hubEngineLabel).join(', ')
   const updated = relativeTime(model.last_modified ?? model.created_at)
 
   const items: [string, ReactNode][] = [
-    [t('hub:table.column.parameters'), stats.params ?? facts.params ?? unknown],
+    [
+      t('hub:table.column.parameters'),
+      facts.params ?? (paramsLoading ? pending('w-12') : unknown),
+    ],
     [t('hub:table.column.format'), HUB_FORMAT_LABELS[facts.format]],
     [t('hub:table.column.engines'), engineText || unknown],
-    [t('hub:table.column.context'), stats.context ?? facts.context ?? unknown],
     [
       t('hub:table.column.capabilities'),
       facts.capabilities.map((cap) => cap.label).join(', ') ||
         t('hub:table.notSpecified'),
     ],
-    [t('hub:table.column.downloadSize'), facts.sizeText ?? unknown],
     [
-      t('hub:table.column.estRam'),
-      facts.sizeBytes ? `≈ ${formatBytes(facts.sizeBytes)}` : unknown,
+      t('hub:table.column.downloadSize'),
+      facts.sizeText ?? (cardLoading ? pending('w-14') : unknown),
     ],
     [
       t('hub:table.column.thisDevice'),
@@ -158,15 +152,11 @@ export function ModelDetailPanel({
         <FitBadge fit={facts.fit} className="px-1.5 py-0.5 text-[10px]" />
       ) : model.is_managed || foundry ? (
         t('hub:table.deviceInCard')
+      ) : cardLoading ? (
+        pending('w-16')
       ) : (
         unknown
       ),
-    ],
-    [
-      t('hub:table.column.uncensored'),
-      facts.uncensored
-        ? t('hub:table.uncensoredYes')
-        : t('hub:table.uncensoredNo'),
     ],
   ]
 
@@ -236,7 +226,23 @@ export function ModelDetailPanel({
         ))}
       </dl>
       <div className="p-4 pt-0">
-        <DownloadOptionsSelect model={model} budgetBytes={budgetBytes} />
+        {cardLoading ? (
+          // The download options' own frame, so the card does not grow when they land.
+          <section
+            data-testid="download-options-pending"
+            className="rounded-lg border border-border bg-card p-4"
+          >
+            <h2 className="mb-3 text-sm font-medium">
+              {t('hub:downloadOptions')}
+            </h2>
+            <div className="flex items-center justify-between gap-3">
+              {pending('w-40')}
+              <Skeleton className="h-9 w-28 rounded-full" />
+            </div>
+          </section>
+        ) : (
+          <DownloadOptionsSelect model={model} budgetBytes={budgetBytes} />
+        )}
       </div>
     </div>
   )

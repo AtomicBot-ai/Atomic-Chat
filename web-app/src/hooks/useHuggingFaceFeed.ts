@@ -36,6 +36,14 @@ export function resetHuggingFaceFeedForTest(): void {
   detailFailed.clear()
 }
 
+/**
+ * Whether the card of a feed row could not be fetched: its sizes and download
+ * options stay unknown, so nothing should wait for them.
+ */
+export function isHuggingFaceCardFailed(repoId: string): boolean {
+  return detailFailed.has(repoId)
+}
+
 export type HuggingFaceFeed = {
   /** Every page so far, in Hugging Face's order, lightweight entries. */
   models: CatalogModel[]

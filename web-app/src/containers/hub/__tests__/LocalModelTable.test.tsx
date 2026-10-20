@@ -1,4 +1,4 @@
-import { act, render, screen, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { HubEngineId } from '@/lib/hub-model-engines'
@@ -11,16 +11,28 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
   }),
 }))
 
-// The open row's body has tests of its own; here it only says which row it is.
+// The open row's body has tests of its own; here it only says which row it is
+// and what the row hands it.
 vi.mock('@/containers/hub/ModelDetailPanel', () => ({
   ModelDetailPanel: ({
     model,
+    facts,
+    paramsLoading,
+    cardLoading,
     onCollapse,
   }: {
     model: CatalogModel
+    facts: { params?: string }
+    paramsLoading: boolean
+    cardLoading: boolean
     onCollapse: () => void
   }) => (
-    <div data-testid="open-row">
+    <div
+      data-testid="open-row"
+      data-params={facts.params ?? ''}
+      data-params-loading={String(paramsLoading)}
+      data-card-loading={String(cardLoading)}
+    >
       {model.model_name}
       <button type="button" onClick={onCollapse}>
         collapse
@@ -29,12 +41,25 @@ vi.mock('@/containers/hub/ModelDetailPanel', () => ({
   ),
 }))
 
+const { fetchModelParams, cardFailed } = vi.hoisted(() => ({
+  fetchModelParams: vi.fn(),
+  cardFailed: new Set<string>(),
+}))
+vi.mock('@/lib/model-card', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/model-card')>()),
+  fetchModelParams,
+}))
+vi.mock('@/hooks/useHuggingFaceFeed', () => ({
+  isHuggingFaceCardFailed: (repoId: string) => cardFailed.has(repoId),
+}))
+
 import {
   LocalModelTable,
   type LocalModelTableItem,
   type LocalModelTableProps,
 } from '../LocalModelTable'
 import { useModelLikes } from '@/hooks/useModelLikes'
+import { useHubModelParams } from '@/stores/hub-model-params-store'
 
 const GB = 1024 ** 3
 
@@ -143,6 +168,9 @@ describe('LocalModelTable', () => {
     Observers.all = []
     vi.stubGlobal('IntersectionObserver', Observers)
     useModelLikes.setState({ liked: [], onlyLiked: false })
+    useHubModelParams.getState().reset()
+    fetchModelParams.mockReset()
+    cardFailed.clear()
   })
 
   afterEach(() => {
@@ -165,14 +193,22 @@ describe('LocalModelTable', () => {
       'model',
       'parameters',
       'format',
-      'context',
       'capabilities',
       'downloadSize',
-      'estRam',
       'thisDevice',
-      'uncensored',
       'engines',
     ])
+  })
+
+  it("keeps a sort arrow on the line of its heading's last word", () => {
+    renderTable()
+
+    const sortBySize = screen.getByRole('button', {
+      name: /hub:table.sortBy.*hub:table.column.downloadSize/,
+    })
+    const glued = sortBySize.querySelector('span.whitespace-nowrap')!
+    expect(glued).toHaveTextContent('hub:table.column.downloadSize')
+    expect(glued.querySelector('svg')).not.toBeNull()
   })
 
   it('fills each column from the listing, the fit as the download card reads it', () => {
@@ -182,15 +218,18 @@ describe('LocalModelTable', () => {
     expect(cell(qwen, 'parameters')).toHaveTextContent('4B')
     expect(cell(qwen, 'format')).toHaveTextContent('GGUF')
     expect(cell(qwen, 'downloadSize')).toHaveTextContent('2.5 GB')
-    expect(cell(qwen, 'estRam')).toHaveTextContent('≈ 2.5 GB')
     expect(cell(qwen, 'thisDevice')).toHaveTextContent('Good fit')
     // 17 GB of a 20 GB budget: past the 70% that fits well.
     expect(cell(gemma, 'thisDevice')).toHaveTextContent('Might fit')
-    expect(cell(qwen, 'uncensored')).toHaveTextContent('hub:table.uncensoredNo')
     expect(cell(qwen, 'engines')).toHaveTextContent('llama.cpp+1')
-    // A Hugging Face row without its card yet: nothing is guessed.
-    expect(cell(llama, 'downloadSize')).toHaveTextContent('hub:table.unknown')
-    expect(cell(llama, 'thisDevice')).toHaveTextContent('hub:table.unknown')
+    // A Hugging Face row whose card is on its way: a placeholder, nothing guessed.
+    for (const column of ['downloadSize', 'thisDevice']) {
+      expect(
+        within(cell(llama, column)).getByRole('status', {
+          name: 'hub:table.loading',
+        })
+      ).toBeInTheDocument()
+    }
     expect(llama).toHaveAttribute('data-source', 'huggingface')
     expect(qwen).toHaveAttribute('data-source', 'recommended')
     expect(
@@ -402,5 +441,100 @@ describe('LocalModelTable', () => {
     expect(Observers.all).toHaveLength(1)
     expect(Observers.all[0].targets).toHaveLength(4)
     expect(onEndVisibleChange.mock.calls).toEqual([[false], [false]])
+  })
+
+  it('says Unknown, not loading, once a Hugging Face card could not be fetched', () => {
+    cardFailed.add('bartowski/Llama-4-8B-GGUF')
+    renderTable()
+
+    const llama = summaryRows()[2]
+    expect(cell(llama, 'downloadSize')).toHaveTextContent('hub:table.unknown')
+    expect(cell(llama, 'thisDevice')).toHaveTextContent('hub:table.unknown')
+    expect(within(llama).queryByRole('status')).toBeNull()
+  })
+
+  it('asks Hugging Face for the parameters of on-screen rows whose name carries none, and shows them in the row and the open row', async () => {
+    let answer!: (params: string | undefined) => void
+    fetchModelParams.mockImplementation(
+      () => new Promise((resolve) => (answer = resolve))
+    )
+    const items: LocalModelTableItem[] = [
+      { model: gguf('inclusionAI/Ling-3.0-flash-GGUF', '67.30 GB') },
+      { model: gguf('Qwen/Qwen3.5-4B-GGUF', '2.50 GB') },
+    ]
+    const { rerender, onSelect } = renderTable({ items })
+    const [ling, qwen] = summaryRows()
+    // Not answered yet: a placeholder, not a "—" that later turns into a number.
+    expect(
+      within(cell(ling, 'parameters')).getByRole('status')
+    ).toBeInTheDocument()
+
+    vi.useFakeTimers({ toFake: ['requestAnimationFrame'] })
+    act(() =>
+      Observers.all[0].show([
+        'inclusionAI/Ling-3.0-flash-GGUF',
+        'Qwen/Qwen3.5-4B-GGUF',
+      ])
+    )
+    act(() => vi.advanceTimersToNextFrame())
+    vi.useRealTimers()
+
+    // The name says 4B for Qwen: only Ling is asked.
+    expect(fetchModelParams).toHaveBeenCalledTimes(1)
+    expect(fetchModelParams).toHaveBeenCalledWith(
+      'inclusionAI/Ling-3.0-flash-GGUF'
+    )
+    expect(
+      within(cell(summaryRows()[0], 'parameters')).getByRole('status')
+    ).toBeInTheDocument()
+    expect(cell(qwen, 'parameters')).toHaveTextContent('4B')
+
+    await act(async () => answer('104B'))
+    await waitFor(() =>
+      expect(cell(summaryRows()[0], 'parameters')).toHaveTextContent('104B')
+    )
+
+    // The open row names the same count; nothing is asked again.
+    rerender(
+      <LocalModelTable
+        items={items}
+        selected="inclusionAI/Ling-3.0-flash-GGUF"
+        onSelect={onSelect}
+        budgetBytes={20 * GB}
+        availableEngines={ALL_ENGINES}
+      />
+    )
+    expect(screen.getByTestId('open-row')).toHaveAttribute(
+      'data-params',
+      '104B'
+    )
+    expect(fetchModelParams).toHaveBeenCalledTimes(1)
+  })
+
+  it('hands the open row what is still loading', () => {
+    renderTable({ selected: 'bartowski/Llama-4-8B-GGUF' })
+
+    const open = screen.getByTestId('open-row')
+    expect(open).toHaveAttribute('data-card-loading', 'true')
+    // "8B" is in the name: nothing to ask for.
+    expect(open).toHaveAttribute('data-params', '8B')
+    expect(open).toHaveAttribute('data-params-loading', 'false')
+  })
+
+  it('says "—" once Hugging Face reports no count either', async () => {
+    fetchModelParams.mockResolvedValue(undefined)
+    renderTable({
+      items: [{ model: gguf('a/humanizer-GGUF', '1.00 GB') }],
+    })
+
+    vi.useFakeTimers({ toFake: ['requestAnimationFrame'] })
+    act(() => Observers.all[0].show(['a/humanizer-GGUF']))
+    act(() => vi.advanceTimersToNextFrame())
+    vi.useRealTimers()
+
+    await waitFor(() =>
+      expect(cell(summaryRows()[0], 'parameters')).toHaveTextContent('—')
+    )
+    expect(within(summaryRows()[0]).queryByRole('status')).toBeNull()
   })
 })

@@ -22,10 +22,11 @@ vi.mock('@/containers/hub/DownloadOptionsSelect', () => ({
     <section className="h-24 rounded-lg border border-border" />
   ),
 }))
+// Parameter counts come from Hugging Face for names that carry none; none here.
 vi.mock('@/lib/model-card', async () => {
   const actual =
     await vi.importActual<typeof import('@/lib/model-card')>('@/lib/model-card')
-  return { ...actual, fetchModelStats: async () => ({}) }
+  return { ...actual, fetchModelParams: async () => undefined }
 })
 
 const GB = 1024 ** 3
@@ -159,7 +160,21 @@ describe('LocalModelTable layout', () => {
         expectNoHorizontalOverflow(list)
         const headers = visibleColumns()
         for (const header of headers) {
-          expectWholeWords(within(header).queryByRole('button') ?? header)
+          const sort = within(header).queryByRole('button')
+          expectWholeWords(sort ?? header)
+          if (!sort) continue
+          // The arrow stays on its last word's line, never alone below it.
+          const glued = sort.querySelector('span.whitespace-nowrap')!
+          expect(
+            [...glued.getClientRects()].filter((rect) => rect.width > 0),
+            header.dataset.column
+          ).toHaveLength(1)
+          // At these widths every heading, "Download size" too, is one line.
+          const lineHeight = parseFloat(getComputedStyle(sort).lineHeight)
+          expect(
+            sort.getBoundingClientRect().height,
+            header.dataset.column
+          ).toBeLessThan(lineHeight * 1.5)
         }
         for (const row of summaries()) {
           const cells = visibleCells(row)
@@ -211,10 +226,10 @@ describe('LocalModelTable layout', () => {
 
   // The table answers to its own width: columns give way, the rest share it.
   for (const [width, columns] of [
-    [1200, 10],
-    [1000, 7],
-    [800, 6],
-    [600, 5],
+    [1200, 7],
+    [1000, 6],
+    [800, 5],
+    [600, 4],
     [480, 3],
   ] as const) {
     it(`keeps ${columns} columns at ${width}px`, async () => {

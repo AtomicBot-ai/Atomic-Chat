@@ -130,55 +130,26 @@ export function formatContextLength(tokens?: number): string | undefined {
   return `${Math.round(k)}K`
 }
 
-export type ModelStats = { params?: string; context?: string }
-
-const modelStatsCache = new Map<string, ModelStats>()
+const modelParamsCache = new Map<string, string | undefined>()
 
 /**
- * Fetch real params/context from the Hugging Face model API:
- *   params  ← safetensors.total | gguf.total
- *   context ← gguf.context_length | config.max_position_embeddings
- * Falls back to the repo config.json for context when the API omits it
- * (typical for safetensors/MLX repos). Cached per model id.
+ * The parameter count Hugging Face's model API reports for a repo
+ * (`safetensors.total`, else `gguf.total`), as "9B"; `undefined` when it
+ * reports none. Cached per repo, a "none" too; a request that failed is asked
+ * again next time.
  */
-export async function fetchModelStats(modelId: string): Promise<ModelStats> {
-  if (modelStatsCache.has(modelId)) return modelStatsCache.get(modelId) as ModelStats
-  const stats: ModelStats = {}
-  try {
-    const res = await fetch(`https://huggingface.co/api/models/${modelId}`)
-    if (res.ok) {
-      const d = await res.json()
-      const total: number | undefined = d?.safetensors?.total ?? d?.gguf?.total
-      stats.params = formatParamCount(total)
-      const ctx: number | undefined =
-        d?.gguf?.context_length ??
-        d?.config?.max_position_embeddings ??
-        d?.config?.text_config?.max_position_embeddings
-      stats.context = formatContextLength(ctx)
-    }
-  } catch {
-    // ignore — try config.json below / fall back to name heuristics
+export async function fetchModelParams(
+  modelId: string
+): Promise<string | undefined> {
+  if (modelParamsCache.has(modelId)) return modelParamsCache.get(modelId)
+  const res = await fetch(`https://huggingface.co/api/models/${modelId}`)
+  let params: string | undefined
+  if (res.ok) {
+    const d = await res.json()
+    params = formatParamCount(d?.safetensors?.total ?? d?.gguf?.total)
   }
-
-  if (!stats.context) {
-    try {
-      const cfgRes = await fetch(
-        `https://huggingface.co/${modelId}/resolve/main/config.json`
-      )
-      if (cfgRes.ok) {
-        const cfg = await cfgRes.json()
-        const ctx: number | undefined =
-          cfg?.max_position_embeddings ??
-          cfg?.text_config?.max_position_embeddings
-        stats.context = formatContextLength(ctx)
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  modelStatsCache.set(modelId, stats)
-  return stats
+  modelParamsCache.set(modelId, params)
+  return params
 }
 
 /**
@@ -273,7 +244,10 @@ export function deriveCapabilities(
     `${model.model_name} ${model.description ?? ''} ${model.library_name ?? ''}`.toLowerCase()
   const caps: Capability[] = []
 
-  if ((model.num_mmproj ?? 0) > 0 || /image-text-to-text|vision|multimodal|-vl\b/.test(hay)) {
+  if (
+    (model.num_mmproj ?? 0) > 0 ||
+    /image-text-to-text|vision|multimodal|-vl\b/.test(hay)
+  ) {
     caps.push({ label: 'Vision', className: CAP_COLORS.vision })
   }
   if (model.tools || /function[- ]?calling|tool[- ]?use|\btools\b/.test(hay)) {
@@ -305,7 +279,9 @@ export function quantLabel(modelId: string): string {
   if (bit) return `${bit[1]}BIT`
   // GGUF: trailing quant token after a separator (I-quants, ternary TQ,
   // PrismML's PQ / PTQ packings, plain Q)
-  const gguf = seg.match(/[-_.]((?:(?:[IT]|PT?)?Q\d[0-9A-Za-z_]*)|BF16|F16|F32)$/i)
+  const gguf = seg.match(
+    /[-_.]((?:(?:[IT]|PT?)?Q\d[0-9A-Za-z_]*)|BF16|F16|F32)$/i
+  )
   if (gguf) return gguf[1].toUpperCase()
   // Fallback: last separator-delimited segment
   return (seg.split(/[-_.]/).pop() ?? seg).toUpperCase()
@@ -340,7 +316,10 @@ export function getMemoryBudgetBytes(hw: {
   gpus?: Array<{ total_memory?: number }>
 }): number {
   const ramMB = hw.total_memory ?? 0
-  const gpuMB = (hw.gpus ?? []).reduce((sum, g) => sum + (g.total_memory ?? 0), 0)
+  const gpuMB = (hw.gpus ?? []).reduce(
+    (sum, g) => sum + (g.total_memory ?? 0),
+    0
+  )
   return Math.max(ramMB, gpuMB) * SIZE_UNIT_BYTES.MB
 }
 

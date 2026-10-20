@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-428 records, 2026-05-19 → 2026-10-20.
+429 records, 2026-05-19 → 2026-10-20.
 420 records, 2026-05-19 → 2026-10-20.
 
 ---
@@ -336,7 +336,8 @@ decision is reversed, add a new one that says which record it supersedes.
 ## UI / UX (2)
 - **2026-10-20** — [Show hosted providers on Cloud and the user's own servers on Custom Endpoint](2026-10-20-show-hosted-providers-on-cloud-and-own-servers-on-custom-endpoint.md)
 - **2026-10-20** — [List everything downloaded on a Downloads page](2026-10-20-list-everything-downloaded-on-a-downloads-page.md)
-## UI / UX (95)
+## UI / UX (96)
+- **2026-10-20** — [Name every Hub row's parameters and hold the place of what loads](2026-10-20-name-every-hub-rows-parameters-and-hold-the-place-of-what-loads.md)
 - **2026-10-20** — [Unfold engine settings and offer engine updates on the overview](2026-10-20-unfold-engine-settings-and-offer-engine-updates-on-the-overview.md) — supersedes the status, card link and switch of the grouped overview.
 - **2026-10-20** — [List the inference engines on one grouped overview](2026-10-20-list-inference-engines-on-one-grouped-overview.md)
 - **2026-10-20** — [Split the API screen into Overview, Activity, Connections and Engine & model](2026-10-20-split-the-api-screen-into-overview-activity-connections-and-model.md)

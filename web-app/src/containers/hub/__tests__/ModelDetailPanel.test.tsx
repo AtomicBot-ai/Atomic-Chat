@@ -1,11 +1,11 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { hubModelFacts } from '@/lib/hub-model-facts'
 import type { CatalogModel } from '@/services/models/types'
 
 const mocks = vi.hoisted(() => ({
-  fetchModelStats: vi.fn(async () => ({})),
+  fetch: vi.fn(),
 }))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
@@ -21,12 +21,6 @@ vi.mock('@/containers/hub/DownloadOptionsSelect', () => ({
     <section data-testid="download-options">{model.model_name}</section>
   ),
 }))
-
-vi.mock('@/lib/model-card', async () => {
-  const actual =
-    await vi.importActual<typeof import('@/lib/model-card')>('@/lib/model-card')
-  return { ...actual, fetchModelStats: mocks.fetchModelStats }
-})
 
 import { ModelDetailPanel } from '../ModelDetailPanel'
 
@@ -76,7 +70,12 @@ const fact = (label: string) =>
 describe('ModelDetailPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mocks.fetchModelStats.mockResolvedValue({})
+    // The open row asks nothing itself: its facts are the row's.
+    vi.stubGlobal('fetch', mocks.fetch)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
   })
 
   it('heads the open row with the name, the repo and its numbers', () => {
@@ -103,16 +102,14 @@ describe('ModelDetailPanel', () => {
     expect(fact('hub:table.column.engines')).toHaveTextContent(
       'llama.cpp, llama.cpp turboquant'
     )
-    expect(fact('hub:table.column.context')).toHaveTextContent(
-      'hub:table.unknown'
-    )
     expect(fact('hub:table.column.downloadSize')).toHaveTextContent('2.5 GB')
-    // The weights' size, which the device is judged by — not a guess above it.
-    expect(fact('hub:table.column.estRam')).toHaveTextContent('≈ 2.5 GB')
     expect(fact('hub:table.column.thisDevice')).toHaveTextContent('Good fit')
-    expect(fact('hub:table.column.uncensored')).toHaveTextContent(
-      'hub:table.uncensoredNo'
-    )
+    // Context, the RAM estimate and the uncensored tag are not listed.
+    for (const gone of ['context', 'estRam', 'uncensored']) {
+      expect(
+        screen.queryByText(`hub:table.column.${gone}`)
+      ).not.toBeInTheDocument()
+    }
     const facts = screen.getByText('hub:table.column.parameters').closest('dl')!
     expect(
       facts.compareDocumentPosition(screen.getByTestId('download-options')) &
@@ -120,15 +117,39 @@ describe('ModelDetailPanel', () => {
     ).toBeTruthy()
   })
 
-  it("prefers Hugging Face's own parameters and context once they arrive", async () => {
-    mocks.fetchModelStats.mockResolvedValue({ params: '4.2B', context: '256K' })
-    renderPanel()
+  it('names the parameters the row names, and asks Hugging Face nothing itself', () => {
+    const entry = model({ model_name: 'inclusionAI/Ling-3.0-flash-GGUF' })
+    renderPanel(entry, {
+      facts: {
+        ...hubModelFacts(entry, { budgetBytes: BUDGET }),
+        params: '104B',
+      },
+    })
 
-    await waitFor(() =>
-      expect(fact('hub:table.column.parameters')).toHaveTextContent('4.2B')
-    )
-    expect(fact('hub:table.column.context')).toHaveTextContent('256K')
-    expect(mocks.fetchModelStats).toHaveBeenCalledWith('Qwen/Qwen3.5-4B-GGUF')
+    expect(fact('hub:table.column.parameters')).toHaveTextContent('104B')
+    expect(mocks.fetch).not.toHaveBeenCalled()
+  })
+
+  it('holds the place of what is still on its way, so nothing jumps when it lands', () => {
+    const entry = model({
+      model_name: 'bartowski/Ling-3.0-flash-GGUF',
+      quants: undefined,
+    })
+    renderPanel(entry, { paramsLoading: true, cardLoading: true })
+
+    for (const label of [
+      'hub:table.column.parameters',
+      'hub:table.column.downloadSize',
+      'hub:table.column.thisDevice',
+    ]) {
+      expect(
+        within(fact(label)).getByRole('status', { name: 'hub:table.loading' })
+      ).toBeInTheDocument()
+    }
+    // The download options' frame is there already, with its heading.
+    const pending = screen.getByTestId('download-options-pending')
+    expect(within(pending).getByText('hub:downloadOptions')).toBeInTheDocument()
+    expect(screen.queryByTestId('download-options')).not.toBeInTheDocument()
   })
 
   it('links the repo on Hugging Face in place of a README', () => {
@@ -164,13 +185,12 @@ describe('ModelDetailPanel', () => {
       screen.getByText('hub:foundryLocal.microsoftCatalog')
     ).toBeInTheDocument()
     expect(screen.getByText('phi-4-mini')).toBeInTheDocument()
-    expect(fact('hub:table.column.context')).toHaveTextContent('128K')
     expect(fact('hub:table.column.engines')).toHaveTextContent('Foundry Local')
     // Each variant is judged in the download options, not by one size here.
     expect(fact('hub:table.column.thisDevice')).toHaveTextContent(
       'hub:table.deviceInCard'
     )
-    expect(mocks.fetchModelStats).not.toHaveBeenCalled()
+    expect(mocks.fetch).not.toHaveBeenCalled()
   })
 
   it('collapses from its header and keeps the heart beside it', async () => {
