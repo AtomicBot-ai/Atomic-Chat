@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-417 records, 2026-05-19 → 2026-10-20.
+418 records, 2026-05-19 → 2026-10-20.
 
 ---
 
@@ -326,8 +326,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Windows ships `atomic-chat-cli.exe` as a copy of `jan.exe`](2026-05-22-windows-ships-atomic-chat-cli-exe-as-a-copy-of-jan-exe.md)
 - **2026-05-22** — [Windows auto-updater uses NSIS as sole relauncher](2026-05-22-windows-auto-updater-uses-nsis-as-sole-relauncher.md)
 
-## UI / UX (90)
+## UI / UX (91)
 
+- **2026-10-20** — [Give the server's configuration and remote access their own pages](2026-10-20-give-server-configuration-and-remote-access-their-own-pages.md)
 - **2026-10-20** — [Put every control on a 36 / 24 / 40 px scale](2026-10-20-put-every-control-on-a-36-24-40-px-scale.md)
 - **2026-10-19** — [Navigate with an icon rail and a contextual sidebar](2026-10-19-navigate-with-an-icon-rail-and-a-contextual-sidebar.md)
 - **2026-10-09** — [Match file_ids by name, and tell the model documents are attached](2026-10-09-match-file-ids-by-name-and-tell-the-model-documents-are-attached.md)

@@ -10,7 +10,9 @@ import {
   Plug,
   RadioTower,
   Search,
+  Settings2,
   Shield,
+  Wifi,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -119,6 +121,22 @@ function ServerNavigation() {
           active={isPathActive(pathname, route.launch.index)}
           trailing={!integrationsBadgeSeen && <NewBadge />}
         />
+        {PlatformFeatures[PlatformFeature.LOCAL_API_SERVER] && (
+          <>
+            <NavRow
+              to={route.settings.local_api_server}
+              label={t('common:navigation.configuration')}
+              icon={<Settings2 size={16} />}
+              active={isPathActive(pathname, route.settings.local_api_server)}
+            />
+            <NavRow
+              to={route.settings.remote_lan}
+              label={t('common:navigation.remoteAccess')}
+              icon={<Wifi size={16} />}
+              active={isPathActive(pathname, route.settings.remote_lan)}
+            />
+          </>
+        )}
         {PlatformFeatures[PlatformFeature.HTTPS_PROXY] && (
           <NavRow
             to={route.settings.https_proxy}

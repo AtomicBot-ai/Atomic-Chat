@@ -1,9 +1,9 @@
 /**
- * API → Remote & LAN on the core. Remote access starts a Cloudflare quick
+ * Server → Remote access on the core. Remote access starts a Cloudflare quick
  * tunnel in front of the Local API Server, shows the public URL with a QR
  * code, serves the API through it, and stops it; without an API key it asks
  * first. When the tunnel cannot register, or the program is missing, the card
- * says why. LAN access lists this computer's addresses and serves them.
+ * says why. Local network access lists this computer's addresses and serves them.
  *
  * The tunnel program is the core's scripted `cloudflared`, installed as this
  * profile's sidecar; Cloudflare's edge is a TLS server here that the core's
@@ -35,7 +35,7 @@ import { endSession, startSession, withArtifacts, type Session } from '../harnes
 const MODEL_ID = 'e2e/fake-model'
 const LOCAL_API_KEY = 'e2e-remote-key'
 const REMOTE = 'section[aria-label="Remote access"]'
-const LAN = 'section[aria-label="LAN access"]'
+const LAN = 'section[aria-label="Local network"]'
 
 /** The port the profile's local API will listen on: written into the webview seed before `prepare` runs. */
 async function apiPortOf(profile: Profile): Promise<number> {
@@ -81,9 +81,9 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('remote access with an API key', () => {
       const { dataFolder, root } = session.profile
 
       await openRemoteLan(session)
-      expect(await remoteCardState(session)).toBe('Off')
-      await browser.$(`${REMOTE} button=Start`).click()
-      await browser.waitUntil(async () => (await remoteCardState(session)) === 'Online', {
+      expect(await remoteCardState(session)).toBe('Stopped')
+      await browser.$(`${REMOTE} button=Start remote access`).click()
+      await browser.waitUntil(async () => (await remoteCardState(session)) === 'Connected', {
         timeout: 60_000,
         timeoutMsg: `remote access never came online: ${JSON.stringify(await remoteAccessStatus(dataFolder))}`,
       })
@@ -108,8 +108,8 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('remote access with an API key', () => {
       await browser.keys('Escape')
       await browser.waitUntil(async () => !(await browser.$('[data-testid="access-qr-code"]').isExisting()), { timeout: 15_000 })
 
-      await browser.$(`${REMOTE} button=Stop`).click()
-      await browser.waitUntil(async () => (await remoteCardState(session)) === 'Off', { timeout: 30_000 })
+      await browser.$(`${REMOTE} button=Stop remote access`).click()
+      await browser.waitUntil(async () => (await remoteCardState(session)) === 'Stopped', { timeout: 30_000 })
       expect(await remoteAccessStatus(dataFolder)).toMatchObject({ state: 'off', url: null, canStart: true })
       await browser.waitUntil(async () => !isAlive(launch?.pid as number), { timeout: 15_000 })
       expect(liveFakeTunnels(root)).toEqual([])
@@ -148,7 +148,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('remote access without an API key', () =>
       const { dataFolder, root } = session.profile
       await openRemoteLan(session)
 
-      await browser.$(`${REMOTE} button=Start`).click()
+      await browser.$(`${REMOTE} button=Start remote access`).click()
       const dialog = browser.$('[role="dialog"]')
       await dialog.waitForDisplayed({ timeout: 15_000 })
       expect(await dialog.getText()).toContain('Start without an API key?')
@@ -157,10 +157,10 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('remote access without an API key', () =>
       expect(await tunnelLaunches(root)).toEqual([])
       expect((await remoteAccessStatus(dataFolder)).state).toBe('off')
 
-      await browser.$(`${REMOTE} button=Start`).click()
+      await browser.$(`${REMOTE} button=Start remote access`).click()
       await dialog.waitForDisplayed({ timeout: 15_000 })
       await dialog.$('button=Generate key and start').click()
-      await browser.waitUntil(async () => (await remoteCardState(session)) === 'Online', { timeout: 60_000 })
+      await browser.waitUntil(async () => (await remoteCardState(session)) === 'Connected', { timeout: 60_000 })
       // A key now guards the listener; the page kept it for the user.
       const key = await browser.execute(() => {
         const stored = JSON.parse(localStorage.getItem('setting-local-api-server') ?? '{}') as { state?: { apiKey?: string } }
@@ -171,8 +171,8 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('remote access without an API key', () =>
       expect((await models(session.apiPort, key)).status).toBe(200)
       expect((await remoteAccessStatus(dataFolder)).serverHasApiKey).toBe(true)
 
-      await browser.$(`${REMOTE} button=Stop`).click()
-      await browser.waitUntil(async () => (await remoteCardState(session)) === 'Off', { timeout: 30_000 })
+      await browser.$(`${REMOTE} button=Stop remote access`).click()
+      await browser.waitUntil(async () => (await remoteCardState(session)) === 'Stopped', { timeout: 30_000 })
     })
   }, 300_000)
 })
@@ -207,7 +207,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('remote access that cannot start', () => 
       const browser = session.app.browser
       const { dataFolder, root } = session.profile
       await openRemoteLan(session)
-      await browser.$(`${REMOTE} button=Start`).click()
+      await browser.$(`${REMOTE} button=Start remote access`).click()
       // The first attempt gets its 15 s to register, then the HTTP/2 retry gets the same.
       await browser.waitUntil(async () => (await remoteCardState(session)) === 'Error', {
         timeout: 90_000,
@@ -219,7 +219,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('remote access that cannot start', () => 
       expect(launches).toHaveLength(2)
       expect(launches[1]?.argv.slice(-2)).toEqual(['--protocol', 'http2'])
       for (const { pid } of launches) expect(isAlive(pid)).toBe(false)
-      expect(await browser.$(`${REMOTE} button=Start`).isEnabled()).toBe(true)
+      expect(await browser.$(`${REMOTE} button=Start remote access`).isEnabled()).toBe(true)
     })
   }, 300_000)
 })
@@ -249,7 +249,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('remote access in a build without the tun
       const { dataFolder, root } = session.profile
       expect(coreCommand(dataFolder)).not.toContain('--cloudflared-bin')
       await openRemoteLan(session)
-      await browser.$(`${REMOTE} button=Start`).click()
+      await browser.$(`${REMOTE} button=Start remote access`).click()
       await browser.waitUntil(async () => (await remoteCardState(session)) === 'Error', { timeout: 30_000 })
       expect(await remoteAccessStatus(dataFolder)).toMatchObject({ state: 'error', error: 'cloudflared_unavailable', canStart: true })
       expect(await browser.$(`${REMOTE} [role="alert"]`).getText()).toContain('cloudflared')
@@ -282,8 +282,8 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND || process.env.E2E_LAN !== '1')('LAN acces
       const browser = session.app.browser
       const { dataFolder } = session.profile
       await openRemoteLan(session)
-      await browser.$(`${LAN} button=Start`).click()
-      await browser.waitUntil(async () => (await browser.$(`${LAN} output`).getText()).trim() === 'Online', { timeout: 60_000 })
+      await browser.$(`${LAN} button=Start local network`).click()
+      await browser.waitUntil(async () => (await browser.$(`${LAN} output`).getText()).trim() === 'Connected', { timeout: 60_000 })
 
       const addresses = await lanAddresses(dataFolder)
       const shown = await browser.$$(`${LAN} [role="group"]`)
@@ -306,8 +306,8 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND || process.env.E2E_LAN !== '1')('LAN acces
       }
       expect(reached).toBeDefined()
 
-      await browser.$(`${LAN} button=Stop`).click()
-      await browser.waitUntil(async () => (await browser.$(`${LAN} output`).getText()).trim() === 'Off', { timeout: 30_000 })
+      await browser.$(`${LAN} button=Stop local network`).click()
+      await browser.waitUntil(async () => (await browser.$(`${LAN} output`).getText()).trim() === 'Stopped', { timeout: 30_000 })
       // Off the network, still on loopback.
       await expect(
         fetch(`http://${reached}:${session.apiPort}/v1/models`, { headers: { authorization: `Bearer ${LOCAL_API_KEY}` } })

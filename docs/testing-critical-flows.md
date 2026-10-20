@@ -224,8 +224,8 @@ desktop (ADR 2026-09-18). Here the seam is proved by
 `services/__tests__/app.test.ts` (the four remote-access calls hit their core
 routes and a refused start keeps the core's `details` for
 `parseRemoteAccessRejection`), `hooks/__tests__/useRemoteAccessSync.test.ts`
-and `containers/remote-lan/__tests__/RemoteLanSection.test.tsx` on the API
-screen, and in Rust by
+and `containers/remote-lan/__tests__/RemoteLanSection.test.tsx` on Server →
+Remote access, and in Rust by
 `atomic_core::launch` (`--cloudflared-bin` only when the sidecar is there),
 `atomic_core::relay::legacy_events` (`download:stage` under the legacy task
 name) and `server::api_request_analytics` (the image labels). A status read

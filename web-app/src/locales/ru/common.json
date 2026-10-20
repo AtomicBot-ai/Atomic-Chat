@@ -743,6 +743,8 @@
     "serverRestarting": "Перезапуск…",
     "engine": "Движок",
     "model": "Модель",
-    "notSelected": "Не выбрана"
+    "notSelected": "Не выбрана",
+    "configuration": "Настройки",
+    "remoteAccess": "Удалённый доступ"
   }
 }

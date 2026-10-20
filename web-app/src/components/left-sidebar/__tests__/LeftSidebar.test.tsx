@@ -290,18 +290,44 @@ describe('LeftSidebar', () => {
         screen.getByText('common:launch').closest('a')
       ).toHaveAttribute('href', '/launch/')
       expect(
+        screen.getByText('common:navigation.configuration').closest('a')
+      ).toHaveAttribute('href', '/settings/local-api-server')
+      expect(
+        screen.getByText('common:navigation.remoteAccess').closest('a')
+      ).toHaveAttribute('href', '/settings/remote-lan')
+      expect(
         screen.getByText('common:https_proxy').closest('a')
       ).toHaveAttribute('href', '/settings/https-proxy')
       expect(screen.getByLabelText('agents')).toBeInTheDocument()
     })
 
-    it('drops the panel and the proxy where they do not exist', () => {
+    it('highlights Remote access on its own page', () => {
+      at('/settings/remote-lan')
+      render(<LeftSidebar />)
+
+      expect(rowFor('common:navigation.remoteAccess')).toHaveAttribute(
+        'data-active',
+        'true'
+      )
+      expect(rowFor('common:navigation.overview')).toHaveAttribute(
+        'data-active',
+        'false'
+      )
+    })
+
+    it('drops the panel, the server pages and the proxy where they do not exist', () => {
       platform.localApiServer = false
       platform.httpsProxy = false
       at('/api/')
       render(<LeftSidebar />)
 
       expect(screen.queryByLabelText('server control')).not.toBeInTheDocument()
+      expect(
+        screen.queryByText('common:navigation.configuration')
+      ).not.toBeInTheDocument()
+      expect(
+        screen.queryByText('common:navigation.remoteAccess')
+      ).not.toBeInTheDocument()
       expect(screen.queryByText('common:https_proxy')).not.toBeInTheDocument()
     })
 

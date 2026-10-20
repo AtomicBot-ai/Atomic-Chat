@@ -4,8 +4,6 @@ import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn } from '@/lib/utils'
 
-import { ApiSettingsPopover } from './ApiSettingsPopover'
-
 export function ApiPageHeaderActions({
   isRunning,
   isBusy,
@@ -46,8 +44,6 @@ export function ApiPageHeaderActions({
         <IconTrash size={14} />
         {t('api:actions.clearLog')}
       </Button>
-
-      <ApiSettingsPopover isServerRunning={isRunning} />
 
       <Button
         size="sm"

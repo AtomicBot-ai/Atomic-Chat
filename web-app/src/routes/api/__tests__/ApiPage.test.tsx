@@ -69,11 +69,6 @@ vi.mock('@/lib/clipboard', () => ({
   },
 }))
 
-const { features, sectionServer } = vi.hoisted(() => ({
-  features: { localApiServer: true } as Record<string, boolean>,
-  sectionServer: vi.fn(),
-}))
-
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => ({}),
   Link: ({ children }: { children: React.ReactNode }) => <a>{children}</a>,
@@ -111,19 +106,6 @@ vi.mock('@/utils/apiServerCapacity', () => ({
 
 vi.mock('@/utils/localApiServerControl', () => ({
   getLocalApiServerUrl: () => 'http://127.0.0.1:1337/v1',
-}))
-
-vi.mock('@/containers/api/ApiSettingsPopover', () => ({
-  ApiSettingsPopover: () => <button>api:actions.settings</button>,
-}))
-
-vi.mock('@/lib/platform/const', () => ({ PlatformFeatures: features }))
-
-vi.mock('@/containers/remote-lan/RemoteLanSection', () => ({
-  RemoteLanSection: ({ server }: { server: unknown }) => {
-    sectionServer(server)
-    return <section aria-label="remote-lan" />
-  },
 }))
 
 vi.mock('@/containers/HeaderPage', () => ({
@@ -234,7 +216,6 @@ describe('ApiPage', () => {
     resetFeedBuffers()
     store().reset()
     store().hydrate([])
-    features.localApiServer = true
     appState.activeModels = ['gemma-4']
     useDecisionStore.setState(initialDecision, true)
     useEmbeddingStore.setState(initialEmbedding, true)
@@ -371,22 +352,6 @@ describe('ApiPage', () => {
     }
   })
 
-  it('hosts Remote & LAN on the same server control as the header button', () => {
-    render(<ApiPage />)
-    expect(
-      screen.getByRole('region', { name: 'remote-lan' })
-    ).toBeInTheDocument()
-    expect(sectionServer).toHaveBeenCalledWith(control)
-  })
-
-  it('leaves Remote & LAN out where there is no Local API Server', () => {
-    features.localApiServer = false
-    render(<ApiPage />)
-    expect(
-      screen.queryByRole('region', { name: 'remote-lan' })
-    ).not.toBeInTheDocument()
-  })
-
   it('shows the empty state until traffic arrives', () => {
     render(<ApiPage />)
     expect(screen.getByText('api:log.empty')).toBeInTheDocument()
@@ -421,7 +386,7 @@ describe('ApiPage', () => {
     })
     render(<ApiPage />)
     expect(screen.getByText('api:log.feedUnavailable')).toBeInTheDocument()
-    expect(screen.getByText('api:actions.settings')).toBeInTheDocument()
+    expect(screen.getByText('api:actions.refresh')).toBeInTheDocument()
   })
 
   it('starts and stops the server from a single header button', () => {

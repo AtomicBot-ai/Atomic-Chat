@@ -1,7 +1,6 @@
-import { IconWorld } from '@tabler/icons-react'
+import { Globe } from 'lucide-react'
 
-import { Switch } from '@/components/ui/switch'
-import { Card, CardItem } from '@/containers/Card'
+import { ServerSettingRow } from '@/containers/server/ServerPageParts'
 import type { RemoteAccessView } from '@/hooks/useRemoteAccess'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 
@@ -18,56 +17,50 @@ export function RemoteAccessCard({ remote }: { remote: RemoteAccessView }) {
   const { t } = useTranslation()
 
   return (
-    <section className="flex" aria-label={t('settings:remoteLan.remote.title')}>
-      <Card
-        header={
-          <AccessCardHeader
-            icon={<IconWorld size={18} />}
-            title={t('settings:remoteLan.remote.title')}
-            description={t('settings:remoteLan.remote.description')}
-            tone={remote.tone}
-            stateLabel={t(remote.stateKey)}
-            action={remote.action}
-            busy={remote.busy}
-            disabled={remote.disabled}
-            onAction={remote.onAction}
-            message={remote.message}
-          />
-        }
+    <section
+      className="sp-panel"
+      aria-label={t('settings:remoteLan.remote.title')}
+    >
+      <AccessCardHeader
+        icon={<Globe size={22} />}
+        title={t('settings:remoteLan.remote.title')}
+        description={t('settings:remoteLan.remote.description')}
+        tone={remote.tone}
+        stateLabel={t(remote.stateKey)}
+        action={remote.action}
+        startLabel={t('settings:remoteLan.remote.start')}
+        stopLabel={t('settings:remoteLan.remote.stop')}
+        busy={remote.busy}
+        disabled={remote.disabled}
+        onAction={remote.onAction}
+        message={remote.message}
+      />
+      {remote.apiUrl && (
+        <div className="sp-access-urls">
+          <AccessUrlRow url={remote.apiUrl} kind="remote" />
+          <p>{t('settings:remoteLan.remote.security')}</p>
+          <p>{t('settings:remoteLan.remote.providerHint')}</p>
+        </div>
+      )}
+      <ApiKeyRow
+        apiKey={remote.apiKey}
+        onGenerate={remote.generateKey}
+        needsRestart={remote.keyNeedsRestart}
+        restarting={remote.restarting}
+        restartDisabled={remote.restartDisabled}
+        onRestart={remote.restartServer}
+      />
+      <ServerSettingRow
+        title={t('settings:remoteLan.remote.autoStartTitle')}
+        description={t('settings:remoteLan.remote.autoStartDesc')}
       >
-        {remote.apiUrl && (
-          <CardItem
-            title={t('settings:remoteLan.remote.urlLabel')}
-            className="block"
-            description={
-              <div className="space-y-2">
-                <AccessUrlRow url={remote.apiUrl} kind="remote" />
-                <p>{t('settings:remoteLan.remote.security')}</p>
-                <p>{t('settings:remoteLan.remote.providerHint')}</p>
-              </div>
-            }
-          />
-        )}
-        <ApiKeyRow
-          apiKey={remote.apiKey}
-          onGenerate={remote.generateKey}
-          needsRestart={remote.keyNeedsRestart}
-          restarting={remote.restarting}
-          restartDisabled={remote.restartDisabled}
-          onRestart={remote.restartServer}
+        <input
+          type="checkbox"
+          aria-label={t('settings:remoteLan.remote.autoStartTitle')}
+          checked={remote.autoStart}
+          onChange={(event) => remote.setAutoStart(event.target.checked)}
         />
-        <CardItem
-          title={t('settings:remoteLan.autoStart')}
-          description={t('settings:remoteLan.remote.autoStartDesc')}
-          actions={
-            <Switch
-              aria-label={t('settings:remoteLan.autoStart')}
-              checked={remote.autoStart}
-              onCheckedChange={remote.setAutoStart}
-            />
-          }
-        />
-      </Card>
+      </ServerSettingRow>
       <NoKeyConfirmDialog
         open={remote.confirmOpen}
         onGenerateKey={remote.confirmGenerateKey}

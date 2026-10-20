@@ -838,6 +838,8 @@
     "serverRestarting": "Restarting…",
     "engine": "Engine",
     "model": "Model",
-    "notSelected": "Not selected"
+    "notSelected": "Not selected",
+    "configuration": "Configuration",
+    "remoteAccess": "Remote access"
   }
 }

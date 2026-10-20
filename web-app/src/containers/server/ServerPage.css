@@ -1,0 +1,308 @@
+/* The Server section's pages, ported from the approved prototype
+ * (`containers/server-concept/*.css`). Colours come from the app's theme
+ * tokens, as the prototype's `desktop.css` maps them; type sizes scale with
+ * the interface font size (`--font-size-base`). Element rules sit in the
+ * base layer and the `sp-*` classes in the components layer, so a Tailwind
+ * utility on an element still wins. */
+.server-page {
+  --server-surface: color-mix(in oklab, #28786c 8%, var(--card));
+  --server-surface-line: #28786c30;
+  --server-surface-text: var(--muted-foreground);
+  --server-error: var(--destructive);
+  width: 100%;
+  max-width: 900px;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: calc(var(--font-size-base) * 0.8125);
+  letter-spacing: -0.1px;
+  container-type: inline-size;
+}
+.dark .server-page {
+  --server-surface: #222a25;
+  --server-surface-line: #46584c;
+  --server-surface-text: #b5c3ba;
+  --server-error: #f0a19a;
+}
+
+@layer base {
+  .server-page h1,
+  .server-page h2,
+  .server-page h3 {
+    margin: 0;
+    font-family: var(--font-studio), var(--font-sans);
+    font-weight: 500;
+  }
+  .server-page h1 {
+    font-size: calc(var(--font-size-base) * 1.375);
+  }
+  .server-page h2 {
+    font-size: calc(var(--font-size-base) * 1.125);
+  }
+  .server-page h3 {
+    font-size: calc(var(--font-size-base) * 0.9375);
+  }
+  .server-page p {
+    margin: 0;
+    color: var(--muted-foreground);
+    line-height: 1.6;
+  }
+  .server-page small {
+    color: var(--muted-foreground);
+    font-size: calc(var(--font-size-base) * 0.6875);
+    line-height: 1.5;
+  }
+  .server-page strong {
+    font-weight: 600;
+  }
+  .server-page button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .server-page :is(button, input, select, summary):focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 3px;
+  }
+  .server-page :is(input:not([type='checkbox']), select) {
+    width: 100%;
+    height: var(--control-height);
+    min-width: 0;
+    padding: 0 11px;
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    background-color: var(--secondary);
+    color: var(--foreground);
+    font-size: var(--text-base);
+  }
+  .server-page input[readonly] {
+    color: var(--muted-foreground);
+  }
+  .server-page input[type='checkbox'] {
+    appearance: auto;
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    accent-color: var(--primary);
+    cursor: pointer;
+  }
+  /* Native selects keep an inset chevron with room before the label. */
+  .server-page select {
+    appearance: none;
+    padding-right: 34px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%238c9996' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E");
+    background-position: right 11px center;
+    background-repeat: no-repeat;
+    background-size: 16px;
+  }
+}
+
+@layer components {
+  .sp-button {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    height: var(--control-height);
+    min-height: var(--control-height);
+    padding: 0 16px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    background: var(--secondary);
+    color: var(--foreground);
+    font-size: calc(var(--font-size-base) * 0.75);
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .sp-button:hover:not(:disabled) {
+    background: color-mix(in oklab, var(--secondary) 88%, var(--foreground));
+  }
+  .sp-button.sp-primary {
+    border-color: var(--primary);
+    background: var(--primary);
+    color: var(--primary-foreground);
+  }
+  .sp-button.sp-primary:hover:not(:disabled) {
+    background: color-mix(in oklab, var(--primary) 88%, var(--background));
+  }
+
+  .sp-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--muted-foreground);
+    font-size: calc(var(--font-size-base) * 0.6875);
+  }
+
+  .sp-section-title {
+    margin: 10px 0 25px;
+  }
+  .sp-section-title p {
+    margin-top: 9px;
+    font-size: calc(var(--font-size-base) * 0.75);
+  }
+
+  .sp-panel {
+    min-width: 0;
+    margin-bottom: 16px;
+    padding: 20px;
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    background: var(--card);
+  }
+  .sp-panel > h2 {
+    margin-bottom: 17px;
+  }
+  .sp-panel p {
+    font-size: calc(var(--font-size-base) * 0.75);
+  }
+  .sp-panel > summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    list-style: none;
+  }
+  .sp-panel > summary::-webkit-details-marker {
+    display: none;
+  }
+  .sp-panel > summary > svg {
+    transition: transform 0.15s;
+  }
+  .sp-panel[open] > summary > svg {
+    transform: rotate(180deg);
+  }
+
+  .sp-fields {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(100px, 0.65fr);
+    gap: 16px;
+    margin: 18px 0;
+  }
+  .sp-field {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 7px;
+    font-size: calc(var(--font-size-base) * 0.75);
+  }
+  .sp-field > small {
+    font-size: calc(var(--font-size-base) * 0.625);
+  }
+
+  .sp-key-field {
+    display: grid;
+    gap: 8px;
+    margin-top: 20px;
+  }
+  .sp-key-field > label {
+    font-size: calc(var(--font-size-base) * 0.8125);
+    font-weight: 600;
+  }
+  .sp-key-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .server-page .sp-key-controls input {
+    width: auto;
+    min-width: 160px;
+    flex: 1 1 220px;
+  }
+  .sp-key-restart {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .sp-setting-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    padding: 16px 0;
+    border-top: 1px solid var(--border);
+  }
+  .sp-setting-row strong {
+    font-size: calc(var(--font-size-base) * 0.75);
+  }
+  .server-page .sp-setting-row p {
+    margin-top: 5px;
+    font-size: calc(var(--font-size-base) * 0.6875);
+  }
+
+  .sp-access-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+  .sp-access-heading > div {
+    min-width: 0;
+    flex: 1 1 210px;
+  }
+  .server-page .sp-access-heading p {
+    margin: 5px 0 0;
+  }
+  .sp-access-notes {
+    display: grid;
+    gap: 6px;
+    margin: -6px 0 18px;
+  }
+  .sp-access-urls {
+    display: grid;
+    gap: 8px;
+    margin-bottom: 18px;
+  }
+
+  .server-page .sp-error {
+    margin: 12px 0;
+    color: var(--server-error);
+    font-size: calc(var(--font-size-base) * 0.75);
+  }
+
+  .sp-save {
+    position: sticky;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 22px;
+    padding: 12px;
+    border: 1px solid var(--server-surface-line);
+    border-radius: 10px;
+    background: var(--server-surface);
+  }
+  .sp-save > span {
+    margin-right: auto;
+    color: var(--server-surface-text);
+    font-size: calc(var(--font-size-base) * 0.6875);
+  }
+  .server-page .sp-save > .sp-error {
+    margin: 0 auto 0 0;
+    color: var(--server-error);
+  }
+}
+
+@container (max-width: 480px) {
+  .sp-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sp-save {
+    flex-wrap: wrap;
+  }
+  .sp-save > span {
+    flex-basis: 100%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .server-page *,
+  .sp-button {
+    transition: none !important;
+    animation: none !important;
+  }
+}

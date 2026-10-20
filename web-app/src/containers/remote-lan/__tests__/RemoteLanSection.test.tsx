@@ -61,7 +61,7 @@ vi.mock('sonner', () => ({
 
 import { RemoteLanSection } from '../RemoteLanSection'
 
-/** What the API screen does: one control, shared with its Start/Stop. */
+/** What Server → Remote access does: one control, shared by both cards. */
 function Section() {
   return <RemoteLanSection server={useLocalApiServerControl()} />
 }
@@ -132,7 +132,7 @@ async function renderPage(status: RemoteAccessStatus) {
   await waitFor(() => expect(tunnel().status).toEqual(status))
 }
 
-describe('API screen → Remote & LAN', () => {
+describe('Server → Remote access', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.clear()
@@ -183,19 +183,19 @@ describe('API screen → Remote & LAN', () => {
       within(remote).getByText('settings:remoteLan.remote.description')
     ).toBeInTheDocument()
     // A stopped server does not grey Start out: the page starts it first.
-    expect(button(remote, 'settings:remoteLan.start')).toBeEnabled()
+    expect(button(remote, 'settings:remoteLan.remote.start')).toBeEnabled()
     expect(
       within(remote).getByText('settings:remoteLan.remote.block.serverStopped')
     ).toBeInTheDocument()
     expect(
-      within(remote).getByText('settings:remoteLan.apiKey.title')
-    ).toBeInTheDocument()
+      within(remote).getByLabelText('settings:serverKey.label')
+    ).toHaveValue('')
 
     const lan = lanCard()
     expect(within(lan).getByRole('status')).toHaveTextContent(
       'settings:remoteLan.state.off'
     )
-    expect(button(lan, 'settings:remoteLan.start')).toBeEnabled()
+    expect(button(lan, 'settings:remoteLan.lan.start')).toBeEnabled()
     expect(
       within(lan).getByText('settings:remoteLan.lan.block.serverStopped')
     ).toBeInTheDocument()
@@ -216,7 +216,7 @@ describe('API screen → Remote & LAN', () => {
     expect(within(remote).getByRole('status')).toHaveTextContent(
       'settings:remoteLan.state.unavailable'
     )
-    expect(button(remote, 'settings:remoteLan.start')).toBeDisabled()
+    expect(button(remote, 'settings:remoteLan.remote.start')).toBeDisabled()
     warn.mockRestore()
   })
 
@@ -248,7 +248,7 @@ describe('API screen → Remote & LAN', () => {
     it('asks before exposing the API without a key', async () => {
       await renderPage(SERVER_STOPPED)
 
-      fireEvent.click(button(remoteCard(), 'settings:remoteLan.start'))
+      fireEvent.click(button(remoteCard(), 'settings:remoteLan.remote.start'))
 
       const dialog = await screen.findByRole('dialog')
       expect(
@@ -263,7 +263,7 @@ describe('API screen → Remote & LAN', () => {
 
     it('"Generate key and start" saves a key, starts the server, then the tunnel', async () => {
       await renderPage(SERVER_STOPPED)
-      fireEvent.click(button(remoteCard(), 'settings:remoteLan.start'))
+      fireEvent.click(button(remoteCard(), 'settings:remoteLan.remote.start'))
       const dialog = await screen.findByRole('dialog')
 
       fireEvent.click(
@@ -280,9 +280,9 @@ describe('API screen → Remote & LAN', () => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
       expect(settings().apiKey).toMatch(/^sk-atomic-[A-Za-z0-9_-]{32}$/)
       // The key is in the mounted field, ready to be copied.
-      expect(screen.getByPlaceholderText('common:enterApiKey')).toHaveValue(
-        settings().apiKey
-      )
+      expect(
+        screen.getByPlaceholderText('settings:serverKey.placeholder')
+      ).toHaveValue(settings().apiKey)
       expect(control.start).toHaveBeenCalledTimes(1)
       expect(control.stop).not.toHaveBeenCalled()
       expect(app.startRemoteAccess).toHaveBeenCalledTimes(1)
@@ -303,7 +303,7 @@ describe('API screen → Remote & LAN', () => {
     it('"Generate key and start" restarts a running server so the key applies', async () => {
       useAppState.setState({ serverStatus: 'running' })
       await renderPage(OFF)
-      fireEvent.click(button(remoteCard(), 'settings:remoteLan.start'))
+      fireEvent.click(button(remoteCard(), 'settings:remoteLan.remote.start'))
       const dialog = await screen.findByRole('dialog')
 
       fireEvent.click(
@@ -327,7 +327,7 @@ describe('API screen → Remote & LAN', () => {
     it('"Start without key" remembers the choice and starts', async () => {
       useAppState.setState({ serverStatus: 'running' })
       await renderPage(OFF)
-      fireEvent.click(button(remoteCard(), 'settings:remoteLan.start'))
+      fireEvent.click(button(remoteCard(), 'settings:remoteLan.remote.start'))
       const dialog = await screen.findByRole('dialog')
 
       fireEvent.click(
@@ -357,7 +357,7 @@ describe('API screen → Remote & LAN', () => {
       useLocalApiServer.setState({ exposeWithoutKeyAcknowledged: true })
       await renderPage(OFF)
 
-      fireEvent.click(button(remoteCard(), 'settings:remoteLan.start'))
+      fireEvent.click(button(remoteCard(), 'settings:remoteLan.remote.start'))
 
       await waitFor(() =>
         expect(app.startRemoteAccess).toHaveBeenCalledTimes(1)
@@ -367,7 +367,7 @@ describe('API screen → Remote & LAN', () => {
 
     it('cancelling starts nothing and changes nothing', async () => {
       await renderPage(SERVER_STOPPED)
-      fireEvent.click(button(remoteCard(), 'settings:remoteLan.start'))
+      fireEvent.click(button(remoteCard(), 'settings:remoteLan.remote.start'))
       const dialog = await screen.findByRole('dialog')
 
       fireEvent.click(
@@ -392,7 +392,7 @@ describe('API screen → Remote & LAN', () => {
       useLocalApiServer.setState({ apiKey: KEY })
       await renderPage(SERVER_STOPPED)
 
-      fireEvent.click(button(remoteCard(), 'settings:remoteLan.start'))
+      fireEvent.click(button(remoteCard(), 'settings:remoteLan.remote.start'))
 
       await waitFor(() =>
         expect(within(remoteCard()).getByRole('status')).toHaveTextContent(
@@ -405,7 +405,9 @@ describe('API screen → Remote & LAN', () => {
         app.startRemoteAccess.mock.invocationCallOrder[0]
       )
       // While the tunnel comes up the same button calls it off.
-      expect(button(remoteCard(), 'settings:remoteLan.stop')).toBeEnabled()
+      expect(
+        button(remoteCard(), 'settings:remoteLan.remote.stop')
+      ).toBeEnabled()
     })
 
     it('gives up, and says so, when the server does not come up', async () => {
@@ -417,14 +419,16 @@ describe('API screen → Remote & LAN', () => {
       })
       await renderPage(SERVER_STOPPED)
 
-      fireEvent.click(button(remoteCard(), 'settings:remoteLan.start'))
+      fireEvent.click(button(remoteCard(), 'settings:remoteLan.remote.start'))
 
       await waitFor(() => expect(control.start).toHaveBeenCalledTimes(1))
       // One failed click must not lock the page: both cards stay usable.
       await waitFor(() =>
-        expect(button(remoteCard(), 'settings:remoteLan.start')).toBeEnabled()
+        expect(
+          button(remoteCard(), 'settings:remoteLan.remote.start')
+        ).toBeEnabled()
       )
-      expect(button(lanCard(), 'settings:remoteLan.start')).toBeEnabled()
+      expect(button(lanCard(), 'settings:remoteLan.lan.start')).toBeEnabled()
       expect(useAppState.getState().serverStatus).toBe('stopped')
       expect(app.startRemoteAccess).not.toHaveBeenCalled()
       expect(within(remoteCard()).getByRole('status')).toHaveTextContent(
@@ -445,7 +449,7 @@ describe('API screen → Remote & LAN', () => {
       app.startRemoteAccess.mockRejectedValue('cloudflared_unavailable')
       await renderPage({ ...OFF, serverHasApiKey: true })
 
-      fireEvent.click(button(remoteCard(), 'settings:remoteLan.start'))
+      fireEvent.click(button(remoteCard(), 'settings:remoteLan.remote.start'))
 
       const line = await within(remoteCard()).findByRole('alert')
       expect(line).toHaveTextContent(
@@ -455,7 +459,9 @@ describe('API screen → Remote & LAN', () => {
       expect(within(remoteCard()).getByRole('status')).toHaveTextContent(
         'settings:remoteLan.state.off'
       )
-      expect(button(remoteCard(), 'settings:remoteLan.start')).toBeEnabled()
+      expect(
+        button(remoteCard(), 'settings:remoteLan.remote.start')
+      ).toBeEnabled()
     })
 
     it('shows the code of a start the core did not answer, and stays usable', async () => {
@@ -467,7 +473,7 @@ describe('API screen → Remote & LAN', () => {
       app.getRemoteAccessStatus.mockRejectedValue(CORE_UNREACHABLE)
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
-      fireEvent.click(button(remoteCard(), 'settings:remoteLan.start'))
+      fireEvent.click(button(remoteCard(), 'settings:remoteLan.remote.start'))
 
       const line = await within(remoteCard()).findByRole('alert')
       expect(line).toHaveTextContent('settings:remoteLan.remote.error.unknown')
@@ -478,7 +484,9 @@ describe('API screen → Remote & LAN', () => {
       expect(within(remoteCard()).getByRole('status')).toHaveTextContent(
         'settings:remoteLan.state.off'
       )
-      expect(button(remoteCard(), 'settings:remoteLan.start')).toBeEnabled()
+      expect(
+        button(remoteCard(), 'settings:remoteLan.remote.start')
+      ).toBeEnabled()
       expect(eventsNamed('remote_access_start')).toEqual([
         {
           trigger_source: 'manual',
@@ -499,7 +507,7 @@ describe('API screen → Remote & LAN', () => {
     it('shows the base URL with the API prefix once the event says online', async () => {
       await renderPage({ ...STARTING, serverHasApiKey: true })
       expect(
-        screen.queryByText('settings:remoteLan.remote.urlLabel')
+        screen.queryByText('settings:remoteLan.remote.security')
       ).not.toBeInTheDocument()
 
       act(() => {
@@ -580,7 +588,7 @@ describe('API screen → Remote & LAN', () => {
     it('stops the tunnel from the same button', async () => {
       await renderPage({ ...ONLINE, serverHasApiKey: true })
 
-      fireEvent.click(button(remoteCard(), 'settings:remoteLan.stop'))
+      fireEvent.click(button(remoteCard(), 'settings:remoteLan.remote.stop'))
 
       await waitFor(() =>
         expect(within(remoteCard()).getByRole('status')).toHaveTextContent(
@@ -613,7 +621,7 @@ describe('API screen → Remote & LAN', () => {
       expect(
         screen.queryByText('https://quiet-river.trycloudflare.com/v1')
       ).not.toBeInTheDocument()
-      expect(button(remote, 'settings:remoteLan.start')).toBeDisabled()
+      expect(button(remote, 'settings:remoteLan.remote.start')).toBeDisabled()
       expect(
         within(remote).queryByText('settings:remoteLan.remote.unavailable')
       ).not.toBeInTheDocument()
@@ -674,21 +682,21 @@ describe('API screen → Remote & LAN', () => {
       const remote = remoteCard()
       expect(
         within(remote).queryByRole('button', {
-          name: 'settings:remoteLan.apiKey.copy',
+          name: 'settings:serverKey.copy',
         })
       ).not.toBeInTheDocument()
 
-      fireEvent.click(button(remote, 'settings:remoteLan.apiKey.generate'))
+      fireEvent.click(button(remote, 'settings:serverKey.generate'))
 
       expect(settings().apiKey).toMatch(/^sk-atomic-[A-Za-z0-9_-]{32}$/)
-      expect(screen.getByPlaceholderText('common:enterApiKey')).toHaveValue(
-        settings().apiKey
-      )
+      expect(
+        screen.getByPlaceholderText('settings:serverKey.placeholder')
+      ).toHaveValue(settings().apiKey)
       expect(toastSuccess).toHaveBeenCalledWith(
         'settings:remoteLan.apiKey.generated'
       )
 
-      fireEvent.click(button(remote, 'settings:remoteLan.apiKey.copy'))
+      fireEvent.click(button(remote, 'settings:serverKey.copy'))
       await waitFor(() =>
         expect(writeText).toHaveBeenCalledWith(settings().apiKey)
       )
@@ -698,8 +706,10 @@ describe('API screen → Remote & LAN', () => {
       useAppState.setState({ serverStatus: 'running' })
       useLocalApiServer.setState({ apiKey: KEY })
       await renderPage({ ...OFF, serverHasApiKey: true })
-      const field = screen.getByPlaceholderText('common:enterApiKey')
-      expect(field).not.toHaveClass('pointer-events-none')
+      const field = screen.getByPlaceholderText(
+        'settings:serverKey.placeholder'
+      )
+      expect(field).toBeEnabled()
       expect(
         screen.queryByText('settings:remoteLan.apiKey.restartToApply')
       ).not.toBeInTheDocument()
@@ -716,15 +726,15 @@ describe('API screen → Remote & LAN', () => {
 
   it('binds "Start automatically" to remoteAccessAutoStart', async () => {
     await renderPage(OFF)
-    const toggle = within(remoteCard()).getByRole('switch', {
-      name: 'settings:remoteLan.autoStart',
+    const toggle = within(remoteCard()).getByRole('checkbox', {
+      name: 'settings:remoteLan.remote.autoStartTitle',
     })
-    expect(toggle).toHaveAttribute('aria-checked', 'false')
+    expect(toggle).not.toBeChecked()
 
     fireEvent.click(toggle)
 
     expect(settings().remoteAccessAutoStart).toBe(true)
-    expect(toggle).toHaveAttribute('aria-checked', 'true')
+    expect(toggle).toBeChecked()
     expect(eventsNamed('remote_access_auto_start_toggle')).toEqual([
       { enabled: true },
     ])
@@ -732,7 +742,7 @@ describe('API screen → Remote & LAN', () => {
     expect(settings().enableOnStartup).toBe(true)
   })
 
-  describe('LAN access', () => {
+  describe('Local network', () => {
     it('Start moves a running server onto the network: host first, then stop → start', async () => {
       useAppState.setState({ serverStatus: 'running' })
       useLocalApiServer.setState({ apiKey: KEY })
@@ -751,7 +761,7 @@ describe('API screen → Remote & LAN', () => {
       ).toBeInTheDocument()
       expect(screen.queryByText('http://192.168.1.20:1337/v1')).toBeNull()
 
-      fireEvent.click(button(lan, 'settings:remoteLan.start'))
+      fireEvent.click(button(lan, 'settings:remoteLan.lan.start'))
 
       await waitFor(() =>
         expect(within(lanCard()).getByRole('status')).toHaveTextContent(
@@ -770,10 +780,7 @@ describe('API screen → Remote & LAN', () => {
       expect(
         within(lanCard()).getByText('http://10.0.0.7:1337/v1')
       ).toBeInTheDocument()
-      expect(
-        within(lanCard()).getByText('settings:remoteLan.lan.addressesLabel')
-      ).toBeInTheDocument()
-      expect(button(lanCard(), 'settings:remoteLan.stop')).toBeEnabled()
+      expect(button(lanCard(), 'settings:remoteLan.lan.stop')).toBeEnabled()
       expect(eventsNamed('lan_access_toggle')).toEqual([
         {
           lan_action: 'start',
@@ -789,7 +796,7 @@ describe('API screen → Remote & LAN', () => {
       useLocalApiServer.setState({ apiKey: KEY })
       await renderPage(SERVER_STOPPED)
 
-      fireEvent.click(button(lanCard(), 'settings:remoteLan.start'))
+      fireEvent.click(button(lanCard(), 'settings:remoteLan.lan.start'))
 
       await waitFor(() =>
         expect(within(lanCard()).getByRole('status')).toHaveTextContent(
@@ -816,7 +823,7 @@ describe('API screen → Remote & LAN', () => {
       })
       await renderPage(SERVER_STOPPED)
 
-      fireEvent.click(button(lanCard(), 'settings:remoteLan.start'))
+      fireEvent.click(button(lanCard(), 'settings:remoteLan.lan.start'))
 
       await waitFor(() =>
         expect(eventsNamed('lan_access_toggle')).toEqual([
@@ -830,7 +837,7 @@ describe('API screen → Remote & LAN', () => {
       expect(within(lanCard()).getByRole('status')).toHaveTextContent(
         'settings:remoteLan.state.off'
       )
-      expect(button(lanCard(), 'settings:remoteLan.start')).toBeEnabled()
+      expect(button(lanCard(), 'settings:remoteLan.lan.start')).toBeEnabled()
       expect(useAppState.getState().serverStatus).toBe('stopped')
     })
 
@@ -842,7 +849,7 @@ describe('API screen → Remote & LAN', () => {
         await within(lanCard()).findByText('http://192.168.1.20:1337/v1')
       ).toBeInTheDocument()
 
-      fireEvent.click(button(lanCard(), 'settings:remoteLan.stop'))
+      fireEvent.click(button(lanCard(), 'settings:remoteLan.lan.stop'))
 
       await waitFor(() =>
         expect(within(lanCard()).getByRole('status')).toHaveTextContent(
@@ -867,7 +874,7 @@ describe('API screen → Remote & LAN', () => {
       ])
     })
 
-    it('labels a single address in the singular, with copy and QR of its own', async () => {
+    it('lists a single address with copy and QR of its own', async () => {
       useAppState.setState({ serverStatus: 'running' })
       useLocalApiServer.setState({ apiKey: KEY, serverHost: '0.0.0.0' })
       app.getLanAddresses.mockResolvedValue(['192.168.1.20'])
@@ -876,9 +883,6 @@ describe('API screen → Remote & LAN', () => {
       const row = await within(lanCard()).findByRole('group', {
         name: 'http://192.168.1.20:1337/v1',
       })
-      expect(
-        within(lanCard()).getByText('settings:remoteLan.lan.addressLabel')
-      ).toBeInTheDocument()
 
       fireEvent.click(
         within(row).getByRole('button', { name: 'settings:remoteLan.copyUrl' })
@@ -988,15 +992,15 @@ describe('API screen → Remote & LAN', () => {
 
     it('binds "Start automatically" to the server\'s own enableOnStartup', async () => {
       await renderPage(SERVER_STOPPED)
-      const toggle = within(lanCard()).getByRole('switch', {
-        name: 'settings:remoteLan.autoStart',
+      const toggle = within(lanCard()).getByRole('checkbox', {
+        name: 'settings:remoteLan.lan.autoStartTitle',
       })
-      expect(toggle).toHaveAttribute('aria-checked', 'true')
+      expect(toggle).toBeChecked()
 
       fireEvent.click(toggle)
 
       expect(settings().enableOnStartup).toBe(false)
-      expect(toggle).toHaveAttribute('aria-checked', 'false')
+      expect(toggle).not.toBeChecked()
       expect(settings().remoteAccessAutoStart).toBe(false)
     })
   })

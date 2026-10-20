@@ -261,9 +261,9 @@
   "remoteLan": {
     "title": "Remote & LAN",
     "state": {
-      "off": "Off",
+      "off": "Stopped",
       "starting": "Starting",
-      "online": "Online",
+      "online": "Connected",
       "stopping": "Stopping",
       "error": "Error",
       "unavailable": "Unavailable"
@@ -283,12 +283,12 @@
     },
     "remote": {
       "title": "Remote access",
-      "description": "Reach the OpenAI-compatible API from anywhere through a temporary Cloudflare URL.",
+      "description": "Reach your server over HTTPS through a Cloudflare tunnel.",
       "urlLabel": "API base URL",
       "security": "Anyone who has this URL can reach the API on this computer, and the API key is the only thing between them and your models. The URL is temporary: it stops working as soon as remote access is off.",
       "providerHint": "To chat with these models from another Atomic Chat, open Cloud there, choose “Custom (OpenAI-compatible)…” and enter this URL as the Base URL together with your API key.",
-      "autoStartDesc": "Start remote access every time the Local API Server starts. A new URL is created each time, so the previous one stops working and your clients need the new one.",
-      "autoStartFailed": "Remote access could not start automatically. The API screen shows why.",
+      "autoStartDesc": "Open the tunnel when the server starts. Each start gets a new URL, so clients need the new one.",
+      "autoStartFailed": "Remote access could not start automatically. Server → Remote access shows why.",
       "unavailable": "Remote access is not available in this build of Atomic Chat.",
       "block": {
         "serverStopped": "The Local API Server is stopped. Starting remote access starts it first."
@@ -301,23 +301,29 @@
         "exited": "The tunnel closed unexpectedly. Start remote access again to get a new URL.",
         "stop_failed": "The tunnel process did not exit, so the URL may still work. Press Stop again, or quit Atomic Chat to end it.",
         "unknown": "Remote access ran into a problem (code: {{code}}). Start again, and check the app logs if it keeps happening."
-      }
+      },
+      "start": "Start remote access",
+      "stop": "Stop remote access",
+      "autoStartTitle": "Start remote access automatically"
     },
     "lan": {
-      "title": "LAN access",
-      "description": "Let other devices on your Wi-Fi or wired network use the OpenAI-compatible API on this computer.",
+      "title": "Local network",
+      "description": "Let devices on the same Wi-Fi or network connect.",
       "addressLabel": "Address on your network",
       "addressesLabel": "Addresses on your network",
-      "security": "Any device on the same network can connect this way, so turn LAN access on only in networks you trust.",
+      "security": "Any device on the same network can connect this way, so turn local network access on only in networks you trust.",
       "noKeyWarning": "No API key is in effect: any device on your network can use your models.",
-      "autoStartDesc": "The Local API Server starts on its own whenever a model loads, and with LAN access on it starts on your network. This is the same switch as “Auto-start Local API Server” under API settings at the top of this screen.",
-      "restartNote": "Starting or stopping LAN access restarts the Local API Server, which interrupts requests in progress.",
+      "autoStartDesc": "Keep network access ready when Atomic Chat opens.",
+      "restartNote": "Starting or stopping local network access restarts the Local API Server, which interrupts requests in progress.",
       "windowsFirewallHint": "The first time, Windows asks whether Atomic Chat may pass the firewall. Allow it for private networks, or other devices will not be able to connect.",
       "block": {
-        "serverStopped": "The Local API Server is stopped. Starting LAN access starts it on your network.",
+        "serverStopped": "The Local API Server is stopped. Starting local network access starts it on your network.",
         "loopbackOnly": "The Local API Server is running for this computer only.",
-        "noAddresses": "LAN access is on, but this computer has no network address to share. Connect to Wi-Fi or Ethernet."
-      }
+        "noAddresses": "Local network access is on, but this computer has no network address to share. Connect to Wi-Fi or Ethernet."
+      },
+      "start": "Start local network",
+      "stop": "Stop local network",
+      "autoStartTitle": "Start server automatically"
     },
     "apiKey": {
       "title": "API key",
@@ -325,7 +331,7 @@
       "generate": "Generate",
       "generated": "New API key created. Copy it into the apps that connect.",
       "copy": "Copy API key",
-      "restartToApply": "Restart the server to apply the API key.",
+      "restartToApply": "Apply and restart the server to use the updated key.",
       "restartServer": "Restart server"
     },
     "noKeyDialog": {
@@ -334,7 +340,9 @@
       "generateAndStart": "Generate key and start",
       "startWithoutKey": "Start without key",
       "cancel": "Cancel"
-    }
+    },
+    "pageTitle": "Choose who can connect",
+    "pageDescription": "Connect from another device, on your network or over the internet."
   },
   "privacy": {
     "analytics": "Analytics",
@@ -785,5 +793,40 @@
       "bundled": "Shipped with the app",
       "downloaded": "Downloaded update"
     }
+  },
+  "serverConfig": {
+    "title": "Your server, your settings",
+    "description": "The essentials first. Advanced options are here when you need them.",
+    "panelTitle": "Server configuration",
+    "host": "Server host",
+    "hostLocal": "127.0.0.1 · This device only",
+    "hostNetwork": "0.0.0.0 · Local network",
+    "port": "Port",
+    "prefix": "API prefix",
+    "autoStart": "Start automatically",
+    "autoStartDesc": "Start the server when Atomic Chat opens.",
+    "advanced": "Advanced settings",
+    "timeout": "Proxy timeout (seconds)",
+    "timeoutHint": "0–86400 seconds. Use 0 for no timeout.",
+    "trustedHosts": "Trusted hosts",
+    "trustedHostsHint": "Addresses this server is reached at, comma-separated.",
+    "invalid": "Use a port from 1 to 65535, a prefix beginning with /, and a timeout from 0 to 86400 seconds.",
+    "saved": "Changes saved.",
+    "unsaved": "You have unsaved changes.",
+    "allSaved": "All changes saved.",
+    "restarting": "Restarting the server…",
+    "restartFailed": "Changes saved, but the server did not come back. Start it from the sidebar.",
+    "discard": "Discard",
+    "save": "Save changes",
+    "applyRestart": "Apply & restart"
+  },
+  "serverKey": {
+    "label": "API key",
+    "placeholder": "Enter an API key",
+    "show": "Show key",
+    "hide": "Hide key",
+    "generate": "Generate key",
+    "copy": "Copy key",
+    "copied": "Copied"
   }
 }

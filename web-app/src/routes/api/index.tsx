@@ -9,14 +9,11 @@ import { ApiRequestInspector } from '@/containers/api/ApiRequestInspector'
 import { ApiRequestList } from '@/containers/api/ApiRequestList'
 import { ApiStatTiles } from '@/containers/api/ApiStatTiles'
 import HeaderPage from '@/containers/HeaderPage'
-import { RemoteLanSection } from '@/containers/remote-lan/RemoteLanSection'
 import { useApiServerLog, filterEntries } from '@/hooks/useApiServerLog'
 import { useApiServerLogFeed } from '@/hooks/useApiServerLogFeed'
 import { useApiServerModelNotices } from '@/hooks/useApiServerModelNotices'
 import { useLocalApiServerControl } from '@/hooks/useLocalApiServerControl'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { PlatformFeatures } from '@/lib/platform/const'
-import { PlatformFeature } from '@/lib/platform/types'
 import { cn } from '@/lib/utils'
 import { computeApiServerStats } from '@/utils/apiServerStats'
 
@@ -111,11 +108,6 @@ export function ApiPage() {
 
       <div className="flex h-[calc(100%-60px)] flex-col gap-3 overflow-y-auto p-4 pt-0">
         <ApiConnectionStrip />
-
-        {/* Both expose the Local API Server, which only desktop has. */}
-        {PlatformFeatures[PlatformFeature.LOCAL_API_SERVER] && (
-          <RemoteLanSection server={control} />
-        )}
 
         {hydrated ? (
           <ApiStatTiles stats={stats} />
