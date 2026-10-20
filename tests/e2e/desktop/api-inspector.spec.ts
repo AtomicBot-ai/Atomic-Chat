@@ -10,6 +10,7 @@ import { pageShows, pageText } from '../harness/chat.js'
 import { installFakeBackend, writeFakeModel } from '../harness/fixtures.js'
 import { CAN_RUN_FAKE_BACKEND } from '../harness/platform.js'
 import { endSession, startSession, withArtifacts, type Session } from '../harness/session.js'
+import { openServerPage } from '../harness/navigation.js'
 
 const MODEL_ID = 'e2e/fake-model'
 const REPLY = 'ATOMIC-E2E-INSPECTED 6b1f'
@@ -38,7 +39,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('the API request log', () => {
       const browser = session.app.browser
       const baseUrl = `http://127.0.0.1:${session.apiPort}/v1`
       await browser.$('[data-testid="chat-input"]').waitForDisplayed({ timeout: 60_000 })
-      await browser.$('a=API').click()
+      await openServerPage(browser, 'Overview')
       await browser.$('button=Start server').click()
       await browser.$('button=Stop server').waitForDisplayed({ timeout: 60_000 })
 

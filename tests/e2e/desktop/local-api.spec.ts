@@ -11,6 +11,7 @@ import { readLock } from '../harness/core.js'
 import { installFakeBackend, writeFakeModel } from '../harness/fixtures.js'
 import { CAN_RUN_FAKE_BACKEND } from '../harness/platform.js'
 import { endSession, startSession, withArtifacts, type Session } from '../harness/session.js'
+import { openServerPage } from '../harness/navigation.js'
 
 const MODEL_ID = 'e2e/fake-model'
 const REPLY = 'ATOMIC-E2E-API-REPLY 91be'
@@ -69,7 +70,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('the local API server', () => {
       // Auto-start is off in this profile, so nothing listens yet.
       await expect(fetch(`${baseUrl}/models`, { headers: authorized })).rejects.toThrow()
 
-      await browser.$('a=API').click()
+      await openServerPage(browser, 'Overview')
       await browser.$('button=Start server').click()
       await browser.$('button=Stop server').waitForDisplayed({ timeout: 60_000 })
 
@@ -132,7 +133,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('the local API server when the core dies'
       const models = () => fetch(`${baseUrl}/models`, { headers: authorized }).then((r) => r.status, () => 0)
 
       await browser.$('[data-testid="chat-input"]').waitForDisplayed({ timeout: 60_000 })
-      await browser.$('a=API').click()
+      await openServerPage(browser, 'Overview')
       await browser.$('button=Start server').click()
       await browser.$('button=Stop server').waitForDisplayed({ timeout: 60_000 })
       expect(await models()).toBe(200)

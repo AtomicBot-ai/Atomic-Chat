@@ -28,6 +28,12 @@ export async function openSidebarRow(browser: Browser, label: string): Promise<v
   await row.click()
 }
 
+/** Opens a page of the Server section by its sidebar label, wherever the app is. */
+export async function openServerPage(browser: Browser, label: string): Promise<void> {
+  await openSection(browser, 'server')
+  await openSidebarRow(browser, label)
+}
+
 /** Starts a new chat from the Workspace sidebar, wherever the app is. */
 export async function startNewChat(browser: Browser): Promise<void> {
   await openSection(browser, 'chat')

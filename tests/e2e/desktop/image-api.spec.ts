@@ -24,7 +24,7 @@ import {
 } from '../harness/images.js'
 import { CAN_RUN_FAKE_BACKEND } from '../harness/platform.js'
 import { endSession, startSession, withArtifacts, type Session } from '../harness/session.js'
-import { openSection } from '../harness/navigation.js'
+import { openSection, openServerPage } from '../harness/navigation.js'
 
 const LOCAL_API_KEY = 'e2e-images-api-key'
 
@@ -190,7 +190,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('the image endpoint for an image-only use
       await expect(fetch(models)).rejects.toThrow()
 
       // "Start server" used to load a chat model first; with none on disk it never started.
-      await browser.$('a=API').click()
+      await openServerPage(browser, 'Overview')
       await browser.$('button=Start server').click()
       await browser.$('button=Stop server').waitForDisplayed({ timeout: 60_000 })
       await expectPicture(session, 'a cube for a client of the API screen')
