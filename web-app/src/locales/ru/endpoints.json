@@ -1,0 +1,44 @@
+{
+  "title": "Свой эндпоинт",
+  "description": "Подключите любой OpenAI-совместимый сервер или эндпоинт модели в вашей сети.",
+  "add": "Добавить эндпоинт",
+  "empty": {
+    "title": "Ваши модели, где бы они ни работали",
+    "description": "Добавьте первый свой эндпоинт."
+  },
+  "noAddress": "Адрес не задан",
+  "status": {
+    "notChecked": "Не проверен",
+    "checking": "Проверка…",
+    "connected": "Подключён · {{models}}",
+    "reachable": "Отвечает · {{latency}} мс · {{models}}",
+    "failed": "Нет ответа"
+  },
+  "actions": {
+    "ping": "Проверить",
+    "models": "Модели",
+    "showModels": "Модели {{name}}",
+    "configure": "Настроить {{name}}",
+    "remove": "Удалить {{name}}"
+  },
+  "dialog": {
+    "addTitle": "Новый эндпоинт",
+    "configureTitle": "Настройка эндпоинта",
+    "description": "Укажите название и базовый URL сервера.",
+    "name": "Название",
+    "namePlaceholder": "Мой локальный сервер",
+    "nameLocked": "Название определяет эндпоинт, его нельзя изменить.",
+    "baseUrl": "Базовый URL",
+    "baseUrlPlaceholder": "http://localhost:8080/v1",
+    "apiKey": "API-ключ (необязательно)",
+    "invalidUrl": "Введите корректный HTTP- или HTTPS-адрес.",
+    "cancel": "Отмена",
+    "save": "Сохранить"
+  },
+  "remove": {
+    "title": "Удалить {{name}}?",
+    "description": "Эндпоинт будет удалён вместе с его моделями и настройками.",
+    "cancel": "Отмена",
+    "confirm": "Удалить эндпоинт"
+  }
+}

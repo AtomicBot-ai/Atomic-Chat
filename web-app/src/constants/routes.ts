@@ -28,6 +28,9 @@ export const route = {
   cloud: {
     index: '/cloud/',
   },
+  endpoints: {
+    index: '/endpoints/',
+  },
   hub: {
     index: '/hub/',
     model: '/hub/$modelId',

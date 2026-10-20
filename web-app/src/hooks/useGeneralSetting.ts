@@ -55,6 +55,12 @@ type GeneralSettingState = {
   connectorsBadgeSeen: boolean
   markConnectorsBadgeSeen: () => void
   /**
+   * The Cloud page's first-visit guide was finished or skipped. After that it
+   * opens only from its "Guide me" button.
+   */
+  cloudGuideDone: boolean
+  markCloudGuideDone: () => void
+  /**
    * Global opt-in for the agent engine. Off = every turn runs on the chat
    * pipeline. Toggled from the composer "+" menu; while on, an "Agent" chip
    * sits in the composer toolbar until the user removes it.
@@ -105,6 +111,11 @@ export const useGeneralSetting = create<GeneralSettingState>()(
       markConnectorsBadgeSeen: () =>
         set((state) =>
           state.connectorsBadgeSeen ? state : { connectorsBadgeSeen: true }
+        ),
+      cloudGuideDone: false,
+      markCloudGuideDone: () =>
+        set((state) =>
+          state.cloudGuideDone ? state : { cloudGuideDone: true }
         ),
       agentModeEnabled: false,
       setAgentModeEnabled: (value) => set({ agentModeEnabled: value }),

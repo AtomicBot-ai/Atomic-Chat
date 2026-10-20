@@ -1,24 +1,31 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { createFileRoute, useNavigate, useSearch } from '@tanstack/react-router'
+import {
+  createFileRoute,
+  redirect,
+  useNavigate,
+  useSearch,
+} from '@tanstack/react-router'
 import { IconRefresh } from '@tabler/icons-react'
-import cloneDeep from 'lodash/cloneDeep'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { route } from '@/constants/routes'
-import { openAIProviderSettings } from '@/constants/providers'
 import HeaderPage from '@/containers/HeaderPage'
 import { CloudConnectionCard } from '@/containers/cloud/CloudConnectionCard'
 import { CloudMediaModelsCard } from '@/containers/cloud/CloudMediaModelsCard'
 import { CloudModelsCard } from '@/containers/cloud/CloudModelsCard'
+import { CloudProviderBrowser } from '@/containers/cloud/CloudProviderBrowser'
+import { CloudSetupWizard } from '@/containers/cloud/CloudSetupWizard'
 import { CloudSubscriptionCard } from '@/containers/cloud/CloudSubscriptionCard'
-import { AddProviderDialog } from '@/containers/dialogs'
 import { useChatGptAuth } from '@/hooks/useChatGptAuth'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
+  groupCloudProviders,
   isCloudProvider,
   isProviderConnected,
+  isSelfHostedGroup,
   isSubscriptionProvider,
 } from '@/lib/cloud-providers'
 import { refreshProviderModels } from '@/lib/refresh-provider-models'
@@ -29,11 +36,15 @@ import { isKnownProvider, useProviderRegistryStore } from '@/stores/provider-reg
 type CloudSearch = {
   provider?: string
   /**
-   * `custom` opens the "Custom (OpenAI-compatible)" dialog. In the URL so the
-   * sidebar's Custom Endpoint row can open it and stay highlighted meanwhile.
+   * The old Custom Endpoint link (`?add=custom`). Custom endpoints have their
+   * own page now; the param is kept only to forward such links there.
    */
   add?: 'custom'
 }
+
+/** A provider of the user's own: Ollama, a `llama-server`, a custom endpoint. */
+const isSelfHosted = (provider: ProviderObject | undefined) =>
+  provider !== undefined && isCloudProvider(provider) && isSelfHostedGroup(provider)
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.cloud.index as any)({
@@ -47,6 +58,26 @@ export const Route = createFileRoute(route.cloud.index as any)({
         ? { provider }
         : {}),
       ...(search?.add === 'custom' ? { add: 'custom' as const } : {}),
+    }
+  },
+  /**
+   * Self-hosted servers moved to Custom Endpoint. Links that still point here
+   * — `?add=custom`, and `?provider=` for one of them, which is where the
+   * `/settings/providers/$providerName` redirect and the model picker's gear
+   * send it — land on that page instead.
+   */
+  beforeLoad: ({ search }: { search: CloudSearch }) => {
+    if (search.add === 'custom') throw redirect({ to: route.endpoints.index })
+    if (search.provider) {
+      const provider = useModelProvider
+        .getState()
+        .getProviderByName(search.provider)
+      if (isSelfHosted(provider)) {
+        throw redirect({
+          to: route.endpoints.index,
+          search: { provider: search.provider },
+        })
+      }
     }
   },
 })
@@ -67,26 +98,13 @@ export function CloudPage() {
   const serviceHub = useServiceHub()
   const navigate = useNavigate()
   const search = useSearch({ from: Route.id }) as CloudSearch
-  const { providers, addProvider, updateProvider, setProviders } =
-    useModelProvider()
+  const { providers, updateProvider, setProviders } = useModelProvider()
 
   const subscription = useChatGptAuth('settings')
 
-  const customOpen = search.add === 'custom'
-  const setCustomOpen = useCallback(
-    (open: boolean) => {
-      navigate({
-        to: route.cloud.index,
-        search: (prev: CloudSearch) => ({
-          ...prev,
-          add: open ? ('custom' as const) : undefined,
-        }),
-        replace: true,
-      })
-    },
-    [navigate]
-  )
   const [refreshing, setRefreshing] = useState(false)
+  /** The model a search result was picked for, named above the connection. */
+  const [selectedModelName, setSelectedModelName] = useState<string>()
 
   // The provider catalog is a cloud concern, so its refresh moved here from
   // Settings along with the providers it describes.
@@ -94,16 +112,34 @@ export function CloudPage() {
     (s) => s.status === 'loading'
   )
   const registryFetchedAt = useProviderRegistryStore((s) => s.fetchedAt)
+  const registryReady = useProviderRegistryStore((s) => s.hasInitialized)
   const refreshRegistry = useProviderRegistryStore((s) => s.refresh)
 
-  const cloudProviders = useMemo(
-    () => providers.filter(isCloudProvider),
-    [providers]
+  // Which providers count as the user's own depends on the registry (a
+  // provider it does not ship is one the user added), hence the dependency.
+  const groups = useMemo(
+    () => groupCloudProviders(providers),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [providers, registryReady]
   )
+  const hostedProviders = groups.hosted
+
+  // The first-visit guide. It is not offered to someone who already has a
+  // hosted provider connected — through onboarding's own cloud dialog, say —
+  // and once finished or skipped it opens only from "Guide me".
+  const cloudGuideDone = useGeneralSetting((s) => s.cloudGuideDone)
+  const markCloudGuideDone = useGeneralSetting((s) => s.markCloudGuideDone)
+  const [guideOpen, setGuideOpen] = useState(
+    () => !cloudGuideDone && !hostedProviders.some(isProviderConnected)
+  )
+  const finishGuide = useCallback(() => {
+    markCloudGuideDone()
+    setGuideOpen(false)
+  }, [markCloudGuideDone])
 
   const selected = useMemo(() => {
     if (search.provider) {
-      return cloudProviders.find((p) => p.provider === search.provider)
+      return hostedProviders.find((p) => p.provider === search.provider)
     }
     // No explicit selection: open on something the user already set up, so the
     // page is useful on arrival rather than an empty picker. With nothing
@@ -111,11 +147,11 @@ export function CloudPage() {
     // catalog — and failing that on whatever comes first, so the page never
     // opens blank.
     return (
-      cloudProviders.find(isProviderConnected) ??
-      cloudProviders.find((p) => p.provider === DEFAULT_CLOUD_PROVIDER) ??
-      cloudProviders[0]
+      hostedProviders.find(isProviderConnected) ??
+      hostedProviders.find((p) => p.provider === DEFAULT_CLOUD_PROVIDER) ??
+      hostedProviders[0]
     )
-  }, [cloudProviders, search.provider])
+  }, [hostedProviders, search.provider])
 
   const selectProvider = useCallback(
     (providerName: string) => {
@@ -141,55 +177,24 @@ export function CloudPage() {
   // Canonicalise the implicit “first connected provider” choice into the URL.
   // Otherwise disconnecting it changes `isProviderConnected`, recomputes the
   // fallback and unexpectedly jumps the page to OpenRouter.
-  // An open Custom dialog (`add`) stays open across the pin.
   useEffect(() => {
-    if (!search.provider && selected) {
+    if (!search.provider && selected) selectProvider(selected.provider)
+  }, [search.provider, selectProvider, selected])
+
+  // `beforeLoad` forwards a self-hosted provider, but a provider the user
+  // added is only known as theirs once the registry has loaded.
+  useEffect(() => {
+    if (
+      search.provider &&
+      groups.selfHosted.some((p) => p.provider === search.provider)
+    ) {
       navigate({
-        to: route.cloud.index,
-        search: {
-          provider: selected.provider,
-          ...(search.add ? { add: search.add } : {}),
-        },
+        to: route.endpoints.index,
+        search: { provider: search.provider },
         replace: true,
       })
     }
-  }, [navigate, search.provider, search.add, selected])
-
-  const createProvider = useCallback(
-    (name: string) => {
-      if (
-        providers.some((p) => p.provider.toLowerCase() === name.toLowerCase())
-      ) {
-        toast.error(t('common:providerAlreadyExists', { name }))
-        return
-      }
-      // The form is OpenAI's, the address is not: a provider the user has only
-      // named so far has no endpoint, and seeding OpenAI's made the app ask
-      // api.openai.com for models the moment the provider appeared — a third
-      // party nobody chose. The address stays on as the field's placeholder.
-      const settings = (
-        cloneDeep(openAIProviderSettings) as ProviderSetting[]
-      ).map((setting) =>
-        setting.key === 'base-url'
-          ? {
-              ...setting,
-              controller_props: { ...setting.controller_props, value: '' },
-            }
-          : setting
-      )
-      addProvider({
-        provider: name,
-        active: true,
-        models: [],
-        settings,
-        api_key: '',
-        base_url: '',
-      })
-      // Let the store commit before the route reads it back.
-      setTimeout(() => selectProvider(name), 0)
-    },
-    [addProvider, providers, selectProvider, t]
-  )
+  }, [groups.selfHosted, navigate, search.provider])
 
   const handleRefreshCatalog = useCallback(async () => {
     const errorMessage = t('providers:registry.errorDescription')
@@ -235,6 +240,35 @@ export function CloudPage() {
     }
   }, [selected, serviceHub, setProviders, updateProvider, t])
 
+  const connectionForm = (
+    <>
+      <CloudConnectionCard
+        hideProviderSelect
+        providers={providers}
+        selected={selected}
+        onSelect={selectProvider}
+        onDeleted={clearSelection}
+        updateProvider={updateProvider}
+        serviceHub={serviceHub}
+      />
+
+      {isSubscriptionProvider(selected?.provider) && (
+        <CloudSubscriptionCard
+          state={subscription.state}
+          account={subscription.account}
+          error={subscription.error}
+          modelCount={subscription.modelCount}
+          onConnectBrowser={() => void subscription.connect()}
+          onCancel={() => void subscription.cancel()}
+          onDisconnect={() => void subscription.disconnect()}
+          surface="settings"
+        />
+      )}
+    </>
+  )
+
+  const selectedConnected = selected ? isProviderConnected(selected) : false
+
   return (
     <div className="flex h-svh w-full flex-col">
       <HeaderPage>
@@ -248,6 +282,13 @@ export function CloudPage() {
             {t('cloud:title')}
           </span>
           <div className="relative z-50 flex shrink-0 items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setGuideOpen(true)}
+            >
+              {t('cloud:guide.open')}
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -274,60 +315,73 @@ export function CloudPage() {
           </div>
         </div>
       </HeaderPage>
-      {/* Classic (non-overlay) scrollbars — macOS with a mouse connected or
-          "Show scroll bars: Always", Windows, Linux — take layout width, so
-          a provider whose model list scrolls and one whose list does not
-          gave the centred column two different widths: every switch between
-          them nudged the whole block sideways. Reserving the gutter keeps
-          the geometry constant; same rule the onboarding picker applies. */}
-      <div className="h-[calc(100%-60px)] overflow-y-auto p-4 pt-0 [scrollbar-gutter:stable]">
-        <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
-          <CloudConnectionCard
-            providers={providers}
-            selected={selected}
-            onSelect={selectProvider}
-            onAddCustom={() => setCustomOpen(true)}
-            onDeleted={clearSelection}
-            updateProvider={updateProvider}
-            serviceHub={serviceHub}
+      {guideOpen ? (
+        <CloudSetupWizard
+          providers={hostedProviders}
+          selected={selected}
+          onSelect={selectProvider}
+          onFinish={finishGuide}
+        >
+          {connectionForm}
+        </CloudSetupWizard>
+      ) : (
+        <div className="grid min-h-0 flex-1 grid-cols-[minmax(230px,290px)_minmax(0,1fr)]">
+          <CloudProviderBrowser
+            providers={hostedProviders}
+            selected={selected?.provider}
+            onSelect={(provider, model) => {
+              setSelectedModelName(model)
+              selectProvider(provider)
+            }}
           />
+          {/* Classic (non-overlay) scrollbars — macOS with a mouse connected or
+              "Show scroll bars: Always", Windows, Linux — take layout width, so
+              a provider whose model list scrolls and one whose list does not
+              gave the centred column two different widths: every switch between
+              them nudged the whole block sideways. Reserving the gutter keeps
+              the geometry constant; same rule the onboarding picker applies. */}
+          <section
+            aria-label={t('cloud:configurationLabel')}
+            className="min-w-0 overflow-y-auto p-4 pt-0 [scrollbar-gutter:stable]"
+          >
+            <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
+              {selectedModelName && selected && (
+                <div
+                  role="status"
+                  className="rounded-lg border border-border bg-secondary/30 px-4 py-3"
+                >
+                  <p className="truncate text-sm font-medium">
+                    {selectedModelName}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {selectedConnected
+                      ? t('cloud:browser.modelReady')
+                      : t('cloud:browser.modelConnect')}
+                  </p>
+                </div>
+              )}
 
-          {isSubscriptionProvider(selected?.provider) && (
-            <CloudSubscriptionCard
-              state={subscription.state}
-              account={subscription.account}
-              error={subscription.error}
-              modelCount={subscription.modelCount}
-              onConnectBrowser={() => void subscription.connect()}
-              onCancel={() => void subscription.cancel()}
-              onDisconnect={() => void subscription.disconnect()}
-              surface="settings"
-            />
-          )}
+              {connectionForm}
 
-          {selected && !selected.media_only && (
-            <CloudModelsCard
-              provider={selected}
-              refreshing={refreshing}
-              onRefresh={handleRefreshModels}
-            />
-          )}
+              {selected && !selected.media_only && (
+                <CloudModelsCard
+                  provider={selected}
+                  refreshing={refreshing}
+                  onRefresh={handleRefreshModels}
+                />
+              )}
 
-          {selected && mediaAvailable && !isSubscriptionProvider(selected.provider) && (
-            <CloudMediaModelsCard
-              provider={selected}
-              custom={!isKnownProvider(selected.provider)}
-              onChange={(media) => updateProvider(selected.provider, { media })}
-            />
-          )}
+              {selected && mediaAvailable && !isSubscriptionProvider(selected.provider) && (
+                <CloudMediaModelsCard
+                  provider={selected}
+                  custom={!isKnownProvider(selected.provider)}
+                  onChange={(media) => updateProvider(selected.provider, { media })}
+                />
+              )}
+            </div>
+          </section>
         </div>
-      </div>
-
-      <AddProviderDialog
-        open={customOpen}
-        onOpenChange={setCustomOpen}
-        onCreateProvider={createProvider}
-      />
+      )}
     </div>
   )
 }

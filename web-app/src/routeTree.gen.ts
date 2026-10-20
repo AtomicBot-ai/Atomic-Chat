@@ -17,6 +17,7 @@ import { Route as SkillsIndexRouteImport } from './routes/skills/index'
 import { Route as LaunchIndexRouteImport } from './routes/launch/index'
 import { Route as ImagesIndexRouteImport } from './routes/images/index'
 import { Route as HubIndexRouteImport } from './routes/hub/index'
+import { Route as EndpointsIndexRouteImport } from './routes/endpoints/index'
 import { Route as ConnectorsIndexRouteImport } from './routes/connectors/index'
 import { Route as CloudIndexRouteImport } from './routes/cloud/index'
 import { Route as ApiIndexRouteImport } from './routes/api/index'
@@ -85,6 +86,11 @@ const ImagesIndexRoute = ImagesIndexRouteImport.update({
 const HubIndexRoute = HubIndexRouteImport.update({
   id: '/hub/',
   path: '/hub/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EndpointsIndexRoute = EndpointsIndexRouteImport.update({
+  id: '/endpoints/',
+  path: '/endpoints/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ConnectorsIndexRoute = ConnectorsIndexRouteImport.update({
@@ -265,6 +271,7 @@ export interface FileRoutesByFullPath {
   '/api/': typeof ApiIndexRoute
   '/cloud/': typeof CloudIndexRoute
   '/connectors/': typeof ConnectorsIndexRoute
+  '/endpoints/': typeof EndpointsIndexRoute
   '/hub/': typeof HubIndexRoute
   '/images/': typeof ImagesIndexRoute
   '/launch/': typeof LaunchIndexRoute
@@ -304,6 +311,7 @@ export interface FileRoutesByTo {
   '/api': typeof ApiIndexRoute
   '/cloud': typeof CloudIndexRoute
   '/connectors': typeof ConnectorsIndexRoute
+  '/endpoints': typeof EndpointsIndexRoute
   '/hub': typeof HubIndexRoute
   '/images': typeof ImagesIndexRoute
   '/launch': typeof LaunchIndexRoute
@@ -344,6 +352,7 @@ export interface FileRoutesById {
   '/api/': typeof ApiIndexRoute
   '/cloud/': typeof CloudIndexRoute
   '/connectors/': typeof ConnectorsIndexRoute
+  '/endpoints/': typeof EndpointsIndexRoute
   '/hub/': typeof HubIndexRoute
   '/images/': typeof ImagesIndexRoute
   '/launch/': typeof LaunchIndexRoute
@@ -385,6 +394,7 @@ export interface FileRouteTypes {
     | '/api/'
     | '/cloud/'
     | '/connectors/'
+    | '/endpoints/'
     | '/hub/'
     | '/images/'
     | '/launch/'
@@ -424,6 +434,7 @@ export interface FileRouteTypes {
     | '/api'
     | '/cloud'
     | '/connectors'
+    | '/endpoints'
     | '/hub'
     | '/images'
     | '/launch'
@@ -463,6 +474,7 @@ export interface FileRouteTypes {
     | '/api/'
     | '/cloud/'
     | '/connectors/'
+    | '/endpoints/'
     | '/hub/'
     | '/images/'
     | '/launch/'
@@ -503,6 +515,7 @@ export interface RootRouteChildren {
   ApiIndexRoute: typeof ApiIndexRoute
   CloudIndexRoute: typeof CloudIndexRoute
   ConnectorsIndexRoute: typeof ConnectorsIndexRoute
+  EndpointsIndexRoute: typeof EndpointsIndexRoute
   HubIndexRoute: typeof HubIndexRoute
   ImagesIndexRoute: typeof ImagesIndexRoute
   LaunchIndexRoute: typeof LaunchIndexRoute
@@ -568,6 +581,13 @@ declare module '@tanstack/react-router' {
       path: '/hub'
       fullPath: '/hub/'
       preLoaderRoute: typeof HubIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/endpoints/': {
+      id: '/endpoints/'
+      path: '/endpoints'
+      fullPath: '/endpoints/'
+      preLoaderRoute: typeof EndpointsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/connectors/': {
@@ -807,6 +827,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiIndexRoute: ApiIndexRoute,
   CloudIndexRoute: CloudIndexRoute,
   ConnectorsIndexRoute: ConnectorsIndexRoute,
+  EndpointsIndexRoute: EndpointsIndexRoute,
   HubIndexRoute: HubIndexRoute,
   ImagesIndexRoute: ImagesIndexRoute,
   LaunchIndexRoute: LaunchIndexRoute,

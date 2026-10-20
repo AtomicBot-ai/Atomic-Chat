@@ -375,11 +375,8 @@ describe('LeftSidebar', () => {
       const custom = screen
         .getByText('common:navigation.customEndpoint')
         .closest('a')
-      expect(custom).toHaveAttribute('href', '/cloud/')
-      expect(custom).toHaveAttribute(
-        'data-search',
-        JSON.stringify({ add: 'custom' })
-      )
+      expect(custom).toHaveAttribute('href', '/endpoints/')
+      expect(custom).not.toHaveAttribute('data-search')
       expect(screen.getByLabelText('engine navigation')).toBeInTheDocument()
     })
 
@@ -402,15 +399,26 @@ describe('LeftSidebar', () => {
       )
     })
 
-    it('highlights Custom Endpoint while its dialog is open', () => {
-      at('/cloud/', { provider: 'openai', add: 'custom' })
-      render(<LeftSidebar />)
-
+    it('highlights Custom Endpoint on its own page, apart from Cloud providers', () => {
+      at('/endpoints/', { provider: 'ollama' })
+      const { unmount } = render(<LeftSidebar />)
       expect(rowFor('common:navigation.customEndpoint')).toHaveAttribute(
         'data-active',
         'true'
       )
       expect(rowFor('common:navigation.cloudProviders')).toHaveAttribute(
+        'data-active',
+        'false'
+      )
+      unmount()
+
+      at('/cloud/', { provider: 'openai' })
+      render(<LeftSidebar />)
+      expect(rowFor('common:navigation.cloudProviders')).toHaveAttribute(
+        'data-active',
+        'true'
+      )
+      expect(rowFor('common:navigation.customEndpoint')).toHaveAttribute(
         'data-active',
         'false'
       )
