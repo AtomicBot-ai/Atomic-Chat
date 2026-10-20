@@ -32,7 +32,12 @@ pub(crate) const HOST_TIMEOUT_GRACE_SECS: u64 = 15;
 pub(crate) struct PolicyInput<'a> {
     pub container_id: &'a str,
     pub command_line: &'a str,
+    /// The chat's own folder: always writable, home of `.tmp` and packages.
     pub workdir: &'a Path,
+    /// Where the command starts: the chat folder, or a secure project's first
+    /// editable folder, so a relative path lands where the user looks. Must be
+    /// the chat folder or one of `writable_folders`.
+    pub cwd: &'a Path,
     /// Writable beside the chat folder: the secure environment project's
     /// editable folders.
     pub writable_folders: &'a [PathBuf],
@@ -59,7 +64,7 @@ pub(crate) fn build_policy(input: &PolicyInput<'_>) -> Value {
         "lifecycle": { "destroyOnExit": true, "preservePolicy": false },
         "process": {
             "commandLine": input.command_line,
-            "cwd": path_text(input.workdir),
+            "cwd": path_text(input.cwd),
             "env": input
                 .env
                 .iter()
@@ -318,6 +323,7 @@ pub(crate) async fn probe(wxc_exec: &Path, scratch: &Path) -> Result<(), String>
             container_id: &container_id,
             command_line: &command_line,
             workdir: &workdir,
+            cwd: &workdir,
             writable_folders: &[],
             env: &env,
             readonly_paths: &[system_root],
@@ -427,6 +433,7 @@ mod tests {
             container_id: "atomic-1",
             command_line: r#""C:\Windows\System32\cmd.exe" /d /s /c "dir""#,
             workdir: Path::new(r"C:\data\chat\t1"),
+            cwd: Path::new(r"C:\data\chat\t1"),
             writable_folders: &[],
             env: &[("SYSTEMROOT".into(), r"C:\Windows".into())],
             readonly_paths: &[PathBuf::from(r"C:\Windows")],
@@ -450,6 +457,26 @@ mod tests {
         assert_eq!(policy["process"]["timeout"], 120_000);
         assert_eq!(policy["process"]["env"], json!([r"SYSTEMROOT=C:\Windows"]));
         assert_eq!(policy["lifecycle"]["destroyOnExit"], true);
+    }
+
+    #[test]
+    fn starts_the_command_in_its_cwd_and_keeps_the_chat_folder_writable() {
+        let policy = build_policy(&PolicyInput {
+            container_id: "atomic-1",
+            command_line: "cmd",
+            workdir: Path::new(r"C:\data\chat\t1"),
+            cwd: Path::new(r"C:\Users\me\Desktop\ClientC"),
+            writable_folders: &[PathBuf::from(r"C:\Users\me\Desktop\ClientC")],
+            env: &[],
+            readonly_paths: &[],
+            timeout_ms: 1,
+            network: true,
+        });
+        assert_eq!(policy["process"]["cwd"], r"C:\Users\me\Desktop\ClientC");
+        assert_eq!(
+            policy["filesystem"]["readwritePaths"],
+            json!([r"C:\data\chat\t1", r"C:\Users\me\Desktop\ClientC"])
+        );
     }
 
     #[test]
@@ -477,6 +504,7 @@ mod tests {
             container_id: "atomic-1",
             command_line: "cmd",
             workdir: Path::new(r"C:\data\chat\t1"),
+            cwd: Path::new(r"C:\data\chat\t1"),
             writable_folders: &[],
             env: &[],
             readonly_paths: &[],
@@ -496,6 +524,7 @@ mod tests {
             container_id: "atomic-1",
             command_line: "cmd",
             workdir: &chat,
+            cwd: &chat,
             writable_folders: &[
                 base.join("Desktop"),
                 base.join("Documents"),
@@ -581,6 +610,7 @@ mod tests {
             container_id: "atomic-1",
             command_line: &long,
             workdir: Path::new(r"C:\w"),
+            cwd: Path::new(r"C:\w"),
             writable_folders: &[],
             env: &[],
             readonly_paths: &[],
@@ -670,6 +700,7 @@ mod tests {
             container_id: "atomic-1",
             command_line: "cmd",
             workdir: &chat,
+            cwd: &chat,
             writable_folders: &[project.clone()],
             env: &[],
             readonly_paths: &[runtime.clone()],

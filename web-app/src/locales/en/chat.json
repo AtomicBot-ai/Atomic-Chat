@@ -171,7 +171,7 @@
       }
     },
     "exec": {
-      "openFolder": "Open chat folder",
+      "openFolder": "Open folder",
       "sandboxed": "Ran in the Windows sandbox",
       "exitCode": "Exit code {{code}}",
       "timedOut": "Timed out",

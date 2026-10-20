@@ -59,7 +59,7 @@ export type ChatExecResult = {
   timedOut: boolean
   cancelled: boolean
   sandbox: ChatExecSandboxKind
-  /** The chat's folder the call ran in. */
+  /** The folder the call ran in: the chat's own, or a secure project's first editable folder. */
   workdir: string
   durationMs: number
   /** A refusal the OS made, explained for the model (macOS privacy, the Windows sandbox). */

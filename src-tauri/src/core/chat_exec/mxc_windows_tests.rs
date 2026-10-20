@@ -34,6 +34,16 @@ fn wxc_exec() -> PathBuf {
 }
 
 fn policy_for(workdir: &Path, folders: &[PathBuf], command: &str, timeout_ms: u64) -> String {
+    policy_in(workdir, folders, workdir, command, timeout_ms)
+}
+
+fn policy_in(
+    workdir: &Path,
+    folders: &[PathBuf],
+    cwd: &Path,
+    command: &str,
+    timeout_ms: u64,
+) -> String {
     let cmd = system_root().join("System32").join("cmd.exe");
     let command_line = format!(
         "{} {}",
@@ -46,6 +56,7 @@ fn policy_for(workdir: &Path, folders: &[PathBuf], command: &str, timeout_ms: u6
         container_id: &container_id,
         command_line: &command_line,
         workdir,
+        cwd,
         writable_folders: folders,
         env: &env,
         readonly_paths: &[system_root()],
@@ -72,6 +83,25 @@ async fn run_sandboxed_with(
     runner::run(
         &launch,
         Duration::from_millis(timeout_ms) + Duration::from_secs(HOST_TIMEOUT_GRACE_SECS),
+        &CancellationToken::new(),
+    )
+    .await
+    .unwrap()
+}
+
+async fn run_sandboxed_in(
+    workdir: &Path,
+    folders: &[PathBuf],
+    cwd: &Path,
+    command: &str,
+) -> RunOutput {
+    let launch = executor_launch(
+        &wxc_exec(),
+        policy_in(workdir, folders, cwd, command, 20_000),
+    );
+    runner::run(
+        &launch,
+        Duration::from_millis(20_000) + Duration::from_secs(HOST_TIMEOUT_GRACE_SECS),
         &CancellationToken::new(),
     )
     .await
@@ -271,4 +301,37 @@ async fn lists_a_granted_folder_without_opening_its_neighbors() {
     assert!(!denied.stderr.is_empty(), "{}", explain(&denied));
     assert!(!denied.stderr.contains('\u{fffd}'), "{}", explain(&denied));
     assert!(!escape.exists(), "{}", explain(&denied));
+}
+
+/// A secure project's command starts in the project's editable folder, which
+/// is granted without enumeration: a relative write must land there, while
+/// the chat folder stays writable for `.tmp` and packages.
+#[tokio::test]
+#[ignore]
+async fn a_command_starts_in_the_project_folder_and_writes_relative_paths_there() {
+    let scratch = tempfile::tempdir().unwrap();
+    let workdir = scratch.path().join("chat");
+    let project = scratch.path().join("ClientC");
+    std::fs::create_dir_all(&workdir).unwrap();
+    std::fs::create_dir_all(&project).unwrap();
+
+    let output = run_sandboxed_in(
+        &workdir,
+        &[project.clone()],
+        &project,
+        &format!(
+            "echo hello> made.txt && echo tmp> \"{}\"",
+            workdir.join("scratch.txt").display()
+        ),
+    )
+    .await;
+
+    assert_eq!(output.exit_code, Some(0), "{}", explain(&output));
+    assert!(project.join("made.txt").is_file(), "{}", explain(&output));
+    assert!(!workdir.join("made.txt").exists());
+    assert!(
+        workdir.join("scratch.txt").is_file(),
+        "{}",
+        explain(&output)
+    );
 }

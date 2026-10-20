@@ -156,6 +156,22 @@ describe('chatExecTools in a secure environment project', () => {
     }
   })
 
+  it("starts commands in the project's first editable folder, so relative paths land there", () => {
+    const [command] = chatExecTools(windowsSandboxed, secure)
+    expect(command.description).toContain(
+      "The working directory is the project's folder D:\\Work\\Reports: a relative path such as notes.txt lands there."
+    )
+  })
+
+  it('keeps the scratch folder as working directory when every project folder is read-only', () => {
+    const [command] = chatExecTools(windowsSandboxed, {
+      folders: [{ path: 'D:\\Work\\Reference', canEdit: false }],
+      network: true,
+      allowedMcpServers: [],
+    })
+    expect(command.description).toContain('scratch folder of this chat')
+  })
+
   it('says only the chat folder is reachable when the project has no folders', () => {
     const [command] = chatExecTools(windowsSandboxed, {
       folders: [],
