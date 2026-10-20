@@ -39,9 +39,6 @@ const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), info: vi.fn(
 vi.mock('sonner', () => ({ toast }))
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }))
 vi.mock('@/lib/telemetry-queue', () => ({ queuedCapture: vi.fn() }))
-vi.mock('@/containers/HeaderPage', () => ({
-  default: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-}))
 vi.mock('../VideoPromptForm', () => ({
   VideoPromptForm: ({ modelsOpen }: { modelsOpen?: boolean }) => (
     <div data-testid="video-prompt-form" data-models-open={String(modelsOpen)} />
@@ -121,6 +118,8 @@ describe('VideoGenerationPage', () => {
     expect(card).toHaveTextContent('videos:setup.card.title')
     expect(screen.queryByTestId('video-prompt-form')).not.toBeInTheDocument()
     expect(useImageGenerationStore.getState().setupOpen).toBe(false)
+    // No title row above the card: the sidebar row already names the page.
+    expect(screen.queryByText('videos:page.title')).not.toBeInTheDocument()
   })
 
   it('keeps the setup card while the engine is missing, beside existing clips', async () => {
@@ -146,6 +145,8 @@ describe('VideoGenerationPage', () => {
     })
     await renderPage()
     expect(screen.getByTestId('video-prompt-form')).toHaveAttribute('data-models-open', 'false')
+    // The form's own heading names the page; there is no second title row.
+    expect(screen.queryByText('videos:page.title')).not.toBeInTheDocument()
     const empty = screen.getByTestId('image-empty-state')
     expect(empty).toHaveAttribute('data-modality', 'video')
     expect(empty).toHaveTextContent('videos:gallery.emptyNoModel')

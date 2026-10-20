@@ -13,7 +13,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { chooseFromMenu, fakeBackendCommands, pageShows, pickModel, send, waitForChat } from '../harness/chat.js'
+import { fakeBackendCommands, pageShows, pickModel, send, waitForChat } from '../harness/chat.js'
 import { answerNextDialog, EMBEDDING_MODEL_ID, installFakeBackend, writeFakeModel } from '../harness/fixtures.js'
 import { CAN_RUN_FAKE_BACKEND } from '../harness/platform.js'
 import { endSession, startSession, withArtifacts, type Session } from '../harness/session.js'
@@ -23,8 +23,8 @@ const REPLY = 'ATOMIC-E2E-DOCS 4d7b'
 const DOCUMENT_NAME = 'e2e-field-notes.txt'
 const DOCUMENT_TEXT = 'ATOMIC-E2E-DOC 9f21: the kingfisher nests in the river bank in March.'
 
-// The composer's "+" menu; its trigger has no name of its own.
-const ATTACH_MENU = 'button[aria-haspopup="menu"].rounded-full.mr-2'
+// The composer's paperclip: one picker for every file type, routed like a drop.
+const ATTACH = '[data-testid="composer-attach"]'
 
 const setting = (key: string, value: unknown) => ({ key, controllerProps: { value } })
 
@@ -66,7 +66,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a document attached for retrieval', () =
       await pageShows(session, REPLY, 90_000)
 
       await answerNextDialog(session.profile, [documentPath])
-      await chooseFromMenu(session, ATTACH_MENU, 'Add documents')
+      await session.app.browser.$(ATTACH).click()
       await pageShows(session, DOCUMENT_NAME, 60_000)
 
       // The embedding model may be gone again by the time anyone looks, so its

@@ -190,8 +190,8 @@
     "modelWithoutTools": "This model cannot call tools, so Agent mode is off for it and your messages go to chat. Pick a model with tool calling to use Agent mode."
   },
   "agentApprovals": {
-    "manualSelected": "Ask for approval",
-    "manual": "Ask for approval",
+    "manualSelected": "Restricted",
+    "manual": "Restricted",
     "manualDescription": "Always ask before tool calls edit files or use the internet",
     "skipSelected": "Full access",
     "skip": "Full access",
@@ -298,6 +298,12 @@
     "agent": "Agent thread"
   },
   "chatExec": {
-    "menuItem": "Run commands"
+    "menuItem": "Run commands",
+    "menuDescription": "Lets the model run terminal commands and scripts; each run asks first unless Full access is on"
+  },
+  "composer": {
+    "attachFiles": "Attach files",
+    "supportedFiles": "Supported files",
+    "attachFailed": "Failed to attach files"
   }
 }

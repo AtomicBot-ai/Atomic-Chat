@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { createFileRoute, useSearch } from '@tanstack/react-router'
 import ChatInput from '@/containers/ChatInput'
+import { LazyAtomicLogo } from '@/components/LazyAtomicLogo'
 import HeaderPage from '@/containers/HeaderPage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useTools } from '@/hooks/useTools'
@@ -141,6 +142,7 @@ function Index() {
         >
           <div className={cn('mx-auto w-full md:w-4/5 xl:w-4/6 -mt-20')}>
             <div className={cn('text-center mb-4')}>
+              <LazyAtomicLogo />
               <h1 className={cn('text-2xl mt-2 font-studio font-medium')}>
                 {t('chat:description')}
               </h1>

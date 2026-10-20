@@ -36,7 +36,10 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('an MCP tool in a chat', () => {
     if (session) expect(await endSession(session)).toEqual([])
   })
 
-  const APPROVAL_SELECT = 'button[aria-label="Ask for approval"]'
+  const APPROVAL_SELECT = 'button[aria-label="Restricted"]'
+  // The reply is over when Stop leaves: an empty composer shows no Send. Stop
+  // has no name of its own; it is the composer's only destructive button.
+  const STOP = 'button[data-variant="destructive"].rounded-full'
   const newChat = async () => {
     await startNewChat(session.app.browser)
     await waitForChat(session)
@@ -72,20 +75,20 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('an MCP tool in a chat', () => {
       const before = (await mcp.calls()).length
 
       await newChat()
-      await chooseFromMenu(session, APPROVAL_SELECT, 'Ask for approval')
+      await chooseFromMenu(session, APPROVAL_SELECT, 'Restricted')
       await send(session, `look up record ${CODE} again`)
       await pageShows(session, 'Tool Approval Required', 60_000)
       expect((await browser.$('body').getText())).toContain(MCP_TOOL)
       expect((await mcp.calls()).length).toBe(before)
       await browser.$('//button[normalize-space(.)="Deny"]').click()
-      await browser.$('[data-test-id="send-message-button"]').waitForDisplayed({ timeout: 60_000 })
+      await browser.$(STOP).waitForDisplayed({ reverse: true, timeout: 60_000 })
       await browser.pause(2_000)
       expect((await mcp.calls()).length).toBe(before)
       // The model is told, rather than left waiting for a result.
       await pageShows(session, 'Tool execution denied by user', 10_000)
 
       await newChat()
-      await chooseFromMenu(session, APPROVAL_SELECT, 'Ask for approval')
+      await chooseFromMenu(session, APPROVAL_SELECT, 'Restricted')
       await send(session, `look up record ${CODE} once more`)
       await pageShows(session, 'Tool Approval Required', 60_000)
       await browser.$('//button[normalize-space(.)="Allow Once"]').click()

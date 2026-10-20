@@ -1,3 +1,4 @@
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import TextareaAutosize from 'react-textarea-autosize'
 import {
@@ -33,16 +34,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { ArrowRight } from 'lucide-react'
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { ArrowRight, PlusIcon } from 'lucide-react'
-import {
-  IconCheck,
-  IconPhoto,
   IconCodeCircle2,
   IconPlayerStopFilled,
   IconX,
@@ -50,7 +43,6 @@ import {
   IconPaperclip,
   IconTerminal2,
   IconLoader2,
-  IconMusic,
 } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { isAgentModeOn, useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -155,7 +147,10 @@ import {
 import { VOICE_ACTIVE_PHASES } from '@/constants/voice'
 import { ttftPreBegin } from '@/lib/ttft-timing'
 import { ModelFactory } from '@/lib/model-factory'
-import { AgentApprovalModeSelect } from '@/containers/AgentApprovalModeSelect'
+import {
+  AgentApprovalModeSelect,
+  type ApprovalMenuToggle,
+} from '@/containers/AgentApprovalModeSelect'
 import { AgentSkillSlashMenu } from '@/containers/AgentSkillSlashMenu'
 import {
   filterAgentSkills,
@@ -173,6 +168,22 @@ import {
   useBackendMismatch,
 } from '@/hooks/useBackendMismatch'
 import type { AgentSkill } from '@/services/agent/skills'
+
+/** Every extension the paperclip's picker offers: whatever a drop accepts. */
+const ATTACHABLE_EXTENSIONS = [
+  ...IMAGE_EXTENSIONS,
+  ...AUDIO_EXTENSIONS,
+  ...DOCUMENT_EXTENSIONS,
+]
+
+type AttachRouteOptions = {
+  /**
+   * Images arrived while the model cannot see them. A drop says so in a
+   * toast; the paperclip offers to download a vision model instead, as the
+   * old "Add Images" item did.
+   */
+  onImagesNeedVision?: () => void
+}
 
 type ChatInputProps = {
   className?: string
@@ -215,6 +226,7 @@ const ChatInput = memo(function ChatInput({
   const serverStatus = useAppState((state) => state.serverStatus)
   const tools = useAppState((state) => state.tools)
   const cancelToolCall = useAppState((state) => state.cancelToolCall)
+  const reducedMotion = useReducedMotion()
   const prompt = usePrompt((state) => state.prompt)
   const setPrompt = usePrompt((state) => state.setPrompt)
   // Narrow selectors on purpose. Subscribing to the whole voice store
@@ -409,6 +421,9 @@ const ChatInput = memo(function ChatInput({
   const [dropdownToolsAvailable, setDropdownToolsAvailable] = useState(false)
   const [tooltipToolsAvailable, setTooltipToolsAvailable] = useState(false)
   const [isDragOver, setIsDragOver] = useState(false)
+  // The Send slot clips its button only while it grows or shrinks; settled,
+  // the button's focus ring must show whole.
+  const [sendControlMoving, setSendControlMoving] = useState(false)
   const [hasMmproj, setHasMmproj] = useState(false)
   const [showVisionModelPrompt, setShowVisionModelPrompt] = useState(false)
   const [replyGateOpen, setReplyGateOpen] = useState(false)
@@ -658,8 +673,8 @@ const ChatInput = memo(function ChatInput({
   )
 
   // Audio input is gated on the model's `audio` capability (omni/audio-capable
-  // models such as Gemma 4 via the MLX backend). The "Add audio" menu item is
-  // hidden entirely for non-audio models — unlike images, there is no
+  // models such as Gemma 4 via the MLX backend). Audio picked or dropped for
+  // any other model is refused with a toast — unlike images, there is no
   // download-a-model prompt to fall back to.
   const hasAudio = useMemo(
     () => selectedModel?.capabilities?.includes('audio') ?? false,
@@ -1457,7 +1472,6 @@ const ChatInput = memo(function ChatInput({
   )
 
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const audioInputRef = useRef<HTMLInputElement>(null)
 
   const processNewDocumentAttachments = useCallback(
     async (docs: Attachment[]) => {
@@ -1754,35 +1768,6 @@ const ChatInput = memo(function ChatInput({
       setAttachmentsForThread,
     ]
   )
-
-  const handleAttachDocsIngest = async () => {
-    if (!attachmentsEnabled) {
-      toast.info('Attachments are disabled in Settings')
-      return
-    }
-    try {
-      const selection = await serviceHub.dialog().open({
-        multiple: true,
-        filters: [
-          {
-            name: 'Documents & Code',
-            extensions: [...DOCUMENT_EXTENSIONS],
-          },
-          {
-            name: 'All Files',
-            extensions: ['*'],
-          },
-        ],
-      })
-      if (!selection) return
-      const paths = Array.isArray(selection) ? selection : [selection]
-      await ingestDocumentPaths(paths)
-    } catch (e) {
-      console.error('Failed to open documents dialog:', e)
-      const desc = e instanceof Error ? e.message : JSON.stringify(e)
-      toast.error('Failed to attach documents', { description: desc })
-    }
-  }
 
   const handleRemoveAttachment = async (indexToRemove: number) => {
     const attachmentToRemove = attachments[indexToRemove]
@@ -2199,83 +2184,6 @@ const ChatInput = memo(function ChatInput({
     }
   }
 
-  // Open the image picker dialog (extracted for reuse)
-  const openImagePicker = useCallback(async () => {
-    if (isPlatformTauri()) {
-      try {
-        const selected = await serviceHub.dialog().open({
-          multiple: true,
-          filters: [
-            {
-              name: 'Images',
-              extensions: ['jpg', 'jpeg', 'png', 'webp'],
-            },
-          ],
-        })
-
-        if (selected) {
-          const paths = Array.isArray(selected) ? selected : [selected]
-          const files: File[] = []
-
-          for (const path of paths) {
-            try {
-              // Use Tauri's convertFileSrc to create a valid URL for the file
-              const { convertFileSrc } = await import('@tauri-apps/api/core')
-              const fileUrl = convertFileSrc(path)
-
-              // Fetch the file as blob
-              const response = await fetch(fileUrl)
-              if (!response.ok) {
-                throw new Error(`Failed to fetch file: ${response.statusText}`)
-              }
-
-              const blob = await response.blob()
-              const fileName =
-                path.split(/[\\/]/).filter(Boolean).pop() || 'image'
-              const ext = fileName.toLowerCase().split('.').pop()
-              const mimeType =
-                ext === 'png'
-                  ? 'image/png'
-                  : ext === 'webp'
-                    ? 'image/webp'
-                    : 'image/jpeg'
-
-              const file = new File([blob], fileName, { type: mimeType })
-              files.push(file)
-            } catch (error) {
-              console.error('Failed to read file:', error)
-              toast.error('Failed to read file', {
-                description:
-                  error instanceof Error ? error.message : String(error),
-              })
-            }
-          }
-
-          if (files.length > 0) {
-            await processImageFiles(files)
-          }
-        }
-      } catch (error) {
-        console.error('Failed to open file dialog:', error)
-      }
-
-      if (textareaRef.current) {
-        textareaRef.current.focus()
-      }
-    } else {
-      // Fallback to input click for web
-      fileInputRef.current?.click()
-    }
-  }, [serviceHub, processImageFiles])
-
-  const handleImagePickerClick = async () => {
-    if (hasMmproj) {
-      await openImagePicker()
-      return
-    }
-    setShowVisionModelPrompt(true)
-  }
-
   // --- Audio attachments (omni/audio-capable models) -----------------------
   // Audio mirrors the image attachment pipeline (validate → read as base64 →
   // commit to the per-thread chip store) but is never downscaled/transcoded,
@@ -2382,10 +2290,11 @@ const ChatInput = memo(function ChatInput({
     // cheap and more than precise enough for audio files.
     const audioKey = (a: Attachment) => `${a.name}:${a.size ?? 0}`
 
-    // Use the live key ref, not the captured `attachmentsKey`. `openAudioPicker`
-    // is memoized on [serviceHub], so it captures a stale commit closure bound
-    // to the mount-time key (`__new-thread__`); writing there made the chip only
-    // appear after a remount transferred it to the real thread key.
+    // Use the live key ref, not the captured `attachmentsKey`. A callback that
+    // outlives its render (the file picker awaiting the user, a drop listener)
+    // holds a commit closure bound to an older key — at mount, `__new-thread__`;
+    // writing there made the chip only appear after a remount transferred it to
+    // the real thread key.
     const targetKey = attachmentsKeyRef.current
 
     const currentAttachments = useChatAttachments
@@ -2481,42 +2390,6 @@ const ChatInput = memo(function ChatInput({
     await commitAudioAttachments(outcome)
   }
 
-  const handleAudioFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    if (files && files.length > 0) {
-      void processAudioFiles(Array.from(files))
-      if (audioInputRef.current) audioInputRef.current.value = ''
-    }
-    if (textareaRef.current) textareaRef.current.focus()
-  }
-
-  const openAudioPicker = useCallback(async () => {
-    if (isPlatformTauri()) {
-      try {
-        const selected = await serviceHub.dialog().open({
-          multiple: true,
-          filters: [
-            {
-              name: 'Audio',
-              extensions: ['mp3', 'wav'],
-            },
-          ],
-        })
-
-        if (selected) {
-          const paths = Array.isArray(selected) ? selected : [selected]
-          await ingestAudioPaths(paths)
-        }
-      } catch (error) {
-        console.error('Failed to open audio dialog:', error)
-      }
-      if (textareaRef.current) textareaRef.current.focus()
-    } else {
-      audioInputRef.current?.click()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [serviceHub])
-
   const handleVisionModelDownloadComplete = useCallback(
     (modelId: string) => {
       setShowVisionModelPrompt(false)
@@ -2573,7 +2446,10 @@ const ChatInput = memo(function ChatInput({
     ]
   )
 
-  const handleTauriDrop = (paths: string[]) => {
+  const handleTauriDrop = (
+    paths: string[],
+    options: AttachRouteOptions = {}
+  ) => {
     if (!attachmentsEnabled) {
       toast.info('Attachments are disabled in Settings')
       return
@@ -2589,9 +2465,13 @@ const ChatInput = memo(function ChatInput({
 
     if (images.length > 0) {
       if (!hasMmproj) {
-        toast.error('Vision model required', {
-          description: 'Select a model with vision support to attach images.',
-        })
+        if (options.onImagesNeedVision) {
+          options.onImagesNeedVision()
+        } else {
+          toast.error('Vision model required', {
+            description: 'Select a model with vision support to attach images.',
+          })
+        }
       } else {
         void ingestImagePaths(images)
       }
@@ -2619,6 +2499,43 @@ const ChatInput = memo(function ChatInput({
     onDrop: handleTauriDrop,
   })
 
+  const requestVisionModel = () => setShowVisionModelPrompt(true)
+
+  // The paperclip: one native picker for every supported file, whose
+  // selection is routed exactly like a drop of the same files.
+  const handleAttachClick = async () => {
+    if (!attachmentsEnabled) {
+      toast.info('Attachments are disabled in Settings')
+      return
+    }
+    if (!isPlatformTauri()) {
+      // The web build has no native dialog and no file paths.
+      fileInputRef.current?.click()
+      return
+    }
+    try {
+      const selection = await serviceHub.dialog().open({
+        multiple: true,
+        filters: [
+          {
+            name: t('chat:composer.supportedFiles'),
+            extensions: ATTACHABLE_EXTENSIONS,
+          },
+        ],
+      })
+      if (!selection) return
+      handleTauriDrop(Array.isArray(selection) ? selection : [selection], {
+        onImagesNeedVision: requestVisionModel,
+      })
+    } catch (e) {
+      console.error('Failed to open the file dialog:', e)
+      const desc = e instanceof Error ? e.message : JSON.stringify(e)
+      toast.error(t('chat:composer.attachFailed'), { description: desc })
+    } finally {
+      textareaRef.current?.focus()
+    }
+  }
+
   const handleDragEnter = (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
@@ -2645,6 +2562,70 @@ const ChatInput = memo(function ChatInput({
     }
   }
 
+  // Files handed over by the browser — an HTML5 drop, or the paperclip's file
+  // input on the web build — as File objects without a path on disk. Images
+  // and audio are read in place; documents need a path for retrieval, which
+  // only the desktop app has.
+  const routeBrowserFiles = (
+    fileArr: File[],
+    options: AttachRouteOptions = {}
+  ) => {
+    const imageFiles = fileArr.filter((f) => {
+      const ext = f.name.split('.').pop()?.toLowerCase() ?? ''
+      return IMAGE_EXTENSIONS.has(ext) || f.type.startsWith('image/')
+    })
+    const audioFiles = fileArr.filter((f) => {
+      if (imageFiles.includes(f)) return false
+      const ext = f.name.split('.').pop()?.toLowerCase() ?? ''
+      return AUDIO_EXTENSIONS.has(ext) || f.type.startsWith('audio/')
+    })
+    const otherFiles = fileArr.filter(
+      (f) => !imageFiles.includes(f) && !audioFiles.includes(f)
+    )
+
+    if (otherFiles.length > 0) {
+      const names = otherFiles.map((f) => f.name)
+      toast.warning('Documents need the desktop app', {
+        description: `${names.join(', ')} - attach documents in the desktop app.`,
+      })
+    }
+
+    if (audioFiles.length > 0) {
+      if (!hasAudio) {
+        toast.error('Audio model required', {
+          description: 'Select a model with audio support to attach audio.',
+        })
+      } else {
+        void processAudioFiles(audioFiles)
+      }
+    }
+
+    if (imageFiles.length === 0) return
+
+    if (!hasMmproj) {
+      if (options.onImagesNeedVision) {
+        options.onImagesNeedVision()
+        return
+      }
+      toast.error('Vision model required', {
+        description: 'Select a model with vision support to attach images.',
+      })
+      return
+    }
+
+    void processImageFiles(imageFiles)
+  }
+
+  const handleBrowserFilePick = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? [])
+    // Cleared so picking the same file again still fires a change.
+    e.target.value = ''
+    if (files.length > 0) {
+      routeBrowserFiles(files, { onImagesNeedVision: requestVisionModel })
+    }
+    textareaRef.current?.focus()
+  }
+
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
@@ -2664,47 +2645,7 @@ const ChatInput = memo(function ChatInput({
     const files = e.dataTransfer.files
     if (!files || files.length === 0) return
 
-    const fileArr = Array.from(files)
-    const imageFiles = fileArr.filter((f) => {
-      const ext = f.name.split('.').pop()?.toLowerCase() ?? ''
-      return IMAGE_EXTENSIONS.has(ext) || f.type.startsWith('image/')
-    })
-    const audioFiles = fileArr.filter((f) => {
-      if (imageFiles.includes(f)) return false
-      const ext = f.name.split('.').pop()?.toLowerCase() ?? ''
-      return AUDIO_EXTENSIONS.has(ext) || f.type.startsWith('audio/')
-    })
-    const otherFiles = fileArr.filter(
-      (f) => !imageFiles.includes(f) && !audioFiles.includes(f)
-    )
-
-    if (otherFiles.length > 0) {
-      const names = otherFiles.map((f) => f.name)
-      toast.warning('Document drag-and-drop unavailable here', {
-        description: `${names.join(', ')} - drop documents in the desktop app or use the attach menu.`,
-      })
-    }
-
-    if (audioFiles.length > 0) {
-      if (!hasAudio) {
-        toast.error('Audio model required', {
-          description: 'Select a model with audio support to attach audio.',
-        })
-      } else {
-        void processAudioFiles(audioFiles)
-      }
-    }
-
-    if (imageFiles.length === 0) return
-
-    if (!hasMmproj) {
-      toast.error('Vision model required', {
-        description: 'Select a model with vision support to attach images.',
-      })
-      return
-    }
-
-    void processImageFiles(imageFiles)
+    routeBrowserFiles(Array.from(files))
   }
 
   const handlePaste = async (e: React.ClipboardEvent) => {
@@ -2813,6 +2754,31 @@ const ChatInput = memo(function ChatInput({
   }
 
   const isStreaming = chatStatus === 'submitted' || chatStatus === 'streaming'
+  const showSendControl = Boolean(prompt.trim()) || isStreaming
+
+  // What the model may do at all rides the access menu, beside how its calls
+  // are approved: commands and scripts, and Agent mode while it is shown.
+  const accessToggles: ApprovalMenuToggle[] = []
+  if (PlatformFeatures[PlatformFeature.CHAT_EXEC]) {
+    accessToggles.push({
+      id: 'chat-exec',
+      label: t('chat:chatExec.menuItem'),
+      description: t('chat:chatExec.menuDescription'),
+      icon: <IconTerminal2 className="size-4 text-muted-foreground" />,
+      checked: chatExecEnabled,
+      onCheckedChange: setChatExecEnabled,
+      testId: 'chat-exec-toggle',
+    })
+  }
+  if (PlatformFeatures[PlatformFeature.AGENT_MODE]) {
+    accessToggles.push({
+      id: 'agent-mode',
+      label: t('chat:agentMode.menuItem'),
+      icon: <RobotHeadIcon size={16} className="text-muted-foreground" />,
+      checked: agentModeEnabled,
+      onCheckedChange: setAgentModeEnabled,
+    })
+  }
 
   return (
     // ATO-462: the download panel docks above this element when the composer is
@@ -3143,131 +3109,62 @@ const ChatInput = memo(function ChatInput({
                     isStreaming && 'opacity-50 pointer-events-none'
                   )}
                 >
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
+                  {/* One paperclip for every kind of file the composer takes.
+                      The picker's selection goes down the drop path, so the
+                      same rules apply either way: images need a vision model,
+                      audio an audio model, documents go to retrieval, and the
+                      Attachments setting can turn it all off. */}
+                  <Tooltip>
+                    <TooltipTrigger asChild>
                       <Button
                         variant="secondary"
                         size="icon-sm"
                         className="rounded-full mr-2 mb-1"
-                      >
-                        <PlusIcon
-                          size={18}
-                          className="text-secondary-foreground"
-                        />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start">
-                      {/* Vision image attachment - always enabled, prompts to download vision model if needed */}
-                      <DropdownMenuItem onClick={handleImagePickerClick}>
-                        <IconPhoto
-                          size={18}
-                          className="text-muted-foreground"
-                        />
-                        <span>Add Images</span>
-                        <input
-                          type="file"
-                          ref={fileInputRef}
-                          className="hidden"
-                          multiple
-                          onChange={handleFileChange}
-                        />
-                      </DropdownMenuItem>
-                      {/* Audio attachment — only shown for omni/audio-capable
-                          models (gated on the `audio` capability). */}
-                      {hasAudio && (
-                        <DropdownMenuItem onClick={openAudioPicker}>
-                          <IconMusic
-                            size={18}
-                            className="text-muted-foreground"
-                          />
-                          <span>Add audio</span>
-                          <input
-                            type="file"
-                            ref={audioInputRef}
-                            className="hidden"
-                            accept="audio/mpeg,audio/wav,.mp3,.wav"
-                            multiple
-                            onChange={handleAudioFileChange}
-                          />
-                        </DropdownMenuItem>
-                      )}
-                      {/* RAG document attachments - desktop-only via dialog; shown when feature enabled */}
-                      <DropdownMenuItem
-                        onClick={handleAttachDocsIngest}
-                        disabled={!supportsTools}
+                        aria-label={t('chat:composer.attachFiles')}
+                        data-testid="composer-attach"
+                        onClick={() => void handleAttachClick()}
                       >
                         {ingestingDocs ? (
                           <IconLoader2
                             size={18}
-                            className="text-muted-foreground animate-spin"
+                            className="text-secondary-foreground animate-spin"
                           />
                         ) : (
                           <IconPaperclip
                             size={18}
-                            className="text-muted-foreground"
+                            className="text-secondary-foreground"
                           />
                         )}
-                        <span>
-                          {ingestingDocs
-                            ? 'Indexing documents…'
-                            : 'Add documents or files'}
-                        </span>
-                      </DropdownMenuItem>
-                      {/* Global Agent mode toggle. It lives here and surfaces
-                          as a toolbar chip; routing guards at send time, so
-                          it stays togglable even when the current provider
-                          can't serve the agent loop — the chip's tooltip
-                          carries that explanation, so this row stays a single
-                          line like its neighbours. (Plugins is not in this
-                          menu: its button is a toolbar fixture like the
-                          web-search globe, with each connector's on/off
-                          switch inside its dropdown.) */}
-                      {PlatformFeatures[PlatformFeature.AGENT_MODE] && (
-                        <DropdownMenuItem
-                          onClick={() =>
-                            setAgentModeEnabled(!agentModeEnabled)
-                          }
-                        >
-                          <RobotHeadIcon
-                            size={18}
-                            className="text-muted-foreground"
-                          />
-                          <span>{t('chat:agentMode.menuItem')}</span>
-                          {agentModeEnabled && (
-                            <IconCheck
-                              size={16}
-                              className="ml-auto text-primary"
-                            />
-                          )}
-                        </DropdownMenuItem>
-                      )}
-                      {/* Lets the model run terminal commands and scripts
-                          (`run_command` / `run_script`); every call still
-                          goes through the approval mode beside this menu. */}
-                      {PlatformFeatures[PlatformFeature.CHAT_EXEC] && (
-                        <DropdownMenuItem
-                          onClick={() => setChatExecEnabled(!chatExecEnabled)}
-                          data-testid="chat-exec-toggle"
-                        >
-                          <IconTerminal2
-                            size={18}
-                            className="text-muted-foreground"
-                          />
-                          <span>{t('chat:chatExec.menuItem')}</span>
-                          {chatExecEnabled && (
-                            <IconCheck
-                              size={16}
-                              className="ml-auto text-primary"
-                            />
-                          )}
-                        </DropdownMenuItem>
-                      )}
-                      {/* Workspace folders ride in the same attach menu: for
-                          the agent they are just another kind of context. The
-                          project composer hides it — that page has no files
-                          panel to surface the folder in. */}
-                      {agentRouteActive && !projectId && (
-                        <DropdownMenuItem
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {t('chat:composer.attachFiles')}
+                    </TooltipContent>
+                  </Tooltip>
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    className="hidden"
+                    multiple
+                    accept={ATTACHABLE_EXTENSIONS.map((ext) => `.${ext}`).join(
+                      ','
+                    )}
+                    tabIndex={-1}
+                    aria-hidden
+                    onChange={handleBrowserFilePick}
+                  />
+                  {/* Workspace folders are agent context, so they sit beside
+                      the paperclip while the agent serves this chat. The
+                      project composer hides it — that page has no files panel
+                      to surface the folder in. */}
+                  {agentRouteActive && !projectId && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          className="mb-1"
+                          aria-label={t('chat:agentWorkspace.addFolder')}
                           onClick={() =>
                             void addExternalAgentFolder(
                               serviceHub,
@@ -3279,15 +3176,19 @@ const ChatInput = memo(function ChatInput({
                             size={18}
                             className="text-muted-foreground"
                           />
-                          <span>{t('chat:agentWorkspace.addFolder')}</span>
-                        </DropdownMenuItem>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {t('chat:agentWorkspace.addFolder')}
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
 
                   {/* Approval mode rides the toolbar in both engines: it
                       gates the agent's dangerous tools AND the MCP/RAG calls
-                      of the chat pipeline (see lib/mcp-approval.ts). */}
+                      of the chat pipeline (see lib/mcp-approval.ts). Its menu
+                      also holds what the model may do at all: run commands,
+                      and Agent mode while that feature is shown. */}
                   <AgentApprovalModeSelect
                     compact={compactComposer}
                     mode={approvalMode}
@@ -3311,6 +3212,7 @@ const ChatInput = memo(function ChatInput({
                     skipConfirmAccept={t(
                       'chat:agentApprovals.skipConfirmAccept'
                     )}
+                    toggles={accessToggles}
                   />
                   {/* //! Browse (Chrome) button — temporarily hidden
                 {!agentRouteActive && hasJanBrowserMCPConfig && modelSupportsBrowser && (
@@ -3470,7 +3372,8 @@ const ChatInput = memo(function ChatInput({
                       beside the connectors button. Last in the cluster on
                       purpose: turning the mode on then appends the chip instead
                       of shifting every control the user was aiming at. The X
-                      (or unchecking in the "+" menu) turns it off everywhere.
+                      (or its switch in the access menu) turns it off
+                      everywhere.
                       Muted with a tooltip while the provider can't serve the
                       agent loop. */}
                   {agentModeEnabled && (
@@ -3531,7 +3434,7 @@ const ChatInput = memo(function ChatInput({
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center">
                 {/* The model rides with the microphone rather than the
                     attachment cluster: both change how the next message is
                     produced. The pill names the model and, while thinking is
@@ -3539,7 +3442,7 @@ const ChatInput = memo(function ChatInput({
                     whose first stop switches thinking off, and leads into the
                     model list. */}
                 <DropdownModelProvider
-                  className="mb-1"
+                  className="mb-1 mr-2"
                   compact={compactComposer}
                 />
 
@@ -3556,57 +3459,86 @@ const ChatInput = memo(function ChatInput({
                   className="mb-1"
                 />
 
-                {isStreaming ? (
-                  <Button
-                    variant="destructive"
-                    size="icon-sm"
-                    className="rounded-full mr-1 mb-1"
-                    onClick={() => {
-                      if (currentThreadId) stopStreaming(currentThreadId)
-                    }}
-                  >
-                    <IconPlayerStopFilled />
-                  </Button>
-                ) : needsReplyModel ? (
-                  // Nothing to answer with yet. The button says so before it is
-                  // pressed — the old behaviour let it look ready and answered
-                  // with a red line afterwards — but stays live, because
-                  // pressing it is how the user gets a model.
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="secondary"
-                        size="icon-sm"
-                        disabled={!prompt.trim() || isAttachmentPipelineBusy}
-                        data-test-id="send-message-button"
-                        data-needs-model="true"
-                        aria-label={t('chat:replyGate.sendHint')}
-                        onClick={() => handleSendMessage(prompt)}
-                        className="rounded-full mr-1 mb-1"
-                      >
-                        <ArrowRight />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      {t('chat:replyGate.sendHint')}
-                    </TooltipContent>
-                  </Tooltip>
-                ) : (
-                  <Button
-                    variant="default"
-                    size="icon-sm"
-                    disabled={
-                      !prompt.trim() ||
-                      isAttachmentPipelineBusy ||
-                      blockSendUntilModelReady
-                    }
-                    data-test-id="send-message-button"
-                    onClick={() => handleSendMessage(prompt)}
-                    className="rounded-full mr-1 mb-1"
-                  >
-                    <ArrowRight className="text-primary-fg" />
-                  </Button>
-                )}
+                {/* Send shows once there is something to send, and Stop while
+                    a reply streams; an empty composer keeps the corner quiet.
+                    It grows from zero width so the pill and the microphone
+                    slide aside instead of jumping, and it is clipped only
+                    while it moves, so a focus ring is never cut off. */}
+                <AnimatePresence initial={false}>
+                  {showSendControl && (
+                    <motion.div
+                      key="send"
+                      data-testid="send-control"
+                      className={cn(
+                        'shrink-0',
+                        sendControlMoving && 'overflow-hidden'
+                      )}
+                      initial={{ width: 0, opacity: 0, marginLeft: 0 }}
+                      animate={{ width: 'auto', opacity: 1, marginLeft: 8 }}
+                      exit={{ width: 0, opacity: 0, marginLeft: 0 }}
+                      transition={{
+                        duration: reducedMotion ? 0 : 0.24,
+                        ease: 'easeOut',
+                      }}
+                      onAnimationStart={() => setSendControlMoving(true)}
+                      onAnimationComplete={() => setSendControlMoving(false)}
+                    >
+                      {isStreaming ? (
+                        <Button
+                          variant="destructive"
+                          size="icon-sm"
+                          className="rounded-full mr-1 mb-1"
+                          onClick={() => {
+                            if (currentThreadId) stopStreaming(currentThreadId)
+                          }}
+                        >
+                          <IconPlayerStopFilled />
+                        </Button>
+                      ) : needsReplyModel ? (
+                        // Nothing to answer with yet. The button says so before it is
+                        // pressed — the old behaviour let it look ready and answered
+                        // with a red line afterwards — but stays live, because
+                        // pressing it is how the user gets a model.
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="secondary"
+                              size="icon-sm"
+                              disabled={
+                                !prompt.trim() || isAttachmentPipelineBusy
+                              }
+                              data-test-id="send-message-button"
+                              data-needs-model="true"
+                              aria-label={t('chat:replyGate.sendHint')}
+                              onClick={() => handleSendMessage(prompt)}
+                              className="rounded-full mr-1 mb-1"
+                            >
+                              <ArrowRight />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {t('chat:replyGate.sendHint')}
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <Button
+                          variant="default"
+                          size="icon-sm"
+                          disabled={
+                            !prompt.trim() ||
+                            isAttachmentPipelineBusy ||
+                            blockSendUntilModelReady
+                          }
+                          data-test-id="send-message-button"
+                          onClick={() => handleSendMessage(prompt)}
+                          className="rounded-full mr-1 mb-1"
+                        >
+                          <ArrowRight className="text-primary-fg" />
+                        </Button>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             </div>
           </div>

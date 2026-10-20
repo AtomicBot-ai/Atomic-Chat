@@ -2,7 +2,10 @@ import { useState } from 'react'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import { AgentApprovalModeSelect } from '@/containers/AgentApprovalModeSelect'
+import {
+  AgentApprovalModeSelect,
+  type ApprovalMenuToggle,
+} from '@/containers/AgentApprovalModeSelect'
 import type { AgentApprovalMode } from '@/hooks/useAgentMode'
 import chat from '@/locales/en/chat.json'
 
@@ -17,8 +20,8 @@ const BODY_BUDGET = 135
 // takes it as props, so the test pins the words the user reads.
 const COPY = {
   menuTitle: 'How should tool calls be approved?',
-  manualSelectedLabel: 'Ask for approval',
-  manualLabel: 'Ask for approval',
+  manualSelectedLabel: 'Restricted',
+  manualLabel: 'Restricted',
   manualDescription:
     'Always ask before tool calls edit files or use the internet',
   skipSelectedLabel: 'Full access',
@@ -35,14 +38,20 @@ const COPY = {
 function Harness({
   initial = 'manual',
   onChange,
+  compact,
+  toggles,
 }: {
   initial?: AgentApprovalMode
   onChange: (mode: AgentApprovalMode) => void
+  compact?: boolean
+  toggles?: ApprovalMenuToggle[]
 }) {
   const [mode, setMode] = useState<AgentApprovalMode>(initial)
   return (
     <AgentApprovalModeSelect
       mode={mode}
+      compact={compact}
+      toggles={toggles}
       onChange={(next) => {
         onChange(next)
         setMode(next)
@@ -53,7 +62,7 @@ function Harness({
 }
 
 const openMenu = async (user: ReturnType<typeof userEvent.setup>) => {
-  await user.click(screen.getByRole('button', { name: 'Ask for approval' }))
+  await user.click(screen.getByRole('button', { name: 'Restricted' }))
   expect(screen.getByText(COPY.menuTitle)).toBeInTheDocument()
 }
 
@@ -63,6 +72,79 @@ const pickFullAccess = async (user: ReturnType<typeof userEvent.setup>) => {
 }
 
 describe('AgentApprovalModeSelect', () => {
+  it('calls the asking mode Restricted in every shipped language', async () => {
+    const [ja, ru] = await Promise.all([
+      import('@/locales/ja/chat.json'),
+      import('@/locales/ru/chat.json'),
+    ])
+    expect(chat.agentApprovals.manual).toBe('Restricted')
+    expect(chat.agentApprovals.manualSelected).toBe('Restricted')
+    expect(ja.agentApprovals.manual).toBe('制限付き')
+    expect(ru.agentApprovals.manual).toBe('Ограниченный доступ')
+    // "Full access" keeps its name.
+    expect(chat.agentApprovals.skip).toBe('Full access')
+  })
+
+  it('names the mode in the compact composer too', () => {
+    render(<Harness compact onChange={vi.fn()} />)
+
+    const trigger = screen.getByRole('button', { name: 'Restricted' })
+    expect(trigger).toHaveTextContent('Restricted')
+  })
+
+  it('puts the switches under the modes, each flipped by a pick', async () => {
+    const user = userEvent.setup()
+    const onCheckedChange = vi.fn()
+    render(
+      <Harness
+        onChange={vi.fn()}
+        toggles={[
+          {
+            id: 'chat-exec',
+            label: 'Run commands',
+            description: 'Lets the model run terminal commands and scripts',
+            icon: <span data-testid="toggle-icon" />,
+            checked: true,
+            onCheckedChange,
+            testId: 'chat-exec-toggle',
+          },
+        ]}
+      />
+    )
+
+    await openMenu(user)
+
+    const toggle = screen.getByRole('menuitemcheckbox', {
+      name: /Run commands/,
+    })
+    expect(toggle).toHaveAttribute('aria-checked', 'true')
+    expect(toggle).toHaveAttribute('data-testid', 'chat-exec-toggle')
+    expect(toggle).toHaveTextContent(
+      'Lets the model run terminal commands and scripts'
+    )
+    // Below the two modes, set apart from them.
+    expect(screen.getAllByRole('menuitem')).toHaveLength(2)
+    expect(screen.getByRole('separator')).toBeInTheDocument()
+    expect(
+      screen
+        .getByRole('menuitem', { name: /Full access/ })
+        .compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+
+    await user.click(toggle)
+    expect(onCheckedChange).toHaveBeenCalledWith(false)
+  })
+
+  it('draws no separator when there is nothing to switch', async () => {
+    const user = userEvent.setup()
+    render(<Harness onChange={vi.fn()} />)
+
+    await openMenu(user)
+
+    expect(screen.queryByRole('separator')).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitemcheckbox')).not.toBeInTheDocument()
+  })
+
   it('describes both modes in the menu', async () => {
     const user = userEvent.setup()
     render(<Harness onChange={vi.fn()} />)
@@ -70,7 +152,7 @@ describe('AgentApprovalModeSelect', () => {
     await openMenu(user)
 
     expect(
-      screen.getByRole('menuitem', { name: /Ask for approval/ })
+      screen.getByRole('menuitem', { name: /Restricted/ })
     ).toHaveTextContent(COPY.manualDescription)
     expect(
       screen.getByRole('menuitem', { name: /Full access/ })
@@ -101,7 +183,7 @@ describe('AgentApprovalModeSelect', () => {
     // The trigger still says the old mode: nothing changed yet. (The modal
     // hides the rest of the page from the accessibility tree while open.)
     expect(
-      screen.getByRole('button', { name: 'Ask for approval', hidden: true })
+      screen.getByRole('button', { name: 'Restricted', hidden: true })
     ).toBeInTheDocument()
   })
 
@@ -136,7 +218,7 @@ describe('AgentApprovalModeSelect', () => {
     )
     expect(onChange).not.toHaveBeenCalled()
     expect(
-      screen.getByRole('button', { name: 'Ask for approval' })
+      screen.getByRole('button', { name: 'Restricted' })
     ).toBeInTheDocument()
   })
 
@@ -153,7 +235,7 @@ describe('AgentApprovalModeSelect', () => {
     )
     expect(onChange).not.toHaveBeenCalled()
     expect(
-      screen.getByRole('button', { name: 'Ask for approval' })
+      screen.getByRole('button', { name: 'Restricted' })
     ).toBeInTheDocument()
   })
 
@@ -168,9 +250,9 @@ describe('AgentApprovalModeSelect', () => {
       expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     )
 
-    // Back to Ask for approval, then Full access once more.
+    // Back to Restricted, then Full access once more.
     await user.click(screen.getByRole('button', { name: 'Full access' }))
-    await user.click(screen.getByRole('menuitem', { name: /Ask for approval/ }))
+    await user.click(screen.getByRole('menuitem', { name: /Restricted/ }))
     expect(onChange).toHaveBeenLastCalledWith('manual')
     await pickFullAccess(user)
 
@@ -179,19 +261,19 @@ describe('AgentApprovalModeSelect', () => {
     expect(onChange.mock.calls.filter(([m]) => m === 'skip')).toHaveLength(1)
   })
 
-  it('switches to Ask for approval without asking', async () => {
+  it('switches to Restricted without asking', async () => {
     const user = userEvent.setup()
     const onChange = vi.fn()
     render(<Harness initial="skip" onChange={onChange} />)
 
     await user.click(screen.getByRole('button', { name: 'Full access' }))
-    await user.click(screen.getByRole('menuitem', { name: /Ask for approval/ }))
+    await user.click(screen.getByRole('menuitem', { name: /Restricted/ }))
 
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     expect(onChange).toHaveBeenCalledTimes(1)
     expect(onChange).toHaveBeenCalledWith('manual')
     expect(
-      screen.getByRole('button', { name: 'Ask for approval' })
+      screen.getByRole('button', { name: 'Restricted' })
     ).toBeInTheDocument()
   })
 

@@ -76,4 +76,16 @@ describe('home route onboarding gate', () => {
     expect(screen.queryByTestId('setup-screen')).not.toBeInTheDocument()
     expect(screen.getByTestId('chat-input')).toBeInTheDocument()
   })
+
+  it('greets an empty chat with the logo above the question', () => {
+    localStorage.setItem(localStorageKey.setupCompleted, 'true')
+    render(<Index />)
+
+    const logo = screen.getByTestId('lazy-atomic-logo')
+    const question = screen.getByRole('heading', { level: 1 })
+    expect(question).toHaveTextContent('chat:description')
+    expect(
+      logo.compareDocumentPosition(question) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+  })
 })

@@ -3,7 +3,6 @@ import { useNavigate } from '@tanstack/react-router'
 import { IconLoader2, IconMovie } from '@tabler/icons-react'
 import { toast } from 'sonner'
 
-import HeaderPage from '@/containers/HeaderPage'
 import { route } from '@/constants/routes'
 import { ImageEmptyState } from '@/containers/images/ImageEmptyState'
 import { ImageErrorBanner } from '@/containers/images/ImageErrorBanner'
@@ -18,7 +17,6 @@ import { useVideoSetting } from '@/hooks/useVideoSetting'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import type { DiffusionErrorAction } from '@/lib/diffusion/errors'
 import { artifactId } from '@/lib/diffusion/models'
-import { cn } from '@/lib/utils'
 import { formatSeconds, secondsForFrames } from '@/lib/video/duration'
 import {
   selectHasInstalledModel,
@@ -218,25 +216,9 @@ export const VideoGenerationPage = memo(function VideoGenerationPage({
     ]
   )
 
-  const header = (
-    <HeaderPage>
-      <div
-        className={cn(
-          'flex w-full items-center gap-2 pr-3',
-          !IS_MACOS && 'pr-30'
-        )}
-      >
-        <span className="font-studio text-base font-medium">
-          {t('videos:page.title')}
-        </span>
-      </div>
-    </HeaderPage>
-  )
-
   if (onboarding) {
     return (
       <div className="flex h-svh w-full flex-col">
-        {header}
         <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 pb-4">
           <ImageErrorBanner
             error={lastError}
@@ -259,12 +241,10 @@ export const VideoGenerationPage = memo(function VideoGenerationPage({
 
   return (
     <div
-      className="grid h-svh w-full grid-cols-[minmax(340px,400px)_1fr] grid-rows-[auto_minmax(0,1fr)] overflow-hidden"
+      className="grid h-svh w-full grid-cols-[minmax(340px,400px)_1fr] grid-rows-[minmax(0,1fr)] overflow-hidden"
       data-testid="video-generation-page"
     >
-      <div className="col-span-2 min-w-0">{header}</div>
-
-      <aside className="col-start-1 row-start-2 flex min-h-0 min-w-0 flex-col border-r border-border">
+      <aside className="col-start-1 row-start-1 flex min-h-0 min-w-0 flex-col border-r border-border">
         {studioReady ? (
           <VideoPromptForm
             modelsOpen={modelsOpen}
@@ -277,7 +257,7 @@ export const VideoGenerationPage = memo(function VideoGenerationPage({
         )}
       </aside>
 
-      <section className="relative col-start-2 row-start-2 flex min-h-0 min-w-0 flex-col overflow-hidden">
+      <section className="relative col-start-2 row-start-1 flex min-h-0 min-w-0 flex-col overflow-hidden">
         {lastError && (
           <div className="shrink-0 px-6 pt-3">
             <ImageErrorBanner

@@ -18,7 +18,9 @@ import { endSession, startSession, withArtifacts, type Session } from '../harnes
 const MODEL_ID = 'e2e/fake-model'
 const NOTES = 'ATOMIC-E2E-AGENT-NOTES 3c9d: the ferry leaves at six.'
 const WRITTEN = 'ATOMIC-E2E-AGENT-WROTE 70fa'
-const ATTACH_MENU = 'button[aria-haspopup="menu"].rounded-full.mr-2'
+// Agent mode's switch sits in the composer's access menu, under the
+// approval modes.
+const ACCESS_MENU = 'button[aria-label="Restricted"]'
 
 // Agent mode is hidden in the app (ADR 2026-10-15-hide-agent-mode): no menu
 // item turns it on. This scenario waits for the mode to come back.
@@ -70,7 +72,7 @@ describe.skipIf(!AGENT_MODE_SHOWN || !CAN_RUN_FAKE_BACKEND).each([
       const browser = session.app.browser
       await waitForChat(session)
       await pickModel(session, MODEL_ID)
-      await chooseFromMenu(session, ATTACH_MENU, 'Agent mode')
+      await chooseFromMenu(session, ACCESS_MENU, 'Agent mode')
       await browser.$('[data-testid="agent-mode-chip"]').waitForDisplayed({ timeout: 15_000 })
       await send(session, 'summarise my field notes into summary.txt')
 
