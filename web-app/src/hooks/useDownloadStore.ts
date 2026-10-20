@@ -94,6 +94,10 @@ export type DownloadState = {
   // `downloads[id]` entry so the popover row survives, and makes the
   // stop/error listeners early-return instead of cleaning up.
   pausedDownloads: Set<string>
+  /** Explicit Cancel hides a job across restarts without deleting its files. */
+  dismissedDownloads: Set<string>
+  dismissDownload: (id: string) => void
+  clearDismissedDownload: (id: string) => void
   // ATO-154: resume parameters keyed by model id (see DownloadResumeParams).
   resumeParams: { [modelId: string]: DownloadResumeParams }
   removeDownload: (id: string) => void
@@ -133,6 +137,22 @@ export const useDownloadStore = create<DownloadState>()(persist<DownloadState, [
   localDownloadingModels: new Set(),
   resumableDownloads: new Set(),
   pausedDownloads: new Set(),
+  dismissedDownloads: new Set(),
+  dismissDownload: (id) => set((state) => {
+    const downloads = { ...state.downloads }
+    delete downloads[id]
+    const pausedDownloads = new Set(state.pausedDownloads)
+    const localDownloadingModels = new Set(state.localDownloadingModels)
+    pausedDownloads.delete(id)
+    localDownloadingModels.delete(id)
+    return { downloads, pausedDownloads, localDownloadingModels,
+      dismissedDownloads: new Set(state.dismissedDownloads).add(id) }
+  }),
+  clearDismissedDownload: (id) => set((state) => {
+    const dismissedDownloads = new Set(state.dismissedDownloads)
+    dismissedDownloads.delete(id)
+    return { dismissedDownloads }
+  }),
   resumeParams: {},
   downloadOriginByModelId: {},
   downloadRequestOriginByModelId: {},
@@ -145,6 +165,7 @@ export const useDownloadStore = create<DownloadState>()(persist<DownloadState, [
 
   updateProgress: (id, progress, name, current, total) =>
     set((state) => {
+      if (state.dismissedDownloads.has(id)) return state
       const previous = state.downloads[id]
       // `??` (not `||`) so explicit zero values — e.g. a restarted or
       // resumed transfer whose byte counter resets to 0 — are honored
@@ -176,6 +197,7 @@ export const useDownloadStore = create<DownloadState>()(persist<DownloadState, [
   // `current`/`total`, or a retry would rewind the bar to zero.
   updateStage: (id, stage) =>
     set((state) => {
+      if (state.dismissedDownloads.has(id)) return state
       const previous = state.downloads[id]
       const current = previous?.current ?? 0
       // No bytes are moving while the downloader waits on a quiet connection

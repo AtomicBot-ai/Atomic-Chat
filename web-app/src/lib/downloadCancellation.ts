@@ -68,14 +68,23 @@ export function cancelDownload(
   download: { id: string; name: string },
   serviceHub: ServiceHub
 ): void {
-  const { markResumableDownload, clearPausedDownload, clearResumeParams, markPausedDownload, resumeParams } =
+  const { markResumableDownload, clearPausedDownload, clearResumeParams, dismissDownload, clearDownloadOrigin, resumeParams } =
     useDownloadStore.getState()
+  const modelRequest = !!(resumeParams[download.id] || resumeParams[download.name]) || !(
+    isDiffusionEngineTaskId(download.id) || isEngineBuildTaskId(download.id) ||
+    isEngineUpdateTaskId(download.id) || isDiffusionModelDownloadTaskId(download.id) ||
+    isDecisionDownloadTaskId(download.id) || isEmbeddingDownloadTaskId(download.id) ||
+    isManagedDownloadId(download.id) || isFoundryLocalDownloadId(download.id) ||
+    download.id.startsWith('llamacpp') || download.id.startsWith('mlx')
+  )
   for (const key of new Set([download.name, download.id])) {
     markDownloadCancellationRequested(key)
     markResumableDownload(key)
-    if (resumeParams[key]) {
-      // Stop keeps the recoverable request and its row, just like Pause.
-      markPausedDownload(key)
+    if (modelRequest) {
+      // Cancel is distinct from Pause: hide now, suppress late events/startup
+      // discovery, and retain the source mapping only for an explicit retry.
+      dismissDownload(key)
+      clearDownloadOrigin(key)
     } else {
       clearPausedDownload(key)
       clearResumeParams(key)

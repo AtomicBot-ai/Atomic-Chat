@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-415 records, 2026-05-19 → 2026-10-20.
+416 records, 2026-05-19 → 2026-10-20.
 
 ---
 
@@ -231,6 +231,7 @@ decision is reversed, add a new one that says which record it supersedes.
 
 ## Models, Hub & downloads (43)
 
+- **2026-10-20** — [Keep download cancellation distinct from pause and recovery](2026-10-20-distinguish-download-cancel-from-pause.md)
 - **2026-10-20** — [Recover and reuse unfinished model download requests](2026-10-20-recover-and-reuse-model-download-requests.md)
 
 - **2026-10-16** — [Run Foundry Local through the core; download its models in the app](2026-10-16-run-foundry-local-through-the-core-and-download-its-models-in-the-app.md)

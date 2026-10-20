@@ -28,7 +28,7 @@ type Entry = {
   total: number
   origin?: string
 }
-export type DownloadRecovery = { entries: Entry[] }
+export type DownloadRecovery = { entries: Entry[]; dismissed?: string[] }
 
 export function publicSource(value: unknown): value is string {
   if (typeof value !== 'string') return false
@@ -68,7 +68,7 @@ function safeParams(value: unknown): DownloadResumeParams | undefined {
 const bytes = (value: unknown): number => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0
 
 export function saveDownloadRecovery(state: DownloadState): DownloadRecovery {
-  return { entries: Object.entries(state.resumeParams).flatMap(([id, value]) => {
+  return { dismissed: [...state.dismissedDownloads], entries: Object.entries(state.resumeParams).flatMap(([id, value]) => {
     const params = safeParams(value)
     if (!params) return []
     const progress = state.downloads[id]
@@ -80,10 +80,17 @@ export function saveDownloadRecovery(state: DownloadState): DownloadRecovery {
 export function restoreDownloadRecovery(value: unknown): Partial<DownloadState> {
   const restored: Partial<DownloadState> = {
     downloads: {}, resumeParams: {}, pausedDownloads: new Set(),
-    resumableDownloads: new Set(), localDownloadingModels: new Set(),
+    resumableDownloads: new Set(), localDownloadingModels: new Set(), dismissedDownloads: new Set(),
     downloadOriginByModelId: {}, downloadRequestOriginByModelId: {},
   }
   if (!value || typeof value !== 'object' || !Array.isArray((value as DownloadRecovery).entries)) return restored
+  const dismissed = (value as DownloadRecovery).dismissed
+  if (Array.isArray(dismissed)) {
+    for (const id of dismissed) {
+      if (typeof id === 'string' && /^[A-Za-z0-9/_\-.]+$/.test(id) &&
+        id.split('/').every((part) => part && part !== '.' && part !== '..')) restored.dismissedDownloads!.add(id)
+    }
+  }
   const identities = new Set<string>()
   for (const entry of (value as DownloadRecovery).entries) {
     if (!entry || typeof entry.id !== 'string' || !/^[A-Za-z0-9/_\-.]+$/.test(entry.id) ||
@@ -95,6 +102,8 @@ export function restoreDownloadRecovery(value: unknown): Partial<DownloadState> 
     identities.add(key)
     const current = bytes(entry.current), total = bytes(entry.total)
     restored.resumeParams![entry.id] = params
+    // Retain only the safe source mapping for an explicit later re-download.
+    if (restored.dismissedDownloads!.has(entry.id)) continue
     restored.downloads![entry.id] = {
       id: entry.id, name: entry.id, current, total,
       progress: total > 0 ? Math.min(current / total, 1) : 0,

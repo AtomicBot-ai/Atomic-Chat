@@ -55,12 +55,13 @@ function load(file) {
 const { modelDownloadKey, saveDownloadRecovery, restoreDownloadRecovery } = load(path.join(root,'lib/downloadRecovery.ts'))
 const { useDownloadStore: store } = load(path.join(root,'hooks/useDownloadStore.ts'))
 const { DefaultModelsService } = load(path.join(root,'services/models/default.ts'))
+const { scanLegacyModelDownloads, mergeLegacyModelDownloads, beginLegacyDownloadRecovery } = load(path.join(root,'services/models/downloadRecovery.ts'))
 const { cancelDownload } = load(path.join(root,'lib/downloadCancellation.ts'))
 const modelPath = 'https://huggingface.co/acme/model/resolve/main/model-Q4-00001-of-00002.gguf'
 const params = {modelPath, provider:'llamacpp-upstream', hfToken:'hf_secret_test', skipVerification:true}
 let passed = 0
 async function check(name, fn) { await fn(); passed++; console.log('PASS '+name) }
-function reset() { store.setState({ downloads:{}, resumeParams:{}, localDownloadingModels:new Set(), pausedDownloads:new Set(), resumableDownloads:new Set(), downloadOriginByModelId:{}, downloadRequestOriginByModelId:{} }); imports=[]; emitted=[]; notices=[]; preflights=0; importer=async()=>{} }
+function reset() { store.setState({ downloads:{}, dismissedDownloads:new Set(), resumeParams:{}, localDownloadingModels:new Set(), pausedDownloads:new Set(), resumableDownloads:new Set(), downloadOriginByModelId:{}, downloadRequestOriginByModelId:{} }); imports=[]; emitted=[]; notices=[]; preflights=0; importer=async()=>{} }
 const tick = () => new Promise(r=>setImmediate(r))
 ;(async()=>{
 await check('identity groups GGUF shards but separates repo, revision and quant', ()=>{
@@ -105,11 +106,43 @@ await check('MLX import retains every companion and the engine provider',async()
  await new DefaultModelsService().pullModelWithMetadata('mlx-model','https://huggingface.co/acme/mlx/resolve/main/model.safetensors',undefined,undefined,true,false,{provider:'mlx',files})
  assert.deepEqual(imports[0][1].files,files); assert.equal(store.getState().resumeParams['mlx-model'].provider,'mlx')
 })
-await check('stop keeps request metadata and row, while completion cleanup removes durable recovery',()=>{
+await check('Cancel hides the job while retaining only its source mapping for an explicit retry',()=>{
  reset(); store.getState().setResumeParams('model',params); store.getState().updateProgress('model',.4,'model',40,100)
  let aborted=0; cancelDownload({id:'model',name:'model'},{models:()=>({abortDownload:()=>{aborted++;return Promise.resolve()}})})
- assert.equal(aborted,1); assert(store.getState().pausedDownloads.has('model')); assert(store.getState().resumeParams.model); assert.equal(store.getState().downloads.model.current,40)
+ assert.equal(aborted,1); assert(!store.getState().pausedDownloads.has('model')); assert(store.getState().resumeParams.model); assert(!store.getState().downloads.model); assert(store.getState().dismissedDownloads.has('model'))
  store.getState().clearResumeParams('model'); assert.equal(JSON.parse(storage.get('atomic-model-downloads-v1')).state.recovery.entries.length,0)
+})
+await check('Cancel persists across restart and legacy scanning, while an explicit alias retry reuses the original destination',async()=>{
+ reset();store.getState().setResumeParams('original',params);store.getState().updateProgress('original',.4,'original',40,100)
+ cancelDownload({id:'original',name:'original'},{models:()=>({abortDownload:async()=>{}})})
+ const saved=storage.get('atomic-model-downloads-v1');assert(!saved.includes('hf_secret_test'))
+ store.setState({downloads:{},resumeParams:{},dismissedDownloads:new Set()});storage.set('atomic-model-downloads-v1',saved);await store.persist.rehydrate()
+ assert(store.getState().dismissedDownloads.has('original'));assert(!store.getState().downloads.original)
+ mergeLegacyModelDownloads({truncated:false,candidates:[{id:'original',params,current:40,total:100}]})
+ assert(!store.getState().downloads.original);assert.equal(imports.length,0)
+ await new DefaultModelsService().pullModelWithMetadata('alias',modelPath)
+ assert.equal(imports.length,1);assert.equal(imports[0][0],'original');assert.equal(imports[0][1].resume,true);assert(!store.getState().dismissedDownloads.has('original'))
+})
+await check('Cancel during preflight prevents an import from starting after the row disappeared',async()=>{
+ reset();let release;const gate=new Promise(r=>release=r)
+ const original=mocks['@/services/models/downloadPreflight'].preflightDownloadDiskSpace
+ mocks['@/services/models/downloadPreflight'].preflightDownloadDiskSpace=async()=>{await gate;return undefined}
+ const request=new DefaultModelsService().pullModelWithMetadata('early',modelPath);await tick()
+ cancelDownload({id:'early',name:'early'},{models:()=>({abortDownload:async()=>{}})})
+ release();await request;mocks['@/services/models/downloadPreflight'].preflightDownloadDiskSpace=original
+ assert.equal(imports.length,0);assert(!store.getState().downloads.early);assert(store.getState().dismissedDownloads.has('early'))
+})
+await check('an immediate explicit retry waits for both the canceled import and its stop notification',async()=>{
+ reset();let finishImport,finishAbort;const importGate=new Promise(r=>finishImport=r),abortGate=new Promise(r=>finishAbort=r)
+ const factory=mocks['@janhq/core'].EngineManager.instance
+ mocks['@janhq/core'].EngineManager.instance=()=>({get:()=>({import:(...args)=>{imports.push(args);return importer(...args)},abortImport:()=>abortGate})})
+ importer=()=>importGate
+ const service=new DefaultModelsService(),first=service.pullModelWithMetadata('racing',modelPath);await tick()
+ cancelDownload({id:'racing',name:'racing'},{models:()=>service})
+ const retry=service.pullModelWithMetadata('alias',modelPath);await tick();assert.equal(imports.length,1)
+ importer=async()=>{};finishImport();await tick();assert.equal(imports.length,1);assert(!store.getState().downloads.racing)
+ finishAbort();await Promise.all([first,retry]);assert.equal(imports.length,2);assert.equal(imports[1][0],'racing');assert.equal(imports[1][1].resume,true);assert(!store.getState().dismissedDownloads.has('racing'))
+ mocks['@janhq/core'].EngineManager.instance=factory
 })
 await check('unavailable local storage cannot interrupt a transfer',()=>{
  reset(); const previous=global.localStorage
@@ -133,7 +166,6 @@ await check('rapid pause/resume waits for the predecessor import to settle',asyn
  store.getState().markPausedDownload('model'); const resume=service.pullModelWithMetadata('model',modelPath,undefined,undefined,true,true); await tick(); assert.equal(imports.length,1)
  importer=async()=>{}; finish(); await Promise.all([first,resume]); assert.equal(imports.length,2); assert.equal(imports[1][1].resume,true)
 })
-const { scanLegacyModelDownloads, mergeLegacyModelDownloads, beginLegacyDownloadRecovery } = load(path.join(root,'services/models/downloadRecovery.ts'))
 const fsp=require('node:fs/promises'), crypto=require('node:crypto'), os=require('node:os')
 const fixtures=[]
 async function fixture(records) {

@@ -7,6 +7,7 @@ import {
   within,
 } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { events, DownloadEvent } from '@janhq/core'
 
 // A Bonsai file downloads under PrismML with the app's own downloader, so it
 // pauses and resumes in the panel like any GGUF. A resume finishes the way the
@@ -67,6 +68,7 @@ vi.mock('@/containers/downloads/DownloadPanel', () => ({
       bytesPerSecond?: number
       paused?: boolean
       pausable?: boolean
+      onPause?: () => void
       onResume?: () => void
       onCancel?: () => void
     }>
@@ -83,7 +85,7 @@ vi.mock('@/containers/downloads/DownloadPanel', () => ({
                 resume
               </button>
             ) : (
-              <button type="button">pause</button>
+              <button type="button" onClick={item.onPause}>pause</button>
             ))}
           <button type="button" onClick={item.onCancel}>
             cancel
@@ -123,6 +125,7 @@ describe('DownloadManagement — a Bonsai download', () => {
     })
     hub.models.deleteModel.mockResolvedValue(undefined)
     useDownloadStore.setState({
+      dismissedDownloads: new Set(),
       downloads: {
         [MODEL_ID]: { name: MODEL_ID, progress: 0.5, current: 50, total: 100 },
       },
@@ -139,6 +142,31 @@ describe('DownloadManagement — a Bonsai download', () => {
         },
       },
     } as never)
+  })
+
+  it('Cancel removes a paused row immediately and late events cannot restore it', () => {
+    render(<DownloadManagement />)
+    fireEvent.click(within(screen.getByTestId(ROW)).getByText('cancel'))
+    expect(screen.queryByTestId(ROW)).not.toBeInTheDocument()
+    expect(useDownloadStore.getState().dismissedDownloads.has(MODEL_ID)).toBe(true)
+    expect(useDownloadStore.getState().resumeParams[MODEL_ID].modelPath).toBe(URL)
+    act(() => {
+      events.emit(DownloadEvent.onFileDownloadStopped, { modelId: MODEL_ID })
+      events.emit(DownloadEvent.onFileDownloadUpdate, { modelId: MODEL_ID, percent: 0.6, size: { transferred: 60, total: 100 } })
+      events.emit(DownloadEvent.onFileDownloadError, { modelId: MODEL_ID, error: 'Download cancelled' })
+    })
+    expect(screen.queryByTestId(ROW)).not.toBeInTheDocument()
+    expect(useDownloadStore.getState().downloads[MODEL_ID]).toBeUndefined()
+  })
+
+  it('Pause retains the row and offers Resume, unlike Cancel', () => {
+    useDownloadStore.getState().clearPausedDownload(MODEL_ID)
+    render(<DownloadManagement />)
+    fireEvent.click(within(screen.getByTestId(ROW)).getByText('pause'))
+    act(() => events.emit(DownloadEvent.onFileDownloadStopped, { modelId: MODEL_ID }))
+    expect(screen.getByTestId(ROW)).toHaveTextContent('50/100')
+    expect(within(screen.getByTestId(ROW)).getByText('resume')).toBeInTheDocument()
+    expect(useDownloadStore.getState().dismissedDownloads.has(MODEL_ID)).toBe(false)
   })
 
   it('resumes under PrismML with the hashes it started with, and keeps a file PrismML runs', async () => {

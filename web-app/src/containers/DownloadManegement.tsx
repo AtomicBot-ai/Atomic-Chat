@@ -328,6 +328,7 @@ export function DownloadManagement() {
   const onFileDownloadError = useCallback(
     (state: DownloadState) => {
       console.debug('onFileDownloadError', state)
+      if (useDownloadStore.getState().dismissedDownloads.has(state.modelId)) return
 
       const anyState = state as unknown as {
         error?: string
@@ -608,6 +609,7 @@ export function DownloadManagement() {
   const onFileDownloadStopped = useCallback(
     (state: DownloadState) => {
       console.debug('onFileDownloadStopped', state)
+      if (useDownloadStore.getState().dismissedDownloads.has(state.modelId)) return
 
       toast.dismiss(`model-validation-started-${state.modelId}`)
 
@@ -660,6 +662,7 @@ export function DownloadManagement() {
   const onFileDownloadSuccess = useCallback(
     async (state: DownloadState) => {
       console.debug('onFileDownloadSuccess', state)
+      if (useDownloadStore.getState().dismissedDownloads.has(state.modelId)) return
 
       notifyDownloadFinished(state, imageCatalog, t)
       captureDownloadTerminal('completed', state.modelId, {
@@ -710,6 +713,7 @@ export function DownloadManagement() {
   const onFileDownloadAndVerificationSuccess = useCallback(
     async (state: DownloadState) => {
       console.debug('onFileDownloadAndVerificationSuccess', state)
+      if (useDownloadStore.getState().dismissedDownloads.has(state.modelId)) return
 
       notifyDownloadFinished(state, imageCatalog, t)
       captureDownloadTerminal('completed', state.modelId, {
@@ -944,12 +948,12 @@ export function DownloadManagement() {
   const handleCancelDownload = useCallback(
     (download: { id: string; name: string }) => {
       if (useDownloadStore.getState().downloads[download.id]?.recoveryBlocked) {
-        removeDownload(download.id) // Hide an unresolved row; never touch its files.
+        useDownloadStore.getState().dismissDownload(download.id) // Hide an unresolved row; never touch its files.
         return
       }
       cancelDownload(download, serviceHub)
     },
-    [serviceHub, removeDownload]
+    [serviceHub]
   )
 
   const panelItems = useMemo<DownloadRowProps[]>(() => {

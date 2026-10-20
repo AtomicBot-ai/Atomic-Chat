@@ -2,6 +2,7 @@
  * Default Models Service - Web implementation
  */
 
+import { clearDownloadCancellationRequested } from '@/lib/downloadCancellation'
 import { managedEngines } from '@/lib/managed-engines'
 import {
   sanitizeModelId,
@@ -61,6 +62,7 @@ import { modelDownloadKey } from '@/lib/downloadRecovery'
 import { waitForLegacyDownloadRecovery } from './downloadRecovery'
 
 // Shared across service instances. Claim synchronously, before metadata or disk probes yield.
+const pendingModelStops = new Map<string, Promise<void>>()
 const activeModelDownloads = new Map<string, { id: string; promise: Promise<DownloadRefusal | undefined> }>()
 
 // Platform-active llama.cpp provider id. Windows registers only the
@@ -687,11 +689,13 @@ export class DefaultModelsService implements ModelsService {
     resume: boolean = false,
     options: PullModelOptions = {}
   ): Promise<DownloadRefusal | undefined> {
+    const wasDismissedAtRequest = useDownloadStore.getState().dismissedDownloads.has(id)
     // Startup discovery must finish before a fresh request can claim a legacy destination.
     await waitForLegacyDownloadRecovery()
     const params = { ...options, provider: options.provider ?? defaultProvider, modelPath, mmprojPath }
     const key = modelDownloadKey(params)
     const store = useDownloadStore.getState()
+    if (!wasDismissedAtRequest && store.dismissedDownloads.has(id)) return
     if (store.downloads[id]?.recoveryBlocked) {
       window.dispatchEvent(new Event('atomic-open-download-panel'))
       toast.info(i18n.t('common:downloadRecoveryNeedsSource'))
@@ -700,8 +704,8 @@ export class DefaultModelsService implements ModelsService {
     const active = activeModelDownloads.get(key)
     if (active) {
       // Pause signals cancellation; wait for the old import to unwind before resuming.
-      if (resume && store.pausedDownloads.has(active.id)) {
-        await active.promise.catch(() => undefined)
+      if ((resume && store.pausedDownloads.has(active.id)) || store.dismissedDownloads.has(active.id)) {
+        await Promise.all([active.promise.catch(() => undefined), pendingModelStops.get(active.id)])
         return this.pullModelWithMetadata(id, modelPath, mmprojPath, hfToken, skipVerification, true, options)
       }
       if (id !== active.id) {
@@ -725,6 +729,13 @@ export class DefaultModelsService implements ModelsService {
       store.removeLocalDownloadingModel(id)
       store.clearDownloadOrigin(id)
     }
+    const stopping = pendingModelStops.get(ownerId)
+    if (stopping) {
+      await stopping
+      return this.pullModelWithMetadata(id, modelPath, mmprojPath, hfToken, skipVerification, resume, options)
+    }
+    store.clearDismissedDownload(ownerId)
+    clearDownloadCancellationRequested(ownerId)
     store.clearPausedDownload(ownerId)
     store.addLocalDownloadingModel(ownerId)
     window.dispatchEvent(new Event('atomic-open-download-panel'))
@@ -746,6 +757,7 @@ export class DefaultModelsService implements ModelsService {
     resume: boolean = false,
     options: PullModelOptions = {}
   ): Promise<DownloadRefusal | undefined> {
+    if (useDownloadStore.getState().dismissedDownloads.has(id)) return
     let { modelSha256, modelSize, mmprojSha256, mmprojSize } = options
 
     // Extract repo ID from model URL
@@ -828,6 +840,8 @@ export class DefaultModelsService implements ModelsService {
       }
     }
 
+    if (useDownloadStore.getState().dismissedDownloads.has(id)) return
+
     // ATO-154: record resume parameters at the single GGUF download-start
     // choke point so the global Download popover can resume a paused download
     // (it only knows the model id, not these HF paths/token). MLX downloads go
@@ -885,6 +899,7 @@ export class DefaultModelsService implements ModelsService {
         options = { ...options, recoverRepository: false, files: files!.filter((file) => file !== main).map((file) => ({ url: urlFor(file.rfilename), filename: file.rfilename })) }
         useDownloadStore.getState().setResumeParams(id, { ...options, modelPath, hfToken, skipVerification })
       }
+      if (useDownloadStore.getState().dismissedDownloads.has(id)) return
       // Also recover pre-journal partials when the same HF file is requested again.
       // Rust checks the saved URL, persisted size and range response before appending.
       const resumePartial = resume || /^https:\/\/(huggingface\.co|hf\.co)\//.test(modelPath)
@@ -910,7 +925,7 @@ export class DefaultModelsService implements ModelsService {
       // catch doesn't fire a spurious "download failed" toast or clean up the
       // row — the download-stopped listener keeps the paused entry alive and
       // the popover shows a Resume button instead.
-      if (useDownloadStore.getState().pausedDownloads.has(id)) {
+      if (useDownloadStore.getState().pausedDownloads.has(id) || useDownloadStore.getState().dismissedDownloads.has(id)) {
         return
       }
       // Emit download error event so the UI can clean up the stale downloading state
@@ -924,21 +939,27 @@ export class DefaultModelsService implements ModelsService {
   }
 
   async abortDownload(id: string): Promise<void> {
+    const stopping = pendingModelStops.get(id)
+    if (stopping) return stopping
     // A Bonsai file downloads under PrismML's own task id: every engine that
     // may hold `id` is asked, and the ones that do not hold it ignore it.
-    const engines = [LOCAL_LLAMACPP_PROVIDER, 'atomic-prism', 'mlx'].map(
-      (provider) => this.getEngine(provider)
-    )
-    try {
-      await Promise.allSettled(
-        engines.map((engine) => engine?.abortImport(id)).filter(Boolean)
+    const promise = Promise.resolve().then(async () => {
+      const engines = [LOCAL_LLAMACPP_PROVIDER, 'atomic-prism', 'mlx'].map(
+        (provider) => this.getEngine(provider)
       )
-    } finally {
-      events.emit(DownloadEvent.onFileDownloadStopped, {
-        modelId: id,
-        downloadType: 'Model',
-      })
-    }
+      try {
+        await Promise.allSettled(
+          engines.map((engine) => engine?.abortImport(id)).filter(Boolean)
+        )
+      } finally {
+        events.emit(DownloadEvent.onFileDownloadStopped, {
+          modelId: id,
+          downloadType: 'Model',
+        })
+      }
+    }).finally(() => { pendingModelStops.delete(id) })
+    pendingModelStops.set(id, promise)
+    return promise
   }
 
   async deleteModel(

@@ -148,6 +148,7 @@ export async function scanLegacyModelDownloads(io: RecoveryIo, roots: RecoveryRo
 export function mergeLegacyModelDownloads(result: LegacyScanResult): void {
   for (const candidate of result.candidates) {
     const state = useDownloadStore.getState()
+    if (state.dismissedDownloads.has(candidate.id)) continue
     if (state.localDownloadingModels.has(candidate.id) ||
       (state.downloads[candidate.id] && !state.pausedDownloads.has(candidate.id))) continue
     const existing = state.resumeParams[candidate.id]
