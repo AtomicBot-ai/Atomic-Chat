@@ -41,6 +41,9 @@ import { Route as ProjectProjectIdRouteImport } from './routes/project/$projectI
 import { Route as LocalApiServerLogsRouteImport } from './routes/local-api-server/logs'
 import { Route as ImagesWorkflowRouteImport } from './routes/images/$workflow'
 import { Route as HubModelIdRouteImport } from './routes/hub/$modelId'
+import { Route as ApiModelRouteImport } from './routes/api/model'
+import { Route as ApiConnectionsRouteImport } from './routes/api/connections'
+import { Route as ApiActivityRouteImport } from './routes/api/activity'
 import { Route as SettingsProvidersIndexRouteImport } from './routes/settings/providers/index'
 import { Route as SettingsProvidersProviderNameRouteImport } from './routes/settings/providers/$providerName'
 
@@ -204,6 +207,21 @@ const HubModelIdRoute = HubModelIdRouteImport.update({
   path: '/hub/$modelId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiModelRoute = ApiModelRouteImport.update({
+  id: '/api/model',
+  path: '/api/model',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiConnectionsRoute = ApiConnectionsRouteImport.update({
+  id: '/api/connections',
+  path: '/api/connections',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiActivityRoute = ApiActivityRouteImport.update({
+  id: '/api/activity',
+  path: '/api/activity',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SettingsProvidersIndexRoute = SettingsProvidersIndexRouteImport.update({
   id: '/settings/providers/',
   path: '/settings/providers/',
@@ -220,6 +238,9 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/logs': typeof LogsRoute
   '/system-monitor': typeof SystemMonitorRoute
+  '/api/activity': typeof ApiActivityRoute
+  '/api/connections': typeof ApiConnectionsRoute
+  '/api/model': typeof ApiModelRoute
   '/hub/$modelId': typeof HubModelIdRoute
   '/images/$workflow': typeof ImagesWorkflowRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
@@ -256,6 +277,9 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/logs': typeof LogsRoute
   '/system-monitor': typeof SystemMonitorRoute
+  '/api/activity': typeof ApiActivityRoute
+  '/api/connections': typeof ApiConnectionsRoute
+  '/api/model': typeof ApiModelRoute
   '/hub/$modelId': typeof HubModelIdRoute
   '/images/$workflow': typeof ImagesWorkflowRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
@@ -293,6 +317,9 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/logs': typeof LogsRoute
   '/system-monitor': typeof SystemMonitorRoute
+  '/api/activity': typeof ApiActivityRoute
+  '/api/connections': typeof ApiConnectionsRoute
+  '/api/model': typeof ApiModelRoute
   '/hub/$modelId': typeof HubModelIdRoute
   '/images/$workflow': typeof ImagesWorkflowRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
@@ -331,6 +358,9 @@ export interface FileRouteTypes {
     | '/'
     | '/logs'
     | '/system-monitor'
+    | '/api/activity'
+    | '/api/connections'
+    | '/api/model'
     | '/hub/$modelId'
     | '/images/$workflow'
     | '/local-api-server/logs'
@@ -367,6 +397,9 @@ export interface FileRouteTypes {
     | '/'
     | '/logs'
     | '/system-monitor'
+    | '/api/activity'
+    | '/api/connections'
+    | '/api/model'
     | '/hub/$modelId'
     | '/images/$workflow'
     | '/local-api-server/logs'
@@ -403,6 +436,9 @@ export interface FileRouteTypes {
     | '/'
     | '/logs'
     | '/system-monitor'
+    | '/api/activity'
+    | '/api/connections'
+    | '/api/model'
     | '/hub/$modelId'
     | '/images/$workflow'
     | '/local-api-server/logs'
@@ -440,6 +476,9 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LogsRoute: typeof LogsRoute
   SystemMonitorRoute: typeof SystemMonitorRoute
+  ApiActivityRoute: typeof ApiActivityRoute
+  ApiConnectionsRoute: typeof ApiConnectionsRoute
+  ApiModelRoute: typeof ApiModelRoute
   HubModelIdRoute: typeof HubModelIdRoute
   ImagesWorkflowRoute: typeof ImagesWorkflowRoute
   LocalApiServerLogsRoute: typeof LocalApiServerLogsRoute
@@ -699,6 +738,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HubModelIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/model': {
+      id: '/api/model'
+      path: '/api/model'
+      fullPath: '/api/model'
+      preLoaderRoute: typeof ApiModelRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/connections': {
+      id: '/api/connections'
+      path: '/api/connections'
+      fullPath: '/api/connections'
+      preLoaderRoute: typeof ApiConnectionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/activity': {
+      id: '/api/activity'
+      path: '/api/activity'
+      fullPath: '/api/activity'
+      preLoaderRoute: typeof ApiActivityRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/settings/providers/': {
       id: '/settings/providers/'
       path: '/settings/providers'
@@ -720,6 +780,9 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LogsRoute: LogsRoute,
   SystemMonitorRoute: SystemMonitorRoute,
+  ApiActivityRoute: ApiActivityRoute,
+  ApiConnectionsRoute: ApiConnectionsRoute,
+  ApiModelRoute: ApiModelRoute,
   HubModelIdRoute: HubModelIdRoute,
   ImagesWorkflowRoute: ImagesWorkflowRoute,
   LocalApiServerLogsRoute: LocalApiServerLogsRoute,

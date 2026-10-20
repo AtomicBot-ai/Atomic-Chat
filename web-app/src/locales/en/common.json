@@ -840,6 +840,8 @@
     "model": "Model",
     "notSelected": "Not selected",
     "configuration": "Configuration",
-    "remoteAccess": "Remote access"
+    "remoteAccess": "Remote access",
+    "activity": "Activity",
+    "connections": "Connections"
   }
 }

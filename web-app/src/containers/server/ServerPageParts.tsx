@@ -12,27 +12,49 @@ import './ServerPage.css'
 /**
  * A page of the Server section: one scrolling column with the prototype's
  * title block. The window title bar above already carries the drag region,
- * so these pages have no header row of their own.
+ * so these pages have no header row of their own. Overview has no title.
+ * `wide` is for a dashboard built from the app's own components: it gets the
+ * title block and the width, but its content keeps the app's styles rather
+ * than the section's.
  */
 export function ServerPage({
   title,
   description,
+  actions,
+  wide = false,
   children,
 }: {
-  title: string
-  description: string
+  title?: string
+  description?: string
+  /** Page-level actions, right of the title. */
+  actions?: ReactNode
+  wide?: boolean
   children: ReactNode
 }) {
+  const heading = title && (
+    <div className="sp-section-title">
+      <div className="min-w-0">
+        <h1>{title}</h1>
+        {description && <p>{description}</p>}
+      </div>
+      {actions && <div className="sp-actions">{actions}</div>}
+    </div>
+  )
+
   return (
     <div className="flex h-svh w-full min-w-0 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
-        <div className="server-page">
-          <div className="sp-section-title">
-            <h1>{title}</h1>
-            <p>{description}</p>
+        {wide ? (
+          <div className="w-full max-w-[1200px]">
+            <div className="server-page server-page-wide">{heading}</div>
+            {children}
           </div>
-          {children}
-        </div>
+        ) : (
+          <div className="server-page">
+            {heading}
+            {children}
+          </div>
+        )}
       </div>
     </div>
   )

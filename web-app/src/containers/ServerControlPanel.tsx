@@ -1,42 +1,39 @@
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { Box, Cpu, Play, RotateCw, Square } from 'lucide-react'
+import { Box, Cpu, Network, Play, RotateCw, Square } from 'lucide-react'
 import { route } from '@/constants/routes'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useLocalApiServerControl } from '@/hooks/useLocalApiServerControl'
-import { getProviderTitle } from '@/lib/utils'
+import { restartLocalApiServer } from '@/hooks/useRemoteAccess'
+import { useServiceHub } from '@/hooks/useServiceHub'
+import { useServedModel } from '@/containers/server/useServedModel'
 import './ServerControlPanel.css'
 
 /**
  * Start/Stop and Restart for the Local API Server, plus the engine and model
- * it serves, at the top of the Server sidebar. Driven by the same control
- * hook as the API page, so the two always agree.
+ * it serves and the way to its connection details, at the top of the Server
+ * sidebar. Driven by the same control hook as the Server pages, so they
+ * always agree.
  */
 export function ServerControlPanel() {
   const { t } = useTranslation()
+  const hub = useServiceHub()
   const control = useLocalApiServerControl()
-  const defaultModel = useLocalApiServer(
-    (state) => state.defaultModelLocalApiServer
-  )
-  const lastServerModels = useLocalApiServer((state) => state.lastServerModels)
   const [restarting, setRestarting] = useState(false)
 
   // While running, show what the server actually loaded; otherwise what it
   // will load on the next start.
-  const served =
-    (control.isRunning ? lastServerModels[0] : undefined) ?? defaultModel
-  const engine = served ? getProviderTitle(served.provider) : undefined
-  const model = served?.model
+  const { engine, model } = useServedModel(control.isRunning)
 
   const busy = restarting || control.isBusy
   const starting = control.status === 'pending' && !restarting
 
+  // The shared restart: it loads the chosen model and brings a tunnel that
+  // was online back with the server.
   const restart = async () => {
     setRestarting(true)
     try {
-      await control.stop()
-      await control.start()
+      await restartLocalApiServer(hub, control, { ensureModel: true })
     } finally {
       setRestarting(false)
     }
@@ -87,19 +84,27 @@ export function ServerControlPanel() {
         </button>
       </div>
       <div className="dsc-details">
-        <Link to={route.api.index} className="dsc-detail">
+        <Link to={route.api.model} className="dsc-detail">
           <Cpu size={15} />
           <span>{t('common:navigation.engine')}</span>
           <strong title={engine}>
             {engine ?? t('common:navigation.notSelected')}
           </strong>
         </Link>
-        <Link to={route.api.index} className="dsc-detail">
+        <Link to={route.api.model} className="dsc-detail">
           <Box size={15} />
           <span>{t('common:navigation.model')}</span>
           <strong title={model}>
             {model ?? t('common:navigation.notSelected')}
           </strong>
+        </Link>
+        <Link
+          to={route.api.connections}
+          className="dsc-detail"
+          data-testid="server-panel-connections"
+        >
+          <Network size={15} />
+          <span>{t('common:navigation.connections')}</span>
         </Link>
       </div>
     </section>

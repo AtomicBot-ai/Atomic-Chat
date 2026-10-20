@@ -34,6 +34,46 @@ export async function openServerPage(browser: Browser, label: string): Promise<v
   await openSidebarRow(browser, label)
 }
 
+/** The Server sidebar's Start/Stop button; its label is what it would do. */
+const SERVER_POWER = '[data-testid="server-panel-power"]'
+
+/** Waits until the Server sidebar's power button offers `label`. */
+export async function waitForServerPower(
+  browser: Browser,
+  label: 'Start' | 'Stop',
+  timeout = 60_000
+): Promise<void> {
+  const power = browser.$(SERVER_POWER)
+  await browser.waitUntil(async () => (await power.isExisting()) && (await power.getText()).trim() === label, {
+    timeout,
+    timeoutMsg: `the Server sidebar never offered ${label}`,
+  })
+}
+
+/** Starts the Local API Server from the Server sidebar and waits until it runs. */
+export async function startServerFromSidebar(browser: Browser): Promise<void> {
+  await openSection(browser, 'server')
+  await waitForServerPower(browser, 'Start', 30_000)
+  await browser.$(SERVER_POWER).click()
+  await waitForServerPower(browser, 'Stop')
+}
+
+/** Stops the Local API Server from the Server sidebar and waits until it has. */
+export async function stopServerFromSidebar(browser: Browser): Promise<void> {
+  await openSection(browser, 'server')
+  await waitForServerPower(browser, 'Stop', 30_000)
+  await browser.$(SERVER_POWER).click()
+  await waitForServerPower(browser, 'Start', 30_000)
+}
+
+/** Opens Server → Connections from the link in the sidebar's server panel. */
+export async function openServerConnections(browser: Browser): Promise<void> {
+  await openSection(browser, 'server')
+  const link = browser.$('[data-testid="server-panel-connections"]')
+  await link.waitForClickable({ timeout: 30_000 })
+  await link.click()
+}
+
 /** Starts a new chat from the Workspace sidebar, wherever the app is. */
 export async function startNewChat(browser: Browser): Promise<void> {
   await openSection(browser, 'chat')

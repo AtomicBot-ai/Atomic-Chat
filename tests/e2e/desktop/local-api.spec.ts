@@ -11,7 +11,7 @@ import { readLock } from '../harness/core.js'
 import { installFakeBackend, writeFakeModel } from '../harness/fixtures.js'
 import { CAN_RUN_FAKE_BACKEND } from '../harness/platform.js'
 import { endSession, startSession, withArtifacts, type Session } from '../harness/session.js'
-import { openServerPage } from '../harness/navigation.js'
+import { startServerFromSidebar, stopServerFromSidebar, waitForServerPower } from '../harness/navigation.js'
 
 const MODEL_ID = 'e2e/fake-model'
 const REPLY = 'ATOMIC-E2E-API-REPLY 91be'
@@ -70,9 +70,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('the local API server', () => {
       // Auto-start is off in this profile, so nothing listens yet.
       await expect(fetch(`${baseUrl}/models`, { headers: authorized })).rejects.toThrow()
 
-      await openServerPage(browser, 'Overview')
-      await browser.$('button=Start server').click()
-      await browser.$('button=Stop server').waitForDisplayed({ timeout: 60_000 })
+      await startServerFromSidebar(browser)
 
       // Without the key the request is refused; with it the app's model is listed.
       expect((await fetch(`${baseUrl}/models`)).status).toBe(401)
@@ -99,8 +97,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('the local API server', () => {
       expect(streamed.chunks).toBeGreaterThan(1)
       expect(streamed.done).toBe(true)
 
-      await browser.$('button=Stop server').click()
-      await browser.$('button=Start server').waitForDisplayed({ timeout: 30_000 })
+      await stopServerFromSidebar(browser)
       await expect(fetch(`${baseUrl}/models`, { headers: authorized })).rejects.toThrow()
     })
   })
@@ -133,9 +130,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('the local API server when the core dies'
       const models = () => fetch(`${baseUrl}/models`, { headers: authorized }).then((r) => r.status, () => 0)
 
       await browser.$('[data-testid="chat-input"]').waitForDisplayed({ timeout: 60_000 })
-      await openServerPage(browser, 'Overview')
-      await browser.$('button=Start server').click()
-      await browser.$('button=Stop server').waitForDisplayed({ timeout: 60_000 })
+      await startServerFromSidebar(browser)
       expect(await models()).toBe(200)
 
       // The listener belongs to the core, so it dies with it.
@@ -163,8 +158,8 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('the local API server when the core dies'
       expect(completion.status).toBe(200)
       expect((await streamedText(completion)).text).toBe(REPLY)
 
-      // And the page still tells the truth about it.
-      await browser.$('button=Stop server').waitForDisplayed({ timeout: 15_000 })
+      // And the sidebar still tells the truth about it.
+      await waitForServerPower(browser, 'Stop', 15_000)
     })
   }, 300_000)
 })

@@ -31,6 +31,13 @@ vi.mock('@/hooks/useLocalApiServerControl', () => ({
   useLocalApiServerControl: () => control,
 }))
 
+const { hub, restart } = vi.hoisted(() => ({
+  hub: { app: () => ({}) },
+  restart: vi.fn(),
+}))
+vi.mock('@/hooks/useServiceHub', () => ({ useServiceHub: () => hub }))
+vi.mock('@/hooks/useRemoteAccess', () => ({ restartLocalApiServer: restart }))
+
 const server = vi.hoisted(() => ({
   defaultModelLocalApiServer: null as null | {
     model: string
@@ -58,6 +65,7 @@ describe('ServerControlPanel', () => {
     control.start.mockResolvedValue(undefined)
     control.stop.mockResolvedValue(undefined)
     control.toggle.mockResolvedValue(undefined)
+    restart.mockResolvedValue(true)
   })
 
   it('starts a stopped server', async () => {
@@ -74,7 +82,7 @@ describe('ServerControlPanel', () => {
     ).toBeDisabled()
   })
 
-  it('offers Stop while running and restarts as stop then start', async () => {
+  it('offers Stop while running and restarts through the shared restart, loading the chosen model', async () => {
     setStatus('running')
     render(<ServerControlPanel />)
 
@@ -87,11 +95,23 @@ describe('ServerControlPanel', () => {
       )
     })
 
-    expect(control.stop).toHaveBeenCalledTimes(1)
-    expect(control.start).toHaveBeenCalledTimes(1)
-    expect(control.stop.mock.invocationCallOrder[0]).toBeLessThan(
-      control.start.mock.invocationCallOrder[0]
-    )
+    // The shared path also brings back a tunnel that was online.
+    expect(restart).toHaveBeenCalledWith(hub, control, { ensureModel: true })
+    expect(control.toggle).not.toHaveBeenCalled()
+  })
+
+  it('opens Engine & model from the engine and model, and Connections below them', () => {
+    render(<ServerControlPanel />)
+
+    expect(
+      screen.getByText('common:navigation.engine').closest('a')
+    ).toHaveAttribute('href', '/api/model')
+    expect(
+      screen.getByText('common:navigation.model').closest('a')
+    ).toHaveAttribute('href', '/api/model')
+    expect(
+      screen.getByText('common:navigation.connections').closest('a')
+    ).toHaveAttribute('href', '/api/connections')
   })
 
   it('locks both actions while the server is starting', () => {

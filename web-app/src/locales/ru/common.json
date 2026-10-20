@@ -745,6 +745,8 @@
     "model": "Модель",
     "notSelected": "Не выбрана",
     "configuration": "Настройки",
-    "remoteAccess": "Удалённый доступ"
+    "remoteAccess": "Удалённый доступ",
+    "activity": "Активность",
+    "connections": "Подключения"
   }
 }

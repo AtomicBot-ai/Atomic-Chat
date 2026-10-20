@@ -1,24 +1,9 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { useApiServerLog } from '@/hooks/useApiServerLog'
-import type { ApiRequestEntry } from '@/types/apiServerLog'
-
-const { control, clearFeed, hydrateFeed, appState } = vi.hoisted(() => ({
-  control: {
-    status: 'running' as 'running' | 'stopped' | 'pending',
-    isRunning: true,
-    isModelLoading: false,
-    isBusy: false,
-    start: vi.fn(),
-    stop: vi.fn(),
-    toggle: vi.fn(),
-    refreshStatus: vi.fn().mockResolvedValue(undefined),
-  },
-  clearFeed: vi.fn().mockResolvedValue(undefined),
-  hydrateFeed: vi.fn().mockResolvedValue(undefined),
+const { appState } = vi.hoisted(() => ({
   appState: {
-    serverStatus: 'running' as const,
+    serverStatus: 'running' as 'running' | 'stopped' | 'pending',
     activeModels: ['gemma-4'] as string[],
   },
 }))
@@ -78,20 +63,6 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }))
 
-vi.mock('@/hooks/useLocalApiServerControl', () => ({
-  useLocalApiServerControl: () => control,
-}))
-
-vi.mock('@/hooks/useApiServerLogFeed', async () => {
-  const actual = await vi.importActual<
-    typeof import('@/hooks/useApiServerLogFeed')
-  >('@/hooks/useApiServerLogFeed')
-  return {
-    ...actual,
-    useApiServerLogFeed: () => ({ clear: clearFeed, hydrate: hydrateFeed }),
-  }
-})
-
 vi.mock('@/hooks/useAppState', () => ({
   useAppState: Object.assign(
     (selector?: (s: typeof appState) => unknown) =>
@@ -108,27 +79,7 @@ vi.mock('@/utils/localApiServerControl', () => ({
   getLocalApiServerUrl: () => 'http://127.0.0.1:1337/v1',
 }))
 
-vi.mock('@/containers/HeaderPage', () => ({
-  default: ({ children }: { children: React.ReactNode }) => (
-    <div>{children}</div>
-  ),
-}))
-
-vi.mock('@tanstack/react-virtual', () => ({
-  useVirtualizer: ({ count }: { count: number }) => ({
-    getTotalSize: () => count * 64,
-    getVirtualItems: () =>
-      Array.from({ length: count }, (_, index) => ({
-        index,
-        key: index,
-        start: index * 64,
-        size: 64,
-      })),
-    measureElement: () => {},
-  }),
-}))
-
-import { resetFeedBuffers } from '@/hooks/useApiServerLogFeed'
+import { useRemoteAccessStore } from '@/hooks/useRemoteAccess'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import type { DecisionService, DecisionState } from '@/services/decision/types'
 import type {
@@ -139,7 +90,7 @@ import { useDecisionStore } from '@/stores/decision-store'
 import { useEmbeddingStore } from '@/stores/embedding-store'
 import { seedServiceHub } from '@/test/service-hub'
 
-import { ApiPage } from '../index'
+import { ConnectionDetails } from '../ConnectionDetails'
 
 const getDecisionConfig = vi.fn()
 const initialDecision = useDecisionStore.getState()
@@ -189,34 +140,13 @@ function embeddingAs(
   })
 }
 
-function request(
-  id: string,
-  overrides: Partial<ApiRequestEntry> = {}
-): ApiRequestEntry {
-  return {
-    kind: 'request',
-    id,
-    seq: 0,
-    startedAt: Date.now(),
-    status: 'completed',
-    method: 'POST',
-    endpoint: 'chat/completions',
-    model: 'gemma-4',
-    stream: true,
-    durationMs: 1000,
-    ...overrides,
-  }
-}
-
-const store = () => useApiServerLog.getState()
-
-describe('ApiPage', () => {
+describe('Server → Connections, connection details', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    resetFeedBuffers()
-    store().reset()
-    store().hydrate([])
+    appState.serverStatus = 'running'
     appState.activeModels = ['gemma-4']
+    useRemoteAccessStore.getState().reset()
+    useLocalApiServer.setState({ serverHost: '127.0.0.1' })
     useDecisionStore.setState(initialDecision, true)
     useEmbeddingStore.setState(initialEmbedding, true)
     useLocalApiServer.getState().setApiKey('')
@@ -232,7 +162,7 @@ describe('ApiPage', () => {
 
   it('names the decision model the server answers /systemone with', async () => {
     decisionAs('ready')
-    render(<ApiPage />)
+    render(<ConnectionDetails />)
     expect(await screen.findByText('Laya Multilingual')).toBeInTheDocument()
     expect(screen.getByText('api:strip.decisionModel')).toBeInTheDocument()
     expect(screen.getByText('gemma-4')).toBeInTheDocument()
@@ -241,18 +171,18 @@ describe('ApiPage', () => {
   it('reads Ready from a decision model alone, and marks one still starting', async () => {
     appState.activeModels = []
     decisionAs('ready')
-    const { unmount } = render(<ApiPage />)
+    const { unmount } = render(<ConnectionDetails />)
     expect(await screen.findByText('api:status.ready')).toBeInTheDocument()
     unmount()
 
     decisionAs('starting')
-    render(<ApiPage />)
+    render(<ConnectionDetails />)
     expect(await screen.findByText(/api:status\.starting/)).toBeInTheDocument()
     expect(screen.getByText('api:status.noModel')).toBeInTheDocument()
   })
 
   it('leaves the decision field out while the module is off', async () => {
-    render(<ApiPage />)
+    render(<ConnectionDetails />)
     await waitFor(() =>
       expect(useDecisionStore.getState().status?.state).toBe('disabled')
     )
@@ -264,7 +194,7 @@ describe('ApiPage', () => {
   it('names the embedding model by the id clients pass, with a text test to copy', async () => {
     appState.activeModels = []
     embeddingAs('ready', { modalities: ['text'], dims: 1024 })
-    render(<ApiPage />)
+    render(<ConnectionDetails />)
 
     expect(await screen.findByText('bge-m3')).toBeInTheDocument()
     expect(screen.getByText('api:strip.embeddingModel')).toBeInTheDocument()
@@ -296,7 +226,7 @@ describe('ApiPage', () => {
     useLocalApiServer.getState().setApiKey('secret')
     // Until the process reports what it reads, the catalog says.
     embeddingAs('starting', { model_id: 'embeddinggemma-2' })
-    render(<ApiPage />)
+    render(<ConnectionDetails />)
 
     expect(await screen.findByText('embeddinggemma-2')).toBeInTheDocument()
     expect(screen.getByText(/api:status\.starting/)).toBeInTheDocument()
@@ -326,7 +256,7 @@ describe('ApiPage', () => {
     'leaves the embedding field out while the module is %s',
     async (state) => {
       embeddingAs(state)
-      render(<ApiPage />)
+      render(<ConnectionDetails />)
       await waitFor(() =>
         expect(useEmbeddingStore.getState().status?.state).toBe(state)
       )
@@ -336,78 +266,55 @@ describe('ApiPage', () => {
     }
   )
 
-  it('renders the header, the strip and the six stat tiles', () => {
-    render(<ApiPage />)
-    expect(screen.getByText('api:title')).toBeInTheDocument()
+  it('gives the address to copy and says who can reach it and whether it wants a key', async () => {
+    render(<ConnectionDetails />)
+
+    expect(screen.getByText('api:connections.details')).toBeInTheDocument()
     expect(screen.getByText('http://127.0.0.1:1337/v1')).toBeInTheDocument()
-    for (const key of [
-      'api:stats.inFlight',
-      'api:stats.requests',
-      'api:stats.completed',
-      'api:stats.errors',
-      'api:stats.avgLatency',
-      'api:stats.throughput',
-    ]) {
-      expect(screen.getByText(key)).toBeInTheDocument()
-    }
+    expect(screen.getByText('api:connections.accessDevice')).toBeInTheDocument()
+    expect(screen.getByText('api:connections.noKey')).toBeInTheDocument()
+
+    fireEvent.click(
+      screen.getByRole('button', { name: /api:connections\.copyUrl/ })
+    )
+    await waitFor(() =>
+      expect(copied).toHaveBeenCalledWith('http://127.0.0.1:1337/v1')
+    )
   })
 
-  it('shows the empty state until traffic arrives', () => {
-    render(<ApiPage />)
-    expect(screen.getByText('api:log.empty')).toBeInTheDocument()
+  it('reads the local network, the tunnel and a key from the live settings', () => {
     act(() => {
-      store().applyBatch([{ t: 'start', entry: request('a') }])
+      useLocalApiServer.setState({ serverHost: '0.0.0.0' })
+      useLocalApiServer.getState().setApiKey('secret')
     })
-    expect(screen.queryByText('api:log.empty')).not.toBeInTheDocument()
-    expect(screen.getByText('/chat/completions')).toBeInTheDocument()
-  })
+    const { unmount } = render(<ConnectionDetails />)
+    expect(
+      screen.getByText('api:connections.accessNetwork')
+    ).toBeInTheDocument()
+    expect(screen.getByText('api:connections.keyRequired')).toBeInTheDocument()
+    unmount()
 
-  it('clears the log through the feed', async () => {
-    render(<ApiPage />)
     act(() => {
-      store().applyBatch([{ t: 'start', entry: request('a') }])
+      useRemoteAccessStore.getState().applyStatus(
+        {
+          state: 'online',
+          url: 'https://quiet-river.trycloudflare.com',
+          error: null,
+          blockReason: null,
+          canStart: false,
+          canStop: true,
+          serverHasApiKey: true,
+        },
+        'event'
+      )
     })
-    fireEvent.click(screen.getByText('api:actions.clearLog'))
-    await waitFor(() => expect(clearFeed).toHaveBeenCalled())
+    render(<ConnectionDetails />)
+    expect(screen.getByText('api:connections.accessRemote')).toBeInTheDocument()
   })
 
-  it('refreshes both the server status and the log', async () => {
-    render(<ApiPage />)
-    fireEvent.click(screen.getByText('api:actions.refresh'))
-    await waitFor(() => {
-      expect(control.refreshStatus).toHaveBeenCalled()
-      expect(hydrateFeed).toHaveBeenCalled()
-    })
-  })
-
-  it('warns when the backend has no live telemetry, without hiding the controls', () => {
-    act(() => {
-      store().setFeedUnavailable(true)
-    })
-    render(<ApiPage />)
-    expect(screen.getByText('api:log.feedUnavailable')).toBeInTheDocument()
-    expect(screen.getByText('api:actions.refresh')).toBeInTheDocument()
-  })
-
-  it('starts and stops the server from a single header button', () => {
-    control.isRunning = false
-    control.status = 'stopped'
-    try {
-      const { unmount } = render(<ApiPage />)
-      // Exactly one control for the server, and it toggles.
-      const start = screen.getAllByText('api:actions.start')
-      expect(start).toHaveLength(1)
-      fireEvent.click(start[0])
-      expect(control.toggle).toHaveBeenCalledTimes(1)
-      unmount()
-    } finally {
-      control.isRunning = true
-      control.status = 'running'
-    }
-
-    render(<ApiPage />)
-    expect(screen.queryByText('api:actions.start')).not.toBeInTheDocument()
-    fireEvent.click(screen.getByText('api:actions.stop'))
-    expect(control.toggle).toHaveBeenCalledTimes(2)
+  it('says the server is stopped', () => {
+    appState.serverStatus = 'stopped'
+    render(<ConnectionDetails />)
+    expect(screen.getByText('api:status.stopped')).toBeInTheDocument()
   })
 })

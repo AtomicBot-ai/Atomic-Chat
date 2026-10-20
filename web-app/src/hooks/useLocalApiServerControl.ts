@@ -40,8 +40,9 @@ type StartOptions = {
 export function useLocalApiServerControl() {
   const serviceHub = useServiceHub()
   const { serverStatus, setServerStatus } = useAppState()
-  const { defaultModelLocalApiServer, setLastServerModels, serverPort } =
-    useLocalApiServer()
+  const setLastServerModels = useLocalApiServer(
+    (state) => state.setLastServerModels
+  )
   const [isModelLoading, setIsModelLoading] = useState(false)
 
   const refreshStatus = useCallback(async () => {
@@ -67,6 +68,11 @@ export function useLocalApiServerControl() {
 
   const start = useCallback(
     async ({ ensureModel = true }: StartOptions = {}) => {
+      // Read at call time: a restart right after Configuration or Engine &
+      // model saved new values must not start with the ones from the render
+      // before (a false "different port" warning, the previous model).
+      const { serverPort, defaultModelLocalApiServer } =
+        useLocalApiServer.getState()
       const requestedPort = serverPort
       toast.info('Starting server...', {
         description: `Attempting to start server on port ${serverPort}`,
@@ -130,13 +136,7 @@ export function useLocalApiServerControl() {
         reportStartFailure(error, serverPort)
       }
     },
-    [
-      defaultModelLocalApiServer,
-      serverPort,
-      serviceHub,
-      setLastServerModels,
-      setServerStatus,
-    ]
+    [serviceHub, setLastServerModels, setServerStatus]
   )
 
   const stop = useCallback(async () => {

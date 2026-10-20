@@ -15,7 +15,7 @@ import { coreRequest } from '../harness/core.js'
 import { startFakeCloud, type FakeCloud } from '../harness/fixtures.js'
 import { CAN_RUN_FAKE_BACKEND } from '../harness/platform.js'
 import { endSession, startSession, withArtifacts, type Session } from '../harness/session.js'
-import { openSection, openServerPage, openSidebarRow, startNewChat } from '../harness/navigation.js'
+import { openSection, openServerConnections, openSidebarRow, startNewChat, waitForServerPower } from '../harness/navigation.js'
 
 const PROVIDER_NAME = 'e2e-cloud'
 const MODEL = 'e2e-cloud-model'
@@ -116,8 +116,8 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a cloud provider added in the UI', () =>
       // Nobody started the server: auto-start is off in this profile. The chat
       // above did, because the app itself reaches a cloud provider through the
       // core's local API — which is what makes that chat a test of the core.
-      await openServerPage(browser, 'Overview')
-      await browser.$('button=Stop server').waitForDisplayed({ timeout: 60_000 })
+      await openServerConnections(browser)
+      await waitForServerPower(browser, 'Stop')
       await pageShows(session, 'Ready', 15_000)
       const localApi = `http://127.0.0.1:${session.apiPort}/v1`
       const local = { authorization: `Bearer ${LOCAL_API_KEY}`, 'content-type': 'application/json' }

@@ -15,7 +15,7 @@ import {
   settle,
 } from '@/test/layout'
 
-import { ApiConnectionStrip } from './ApiConnectionStrip'
+import { ConnectionDetails } from './ConnectionDetails'
 
 vi.mock('@/hooks/useServiceHub', () => ({
   useServiceHub: () => ({}),
@@ -49,14 +49,14 @@ beforeEach(() => {
 })
 
 describe.each(['light', 'dark'] as const)(
-  'the embedding model in the API strip, %s theme',
+  'the embedding model in Connection details, %s theme',
   (theme) => {
     it.each(
       [1024, 1280].flatMap((width) =>
         ['16px', '18px', '20px'].map((fontSize) => ({ width, fontSize }))
       )
     )(
-      'keeps the strip one row tall at $width px / $fontSize',
+      'keeps a long id on one line beside its copies at $width px / $fontSize',
       async ({ width, fontSize }) => {
         await page.viewport(width, 800)
         setTheme(theme)
@@ -64,18 +64,21 @@ describe.each(['light', 'dark'] as const)(
         // The `api` namespace is not loaded here: labels read as their keys.
         await i18n.changeLanguage('en')
         serveEmbedding(LONG_ID, ['text', 'image'])
+        // The page column beside the 60 px rail and the 256 px sidebar.
         const { container } = render(
           <div className="flex w-full">
-            <aside className="w-64 shrink-0">Sidebar</aside>
+            <aside className="w-[316px] shrink-0">Sidebar</aside>
             <main className="min-w-0 flex-1 p-4">
-              <ApiConnectionStrip />
+              <div className="server-page">
+                <ConnectionDetails />
+              </div>
             </main>
           </div>
         )
         await settle(container)
 
-        const strip = container.querySelector('main > div') as HTMLElement
-        expectNoHorizontalOverflow(strip)
+        const panel = container.querySelector('.sp-panel') as HTMLElement
+        expectNoHorizontalOverflow(panel)
 
         // The id truncates, the three copy icons stay on its line.
         const id = screen.getByTitle(LONG_ID)
@@ -87,21 +90,6 @@ describe.each(['light', 'dark'] as const)(
         ]) {
           expectVerticallyCentered(screen.getByRole('button', { name }), id)
         }
-
-        // As tall as the Base URL field beside it: no second row of buttons.
-        const baseUrl = screen.getByText('api:strip.baseUrl')
-          .parentElement as HTMLElement
-        const embedding = screen.getByText('api:strip.embeddingModel')
-          .parentElement as HTMLElement
-        const tolerance = 2
-        const delta = Math.abs(
-          embedding.getBoundingClientRect().height -
-            baseUrl.getBoundingClientRect().height
-        )
-        if (delta > tolerance)
-          throw new Error(
-            `the embedding field is ${delta}px taller than the Base URL field`
-          )
       }
     )
   }

@@ -47,6 +47,9 @@ export const route = {
   },
   api: {
     index: '/api/',
+    activity: '/api/activity',
+    connections: '/api/connections',
+    model: '/api/model',
   },
   skills: {
     index: '/skills/',

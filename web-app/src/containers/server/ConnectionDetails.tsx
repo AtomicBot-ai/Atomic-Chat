@@ -3,7 +3,6 @@ import {
   IconCopy,
   IconPhoto,
   IconTerminal2,
-  IconWorld,
 } from '@tabler/icons-react'
 import { useEffect, useMemo, useState } from 'react'
 
@@ -13,9 +12,13 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { CopyButton } from '@/containers/CopyButton'
+import {
+  StatusDot,
+  type StatusTone,
+} from '@/containers/api/ApiStatusIndicators'
 import { useAppState } from '@/hooks/useAppState'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
+import { useRemoteAccessStore } from '@/hooks/useRemoteAccess'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { copyToClipboard } from '@/lib/clipboard'
 import {
@@ -24,7 +27,6 @@ import {
   embeddingImageCommand,
   embeddingTextCommand,
 } from '@/lib/embedding/examples'
-import { cn } from '@/lib/utils'
 import type { DecisionState } from '@/services/decision/types'
 import type { EmbeddingState } from '@/services/embedding/types'
 import { useDecisionStore } from '@/stores/decision-store'
@@ -33,24 +35,7 @@ import { getModelContextLength } from '@/utils/apiServerCapacity'
 import { formatCount } from '@/utils/apiServerStats'
 import { getLocalApiServerUrl } from '@/utils/localApiServerControl'
 
-import { MicroLabel, StatusDot, type StatusTone } from './ApiStatusIndicators'
-
-function Field({
-  label,
-  children,
-  className,
-}: {
-  label: string
-  children: React.ReactNode
-  className?: string
-}) {
-  return (
-    <div className={cn('min-w-0', className)}>
-      <MicroLabel>{label}</MicroLabel>
-      <div className="mt-0.5 text-sm text-foreground">{children}</div>
-    </div>
-  )
-}
+import { ServerCopyButton } from './ServerPageParts'
 
 /** `idle` is an enabled module unloaded for idling: the next request starts it. */
 const DECISION_SERVED_STATES = new Set<DecisionState>([
@@ -135,8 +120,8 @@ function useServedEmbeddingModel(): {
 
 /**
  * An icon that copies `text`, named by its tooltip: what it copies, and what
- * to do with it. The strip's fields stay one line, so the copies sit as icons
- * beside the model id, not buttons.
+ * to do with it. A fact stays one line, so the copies sit as icons beside the
+ * model id, not buttons.
  */
 function CopyIcon({
   text,
@@ -176,19 +161,34 @@ function CopyIcon({
   )
 }
 
-export function ApiConnectionStrip() {
-  const { t } = useTranslation()
-  const { serverStatus, activeModels } = useAppState()
-  const decisionModel = useServedDecisionModel()
-  const embeddingModel = useServedEmbeddingModel()
-  const { serverHost, serverPort, apiPrefix, apiKey } = useLocalApiServer()
-
-  const url = useMemo(
+/** The address clients dial, from the persisted configuration. */
+export function useLocalApiServerUrl(): string {
+  const { serverHost, serverPort, apiPrefix } = useLocalApiServer()
+  return useMemo(
     () => getLocalApiServerUrl(),
     // Recompute when any part of the address changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [serverHost, serverPort, apiPrefix]
   )
+}
+
+/**
+ * Server → Connections, "Connection details": the address to copy, whether
+ * the server is serving, and the facts a client needs — the model it answers
+ * with, who can reach it, whether it wants a key — plus the decision and
+ * embedding models it also serves, with copyable test commands.
+ */
+export function ConnectionDetails() {
+  const { t } = useTranslation()
+  const { serverStatus, activeModels } = useAppState()
+  const decisionModel = useServedDecisionModel()
+  const embeddingModel = useServedEmbeddingModel()
+  const serverHost = useLocalApiServer((state) => state.serverHost)
+  const apiKey = useLocalApiServer((state) => state.apiKey)
+  const tunnelOnline = useRemoteAccessStore(
+    (state) => state.status?.state === 'online'
+  )
+  const url = useLocalApiServerUrl()
 
   const embeddingsEndpoint = `${url.replace(/\/+$/, '')}/embeddings`
   const authRequired = apiKey.trim().length > 0
@@ -206,119 +206,128 @@ export function ApiConnectionStrip() {
           ? { tone: 'ready', label: t('api:status.ready') }
           : { tone: 'idle', label: t('api:status.noModel') }
 
+  const access = tunnelOnline
+    ? t('api:connections.accessRemote')
+    : serverHost === '0.0.0.0'
+      ? t('api:connections.accessNetwork')
+      : t('api:connections.accessDevice')
+
   return (
-    <div className="flex flex-wrap items-center gap-x-8 gap-y-3 rounded-lg border border-border bg-card px-4 py-3">
-      <IconWorld size={18} className="shrink-0 text-muted-foreground" />
-
-      <Field label={t('api:strip.baseUrl')}>
-        <span className="flex items-center gap-1 font-mono text-xs">
-          <a
-            href={url}
-            target="_blank"
-            rel="noreferrer"
-            className="underline underline-offset-2 hover:text-foreground"
-          >
-            {url}
-          </a>
-          <CopyButton text={url} />
-        </span>
-      </Field>
-
-      <Field label={t('api:strip.status')}>
-        <span className="flex items-center gap-1.5">
+    <section className="sp-panel">
+      <div className="sp-row">
+        <h2>{t('api:connections.details')}</h2>
+        <span className="sp-status">
           <StatusDot tone={tone} />
           {label}
         </span>
-      </Field>
-
-      <Field label={t('api:strip.loadedModel')} className="flex-1">
-        <span className="block truncate" title={loadedModel ?? undefined}>
-          {loadedModel ?? (
-            <span className="text-muted-foreground">
-              {t('api:strip.noModel')}
-            </span>
-          )}
-          {loadedModel && contextLength ? (
-            <span className="text-muted-foreground">
-              {' · '}
-              {t('api:strip.ctx', { count: formatCount(contextLength) })}
-            </span>
-          ) : null}
-        </span>
-      </Field>
-
-      {decisionModel && (
-        <Field label={t('api:strip.decisionModel')} className="flex-1">
-          <span className="block truncate" title={decisionModel.name}>
-            {decisionModel.name}
-            {decisionModel.starting && (
+      </div>
+      <div className="sp-copy-row">
+        <code>{url}</code>
+        <ServerCopyButton value={url} label={t('api:connections.copyUrl')} />
+      </div>
+      <dl className="sp-facts">
+        <div>
+          <dt>{t('api:strip.loadedModel')}</dt>
+          <dd className="truncate" title={loadedModel ?? undefined}>
+            {loadedModel ?? (
               <span className="text-muted-foreground">
-                {' · '}
-                {t('api:status.starting')}
+                {t('api:strip.noModel')}
               </span>
             )}
-          </span>
-        </Field>
-      )}
-
-      {embeddingModel && (
-        <Field label={t('api:strip.embeddingModel')} className="max-w-full">
-          <span className="flex min-w-0 items-center gap-1 font-mono text-xs">
-            <span className="min-w-0 truncate" title={embeddingModel.id}>
-              {embeddingModel.id}
-              {embeddingModel.starting && (
-                <span className="font-sans text-muted-foreground">
+            {loadedModel && contextLength ? (
+              <span className="text-muted-foreground">
+                {' · '}
+                {t('api:strip.ctx', { count: formatCount(contextLength) })}
+              </span>
+            ) : null}
+          </dd>
+        </div>
+        <div>
+          <dt>{t('api:connections.access')}</dt>
+          <dd>{access}</dd>
+        </div>
+        <div>
+          <dt>{t('api:connections.auth')}</dt>
+          <dd>
+            {authRequired
+              ? t('api:connections.keyRequired')
+              : t('api:connections.noKey')}
+          </dd>
+        </div>
+        {decisionModel && (
+          <div>
+            <dt>{t('api:strip.decisionModel')}</dt>
+            <dd className="truncate" title={decisionModel.name}>
+              {decisionModel.name}
+              {decisionModel.starting && (
+                <span className="text-muted-foreground">
                   {' · '}
                   {t('api:status.starting')}
                 </span>
               )}
-            </span>
-            <span className="flex shrink-0 items-center">
-              <CopyIcon
-                text={embeddingModel.id}
-                label={t('api:strip.copyEmbeddingModel')}
-                description={t('api:strip.copyEmbeddingModelHint')}
-                icon={<IconCopy size={16} />}
-              />
-              <CopyIcon
-                text={embeddingTextCommand(
-                  embeddingsEndpoint,
-                  embeddingModel.id,
-                  embeddingModel.queryPrefix,
-                  authRequired
+            </dd>
+          </div>
+        )}
+        {embeddingModel && (
+          <div className="sp-fact-wide">
+            <dt>{t('api:strip.embeddingModel')}</dt>
+            <dd className="flex min-w-0 items-center gap-1 font-mono">
+              <span className="min-w-0 truncate" title={embeddingModel.id}>
+                {embeddingModel.id}
+                {embeddingModel.starting && (
+                  <span className="font-sans text-muted-foreground">
+                    {' · '}
+                    {t('api:status.starting')}
+                  </span>
                 )}
-                label={t('api:strip.copyTextTest')}
-                description={[
-                  embeddingModel.dims
-                    ? t('api:strip.copyTextTestHint', {
-                        dims: embeddingModel.dims,
-                      })
-                    : t('api:strip.copyTextTestHintNoDims'),
-                  ...(authRequired ? [apiKeyHint] : []),
-                ].join(' ')}
-                icon={<IconTerminal2 size={16} />}
-              />
-              {embeddingModel.readsImages && (
+              </span>
+              <span className="flex shrink-0 items-center">
                 <CopyIcon
-                  text={embeddingImageCommand(
+                  text={embeddingModel.id}
+                  label={t('api:strip.copyEmbeddingModel')}
+                  description={t('api:strip.copyEmbeddingModelHint')}
+                  icon={<IconCopy size={16} />}
+                />
+                <CopyIcon
+                  text={embeddingTextCommand(
                     embeddingsEndpoint,
                     embeddingModel.id,
+                    embeddingModel.queryPrefix,
                     authRequired
                   )}
-                  label={t('api:strip.copyImageTest')}
+                  label={t('api:strip.copyTextTest')}
                   description={[
-                    t('api:strip.copyImageTestHint', {
-                      file: IMAGE_FILE_PLACEHOLDER,
-                    }),
+                    embeddingModel.dims
+                      ? t('api:strip.copyTextTestHint', {
+                          dims: embeddingModel.dims,
+                        })
+                      : t('api:strip.copyTextTestHintNoDims'),
                     ...(authRequired ? [apiKeyHint] : []),
                   ].join(' ')}
-                  icon={<IconPhoto size={16} />}
+                  icon={<IconTerminal2 size={16} />}
                 />
-              )}
-            </span>
-          </span>
-        </Field>
-      )}
-    </div>
+                {embeddingModel.readsImages && (
+                  <CopyIcon
+                    text={embeddingImageCommand(
+                      embeddingsEndpoint,
+                      embeddingModel.id,
+                      authRequired
+                    )}
+                    label={t('api:strip.copyImageTest')}
+                    description={[
+                      t('api:strip.copyImageTestHint', {
+                        file: IMAGE_FILE_PLACEHOLDER,
+                      }),
+                      ...(authRequired ? [apiKeyHint] : []),
+                    ].join(' ')}
+                    icon={<IconPhoto size={16} />}
+                  />
+                )}
+              </span>
+            </dd>
+          </div>
+        )}
+      </dl>
+    </section>
   )
 }

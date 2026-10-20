@@ -1,5 +1,6 @@
 import { useLocation, useNavigate } from '@tanstack/react-router'
 import {
+  Activity,
   Blocks,
   Clapperboard,
   Cloud,
@@ -113,6 +114,12 @@ function ServerNavigation() {
           label={t('common:navigation.overview')}
           icon={<RadioTower size={16} />}
           active={isPathActive(pathname, route.api.index)}
+        />
+        <NavRow
+          to={route.api.activity}
+          label={t('common:navigation.activity')}
+          icon={<Activity size={16} />}
+          active={isPathActive(pathname, route.api.activity)}
         />
         <NavRow
           to={route.launch.index}

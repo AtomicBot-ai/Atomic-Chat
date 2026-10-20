@@ -287,6 +287,9 @@ describe('LeftSidebar', () => {
         'true'
       )
       expect(
+        screen.getByText('common:navigation.activity').closest('a')
+      ).toHaveAttribute('href', '/api/activity')
+      expect(
         screen.getByText('common:launch').closest('a')
       ).toHaveAttribute('href', '/launch/')
       expect(
@@ -299,6 +302,20 @@ describe('LeftSidebar', () => {
         screen.getByText('common:https_proxy').closest('a')
       ).toHaveAttribute('href', '/settings/https-proxy')
       expect(screen.getByLabelText('agents')).toBeInTheDocument()
+    })
+
+    it('highlights Activity, not Overview, below /api', () => {
+      at('/api/activity')
+      render(<LeftSidebar />)
+
+      expect(rowFor('common:navigation.activity')).toHaveAttribute(
+        'data-active',
+        'true'
+      )
+      expect(rowFor('common:navigation.overview')).toHaveAttribute(
+        'data-active',
+        'false'
+      )
     })
 
     it('highlights Remote access on its own page', () => {
