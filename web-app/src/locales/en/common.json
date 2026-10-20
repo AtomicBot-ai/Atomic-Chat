@@ -1,4 +1,8 @@
 {
+  "showDownloadProgress": "Show download progress",
+  "downloadRecoveryNeedsSource": "Partial download found. Source information needs checking.",
+  "downloadAlreadyActive": "This model is already downloading.",
+  "downloadDestinationBusy": "Another download is using this model destination.",
   "assistants": "Assistants",
   "hardware": "Hardware",
   "mcp-servers": "MCP Servers",

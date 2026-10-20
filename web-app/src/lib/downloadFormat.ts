@@ -157,7 +157,11 @@ export function formatDownloadReadout(
   return [
     downloadStatusLabel(t, download),
     stageNote,
-    download.total > 0 && formatProgressPair(download.current, download.total),
+    download.total > 0
+      ? formatProgressPair(download.current, download.total)
+      : download.current > 0
+        ? `${formatBytes(download.current, download.current)} ${bytesUnit(download.current)}`
+        : null,
     eta && t('common:downloadPanel.left', { eta }),
   ]
     .filter(Boolean)

@@ -32,6 +32,8 @@ export type DownloadRowProps = {
    */
   stage?: DownloadRowStage
   paused?: boolean
+  /** Explains a discovered partial whose metadata needs attention. */
+  statusText?: string
   /** Pause/resume is offered only for resumable (GGUF) transfers. */
   pausable?: boolean
   onPause?: () => void
@@ -57,6 +59,7 @@ export function DownloadProgressRow({
   bytesPerSecond,
   stage,
   paused,
+  statusText,
   pausable,
   onPause,
   onResume,
@@ -137,7 +140,7 @@ export function DownloadProgressRow({
           that matters least — instead. `aria-live` is deliberately absent: this
           text changes every few seconds and would talk over everything else. */}
       <p className="truncate text-xs tabular-nums text-muted-foreground">
-        {readout}
+        {statusText ?? readout}
       </p>
     </li>
   )

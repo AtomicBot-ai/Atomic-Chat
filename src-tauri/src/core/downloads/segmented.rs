@@ -90,6 +90,17 @@ pub(crate) fn downloaded_bytes_on_disk(save_path: &Path) -> u64 {
     std::fs::metadata(sidecar_path(save_path, "tmp")).map_or(0, |meta| meta.len())
 }
 
+/// Recover a lost `.url` marker only from a complete, size-matched segment map.
+/// The normal Range and content checks still decide whether those bytes resume.
+pub(super) fn resume_identity_from_parts(save_path: &Path) -> Option<String> {
+    let map = read_map(save_path)?;
+    if std::fs::metadata(sidecar_path(save_path, "tmp")).ok()?.len() != map.size {
+        return None;
+    }
+    Plan::from_map(&map, map.size, 1)?;
+    Some(map.url)
+}
+
 // ===== The plan: who fetches which bytes =====
 
 #[derive(Debug, Clone, PartialEq)]

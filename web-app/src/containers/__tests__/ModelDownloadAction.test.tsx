@@ -78,6 +78,7 @@ describe('ModelDownloadAction', () => {
     mocks.pullModelWithMetadata.mockResolvedValue(undefined)
     useDownloadStore.setState({
       downloads: {},
+      pausedDownloads: new Set(),
       localDownloadingModels: new Set(),
       resumableDownloads: new Set(),
       downloadOriginByModelId: {},
@@ -90,6 +91,21 @@ describe('ModelDownloadAction', () => {
     seedServiceHub({
       models: { pullModelWithMetadata: mocks.pullModelWithMetadata } as never,
     })
+  })
+
+  it('reopens a restored paused download without cancelling or creating a job', () => {
+    useDownloadStore.setState({
+      pausedDownloads: new Set([variant.model_id]),
+    })
+    useDownloadStore.getState().updateProgress(variant.model_id, 0.4, variant.model_id, 40, 100)
+    const open = vi.fn()
+    window.addEventListener('atomic-open-download-panel', open)
+    render(<ModelDownloadAction variant={variant} model={model} asButton />)
+    fireEvent.click(screen.getByRole('button', { name: 'common:showDownloadProgress' }))
+    expect(open).toHaveBeenCalledTimes(1)
+    expect(mocks.pullModelWithMetadata).not.toHaveBeenCalled()
+    expect(mocks.abortDownload).not.toHaveBeenCalled()
+    window.removeEventListener('atomic-open-download-panel', open)
   })
 
   it('offers Download as the primary action, like "New chat" beside it', () => {

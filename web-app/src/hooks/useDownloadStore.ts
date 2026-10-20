@@ -1,4 +1,6 @@
 import { create } from 'zustand'
+import { createJSONStorage, persist } from 'zustand/middleware'
+import { restoreDownloadRecovery, saveDownloadRecovery, type DownloadRecovery } from '@/lib/downloadRecovery'
 import {
   advanceSpeedSample,
   newSpeedSample,
@@ -23,6 +25,8 @@ export interface DownloadProgressProps {
   name: string
   current: number
   total: number
+  /** A discovered partial is visible even when its source metadata cannot be trusted. */
+  recoveryBlocked?: 'missing_source' | 'invalid_manifest' | 'source_conflict' | 'installed_model' | 'unsupported_layout'
   // ATO — #290: a transfer that cannot reach the host spends ~60s inside the
   // retry ladders with no bytes and no events, which rendered as a permanent
   // "Preparing". The stage is the only thing the row can show in that window.
@@ -124,7 +128,7 @@ export type DownloadState = {
 /**
  * This store is used to manage the download progress of files.
  */
-export const useDownloadStore = create<DownloadState>((set) => ({
+export const useDownloadStore = create<DownloadState>()(persist<DownloadState, [], [], { recovery: DownloadRecovery }>((set) => ({
   downloads: {},
   localDownloadingModels: new Set(),
   resumableDownloads: new Set(),
@@ -306,4 +310,17 @@ export const useDownloadStore = create<DownloadState>((set) => ({
         downloadRequestOriginByModelId: requestOrigins,
       }
     }),
+}), {
+  name: 'atomic-model-downloads-v1',
+  storage: createJSONStorage(() => ({
+    // Storage may be unavailable or full; recovery must never stop a live transfer.
+    getItem: (name) => { try { return localStorage.getItem(name) } catch { return null } },
+    setItem: (name, value) => { try { localStorage.setItem(name, value) } catch { /* Best effort journal. */ } },
+    removeItem: (name) => { try { localStorage.removeItem(name) } catch { /* Storage is unavailable. */ } },
+  })),
+  partialize: (state) => ({ recovery: saveDownloadRecovery(state) }),
+  merge: (saved, current) => ({
+    ...current,
+    ...restoreDownloadRecovery((saved as { recovery?: unknown } | undefined)?.recovery),
+  }),
 }))

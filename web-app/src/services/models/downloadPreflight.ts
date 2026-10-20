@@ -19,7 +19,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { isPlatformTauri } from '@/lib/platform/utils'
 import { parseFileSizeToBytes } from '@/lib/model-card'
 import { useModelSources } from '@/hooks/useModelSources'
-import type { DownloadRefusal } from './types'
+import type { DiskSpaceDownloadRefusal } from './types'
 
 /** Mirrors `FreeSpaceReport` in `src-tauri/src/core/downloads/disk.rs`. */
 export interface FreeSpaceReport {
@@ -86,7 +86,7 @@ export function expectedDownloadBytes(
  */
 export async function preflightDownloadDiskSpace(
   download: ExpectedDownload
-): Promise<DownloadRefusal | undefined> {
+): Promise<DiskSpaceDownloadRefusal | undefined> {
   const size = expectedDownloadBytes(download)
   if (size === undefined) return undefined
   const space = await getDownloadFreeSpace()

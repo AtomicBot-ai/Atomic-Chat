@@ -996,10 +996,15 @@ async fn download_single_file(
 
     let mut should_resume = resume
         && tmp_save_path.exists()
-        && tokio::fs::read_to_string(&url_save_path)
-            .await
-            .map(|saved| saved == item.resume_identity()) // the same file, by key or URL
-            .unwrap_or(false);
+        && match tokio::fs::read_to_string(&url_save_path).await {
+            // An existing marker remains authoritative.
+            Ok(saved) => saved == item.resume_identity(), // the same file, by key or URL
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                segmented::resume_identity_from_parts(save_path)
+                    .is_some_and(|saved| saved == item.resume_identity())
+            }
+            Err(_) => false,
+        };
 
     tokio::fs::write(&url_save_path, item.resume_identity())
         .await

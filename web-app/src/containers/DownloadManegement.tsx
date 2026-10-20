@@ -70,6 +70,7 @@ import {
   describeFinishedDownload,
 } from '@/lib/downloadNotification'
 import type { DiffusionCatalog } from '@/services/diffusion-catalog-registry'
+import { beginLegacyDownloadRecovery } from '@/services/models/downloadRecovery'
 
 /**
  * ATO-109: emit the terminal `model_download` event. Deduplicated so the two
@@ -164,6 +165,9 @@ export function DownloadManagement() {
     peakDownloads: 0,
   })
   const serviceHub = useServiceHub()
+  useEffect(() => {
+    void beginLegacyDownloadRecovery(serviceHub)
+  }, [serviceHub])
   const imageCatalog = useImageGenerationStore((state) => state.catalog)
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
   const {
@@ -350,15 +354,20 @@ export function DownloadManagement() {
         return
       }
 
-      clearPausedDownload(state.modelId)
-      clearResumeParams(state.modelId)
-      removeDownload(state.modelId)
-      removeLocalDownloadingModel(state.modelId)
-      clearDownloadOrigin(state.modelId)
-
       const cancelled =
         wasDownloadCancellationRequested(state.modelId) ||
         isDownloadCancellationError(err)
+      const recoverable = useDownloadStore.getState().resumeParams[state.modelId]
+      if (recoverable) {
+        useDownloadStore.getState().markPausedDownload(state.modelId)
+        markResumableDownload(state.modelId)
+      } else {
+        clearPausedDownload(state.modelId)
+        clearResumeParams(state.modelId)
+        removeDownload(state.modelId)
+        removeLocalDownloadingModel(state.modelId)
+        clearDownloadOrigin(state.modelId)
+      }
       captureDownloadTerminal(
         cancelled ? 'cancelled' : 'failed',
         state.modelId,
@@ -609,7 +618,9 @@ export function DownloadManagement() {
       // downloader, so resume continues from where it stopped. Read paused
       // state from the store directly (not the closure) so the async stop
       // event can't race a stale render of `pausedDownloads`.
-      if (useDownloadStore.getState().pausedDownloads.has(state.modelId)) {
+      if (useDownloadStore.getState().pausedDownloads.has(state.modelId) ||
+        useDownloadStore.getState().resumeParams[state.modelId]) {
+        useDownloadStore.getState().markPausedDownload(state.modelId)
         markResumableDownload(state.modelId)
         return
       }
@@ -797,7 +808,7 @@ export function DownloadManagement() {
   // from the files on disk (change add-tensorrt-llm-model-hub, design D6);
   // so are Foundry Local variants (change add-foundry-local).
   const isPausableDownload = (id: string): boolean =>
-    !id.startsWith('llamacpp') &&
+    !downloads[id]?.recoveryBlocked && (!!resumeParams[id] || (!id.startsWith('llamacpp') &&
     !isDiffusionEngineTaskId(id) &&
     !isEngineBuildTaskId(id) &&
     !isEngineUpdateTaskId(id) &&
@@ -805,7 +816,7 @@ export function DownloadManagement() {
     !isDecisionDownloadTaskId(id) &&
     !isEmbeddingDownloadTaskId(id) &&
     !isManagedDownloadId(id) &&
-    !isFoundryLocalDownloadId(id)
+    !isFoundryLocalDownloadId(id)))
 
   const handlePauseDownload = useCallback(
     (download: { id: string; name: string }) => {
@@ -878,8 +889,7 @@ export function DownloadManagement() {
         })
         return
       }
-      clearPausedDownload(download.id)
-      if (download.id !== download.name) clearPausedDownload(download.name)
+      // The model service keeps Pause visible until the previous import has unwound.
       markResumableDownload(download.id)
       const {
         modelPath,
@@ -894,7 +904,7 @@ export function DownloadManagement() {
           download.id,
           modelPath,
           mmprojPath,
-          hfToken,
+          huggingfaceToken || hfToken,
           skipVerification ?? true,
           true,
           pullOptions
@@ -932,9 +942,14 @@ export function DownloadManagement() {
   // Shared with the composer's reply widget, which offers the same Cancel on
   // the download it lists.
   const handleCancelDownload = useCallback(
-    (download: { id: string; name: string }) =>
-      cancelDownload(download, serviceHub),
-    [serviceHub]
+    (download: { id: string; name: string }) => {
+      if (useDownloadStore.getState().downloads[download.id]?.recoveryBlocked) {
+        removeDownload(download.id) // Hide an unresolved row; never touch its files.
+        return
+      }
+      cancelDownload(download, serviceHub)
+    },
+    [serviceHub, removeDownload]
   )
 
   const panelItems = useMemo<DownloadRowProps[]>(() => {
@@ -944,6 +959,7 @@ export function DownloadManagement() {
       rows.push({
         ...download,
         paused: pausedDownloads.has(download.id),
+        statusText: downloads[download.id]?.recoveryBlocked ? t('common:downloadRecoveryNeedsSource') : undefined,
         pausable: isPausableDownload(download.id),
         onPause: () => handlePauseDownload(download),
         onResume: () => handleResumeDownload(download),
@@ -954,10 +970,13 @@ export function DownloadManagement() {
     return rows
   }, [
     downloadProcesses,
+    downloads,
+    resumeParams,
     pausedDownloads,
     handlePauseDownload,
     handleResumeDownload,
     handleCancelDownload,
+    t,
   ])
 
   return (

@@ -116,7 +116,11 @@ const verdict = (outcome: string, reason = 'r') => ({
 describe('DownloadManagement — a Bonsai download', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    hub.models.pullModelWithMetadata.mockResolvedValue(undefined)
+    // The model service now owns clearing Pause after its predecessor unwinds.
+    hub.models.pullModelWithMetadata.mockImplementation(async (id: string) => {
+      useDownloadStore.getState().clearPausedDownload(id)
+      return undefined
+    })
     hub.models.deleteModel.mockResolvedValue(undefined)
     useDownloadStore.setState({
       downloads: {

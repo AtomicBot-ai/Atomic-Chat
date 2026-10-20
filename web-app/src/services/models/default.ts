@@ -57,6 +57,11 @@ import { toast } from 'sonner'
 import i18n from '@/i18n/setup'
 import { preflightDownloadDiskSpace } from './downloadPreflight'
 import { makeRoomForChatModel } from './gpuRoom'
+import { modelDownloadKey } from '@/lib/downloadRecovery'
+import { waitForLegacyDownloadRecovery } from './downloadRecovery'
+
+// Shared across service instances. Claim synchronously, before metadata or disk probes yield.
+const activeModelDownloads = new Map<string, { id: string; promise: Promise<DownloadRefusal | undefined> }>()
 
 // Platform-active llama.cpp provider id. Windows registers only the
 // upstream extension ('llamacpp-upstream') after the 2026-05-22 ADR;
@@ -682,6 +687,65 @@ export class DefaultModelsService implements ModelsService {
     resume: boolean = false,
     options: PullModelOptions = {}
   ): Promise<DownloadRefusal | undefined> {
+    // Startup discovery must finish before a fresh request can claim a legacy destination.
+    await waitForLegacyDownloadRecovery()
+    const params = { ...options, provider: options.provider ?? defaultProvider, modelPath, mmprojPath }
+    const key = modelDownloadKey(params)
+    const store = useDownloadStore.getState()
+    if (store.downloads[id]?.recoveryBlocked) {
+      window.dispatchEvent(new Event('atomic-open-download-panel'))
+      toast.info(i18n.t('common:downloadRecoveryNeedsSource'))
+      return { kind: 'recovery_required', modelId: id }
+    }
+    const active = activeModelDownloads.get(key)
+    if (active) {
+      // Pause signals cancellation; wait for the old import to unwind before resuming.
+      if (resume && store.pausedDownloads.has(active.id)) {
+        await active.promise.catch(() => undefined)
+        return this.pullModelWithMetadata(id, modelPath, mmprojPath, hfToken, skipVerification, true, options)
+      }
+      if (id !== active.id) {
+        store.removeLocalDownloadingModel(id)
+        store.clearDownloadOrigin(id)
+      }
+      window.dispatchEvent(new Event('atomic-open-download-panel'))
+      toast.info(i18n.t('common:downloadAlreadyActive'))
+      return active.promise
+    }
+    const known = Object.entries(store.resumeParams).find(([, p]) => modelDownloadKey(p) === key)
+    const ownerId = known?.[0] ?? id
+    // Different sources with the same destination id must not overwrite each other.
+    if ((store.resumeParams[id] && modelDownloadKey(store.resumeParams[id]) !== key) ||
+      [...activeModelDownloads.values()].some((entry) => entry.id === id)) {
+      window.dispatchEvent(new Event('atomic-open-download-panel'))
+      toast.info(i18n.t('common:downloadDestinationBusy'))
+      return { kind: 'destination_busy', modelId: id }
+    }
+    if (ownerId !== id) {
+      store.removeLocalDownloadingModel(id)
+      store.clearDownloadOrigin(id)
+    }
+    store.clearPausedDownload(ownerId)
+    store.addLocalDownloadingModel(ownerId)
+    window.dispatchEvent(new Event('atomic-open-download-panel'))
+    const promise = Promise.resolve().then(() => this.startModelDownload(
+      ownerId, modelPath, mmprojPath, hfToken, skipVerification, resume || !!known, options
+    )).finally(() => {
+      if (activeModelDownloads.get(key)?.promise === promise) activeModelDownloads.delete(key)
+    })
+    activeModelDownloads.set(key, { id: ownerId, promise })
+    return promise
+  }
+
+  private async startModelDownload(
+    id: string,
+    modelPath: string,
+    mmprojPath?: string,
+    hfToken?: string,
+    skipVerification: boolean = true,
+    resume: boolean = false,
+    options: PullModelOptions = {}
+  ): Promise<DownloadRefusal | undefined> {
     let { modelSha256, modelSize, mmprojSha256, mmprojSize } = options
 
     // Extract repo ID from model URL
@@ -768,8 +832,10 @@ export class DefaultModelsService implements ModelsService {
     // choke point so the global Download popover can resume a paused download
     // (it only knows the model id, not these HF paths/token). MLX downloads go
     // through `engine.import` directly and are pause/resume-gated out.
+    // Recovery now also records the MLX request and its companion files here.
     useDownloadStore.getState().setResumeParams(id, {
       ...options,
+      provider: options.provider ?? defaultProvider,
       modelPath,
       mmprojPath,
       hfToken,
@@ -803,7 +869,30 @@ export class DefaultModelsService implements ModelsService {
 
     // Call the original pullModel with the fetched metadata
     try {
-      await this.pullModel(
+      if (options.provider === 'mlx' && options.recoverRepository) {
+        // Old sidecars name individual files, not the entire MLX request. Rebuild
+        // its file list only on explicit Resume, using the recorded revision.
+        const source = new URL(modelPath)
+        const match = source.pathname.match(/^\/([^/]+\/[^/]+)\/resolve\/([^/]+)\//)
+        if (!match) throw new Error('Missing MLX repository revision')
+        const [, repo, revision] = match
+        const info = await this.fetchExactHuggingFaceRepo(`${repo}/revision/${revision}`, hfToken)
+        const files = info?.siblings?.filter((file) => file.rfilename.split('/').every((part) => part && part !== '.' && part !== '..' && !part.includes('\\')))
+        const main = files?.find((file) => file.rfilename.endsWith('.safetensors'))
+        if (!main) throw new Error('No MLX weights found at the recorded revision')
+        const urlFor = (filename: string) => `${source.origin}/${repo}/resolve/${revision}/${filename.split('/').map(encodeURIComponent).join('/')}`
+        modelPath = urlFor(main.rfilename)
+        options = { ...options, recoverRepository: false, files: files!.filter((file) => file !== main).map((file) => ({ url: urlFor(file.rfilename), filename: file.rfilename })) }
+        useDownloadStore.getState().setResumeParams(id, { ...options, modelPath, hfToken, skipVerification })
+      }
+      // Also recover pre-journal partials when the same HF file is requested again.
+      // Rust checks the saved URL, persisted size and range response before appending.
+      const resumePartial = resume || /^https:\/\/(huggingface\.co|hf\.co)\//.test(modelPath)
+      if (options.provider === 'mlx') {
+        const engine = this.getEngine('mlx')
+        if (!engine) throw new Error('MLX engine not found')
+        await engine.import(id, { modelPath, files: options.files, resume: resumePartial })
+      } else await this.pullModel(
         id,
         modelPath,
         modelSha256,
@@ -811,7 +900,7 @@ export class DefaultModelsService implements ModelsService {
         mmprojPath,
         mmprojSha256,
         mmprojSize,
-        resume,
+        resumePartial,
         options.provider
       )
       return undefined

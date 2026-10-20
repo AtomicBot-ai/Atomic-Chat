@@ -45,6 +45,12 @@ describe('formatDownloadReadout', () => {
     )
   })
 
+  it('shows recovered bytes without inventing a total or percentage', () => {
+    expect(formatDownloadReadout(t, { ...transfer, total: 0, paused: true })).toBe(
+      'common:downloadPanel.paused · 4.20 GB'
+    )
+  })
+
   it('leaves the estimate out until there is a rate', () => {
     expect(formatDownloadReadout(t, { ...transfer, bytesPerSecond: 0 })).toBe(
       '42% · 4.20 / 12.40 GB'

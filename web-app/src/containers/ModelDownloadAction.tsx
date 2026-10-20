@@ -73,6 +73,7 @@ export const ModelDownloadAction = ({
     downloads,
     localDownloadingModels,
     resumableDownloads,
+    pausedDownloads,
     downloadOriginByModelId,
     addLocalDownloadingModel,
     removeLocalDownloadingModel,
@@ -462,6 +463,22 @@ export const ModelDownloadAction = ({
         data-testid="model-setup-starting"
       >
         <IconLoader2 size={14} className="animate-spin" />
+      </Button>
+    )
+  }
+
+  if (isDownloading && pausedDownloads.has(rowModelId)) {
+    return (
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() => window.dispatchEvent(new Event('atomic-open-download-panel'))}
+        title={t('common:showDownloadProgress')}
+        aria-label={t('common:showDownloadProgress')}
+        className="w-24 justify-center"
+      >
+        <IconDownload size={14} />
       </Button>
     )
   }

@@ -1478,55 +1478,60 @@ async fn a_server_that_ignores_ranges_gets_one_plain_download() {
 
 #[tokio::test]
 async fn a_saved_segment_map_resumes_only_the_missing_bytes() {
-    let body = segmented_test_body();
-    let server = spawn_range_server(body.clone(), true).await;
-    let save_path = test_download_path("model.gguf");
-    tokio::fs::create_dir_all(save_path.parent().unwrap())
+    // Both legacy layouts must reuse the same already-written ranges.
+    for keep_url_marker in [true, false] {
+        let body = segmented_test_body();
+        let server = spawn_range_server(body.clone(), true).await;
+        let save_path = test_download_path("model.gguf");
+        tokio::fs::create_dir_all(save_path.parent().unwrap())
+            .await
+            .unwrap();
+
+        // The first half is on disk in a full-size partial, as a cancel leaves it.
+        let half = SEGMENTED_TEST_SIZE / 2;
+        let mut partial = body[..half].to_vec();
+        partial.resize(SEGMENTED_TEST_SIZE, 0);
+        tokio::fs::write(sidecar_path(&save_path, "tmp"), &partial)
+            .await
+            .unwrap();
+        if keep_url_marker {
+            tokio::fs::write(sidecar_path(&save_path, "url"), &server.url)
+                .await
+                .unwrap();
+        }
+        let map = serde_json::json!({
+            "version": 1,
+            "url": server.url,
+            "size": SEGMENTED_TEST_SIZE,
+            "segments": [[0, half, half], [half, half, SEGMENTED_TEST_SIZE]],
+        });
+        tokio::fs::write(sidecar_path(&save_path, "parts"), map.to_string())
+            .await
+            .unwrap();
+
+        download_segmented_for_test(
+            &server,
+            &save_path,
+            true,
+            CancellationToken::new(),
+            segmented_test_tuning(),
+        )
         .await
         .unwrap();
 
-    // The first half is on disk in a full-size partial, as a cancel leaves it.
-    let half = SEGMENTED_TEST_SIZE / 2;
-    let mut partial = body[..half].to_vec();
-    partial.resize(SEGMENTED_TEST_SIZE, 0);
-    tokio::fs::write(sidecar_path(&save_path, "tmp"), &partial)
-        .await
-        .unwrap();
-    tokio::fs::write(sidecar_path(&save_path, "url"), &server.url)
-        .await
-        .unwrap();
-    let map = serde_json::json!({
-        "version": 1,
-        "url": server.url,
-        "size": SEGMENTED_TEST_SIZE,
-        "segments": [[0, half, half], [half, half, SEGMENTED_TEST_SIZE]],
-    });
-    tokio::fs::write(sidecar_path(&save_path, "parts"), map.to_string())
-        .await
-        .unwrap();
+        assert_eq!(tokio::fs::read(&save_path).await.unwrap(), *body);
+        let starts = server.starts.lock().unwrap().clone();
+        assert!(
+            starts
+                .iter()
+                .all(|start| start.is_some_and(|start| start >= half as u64)),
+            "bytes already on disk were fetched again: {starts:?}"
+        );
+        assert_no_sidecars(&save_path);
 
-    download_segmented_for_test(
-        &server,
-        &save_path,
-        true,
-        CancellationToken::new(),
-        segmented_test_tuning(),
-    )
-    .await
-    .unwrap();
-
-    assert_eq!(tokio::fs::read(&save_path).await.unwrap(), *body);
-    let starts = server.starts.lock().unwrap().clone();
-    assert!(
-        starts
-            .iter()
-            .all(|start| start.is_some_and(|start| start >= half as u64)),
-        "bytes already on disk were fetched again: {starts:?}"
-    );
-    assert_no_sidecars(&save_path);
-
-    server.handle.abort();
-    let _ = tokio::fs::remove_dir_all(save_path.parent().unwrap()).await;
+        server.handle.abort();
+        let _ = tokio::fs::remove_dir_all(save_path.parent().unwrap()).await;
+    }
 }
 
 #[tokio::test]

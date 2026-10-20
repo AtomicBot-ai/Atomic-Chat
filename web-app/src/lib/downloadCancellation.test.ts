@@ -54,8 +54,8 @@ describe('cancelDownload', () => {
     expect(extensionCancel).not.toHaveBeenCalled()
     const state = useDownloadStore.getState()
     expect(state.resumableDownloads.has(id)).toBe(true)
-    expect(state.pausedDownloads.has(id)).toBe(false)
-    expect(state.resumeParams).not.toHaveProperty(id)
+    expect(state.pausedDownloads.has(id)).toBe(true)
+    expect(state.resumeParams).toHaveProperty(id)
     // The stop event that follows is read as a cancel, not a failure.
     expect(wasDownloadCancellationRequested(id)).toBe(true)
   })

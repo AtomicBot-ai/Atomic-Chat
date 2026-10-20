@@ -68,13 +68,18 @@ export function cancelDownload(
   download: { id: string; name: string },
   serviceHub: ServiceHub
 ): void {
-  const { markResumableDownload, clearPausedDownload, clearResumeParams } =
+  const { markResumableDownload, clearPausedDownload, clearResumeParams, markPausedDownload, resumeParams } =
     useDownloadStore.getState()
   for (const key of new Set([download.name, download.id])) {
     markDownloadCancellationRequested(key)
     markResumableDownload(key)
-    clearPausedDownload(key)
-    clearResumeParams(key)
+    if (resumeParams[key]) {
+      // Stop keeps the recoverable request and its row, just like Pause.
+      markPausedDownload(key)
+    } else {
+      clearPausedDownload(key)
+      clearResumeParams(key)
+    }
   }
   if (
     isDiffusionEngineTaskId(download.id) ||
@@ -90,6 +95,9 @@ export function cancelDownload(
     isFoundryLocalDownloadId(download.id)
   ) {
     void cancelTransfer(download.id)
+  } else if (resumeParams[download.id] || resumeParams[download.name]) {
+    // Model ids beginning with `mlx` still need the engine's provider/task-id mapping.
+    void serviceHub.models().abortDownload(download.name)
   } else if (
     download.id.startsWith('llamacpp') ||
     download.id.startsWith('mlx')

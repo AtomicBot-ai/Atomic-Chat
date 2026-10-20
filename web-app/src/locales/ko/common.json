@@ -1,4 +1,8 @@
 {
+  "showDownloadProgress": "다운로드 진행 상황 보기",
+  "downloadRecoveryNeedsSource": "미완료 다운로드를 찾았어요. 원본 정보를 확인해 주세요.",
+  "downloadAlreadyActive": "이미 다운로드 중인 모델이에요.",
+  "downloadDestinationBusy": "같은 저장 위치를 사용하는 미완료 다운로드가 있어요.",
   "assistants": "어시스턴트",
   "hardware": "하드웨어",
   "mcp-servers": "MCP 서버",
