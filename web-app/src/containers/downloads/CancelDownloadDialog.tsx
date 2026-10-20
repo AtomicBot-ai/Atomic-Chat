@@ -16,7 +16,7 @@ export function CancelDownloadDialog({ name, busy, error, canDeleteFiles, onBack
       </DialogHeader>
       <p className="min-w-0 break-all text-sm">{name ? shortModelName(name) : ''}</p>
       {!canDeleteFiles && <p className="text-sm text-muted-foreground">{t('common:cancelDownloadDialog.unsupported')}</p>}
-      {error && <p role="alert" className="break-words text-sm text-destructive">{t('common:cancelDownloadDialog.failed')}</p>}
+      {error && <p role="alert" className="break-words text-sm text-destructive">{t('common:cancelDownloadDialog.failed')}<span className="mt-2 block text-xs">{error}</span></p>}
       <DialogFooter className="flex-col gap-2 sm:flex-col sm:items-stretch">
         <Button className="h-auto min-h-9 whitespace-normal py-2" variant="outline" disabled={busy} onClick={onKeep}>{t('common:cancelDownloadDialog.keep')}</Button>
         <Button className="h-auto min-h-9 whitespace-normal py-2" variant="destructive" disabled={busy || !canDeleteFiles} onClick={onDeleteFiles}>{t(busy ? 'common:cancelDownloadDialog.busy' : 'common:cancelDownloadDialog.delete')}</Button>

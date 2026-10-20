@@ -996,6 +996,7 @@ export function DownloadManagement() {
       state.clearDismissedDownload(target.id)
       if (snapshot) useDownloadStore.setState((current) => ({ downloads: { ...current.downloads, [target.id]: snapshot } }))
       state.markPausedDownload(target.id)
+      console.error('Failed to delete unfinished model download', { provider: cancelProvider, id: target.id, error })
       setCancelError(String(error))
     } finally { setCancelBusy(false) }
   }

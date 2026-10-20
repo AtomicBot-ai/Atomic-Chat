@@ -193,6 +193,7 @@ describe('DownloadManagement — a Bonsai download', () => {
     fireEvent.click(within(screen.getByTestId(ROW)).getByText('cancel'))
     fireEvent.click(screen.getByText('common:cancelDownloadDialog.delete'))
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('common:cancelDownloadDialog.failed'))
+    expect(screen.getByRole('alert')).toHaveTextContent('permission denied')
     expect(screen.getByTestId(ROW)).toHaveTextContent('50/100')
     expect(useDownloadStore.getState().pausedDownloads.has(MODEL_ID)).toBe(true)
     expect(useDownloadStore.getState().resumeParams[MODEL_ID].modelPath).toBe(URL)
