@@ -18,6 +18,7 @@ describe('navigationSection', () => {
     ['/hub/', 'models'],
     ['/hub', 'models'],
     ['/cloud/', 'models'],
+    ['/endpoints/', 'models'],
     ['/settings/providers', 'models'],
     ['/settings/providers/llamacpp-upstream', 'models'],
     ['/settings/media', 'models'],

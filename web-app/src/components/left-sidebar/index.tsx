@@ -151,11 +151,9 @@ function ModelsNavigation() {
   const { pathname, search } = useLocation()
   const params = search as Record<string, unknown>
   const onHub = isPathActive(pathname, route.hub.index)
-  const onCloud = isPathActive(pathname, route.cloud.index)
-  // Downloads and Custom Endpoint are views of the Hub and Cloud pages, kept
-  // in the URL so the row that opened them stays highlighted.
+  // Downloads is a view of the Hub page, kept in the URL so the row that
+  // opened it stays highlighted.
   const installedOnly = onHub && params.installed === true
-  const addingCustom = onCloud && params.add === 'custom'
 
   return (
     <>
@@ -180,14 +178,13 @@ function ModelsNavigation() {
           to={route.cloud.index}
           label={t('common:navigation.cloudProviders')}
           icon={<Cloud size={16} />}
-          active={onCloud && !addingCustom}
+          active={isPathActive(pathname, route.cloud.index)}
         />
         <NavRow
-          to={route.cloud.index}
-          search={{ add: 'custom' }}
+          to={route.endpoints.index}
           label={t('common:navigation.customEndpoint')}
           icon={<Network size={16} />}
-          active={addingCustom}
+          active={isPathActive(pathname, route.endpoints.index)}
         />
       </SidebarMenu>
       <EngineNavigation />

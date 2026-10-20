@@ -18,6 +18,7 @@ const SERVER_PATHS = [
 const MODELS_PATHS = [
   '/hub',
   '/cloud',
+  '/endpoints',
   '/settings/providers',
   '/settings/media',
   '/settings/voice',
