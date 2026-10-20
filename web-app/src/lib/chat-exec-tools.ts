@@ -93,8 +93,13 @@ function placeSentence(
   // A secure project names only its own folders: naming the user's (even as
   // blocked) contradicts a project folder that lives inside one of them.
   if (secure) {
+    // The backend starts the command in the project's first editable folder
+    // (`chat_exec_run`), so a relative path lands where the user looks.
+    const start = secure.folders.find((folder) => folder.canEdit)
     return [
-      'The working directory is a scratch folder of this chat (its files stay between calls); a relative path lands in it.',
+      start
+        ? `The working directory is the project's folder ${start.path}: a relative path such as notes.txt lands there.`
+        : 'The working directory is a scratch folder of this chat (its files stay between calls); a relative path lands in it.',
       secureEnvironmentSentence(secure),
     ].join(' ')
   }
