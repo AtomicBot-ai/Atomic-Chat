@@ -82,6 +82,30 @@ export async function openAllIntegrations(browser: Browser): Promise<void> {
   await link.click()
 }
 
+/** Opens Models Hub → Inference engines, the overview of every engine. */
+export async function openInferenceEngines(browser: Browser): Promise<void> {
+  await openSection(browser, 'models')
+  await openSidebarRow(browser, 'Inference engines')
+}
+
+/** Opens an engine's own settings page from its card on the overview. */
+export async function openEnginePage(browser: Browser, provider: string): Promise<void> {
+  await openInferenceEngines(browser)
+  const link = browser.$(`[data-testid="engine-row-${provider}"] a`)
+  await link.waitForClickable({ timeout: 30_000 })
+  await link.click()
+}
+
+/** Opens the media engine's settings, which unfold inside its card on the overview. */
+export async function openMediaEngineSettings(browser: Browser): Promise<void> {
+  await openInferenceEngines(browser)
+  const card = browser.$('[data-testid="engine-row-sd-cpp"] button[aria-expanded]')
+  await card.waitForClickable({ timeout: 30_000 })
+  // The overview may still be open from an earlier step, card unfolded.
+  if ((await card.getAttribute('aria-expanded')) !== 'true') await card.click()
+  await browser.$('[data-testid="media-settings-panel"]').waitForDisplayed({ timeout: 30_000 })
+}
+
 /** Starts a new chat from the Workspace sidebar, wherever the app is. */
 export async function startNewChat(browser: Browser): Promise<void> {
   await openSection(browser, 'chat')

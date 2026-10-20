@@ -625,5 +625,23 @@
     "installing": "Installing…",
     "installFailed": "Could not install the engine: {{error}}",
     "findModels": "Bonsai models"
+  },
+  "overview": {
+    "language": "Language models",
+    "media": "Media models",
+    "voice": "Voice models",
+    "modelCountOne": "1 model",
+    "modelCountOther": "{{count}} models",
+    "build": "Build {{version}}",
+    "mediaDescription": "Images and videos",
+    "voiceDescription": "{{model}} · speech recognition",
+    "updateAvailable": "Update available",
+    "enable": "Turn {{name}} on or off",
+    "status": {
+      "running": "Running",
+      "idle": "Idle",
+      "disabled": "Disabled",
+      "notInstalled": "Not installed"
+    }
   }
 }
