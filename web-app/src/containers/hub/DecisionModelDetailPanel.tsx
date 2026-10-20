@@ -3,7 +3,6 @@ import { IconExternalLink } from '@tabler/icons-react'
 import { Button } from '@/components/ui/button'
 import DecisionModelCard from '@/containers/DecisionModelCard'
 import { ModelLogo } from '@/containers/ModelLogo'
-import { HubReadme } from '@/containers/hub/HubReadme'
 import { route } from '@/constants/routes'
 import { useDecisionEngineReadiness } from '@/hooks/useDecisionEngineReadiness'
 import { useDecisionModel } from '@/hooks/useDecisionModel'
@@ -191,10 +190,6 @@ function ModelPanel({
           </DetailCell>
         </dl>
       </section>
-
-      <HubReadme
-        url={`https://huggingface.co/${model.repo}/resolve/${model.revision}/README.md`}
-      />
     </div>
   )
 }

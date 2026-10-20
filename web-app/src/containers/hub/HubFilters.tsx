@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Check, ChevronsUpDown } from 'lucide-react'
+import { ArrowUpDown, SlidersHorizontal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -13,7 +13,9 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { useHardware } from '@/hooks/useHardware'
+import { useHubEngines } from '@/hooks/useHubEngines'
 import { useManagedHubStates } from '@/hooks/useManagedHubState'
+import { useModelLikes } from '@/hooks/useModelLikes'
 import { usePrismHubVisible } from '@/hooks/useModelSetup'
 import { useFoundryLocalHubVisible } from '@/hooks/useFoundryLocalHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -24,6 +26,7 @@ import {
   type HubFilterState,
   type HubSortKey,
 } from '@/lib/hub-filters'
+import { hubEngine, hubEngineLabel } from '@/lib/hub-model-engines'
 import { getMemoryBudgetBytes, type ModelFormat } from '@/lib/model-card'
 import { cn } from '@/lib/utils'
 import { useShallow } from 'zustand/shallow'
@@ -38,11 +41,6 @@ const SORT_LABEL_KEYS: Record<HubSortKey, string> = {
 const FILTER_CHECKBOX_CLASS =
   'items-start whitespace-normal [&>span:first-child]:size-4 [&>span:first-child]:rounded-[5px] [&>span:first-child]:border [&>span:first-child]:border-input data-[state=checked]:[&>span:first-child]:border-primary data-[state=checked]:[&>span:first-child]:bg-primary data-[state=checked]:[&>span:first-child]:text-primary-foreground'
 
-// Dropdown triggers give way to Uncensored instead of pushing it out. The sort
-// label goes first: "TensorRT-LLM" is the one that tells you what you browse.
-const FORMAT_TRIGGER_CLASS = 'max-w-[40%] overflow-hidden'
-const SORT_TRIGGER_CLASS = 'min-w-0 shrink overflow-hidden'
-
 export type HubFiltersProps = {
   state: HubFilterState
   onChange: (next: HubFilterState) => void
@@ -53,6 +51,11 @@ export type HubFiltersProps = {
   className?: string
 }
 
+/**
+ * The Text category's Filters and Sort, beside the search field. Filters holds
+ * the engine and the format (one of each), and what to show only: liked,
+ * uncensored, installed, or fitting models; the trigger counts the ones on.
+ */
 export function HubFilters({
   state,
   onChange,
@@ -62,6 +65,8 @@ export function HubFilters({
   className,
 }: HubFiltersProps) {
   const { t } = useTranslation()
+  const onlyLiked = useModelLikes((s) => s.onlyLiked)
+  const setOnlyLiked = useModelLikes((s) => s.setOnlyLiked)
   const { total_memory, gpus } = useHardware(
     useShallow((s) => ({
       total_memory: s.hardwareData.total_memory,
@@ -89,85 +94,114 @@ export function HubFilters({
     prism: prismVisible,
     foundryLocal: foundryLocalVisible,
   })
+  const engines = useHubEngines(availableFormats)
   const sortKeys = HUB_SORT_KEYS.filter(
     (key) => key !== 'likes' || showLikesSort
   )
-  // Without a memory reading the checkbox could not filter anything, and the
-  // caption would read "Based on : ".
+  // Without a memory reading the checkbox could not filter anything.
   const canFilterByFit = budgetBytes > 0
 
   const selectedFormat = state.formats[0] ?? 'gguf'
+  const activeCount = [
+    Boolean(state.engine),
+    onlyLiked,
+    state.uncensored,
+    showOnlyDownloaded,
+    state.onlyFitting && canFilterByFit,
+  ].filter(Boolean).length
 
   return (
-    // One line, Uncensored pinned to its end. The row used to wrap, and since a
-    // trigger is as wide as its current label, every pick moved Uncensored
-    // between lines (GGUF fits beside it, PrismML does not). Where the column
-    // is too narrow (TensorRT-LLM, a large font) the triggers' labels truncate.
-    <div className={cn('flex items-center gap-2', className)}>
-      {availableFormats.length > 1 && (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              aria-label={t('hub:formats')}
-              title={HUB_FORMAT_LABELS[selectedFormat]}
-              className={FORMAT_TRIGGER_CLASS}
-            >
-              <span className="truncate">
-                {HUB_FORMAT_LABELS[selectedFormat]}
-              </span>
-              <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent side="bottom" align="start">
-            <DropdownMenuRadioGroup
-              value={selectedFormat}
-              onValueChange={(format) =>
-                onChange({ ...state, formats: [format as ModelFormat] })
-              }
-            >
-              {availableFormats.map((format) => (
-                <DropdownMenuRadioItem key={format} value={format}>
-                  {HUB_FORMAT_LABELS[format]}
-                </DropdownMenuRadioItem>
-              ))}
-            </DropdownMenuRadioGroup>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      )}
-
+    <div className={cn('flex shrink-0 items-center gap-2', className)}>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
             variant="outline"
             size="sm"
-            aria-label={t('hub:sortBy')}
-            title={t(SORT_LABEL_KEYS[state.sort])}
-            className={SORT_TRIGGER_CLASS}
+            aria-label={t('hub:filters.label')}
           >
-            <span className="truncate">{t(SORT_LABEL_KEYS[state.sort])}</span>
-            <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
+            <SlidersHorizontal size={15} />
+            {t('hub:filters.button')}
+            {activeCount > 0 && (
+              <span className="rounded-full bg-primary/15 px-1.5 text-xs tabular-nums">
+                {activeCount}
+              </span>
+            )}
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent side="bottom" align="start" className="max-w-72">
-          <DropdownMenuLabel className="text-xs text-muted-foreground">
-            {t('hub:sortBy')}
-          </DropdownMenuLabel>
-          {sortKeys.map((key) => (
-            <DropdownMenuItem
-              key={key}
-              className={cn(
-                'my-0.5 cursor-pointer',
-                state.sort === key && 'bg-secondary'
-              )}
-              onClick={() => onChange({ ...state, sort: key })}
-            >
-              {t(SORT_LABEL_KEYS[key])}
-            </DropdownMenuItem>
-          ))}
-
-          <DropdownMenuSeparator />
+        <DropdownMenuContent
+          align="end"
+          className="max-h-[min(70vh,32rem)] w-max max-w-[calc(100vw-2rem)] min-w-64 overflow-y-auto"
+        >
+          {engines.length > 1 && (
+            <>
+              <DropdownMenuLabel>{t('hub:filters.engine')}</DropdownMenuLabel>
+              <DropdownMenuRadioGroup
+                value={state.engine ?? 'all'}
+                onValueChange={(id) => {
+                  const engine = hubEngine(id)
+                  onChange({
+                    ...state,
+                    engine: engine?.id,
+                    formats: engine ? [engine.format] : state.formats,
+                  })
+                }}
+              >
+                <DropdownMenuRadioItem value="all">
+                  {t('hub:filters.allEngines')}
+                </DropdownMenuRadioItem>
+                {engines.map((engine) => (
+                  <DropdownMenuRadioItem key={engine.id} value={engine.id}>
+                    {hubEngineLabel(engine.id)}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+              <DropdownMenuSeparator />
+            </>
+          )}
+          {availableFormats.length > 1 && (
+            <>
+              <DropdownMenuLabel>{t('hub:filters.format')}</DropdownMenuLabel>
+              <DropdownMenuRadioGroup
+                value={selectedFormat}
+                onValueChange={(format) =>
+                  onChange({
+                    ...state,
+                    engine: undefined,
+                    formats: [format as ModelFormat],
+                  })
+                }
+              >
+                {availableFormats.map((format) => (
+                  <DropdownMenuRadioItem key={format} value={format}>
+                    {HUB_FORMAT_LABELS[format]}
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+              <DropdownMenuSeparator />
+            </>
+          )}
+          <DropdownMenuLabel>{t('hub:filters.showOnly')}</DropdownMenuLabel>
+          <DropdownMenuCheckboxItem
+            checked={onlyLiked}
+            // Toggling a filter is not "picking one option and moving on":
+            // keep the menu open so the effect on the list is visible.
+            onSelect={(event) => event.preventDefault()}
+            onCheckedChange={(checked) => setOnlyLiked(checked === true)}
+            className={FILTER_CHECKBOX_CLASS}
+          >
+            {t('hub:filters.liked')}
+          </DropdownMenuCheckboxItem>
+          <DropdownMenuCheckboxItem
+            checked={state.uncensored}
+            title={t('hub:uncensoredHint')}
+            onSelect={(event) => event.preventDefault()}
+            onCheckedChange={(checked) =>
+              onChange({ ...state, uncensored: checked === true })
+            }
+            className={FILTER_CHECKBOX_CLASS}
+          >
+            {t('hub:uncensored')}
+          </DropdownMenuCheckboxItem>
           <DropdownMenuCheckboxItem
             checked={showOnlyDownloaded}
             onSelect={(event) => event.preventDefault()}
@@ -182,12 +216,9 @@ export function HubFilters({
           >
             {t('hub:installedOnDevice')}
           </DropdownMenuCheckboxItem>
-
           {canFilterByFit && (
             <DropdownMenuCheckboxItem
               checked={state.onlyFitting}
-              // Toggling a filter is not "picking one option and moving on":
-              // keep the menu open so the effect on the list is visible.
               onSelect={(event) => event.preventDefault()}
               onCheckedChange={(checked) => {
                 const next = checked === true
@@ -201,28 +232,53 @@ export function HubFilters({
               {t('hub:fitFilterLabel')}
             </DropdownMenuCheckboxItem>
           )}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            disabled={activeCount === 0}
+            onSelect={() => {
+              setOnlyLiked(false)
+              if (showOnlyDownloaded) onShowOnlyDownloadedChange?.(false)
+              onChange({
+                ...state,
+                engine: undefined,
+                uncensored: false,
+                onlyFitting: false,
+              })
+            }}
+          >
+            {t('hub:filters.clear')}
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <button
-        type="button"
-        role="checkbox"
-        aria-checked={state.uncensored}
-        title={t('hub:uncensoredHint')}
-        onClick={() => onChange({ ...state, uncensored: !state.uncensored })}
-        className="ml-auto flex h-8 shrink-0 cursor-pointer items-center gap-2 rounded-md px-2 text-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-checked:text-foreground"
-      >
-        <span
-          className={cn(
-            'flex size-4 shrink-0 items-center justify-center rounded-[5px] border border-input',
-            state.uncensored &&
-              'border-primary bg-primary text-primary-foreground'
-          )}
-        >
-          {state.uncensored && <Check className="size-3" />}
-        </span>
-        {t('hub:uncensored')}
-      </button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="outline"
+            size="sm"
+            aria-label={t('hub:sortBy')}
+            title={t(SORT_LABEL_KEYS[state.sort])}
+          >
+            <ArrowUpDown size={15} />
+            <span>{t('hub:sort')}</span>
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="max-w-72">
+          <DropdownMenuLabel>{t('hub:sortModels')}</DropdownMenuLabel>
+          <DropdownMenuRadioGroup
+            value={state.sort}
+            onValueChange={(sort) =>
+              onChange({ ...state, sort: sort as HubSortKey })
+            }
+          >
+            {sortKeys.map((key) => (
+              <DropdownMenuRadioItem key={key} value={key}>
+                {t(SORT_LABEL_KEYS[key])}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   )
 }

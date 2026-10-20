@@ -8,7 +8,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import {
   IconLoader2,
@@ -20,18 +20,49 @@ type ImportMlxModelDialogProps = {
   provider: ModelProvider
   trigger?: React.ReactNode
   onSuccess?: (importedModelName?: string) => void
+  /** Controlled open state, for a caller that picked the folder itself. */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  /** An MLX model folder already chosen (the Hub's Import). */
+  initialPath?: string
 }
 
 export const ImportMlxModelDialog = ({
   provider,
   trigger,
   onSuccess,
+  open: controlledOpen,
+  onOpenChange,
+  initialPath,
 }: ImportMlxModelDialogProps) => {
   const serviceHub = useServiceHub()
-  const [open, setOpen] = useState(false)
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
+  const open = controlledOpen ?? uncontrolledOpen
+  const setOpen = (next: boolean) => {
+    if (controlledOpen === undefined) setUncontrolledOpen(next)
+    onOpenChange?.(next)
+  }
   const [importing, setImporting] = useState(false)
   const [selectedPath, setSelectedPath] = useState<string | null>(null)
   const [modelName, setModelName] = useState('')
+
+  const selectFolder = (result: string) => {
+    setSelectedPath(result)
+
+    // Extract model name from path
+    const pathParts = result.split(/[\\/]/)
+    const nameFromPath = pathParts[pathParts.length - 1] || 'mlx-model'
+    const sanitizedName = nameFromPath
+      .replace(/\s/g, '-')
+      //eslint-disable-next-line
+      .replace(/[^a-zA-Z0-9/_.\-]/g, '')
+    setModelName(sanitizedName)
+  }
+
+  // A folder the caller picked is the dialog's folder from the moment it opens.
+  useEffect(() => {
+    if (open && initialPath) selectFolder(initialPath)
+  }, [open, initialPath])
 
   const handleFileSelect = async () => {
     const result = await serviceHub.dialog().open({
@@ -40,16 +71,7 @@ export const ImportMlxModelDialog = ({
     })
 
     if (result && typeof result === 'string') {
-      setSelectedPath(result)
-
-      // Extract model name from path
-      const pathParts = result.split(/[\\/]/)
-      const nameFromPath = pathParts[pathParts.length - 1] || 'mlx-model'
-      const sanitizedName = nameFromPath
-        .replace(/\s/g, '-')
-        //eslint-disable-next-line
-        .replace(/[^a-zA-Z0-9/_.\-]/g, '')
-      setModelName(sanitizedName)
+      selectFolder(result)
     }
   }
 
@@ -140,7 +162,7 @@ export const ImportMlxModelDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      {trigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}
       <DialogContent
         className="sm:max-w-lg lg:max-w-lg xl:max-w-lg"
       >

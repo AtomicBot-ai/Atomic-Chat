@@ -28,6 +28,11 @@ type MediaModeSelectProps<Id extends string> = {
   label: string
   /** `image` or `video`: prefixes the test ids. */
   testIdPrefix: string
+  /**
+   * The pill alone, for a toolbar: the label is kept for screen readers only
+   * (it still names the pill), so the pill lines up with the controls beside it.
+   */
+  compact?: boolean
 }
 
 /**
@@ -42,6 +47,7 @@ function MediaModeSelectInner<Id extends string>({
   onChange,
   label,
   testIdPrefix,
+  compact = false,
 }: MediaModeSelectProps<Id>) {
   const [open, setOpen] = useState(false)
   const active = modes.find((mode) => mode.id === value) ?? modes[0]
@@ -50,7 +56,10 @@ function MediaModeSelectInner<Id extends string>({
   const titleId = useId()
 
   return (
-    <ImageField label={<span id={labelId}>{label}</span>}>
+    <ImageField
+      label={<span id={labelId}>{label}</span>}
+      className={compact ? 'gap-0 [&>div:first-child]:sr-only' : undefined}
+    >
       <DropdownMenu open={open} onOpenChange={setOpen}>
         <DropdownMenuTrigger asChild>
           <button

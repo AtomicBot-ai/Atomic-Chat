@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CatalogModel, HuggingFaceRepo } from '@/services/models/types'
@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   mediaSupported: false,
   decisionSupported: false,
   embeddingSupported: false,
+  voiceSupported: false,
   search: {} as Record<string, unknown>,
   staffPicks: [] as ResolvedStaffPick[],
   mlxStaffPicks: [] as ResolvedStaffPick[],
@@ -97,22 +98,29 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mocks.navigate,
 }))
 
-// jsdom reports every element as 0x0, so the real virtualizer would render an
-// empty window. Render the whole list instead and let the assertions be about
-// Hub behaviour rather than layout measurement.
-vi.mock('@tanstack/react-virtual', () => ({
-  useVirtualizer: ({ count }: { count: number }) => ({
-    getTotalSize: () => count * 72,
-    getVirtualItems: () =>
-      Array.from({ length: count }, (_, index) => ({
-        key: index,
-        index,
-        start: index * 72,
-        size: 72,
-      })),
-    measureElement: () => undefined,
-  }),
-}))
+// jsdom has no layout, so nothing would ever come on screen. Every row the
+// table observes is reported visible, as if the window held the whole list:
+// the end of the list is in view as soon as it renders.
+class EverythingVisible {
+  private disconnected = false
+  constructor(private readonly callback: IntersectionObserverCallback) {}
+  observe(target: Element) {
+    queueMicrotask(() => {
+      if (this.disconnected) return
+      this.callback(
+        [{ target, isIntersecting: true } as IntersectionObserverEntry],
+        this as unknown as IntersectionObserver
+      )
+    })
+  }
+  unobserve() {}
+  disconnect() {
+    this.disconnected = true
+  }
+  takeRecords() {
+    return []
+  }
+}
 
 // Interpolation options ride along in the output so a test can see what a
 // string would have carried — the feed heading must carry nothing.
@@ -130,12 +138,18 @@ vi.mock('@/containers/HeaderPage', () => ({
 }))
 
 vi.mock('@/containers/hub/ModelDetailPanel', () => ({
-  ModelDetailPanel: ({ model }: { model: CatalogModel | null }) => (
-    <aside
-      data-testid="detail-panel"
-      data-quants={model?.quants?.length ?? 0}
-    >
-      {model ? model.model_name : 'hub:selectModel'}
+  ModelDetailPanel: ({
+    model,
+    onCollapse,
+  }: {
+    model: CatalogModel
+    onCollapse: () => void
+  }) => (
+    <aside data-testid="detail-panel" data-quants={model.quants?.length ?? 0}>
+      {model.model_name}
+      <button type="button" onClick={onCollapse}>
+        collapse-row
+      </button>
     </aside>
   ),
 }))
@@ -206,6 +220,23 @@ vi.mock('@/containers/hub/EmbeddingHub', () => ({
   ),
 }))
 
+vi.mock('@/containers/hub/VoiceHub', () => ({
+  VoiceHub: ({
+    categoryTabs,
+    query,
+    selectedModelId,
+  }: {
+    categoryTabs?: React.ReactNode
+    query: string
+    selectedModelId: string | null
+  }) => (
+    <main data-testid="voice-hub">
+      {categoryTabs}
+      <span>{`voice catalog, query "${query}", open ${selectedModelId}`}</span>
+    </main>
+  ),
+}))
+
 // The Images / Video catalog has tests of its own; here it only has to show
 // what the route handed it, and hand a pick back.
 vi.mock('@/containers/hub/MediaHub', () => ({
@@ -242,7 +273,9 @@ vi.mock('@/lib/platform/const', async (importOriginal) => {
           ? mocks.mediaSupported
           : key === 'localInference'
             ? true
-            : target[key as keyof typeof target],
+            : key === 'voiceInput'
+              ? true
+              : target[key as keyof typeof target],
     }),
   }
 })
@@ -311,6 +344,7 @@ vi.mock('@/hooks/useServiceHub', () => ({
       providers: () => ({ getProviders: async () => [] }),
       decision: () => ({ isSupported: () => mocks.decisionSupported }),
       embedding: () => ({ isSupported: () => mocks.embeddingSupported }),
+      voice: () => ({ isSupported: () => mocks.voiceSupported }),
       modelSetup: () => ({
         isSupported: () => true,
         families: mocks.prismFamilies,
@@ -336,7 +370,13 @@ import { Route } from '../index'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useModelCompatibilityStore } from '@/stores/model-compatibility-store'
 import { HUB_FILTERS_STORAGE_KEY, serializeHubFilters } from '@/lib/hub-filters'
-import { getHubFormat, setHubFormat, setHubSearchQuery } from '../hub-session'
+import {
+  getHubFormat,
+  setHubEngine,
+  setHubFormat,
+  setHubSearchQuery,
+} from '../hub-session'
+import { useModelLikes } from '@/hooks/useModelLikes'
 import { resetHuggingFaceFeedForTest } from '@/hooks/useHuggingFaceFeed'
 import en from '@/locales/en/hub.json'
 
@@ -364,7 +404,10 @@ describe('/hub route', () => {
   })
 
   beforeEach(() => {
+    vi.stubGlobal('IntersectionObserver', EverythingVisible)
     setHubFormat(null)
+    setHubEngine(null)
+    useModelLikes.setState({ liked: [], onlyLiked: false })
     vi.clearAllMocks()
     localStorage.clear()
     setHubSearchQuery('')
@@ -383,6 +426,7 @@ describe('/hub route', () => {
     mocks.mediaSupported = false
     mocks.decisionSupported = false
     mocks.embeddingSupported = false
+    mocks.voiceSupported = false
     mocks.sources = []
     mocks.staffPicks = [
       {
@@ -495,12 +539,15 @@ describe('/hub route', () => {
     ])
     expect(headings[1].className).toBe(headings[0].className)
     expect(headings[1]).not.toHaveClass('text-xs')
-    expect(headings[1].nextElementSibling).toHaveTextContent('Llama-4-8B-GGUF')
+    // Each heading is a row of its own, right above its section's first row.
+    expect(headings[1].closest('tr')!.nextElementSibling).toHaveTextContent(
+      'Llama-4-8B-GGUF'
+    )
     expect(en.feedTitle).toBe('More from Hugging Face')
     expect(screen.getAllByText('Qwen3.5 4B')).toHaveLength(1)
 
-    // jsdom paints every row, so the end of the list is on screen at once:
-    // the next page is asked for, and the rows on screen get their sizes.
+    // Every row is on screen here, the end of the list included: the next
+    // page is asked for, and the rows on screen get their sizes.
     await waitFor(() =>
       expect(mocks.listHuggingFaceFeed).toHaveBeenCalledWith(
         expect.objectContaining({ cursor: 'page-2' })
@@ -509,9 +556,11 @@ describe('/hub route', () => {
     await waitFor(() =>
       expect(screen.getByText('Mistral-Next-GGUF')).toBeInTheDocument()
     )
-    expect(mocks.fetchHuggingFaceRepo).toHaveBeenCalledWith(
-      'bartowski/Llama-4-8B-GGUF',
-      ''
+    await waitFor(() =>
+      expect(mocks.fetchHuggingFaceRepo).toHaveBeenCalledWith(
+        'bartowski/Llama-4-8B-GGUF',
+        ''
+      )
     )
     expect(mocks.listHuggingFaceFeed).toHaveBeenCalledTimes(2)
   })
@@ -682,41 +731,121 @@ describe('/hub route', () => {
     expect(validate({ installed: 'no' }).installed).toBeUndefined()
   })
 
-  it('opens the detail panel straight away for a deep link', () => {
+  it('opens the row a deep link names, in place', () => {
     mocks.search = { model: 'google/gemma-4-12b-GGUF' }
     render(<HubPage />)
 
-    expect(screen.getByTestId('detail-panel')).toHaveTextContent(
-      'google/gemma-4-12b-GGUF'
-    )
-    // A deep link must survive the auto-selection below.
-    expect(mocks.navigate).not.toHaveBeenCalledWith(
-      expect.objectContaining({ replace: true })
-    )
+    const panel = screen.getByTestId('detail-panel')
+    expect(panel).toHaveTextContent('google/gemma-4-12b-GGUF')
+    // The open row takes the place of its summary, between the other rows.
+    const rows = within(screen.getByRole('table')).getAllByRole('row')
+    const open = rows.findIndex((row) => row.contains(panel))
+    expect(rows[open - 1]).toHaveTextContent('Qwen3.5 4B')
+    expect(
+      screen.queryByRole('button', { name: /hub:table.expand.*Gemma 4 12B/ })
+    ).not.toBeInTheDocument()
+    expect(mocks.navigate).not.toHaveBeenCalled()
   })
 
-  it('selects the first row on arrival so the panel is never blank', async () => {
+  it('opens no row on arrival', async () => {
     render(<HubPage />)
 
-    await waitFor(() => expect(mocks.navigate).toHaveBeenCalled())
-    const call = mocks.navigate.mock.calls[0][0] as {
+    await waitFor(() =>
+      expect(screen.getByText('Qwen3.5 4B')).toBeInTheDocument()
+    )
+    expect(screen.queryByTestId('detail-panel')).not.toBeInTheDocument()
+    expect(mocks.navigate).not.toHaveBeenCalled()
+    expect(screen.getByText(/hub:table.count/)).toHaveTextContent('"count":2')
+  })
+
+  it('closes the open row without a history entry', async () => {
+    const user = userEvent.setup()
+    mocks.search = { model: 'google/gemma-4-12b-GGUF' }
+    render(<HubPage />)
+
+    await user.click(screen.getByText('collapse-row'))
+
+    const call = mocks.navigate.mock.calls.at(-1)?.[0] as {
       replace: boolean
       search: (prev: Record<string, unknown>) => Record<string, unknown>
     }
-    // Replaces rather than pushes: arriving at the Hub should not leave a
-    // history entry the Back button has to chew through.
     expect(call.replace).toBe(true)
-    expect(call.search({})).toEqual({ model: 'Qwen/Qwen3.5-4B-GGUF' })
+    expect(call.search({ model: 'google/gemma-4-12b-GGUF', q: 'x' })).toEqual({
+      model: undefined,
+      q: 'x',
+    })
   })
 
-  it('does not auto-select while the list is still empty', () => {
-    mocks.staffPicks = []
+  it('narrows the list to the liked models', () => {
+    useModelLikes.setState({
+      liked: ['google/gemma-4-12b-GGUF'],
+      onlyLiked: true,
+    })
     render(<HubPage />)
 
-    expect(screen.getByTestId('detail-panel')).toHaveTextContent(
-      'hub:selectModel'
+    expect(screen.getByText('Gemma 4 12B')).toBeInTheDocument()
+    expect(screen.queryByText('Qwen3.5 4B')).not.toBeInTheDocument()
+    // A section keeps its heading when its first row is the one filtered out.
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'hub:staffPicks' })
+    ).toBeInTheDocument()
+  })
+
+  it('likes a row from its heart, and keeps it for the next launch', async () => {
+    const user = userEvent.setup()
+    render(<HubPage />)
+
+    await user.click(
+      screen.getByRole('button', { name: /hub:table.like .*Qwen3.5 4B/ })
     )
-    expect(mocks.navigate).not.toHaveBeenCalled()
+
+    expect(useModelLikes.getState().liked).toEqual(['Qwen/Qwen3.5-4B-GGUF'])
+    expect(localStorage.getItem('atomic-model-likes')).toContain(
+      'Qwen/Qwen3.5-4B-GGUF'
+    )
+    expect(
+      screen.getByRole('button', { name: /hub:table.unlike .*Qwen3.5 4B/ })
+    ).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('narrows the list to the engine picked in the filters', () => {
+    mocks.staffPicks = [
+      ...mocks.staffPicks,
+      {
+        pick: { model_name: 'prism-ml/Bonsai-8B-gguf', title: 'Bonsai 8B' },
+        model: model('prism-ml/Bonsai-8B-gguf'),
+      },
+    ]
+    setHubFormat('gguf')
+    setHubEngine('llamacpp-upstream')
+    render(<HubPage />)
+
+    // Bonsai's GGUF files run on PrismML's llama.cpp only.
+    expect(screen.getByText('Qwen3.5 4B')).toBeInTheDocument()
+    expect(screen.queryByText('Bonsai 8B')).not.toBeInTheDocument()
+  })
+
+  it('forgets the engine on a new launch, like the format', () => {
+    mocks.staffPicks = [
+      ...mocks.staffPicks,
+      {
+        pick: { model_name: 'prism-ml/Bonsai-8B-gguf', title: 'Bonsai 8B' },
+        model: model('prism-ml/Bonsai-8B-gguf'),
+      },
+    ]
+    localStorage.setItem(
+      HUB_FILTERS_STORAGE_KEY,
+      JSON.stringify({
+        formats: ['gguf'],
+        engine: 'llamacpp-upstream',
+        sort: 'recommended',
+        onlyFitting: true,
+        uncensored: false,
+      })
+    )
+    render(<HubPage />)
+
+    expect(screen.getByText('Bonsai 8B')).toBeInTheDocument()
   })
 
   it('asks for GGUF picks by default', () => {
@@ -811,8 +940,9 @@ describe('/hub route', () => {
       expect(screen.getByText('hub:tensorrt.blocked.title')).toBeInTheDocument()
       expect(screen.getByText('The NVIDIA driver is too old.')).toBeInTheDocument()
       expect(screen.queryByText('Qwen3.5 4B')).not.toBeInTheDocument()
-      // Nothing to open: no model is selected for the detail panel.
-      expect(screen.getByTestId('detail-panel')).toHaveTextContent('hub:selectModel')
+      // Nothing to open: no table, no open row.
+      expect(screen.queryByRole('table')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('detail-panel')).not.toBeInTheDocument()
     })
 
     it('claims nothing until the core has answered', () => {
@@ -1043,7 +1173,8 @@ describe('/hub route', () => {
       expect(headings).toEqual(['hub:vllm.curated', 'hub:feedTitle'])
       expect(screen.queryByText('TensorRT-LLM needs a newer NVIDIA driver.')).not.toBeInTheDocument()
       // The row reads as the format shown, not as TensorRT-LLM.
-      expect(screen.getAllByText('vllm').length).toBeGreaterThan(0)
+      expect(screen.getAllByText('vLLM').length).toBeGreaterThan(0)
+      expect(screen.queryByText('TensorRT-LLM')).not.toBeInTheDocument()
       view.unmount()
 
       setHubFormat('tensorrt-llm')
@@ -1225,12 +1356,12 @@ describe('/hub route', () => {
       expect(
         screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)
       ).toEqual(['hub:prismCurated'])
-      const names = screen
-        .getAllByText(/Bonsai-/)
-        .map((node) => node.textContent)
-      expect(names.indexOf('Ternary-Bonsai-2-27B-gguf')).toBeLessThan(
-        names.indexOf('Bonsai-8B-gguf')
-      )
+      expect(
+        screen
+          .getByText('Ternary-Bonsai-2-27B-gguf')
+          .compareDocumentPosition(screen.getByText('Bonsai-8B-gguf')) &
+          Node.DOCUMENT_POSITION_FOLLOWING
+      ).toBeTruthy()
       expect(screen.queryByText('Qwen3.5 4B')).not.toBeInTheDocument()
       expect(mocks.listHuggingFaceFeed).not.toHaveBeenCalled()
       expect(mocks.prismFamilies).toHaveBeenCalledTimes(1)
@@ -1278,6 +1409,10 @@ describe('/hub route', () => {
         'tiny-lab/experimental-3b'
       )
     )
+    // Not one of the picks: it opens first, above their heading.
+    const rows = within(screen.getByRole('table')).getAllByRole('row')
+    expect(rows[1]).toContainElement(screen.getByTestId('detail-panel'))
+    expect(rows[2]).toHaveTextContent('hub:staffPicks')
     expect(mocks.fetchHuggingFaceRepo).toHaveBeenCalledWith(
       'tiny-lab/experimental-3b',
       ''
@@ -1492,6 +1627,43 @@ describe('/hub route', () => {
       render(<HubPage />)
 
       expect(screen.queryByTestId('decision-hub')).not.toBeInTheDocument()
+      expect(picker()).toHaveAttribute('data-mode', 'chat')
+    })
+
+    it('offers Voice wherever voice input runs, media engine or not', async () => {
+      mocks.voiceSupported = true
+      render(<HubPage />)
+
+      await userEvent.click(screen.getByTestId('hub-category-workflow-select'))
+      expect(screen.getByTestId('hub-category-workflow-menu')).toHaveTextContent(
+        'hub:categoryVoiceHint'
+      )
+      expect(
+        screen.getByTestId('hub-category-workflow-option-voice')
+      ).toBeInTheDocument()
+      expect(
+        screen.queryByTestId('hub-category-workflow-option-image')
+      ).not.toBeInTheDocument()
+    })
+
+    it('shows the voice catalog the URL names, with its search and selection', () => {
+      mocks.voiceSupported = true
+      mocks.search = { category: 'voice', q: 'vox', model: 'voxtral' }
+      render(<HubPage />)
+
+      expect(
+        screen.getByText('voice catalog, query "vox", open voxtral')
+      ).toBeInTheDocument()
+      expect(picker()).toHaveAttribute('data-mode', 'voice')
+      expect(mocks.listHuggingFaceFeed.mock.calls).toEqual([])
+    })
+
+    it('stays the chat catalog where voice input does not run', () => {
+      mocks.mediaSupported = true
+      mocks.search = { category: 'voice' }
+      render(<HubPage />)
+
+      expect(screen.queryByTestId('voice-hub')).not.toBeInTheDocument()
       expect(picker()).toHaveAttribute('data-mode', 'chat')
     })
 

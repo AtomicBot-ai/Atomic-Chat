@@ -256,7 +256,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a Hub download the server refuses', () =
   const modelYml = (): string =>
     join(session.profile.dataFolder, 'llamacpp', 'models', ...REFUSED_QUANT_ID.split('/'), 'model.yml')
 
-  /** Open the fixture's model card and ask for it. Leaves the card open for the next attempt. */
+  /** Open the fixture's model row and ask for it. Leaves the row open for the next attempt. */
   async function askForTheModel(): Promise<void> {
     const browser = session.app.browser
     const card = browser.$(`//*[normalize-space(text())="${REFUSED_TITLE}"]`)
@@ -264,7 +264,11 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a Hub download the server refuses', () =
       await openSection(browser, 'models')
       await card.waitForDisplayed({ timeout: 60_000 })
     }
-    await card.click()
+    // A row opens in place, and a click on an open row closes it: open it only while it is closed.
+    const closedRow = browser.$(
+      `//button[@aria-expanded="false"][.//*[normalize-space(text())="${REFUSED_TITLE}"]]`
+    )
+    if (await closedRow.isExisting()) await closedRow.click()
     const download = browser.$('//button[normalize-space(.)="Download"]')
     await download.waitForClickable({ timeout: 30_000 })
     await download.click()

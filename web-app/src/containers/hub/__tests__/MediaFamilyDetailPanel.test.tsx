@@ -45,17 +45,6 @@ vi.mock('@/stores/image-generation-store', () => ({
   ) => selector({ generating: false, installedArtifacts: mocks.installed }),
 }))
 
-// The README comes from Hugging Face; the panel's tests answer it here.
-vi.mock('@/hooks/useGeneralSetting', () => ({
-  useGeneralSetting: (selector: (s: { huggingfaceToken: string }) => unknown) =>
-    selector({ huggingfaceToken: '' }),
-}))
-vi.mock('@/containers/RenderMarkdown', () => ({
-  RenderMarkdown: ({ content }: { content: string }) => (
-    <div data-testid="readme">{content}</div>
-  ),
-}))
-
 vi.mock('@/hooks/useImageArtifact', () => ({
   useImageArtifact: (id: string): ImageArtifactState =>
     ({
@@ -131,10 +120,7 @@ describe('MediaFamilyDetailPanel', () => {
     mocks.selected = []
     mocks.artifacts = {}
     mocks.installed = []
-    globalThis.fetch = vi.fn(async () => ({
-      ok: true,
-      text: async () => '---\nlicense: apache-2.0\n---\n# Z-Image Turbo card',
-    })) as unknown as typeof fetch
+    globalThis.fetch = vi.fn() as unknown as typeof fetch
   })
 
   it('asks for a selection when there is none', () => {
@@ -195,15 +181,15 @@ describe('MediaFamilyDetailPanel', () => {
     expect(quantRow('z-image:q4_k_m')).toBeVisible()
   })
 
-  it('shows the repo README from Hugging Face without its frontmatter', async () => {
+  it('links the repo on Hugging Face instead of fetching its README', () => {
     render(<MediaFamilyDetailPanel family={imageFamily} />)
 
-    expect(await screen.findByTestId('readme')).toHaveTextContent(
-      /^# Z-Image Turbo card$/
+    expect(screen.getByRole('link', { name: /hub:openOnWeb/ })).toHaveAttribute(
+      'href',
+      'https://huggingface.co/unsloth/Z-Image-Turbo-GGUF'
     )
-    expect(globalThis.fetch).toHaveBeenCalledWith(
-      'https://huggingface.co/unsloth/Z-Image-Turbo-GGUF/resolve/main/README.md'
-    )
+    expect(screen.queryByText('hub:readme')).not.toBeInTheDocument()
+    expect(globalThis.fetch).not.toHaveBeenCalled()
   })
 
   it('downloads a quant and makes it the Images selection', async () => {

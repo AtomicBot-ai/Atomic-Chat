@@ -1,5 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import userEvent from '@testing-library/user-event'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { hubModelFacts } from '@/lib/hub-model-facts'
 import type { CatalogModel } from '@/services/models/types'
 
 const mocks = vi.hoisted(() => ({
@@ -7,33 +9,17 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, options?: Record<string, unknown>) =>
+      options ? `${key} ${JSON.stringify(options)}` : key,
+  }),
 }))
 
-vi.mock('@i18n/react-i18next-compat', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
-}))
-
-vi.mock('@/hooks/useHardware', () => ({
-  useHardware: (
-    selector: (state: {
-      hardwareData: { total_memory: number; gpus: unknown[] }
-    }) => unknown
-  ) => selector({ hardwareData: { total_memory: 32 * 1024, gpus: [] } }),
-}))
-
-vi.mock('@/hooks/useGeneralSetting', () => ({
-  useGeneralSetting: (
-    selector: (state: { huggingfaceToken: string }) => unknown
-  ) => selector({ huggingfaceToken: '' }),
-}))
-
-vi.mock('@/containers/ModelDownloadAction', () => ({
-  ModelDownloadAction: () => <button type="button">download</button>,
-}))
-
-vi.mock('@/containers/MlxModelDownloadAction', () => ({
-  MlxModelDownloadAction: () => <button type="button">download mlx</button>,
+// The download options have tests of their own.
+vi.mock('@/containers/hub/DownloadOptionsSelect', () => ({
+  DownloadOptionsSelect: ({ model }: { model: CatalogModel }) => (
+    <section data-testid="download-options">{model.model_name}</section>
+  ),
 }))
 
 vi.mock('@/lib/model-card', async () => {
@@ -43,6 +29,9 @@ vi.mock('@/lib/model-card', async () => {
 })
 
 import { ModelDetailPanel } from '../ModelDetailPanel'
+
+const GB = 1024 ** 3
+const BUDGET = 32 * GB
 
 const model = (overrides: Partial<CatalogModel> = {}): CatalogModel =>
   ({
@@ -57,19 +46,32 @@ const model = (overrides: Partial<CatalogModel> = {}): CatalogModel =>
     ...overrides,
   }) as CatalogModel
 
-const README_WITH_ART = `# Qwen3.5 4B
+function renderPanel(
+  entry: CatalogModel = model(),
+  props: Partial<React.ComponentProps<typeof ModelDetailPanel>> = {}
+) {
+  const onCollapse = vi.fn()
+  const onToggleLike = vi.fn()
+  const facts = hubModelFacts(entry, { budgetBytes: BUDGET })
+  render(
+    <ModelDetailPanel
+      model={entry}
+      name="Qwen3.5 4B"
+      facts={facts}
+      engines={facts.engines}
+      budgetBytes={BUDGET}
+      liked={false}
+      onToggleLike={onToggleLike}
+      onCollapse={onCollapse}
+      {...props}
+    />
+  )
+  return { onCollapse, onToggleLike }
+}
 
-![hero banner](https://example.com/banner.png)
-
-<img src="https://img.shields.io/badge/license-apache-blue" alt="license" />
-
-<picture>
-  <source srcset="https://example.com/dark.png" media="(prefers-color-scheme: dark)" />
-  <img src="https://example.com/light.png" alt="logo" />
-</picture>
-
-A compact all-rounder. See the [model card](https://huggingface.co/Qwen) for details.
-`
+/** The value under one label of the facts grid. */
+const fact = (label: string) =>
+  screen.getByText(label).nextElementSibling as HTMLElement
 
 describe('ModelDetailPanel', () => {
   beforeEach(() => {
@@ -77,123 +79,112 @@ describe('ModelDetailPanel', () => {
     mocks.fetchModelStats.mockResolvedValue({})
   })
 
-  afterEach(() => {
-    vi.unstubAllGlobals()
-  })
+  it('heads the open row with the name, the repo and its numbers', () => {
+    renderPanel(model({ last_modified: '2026-08-01T00:00:00Z' }))
 
-  it('prompts for a selection when no model is active', () => {
-    render(<ModelDetailPanel model={null} />)
-
-    expect(screen.getByText('hub:selectModel')).toBeInTheDocument()
-  })
-
-  it('renders the header, stats and details grid', () => {
-    render(
-      <ModelDetailPanel
-        model={model({ last_modified: '2026-08-01T00:00:00Z' })}
-      />
-    )
-
+    const collapse = screen.getByRole('button', {
+      name: 'hub:table.collapse {"name":"Qwen3.5 4B"}',
+    })
+    expect(collapse).toHaveAttribute('aria-expanded', 'true')
+    expect(within(collapse).getByText('Qwen3.5 4B')).toBeInTheDocument()
     expect(
-      screen.getByRole('heading', { name: 'Qwen3.5-4B-GGUF' })
+      within(collapse).getByText('Qwen/Qwen3.5-4B-GGUF')
     ).toBeInTheDocument()
-    expect(screen.getByText('Qwen/Qwen3.5-4B-GGUF')).toBeInTheDocument()
-    expect(screen.getByText(/^4.200$/)).toBeInTheDocument()
-    expect(screen.getByText('77')).toBeInTheDocument()
-    expect(screen.getByText('4B')).toBeInTheDocument()
-    expect(screen.getByText('gguf')).toBeInTheDocument()
-    expect(screen.getByText('hub:context')).toBeInTheDocument()
-    const details = screen.getByRole('heading', { name: 'hub:details' })
-      .parentElement!
-    const downloadOptions = screen.getByRole('heading', {
-      name: 'hub:downloadOptions',
-    }).parentElement!
+    expect(within(collapse).getByText(/^4.200$/)).toBeInTheDocument()
+    expect(within(collapse).getByText('77')).toBeInTheDocument()
+    expect(within(collapse).getByText(/^hub:updatedAgo/)).toBeInTheDocument()
+  })
+
+  it('lists what the listing knows, then the download options', () => {
+    renderPanel()
+
+    expect(fact('hub:table.column.parameters')).toHaveTextContent('4B')
+    expect(fact('hub:table.column.format')).toHaveTextContent('GGUF')
+    expect(fact('hub:table.column.engines')).toHaveTextContent(
+      'llama.cpp, llama.cpp turboquant'
+    )
+    expect(fact('hub:table.column.context')).toHaveTextContent(
+      'hub:table.unknown'
+    )
+    expect(fact('hub:table.column.downloadSize')).toHaveTextContent('2.5 GB')
+    // The weights' size, which the device is judged by — not a guess above it.
+    expect(fact('hub:table.column.estRam')).toHaveTextContent('≈ 2.5 GB')
+    expect(fact('hub:table.column.thisDevice')).toHaveTextContent('Good fit')
+    expect(fact('hub:table.column.uncensored')).toHaveTextContent(
+      'hub:table.uncensoredNo'
+    )
+    const facts = screen.getByText('hub:table.column.parameters').closest('dl')!
     expect(
-      downloadOptions.compareDocumentPosition(details) &
+      facts.compareDocumentPosition(screen.getByTestId('download-options')) &
         Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy()
-    expect(within(details).getByText(/^4.200$/)).toBeInTheDocument()
-    expect(within(details).getByText('77')).toBeInTheDocument()
-    expect(within(details).getByText('hub:updatedAgo')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /hub:openOnWeb/ })).toHaveAttribute(
-      'href',
-      'https://huggingface.co/Qwen/Qwen3.5-4B-GGUF'
-    )
   })
 
-  it('uses a staff pick title without its badge or summary', () => {
-    render(
-      <ModelDetailPanel
-        model={model()}
-        pick={{
-          model_name: 'Qwen/Qwen3.5-4B-GGUF',
-          title: 'Qwen3.5 4B',
-          summary: 'Compact all-rounder.',
-        }}
-      />
+  it("prefers Hugging Face's own parameters and context once they arrive", async () => {
+    mocks.fetchModelStats.mockResolvedValue({ params: '4.2B', context: '256K' })
+    renderPanel()
+
+    await waitFor(() =>
+      expect(fact('hub:table.column.parameters')).toHaveTextContent('4.2B')
     )
+    expect(fact('hub:table.column.context')).toHaveTextContent('256K')
+    expect(mocks.fetchModelStats).toHaveBeenCalledWith('Qwen/Qwen3.5-4B-GGUF')
+  })
+
+  it('links the repo on Hugging Face in place of a README', () => {
+    renderPanel()
 
     expect(
-      screen.getByRole('heading', { name: 'Qwen3.5 4B' })
+      screen.getByRole('link', { name: /hub:source.huggingFace/ })
+    ).toHaveAttribute('href', 'https://huggingface.co/Qwen/Qwen3.5-4B-GGUF')
+    expect(screen.queryByText('hub:readme')).not.toBeInTheDocument()
+  })
+
+  it("names Microsoft's catalog for a Foundry Local model and asks Hugging Face nothing", () => {
+    renderPanel(
+      {
+        model_name: 'foundry-local/phi-4-mini',
+        description: '',
+        downloads: 0,
+        is_foundry_local: true,
+        foundry_local: {
+          origin: 'microsoft',
+          model_id: 'phi-4-mini',
+          name: 'Phi-4 mini',
+          summary: '',
+          context_length: 131072,
+          variants: [],
+        },
+      } as CatalogModel,
+      { name: 'Phi-4 mini' }
+    )
+
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
+    expect(
+      screen.getByText('hub:foundryLocal.microsoftCatalog')
     ).toBeInTheDocument()
-    expect(screen.queryByText('hub:staffPickBadge')).not.toBeInTheDocument()
-    expect(screen.queryByText('Compact all-rounder.')).not.toBeInTheDocument()
+    expect(screen.getByText('phi-4-mini')).toBeInTheDocument()
+    expect(fact('hub:table.column.context')).toHaveTextContent('128K')
+    expect(fact('hub:table.column.engines')).toHaveTextContent('Foundry Local')
+    // Each variant is judged in the download options, not by one size here.
+    expect(fact('hub:table.column.thisDevice')).toHaveTextContent(
+      'hub:table.deviceInCard'
+    )
+    expect(mocks.fetchModelStats).not.toHaveBeenCalled()
   })
 
-  it('says so when the repo ships no README', () => {
-    render(<ModelDetailPanel model={model()} />)
+  it('collapses from its header and keeps the heart beside it', async () => {
+    const user = userEvent.setup()
+    const { onCollapse, onToggleLike } = renderPanel(model(), { liked: true })
 
-    expect(screen.getByText('hub:readmeUnavailable')).toBeInTheDocument()
-  })
+    const heart = screen.getByRole('button', {
+      name: 'hub:table.unlike {"name":"Qwen3.5 4B"}',
+    })
+    expect(heart).toHaveAttribute('aria-pressed', 'true')
+    await user.click(heart)
+    expect(onToggleLike).toHaveBeenCalledOnce()
 
-  it('renders the README without a single image, keeping links clickable', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => ({ ok: true, text: async () => README_WITH_ART }))
-    )
-
-    const { container } = render(
-      <ModelDetailPanel
-        model={model({ readme: 'https://example.com/README.md' })}
-      />
-    )
-
-    await waitFor(() =>
-      expect(screen.getByText(/A compact all-rounder/)).toBeInTheDocument()
-    )
-
-    // Scoped to the rendered markdown: the panel header legitimately draws the
-    // publisher logo as an <img>.
-    const markdown = container.querySelector('.markdown')
-    expect(markdown).not.toBeNull()
-    expect(markdown!.querySelectorAll('img')).toHaveLength(0)
-    expect(markdown!.querySelectorAll('picture')).toHaveLength(0)
-    expect(markdown!.querySelectorAll('source')).toHaveLength(0)
-
-    const link = screen.getByRole('link', { name: 'model card' })
-    expect(link).toHaveAttribute('href', 'https://huggingface.co/Qwen')
-    expect(link).toHaveAttribute('target', '_blank')
-  })
-
-  it('drops the YAML frontmatter ahead of the README body', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => ({
-        ok: true,
-        text: async () =>
-          '---\r\nlicense: apache-2.0\r\nbase_model: Qwen/Qwen3.5-4B\r\n---\r\n\r\nReal content here.\r\n',
-      }))
-    )
-
-    render(
-      <ModelDetailPanel
-        model={model({ readme: 'https://example.com/README.md' })}
-      />
-    )
-
-    await waitFor(() =>
-      expect(screen.getByText(/Real content here/)).toBeInTheDocument()
-    )
-    expect(screen.queryByText(/license: apache-2.0/)).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { expanded: true }))
+    expect(onCollapse).toHaveBeenCalledOnce()
   })
 })

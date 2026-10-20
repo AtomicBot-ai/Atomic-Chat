@@ -1,3 +1,4 @@
+import type { HubEngineId } from '@/lib/hub-model-engines'
 import type { ModelFormat } from '@/lib/model-card'
 
 let searchQuery = ''
@@ -23,4 +24,15 @@ export function getHubFormat() {
 
 export function setHubFormat(format: ModelFormat | null) {
   hubFormat = format
+}
+
+/** The engine picked in the Hub's filters during this launch: never saved, like the format. */
+let hubEngine: HubEngineId | null = null
+
+export function getHubEngine() {
+  return hubEngine
+}
+
+export function setHubEngine(engine: HubEngineId | null) {
+  hubEngine = engine
 }

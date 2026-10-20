@@ -1,0 +1,186 @@
+/*
+ * The Models Hub's toolbar and local models table (approved interface
+ * prototype). The table answers to its own width, not the window's: the
+ * sidebar can be open or resized, so its columns give way through container
+ * queries. Rows are grids rather than table layout, so a hidden cell or an
+ * expanded row spanning every column never reserves a phantom column.
+ */
+
+.hub-search-field {
+  height: var(--control-height);
+}
+.hub-search-field input {
+  height: 100%;
+  font-size: 0.875rem;
+}
+
+/* Search takes the spare width; the other controls keep their own. */
+.hub-search-toolbar {
+  flex-wrap: nowrap;
+  padding-block: 8px;
+}
+.hub-search-toolbar .hub-search-field {
+  flex: 1 1 140px;
+  min-width: 120px;
+}
+.hub-model-type {
+  flex: 0 0 148px;
+  min-width: 0;
+}
+/* The page header holding the toolbar: as tall as one row of controls, taller
+   when a narrow window wraps them. */
+.hub-toolbar-header {
+  height: auto;
+  min-height: 60px;
+  container: hub-toolbar / inline-size;
+}
+@container hub-toolbar (max-width: 620px) {
+  .hub-search-toolbar {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  .hub-model-type {
+    flex-basis: 116px;
+  }
+}
+
+.local-models-responsive {
+  container: local-models / inline-size;
+}
+.local-model-table-frame {
+  width: 100%;
+  min-width: 0;
+}
+.local-model-table {
+  display: block;
+  width: 100%;
+}
+.local-model-table :is(thead, tbody) {
+  display: block;
+  width: 100%;
+}
+.local-model-table thead tr,
+.local-model-table .local-model-summary {
+  display: grid;
+  grid-template-columns: minmax(0, 2.5fr) repeat(9, minmax(0, 1fr));
+  width: 100%;
+  align-items: center;
+}
+.local-model-table :is(th, td) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+/* A header wraps between its words; only a word wider than its column breaks. */
+.local-model-table th {
+  overflow-wrap: break-word;
+}
+.local-model-table th button {
+  white-space: normal;
+  min-width: 0;
+}
+.local-model-table th svg,
+.local-model-toggle > svg {
+  flex-shrink: 0;
+}
+.local-model-table tbody > tr:not(.local-model-summary),
+.local-model-table :is(td, th)[colspan] {
+  display: block;
+  width: 100%;
+}
+.local-model-table .model-inline-meta,
+.local-model-table .model-inline-engines {
+  display: none;
+}
+.local-model-table :is(td, th)[colspan] > div {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.local-model-summary > td:first-child {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+/* A Hugging Face row is warmer than a curated one, as in the prototype. */
+.local-model-summary[data-source='huggingface'] {
+  background: color-mix(in srgb, #e8be61 4%, transparent);
+}
+.local-model-summary[data-source='huggingface']:hover {
+  background: color-mix(in srgb, #e8be61 8%, transparent);
+}
+.model-like {
+  flex-shrink: 0;
+}
+
+@container local-models (max-width: 1100px) {
+  .local-model-table thead tr,
+  .local-model-table .local-model-summary {
+    grid-template-columns: minmax(0, 2.5fr) repeat(6, minmax(0, 1fr));
+  }
+  .local-model-table th:nth-child(4),
+  .local-model-summary td:nth-child(4),
+  .local-model-table th:nth-child(5),
+  .local-model-summary td:nth-child(5),
+  .local-model-table th:nth-child(9),
+  .local-model-summary td:nth-child(9) {
+    display: none;
+  }
+}
+@container local-models (max-width: 900px) {
+  .local-model-table thead tr,
+  .local-model-table .local-model-summary {
+    grid-template-columns: minmax(0, 2.4fr) repeat(5, minmax(0, 1fr));
+  }
+  .local-model-table th:nth-child(2),
+  .local-model-summary td:nth-child(2) {
+    display: none;
+  }
+  .local-model-table .model-inline-meta {
+    display: block;
+  }
+}
+@container local-models (max-width: 700px) {
+  .local-model-table thead tr,
+  .local-model-table .local-model-summary {
+    grid-template-columns: minmax(0, 2.3fr) repeat(4, minmax(0, 1fr));
+  }
+  .local-model-table th:nth-child(3),
+  .local-model-summary td:nth-child(3) {
+    display: none;
+  }
+}
+@container local-models (max-width: 520px) {
+  .local-model-table thead tr,
+  .local-model-table .local-model-summary {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .local-model-table th:nth-child(6),
+  .local-model-summary td:nth-child(6),
+  .local-model-table th:nth-child(10),
+  .local-model-summary td:nth-child(10) {
+    display: none;
+  }
+  .local-model-table .model-inline-engines {
+    display: block;
+  }
+  .local-model-table :is(th, td) {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+  .local-model-table .model-row-logo {
+    display: none;
+  }
+  .local-model-toggle {
+    gap: 5px;
+  }
+}
+
+.model-expanded-facts {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@container local-models (min-width: 700px) {
+  .model-expanded-facts {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}

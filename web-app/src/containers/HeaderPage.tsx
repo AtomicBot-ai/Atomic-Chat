@@ -3,17 +3,22 @@ import { ReactNode, memo } from 'react'
 
 type HeaderPageProps = {
   children?: ReactNode
+  className?: string
 }
 
 // The sidebar toggle and the macOS traffic-light inset live in the window
 // title bar row above every page (components/left-sidebar/WindowTitlebar), so
 // a page header only carries the page's own title and actions.
-const HeaderPage = memo(function HeaderPage({ children }: HeaderPageProps) {
+const HeaderPage = memo(function HeaderPage({
+  children,
+  className,
+}: HeaderPageProps) {
   return (
     <div
       className={cn(
         'relative h-15 flex shrink-0 items-center pl-4 pr-4',
-        children === undefined && 'border-none'
+        children === undefined && 'border-none',
+        className
       )}
       // On macOS the element-based drag region approach is used: this div sits
       // inside the SidebarInset which is in normal document flow, so it is

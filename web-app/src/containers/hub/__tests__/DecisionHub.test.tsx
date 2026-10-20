@@ -13,12 +13,15 @@ vi.mock('@/containers/HeaderPage', () => ({
   ),
 }))
 
+// Import has tests of its own and needs the service hub.
+vi.mock('@/containers/hub/ImportLocalFile', () => ({
+  ImportLocalFile: () => null,
+}))
+
 vi.mock('@/containers/hub/DecisionModelDetailPanel', () => ({
-  DecisionModelDetailPanel: ({
-    model,
-  }: {
-    model: DecisionCatalogModel | null
-  }) => <aside data-testid="detail">{model?.id ?? 'none'}</aside>,
+  DecisionModelDetailPanel: ({ model }: { model: DecisionCatalogModel }) => (
+    <aside data-testid="detail">{model.id}</aside>
+  ),
 }))
 
 import { useDecisionStore } from '@/stores/decision-store'
@@ -75,12 +78,16 @@ describe('DecisionHub', () => {
     expect(bind).toHaveBeenCalledOnce()
   })
 
-  it('marks the open model and reports a pick', async () => {
+  it('opens the model the URL names below its row, and reports a pick', async () => {
     const { onSelectModel } = renderHub()
 
-    const open = screen.getByRole('button', { current: true })
+    const open = screen.getByRole('button', { expanded: true })
     expect(open).toHaveTextContent('convaiinnovations/laya')
+    expect(open.nextElementSibling).toBe(screen.getByTestId('detail'))
     expect(screen.getByTestId('detail')).toHaveTextContent('laya')
+    expect(screen.getAllByRole('button', { expanded: false })).toHaveLength(
+      catalog.models.length - 1
+    )
 
     await userEvent.click(
       screen.getByRole('button', { name: /Laya Typed Decisions/ })
@@ -88,13 +95,20 @@ describe('DecisionHub', () => {
     expect(onSelectModel).toHaveBeenCalledWith('laya-typed-decisions')
   })
 
-  it('opens on the first model when the URL names none', () => {
+  it('closes the open model from its row', async () => {
+    const { onSelectModel } = renderHub()
+
+    const open = screen.getByRole('button', { expanded: true })
+    expect(open).toHaveTextContent('convaiinnovations/laya')
+    await userEvent.click(open)
+    expect(onSelectModel).toHaveBeenCalledWith(null)
+  })
+
+  it('opens nothing until a model is picked', () => {
     const { onSelectModel } = renderHub({ selectedModelId: null })
 
-    expect(screen.getByTestId('detail')).toHaveTextContent('none')
-    expect(onSelectModel).toHaveBeenCalledWith('laya-multilingual', {
-      replace: true,
-    })
+    expect(screen.queryByTestId('detail')).not.toBeInTheDocument()
+    expect(onSelectModel).not.toHaveBeenCalled()
   })
 
   it('narrows the list by the search and offers to clear an empty one', async () => {

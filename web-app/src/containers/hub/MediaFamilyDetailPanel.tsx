@@ -18,7 +18,6 @@ import {
 } from '@/components/ui/dialog'
 import { ModelLogo } from '@/containers/ModelLogo'
 import { FitBadge } from '@/containers/hub/FitBadge'
-import { HubReadme } from '@/containers/hub/HubReadme'
 import { ImageArtifactDownloadButton } from '@/containers/images/ImageArtifactDownloadButton'
 import { route } from '@/constants/routes'
 import { useHardwareTier } from '@/hooks/useHardwareTier'
@@ -147,10 +146,6 @@ export function MediaFamilyDetailPanel({
           )}
         </dl>
       </section>
-
-      <HubReadme
-        url={`https://huggingface.co/${repo}/resolve/main/README.md`}
-      />
     </div>
   )
 }

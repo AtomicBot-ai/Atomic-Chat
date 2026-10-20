@@ -101,6 +101,24 @@ describe('normalizeHubFilters', () => {
     ])
   })
 
+  it('keeps an engine only within its own format, where that format is offered', () => {
+    expect(
+      normalizeHubFilters({ formats: ['gguf'], engine: 'llamacpp' }).engine
+    ).toBe('llamacpp')
+    expect(
+      normalizeHubFilters({ formats: ['mlx'], engine: 'llamacpp' }).engine
+    ).toBeUndefined()
+    expect(
+      normalizeHubFilters({ formats: ['vllm'], engine: 'vllm' }, ['gguf'])
+    ).toMatchObject({ formats: ['gguf'] })
+    expect(
+      normalizeHubFilters({ formats: ['vllm'], engine: 'vllm' }, ['gguf']).engine
+    ).toBeUndefined()
+    expect(
+      normalizeHubFilters({ formats: ['gguf'], engine: 'ollama' }).engine
+    ).toBeUndefined()
+  })
+
   it('preserves a fully valid state', () => {
     const state: HubFilterState = {
       formats: ['mlx'],
@@ -126,6 +144,16 @@ describe('hub filter persistence', () => {
     }
     writeHubFilters(state)
     expect(readHubFilters()).toEqual({ ...state, formats: ['gguf'] })
+  })
+
+  it('never saves the engine, and never brings one back', () => {
+    writeHubFilters({ formats: ['gguf'], engine: 'llamacpp', sort: 'likes', onlyFitting: true, uncensored: false })
+    expect(window.localStorage.getItem(HUB_FILTERS_STORAGE_KEY)).not.toContain('engine')
+    window.localStorage.setItem(
+      HUB_FILTERS_STORAGE_KEY,
+      JSON.stringify({ formats: ['gguf'], engine: 'llamacpp', sort: 'likes' })
+    )
+    expect(readHubFilters().engine).toBeUndefined()
   })
 
   it('never brings a saved format back: the Hub opens on GGUF on every launch', () => {

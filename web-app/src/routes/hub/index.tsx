@@ -1,5 +1,4 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useVirtualizer } from '@tanstack/react-virtual'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import {
   useCallback,
@@ -10,15 +9,18 @@ import {
   type ReactNode,
 } from 'react'
 import { Loader } from 'lucide-react'
-import HeaderPage from '@/containers/HeaderPage'
 import { DecisionHub } from '@/containers/hub/DecisionHub'
 import { EmbeddingHub } from '@/containers/hub/EmbeddingHub'
 import { HubCategorySelect } from '@/containers/hub/HubCategorySelect'
 import { HubFilters } from '@/containers/hub/HubFilters'
-import { HubNoResults, HubSearchInput } from '@/containers/hub/HubSearch'
+import { HubNoResults } from '@/containers/hub/HubSearch'
+import { HubSearchToolbar } from '@/containers/hub/HubSearchToolbar'
+import {
+  LocalModelTable,
+  type LocalModelTableItem,
+} from '@/containers/hub/LocalModelTable'
 import { MediaHub } from '@/containers/hub/MediaHub'
-import { ModelDetailPanel } from '@/containers/hub/ModelDetailPanel'
-import { ModelListRow } from '@/containers/hub/ModelListRow'
+import { VoiceHub } from '@/containers/hub/VoiceHub'
 import {
   ManagedHubBlocked,
   ManagedHubChecking,
@@ -27,7 +29,9 @@ import { RECOMMENDED_MODEL_FALLBACKS } from '@/constants/models'
 import { route } from '@/constants/routes'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useHardware } from '@/hooks/useHardware'
+import { useHubEngines } from '@/hooks/useHubEngines'
 import { useHuggingFaceFeed } from '@/hooks/useHuggingFaceFeed'
+import { useModelLikes } from '@/hooks/useModelLikes'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useModelSources } from '@/hooks/useModelSources'
 import { useServiceHub } from '@/hooks/useServiceHub'
@@ -75,10 +79,10 @@ import {
   managedSearchRows,
   type ManagedPrefilterContext,
 } from '@/lib/managed-engine/hub-feed'
+import { modelEngineIds } from '@/lib/hub-model-engines'
 import { extractModelName } from '@/lib/models'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
-import { cn } from '@/lib/utils'
 import { getModelSearchService } from '@/services/model-search'
 import type { GpuFacts } from '@/services/managed-environment/types'
 import { normalizeRepository } from '@/services/managed-models/models'
@@ -95,8 +99,10 @@ import type {
 } from '@/services/staff-picks-registry'
 import { useShallow } from 'zustand/shallow'
 import {
+  getHubEngine,
   getHubFormat,
   getHubSearchQuery,
+  setHubEngine,
   setHubFormat,
   setHubSearchQuery,
 } from './hub-session'
@@ -107,9 +113,8 @@ type SearchParams = {
   engine?: ModelFormat
   q?: string
   /**
-   * Repo id of the model shown in the right-hand detail panel; in the Images
-   * and Video categories, the id of the catalog family; in Decision and
-   * Embedding, the catalog id of the model.
+   * Repo id of the open row; in the Images and Video categories, the id of
+   * the catalog family; in Decision and Embedding, the catalog id of the model.
    */
   model?: string
   /** Absent means Chat: every link into the Hub from a chat asks for one. */
@@ -121,14 +126,8 @@ type SearchParams = {
   installed?: boolean
 }
 
-/** A row in the left column, plus the provenance the row needs to render. */
-type HubListItem = {
-  model: CatalogModel
-  pick?: StaffPick
-  fromHuggingFace?: boolean
-  /** A heading painted above this row: the first row of a new section. */
-  sectionLabel?: string
-}
+/** A row of the table, plus the provenance the row needs to render. */
+type HubListItem = LocalModelTableItem
 
 /** The Hub's sort dropdown, in Hugging Face's own vocabulary. */
 const FEED_SORT_FOR: Record<HubSortKey, HuggingFaceFeedSort> = {
@@ -140,9 +139,6 @@ const FEED_SORT_FOR: Record<HubSortKey, HuggingFaceFeedSort> = {
 
 /** One empty list for every render without a snapshot: a fresh `[]` would re-render forever. */
 const NO_GPUS: GpuFacts[] = []
-
-/** How many rows before the end of the list the next page is asked for. */
-const FEED_PREFETCH_ROWS = 8
 
 /**
  * A managed engine's prefilter can leave a whole page with nothing to show; after
@@ -211,6 +207,11 @@ function HubContent() {
     PlatformFeatures[PlatformFeature.LOCAL_INFERENCE] &&
     embeddingApiSupported &&
     isEmbeddingHostSupported(cpuArch)
+  // The voice model is the one dictation runs on: it is offered wherever voice
+  // input is, media engine or not.
+  const voiceSupported =
+    PlatformFeatures[PlatformFeature.VOICE_INPUT] &&
+    serviceHub.voice().isSupported()
   const categories = useMemo(
     () =>
       HUB_CATEGORIES.filter((c) =>
@@ -218,9 +219,11 @@ function HubContent() {
           ? decisionSupported
           : c === 'embedding'
             ? embeddingSupported
-            : c === 'chat' || mediaSupported
+            : c === 'voice'
+              ? voiceSupported
+              : c === 'chat' || mediaSupported
       ),
-    [mediaSupported, decisionSupported, embeddingSupported]
+    [mediaSupported, decisionSupported, embeddingSupported, voiceSupported]
   )
   const category: HubCategory =
     categorySearchParam && categories.includes(categorySearchParam)
@@ -260,6 +263,9 @@ function HubContent() {
   if (category === 'embedding') {
     return <EmbeddingHubContent categoryTabs={categoryTabs} />
   }
+  if (category === 'voice') {
+    return <VoiceHubContent categoryTabs={categoryTabs} />
+  }
   return (
     <MediaHubContent
       key={category}
@@ -291,11 +297,14 @@ function DecisionHubContent({ categoryTabs }: { categoryTabs?: ReactNode }) {
   )
 
   const selectModel = useCallback(
-    (modelId: string, options?: { replace?: boolean }) => {
+    (modelId: string | null) => {
       void navigate({
         to: route.hub.index,
-        search: (prev: SearchParams) => ({ ...prev, model: modelId }),
-        replace: options?.replace ?? false,
+        search: (prev: SearchParams) => ({
+          ...prev,
+          model: modelId ?? undefined,
+        }),
+        replace: modelId === null,
       })
     },
     [navigate]
@@ -334,11 +343,14 @@ function EmbeddingHubContent({ categoryTabs }: { categoryTabs?: ReactNode }) {
   )
 
   const selectModel = useCallback(
-    (modelId: string, options?: { replace?: boolean }) => {
+    (modelId: string | null) => {
       void navigate({
         to: route.hub.index,
-        search: (prev: SearchParams) => ({ ...prev, model: modelId }),
-        replace: options?.replace ?? false,
+        search: (prev: SearchParams) => ({
+          ...prev,
+          model: modelId ?? undefined,
+        }),
+        replace: modelId === null,
       })
     },
     [navigate]
@@ -346,6 +358,52 @@ function EmbeddingHubContent({ categoryTabs }: { categoryTabs?: ReactNode }) {
 
   return (
     <EmbeddingHub
+      categoryTabs={categoryTabs}
+      query={query}
+      onQueryChange={changeQuery}
+      selectedModelId={modelSearchParam ?? null}
+      onSelectModel={selectModel}
+    />
+  )
+}
+
+function VoiceHubContent({ categoryTabs }: { categoryTabs?: ReactNode }) {
+  const navigate = useNavigate()
+  const { q: querySearchParam, model: modelSearchParam } = Route.useSearch()
+  const [query, setQuery] = useState(querySearchParam ?? getHubSearchQuery())
+
+  const changeQuery = useCallback(
+    (next: string) => {
+      setQuery(next)
+      setHubSearchQuery(next)
+      void navigate({
+        to: route.hub.index,
+        search: (prev: SearchParams) => ({
+          ...prev,
+          q: next.trim() || undefined,
+        }),
+        replace: true,
+      })
+    },
+    [navigate]
+  )
+
+  const selectModel = useCallback(
+    (modelId: string | null) => {
+      void navigate({
+        to: route.hub.index,
+        search: (prev: SearchParams) => ({
+          ...prev,
+          model: modelId ?? undefined,
+        }),
+        replace: modelId === null,
+      })
+    },
+    [navigate]
+  )
+
+  return (
+    <VoiceHub
       categoryTabs={categoryTabs}
       query={query}
       onQueryChange={changeQuery}
@@ -384,11 +442,14 @@ function MediaHubContent({
   )
 
   const selectFamily = useCallback(
-    (familyId: string, options?: { replace?: boolean }) => {
+    (familyId: string | null) => {
       void navigate({
         to: route.hub.index,
-        search: (prev: SearchParams) => ({ ...prev, model: familyId }),
-        replace: options?.replace ?? false,
+        search: (prev: SearchParams) => ({
+          ...prev,
+          model: familyId ?? undefined,
+        }),
+        replace: familyId === null,
       })
     },
     [navigate]
@@ -470,7 +531,9 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   const [storedFilters, setFilters] = useState<HubFilterState>(() => {
     const saved = readHubFilters()
     const format = getHubFormat()
-    return format ? { ...saved, formats: [format] } : saved
+    return format
+      ? { ...saved, formats: [format], engine: getHubEngine() ?? undefined }
+      : saved
   })
   const prismHubVisible = usePrismHubVisible()
   const foundryLocalHubVisible = useFoundryLocalHubVisible()
@@ -517,6 +580,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   const updateFilters = useCallback((next: HubFilterState) => {
     setFilters(next)
     setHubFormat(next.formats[0] ?? null)
+    setHubEngine(next.engine ?? null)
     writeHubFilters(next)
   }, [])
 
@@ -886,12 +950,9 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
         catalog: foundryLocal.catalog,
         query: debouncedSearchValue,
       })
-      return rows.map((row, index) => ({
+      return rows.map((row) => ({
         model: row.model,
-        sectionLabel:
-          index === 0 || rows[index - 1].section !== row.section
-            ? t(row.section === 'curated' ? 'hub:foundryLocal.curated' : 'hub:foundryLocal.microsoftCatalog')
-            : undefined,
+        section: t(row.section === 'curated' ? 'hub:foundryLocal.curated' : 'hub:foundryLocal.microsoftCatalog'),
       }))
     }
 
@@ -911,9 +972,9 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
         { ...filters, formats: ['gguf'] },
         { budgetBytes, applyFitFilter: true }
       )
-      return filtered.map((model, index) => ({
+      return filtered.map((model) => ({
         model,
-        sectionLabel: index === 0 ? t('hub:prismCurated') : undefined,
+        section: t('hub:prismCurated'),
       }))
     }
 
@@ -925,17 +986,14 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
         feed: managedCurated.loading ? [] : feed.models,
         context: managedContext,
       })
-      return rows.map((row, index) => ({
+      return rows.map((row) => ({
         model: row.model,
         fromHuggingFace: row.section !== 'curated',
-        sectionLabel:
-          index === 0 || rows[index - 1].section !== row.section
-            ? t(
-                row.section === 'curated' && managedSelected
-                  ? hubKey(managedSelected)('curated')
-                  : 'hub:feedTitle'
-              )
-            : undefined,
+        section: t(
+          row.section === 'curated' && managedSelected
+            ? hubKey(managedSelected)('curated')
+            : 'hub:feedTitle'
+        ),
       }))
     }
 
@@ -944,10 +1002,10 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
         budgetBytes,
         applyFitFilter: true,
       })
-      const picks: HubListItem[] = filtered.map((model, index) => ({
+      const picks: HubListItem[] = filtered.map((model) => ({
         model,
         pick: pickByRepo.get(model.model_name),
-        sectionLabel: index === 0 ? t('hub:staffPicks') : undefined,
+        section: t('hub:staffPicks'),
       }))
 
       // The feed is already in Hugging Face's order for this sort, so it is
@@ -981,7 +1039,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
         feedRows.push({
           model,
           fromHuggingFace: true,
-          sectionLabel: feedRows.length === 0 ? t('hub:feedTitle') : undefined,
+          section: t('hub:feedTitle'),
         })
       }
       return [...picks, ...feedRows]
@@ -1020,11 +1078,10 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
         filters,
         { applyFitFilter: false }
       )
-      return [...exact, ...found].map((model, index) => ({
+      return [...exact, ...found].map((model) => ({
         model,
         fromHuggingFace: true,
-        sectionLabel:
-          filters.uncensored && index === 0 ? t('hub:uncensored') : undefined,
+        section: filters.uncensored ? t('hub:uncensored') : undefined,
       }))
     }
     // A search hit carries no file list, so the detail panel has nothing to
@@ -1055,11 +1112,10 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
       { budgetBytes, applyFitFilter: true }
     )
 
-    return filtered.map((model, index) => ({
+    return filtered.map((model) => ({
       model,
       fromHuggingFace: hfNames.has(model.model_name),
-      sectionLabel:
-        filters.uncensored && index === 0 ? t('hub:uncensored') : undefined,
+      section: filters.uncensored ? t('hub:uncensored') : undefined,
     }))
   }, [
     managedPanel,
@@ -1106,7 +1162,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
 
   const selectedRepo = modelSearchParam ?? null
 
-  const selectedItem = useMemo(() => {
+  const selectedItem = useMemo<HubListItem | null>(() => {
     if (!selectedRepo) return null
     const fromList = listItems.find(
       (item) => item.model.model_name === selectedRepo
@@ -1116,7 +1172,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     if (fromSources) {
       return { model: fromSources, pick: pickByRepo.get(selectedRepo) }
     }
-    if (deepLinkedModel?.model_name === selectedRepo) {
+    if (deepLinkedModel && deepLinkedModel.model_name === selectedRepo) {
       return { model: deepLinkedModel, pick: pickByRepo.get(selectedRepo) }
     }
     return null
@@ -1155,15 +1211,19 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     huggingfaceToken,
   ])
 
+  // Opens a row, or closes the open one (`null`); one row is open at a time.
   const selectModel = useCallback(
-    (repoId: string) => {
+    (repoId: string | null) => {
       const el = listScrollRef.current
       hubScrollCache.q = searchValue.trim()
       hubScrollCache.offset = el ? el.scrollTop : 0
       void navigate({
         to: route.hub.index,
-        search: (prev: SearchParams) => ({ ...prev, model: repoId }),
-        replace: false,
+        search: (prev: SearchParams) => ({
+          ...prev,
+          model: repoId ?? undefined,
+        }),
+        replace: repoId === null,
       })
     },
     [navigate, searchValue]
@@ -1184,22 +1244,6 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
       replace: true,
     })
   }, [exactRepoName, selectedRepo, navigate])
-
-  // Open on a populated panel rather than on an empty right-hand column: with
-  // nothing selected the widest part of the page carries no information. Only
-  // fires while the URL names no model, so it never overrides a deep link and
-  // never fights the user's own selection.
-  useEffect(() => {
-    if (selectedRepo || listItems.length === 0) return
-    void navigate({
-      to: route.hub.index,
-      search: (prev: SearchParams) => ({
-        ...prev,
-        model: listItems[0].model.model_name,
-      }),
-      replace: true,
-    })
-  }, [selectedRepo, listItems, navigate])
 
   // ---- URL sync ---------------------------------------------------------
 
@@ -1231,15 +1275,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     }
   }
 
-  // ---- Virtual list -----------------------------------------------------
-
-  const rowVirtualizer = useVirtualizer({
-    count: listItems.length,
-    getScrollElement: () => listScrollRef.current,
-    estimateSize: useCallback(() => 72, []),
-    overscan: 8,
-    measureElement: (el: HTMLElement) => el.getBoundingClientRect().height,
-  })
+  // ---- Rows on screen ---------------------------------------------------
 
   // Restore the saved scroll offset once the list is populated after
   // back-navigation; the container can still be growing (clamping an early
@@ -1271,43 +1307,26 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     requestAnimationFrame(apply)
   }, [listItems.length, querySearchParam])
 
-  // The next page is asked for a few rows before the end, and the rows on
-  // screen that still lack a size get their card fetched — both from what the
-  // virtualizer is actually painting, so a fast scroll costs what it shows.
-  // Feed entries and list rows when a managed format's page last arrived, and how
+  // Whether the end of the list is on screen, as the table last measured it.
+  // A ref, so a page that has just arrived is counted before the next is asked
+  // for; the tick re-runs the paging below when the end comes into view.
+  const endVisibleRef = useRef(false)
+  const [endVisibleTick, setEndVisibleTick] = useState(0)
+  const reportEndVisible = useCallback((visible: boolean) => {
+    endVisibleRef.current = visible
+    if (visible) setEndVisibleTick((tick) => tick + 1)
+  }, [])
+
+  // The next page is asked for while the end of the list is on screen. Feed
+  // entries and list rows when a managed format's page last arrived, and how
   // many pages in a row added no row (see MANAGED_EMPTY_PAGES_LIMIT).
   const managedFeedPages = useRef({ format: '', feed: 0, rows: 0, empty: 0 })
-  const virtualItems = rowVirtualizer.getVirtualItems()
-  const lastVisibleIndex = virtualItems[virtualItems.length - 1]?.index ?? -1
-  const visibleFeedRepos = useMemo(
-    () =>
-      virtualItems
-        .map((v) => listItems[v.index])
-        .filter(
-          (item): item is HubListItem =>
-            !!item?.fromHuggingFace &&
-            // A managed row needs no file sizes: its card asks the engines.
-            !item.model.is_managed &&
-            modelDownloadSizeText(item.model) === undefined
-        )
-        .map((item) => item.model.model_name)
-        .join('\n'),
-    // The virtual window is a new array every render; its contents are what
-    // matter, and `lastVisibleIndex` moves whenever they do.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [lastVisibleIndex, listItems]
-  )
   useEffect(() => {
     if (listItems.length === 0) return
     if (filters.uncensored) {
-      if (lastVisibleIndex >= listItems.length - FEED_PREFETCH_ROWS) {
+      if (endVisibleRef.current) {
         uncensoredFeed.loadMore()
         abliteratedFeed.loadMore()
-      }
-      if (visibleFeedRepos) {
-        const repos = visibleFeedRepos.split('\n')
-        uncensoredFeed.ensureDetails(repos)
-        abliteratedFeed.ensureDetails(repos)
       }
       return
     }
@@ -1327,37 +1346,110 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
       }
     }
     if (
-      lastVisibleIndex >= listItems.length - FEED_PREFETCH_ROWS &&
+      endVisibleRef.current &&
       !(managedFormat && managedFeedPages.current.empty >= MANAGED_EMPTY_PAGES_LIMIT)
     ) {
       feed.loadMore()
     }
-    if (visibleFeedRepos) feed.ensureDetails(visibleFeedRepos.split('\n'))
   }, [
     isSearchMode,
     managedFormat,
     managedSelected?.id,
     filters.uncensored,
     listItems.length,
-    lastVisibleIndex,
-    visibleFeedRepos,
+    endVisibleTick,
     feed,
     uncensoredFeed,
     abliteratedFeed,
   ])
 
-  // A selected feed row needs its card whether or not it is still on screen:
-  // the detail panel's download options come from it.
+  // The rows on screen, as the table reports them: the Hugging Face rows among
+  // them that still lack a size get their card fetched, a couple at a time, so
+  // a fast scroll costs what it shows.
+  const [visibleRows, setVisibleRows] = useState('')
+  const reportVisibleRows = useCallback(
+    (modelIds: string[]) => setVisibleRows(modelIds.join('\n')),
+    []
+  )
+  const visibleFeedRepos = useMemo(() => {
+    if (!visibleRows) return ''
+    const byName = new Map(
+      listItems.map((item) => [item.model.model_name, item])
+    )
+    return visibleRows
+      .split('\n')
+      .filter((id) => {
+        const item = byName.get(id)
+        return (
+          !!item?.fromHuggingFace &&
+          // A managed row needs no file sizes: its card asks the engines.
+          !item.model.is_managed &&
+          modelDownloadSizeText(item.model) === undefined
+        )
+      })
+      .join('\n')
+  }, [visibleRows, listItems])
   useEffect(() => {
-    const model = selectedItem?.model
-    if (!model || !('fromHuggingFace' in selectedItem)) return
-    if (!selectedItem.fromHuggingFace) return
+    if (!visibleFeedRepos) return
+    const repos = visibleFeedRepos.split('\n')
+    if (filters.uncensored) {
+      uncensoredFeed.ensureDetails(repos)
+      abliteratedFeed.ensureDetails(repos)
+      return
+    }
+    if (isSearchMode) return
+    feed.ensureDetails(repos)
+  }, [
+    visibleFeedRepos,
+    filters.uncensored,
+    isSearchMode,
+    feed,
+    uncensoredFeed,
+    abliteratedFeed,
+  ])
+
+  // An open feed row needs its card whether or not it is still on screen: its
+  // download options come from it.
+  useEffect(() => {
+    if (!selectedItem?.fromHuggingFace) return
+    const model = selectedItem.model
     if (model.is_managed) return
     if (modelDownloadSizeText(model) !== undefined) return
     feed.ensureDetails([model.model_name])
   }, [selectedItem, feed])
 
-  const isEmpty = listItems.length === 0
+  // Hearts and the engine narrow what the list found; an open row stays on
+  // screen even when they would hide it (a link can open any model), first.
+  const onlyLiked = useModelLikes((state) => state.onlyLiked)
+  const liked = useModelLikes((state) => state.liked)
+  const hubEngines = useHubEngines(availableFormats)
+  const availableEngineIds = useMemo(
+    () => new Set(hubEngines.map((engine) => engine.id)),
+    [hubEngines]
+  )
+  // The installed list holds every format: each of its rows reads as its own.
+  const tableFormat = showOnlyDownloaded ? undefined : filters.formats[0]
+  const tableItems = useMemo(() => {
+    let rows = listItems
+    if (onlyLiked) {
+      rows = rows.filter((item) => liked.includes(item.model.model_name))
+    }
+    const engine = filters.engine
+    if (engine) {
+      rows = rows.filter((item) =>
+        modelEngineIds(item.model, tableFormat).includes(engine)
+      )
+    }
+    if (
+      selectedItem &&
+      !rows.some((item) => item.model.model_name === selectedItem.model.model_name)
+    ) {
+      rows = [{ ...selectedItem, section: undefined }, ...rows]
+    }
+    return rows
+  }, [listItems, onlyLiked, liked, filters.engine, tableFormat, selectedItem])
+
+  const isEmpty = tableItems.length === 0
   const uncensoredLoading =
     filters.uncensored &&
     (uncensoredFeed.loading || abliteratedFeed.loading)
@@ -1366,7 +1458,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     !isSearchMode &&
     (managedCurated.loading || feed.loading)
   const showSkeleton =
-    isEmpty &&
+    listItems.length === 0 &&
     (prismFormat
       ? prismFamilies.loading
       : foundryFormat
@@ -1377,29 +1469,14 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
         managedLoading)
 
   return (
-    <div className="grid h-svh w-full grid-cols-[minmax(320px,420px)_1fr] grid-rows-[auto_minmax(0,1fr)]">
-      <HeaderPage>
-        <div
-          className={cn(
-            'relative z-20 flex h-10 w-full items-center gap-2 py-3 pr-3',
-            !IS_MACOS && !IS_WINDOWS && 'pr-30'
-          )}
-          {...(IS_WINDOWS || IS_MACOS
-            ? { 'data-tauri-drag-region': true }
-            : {})}
-        >
-          <HubSearchInput
-            value={searchValue}
-            onChange={handleSearchChange}
-            placeholder={t('hub:searchPlaceholder')}
-            busy={isSearching || hfSearching}
-          />
-        </div>
-      </HeaderPage>
-
-      <div className="col-start-1 row-start-2 flex min-h-0 min-w-0 flex-col border-r border-border">
-        <div className="flex flex-col gap-2 border-b border-border p-3">
-          {categoryTabs}
+    <div className="grid h-svh w-full min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)]">
+      <HubSearchToolbar
+        modelType={categoryTabs}
+        value={searchValue}
+        onChange={handleSearchChange}
+        placeholder={t('hub:searchPlaceholder')}
+        busy={isSearching || hfSearching}
+        controls={
           <HubFilters
             state={filters}
             onChange={updateFilters}
@@ -1414,8 +1491,10 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
               }
             }}
           />
-        </div>
+        }
+      />
 
+      <div className="col-start-1 row-start-2 flex min-h-0 min-w-0 flex-col">
         <div ref={listScrollRef} className="min-h-0 flex-1 overflow-y-auto p-2">
           {foundryFormat && !showOnlyDownloaded && foundryLocal.catalogUnavailable && (
             <p className="px-2 pb-2 text-xs text-muted-foreground" role="status">
@@ -1448,48 +1527,16 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
               }
             />
           ) : (
-            <div
-              style={{
-                height: `${rowVirtualizer.getTotalSize()}px`,
-                width: '100%',
-                position: 'relative',
-              }}
-            >
-              {rowVirtualizer.getVirtualItems().map((virtualItem) => {
-                const item = listItems[virtualItem.index]
-                return (
-                  <div
-                    key={virtualItem.key}
-                    data-index={virtualItem.index}
-                    ref={rowVirtualizer.measureElement}
-                    style={{
-                      position: 'absolute',
-                      top: 0,
-                      left: 0,
-                      width: '100%',
-                      transform: `translateY(${virtualItem.start}px)`,
-                      paddingBottom: 4,
-                    }}
-                  >
-                    {item.sectionLabel && (
-                      <h2 className="px-2 pb-2 pt-4 text-base font-semibold text-foreground">
-                        {item.sectionLabel}
-                      </h2>
-                    )}
-                    <ModelListRow
-                      model={item.model}
-                      managedFormat={
-                        managedSelected ? (managedSelected.id as ModelFormat) : undefined
-                      }
-                      pick={item.pick}
-                      fromHuggingFace={item.fromHuggingFace}
-                      selected={item.model.model_name === selectedRepo}
-                      onSelect={() => selectModel(item.model.model_name)}
-                    />
-                  </div>
-                )
-              })}
-            </div>
+            <LocalModelTable
+              items={tableItems}
+              selected={selectedRepo}
+              onSelect={selectModel}
+              budgetBytes={budgetBytes}
+              format={tableFormat}
+              availableEngines={availableEngineIds}
+              onVisibleRowsChange={reportVisibleRows}
+              onEndVisibleChange={reportEndVisible}
+            />
           )}
           {!isSearchMode && !isEmpty && feed.loading && (
             <p
@@ -1515,14 +1562,6 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
             </p>
           )}
         </div>
-      </div>
-
-      <div className="col-start-2 row-span-2 row-start-1 min-h-0 min-w-0 overflow-y-auto">
-        <ModelDetailPanel
-          model={selectedItem?.model ?? null}
-          pick={selectedItem?.pick}
-          managedFormat={managedSelected ? (managedSelected.id as ModelFormat) : undefined}
-        />
       </div>
     </div>
   )

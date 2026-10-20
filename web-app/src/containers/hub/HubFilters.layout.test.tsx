@@ -1,125 +1,137 @@
-import { render, screen } from '@testing-library/react'
-import type { ReactElement } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import {
-  DEFAULT_HUB_FILTERS,
-  type HubFilterState,
-  type HubSortKey,
-} from '@/lib/hub-filters'
-import type { ModelFormat } from '@/lib/model-card'
+import { DEFAULT_HUB_FILTERS } from '@/lib/hub-filters'
 import {
   DEFAULT_FONT_SIZE,
-  expectFits,
   expectNoHorizontalOverflow,
+  expectSameHeight,
+  expectVerticallyCentered,
   setFontSize,
   settle,
   withTranslations,
   XL_FONT_SIZE,
 } from '@/test/layout'
+import { useModelProvider } from '@/hooks/useModelProvider'
 import { HubFilters } from './HubFilters'
 
 vi.mock('@/hooks/useHardware', () => ({
   useHardware: (selector: (state: unknown) => unknown) =>
     selector({ hardwareData: { total_memory: 32 * 1024, gpus: [] } }),
 }))
-// The TensorRT-LLM provider is shown: the format menu offers it next to GGUF.
+// Every managed engine is shown: the longest menu the Filters can hold.
 vi.mock('@/hooks/useManagedHubState', () => {
-  const hub = { visible: true, state: 'ready', blockers: [], descriptorId: null }
+  const hub = {
+    visible: true,
+    state: 'ready',
+    blockers: [],
+    descriptorId: null,
+  }
   return {
     useManagedHubStates: () => [
       { engine: { id: 'vllm', label: 'vLLM', i18n: 'vllm' }, hub },
       { engine: { id: 'sglang', label: 'SGLang', i18n: 'sglang' }, hub },
-      { engine: { id: 'tensorrt-llm', label: 'TensorRT-LLM', i18n: 'tensorrt' }, hub },
+      {
+        engine: { id: 'tensorrt-llm', label: 'TensorRT-LLM', i18n: 'tensorrt' },
+        hub,
+      },
     ],
   }
 })
-// PrismML is shown too: its label is wider than GGUF's, narrower than TensorRT-LLM's.
-vi.mock('@/hooks/useModelSetup', () => ({ usePrismHubVisible: () => true }))
-
-/**
- * The Hub's left column at its narrowest: `minmax(320px, 420px)` less the
- * filter block's `p-3` on both sides.
- */
-const COLUMN_WIDTH = 320 - 2 * 12
-
-function inColumn(state: HubFilterState, width = COLUMN_WIDTH) {
-  return withTranslations(
-    <div data-testid="column" style={{ width }}>
-      <HubFilters state={state} onChange={() => {}} />
-    </div>
-  )
-}
-
-function renderInColumn() {
-  render(inColumn({ ...DEFAULT_HUB_FILTERS, formats: ['tensorrt-llm'] }))
-}
-
-const FORMATS: ModelFormat[] = ['gguf', 'vllm', 'sglang', 'atomic-prism', 'tensorrt-llm']
-const SORTS: HubSortKey[] = ['recommended', 'downloads', 'last-modified']
-/** The column at its widest, `420px` less `p-3` on both sides. */
-const WIDE_COLUMN_WIDTH = 420 - 2 * 12
-
-/** Where Uncensored and the format trigger sit, for one filter state. */
-async function measureRow(
-  rerender: (ui: ReactElement) => void,
-  state: HubFilterState,
-  width: number
-) {
-  rerender(inColumn(state, width))
-  await settle()
-  const { left, top, width: w } = screen
-    .getByRole('checkbox', { name: /uncensored/i })
-    .getBoundingClientRect()
-  return {
-    uncensored: { left, top, width: w },
-    formatTop: screen.getByRole('button', { name: 'Formats' }).getBoundingClientRect()
-      .top,
-  }
-}
 
 describe('HubFilters layout', () => {
+  beforeEach(() => {
+    useModelProvider.setState({
+      providers: [
+        'llamacpp-upstream',
+        'llamacpp',
+        'atomic-prism',
+        'foundry-local',
+      ].map((provider) => ({ provider, models: [], settings: [] }) as never),
+    })
+  })
+  afterEach(() => {
+    setFontSize(DEFAULT_FONT_SIZE)
+  })
+
   for (const [label, size] of [
     ['Medium', DEFAULT_FONT_SIZE],
     ['Extra Large', XL_FONT_SIZE],
   ] as const) {
-    it(`keeps Uncensored inside the column with TensorRT-LLM selected (${label})`, async () => {
+    it(`keeps Filters with its count and Sort on one line of equal controls (${label})`, async () => {
       setFontSize(size)
-      renderInColumn()
+      render(
+        withTranslations(
+          <div
+            className="app-shell"
+            style={{ height: 'auto', paddingTop: 0, overflow: 'visible' }}
+          >
+            <div data-testid="row" style={{ width: 'max-content' }}>
+              <HubFilters
+                state={{ ...DEFAULT_HUB_FILTERS, uncensored: true }}
+                onChange={() => {}}
+                showOnlyDownloaded
+              />
+            </div>
+          </div>
+        )
+      )
       await settle()
 
-      const column = screen.getByTestId('column')
-      expectFits(screen.getByRole('checkbox', { name: /uncensored/i }), column)
-      expectNoHorizontalOverflow(column)
-    })
-  }
-
-  // Uncensored sits on the triggers' line, pinned to its end: picking a format
-  // or a sort moves it neither between lines nor along the line.
-  for (const [width, label, size] of [
-    [COLUMN_WIDTH, 'Medium', DEFAULT_FONT_SIZE],
-    [WIDE_COLUMN_WIDTH, 'Medium', DEFAULT_FONT_SIZE],
-    [COLUMN_WIDTH, 'Extra Large', XL_FONT_SIZE],
-  ] as const) {
-    it(`pins Uncensored to the first line whichever format or sort is picked (${width}px, ${label})`, async () => {
-      setFontSize(size)
-      const { rerender } = render(inColumn(DEFAULT_HUB_FILTERS, width))
-      const first = await measureRow(rerender, DEFAULT_HUB_FILTERS, width)
-
-      for (const format of FORMATS) {
-        for (const sort of SORTS) {
-          const row = await measureRow(
-            rerender,
-            { ...DEFAULT_HUB_FILTERS, formats: [format], sort },
-            width
-          )
-          expect(row.uncensored, `${format} / ${sort}`).toEqual(first.uncensored)
-          expect(row.uncensored.top, `${format} / ${sort}`).toBe(row.formatTop)
-          const column = screen.getByTestId('column')
-          expectFits(screen.getByRole('checkbox', { name: /uncensored/i }), column)
-          expectNoHorizontalOverflow(column)
-        }
+      const filters = screen.getByRole('button', { name: 'Filter models' })
+      const sort = screen.getByRole('button', { name: 'Sort by' })
+      expect(filters).toHaveTextContent('3')
+      for (const button of [filters, sort]) {
+        // 36px tall: the label and the count did not wrap.
+        expect(button.getBoundingClientRect().height).toBeCloseTo(36, 0)
       }
+      expectVerticallyCentered(within(filters).getByText('3'), filters)
+      expect(filters.getBoundingClientRect().top).toBeCloseTo(
+        sort.getBoundingClientRect().top,
+        0
+      )
+    })
+
+    it(`holds every engine and format name in the Filters menu without a sideways scrollbar (${label})`, async () => {
+      setFontSize(size)
+      const user = userEvent.setup()
+      render(
+        withTranslations(
+          <HubFilters
+            state={{ ...DEFAULT_HUB_FILTERS, formats: ['tensorrt-llm'] }}
+            onChange={() => {}}
+          />
+        )
+      )
+      await user.click(screen.getByRole('button', { name: 'Filter models' }))
+      const menu = await screen.findByRole('menu')
+      await settle()
+
+      // Every name keeps to the menu's width; the menu scrolls down, never
+      // sideways.
+      expectNoHorizontalOverflow(menu)
+      // No option wraps: the longest is as tall as GGUF's.
+      expectSameHeight(
+        [
+          'GGUF',
+          'llama.cpp turboquant',
+          'PrismML llama.cpp',
+          'TensorRT-LLM',
+          'Foundry Local',
+        ].flatMap((name) =>
+          within(menu).getAllByRole('menuitemradio', { name })
+        )
+      )
+      expectSameHeight(
+        ['Liked models', 'Only show models that fit'].map((name) =>
+          within(menu).getByRole('menuitemcheckbox', { name })
+        )
+      )
+      // A menu taller than the window scrolls inside itself.
+      expect(menu.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+        window.innerHeight
+      )
     })
   }
 })

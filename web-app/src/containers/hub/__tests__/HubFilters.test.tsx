@@ -31,17 +31,40 @@ const tensorrt = vi.hoisted(() => ({ visible: false }))
 const vllm = vi.hoisted(() => ({ visible: false }))
 const sglang = vi.hoisted(() => ({ visible: false }))
 vi.mock('@/hooks/useManagedHubState', () => {
-  const hub = (visible: boolean) => ({ visible, state: 'unknown', blockers: [], descriptorId: null })
+  const hub = (visible: boolean) => ({
+    visible,
+    state: 'unknown',
+    blockers: [],
+    descriptorId: null,
+  })
   return {
     useManagedHubStates: () => [
-      { engine: { id: 'vllm', label: 'vLLM', i18n: 'vllm' }, hub: hub(vllm.visible) },
-      { engine: { id: 'sglang', label: 'SGLang', i18n: 'sglang' }, hub: hub(sglang.visible) },
-      { engine: { id: 'tensorrt-llm', label: 'TensorRT-LLM', i18n: 'tensorrt' }, hub: hub(tensorrt.visible) },
+      {
+        engine: { id: 'vllm', label: 'vLLM', i18n: 'vllm' },
+        hub: hub(vllm.visible),
+      },
+      {
+        engine: { id: 'sglang', label: 'SGLang', i18n: 'sglang' },
+        hub: hub(sglang.visible),
+      },
+      {
+        engine: { id: 'tensorrt-llm', label: 'TensorRT-LLM', i18n: 'tensorrt' },
+        hub: hub(tensorrt.visible),
+      },
     ],
   }
 })
 
 import { HubFilters } from '../HubFilters'
+import { useModelLikes } from '@/hooks/useModelLikes'
+import { useModelProvider } from '@/hooks/useModelProvider'
+
+const withProviders = (...ids: string[]) =>
+  useModelProvider.setState({
+    providers: ids.map(
+      (provider) => ({ provider, models: [], settings: [] }) as never
+    ),
+  })
 
 /**
  * `HubFilters` is controlled, so a click only changes what the user sees once
@@ -73,10 +96,30 @@ const renderFilters = (
   return { onChange }
 }
 
-const openSortMenu = async (user: ReturnType<typeof userEvent.setup>) => {
+type User = ReturnType<typeof userEvent.setup>
+
+const openFilters = async (user: User) => {
+  await user.click(screen.getByRole('button', { name: 'hub:filters.label' }))
+  return screen.findByRole('menu')
+}
+
+const openSortMenu = async (user: User) => {
   await user.click(screen.getByRole('button', { name: /hub:sortBy/ }))
   return screen.findByRole('menu')
 }
+
+/** The radio group of the open menu that holds `item`. */
+const groupWith = (menu: HTMLElement, item: string) =>
+  within(menu)
+    .getAllByRole('group')
+    .find((group) =>
+      within(group).queryByRole('menuitemradio', { name: item })
+    )!
+
+const radios = (group: HTMLElement) =>
+  within(group)
+    .getAllByRole('menuitemradio')
+    .map((radio) => radio.textContent)
 
 describe('HubFilters', () => {
   beforeEach(() => {
@@ -89,11 +132,25 @@ describe('HubFilters', () => {
     tensorrt.visible = false
     vllm.visible = false
     sglang.visible = false
+    withProviders('llamacpp-upstream')
+    useModelLikes.setState({ liked: [], onlyLiked: false })
   })
 
-  it('offers no format choice where only GGUF exists (no MLX, no TensorRT-LLM provider)', () => {
+  it('offers neither a format nor an engine where only GGUF on llama.cpp exists', async () => {
+    // IS_MACOS is false in the vitest define block: no MLX.
+    const user = userEvent.setup()
     renderFilters()
-    expect(screen.queryByRole('button', { name: 'hub:formats' })).not.toBeInTheDocument()
+
+    const menu = await openFilters(user)
+    expect(
+      within(menu).queryByText('hub:filters.format')
+    ).not.toBeInTheDocument()
+    expect(
+      within(menu).queryByText('hub:filters.engine')
+    ).not.toBeInTheDocument()
+    expect(
+      within(menu).getByRole('menuitemcheckbox', { name: 'hub:uncensored' })
+    ).toBeInTheDocument()
   })
 
   it('offers TensorRT-LLM next to GGUF where its provider is shown, and switches to it', async () => {
@@ -101,117 +158,159 @@ describe('HubFilters', () => {
     const user = userEvent.setup()
     const { onChange } = renderFilters()
 
-    await user.click(screen.getByRole('button', { name: 'hub:formats' }))
-    const menu = await screen.findByRole('menu')
-    expect(within(menu).getByRole('menuitemradio', { name: 'GGUF' })).toBeInTheDocument()
-    await user.click(within(menu).getByRole('menuitemradio', { name: 'TensorRT-LLM' }))
+    const menu = await openFilters(user)
+    const formats = groupWith(menu, 'GGUF')
+    expect(radios(formats)).toEqual(['GGUF', 'TensorRT-LLM'])
+    await user.click(
+      within(formats).getByRole('menuitemradio', { name: 'TensorRT-LLM' })
+    )
 
     expect(onChange).toHaveBeenLastCalledWith(
-      expect.objectContaining({ formats: ['tensorrt-llm'] })
+      expect.objectContaining({ formats: ['tensorrt-llm'], engine: undefined })
     )
-    expect(screen.getByRole('button', { name: 'hub:formats' })).toHaveTextContent('TensorRT-LLM')
+    expect(
+      within(groupWith(menu, 'GGUF')).getByRole('menuitemradio', {
+        name: 'TensorRT-LLM',
+      })
+    ).toBeChecked()
   })
 
-  it('offers vLLM before TensorRT-LLM when both providers are shown (spec vllm-desktop)', async () => {
-    tensorrt.visible = true
-    vllm.visible = true
-    const user = userEvent.setup()
-    const { onChange } = renderFilters()
-
-    await user.click(screen.getByRole('button', { name: 'hub:formats' }))
-    const menu = await screen.findByRole('menu')
-    expect(within(menu).getAllByRole('menuitemradio').map((item) => item.textContent)).toEqual([
-      'GGUF',
-      'vLLM',
-      'TensorRT-LLM',
-    ])
-    await user.click(within(menu).getByRole('menuitemradio', { name: 'vLLM' }))
-    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ formats: ['vllm'] }))
-  })
-
-  it('offers vLLM, SGLang, TensorRT-LLM in that order when all three are shown (spec sglang-desktop "Порядок трёх движков")', async () => {
+  it('keeps vLLM, SGLang and TensorRT-LLM as formats of their own, in that order (spec sglang-desktop "Порядок трёх движков")', async () => {
     tensorrt.visible = true
     vllm.visible = true
     sglang.visible = true
+    withProviders('llamacpp-upstream', 'foundry-local')
     const user = userEvent.setup()
     const { onChange } = renderFilters()
 
-    await user.click(screen.getByRole('button', { name: 'hub:formats' }))
-    const menu = await screen.findByRole('menu')
-    expect(within(menu).getAllByRole('menuitemradio').map((item) => item.textContent)).toEqual([
+    const menu = await openFilters(user)
+    expect(radios(groupWith(menu, 'GGUF'))).toEqual([
       'GGUF',
       'vLLM',
       'SGLang',
       'TensorRT-LLM',
+      'Foundry Local',
     ])
-    await user.click(within(menu).getByRole('menuitemradio', { name: 'SGLang' }))
-    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ formats: ['sglang'] }))
-  })
-
-  it('shows the current sort and switches on selection', async () => {
-    const user = userEvent.setup()
-    const { onChange } = renderFilters()
-
-    const trigger = screen.getByRole('button', { name: /hub:sortBy/ })
-    expect(trigger).toHaveTextContent('hub:sortRecommended')
-
-    await openSortMenu(user)
-    await user.click(screen.getByRole('menuitem', { name: 'hub:sortDownloads' }))
-
-    expect(
-      screen.getByRole('button', { name: /hub:sortBy/ })
-    ).toHaveTextContent('hub:sortDownloads')
-    expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({ sort: 'downloads' })
+    await user.click(
+      within(groupWith(menu, 'GGUF')).getByRole('menuitemradio', {
+        name: 'SGLang',
+      })
+    )
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ formats: ['sglang'] })
     )
   })
 
-  it('hides the Likes option when the data carries no likes', async () => {
+  it('names each engine this machine offers, TurboQuant only where its provider is installed', async () => {
+    vllm.visible = true
+    withProviders('llamacpp-upstream', 'llamacpp', 'atomic-prism')
     const user = userEvent.setup()
     renderFilters()
 
-    await openSortMenu(user)
-
-    expect(
-      screen.getByRole('menuitem', { name: 'hub:sortDownloads' })
-    ).toBeInTheDocument()
-    expect(
-      screen.queryByRole('menuitem', { name: 'hub:sortLikes' })
-    ).not.toBeInTheDocument()
+    const menu = await openFilters(user)
+    expect(radios(groupWith(menu, 'hub:filters.allEngines'))).toEqual([
+      'hub:filters.allEngines',
+      'llama.cpp',
+      'llama.cpp turboquant',
+      'PrismML llama.cpp',
+      'vLLM',
+    ])
   })
 
-  it('offers the Likes option once like counts exist', async () => {
+  it('narrows to an engine through its format, counts it, and drops it with a format pick', async () => {
+    withProviders('llamacpp-upstream', 'llamacpp', 'atomic-prism')
     const user = userEvent.setup()
-    renderFilters({}, { showLikesSort: true })
+    const { onChange } = renderFilters({ onlyFitting: false })
 
-    await openSortMenu(user)
-
+    let menu = await openFilters(user)
+    await user.click(
+      within(menu).getByRole('menuitemradio', { name: 'PrismML llama.cpp' })
+    )
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        engine: 'atomic-prism',
+        formats: ['atomic-prism'],
+      })
+    )
+    await user.keyboard('{Escape}')
     expect(
-      screen.getByRole('menuitem', { name: 'hub:sortLikes' })
-    ).toBeInTheDocument()
+      screen.getByRole('button', { name: 'hub:filters.label' })
+    ).toHaveTextContent('1')
+
+    menu = await openFilters(user)
+    await user.click(
+      within(groupWith(menu, 'GGUF')).getByRole('menuitemradio', {
+        name: 'GGUF',
+      })
+    )
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ engine: undefined, formats: ['gguf'] })
+    )
   })
 
-  it('carries the device filter inside the sort menu, on by default', async () => {
+  it('shows only liked models from the menu, kept for this launch', async () => {
     const user = userEvent.setup()
     renderFilters()
 
-    await openSortMenu(user)
+    const menu = await openFilters(user)
+    await user.click(
+      within(menu).getByRole('menuitemcheckbox', { name: 'hub:filters.liked' })
+    )
 
-    const item = screen.getByRole('menuitemcheckbox', {
-      name: 'hub:fitFilterLabel',
+    expect(useModelLikes.getState().onlyLiked).toBe(true)
+    // The menu stays open: the effect on the list is visible.
+    expect(
+      screen.getByRole('menuitemcheckbox', { name: 'hub:filters.liked' })
+    ).toBeChecked()
+    expect(localStorage.getItem('atomic-model-likes') ?? '').not.toContain(
+      'onlyLiked'
+    )
+  })
+
+  it('narrows to uncensored builds from the menu, off by default', async () => {
+    const user = userEvent.setup()
+    const { onChange } = renderFilters()
+
+    const menu = await openFilters(user)
+    const box = within(menu).getByRole('menuitemcheckbox', {
+      name: 'hub:uncensored',
     })
-    expect(item).toBeChecked()
+    expect(box).not.toBeChecked()
+    expect(box).toHaveAttribute('title', 'hub:uncensoredHint')
+
+    await user.click(box)
+
+    expect(
+      screen.getByRole('menuitemcheckbox', { name: 'hub:uncensored' })
+    ).toBeChecked()
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ uncensored: true })
+    )
+  })
+
+  it('carries the device filter, on by default and counted on the trigger', async () => {
+    const user = userEvent.setup()
+    renderFilters()
+
+    expect(
+      screen.getByRole('button', { name: 'hub:filters.label' })
+    ).toHaveTextContent('1')
+    const menu = await openFilters(user)
+    expect(
+      within(menu).getByRole('menuitemcheckbox', {
+        name: 'hub:fitFilterLabel',
+      })
+    ).toBeChecked()
   })
 
   it('turns the device filter off and keeps the menu open', async () => {
     const user = userEvent.setup()
     const { onChange } = renderFilters()
 
-    await openSortMenu(user)
-    const item = screen.getByRole('menuitemcheckbox', {
-      name: 'hub:fitFilterLabel',
-    })
-    await user.click(item)
+    await openFilters(user)
+    await user.click(
+      screen.getByRole('menuitemcheckbox', { name: 'hub:fitFilterLabel' })
+    )
 
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({ onlyFitting: false })
@@ -221,7 +320,7 @@ describe('HubFilters', () => {
     ).not.toBeChecked()
   })
 
-  it('carries the downloaded filter inside the sort menu', async () => {
+  it('carries the installed filter, which turns the device filter off', async () => {
     const user = userEvent.setup()
     const onShowOnlyDownloadedChange = vi.fn()
     const { onChange } = renderFilters(
@@ -229,7 +328,7 @@ describe('HubFilters', () => {
       { showOnlyDownloaded: false, onShowOnlyDownloadedChange }
     )
 
-    await openSortMenu(user)
+    await openFilters(user)
     const item = screen.getByRole('menuitemcheckbox', {
       name: 'hub:installedOnDevice',
     })
@@ -244,12 +343,9 @@ describe('HubFilters', () => {
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({ onlyFitting: false })
     )
-    expect(
-      screen.getByRole('menuitemcheckbox', { name: 'hub:fitFilterLabel' })
-    ).toBeInTheDocument()
   })
 
-  it('turns off the downloaded filter when device fit is selected', async () => {
+  it('turns off the installed filter when device fit is selected', async () => {
     const user = userEvent.setup()
     const onShowOnlyDownloadedChange = vi.fn()
     renderFilters(
@@ -257,7 +353,7 @@ describe('HubFilters', () => {
       { showOnlyDownloaded: true, onShowOnlyDownloadedChange }
     )
 
-    await openSortMenu(user)
+    await openFilters(user)
     const fitItem = screen.getByRole('menuitemcheckbox', {
       name: 'hub:fitFilterLabel',
     })
@@ -277,37 +373,95 @@ describe('HubFilters', () => {
     const user = userEvent.setup()
     renderFilters()
 
-    await openSortMenu(user)
+    expect(
+      screen.getByRole('button', { name: 'hub:filters.label' })
+    ).not.toHaveTextContent(/\d/)
+    await openFilters(user)
 
     expect(
       screen.queryByRole('menuitemcheckbox', { name: 'hub:fitFilterLabel' })
     ).not.toBeInTheDocument()
   })
 
-  it('omits the format picker where MLX cannot run', () => {
-    // IS_MACOS is false in the vitest define block, so GGUF is the only
-    // format and a picker would be a control that can never change anything.
-    renderFilters()
+  it('clears every filter at once, and only offers to when one is on', async () => {
+    const user = userEvent.setup()
+    const onShowOnlyDownloadedChange = vi.fn()
+    useModelLikes.setState({ onlyLiked: true })
+    const { onChange } = renderFilters(
+      { uncensored: true },
+      { showOnlyDownloaded: false, onShowOnlyDownloadedChange }
+    )
 
+    // Liked, Uncensored and the device fit.
     expect(
-      screen.queryByRole('button', { name: 'hub:formats' })
-    ).not.toBeInTheDocument()
+      screen.getByRole('button', { name: 'hub:filters.label' })
+    ).toHaveTextContent('3')
+    await openFilters(user)
+    await user.click(
+      screen.getByRole('menuitem', { name: 'hub:filters.clear' })
+    )
+
+    expect(useModelLikes.getState().onlyLiked).toBe(false)
+    // Installed was off: nothing to turn off there.
+    expect(onShowOnlyDownloadedChange).not.toHaveBeenCalled()
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        engine: undefined,
+        uncensored: false,
+        onlyFitting: false,
+      })
+    )
+    await openFilters(user)
+    expect(
+      screen.getByRole('menuitem', { name: 'hub:filters.clear' })
+    ).toHaveAttribute('aria-disabled', 'true')
   })
 
-  it('narrows to uncensored builds from the bar itself, off by default', async () => {
+  it('names the current sort on its trigger and switches on selection', async () => {
     const user = userEvent.setup()
     const { onChange } = renderFilters()
 
-    const box = screen.getByRole('checkbox', { name: 'hub:uncensored' })
-    expect(box).not.toBeChecked()
+    const trigger = screen.getByRole('button', { name: /hub:sortBy/ })
+    expect(trigger).toHaveTextContent('hub:sort')
+    expect(trigger).toHaveAttribute('title', 'hub:sortRecommended')
 
-    await user.click(box)
+    const menu = await openSortMenu(user)
+    expect(within(menu).getByText('hub:sortModels')).toBeInTheDocument()
+    await user.click(
+      within(menu).getByRole('menuitemradio', { name: 'hub:sortDownloads' })
+    )
+
+    expect(screen.getByRole('button', { name: /hub:sortBy/ })).toHaveAttribute(
+      'title',
+      'hub:sortDownloads'
+    )
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ sort: 'downloads' })
+    )
+  })
+
+  it('hides the Likes sort when the data carries no likes', async () => {
+    const user = userEvent.setup()
+    renderFilters()
+
+    const menu = await openSortMenu(user)
 
     expect(
-      screen.getByRole('checkbox', { name: 'hub:uncensored' })
-    ).toBeChecked()
-    expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({ uncensored: true })
-    )
+      within(menu).getByRole('menuitemradio', { name: 'hub:sortDownloads' })
+    ).toBeInTheDocument()
+    expect(
+      within(menu).queryByRole('menuitemradio', { name: 'hub:sortLikes' })
+    ).not.toBeInTheDocument()
+  })
+
+  it('offers the Likes sort once like counts exist', async () => {
+    const user = userEvent.setup()
+    renderFilters({}, { showLikesSort: true })
+
+    const menu = await openSortMenu(user)
+
+    expect(
+      within(menu).getByRole('menuitemradio', { name: 'hub:sortLikes' })
+    ).toBeInTheDocument()
   })
 })
