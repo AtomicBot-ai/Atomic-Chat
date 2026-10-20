@@ -70,6 +70,32 @@ describe('useGeneralSetting — persisted state migration', () => {
     expect(state.disableReasoning).toBe(false)
     expect(
       JSON.parse(localStorage.getItem(localStorageKey.settingGeneral)!)
-    ).toMatchObject({ version: 4 })
+    ).toMatchObject({ version: 5 })
+  })
+
+  it('drops a switched-off "Run commands" from a v4 install and keeps the rest', async () => {
+    // v4 → v5: the access menu lost its "Run commands" switch. An install
+    // that had it off would keep commands off with no way back, so the key
+    // goes and chat offers them again (each run still asks per the mode).
+    persisted(
+      {
+        chatExecEnabled: false,
+        agentModeEnabled: true,
+        reasoningBudget: 'low',
+      },
+      4
+    )
+
+    await useGeneralSetting.persist.rehydrate()
+
+    const state = useGeneralSetting.getState()
+    expect('chatExecEnabled' in state).toBe(false)
+    expect(state.agentModeEnabled).toBe(true)
+    expect(state.reasoningBudget).toBe('low')
+    const saved = JSON.parse(
+      localStorage.getItem(localStorageKey.settingGeneral)!
+    )
+    expect(saved).toMatchObject({ version: 5 })
+    expect('chatExecEnabled' in saved.state).toBe(false)
   })
 })

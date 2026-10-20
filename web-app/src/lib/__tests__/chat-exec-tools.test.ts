@@ -1,6 +1,5 @@
 import type { UIMessage } from '@ai-sdk/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useChatExecStatus } from '@/hooks/useChatExecStatus'
 import {
   chatExecOutputsForModel,
@@ -186,11 +185,10 @@ describe('chatExecTools in a secure environment project', () => {
 describe('isChatExecOffered', () => {
   beforeEach(() => {
     platformFeatures.chatExec = true
-    useGeneralSetting.setState({ chatExecEnabled: true })
     useChatExecStatus.setState({ status: macStatus })
   })
 
-  it('offers the tools when the platform, the toggle and the machine allow it', () => {
+  it('offers the tools when the platform and the machine allow it', () => {
     expect(isChatExecOffered()).toBe(true)
     expect([...offeredChatExecToolNames()]).toEqual([
       'run_command',
@@ -198,8 +196,8 @@ describe('isChatExecOffered', () => {
     ])
   })
 
-  it('offers nothing with the composer toggle off', () => {
-    useGeneralSetting.setState({ chatExecEnabled: false })
+  it('offers nothing on a machine that cannot run commands', () => {
+    useChatExecStatus.setState({ status: { ...macStatus, supported: false } })
     expect(isChatExecOffered()).toBe(false)
     expect(offeredChatExecToolNames().size).toBe(0)
   })

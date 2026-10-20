@@ -331,8 +331,8 @@
       "generate": "Generate",
       "generated": "New API key created. Copy it into the apps that connect.",
       "copy": "Copy API key",
-      "restartToApply": "Apply and restart the server to use the updated key.",
-      "restartServer": "Restart server"
+      "restartToApply": "Apply the new key to start using it. Connected apps need it too.",
+      "restartServer": "Apply key"
     },
     "noKeyDialog": {
       "title": "Start without an API key?",
@@ -341,8 +341,7 @@
       "startWithoutKey": "Start without key",
       "cancel": "Cancel"
     },
-    "pageTitle": "Choose who can connect",
-    "pageDescription": "Connect from another device, on your network or over the internet."
+    "pageTitle": "Remote access"
   },
   "privacy": {
     "analytics": "Analytics",
@@ -795,9 +794,7 @@
     }
   },
   "serverConfig": {
-    "title": "Your server, your settings",
-    "description": "The essentials first. Advanced options are here when you need them.",
-    "panelTitle": "Server configuration",
+    "title": "Server configuration",
     "host": "Server host",
     "hostLocal": "127.0.0.1 · This device only",
     "hostNetwork": "0.0.0.0 · Local network",
@@ -811,14 +808,11 @@
     "trustedHosts": "Trusted hosts",
     "trustedHostsHint": "Addresses this server is reached at, comma-separated.",
     "invalid": "Use a port from 1 to 65535, a prefix beginning with /, and a timeout from 0 to 86400 seconds.",
-    "saved": "Changes saved.",
     "unsaved": "You have unsaved changes.",
-    "allSaved": "All changes saved.",
-    "restarting": "Restarting the server…",
+    "restarting": "Applying changes…",
     "restartFailed": "Changes saved, but the server did not come back. Start it from the sidebar.",
     "discard": "Discard",
-    "save": "Save changes",
-    "applyRestart": "Apply & restart"
+    "save": "Save changes"
   },
   "serverKey": {
     "label": "API key",

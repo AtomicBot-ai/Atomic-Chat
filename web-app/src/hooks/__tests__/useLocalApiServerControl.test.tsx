@@ -18,6 +18,8 @@ const {
   setRunning,
   ensureModel,
   findProvider,
+  turnOff,
+  resume,
 } = vi.hoisted(() => ({
   toastInfo: vi.fn(),
   toastWarning: vi.fn(),
@@ -26,10 +28,17 @@ const {
   setRunning: vi.fn(),
   ensureModel: vi.fn(),
   findProvider: vi.fn(),
+  turnOff: vi.fn(),
+  resume: vi.fn(),
 }))
 
 vi.mock('sonner', () => ({
-  toast: { info: toastInfo, warning: toastWarning, error: toastError, dismiss: toastDismiss },
+  toast: {
+    info: toastInfo,
+    warning: toastWarning,
+    error: toastError,
+    dismiss: toastDismiss,
+  },
 }))
 vi.mock('@/utils/localApiServerControl', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/utils/localApiServerControl')>()),
@@ -39,6 +48,10 @@ vi.mock('@/utils/localApiServerControl', async (importOriginal) => ({
 vi.mock('@/utils/ensureModelForServer', () => ({
   ensureModelForServer: ensureModel,
   findProviderForModel: findProvider,
+}))
+vi.mock('@/utils/turnOffLocalApiServer', () => ({
+  turnOffLocalApiServer: turnOff,
+  resumeServedHelperModels: resume,
 }))
 vi.mock('@/utils/activeModelsSync', () => ({
   hydrateActiveModelsForRunningServer: vi.fn(),
@@ -79,7 +92,10 @@ describe('starting the local API server', () => {
     })
 
     await waitFor(() => expect(toastWarning).toHaveBeenCalledTimes(1))
-    const [title, options] = toastWarning.mock.calls[0] as [string, { description: string }]
+    const [title, options] = toastWarning.mock.calls[0] as [
+      string,
+      { description: string },
+    ]
     expect(title).toBe('Server started on a different port')
     expect(options.description).toContain('1337')
     expect(options.description).toContain('1338')
@@ -184,5 +200,73 @@ describe('what Start loads before the server comes up', () => {
       { model: 'gemma', provider: 'llamacpp' },
     ])
     expect(setRunning).toHaveBeenCalledWith(true)
+  })
+})
+
+describe('stopping and starting the server with its models', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    useLocalApiServer.getState().setServerPort(1337)
+    bindsPort(1337)
+    ensureModel.mockResolvedValue({ status: 'already_loaded' })
+    initializeServiceHubStore(
+      createMockServiceHub({
+        app: { getServerStatus: vi.fn().mockResolvedValue(false) } as never,
+        models: { getActiveModels: vi.fn(async () => []) } as never,
+      })
+    )
+  })
+
+  async function mount() {
+    const { result } = renderHook(() => useLocalApiServerControl())
+    await act(async () => {})
+    return result
+  }
+
+  it('turns the server off together with the models it served', async () => {
+    const control = await mount()
+
+    await act(async () => {
+      await control.current.stop()
+    })
+
+    expect(turnOff).toHaveBeenCalledTimes(1)
+    expect(setRunning).not.toHaveBeenCalled()
+  })
+
+  it('keeps the models for a restart, which only brings the server back', async () => {
+    const control = await mount()
+
+    await act(async () => {
+      await control.current.stop({ keepModels: true })
+    })
+
+    expect(setRunning).toHaveBeenCalledWith(false)
+    expect(turnOff).not.toHaveBeenCalled()
+  })
+
+  it('switches back on what the last turn-off switched off, once the server is up', async () => {
+    const control = await mount()
+
+    await act(async () => {
+      await control.current.start()
+    })
+
+    expect(setRunning).toHaveBeenCalledWith(true)
+    expect(resume).toHaveBeenCalledTimes(1)
+    expect(setRunning.mock.invocationCallOrder[0]).toBeLessThan(
+      resume.mock.invocationCallOrder[0]
+    )
+  })
+
+  it('switches nothing back on when the server would not start', async () => {
+    setRunning.mockRejectedValue(new Error('Address already in use'))
+    const control = await mount()
+
+    await act(async () => {
+      await control.current.start()
+    })
+
+    expect(resume).not.toHaveBeenCalled()
   })
 })

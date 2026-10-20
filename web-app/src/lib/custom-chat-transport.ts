@@ -593,23 +593,22 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       ragFeatureAvailable = Boolean(useAttachments.getState().enabled)
     }
 
-    // Commands and scripts (`run_command` / `run_script`) when the composer's
-    // "Run commands" item is on and this machine can run them. The status is
-    // probed once per session; useTools starts that early.
+    // Commands and scripts (`run_command` / `run_script`) whenever this
+    // machine can run them. The status is probed once per session; useTools
+    // starts that early.
     // A secure environment project's chat: its commands reach only the
     // project's folders, and only inside MXC (the backend refuses anything
     // else, so without MXC they are not offered at all).
     await ensureSecureEnvironmentsLoaded()
     const secure = secureEnvironmentForThread(this.threadId)
-    const chatExecStatus =
-      modelSupportsTools && useGeneralSetting.getState().chatExecEnabled
-        ? await ensureChatExecStatus().then((status) =>
-            isChatExecOffered(status) &&
-            (!secure || status.sandbox.kind === 'mxc')
-              ? status
-              : null
-          )
-        : null
+    const chatExecStatus = modelSupportsTools
+      ? await ensureChatExecStatus().then((status) =>
+          isChatExecOffered(status) &&
+          (!secure || status.sandbox.kind === 'mxc')
+            ? status
+            : null
+        )
+      : null
 
     const cacheKey = this.buildToolsCacheKey(
       disabledToolKeys,

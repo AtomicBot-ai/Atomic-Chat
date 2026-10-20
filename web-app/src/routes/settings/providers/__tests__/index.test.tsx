@@ -1,8 +1,7 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { useAppState } from '@/hooks/useAppState'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import i18n from '@/i18n/setup'
 import { refreshAppManagedProviders } from '@/lib/provider-visibility'
@@ -15,8 +14,10 @@ import { withTranslations } from '@/test/layout'
 import { seedServiceHub } from '@/test/service-hub'
 import { Route as ProvidersRoute } from '../index'
 
+const navigate = vi.hoisted(() => vi.fn())
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (config: Record<string, unknown>) => config,
+  useNavigate: () => navigate,
   Link: ({
     children,
     to,
@@ -47,6 +48,36 @@ vi.mock('@/containers/images/MediaSettingsPanel', () => ({
 vi.mock('@/containers/VoiceSettingsPanel', () => ({
   VoiceSettingsPanel: () => <div data-testid="voice-settings-panel" />,
 }))
+// So is a language engine's: the engine's page renders it, settings only.
+vi.mock('@/containers/engines/EngineDetail', () => ({
+  EngineDetail: ({
+    providerName,
+    embedded,
+  }: {
+    providerName: string
+    embedded?: boolean
+  }) => (
+    <div
+      data-testid={`engine-detail-${providerName}`}
+      data-embedded={String(embedded)}
+    />
+  ),
+}))
+
+const { installEngineUpdate, updater, toast } = vi.hoisted(() => ({
+  installEngineUpdate: vi.fn(),
+  updater: {
+    recheckOptimalBackend: vi.fn(),
+    downloadRecommendedBackend: vi.fn(),
+    recommendationPhase: 'idle',
+  },
+  toast: { success: vi.fn(), info: vi.fn(), error: vi.fn() },
+}))
+vi.mock('@/hooks/useEngineUpdate', () => ({ installEngineUpdate }))
+vi.mock('@/hooks/useBackendUpdater', () => ({
+  useBackendUpdater: () => updater,
+}))
+vi.mock('sonner', () => ({ toast }))
 
 vi.mock('@/lib/provider-visibility', () => ({
   refreshAppManagedProviders: vi.fn().mockResolvedValue(false),
@@ -107,12 +138,6 @@ const versions = (
     },
   }) as unknown as EngineVersions
 
-let loaded: Record<string, string[]>
-const getActiveModels = vi.fn(async (provider?: string) =>
-  provider ? (loaded[provider] ?? []) : []
-)
-const stopAllModels = vi.fn().mockResolvedValue(undefined)
-
 const renderPage = () => {
   const Page = ProvidersRoute.component as React.ComponentType
   return render(withTranslations(<Page />))
@@ -121,15 +146,24 @@ const renderPage = () => {
 const row = (testId: string) => screen.getByTestId(testId)
 const statusOf = (testId: string) =>
   row(testId).querySelector('[data-status]')?.getAttribute('data-status')
+/** Stand in for the core's answer to "Check for updates". */
+const answerVersions = (engines: Record<string, EngineVersions>) => {
+  const refresh = vi.fn(async () => {
+    useEngineVersionsStore.setState({ engines, error: null, loading: false })
+  })
+  useEngineVersionsStore.setState({ refresh })
+  return refresh
+}
 
 describe('Inference engines overview', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.unstubAllGlobals()
     i18n.changeLanguage('en')
     platform.mediaGeneration = true
     platform.voiceInput = true
     platform.turboquantEngine = true
-    loaded = {}
+    updater.recommendationPhase = 'idle'
     useModelProvider.setState({
       providers: [
         engine('llamacpp', false),
@@ -137,16 +171,21 @@ describe('Inference engines overview', () => {
         cloud('openai'),
       ],
     })
-    useEngineVersionsStore.setState({ engines: {} })
+    useEngineVersionsStore.setState({
+      engines: {},
+      error: null,
+      loading: false,
+      refresh: vi.fn().mockResolvedValue(undefined),
+    })
     useImageGenerationStore.setState({ status: null })
-    useAppState.setState({ activeModels: [] })
+    installEngineUpdate.mockResolvedValue(undefined)
     seedServiceHub({
       providers: {
         getProviders: vi.fn().mockResolvedValue([]),
       } as unknown as ProvidersService,
       models: {
-        getActiveModels,
-        stopAllModels,
+        getActiveModels: vi.fn().mockResolvedValue([]),
+        stopAllModels: vi.fn().mockResolvedValue(undefined),
       } as unknown as ModelsService,
     })
   })
@@ -201,20 +240,39 @@ describe('Inference engines overview', () => {
     expect(row('engine-row-llamacpp-upstream')).toBeInTheDocument()
   })
 
-  it("opens each engine's own settings page, disabled ones too", () => {
+  it("unfolds an engine's settings underneath it, without its models", async () => {
+    const user = userEvent.setup()
     renderPage()
 
     expect(
-      within(row('engine-row-llamacpp-upstream')).getByRole('link', {
-        name: 'llama.cpp',
-      })
-    ).toHaveAttribute('href', '/settings/providers/llamacpp-upstream')
+      screen.queryByTestId('engine-detail-llamacpp-upstream')
+    ).not.toBeInTheDocument()
+    const expand = within(row('engine-row-llamacpp-upstream')).getByRole(
+      'button',
+      { name: 'Show llama.cpp settings' }
+    )
+    await user.click(expand)
+
+    expect(expand).toHaveAttribute('aria-expanded', 'true')
+    const panel = within(row('engine-row-llamacpp-upstream')).getByRole(
+      'region',
+      { name: 'llama.cpp settings' }
+    )
     expect(
-      within(row('engine-row-llamacpp')).getByRole('link')
-    ).toHaveAttribute('href', '/settings/providers/llamacpp')
+      within(panel).getByTestId('engine-detail-llamacpp-upstream')
+    ).toHaveAttribute('data-embedded', 'true')
+
+    await user.click(
+      within(row('engine-row-llamacpp-upstream')).getByRole('button', {
+        name: 'Hide llama.cpp settings',
+      })
+    )
+    expect(
+      screen.queryByTestId('engine-detail-llamacpp-upstream')
+    ).not.toBeInTheDocument()
   })
 
-  it('shows the model count, the active build and an update offer', () => {
+  it('says whether each build is current, and names the model count and build', () => {
     useEngineVersionsStore.setState({
       engines: {
         'llamacpp-upstream': versions('llamacpp-upstream', 'b10840', 'b10909'),
@@ -225,86 +283,195 @@ describe('Inference engines overview', () => {
 
     const upstream = within(row('engine-row-llamacpp-upstream'))
     expect(upstream.getByText('2 models · Build b10840')).toBeInTheDocument()
+    expect(statusOf('engine-row-llamacpp-upstream')).toBe('available')
     expect(upstream.getByText('Update available')).toBeInTheDocument()
+    expect(
+      upstream.getByRole('button', { name: 'Update llama.cpp' })
+    ).toBeInTheDocument()
     const fork = within(row('engine-row-llamacpp'))
-    expect(fork.getByText('0 models · Build b9000')).toBeInTheDocument()
-    expect(fork.queryByText('Update available')).not.toBeInTheDocument()
+    expect(
+      fork.getByText('0 models · Build b9000 · Disabled')
+    ).toBeInTheDocument()
+    expect(statusOf('engine-row-llamacpp')).toBe('upToDate')
+    expect(fork.queryByRole('button', { name: /^Update/ })).toBeNull()
   })
 
-  it('names no build before the core has answered', () => {
+  it('says nothing about a build before the core has answered', () => {
     renderPage()
 
     expect(
       within(row('engine-row-llamacpp-upstream')).getByText('2 models')
     ).toBeInTheDocument()
+    expect(statusOf('engine-row-llamacpp-upstream')).toBeUndefined()
   })
 
-  it('reads Running from the models loaded on each enabled engine', async () => {
-    loaded = { 'llamacpp-upstream': ['qwen'] }
-    renderPage()
-
-    await waitFor(() =>
-      expect(statusOf('engine-row-llamacpp-upstream')).toBe('running')
-    )
-    expect(statusOf('engine-row-llamacpp')).toBe('disabled')
-    // A disabled engine is not asked.
-    expect(getActiveModels).not.toHaveBeenCalledWith('llamacpp')
-  })
-
-  it('asks again when a model loads or unloads anywhere', async () => {
-    renderPage()
-    await waitFor(() => expect(getActiveModels).toHaveBeenCalled())
-    expect(statusOf('engine-row-llamacpp-upstream')).toBe('idle')
-
-    loaded = { 'llamacpp-upstream': ['qwen'] }
-    act(() => useAppState.setState({ activeModels: ['qwen'] }))
-
-    await waitFor(() =>
-      expect(statusOf('engine-row-llamacpp-upstream')).toBe('running')
-    )
-  })
-
-  it('turns an engine on and off from its switch', async () => {
+  it('installs an offered update through the core and asks for the new answer', async () => {
+    useEngineVersionsStore.setState({
+      engines: {
+        'llamacpp-upstream': versions('llamacpp-upstream', 'b10840', 'b10909'),
+      },
+    })
+    const refresh = answerVersions({
+      'llamacpp-upstream': versions('llamacpp-upstream', 'b10909'),
+    })
     const user = userEvent.setup()
     renderPage()
 
+    await user.click(screen.getByRole('button', { name: 'Update llama.cpp' }))
+
+    expect(installEngineUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'llamacpp-upstream',
+        targetBackend: 'b10909/macos-arm64',
+        apply: 'swap',
+      })
+    )
+    await waitFor(() =>
+      expect(statusOf('engine-row-llamacpp-upstream')).toBe('upToDate')
+    )
+    expect(refresh).toHaveBeenCalled()
+  })
+
+  it("sends a reinstall to the engine's page to be confirmed there", async () => {
+    useModelProvider.setState({ providers: [engine('vllm')] })
+    useEngineVersionsStore.setState({
+      engines: {
+        vllm: {
+          ...versions('vllm', '0.11.0', '0.12.0'),
+          update: {
+            needed: true,
+            target: { version: '0.12.0', variant: 'cuda' },
+            apply: 'reinstall',
+          },
+        } as unknown as EngineVersions,
+      },
+    })
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(screen.getByRole('button', { name: /^Update/ }))
+
+    expect(installEngineUpdate).not.toHaveBeenCalled()
+    expect(navigate).toHaveBeenCalledWith({
+      to: '/settings/providers/$providerName',
+      params: { providerName: 'vllm' },
+      search: { engineUpdate: true },
+    })
+  })
+
+  it('says when an update would not install, and offers it again', async () => {
+    useEngineVersionsStore.setState({
+      engines: {
+        'llamacpp-upstream': versions('llamacpp-upstream', 'b10840', 'b10909'),
+      },
+    })
+    installEngineUpdate.mockRejectedValue(new Error('disk full'))
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(screen.getByRole('button', { name: 'Update llama.cpp' }))
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith('Could not update the engine', {
+        description: 'disk full',
+      })
+    )
+    expect(statusOf('engine-row-llamacpp-upstream')).toBe('available')
+  })
+
+  it('checks every engine for updates from the header and says what it found', async () => {
+    const refresh = answerVersions({
+      'llamacpp-upstream': versions('llamacpp-upstream', 'b10840', 'b10909'),
+      'sd-cpp': versions('sd-cpp', 'master-883', 'master-900'),
+      // Not on this page: TurboQuant is off but still listed; MLX is not.
+      'mlx': versions('mlx', 'v0.3.1', 'v0.3.2'),
+    })
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(screen.getByRole('button', { name: 'Check for updates' }))
+
+    expect(refresh).toHaveBeenCalledWith({ force: true })
+    await waitFor(() =>
+      expect(toast.info).toHaveBeenCalledWith('Engines with an update: 2')
+    )
+    expect(statusOf('engine-row-sd-cpp')).toBe('available')
+  })
+
+  it('says all engines are current when the check finds nothing', async () => {
+    answerVersions({ 'llamacpp-upstream': versions('llamacpp-upstream', 'b1') })
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(screen.getByRole('button', { name: 'Check for updates' }))
+
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith('All engines are up to date')
+    )
+  })
+
+  it('says when the check could not reach the core', async () => {
+    useEngineVersionsStore.setState({
+      refresh: vi.fn(async () => {
+        useEngineVersionsStore.setState({
+          error: { code: 'NETWORK', message: 'offline' },
+        })
+      }),
+    })
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(screen.getByRole('button', { name: 'Check for updates' }))
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        'Could not check for engine updates',
+        { description: 'offline' }
+      )
+    )
+  })
+
+  it('offers Find optimal backend on the llama.cpp rows on Linux and Windows, and installs what it finds', async () => {
+    vi.stubGlobal('IS_LINUX', true)
+    updater.recheckOptimalBackend.mockResolvedValue({
+      currentBackend: 'b1/linux-x64-cpu',
+      recommendedBackend: 'b1/linux-x64-cuda',
+      recommendedCategory: 'cuda',
+    })
+    updater.downloadRecommendedBackend.mockResolvedValue(undefined)
+    const user = userEvent.setup()
+    renderPage()
+
+    expect(
+      within(row('engine-row-llamacpp')).getByRole('button', {
+        name: 'Find optimal backend',
+      })
+    ).toBeInTheDocument()
     await user.click(
-      within(row('engine-row-llamacpp')).getByRole('switch', {
-        name: 'Turn llama.cpp turboquant on or off',
+      within(row('engine-row-llamacpp-upstream')).getByRole('button', {
+        name: 'Find optimal backend',
       })
     )
 
-    expect(
-      useModelProvider
-        .getState()
-        .providers.find((p) => p.provider === 'llamacpp')?.active
-    ).toBe(true)
-    expect(stopAllModels).not.toHaveBeenCalled()
+    expect(updater.recheckOptimalBackend).toHaveBeenCalledTimes(1)
+    await waitFor(() =>
+      expect(updater.downloadRecommendedBackend).toHaveBeenCalledWith(
+        'b1/linux-x64-cuda'
+      )
+    )
   })
 
-  it('stops every model before turning the TurboQuant engine off', async () => {
-    useModelProvider.setState({
-      providers: [engine('llamacpp-upstream'), engine('llamacpp', true)],
-    })
-    const user = userEvent.setup()
+  it('offers no Find optimal backend on macOS', () => {
     renderPage()
 
-    await user.click(within(row('engine-row-llamacpp')).getByRole('switch'))
-
-    expect(stopAllModels).toHaveBeenCalledTimes(1)
     expect(
-      useModelProvider
-        .getState()
-        .providers.find((p) => p.provider === 'llamacpp')?.active
-    ).toBe(false)
+      screen.queryByRole('button', { name: 'Find optimal backend' })
+    ).not.toBeInTheDocument()
   })
 
-  it('opens the media settings in place, with the engine build and status', async () => {
+  it('opens the media settings in place, with the engine build and its update', async () => {
     useEngineVersionsStore.setState({
       engines: { 'sd-cpp': versions('sd-cpp', 'master-883', 'master-900') },
-    })
-    useImageGenerationStore.setState({
-      status: { model: { state: 'ready', loaded: { id: 'flux' } } } as never,
     })
     const user = userEvent.setup()
     renderPage()
@@ -314,18 +481,23 @@ describe('Inference engines overview', () => {
     expect(
       media.getByText('Images and videos · Build master-883')
     ).toBeInTheDocument()
-    expect(media.getByText('Update available')).toBeInTheDocument()
-    expect(statusOf('engine-row-sd-cpp')).toBe('running')
+    expect(statusOf('engine-row-sd-cpp')).toBe('available')
+    expect(
+      media.getByRole('button', { name: 'Update stable-diffusion.cpp' })
+    ).toBeInTheDocument()
     expect(screen.queryByTestId('media-settings-panel')).not.toBeInTheDocument()
 
-    const toggle = media.getByRole('button', { expanded: false })
-    await user.click(toggle)
+    await user.click(
+      media.getByRole('button', { name: 'Show stable-diffusion.cpp settings' })
+    )
 
-    expect(toggle).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByTestId('media-settings-panel')).toBeInTheDocument()
   })
 
-  it('opens the voice settings in place and says whether the model runs', async () => {
+  it('opens the voice settings in place and says whether the model is there', async () => {
+    useEngineVersionsStore.setState({
+      engines: { 'llamacpp-upstream': versions('llamacpp-upstream', 'b10840') },
+    })
     const user = userEvent.setup()
     const { unmount } = renderPage()
     expect(statusOf('engine-row-voice')).toBe('notInstalled')
@@ -338,14 +510,14 @@ describe('Inference engines overview', () => {
         ]),
       ],
     })
-    loaded = {
-      'llamacpp-upstream': ['ggml-org/Voxtral-Mini-3B-2507-Q4_K_M'],
-    }
     renderPage()
-    await waitFor(() => expect(statusOf('engine-row-voice')).toBe('running'))
+    // Voxtral runs on stock llama.cpp: its build is that engine's.
+    expect(statusOf('engine-row-voice')).toBe('upToDate')
 
     await user.click(
-      within(row('engine-row-voice')).getByRole('button', { expanded: false })
+      within(row('engine-row-voice')).getByRole('button', {
+        name: /^Show .* settings$/,
+      })
     )
     expect(screen.getByTestId('voice-settings-panel')).toBeInTheDocument()
   })

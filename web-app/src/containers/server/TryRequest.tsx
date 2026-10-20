@@ -11,7 +11,7 @@ import {
 } from '@/utils/localApiServerControl'
 
 import { useLocalApiServerUrl } from './ConnectionDetails'
-import { ServerButton, ServerCopyButton } from './ServerPageParts'
+import { ServerButton, ServerCopyButton, ServerSelect } from './ServerPageParts'
 
 export type ExampleLanguage = 'curl' | 'python'
 
@@ -95,16 +95,15 @@ export function TryRequest() {
     <section className="sp-panel">
       <div className="sp-row">
         <h2>{t('api:connections.tryTitle')}</h2>
-        <select
-          aria-label={t('api:connections.language')}
+        <ServerSelect
+          label={t('api:connections.language')}
           value={language}
-          onChange={(event) =>
-            setLanguage(event.target.value as ExampleLanguage)
-          }
-        >
-          <option value="curl">cURL</option>
-          <option value="python">Python</option>
-        </select>
+          options={[
+            { value: 'curl', label: 'cURL' },
+            { value: 'python', label: 'Python' },
+          ]}
+          onChange={(next) => setLanguage(next as ExampleLanguage)}
+        />
       </div>
       <pre>{example}</pre>
       <div className="sp-actions">

@@ -67,15 +67,10 @@
   color: #183d34;
   animation: dsc-attention 1.6s ease-in-out 2;
 }
-.dsc-stop,
-.dsc-restart {
+.dsc-stop {
   color: var(--server-accent);
   background: var(--server-soft);
   border: 1px solid #78baad40;
-}
-.dsc-restart {
-  width: 36px;
-  flex-shrink: 0;
 }
 .dsc-power-label {
   display: inline-flex;

@@ -297,10 +297,6 @@
     "chat": "Chat thread",
     "agent": "Agent thread"
   },
-  "chatExec": {
-    "menuItem": "Run commands",
-    "menuDescription": "Lets the model run terminal commands and scripts; each run asks first unless Full access is on"
-  },
   "composer": {
     "attachFiles": "Attach files",
     "supportedFiles": "Supported files",

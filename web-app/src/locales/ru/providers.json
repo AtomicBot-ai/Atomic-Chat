@@ -534,13 +534,29 @@
     "build": "Сборка {{version}}",
     "mediaDescription": "Изображения и видео",
     "voiceDescription": "{{model}} · распознавание речи",
-    "updateAvailable": "Есть обновление",
     "enable": "Включить или выключить {{name}}",
     "status": {
-      "running": "Работает",
-      "idle": "Ожидает",
-      "disabled": "Выключен",
+      "disabled": "Выключен"
+    },
+    "updateStatus": {
+      "updating": "Обновляется…",
+      "available": "Есть обновление",
+      "upToDate": "Актуальная версия",
       "notInstalled": "Не установлен"
-    }
+    },
+    "update": "Обновить",
+    "updateEngine": "Обновить {{name}}",
+    "updateFailed": "Не удалось обновить движок",
+    "checkForUpdates": "Проверить обновления",
+    "checkFailed": "Не удалось проверить обновления движков",
+    "allUpToDate": "Все движки обновлены",
+    "updatesFound": "Движков с обновлением: {{count}}",
+    "expandSettings": "Показать настройки {{name}}",
+    "collapseSettings": "Скрыть настройки {{name}}",
+    "settingsOf": "Настройки {{name}}",
+    "engineEnabled": "Движок включён",
+    "installedModels": "Установленные модели: {{models}}",
+    "noModels": "нет",
+    "openEnginePage": "Модели и все настройки"
   }
 }

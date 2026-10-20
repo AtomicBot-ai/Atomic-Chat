@@ -19,6 +19,7 @@ describe('useServerSetup', () => {
       setupDone: false,
       setupDismissed: false,
       configuredAgents: [],
+      forgottenAgents: [],
       endpointConfigured: false,
       guide: null,
       guideRevision: 0,
@@ -98,6 +99,25 @@ describe('useServerSetup', () => {
     expect(setup().endpointConfigured).toBe(false)
   })
 
+  it('adopts tools found set up before, but not ones the user removed', () => {
+    setup().markAgentConfigured('codex')
+    setup().markAgentConfigured('pi')
+    setup().forgetAgent('pi')
+
+    setup().adoptAgents(['opencode', 'codex', 'pi', 'opencode'])
+
+    // Found ones read as older than what the guide set up.
+    expect(setup().configuredAgents.map((agent) => agent.id)).toEqual([
+      'opencode',
+      'codex',
+    ])
+
+    // Setting one up again lets detection see it from then on.
+    setup().markAgentConfigured('pi')
+    setup().forgetAgent('opencode')
+    expect(setup().forgottenAgents).toEqual(['opencode'])
+  })
+
   it('persists what was set up, never the guide on screen', () => {
     setup().markAgentConfigured('codex')
     setup().openGuide({ path: 'endpoint' })
@@ -107,6 +127,7 @@ describe('useServerSetup', () => {
     expect(Object.keys(stored.state).sort()).toEqual([
       'configuredAgents',
       'endpointConfigured',
+      'forgottenAgents',
       'setupDismissed',
       'setupDone',
     ])

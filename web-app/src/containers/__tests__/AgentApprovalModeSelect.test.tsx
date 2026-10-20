@@ -100,13 +100,13 @@ describe('AgentApprovalModeSelect', () => {
         onChange={vi.fn()}
         toggles={[
           {
-            id: 'chat-exec',
-            label: 'Run commands',
-            description: 'Lets the model run terminal commands and scripts',
+            id: 'agent-mode',
+            label: 'Agent mode',
+            description: 'Lets the model work through several steps',
             icon: <span data-testid="toggle-icon" />,
             checked: true,
             onCheckedChange,
-            testId: 'chat-exec-toggle',
+            testId: 'agent-mode-toggle',
           },
         ]}
       />
@@ -115,12 +115,12 @@ describe('AgentApprovalModeSelect', () => {
     await openMenu(user)
 
     const toggle = screen.getByRole('menuitemcheckbox', {
-      name: /Run commands/,
+      name: /Agent mode/,
     })
     expect(toggle).toHaveAttribute('aria-checked', 'true')
-    expect(toggle).toHaveAttribute('data-testid', 'chat-exec-toggle')
+    expect(toggle).toHaveAttribute('data-testid', 'agent-mode-toggle')
     expect(toggle).toHaveTextContent(
-      'Lets the model run terminal commands and scripts'
+      'Lets the model work through several steps'
     )
     // Below the two modes, set apart from them.
     expect(screen.getAllByRole('menuitem')).toHaveLength(2)

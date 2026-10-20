@@ -1,9 +1,19 @@
 import { useEffect, useId, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Link } from '@tanstack/react-router'
-import { ChevronDown, ChevronRight, Clapperboard, Cpu, Mic } from 'lucide-react'
+import { useNavigate } from '@tanstack/react-router'
+import {
+  ChevronDown,
+  Clapperboard,
+  Cpu,
+  Download,
+  LoaderCircle,
+  Mic,
+  RefreshCw,
+  Rocket,
+} from 'lucide-react'
+import { toast } from 'sonner'
 
-import { Switch } from '@/components/ui/switch'
+import { Button } from '@/components/ui/button'
 import { route } from '@/constants/routes'
 import {
   VOICE_MODEL_ID,
@@ -13,13 +23,23 @@ import {
 import HeaderPage from '@/containers/HeaderPage'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import { VoiceSettingsPanel } from '@/containers/VoiceSettingsPanel'
+import { EngineDetail } from '@/containers/engines/EngineDetail'
 import { MediaSettingsPanel } from '@/containers/images/MediaSettingsPanel'
-import { useAppState } from '@/hooks/useAppState'
+import { useBackendUpdater } from '@/hooks/useBackendUpdater'
+import { installEngineUpdate } from '@/hooks/useEngineUpdate'
+import {
+  backendUpdaterConfigFor,
+  offersOptimalBackend,
+  useFindOptimalBackend,
+} from '@/hooks/useFindOptimalBackend'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { isLocalEngineProvider } from '@/lib/cloud-providers'
-import { engineUpdateOfferFrom } from '@/lib/engineUpdateOffer'
+import {
+  engineUpdateOfferFrom,
+  type EngineUpdateOffer,
+} from '@/lib/engineUpdateOffer'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import { sortProvidersForSettings } from '@/lib/providerOrder'
@@ -27,12 +47,10 @@ import { refreshAppManagedProviders } from '@/lib/provider-visibility'
 import { cn, getProviderTitle } from '@/lib/utils'
 import type { EngineId, EngineVersions } from '@/services/engines/types'
 import { useEngineVersionsStore } from '@/stores/engine-versions-store'
-import { useImageGenerationStore } from '@/stores/image-generation-store'
-
-type EngineStatus = 'running' | 'idle' | 'disabled' | 'notInstalled'
 
 /** The media engine's name, as Settings → Media names it. */
 const MEDIA_ENGINE_NAME = 'stable-diffusion.cpp'
+const MEDIA_ENGINE: EngineId = 'sd-cpp'
 
 /**
  * The local language engines this machine lists: MLX on macOS only, the
@@ -52,34 +70,40 @@ function isListedEngine(provider: ModelProvider): boolean {
 }
 
 /** "N models · Build b10840", the build only when the core named one. */
-function joinFacts(parts: Array<string | undefined>): string {
+function joinFacts(parts: Array<string | false | undefined>): string {
   return parts.filter(Boolean).join(' · ')
 }
 
-function StatusLabel({ status }: { status: EngineStatus }) {
+/**
+ * What a row says about its engine's build: the core's answer
+ * (`useEngineVersionsStore`), nothing while none came for it.
+ */
+type UpdateStatus = 'updating' | 'available' | 'upToDate' | 'notInstalled'
+
+function updateStatusOf(
+  versions: EngineVersions | undefined,
+  updating: boolean
+): UpdateStatus | null {
+  if (updating) return 'updating'
+  if (!versions) return null
+  if (!versions.active) return 'notInstalled'
+  return engineUpdateOfferFrom(versions) ? 'available' : 'upToDate'
+}
+
+function StatusLabel({ status }: { status: UpdateStatus }) {
   const { t } = useTranslation()
   return (
     <span
+      role="status"
       data-status={status}
-      className="flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground"
+      className={cn(
+        'shrink-0 whitespace-nowrap text-xs',
+        status === 'available'
+          ? 'text-amber-600 dark:text-amber-400'
+          : 'text-muted-foreground'
+      )}
     >
-      <span
-        aria-hidden
-        className={cn(
-          'size-1.5 shrink-0 rounded-full',
-          status === 'running' ? 'bg-emerald-500' : 'bg-muted-foreground/60'
-        )}
-      />
-      <span>{t(`providers:overview.status.${status}`)}</span>
-    </span>
-  )
-}
-
-function UpdateBadge() {
-  const { t } = useTranslation()
-  return (
-    <span className="shrink-0 whitespace-nowrap rounded-full bg-blue-500/15 px-2 py-0.5 text-[11px] font-medium text-blue-600 dark:bg-blue-400/15 dark:text-blue-400">
-      <span>{t('providers:overview.updateAvailable')}</span>
+      {t(`providers:overview.updateStatus.${status}`)}
     </span>
   )
 }
@@ -105,128 +129,131 @@ function Group({
 }
 
 /**
- * A language engine. The whole card opens the engine's own page
- * (`/settings/providers/$providerName`, unchanged); the switch above it turns
- * the engine on and off as the provider list always has.
+ * "Find optimal backend" on a llama.cpp row (Windows and Linux): its own
+ * backend updater, routed to the row's provider.
  */
-function EngineRow({
-  provider,
-  versions,
-  status,
-  onToggle,
-}: {
-  provider: ModelProvider
-  versions: EngineVersions | undefined
-  status: EngineStatus
-  onToggle: (active: boolean) => void
-}) {
-  const { t } = useTranslation()
-  const title = getProviderTitle(provider.provider)
-  const build = versions?.active?.version
-  const update = versions ? engineUpdateOfferFrom(versions) : null
-
+function FindOptimalBackendButton({ providerName }: { providerName: string }) {
+  const config = useMemo(
+    () => ({
+      ...backendUpdaterConfigFor(providerName),
+      // The engine's page and the global dialog own the one-time recheck.
+      postUpgradeRecheckEnabled: false,
+    }),
+    [providerName]
+  )
+  const optimal = useFindOptimalBackend(providerName, useBackendUpdater(config))
   return (
-    <li
-      data-testid={`engine-row-${provider.provider}`}
-      className="relative flex items-center gap-3 rounded-xl border border-border bg-card p-4 transition-colors hover:bg-muted/40"
+    <Button
+      size="sm"
+      variant="outline"
+      disabled={optimal.busy}
+      onClick={() => void optimal.find()}
     >
-      <ProvidersAvatar provider={provider} />
-      <div className="min-w-0 flex-1">
-        <Link
-          to={route.settings.providers}
-          params={{ providerName: provider.provider }}
-          className="block truncate text-sm font-medium outline-none after:absolute after:inset-0 after:rounded-xl focus-visible:after:ring-[3px] focus-visible:after:ring-ring/50"
-        >
-          {title}
-        </Link>
-        <p className="mt-1 truncate text-xs text-muted-foreground">
-          {joinFacts([
-            provider.models.length === 1
-              ? t('providers:overview.modelCountOne')
-              : t('providers:overview.modelCountOther', {
-                  count: provider.models.length,
-                }),
-            build && t('providers:overview.build', { version: build }),
-          ])}
-        </p>
-      </div>
-      {update && <UpdateBadge />}
-      <StatusLabel status={status} />
-      <Switch
-        className="relative z-10"
-        aria-label={t('providers:overview.enable', { name: title })}
-        checked={provider.active}
-        onCheckedChange={onToggle}
-      />
-      <ChevronRight
-        aria-hidden
-        size={16}
-        className="shrink-0 text-muted-foreground"
-      />
-    </li>
+      {optimal.busy ? (
+        <LoaderCircle size={14} className="animate-spin" />
+      ) : (
+        <Rocket size={14} />
+      )}
+      <span>{optimal.label}</span>
+    </Button>
   )
 }
 
 /**
- * Media and Voice have no page of their own in the list: their existing
- * settings panels open inside the card, as in the prototype.
+ * One engine: its name and facts, whether its build is current, "Update"
+ * while the core offers one, and its settings unfolding underneath.
  */
-function PanelRow({
+function EngineRow({
   testId,
   icon,
   name,
   description,
   status,
-  update,
+  onUpdate,
+  actions,
   children,
 }: {
   testId: string
   icon: ReactNode
   name: string
   description: string
-  status: EngineStatus
-  update: boolean
+  status: UpdateStatus | null
+  /** Shown while an update is offered. */
+  onUpdate?: () => void
+  /** Engine-specific buttons left of the chevron. */
+  actions?: ReactNode
   children: ReactNode
 }) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const panelId = useId()
+  const updating = status === 'updating'
 
   return (
     <li
       data-testid={testId}
       className="rounded-xl border border-border bg-card"
     >
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-controls={panelId}
-        onClick={() => setOpen(!open)}
-        className="flex w-full items-center gap-3 rounded-xl p-4 text-left outline-none transition-colors hover:bg-muted/40 focus-visible:ring-[3px] focus-visible:ring-ring/50"
-      >
-        <span className="flex size-4.5 shrink-0 items-center justify-center text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-3 p-4">
+        <span className="flex size-6 shrink-0 items-center justify-center text-muted-foreground">
           {icon}
         </span>
-        <span className="min-w-0 flex-1">
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={panelId}
+          onClick={() => setOpen(!open)}
+          className="min-w-24 flex-1 rounded-md text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        >
           <span className="block truncate text-sm font-medium">{name}</span>
           <span className="mt-1 block truncate text-xs text-muted-foreground">
             {description}
           </span>
-        </span>
-        {update && <UpdateBadge />}
-        <StatusLabel status={status} />
-        {/* The language rows' switch column, so statuses line up. */}
-        <span aria-hidden className="w-8.5 shrink-0" />
-        <ChevronDown
-          aria-hidden
-          size={16}
-          className={cn(
-            'shrink-0 text-muted-foreground transition-transform',
-            open && 'rotate-180'
+        </button>
+        {status && <StatusLabel status={status} />}
+        {onUpdate && (status === 'available' || updating) && (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={updating}
+            aria-label={t('providers:overview.updateEngine', { name })}
+            onClick={onUpdate}
+          >
+            {updating ? (
+              <LoaderCircle size={14} className="animate-spin" />
+            ) : (
+              <Download size={14} />
+            )}
+            <span>{t('providers:overview.update')}</span>
+          </Button>
+        )}
+        {actions}
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          aria-expanded={open}
+          aria-controls={panelId}
+          aria-label={t(
+            open
+              ? 'providers:overview.collapseSettings'
+              : 'providers:overview.expandSettings',
+            { name }
           )}
-        />
-      </button>
+          onClick={() => setOpen(!open)}
+        >
+          <ChevronDown
+            size={16}
+            className={cn('transition-transform', open && 'rotate-180')}
+          />
+        </Button>
+      </div>
       {open && (
-        <div id={panelId} className="border-t border-border p-4">
+        <div
+          id={panelId}
+          role="region"
+          aria-label={t('providers:overview.settingsOf', { name })}
+          className="border-t border-border p-4"
+        >
           {children}
         </div>
       )}
@@ -236,24 +263,25 @@ function PanelRow({
 
 /**
  * Models Hub → Inference engines: every engine on this machine in the
- * prototype's three groups. Language engines open their own page; the media
- * and voice settings open in place. Engines have no start or stop of their
- * own — one runs while a model is loaded on it — so the status is read from
- * the loaded models, not offered as a button.
+ * prototype's three groups. A row says whether the engine's build is current
+ * and offers the core's update; its settings unfold underneath — a language
+ * engine's are its page's, without the models. "Check for updates" asks the
+ * core again for every engine; on Windows and Linux the llama.cpp rows also
+ * offer "Find optimal backend". Engines have no start or stop of their own:
+ * one runs while a model is loaded on it.
  */
 export function InferenceEnginesOverview() {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
-  const { providers, updateProvider } = useModelProvider()
+  const navigate = useNavigate()
+  const providers = useModelProvider((state) => state.providers)
   const versions = useEngineVersionsStore((state) => state.engines)
-  // Changes whenever a model loads or unloads anywhere in the app: the cue
-  // to ask the engines again.
-  const activeModels = useAppState((state) => state.activeModels)
-  const mediaLoaded = useImageGenerationStore((state) =>
-    Boolean(state.status?.model.loaded)
-  )
+  const checking = useEngineVersionsStore((state) => state.loading)
   const showMedia = PlatformFeatures[PlatformFeature.MEDIA_GENERATION]
   const showVoice = PlatformFeatures[PlatformFeature.VOICE_INPUT]
+  // Engines whose update is running: their offer stays until the core's
+  // `engine:changed` refreshes the answer.
+  const [updating, setUpdating] = useState<ReadonlySet<EngineId>>(new Set())
 
   // Ask gated engines again each time this page opens: a TensorRT-LLM descriptor published since
   // the app started shows the provider here without an update (spec `tensorrt-llm-desktop`).
@@ -270,93 +298,150 @@ export function InferenceEnginesOverview() {
     [providers]
   )
 
-  // The engines to ask what they have loaded, as one stable key.
-  const asked = useMemo(() => {
-    const names = engines.filter((p) => p.active).map((p) => p.provider)
-    if (showVoice) names.push(VOICE_PROVIDER)
-    return [...new Set(names)].join(',')
-  }, [engines, showVoice])
+  const statusOf = (engine: string) =>
+    updateStatusOf(
+      versions[engine as EngineId],
+      updating.has(engine as EngineId)
+    )
 
-  const [loaded, setLoaded] = useState<Record<string, string[]>>({})
-  useEffect(() => {
-    let cancelled = false
-    const names = asked ? asked.split(',') : []
-    void Promise.all(
-      names.map(async (name) => {
-        const models = await serviceHub
-          .models()
-          .getActiveModels(name)
-          .catch(() => [] as string[])
-        return [name, models] as const
+  const applyUpdate = async (engine: EngineId, offer: EngineUpdateOffer) => {
+    if (offer.apply === 'reinstall') {
+      // A reinstall downloads a large image and asks for consent: the
+      // engine's page confirms it first, as from the banner.
+      await navigate({
+        to: route.settings.providers,
+        params: { providerName: engine },
+        search: { engineUpdate: true },
       })
-    ).then((entries) => {
-      if (!cancelled) setLoaded(Object.fromEntries(entries))
+      return
+    }
+    setUpdating((held) => new Set(held).add(engine))
+    try {
+      await installEngineUpdate(offer)
+      await useEngineVersionsStore.getState().refresh()
+    } catch (error) {
+      console.error('Engine update failed:', error)
+      toast.error(t('providers:overview.updateFailed'), {
+        description: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setUpdating((held) => {
+        const next = new Set(held)
+        next.delete(engine)
+        return next
+      })
+    }
+  }
+
+  const onUpdate = (engine: string) => {
+    const entry = versions[engine as EngineId]
+    const offer = entry ? engineUpdateOfferFrom(entry) : null
+    if (!offer) return undefined
+    return () => void applyUpdate(engine as EngineId, offer)
+  }
+
+  // Every engine on this page, as the core names them.
+  const listed = useMemo(() => {
+    const ids = engines.map((engine) => engine.provider as EngineId)
+    if (showMedia) ids.push(MEDIA_ENGINE)
+    return new Set(ids)
+  }, [engines, showMedia])
+
+  const checkForUpdates = async () => {
+    await useEngineVersionsStore.getState().refresh({ force: true })
+    const { engines: answer, error } = useEngineVersionsStore.getState()
+    if (error) {
+      toast.error(t('providers:overview.checkFailed'), {
+        description: error.message,
+      })
+      return
+    }
+    const offered = [...listed].filter((engine) => {
+      const entry = answer[engine]
+      return entry ? engineUpdateOfferFrom(entry) !== null : false
     })
-    return () => {
-      cancelled = true
+    if (offered.length === 0) {
+      toast.success(t('providers:overview.allUpToDate'))
+    } else {
+      toast.info(
+        t('providers:overview.updatesFound', { count: offered.length })
+      )
     }
-  }, [serviceHub, asked, activeModels])
-
-  const statusOf = (provider: ModelProvider): EngineStatus => {
-    if (!provider.active) return 'disabled'
-    return (loaded[provider.provider]?.length ?? 0) > 0 ? 'running' : 'idle'
   }
 
-  const toggle = async (provider: ModelProvider, active: boolean) => {
-    if (!active && provider.provider.toLowerCase() === 'llamacpp') {
-      await serviceHub.models().stopAllModels()
-    }
-    updateProvider(provider.provider, { ...provider, active })
-  }
-
-  const versionsOf = (id: string) => versions[id as EngineId]
-  const offers = (id: EngineId) => {
-    const entry = versions[id]
-    return entry ? engineUpdateOfferFrom(entry) !== null : false
-  }
-
-  const mediaBuild = versions['sd-cpp']?.active?.version
+  const mediaBuild = versions[MEDIA_ENGINE]?.active?.version
   const voiceInstalled = providers.some(
     (provider) =>
       provider.provider === VOICE_PROVIDER &&
       provider.models.some((model) => model.id === VOICE_MODEL_ID)
   )
-  const voiceStatus: EngineStatus = loaded[VOICE_PROVIDER]?.includes(
-    VOICE_MODEL_ID
-  )
-    ? 'running'
-    : voiceInstalled
-      ? 'idle'
-      : 'notInstalled'
 
   return (
     <div className="flex h-svh w-full flex-col">
       <HeaderPage>
-        <h1 className="font-studio truncate text-lg font-semibold">
-          {t('common:navigation.inferenceEngines')}
-        </h1>
+        <div className="flex w-full min-w-0 items-center justify-between gap-3">
+          <h1 className="font-studio truncate text-lg font-semibold">
+            {t('common:navigation.inferenceEngines')}
+          </h1>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={checking}
+            onClick={() => void checkForUpdates()}
+          >
+            {checking ? (
+              <LoaderCircle size={14} className="animate-spin" />
+            ) : (
+              <RefreshCw size={14} />
+            )}
+            <span>{t('providers:overview.checkForUpdates')}</span>
+          </Button>
+        </div>
       </HeaderPage>
       <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 pb-6">
         <Group
           title={t('providers:overview.language')}
           icon={<Cpu size={16} aria-hidden />}
         >
-          {engines.map((provider) => (
-            <EngineRow
-              key={provider.provider}
-              provider={provider}
-              versions={versionsOf(provider.provider)}
-              status={statusOf(provider)}
-              onToggle={(active) => void toggle(provider, active)}
-            />
-          ))}
+          {engines.map((provider) => {
+            const build =
+              versions[provider.provider as EngineId]?.active?.version
+            return (
+              <EngineRow
+                key={provider.provider}
+                testId={`engine-row-${provider.provider}`}
+                icon={<ProvidersAvatar provider={provider} />}
+                name={getProviderTitle(provider.provider)}
+                description={joinFacts([
+                  provider.models.length === 1
+                    ? t('providers:overview.modelCountOne')
+                    : t('providers:overview.modelCountOther', {
+                        count: provider.models.length,
+                      }),
+                  build && t('providers:overview.build', { version: build }),
+                  !provider.active && t('providers:overview.status.disabled'),
+                ])}
+                status={statusOf(provider.provider)}
+                onUpdate={onUpdate(provider.provider)}
+                actions={
+                  offersOptimalBackend(provider.provider) && (
+                    <FindOptimalBackendButton
+                      providerName={provider.provider}
+                    />
+                  )
+                }
+              >
+                <EngineDetail providerName={provider.provider} embedded />
+              </EngineRow>
+            )
+          })}
         </Group>
         {showMedia && (
           <Group
             title={t('providers:overview.media')}
             icon={<Clapperboard size={16} aria-hidden />}
           >
-            <PanelRow
+            <EngineRow
               testId="engine-row-sd-cpp"
               icon={<Clapperboard size={18} />}
               name={MEDIA_ENGINE_NAME}
@@ -365,11 +450,11 @@ export function InferenceEnginesOverview() {
                 mediaBuild &&
                   t('providers:overview.build', { version: mediaBuild }),
               ])}
-              status={mediaLoaded ? 'running' : 'idle'}
-              update={offers('sd-cpp')}
+              status={statusOf(MEDIA_ENGINE)}
+              onUpdate={onUpdate(MEDIA_ENGINE)}
             >
               <MediaSettingsPanel />
-            </PanelRow>
+            </EngineRow>
           </Group>
         )}
         {showVoice && (
@@ -377,18 +462,21 @@ export function InferenceEnginesOverview() {
             title={t('providers:overview.voice')}
             icon={<Mic size={16} aria-hidden />}
           >
-            <PanelRow
+            {/* Voxtral runs on stock llama.cpp: its build and update are
+                that engine's, offered on its row. */}
+            <EngineRow
               testId="engine-row-voice"
               icon={<Mic size={18} />}
               name={t('common:voice')}
               description={t('providers:overview.voiceDescription', {
                 model: VOICE_MODEL_NAME,
               })}
-              status={voiceStatus}
-              update={false}
+              status={
+                voiceInstalled ? statusOf(VOICE_PROVIDER) : 'notInstalled'
+              }
             >
               <VoiceSettingsPanel />
-            </PanelRow>
+            </EngineRow>
           </Group>
         )}
       </div>

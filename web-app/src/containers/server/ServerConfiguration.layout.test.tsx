@@ -1,4 +1,5 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -56,13 +57,17 @@ describe('Server configuration form', () => {
     async (fontSize) => {
       setFontSize(fontSize)
       const page = renderAt(COLUMN_WIDTH)
+      // The save bar shows once there is something to save.
+      fireEvent.change(screen.getByLabelText('Port'), {
+        target: { value: '8080' },
+      })
       await settle(page)
 
       expectNoHorizontalOverflow(page)
       expect(top(screen.getByLabelText('API prefix'))).toBe(
         top(screen.getByLabelText('Port'))
       )
-      for (const name of ['Generate key', 'Discard', 'Apply & restart']) {
+      for (const name of ['Generate key', 'Discard', 'Save changes']) {
         const button = screen.getByRole('button', { name })
         // One line of label in the 36 px control, not a wrapped one.
         expect(button.getBoundingClientRect().height).toBeCloseTo(36, 0)
@@ -70,6 +75,23 @@ describe('Server configuration form', () => {
       }
     }
   )
+
+  it('drops the host list under its field, as wide as the field', async () => {
+    const page = renderAt(COLUMN_WIDTH)
+    await settle(page)
+    const host = screen.getByRole('button', { name: 'Server host' })
+
+    await userEvent.click(host)
+    const menu = await screen.findByRole('menu')
+    await settle(page)
+
+    const field = host.getBoundingClientRect()
+    const list = menu.getBoundingClientRect()
+    // Under the field, not over it as the macOS select popup sits.
+    expect(list.top).toBeGreaterThanOrEqual(field.bottom)
+    expect(list.width).toBeCloseTo(field.width, 0)
+    expect(list.left).toBeCloseTo(field.left, 0)
+  })
 
   it('stacks port above prefix in a narrow column', async () => {
     const page = renderAt(440)

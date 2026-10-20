@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { invoke } from '@tauri-apps/api/core'
 import { INTEGRATION_AGENTS } from '@/constants/integrations'
+import { useServerSetup } from '@/hooks/useServerSetup'
 import { useLaunchStore } from '@/stores/launch-store'
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))
@@ -45,11 +46,46 @@ describe('detectIntegrationAgent', () => {
   })
 })
 
+describe('adoptConfiguredAgents', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    useServerSetup.setState({ configuredAgents: [], forgottenAgents: [] })
+  })
+
+  it('lists the known agents whose config already points here', async () => {
+    vi.mocked(invoke).mockResolvedValue(['opencode', 'not-an-agent'])
+    const { adoptConfiguredAgents } = await import(
+      '../integration-agent-detection'
+    )
+
+    await adoptConfiguredAgents()
+
+    expect(invoke).toHaveBeenCalledWith('detect_configured_agents')
+    expect(
+      useServerSetup.getState().configuredAgents.map((entry) => entry.id)
+    ).toEqual(['opencode'])
+  })
+
+  it('leaves the list as it is when the backend cannot tell', async () => {
+    vi.mocked(invoke).mockRejectedValue(new Error('unknown command'))
+    const { adoptConfiguredAgents } = await import(
+      '../integration-agent-detection'
+    )
+
+    await expect(adoptConfiguredAgents()).resolves.toBeUndefined()
+    expect(useServerSetup.getState().configuredAgents).toEqual([])
+  })
+})
+
 describe('detectIntegrationAgentsOnce', () => {
   beforeEach(() => {
     vi.resetModules()
     vi.clearAllMocks()
-    vi.mocked(invoke).mockResolvedValue({ installed: false, viaWsl: false })
+    vi.mocked(invoke).mockImplementation(async (command) =>
+      command === 'detect_configured_agents'
+        ? []
+        : { installed: false, viaWsl: false }
+    )
   })
 
   it('asks once per session, and only about agents not yet known', async () => {
@@ -64,7 +100,9 @@ describe('detectIntegrationAgentsOnce', () => {
     detectIntegrationAgentsOnce()
     detectIntegrationAgentsOnce()
 
-    expect(invoke).toHaveBeenCalledTimes(INTEGRATION_AGENTS.length - 1)
+    // One question per unknown agent, plus one for what is already set up.
+    expect(invoke).toHaveBeenCalledTimes(INTEGRATION_AGENTS.length)
+    expect(invoke).toHaveBeenCalledWith('detect_configured_agents')
     // The known answer stands; it is not asked again.
     expect(store.getState().installed[agent.id]).toBe(true)
     expect(invoke).not.toHaveBeenCalledWith(

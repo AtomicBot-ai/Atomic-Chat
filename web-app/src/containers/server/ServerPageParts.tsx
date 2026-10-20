@@ -1,7 +1,15 @@
 import { IconCheck, IconCopy } from '@tabler/icons-react'
+import { ChevronDown } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { copyToClipboard } from '@/lib/clipboard'
 import { generateLocalApiKey } from '@/lib/localApiKey'
@@ -100,6 +108,59 @@ export function ServerField({
       </label>
       {hint && <small>{hint}</small>}
     </div>
+  )
+}
+
+export type ServerSelectOption = { value: string; label: string }
+
+/**
+ * The section's dropdown. A native `<select>` opens the system menu, which in
+ * the macOS webview sits over the field with the chosen row on it instead of
+ * dropping down; this one always opens under the field, as wide as it.
+ */
+export function ServerSelect({
+  label,
+  value,
+  options,
+  onChange,
+  disabled = false,
+  className,
+}: {
+  /** The control's accessible name; the visible label stays the field's. */
+  label: string
+  value: string
+  options: ServerSelectOption[]
+  onChange: (value: string) => void
+  disabled?: boolean
+  className?: string
+}) {
+  const selected = options.find((option) => option.value === value)
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild disabled={disabled}>
+        <button
+          type="button"
+          aria-label={label}
+          className={cn('sp-select', className)}
+        >
+          <span className="min-w-0 truncate">{selected?.label ?? value}</span>
+          <ChevronDown aria-hidden size={16} />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        side="bottom"
+        align="start"
+        className="w-(--radix-dropdown-menu-trigger-width) max-h-72"
+      >
+        <DropdownMenuRadioGroup value={value} onValueChange={onChange}>
+          {options.map((option) => (
+            <DropdownMenuRadioItem key={option.value} value={option.value}>
+              <span className="min-w-0 truncate">{option.label}</span>
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 

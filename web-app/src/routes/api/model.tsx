@@ -15,10 +15,7 @@ export function ServerModelPage() {
   const { t } = useTranslation()
 
   return (
-    <ServerPage
-      title={t('api:model.title')}
-      description={t('api:model.description')}
-    >
+    <ServerPage title={t('api:model.title')}>
       <ServerModelPicker />
     </ServerPage>
   )

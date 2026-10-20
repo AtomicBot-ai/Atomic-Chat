@@ -17,10 +17,7 @@ export function RemoteAccessPage() {
   const control = useLocalApiServerControl()
 
   return (
-    <ServerPage
-      title={t('settings:remoteLan.pageTitle')}
-      description={t('settings:remoteLan.pageDescription')}
-    >
+    <ServerPage title={t('settings:remoteLan.pageTitle')}>
       <RemoteLanSection server={control} />
     </ServerPage>
   )

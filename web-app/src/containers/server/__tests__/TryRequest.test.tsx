@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const { probe } = vi.hoisted(() => ({ probe: vi.fn() }))
@@ -67,13 +68,15 @@ describe('Server → Connections, try a request', () => {
     })
   })
 
-  it('shows the example for the loaded model and switches it to Python', () => {
+  it('shows the example for the loaded model and switches it to Python', async () => {
+    const user = userEvent.setup()
     render(<TryRequest />)
     expect(screen.getByText(/"model":"gemma-4"/)).toBeInTheDocument()
 
-    fireEvent.change(screen.getByLabelText('api:connections.language'), {
-      target: { value: 'python' },
-    })
+    await user.click(
+      screen.getByRole('button', { name: 'api:connections.language' })
+    )
+    await user.click(screen.getByRole('menuitemradio', { name: 'Python' }))
     expect(screen.getByText(/from openai import OpenAI/)).toBeInTheDocument()
   })
 

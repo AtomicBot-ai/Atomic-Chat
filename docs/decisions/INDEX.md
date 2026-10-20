@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-425 records, 2026-05-19 → 2026-10-20.
+428 records, 2026-05-19 → 2026-10-20.
 420 records, 2026-05-19 → 2026-10-20.
 
 ---
@@ -86,8 +86,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-02** — [Add a `/v1/responses` translation shim to the local proxy so Codex CLI works on llama.cpp models](2026-06-02-add-a-v1-responses-translation-shim-to-the-local-proxy-so-codex.md)
 - **2026-06-01** — [Add a "Launch" page to install + configure external coding agents / assistants against the local OpenAI-compatible API](2026-06-01-add-a-launch-page-to-install-configure-external-coding-agents.md)
 
-## Agent mode — autonomous loop, tools, skills, workspace (52)
+## Agent mode — autonomous loop, tools, skills, workspace (53)
 
+- **2026-10-20** — [Always offer chat commands, with no Run commands switch](2026-10-20-always-offer-chat-commands-without-a-switch.md)
 - **2026-10-17** — [Confine a secure project's commands to its folders with MXC](2026-10-17-confine-secure-projects-commands-to-their-folders-with-mxc.md)
 - **2026-10-15** — [Grant directory enumeration and decode Windows chat output](2026-10-15-fix-windows-chat-directory-enumeration-and-output.md)
 - **2026-10-15** — [Let chat commands reach the user's Desktop, Documents and Downloads](2026-10-15-let-chat-commands-reach-the-users-own-folders.md)
@@ -276,8 +277,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-04** — [Recover from unsupported multimodal projector (`gemma4a`) by falling back to text-only instead of crashing the load (issue #44)](2026-06-04-recover-from-unsupported-multimodal-projector-gemma4a-by.md)
 - **2026-05-27** — [Replace `janhq/model-catalog` + Fuse.js with curated `AtomicBot-ai/atomic-chat-model-catalog` and a pre-built MiniSearch index](2026-05-27-replace-janhq-model-catalog-fuse-js-with-curated-atomicbot-ai.md)
 
-## Local API server & OpenAI compatibility (9)
+## Local API server & OpenAI compatibility (10)
 
+- **2026-10-20** — [Turn the served models off with the server](2026-10-20-turn-the-served-models-off-with-the-server.md)
 - **2026-10-08** — [Stop closes the local stream's connection in Rust](2026-10-08-stop-closes-the-local-stream-connection-in-rust.md)
 - **2026-09-25** — [Raise the Local API Server for a resident image or video model](2026-09-25-raise-the-local-api-server-for-a-resident-image-or-video-model.md)
 - **2026-09-19** — [Reload the served model when the API listener is recovered](2026-09-19-reload-the-served-model-when-the-api-listener-is-recovered.md)
@@ -334,7 +336,8 @@ decision is reversed, add a new one that says which record it supersedes.
 ## UI / UX (2)
 - **2026-10-20** — [Show hosted providers on Cloud and the user's own servers on Custom Endpoint](2026-10-20-show-hosted-providers-on-cloud-and-own-servers-on-custom-endpoint.md)
 - **2026-10-20** — [List everything downloaded on a Downloads page](2026-10-20-list-everything-downloaded-on-a-downloads-page.md)
-## UI / UX (94)
+## UI / UX (95)
+- **2026-10-20** — [Unfold engine settings and offer engine updates on the overview](2026-10-20-unfold-engine-settings-and-offer-engine-updates-on-the-overview.md) — supersedes the status, card link and switch of the grouped overview.
 - **2026-10-20** — [List the inference engines on one grouped overview](2026-10-20-list-inference-engines-on-one-grouped-overview.md)
 - **2026-10-20** — [Split the API screen into Overview, Activity, Connections and Engine & model](2026-10-20-split-the-api-screen-into-overview-activity-connections-and-model.md)
 - **2026-10-20** — [Give the server's configuration and remote access their own pages](2026-10-20-give-server-configuration-and-remote-access-their-own-pages.md)

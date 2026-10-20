@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
+import { toast } from 'sonner'
 
 import { route } from '@/constants/routes'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
@@ -14,7 +15,13 @@ import { PlatformFeature } from '@/lib/platform/types'
 import { sortProvidersForSettings } from '@/lib/providerOrder'
 import { getProviderTitle } from '@/lib/utils'
 
-import { ServerButton, ServerField } from './ServerPageParts'
+import { ServerButton, ServerField, ServerSelect } from './ServerPageParts'
+import {
+  NO_HELPER_MODEL,
+  type ServedHelperModels,
+  useServedDecisionModels,
+  useServedEmbeddingModels,
+} from './useServedHelperModels'
 
 export type ServedModel = { provider: string; model: string }
 
@@ -94,48 +101,102 @@ export function EngineModelFields({
   return (
     <div className="sp-engine-model">
       <ServerField label={t('api:model.engine')}>
-        <select
+        <ServerSelect
+          label={t('api:model.engine')}
           value={engine.provider}
-          onChange={(event) => {
-            const next = engines.find((e) => e.provider === event.target.value)
+          options={engines.map((e) => ({ value: e.provider, label: e.title }))}
+          onChange={(provider) => {
+            const next = engines.find((e) => e.provider === provider)
             if (next)
               onChange({
                 provider: next.provider,
                 model: fitModel(next, choice.model),
               })
           }}
-        >
-          {engines.map((e) => (
-            <option key={e.provider} value={e.provider}>
-              {e.title}
-            </option>
-          ))}
-        </select>
+        />
       </ServerField>
       <ServerField label={t('api:model.model')} hint={t('api:model.modelHint')}>
-        <select
+        <ServerSelect
+          label={t('api:model.model')}
           value={choice.model}
-          onChange={(event) =>
-            onChange({ provider: engine.provider, model: event.target.value })
-          }
-        >
-          {engine.models.map((model) => (
-            <option key={model.id} value={model.id}>
-              {modelLabel(model)}
-            </option>
-          ))}
-        </select>
+          options={engine.models.map((model) => ({
+            value: model.id,
+            label: modelLabel(model),
+          }))}
+          onChange={(model) => onChange({ provider: engine.provider, model })}
+        />
       </ServerField>
     </div>
   )
 }
 
-type Phase = 'idle' | 'saved' | 'restarting' | 'failed'
+/**
+ * The embedding and decision models beside the chat model, each "None" or
+ * one of the downloaded ones. A kind this desktop cannot run is left out.
+ */
+function HelperModelFields({
+  embedding,
+  decision,
+  choice,
+  onChange,
+}: {
+  embedding: ServedHelperModels
+  decision: ServedHelperModels
+  choice: HelperChoice
+  onChange: (next: HelperChoice) => void
+}) {
+  const { t } = useTranslation()
+  const none = { value: NO_HELPER_MODEL, label: t('api:model.none') }
+  const field = (
+    kind: keyof HelperChoice,
+    models: ServedHelperModels,
+    label: string,
+    hint: string
+  ) => (
+    <ServerField
+      label={label}
+      hint={models.options.length > 0 ? hint : t('api:model.helperEmpty')}
+    >
+      <ServerSelect
+        label={label}
+        value={choice[kind]}
+        options={[none, ...models.options]}
+        disabled={models.options.length === 0 && choice[kind] === none.value}
+        onChange={(value) => onChange({ ...choice, [kind]: value })}
+      />
+    </ServerField>
+  )
+
+  return (
+    <div className="sp-engine-model">
+      {embedding.supported &&
+        field(
+          'embedding',
+          embedding,
+          t('api:model.embeddingModel'),
+          t('api:model.embeddingHint')
+        )}
+      {decision.supported &&
+        field(
+          'decision',
+          decision,
+          t('api:model.decisionModel'),
+          t('api:model.decisionHint')
+        )}
+    </div>
+  )
+}
+
+type HelperChoice = { embedding: string; decision: string }
+
+type Phase = 'idle' | 'restarting' | 'failed'
 
 /**
- * Server → Engine & model: the engine first, then a model it can run. Saving
- * makes it the model the server loads on start; while the server runs, "Apply
- * & restart" restarts it so the new model is the one it serves.
+ * Server → Engine & model: the engine first, then a model it can run, and
+ * the embedding and decision models served beside it. Saving makes the chat
+ * model the one the server loads on start (while the server runs, it comes
+ * back serving it), and starts the chosen embedding and decision models — or
+ * switches them off — right away, as their Start in the Hub does.
  */
 export function ServerModelPicker() {
   const { t } = useTranslation()
@@ -144,97 +205,137 @@ export function ServerModelPicker() {
   const engines = useServableEngines()
   const saved = useLocalApiServer((state) => state.defaultModelLocalApiServer)
   const lastRun = useLocalApiServer((state) => state.lastServerModels[0])
+  const embedding = useServedEmbeddingModels()
+  const decision = useServedDecisionModels()
 
   const baseline = useMemo(
     () => initialChoice(engines, saved, lastRun),
     [engines, saved, lastRun]
   )
+  const helperBaseline: HelperChoice = {
+    embedding: embedding.active,
+    decision: decision.active,
+  }
   const [draft, setDraft] = useState<ServedModel | null>(null)
+  const [helperDraft, setHelperDraft] = useState<Partial<HelperChoice>>({})
   const [phase, setPhase] = useState<Phase>('idle')
 
   const choice = draft ?? baseline
   const engine = engines.find((e) => e.provider === choice?.provider)
+  const helperChoice = { ...helperBaseline, ...helperDraft }
   // Against what the page opened on, so a first visit with nothing saved yet
   // does not read as an unsaved change.
-  const dirty =
+  const chatDirty =
     draft !== null &&
     (draft.provider !== baseline?.provider || draft.model !== baseline?.model)
+  const helperChanges = (['embedding', 'decision'] as const).filter(
+    (kind) => helperChoice[kind] !== helperBaseline[kind]
+  )
+  const dirty = chatDirty || helperChanges.length > 0
   const restarting = phase === 'restarting'
+  const showHelpers = embedding.supported || decision.supported
 
-  if (!choice || !engine) {
-    return (
-      <section className="sp-panel sp-empty">
-        <h2>{t('api:model.emptyTitle')}</h2>
-        <p>{t('api:model.emptyBody')}</p>
-        <Link to={route.hub.index} className="sp-button sp-primary">
-          {t('api:model.openHub')}
-        </Link>
-      </section>
-    )
-  }
-
-  const choose = (next: ServedModel) => {
-    setDraft(next)
+  const discard = () => {
+    setDraft(null)
+    setHelperDraft({})
     setPhase('idle')
   }
 
   const save = async () => {
     if (!dirty || restarting) return
-    useLocalApiServer.getState().setDefaultModelLocalApiServer(draft)
-    setDraft(null)
-    if (!control.isRunning) {
-      setPhase('saved')
-      return
-    }
     setPhase('restarting')
-    const running = await restartLocalApiServer(hub, control, {
-      ensureModel: true,
-    })
-    setPhase(running ? 'saved' : 'failed')
+    let running = true
+    if (chatDirty) {
+      useLocalApiServer.getState().setDefaultModelLocalApiServer(draft)
+      if (control.isRunning) {
+        running = await restartLocalApiServer(hub, control, {
+          ensureModel: true,
+        })
+      }
+    }
+    const models = { embedding, decision }
+    for (const kind of helperChanges) {
+      try {
+        await models[kind].apply(helperChoice[kind])
+      } catch (error) {
+        toast.error(t('api:model.helperFailed'), {
+          description: coreErrorMessage(error),
+        })
+      }
+    }
+    setDraft(null)
+    setHelperDraft({})
+    setPhase(running ? 'idle' : 'failed')
   }
 
+  // The bar shows only while there is something to save or a restart to
+  // report; once saved it goes, and the fields show what was kept.
+  const showSave = dirty || restarting || phase === 'failed'
   const statusText = restarting
     ? t('settings:serverConfig.restarting')
     : phase === 'failed'
       ? t('settings:serverConfig.restartFailed')
-      : phase === 'saved' && !dirty
-        ? t('settings:serverConfig.saved')
-        : dirty
-          ? t('settings:serverConfig.unsaved')
-          : t('settings:serverConfig.allSaved')
+      : t('settings:serverConfig.unsaved')
 
   return (
     <>
-      <section className="sp-panel">
-        <h2>{t('api:model.panelTitle')}</h2>
-        <EngineModelFields
-          engines={engines}
-          choice={choice}
-          onChange={choose}
-        />
-      </section>
+      {choice && engine ? (
+        <section className="sp-panel">
+          <EngineModelFields
+            engines={engines}
+            choice={choice}
+            onChange={(next) => {
+              setDraft(next)
+              setPhase('idle')
+            }}
+          />
+        </section>
+      ) : (
+        <section className="sp-panel sp-empty">
+          <h2>{t('api:model.emptyTitle')}</h2>
+          <p>{t('api:model.emptyBody')}</p>
+          <Link to={route.hub.index} className="sp-button sp-primary">
+            {t('api:model.openHub')}
+          </Link>
+        </section>
+      )}
 
-      <div className="sp-save">
-        <span role="status">{statusText}</span>
-        <ServerButton
-          disabled={!dirty || restarting}
-          onClick={() => {
-            setDraft(null)
-            setPhase('idle')
-          }}
-        >
-          {t('settings:serverConfig.discard')}
-        </ServerButton>
-        <ServerButton
-          primary
-          disabled={!dirty || restarting || control.isBusy}
-          onClick={() => void save()}
-        >
-          {control.isRunning
-            ? t('settings:serverConfig.applyRestart')
-            : t('settings:serverConfig.save')}
-        </ServerButton>
-      </div>
+      {showHelpers && (
+        <section className="sp-panel" aria-label={t('api:model.helperTitle')}>
+          <HelperModelFields
+            embedding={embedding}
+            decision={decision}
+            choice={helperChoice}
+            onChange={(next) => {
+              setHelperDraft(next)
+              setPhase('idle')
+            }}
+          />
+        </section>
+      )}
+
+      {showSave && (
+        <div className="sp-save">
+          <span role="status">{statusText}</span>
+          <ServerButton disabled={!dirty || restarting} onClick={discard}>
+            {t('settings:serverConfig.discard')}
+          </ServerButton>
+          <ServerButton
+            primary
+            disabled={!dirty || restarting || control.isBusy}
+            onClick={() => void save()}
+          >
+            {t('settings:serverConfig.save')}
+          </ServerButton>
+        </div>
+      )}
     </>
   )
+}
+
+/** The core's `{code, message}`, or whatever else was thrown, as one line. */
+function coreErrorMessage(error: unknown): string {
+  if (typeof error === 'object' && error !== null && 'message' in error)
+    return String((error as { message: unknown }).message)
+  return String(error)
 }

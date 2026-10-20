@@ -41,7 +41,6 @@ import {
   IconX,
   IconFolderPlus,
   IconPaperclip,
-  IconTerminal2,
   IconLoader2,
 } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -297,10 +296,6 @@ const ChatInput = memo(function ChatInput({
   const agentModeEnabled = useGeneralSetting(isAgentModeOn)
   const setAgentModeEnabled = useGeneralSetting(
     (state) => state.setAgentModeEnabled
-  )
-  const chatExecEnabled = useGeneralSetting((state) => state.chatExecEnabled)
-  const setChatExecEnabled = useGeneralSetting(
-    (state) => state.setChatExecEnabled
   )
   const agentRouteActive =
     useMessageExecutionRoute().route === 'agent-ipc' ||
@@ -2757,19 +2752,9 @@ const ChatInput = memo(function ChatInput({
   const showSendControl = Boolean(prompt.trim()) || isStreaming
 
   // What the model may do at all rides the access menu, beside how its calls
-  // are approved: commands and scripts, and Agent mode while it is shown.
+  // are approved: Agent mode while it is shown. Commands and scripts have no
+  // switch; they are always offered and each run follows the approval mode.
   const accessToggles: ApprovalMenuToggle[] = []
-  if (PlatformFeatures[PlatformFeature.CHAT_EXEC]) {
-    accessToggles.push({
-      id: 'chat-exec',
-      label: t('chat:chatExec.menuItem'),
-      description: t('chat:chatExec.menuDescription'),
-      icon: <IconTerminal2 className="size-4 text-muted-foreground" />,
-      checked: chatExecEnabled,
-      onCheckedChange: setChatExecEnabled,
-      testId: 'chat-exec-toggle',
-    })
-  }
   if (PlatformFeatures[PlatformFeature.AGENT_MODE]) {
     accessToggles.push({
       id: 'agent-mode',
@@ -3187,8 +3172,7 @@ const ChatInput = memo(function ChatInput({
                   {/* Approval mode rides the toolbar in both engines: it
                       gates the agent's dangerous tools AND the MCP/RAG calls
                       of the chat pipeline (see lib/mcp-approval.ts). Its menu
-                      also holds what the model may do at all: run commands,
-                      and Agent mode while that feature is shown. */}
+                      also holds Agent mode while that feature is shown. */}
                   <AgentApprovalModeSelect
                     compact={compactComposer}
                     mode={approvalMode}

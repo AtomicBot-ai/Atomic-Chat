@@ -88,10 +88,18 @@ export async function openInferenceEngines(browser: Browser): Promise<void> {
   await openSidebarRow(browser, 'Inference engines')
 }
 
-/** Opens an engine's own settings page from its card on the overview. */
+/**
+ * Opens an engine's own page (its models and every setting) through its card
+ * on the overview: the card unfolds its settings, which end with the link.
+ */
 export async function openEnginePage(browser: Browser, provider: string): Promise<void> {
   await openInferenceEngines(browser)
-  const link = browser.$(`[data-testid="engine-row-${provider}"] a`)
+  const row = `[data-testid="engine-row-${provider}"]`
+  const card = browser.$(`${row} button[aria-expanded]`)
+  await card.waitForClickable({ timeout: 30_000 })
+  // The overview may still be open from an earlier step, card unfolded.
+  if ((await card.getAttribute('aria-expanded')) !== 'true') await card.click()
+  const link = browser.$(`${row} a[href*="/settings/providers/"]`)
   await link.waitForClickable({ timeout: 30_000 })
   await link.click()
 }

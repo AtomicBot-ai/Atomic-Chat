@@ -1,5 +1,4 @@
 import type { UIMessage } from '@ai-sdk/react'
-import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import {
   refreshChatExecStatus,
   useChatExecStatus,
@@ -21,7 +20,7 @@ import type { MCPTool } from '@/types/completion'
 /**
  * Built-in chat tools that run a terminal command or a script on the user's
  * computer (`src-tauri/src/core/chat_exec`). They ride next to the MCP tools
- * in every chat request while the composer's "Run commands" item is on, and
+ * in every chat request where the platform and the machine can run them, and
  * each call goes through the thread's approval mode first (lib/mcp-approval).
  */
 export const RUN_COMMAND_TOOL = 'run_command'
@@ -65,7 +64,6 @@ export function isChatExecOffered(
 ): boolean {
   return (
     Boolean(PlatformFeatures[PlatformFeature.CHAT_EXEC]) &&
-    useGeneralSetting.getState().chatExecEnabled &&
     Boolean(status?.supported)
   )
 }

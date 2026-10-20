@@ -7,6 +7,10 @@ import { useAppState } from '@/hooks/useAppState'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { createSafeUnlisten } from '@/lib/tauriEvent'
 import { setLocalApiServerRunning } from '@/utils/localApiServerControl'
+import {
+  resumeServedHelperModels,
+  turnOffLocalApiServer,
+} from '@/utils/turnOffLocalApiServer'
 
 type SystemUsage = {
   cpu: number
@@ -161,9 +165,11 @@ export function useTrayStatusSync(): void {
 
     register(
       listen<unknown>('tray-stop-server', () => {
-        // `setLocalApiServerRunning` also resets the status to 'stopped' on
-        // failure, so the tray button can't get stuck permanently pending.
-        setLocalApiServerRunning(false).catch((error: unknown) => {
+        // Turning the server off from the tray unloads its models, as from
+        // the app. `setLocalApiServerRunning` underneath also resets the
+        // status to 'stopped' on failure, so the tray button can't get stuck
+        // permanently pending.
+        turnOffLocalApiServer().catch((error: unknown) => {
           console.error('[tray] stop server failed', error)
         })
       })
@@ -171,9 +177,11 @@ export function useTrayStatusSync(): void {
 
     register(
       listen<unknown>('tray-start-server', () => {
-        setLocalApiServerRunning(true).catch((error: unknown) => {
-          console.error('[tray] start server failed', error)
-        })
+        setLocalApiServerRunning(true)
+          .then(() => resumeServedHelperModels())
+          .catch((error: unknown) => {
+            console.error('[tray] start server failed', error)
+          })
       })
     )
 

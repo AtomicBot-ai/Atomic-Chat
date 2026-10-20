@@ -1,24 +1,21 @@
-import { useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { Box, Cpu, Network, Play, RotateCw, Square } from 'lucide-react'
 import { route } from '@/constants/routes'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useLocalApiServerControl } from '@/hooks/useLocalApiServerControl'
-import { restartLocalApiServer } from '@/hooks/useRemoteAccess'
-import { useServiceHub } from '@/hooks/useServiceHub'
 import { useServerSetup, useSetupDone } from '@/hooks/useServerSetup'
 import { useServedModel } from '@/containers/server/useServedModel'
 import './ServerControlPanel.css'
 
 /**
- * Start/Stop and Restart for the Local API Server, plus the engine and model
- * it serves and the way to its connection details, at the top of the Server
- * sidebar. Driven by the same control hook as the Server pages, so they
- * always agree.
+ * Start/Stop for the Local API Server, plus the engine and model it serves
+ * and the way to its connection details, at the top of the Server sidebar.
+ * Driven by the same control hook as the Server pages, so they always agree.
+ * There is no Restart: saving a change on a Server page applies it, and Stop
+ * also unloads the models the server served (`turnOffLocalApiServer`).
  */
 export function ServerControlPanel() {
   const { t } = useTranslation()
-  const hub = useServiceHub()
   const navigate = useNavigate()
   const control = useLocalApiServerControl()
   const setupDone = useSetupDone()
@@ -26,25 +23,13 @@ export function ServerControlPanel() {
     (state) =>
       state.configuredAgents.length + (state.endpointConfigured ? 1 : 0)
   )
-  const [restarting, setRestarting] = useState(false)
 
   // While running, show what the server actually loaded; otherwise what it
   // will load on the next start.
   const { engine, model } = useServedModel(control.isRunning)
 
-  const busy = restarting || control.isBusy
-  const starting = control.status === 'pending' && !restarting
-
-  // The shared restart: it loads the chosen model and brings a tunnel that
-  // was online back with the server.
-  const restart = async () => {
-    setRestarting(true)
-    try {
-      await restartLocalApiServer(hub, control, { ensureModel: true })
-    } finally {
-      setRestarting(false)
-    }
-  }
+  const busy = control.isBusy
+  const starting = control.status === 'pending'
 
   // Until the server is set up once, Start opens the setup guide: it picks
   // the model and what to connect, then starts the server itself.
@@ -57,13 +42,11 @@ export function ServerControlPanel() {
     void control.toggle()
   }
 
-  const powerLabel = restarting
-    ? t('common:navigation.serverRestarting')
-    : starting
-      ? t('common:navigation.serverStarting')
-      : control.isRunning
-        ? t('common:navigation.serverStop')
-        : t('common:navigation.serverStart')
+  const powerLabel = starting
+    ? t('common:navigation.serverStarting')
+    : control.isRunning
+      ? t('common:navigation.serverStop')
+      : t('common:navigation.serverStart')
 
   return (
     <section
@@ -89,16 +72,6 @@ export function ServerControlPanel() {
             )}
             {powerLabel}
           </span>
-        </button>
-        <button
-          type="button"
-          className={`dsc-restart ${restarting ? 'dsc-restarting' : ''}`}
-          aria-label={t('common:navigation.serverRestart')}
-          title={t('common:navigation.serverRestart')}
-          disabled={!control.isRunning || busy}
-          onClick={() => void restart()}
-        >
-          <RotateCw size={16} />
         </button>
       </div>
       <div className="dsc-details">

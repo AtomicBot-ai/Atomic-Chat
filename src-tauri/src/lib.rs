@@ -178,6 +178,7 @@ pub fn run() {
         core::system::commands::configure_kilo,
         core::system::commands::configure_poolside,
         core::system::commands::configure_muse,
+        core::system::agent_config_detection::detect_configured_agents,
         core::system::commands::open_agent_terminal,
         core::system::commands::launch_editor,
         // Server commands
@@ -366,6 +367,7 @@ pub fn run() {
         core::system::commands::configure_kilo,
         core::system::commands::configure_poolside,
         core::system::commands::configure_muse,
+        core::system::agent_config_detection::detect_configured_agents,
         core::system::commands::open_agent_terminal,
         core::system::commands::launch_editor,
         // Server commands

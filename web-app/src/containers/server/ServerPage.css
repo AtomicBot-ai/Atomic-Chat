@@ -92,7 +92,7 @@
     outline: 2px solid var(--primary);
     outline-offset: 3px;
   }
-  .server-page :is(input:not([type='checkbox']), select) {
+  .server-page :is(input:not([type='checkbox']), select, .sp-select) {
     width: 100%;
     height: var(--control-height);
     min-width: 0;
@@ -101,7 +101,8 @@
     border-radius: 7px;
     background-color: var(--secondary);
     color: var(--foreground);
-    font-size: var(--text-base);
+    /* The value reads at its label's size, as in the prototype. */
+    font-size: inherit;
   }
   .server-page input[readonly] {
     color: var(--muted-foreground);
@@ -113,6 +114,23 @@
     flex-shrink: 0;
     accent-color: var(--primary);
     cursor: pointer;
+  }
+  /* The dropdown's chevron sits inset, with room before the label. */
+  .server-page .sp-select {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    text-align: left;
+    cursor: pointer;
+  }
+  .server-page .sp-select > svg {
+    flex-shrink: 0;
+    color: #8c9996;
+    transition: transform 150ms ease;
+  }
+  .server-page .sp-select[data-state='open'] > svg {
+    transform: rotate(180deg);
   }
   /* Native selects keep an inset chevron with room before the label. */
   .server-page select {
@@ -201,7 +219,7 @@
   .sp-panel > .sp-row {
     margin-bottom: 17px;
   }
-  .server-page .sp-panel > .sp-row select {
+  .server-page .sp-panel > .sp-row :is(select, .sp-select) {
     width: 110px;
   }
   .sp-panel pre {

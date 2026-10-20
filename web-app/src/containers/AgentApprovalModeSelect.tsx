@@ -24,8 +24,8 @@ import type { AgentApprovalMode } from '@/hooks/useAgentMode'
 
 /**
  * An on/off switch that rides the access menu under the approval modes: what
- * the model may do at all (run commands, the agent loop), next to how its
- * calls are approved.
+ * the model may do at all (the agent loop), next to how its calls are
+ * approved.
  */
 export type ApprovalMenuToggle = {
   id: string

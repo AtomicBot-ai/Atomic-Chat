@@ -14,6 +14,7 @@ import {
   ServerApiKeyField,
   ServerButton,
   ServerField,
+  ServerSelect,
   ServerSettingRow,
 } from './ServerPageParts'
 
@@ -96,14 +97,15 @@ const normalize = (draft: ServerConfigDraft): ServerConfigDraft => ({
   trustedHosts: parseTrustedHosts(draft.trustedHosts).join(', '),
 })
 
-type Phase = 'idle' | 'saved' | 'restarting' | 'failed'
+type Phase = 'idle' | 'restarting' | 'failed'
 
 /**
  * Server → Configuration. The fields edit a draft; "Save changes" writes it to
- * `useLocalApiServer`, and while the server runs "Apply & restart" also
- * restarts it when a setting it read at start changed (autostart alone does
- * not need one). A change made elsewhere — Remote access generating a key —
- * flows in as long as the draft has no edits of its own.
+ * `useLocalApiServer` and, while the server runs, applies it: the server comes
+ * back with the new values when a setting it read at start changed (autostart
+ * alone does not need that), keeping its models. A change made elsewhere —
+ * Remote access generating a key — flows in as long as the draft has no edits
+ * of its own.
  */
 export function ServerConfiguration() {
   const { t } = useTranslation()
@@ -152,42 +154,44 @@ export function ServerConfiguration() {
     setDraft(next)
 
     if (!needsRestart) {
-      setPhase('saved')
+      setPhase('idle')
       return
     }
     setPhase('restarting')
     const running = await restartLocalApiServer(hub, control)
-    setPhase(running ? 'saved' : 'failed')
+    setPhase(running ? 'idle' : 'failed')
   }
 
+  // The bar shows only while there is something to save or a restart to
+  // report; once saved it goes, and the fields show what was kept.
+  const showSave = dirty || !valid || restarting || phase === 'failed'
   const statusText = restarting
     ? t('settings:serverConfig.restarting')
     : phase === 'failed'
       ? t('settings:serverConfig.restartFailed')
-      : phase === 'saved' && !dirty
-        ? t('settings:serverConfig.saved')
-        : dirty
-          ? t('settings:serverConfig.unsaved')
-          : t('settings:serverConfig.allSaved')
+      : t('settings:serverConfig.unsaved')
 
   return (
     <>
       <section className="sp-panel">
-        <h2>{t('settings:serverConfig.panelTitle')}</h2>
         <ServerField label={t('settings:serverConfig.host')}>
-          <select
+          <ServerSelect
+            label={t('settings:serverConfig.host')}
             value={draft.host}
-            onChange={(event) =>
-              update('host', event.target.value as ServerConfigDraft['host'])
+            options={[
+              {
+                value: '127.0.0.1',
+                label: t('settings:serverConfig.hostLocal'),
+              },
+              {
+                value: '0.0.0.0',
+                label: t('settings:serverConfig.hostNetwork'),
+              },
+            ]}
+            onChange={(host) =>
+              update('host', host as ServerConfigDraft['host'])
             }
-          >
-            <option value="127.0.0.1">
-              {t('settings:serverConfig.hostLocal')}
-            </option>
-            <option value="0.0.0.0">
-              {t('settings:serverConfig.hostNetwork')}
-            </option>
-          </select>
+          />
         </ServerField>
         <div className="sp-fields">
           <ServerField label={t('settings:serverConfig.port')}>
@@ -258,34 +262,34 @@ export function ServerConfiguration() {
         </div>
       </details>
 
-      <div className="sp-save">
-        {/* Why Save is off sits next to it, where the sticky bar keeps it in view. */}
-        {valid ? (
-          <span role="status">{statusText}</span>
-        ) : (
-          <span role="alert" className="sp-error">
-            {t('settings:serverConfig.invalid')}
-          </span>
-        )}
-        <ServerButton
-          disabled={!dirty || restarting}
-          onClick={() => {
-            setDraft(baseline)
-            setPhase('idle')
-          }}
-        >
-          {t('settings:serverConfig.discard')}
-        </ServerButton>
-        <ServerButton
-          primary
-          disabled={!dirty || !valid || restarting || control.isBusy}
-          onClick={() => void save()}
-        >
-          {control.isRunning
-            ? t('settings:serverConfig.applyRestart')
-            : t('settings:serverConfig.save')}
-        </ServerButton>
-      </div>
+      {showSave && (
+        <div className="sp-save">
+          {/* Why Save is off sits next to it, where the sticky bar keeps it in view. */}
+          {valid ? (
+            <span role="status">{statusText}</span>
+          ) : (
+            <span role="alert" className="sp-error">
+              {t('settings:serverConfig.invalid')}
+            </span>
+          )}
+          <ServerButton
+            disabled={!dirty || restarting}
+            onClick={() => {
+              setDraft(baseline)
+              setPhase('idle')
+            }}
+          >
+            {t('settings:serverConfig.discard')}
+          </ServerButton>
+          <ServerButton
+            primary
+            disabled={!dirty || !valid || restarting || control.isBusy}
+            onClick={() => void save()}
+          >
+            {t('settings:serverConfig.save')}
+          </ServerButton>
+        </div>
+      )}
     </>
   )
 }

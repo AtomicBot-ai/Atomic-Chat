@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useServerSetup } from '@/hooks/useServerSetup'
@@ -34,13 +34,6 @@ vi.mock('@/hooks/useLocalApiServerControl', () => ({
   useLocalApiServerControl: () => control,
 }))
 
-const { hub, restart } = vi.hoisted(() => ({
-  hub: { app: () => ({}) },
-  restart: vi.fn(),
-}))
-vi.mock('@/hooks/useServiceHub', () => ({ useServiceHub: () => hub }))
-vi.mock('@/hooks/useRemoteAccess', () => ({ restartLocalApiServer: restart }))
-
 const server = vi.hoisted(() => ({
   defaultModelLocalApiServer: null as null | {
     model: string
@@ -68,7 +61,6 @@ describe('ServerControlPanel', () => {
     control.start.mockResolvedValue(undefined)
     control.stop.mockResolvedValue(undefined)
     control.toggle.mockResolvedValue(undefined)
-    restart.mockResolvedValue(true)
     useServerSetup.setState({
       setupDone: true,
       guide: null,
@@ -86,28 +78,21 @@ describe('ServerControlPanel', () => {
     await userEvent.click(power)
 
     expect(control.toggle).toHaveBeenCalledTimes(1)
-    // Nothing to restart while it is stopped.
-    expect(
-      screen.getByRole('button', { name: 'common:navigation.serverRestart' })
-    ).toBeDisabled()
   })
 
-  it('offers Stop while running and restarts through the shared restart, loading the chosen model', async () => {
+  it('offers only Stop while running: saving a change applies it, so there is no Restart', async () => {
     setStatus('running')
     render(<ServerControlPanel />)
 
-    expect(screen.getByTestId('server-panel-power')).toHaveTextContent(
-      'common:navigation.serverStop'
-    )
-    await act(async () => {
-      await userEvent.click(
-        screen.getByRole('button', { name: 'common:navigation.serverRestart' })
-      )
-    })
+    const power = screen.getByTestId('server-panel-power')
+    expect(power).toHaveTextContent('common:navigation.serverStop')
+    expect(
+      screen.queryByRole('button', { name: /restart/i })
+    ).not.toBeInTheDocument()
+    await userEvent.click(power)
 
-    // The shared path also brings back a tunnel that was online.
-    expect(restart).toHaveBeenCalledWith(hub, control, { ensureModel: true })
-    expect(control.toggle).not.toHaveBeenCalled()
+    // The control's stop is the turn-off that also unloads the models.
+    expect(control.toggle).toHaveBeenCalledTimes(1)
   })
 
   it('opens Engine & model from the engine and model, and Connections below them', () => {
@@ -124,16 +109,13 @@ describe('ServerControlPanel', () => {
     ).toHaveAttribute('href', '/api/connections')
   })
 
-  it('locks both actions while the server is starting', () => {
+  it('locks the power button while the server is starting', () => {
     setStatus('pending')
     render(<ServerControlPanel />)
 
     const power = screen.getByTestId('server-panel-power')
     expect(power).toHaveTextContent('common:navigation.serverStarting')
     expect(power).toBeDisabled()
-    expect(
-      screen.getByRole('button', { name: 'common:navigation.serverRestart' })
-    ).toBeDisabled()
   })
 
   it('shows the model the next start will load', () => {

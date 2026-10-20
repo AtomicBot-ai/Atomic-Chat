@@ -15,10 +15,7 @@ export function ServerConfigurationPage() {
   const { t } = useTranslation()
 
   return (
-    <ServerPage
-      title={t('settings:serverConfig.title')}
-      description={t('settings:serverConfig.description')}
-    >
+    <ServerPage title={t('settings:serverConfig.title')}>
       <ServerConfiguration />
     </ServerPage>
   )

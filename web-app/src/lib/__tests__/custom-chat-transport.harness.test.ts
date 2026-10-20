@@ -1386,7 +1386,6 @@ describe('CustomChatTransport commands and scripts', () => {
 
   beforeEach(() => {
     useChatExecStatus.setState({ status: null })
-    useGeneralSetting.setState({ chatExecEnabled: true })
     seedServiceHub({
       rag: { getTools: vi.fn().mockResolvedValue([]) } as never,
       chatExec: {
@@ -1434,8 +1433,17 @@ describe('CustomChatTransport commands and scripts', () => {
     expect(await sentToolNames()).toEqual(['run_command', 'run_script'])
   })
 
-  it('offers neither once the composer toggle is off', async () => {
-    useGeneralSetting.setState({ chatExecEnabled: false })
+  it('offers neither where the machine cannot run them', async () => {
+    useChatExecStatus.setState({
+      status: {
+        supported: false,
+        os: 'macos',
+        shell: 'sh',
+        languages: [],
+        sandbox: { kind: 'none', reason: null },
+        userFolders: [],
+      },
+    })
     expect(await sentToolNames()).toBeUndefined()
   })
 })

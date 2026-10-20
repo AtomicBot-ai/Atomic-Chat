@@ -35,6 +35,34 @@ function firstOffer(
   return null
 }
 
+/**
+ * Download a swap offer's build and switch to it through the core, as the
+ * banner's and the engine card's "Update" do; the download panel shows the
+ * transfer. Rejects with the core's error as it came. A `reinstall` offer is
+ * not installed here: the engine's page confirms it first.
+ */
+export async function installEngineUpdate(
+  offer: EngineUpdateOffer
+): Promise<void> {
+  if (offer.provider === 'sd-cpp') {
+    // The image store keeps Settings → Media's view of the update and
+    // installs what it has seen offered: let it read this offer first.
+    const images = useImageGenerationStore.getState()
+    if (images.engineUpdate.availableTag !== offer.targetVersion) {
+      await images.checkEngineUpdate()
+    }
+    if (!useImageGenerationStore.getState().engineUpdate.availableTag) {
+      throw new Error('The media engine has no update to install.')
+    }
+    await useImageGenerationStore.getState().updateEngine()
+    return
+  }
+  await updateEngineWithProgress(offer.provider, {
+    taskId: engineUpdateTaskId(offer.provider, offer.targetVersion),
+    backend: offer.targetBackend,
+  })
+}
+
 export interface EngineUpdateState {
   /** The offer to show, or `null` when there is nothing to ask about. */
   offer: EngineUpdateOffer | null
@@ -92,23 +120,7 @@ export const useEngineUpdate = (): EngineUpdateState => {
     setHidden((held) => new Set(held).add(target))
     setApplyingCount((n) => n + 1)
     try {
-      if (offer.provider === 'sd-cpp') {
-        // The image store keeps Settings → Media's view of the update and
-        // installs what it has seen offered: let it read this offer first.
-        const images = useImageGenerationStore.getState()
-        if (images.engineUpdate.availableTag !== offer.targetVersion) {
-          await images.checkEngineUpdate()
-        }
-        if (!useImageGenerationStore.getState().engineUpdate.availableTag) {
-          throw new Error('The media engine has no update to install.')
-        }
-        await useImageGenerationStore.getState().updateEngine()
-      } else {
-        await updateEngineWithProgress(offer.provider, {
-          taskId: engineUpdateTaskId(offer.provider, offer.targetVersion),
-          backend: offer.targetBackend,
-        })
-      }
+      await installEngineUpdate(offer)
     } catch (error) {
       // Refused: the offer is still true, so it comes back.
       setHidden((held) => {

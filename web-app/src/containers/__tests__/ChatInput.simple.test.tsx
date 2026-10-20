@@ -222,8 +222,8 @@ vi.mock('@/containers/ReplyModelGate', () => ({
 vi.mock('@/containers/AgentApprovalModeSelect', () => ({
   // A marker: the project-composer test asserts the agent affordances render.
   // The menu's switches are rendered as plain buttons, so the composer's
-  // wiring of "Run commands" and Agent mode can be driven from here; the
-  // select's own suite covers how the menu draws them.
+  // wiring of Agent mode can be driven from here; the select's own suite
+  // covers how the menu draws them.
   AgentApprovalModeSelect: ({
     toggles = [],
   }: {
@@ -263,10 +263,7 @@ describe('ChatInput', () => {
     seedServiceHub()
     usePrompt.setState({ prompt: '' })
     useChatAttachments.setState({ attachmentsByThread: {} })
-    useGeneralSetting.setState({
-      agentModeEnabled: false,
-      chatExecEnabled: true,
-    })
+    useGeneralSetting.setState({ agentModeEnabled: false })
     platformFeatures.agentMode = true
     platformFeatures.chatExec = true
     platform.tauri = true
@@ -1208,8 +1205,7 @@ describe('ChatInput', () => {
 
   it('attaches through one paperclip, with no menu and no Plugins item', () => {
     // Plugins is a toolbar fixture of its own; the paperclip is a plain
-    // button that opens the picker, and Agent mode / Run commands moved to
-    // the access menu.
+    // button that opens the picker, and Agent mode moved to the access menu.
     selectToolCapableModel()
 
     const { unmount } = render(<ChatInput />)
@@ -1435,25 +1431,18 @@ describe('ChatInput', () => {
     unmount()
   })
 
-  it('toggles running commands from the access menu', () => {
+  it('puts no Run commands switch in the access menu: commands are always on', () => {
+    // The platform can run commands, yet the menu's only switch is Agent mode.
     const { unmount } = render(<ChatInput />)
 
-    fireEvent.click(screen.getByText('chat:chatExec.menuItem'))
-    expect(useGeneralSetting.getState().chatExecEnabled).toBe(false)
-
-    fireEvent.click(screen.getByText('chat:chatExec.menuItem'))
-    expect(useGeneralSetting.getState().chatExecEnabled).toBe(true)
-    unmount()
-  })
-
-  it('offers no command toggle where the platform cannot run commands', () => {
-    platformFeatures.chatExec = false
-
-    const { unmount } = render(<ChatInput />)
-
+    const menu = document.querySelector<HTMLElement>(
+      '[data-test-id="approval-mode-select"]'
+    )!
     expect(
-      screen.queryByText('chat:chatExec.menuItem')
-    ).not.toBeInTheDocument()
+      within(menu)
+        .getAllByRole('button')
+        .map((toggle) => toggle.textContent)
+    ).toEqual(['chat:agentMode.menuItem'])
     unmount()
   })
 

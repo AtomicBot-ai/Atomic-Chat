@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import { AgentApprovalModeSelect } from './AgentApprovalModeSelect'
 import type { AgentApprovalMode } from '@/hooks/useAgentMode'
-import { IconTerminal2 } from '@tabler/icons-react'
+import { RobotHeadIcon } from '@/components/icons/robot-head'
 import chat from '@/locales/en/chat.json'
 import {
   expectNoHorizontalOverflow,
@@ -70,10 +70,11 @@ async function openMenu({
           skipConfirmAccept={copy.skipConfirmAccept}
           toggles={[
             {
-              id: 'chat-exec',
-              label: chat.chatExec.menuItem,
-              description: chat.chatExec.menuDescription,
-              icon: <IconTerminal2 className="size-4 text-muted-foreground" />,
+              id: 'agent-mode',
+              label: chat.agentMode.menuItem,
+              icon: (
+                <RobotHeadIcon size={16} className="text-muted-foreground" />
+              ),
               checked: true,
               onCheckedChange: () => {},
             },
@@ -169,18 +170,12 @@ describe('Approval menu geometry (Chromium)', () => {
       expect(iconLefts[0]).toBe(iconLefts[1])
       expect(checkLefts[0]).toBe(checkLefts[1])
 
-      // "Run commands" under the modes: the same row width and icon column,
-      // its switch ending where the checkmarks end, its copy unclipped.
+      // Agent mode under the modes: the same row width and icon column, its
+      // switch ending where the checkmarks end, its title on one line.
       const toggle = within(menu).getByRole('menuitemcheckbox')
       expectSameWidth([...rows, toggle])
-      const toggleTitle = within(toggle).getByText(chat.chatExec.menuItem)
-      const toggleDescription = within(toggle).getByText(
-        chat.chatExec.menuDescription
-      )
+      const toggleTitle = within(toggle).getByText(chat.agentMode.menuItem)
       expectOneLine(toggleTitle)
-      expect(toggleDescription.scrollHeight).toBeLessThanOrEqual(
-        toggleDescription.clientHeight + 1
-      )
       const toggleIcon = toggle.querySelector('svg')!
       const toggleSwitch = toggle.querySelector<HTMLElement>(
         '[data-state="checked"]'

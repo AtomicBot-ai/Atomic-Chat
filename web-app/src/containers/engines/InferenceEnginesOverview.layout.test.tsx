@@ -2,7 +2,6 @@ import { render, screen, within } from '@testing-library/react'
 import { page } from '@vitest/browser/context'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { useAppState } from '@/hooks/useAppState'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import i18n from '@/i18n/setup'
 import type { EngineVersions } from '@/services/engines/types'
@@ -23,6 +22,7 @@ import {
 import { InferenceEnginesOverview } from './InferenceEnginesOverview'
 
 vi.mock('@tanstack/react-router', () => ({
+  useNavigate: () => vi.fn(),
   Link: ({
     children,
     to,
@@ -39,13 +39,9 @@ vi.mock('@tanstack/react-router', () => ({
   ),
 }))
 
-const getActiveModels = vi.fn(async (provider?: string) =>
-  provider === 'llamacpp-upstream' ? ['qwen'] : []
-)
 vi.mock('@/hooks/useServiceHub', () => ({
   useServiceHub: () => ({
     providers: () => ({ getProviders: async () => [] }),
-    models: () => ({ getActiveModels, stopAllModels: async () => {} }),
   }),
   getServiceHub: () => ({}),
   isServiceHubInitialized: () => false,
@@ -61,6 +57,12 @@ vi.mock('@/containers/images/MediaSettingsPanel', () => ({
 vi.mock('@/containers/VoiceSettingsPanel', () => ({
   VoiceSettingsPanel: () => (
     <div data-testid="voice-settings-panel" className="h-40 w-full" />
+  ),
+}))
+// So does an engine's settings form, which is its page's.
+vi.mock('@/containers/engines/EngineDetail', () => ({
+  EngineDetail: () => (
+    <div data-testid="engine-settings" className="h-60 w-full" />
   ),
 }))
 
@@ -128,7 +130,6 @@ function seed() {
     },
   })
   useImageGenerationStore.setState({ status: null })
-  useAppState.setState({ activeModels: [] })
 }
 
 async function renderPage(width: number, fontSize: string, language: string) {
@@ -145,20 +146,12 @@ async function renderPage(width: number, fontSize: string, language: string) {
       </main>
     </div>
   )
-  // The status comes from an async ask after the first render.
-  await vi.waitFor(() =>
-    expect(container.querySelector('[data-status="running"]')).not.toBeNull()
-  )
   await settle(container)
   return screen.getByTestId('column')
 }
 
 const rows = (column: HTMLElement) =>
   Array.from(column.querySelectorAll<HTMLElement>('li[data-testid]'))
-
-beforeEach(() => {
-  getActiveModels.mockClear()
-})
 
 describe.each(['en', 'ru'])(
   'the inference engines overview in %s',
@@ -182,35 +175,35 @@ describe.each(['en', 'ru'])(
           expectOneLine(heading)
         }
 
+        // "Check for updates" stays beside the title.
+        const check = within(column).getByRole('button', {
+          name: i18n.t('providers:overview.checkForUpdates'),
+        })
+        expectOneLine(check.querySelector('span')!)
+        expect(check.getBoundingClientRect().top).toBeLessThan(
+          title.getBoundingClientRect().bottom
+        )
+
         const all = rows(column)
         expect(all).toHaveLength(8)
         for (const row of all) {
-          const status = row.querySelector<HTMLElement>('[data-status]')!
-          expectOneLine(status.lastElementChild as HTMLElement)
-          expectFits(status, row)
-          const chevron = row.querySelector(
-            'svg.lucide-chevron-right, svg.lucide-chevron-down'
-          )!
-          expectFits(chevron, row)
-          const toggle = row.querySelector('[role="switch"]')
-          if (toggle) expectFits(toggle, row)
-          for (const badge of within(row).queryAllByText(
-            i18n.t('providers:overview.updateAvailable')
-          )) {
-            expectOneLine(badge)
-            expectFits(badge.parentElement!, row)
+          const status = row.querySelector<HTMLElement>('[data-status]')
+          if (status) {
+            expectOneLine(status)
+            expectFits(status, row)
           }
+          const update = within(row).queryByRole('button', {
+            name: /^(Update|Обновить) /,
+          })
+          if (update) {
+            expectOneLine(update.querySelector('span')!)
+            expectFits(update, row)
+          }
+          expectFits(row.querySelector('svg.lucide-chevron-down')!, row)
         }
 
-        // One stable status column: the right edges line up across groups,
-        // the media and voice rows keeping the switch's slot.
-        const rights = all.map(
-          (row) =>
-            row.querySelector('[data-status]')!.getBoundingClientRect().right
-        )
-        for (const right of rights)
-          expect(Math.abs(right - rights[0])).toBeLessThanOrEqual(1)
-
+        // The header of every card stays one row: name, status, Update and
+        // the chevron never wrap under each other.
         expectSameHeight(all)
       }
     )
@@ -218,18 +211,30 @@ describe.each(['en', 'ru'])(
 )
 
 describe.each(['light', 'dark'] as const)('%s theme', (theme) => {
-  it('opens the media settings inside the card without widening it', async () => {
-    setTheme(theme)
-    const column = await renderPage(1024, XL_FONT_SIZE, 'en')
-    const media = screen.getByTestId('engine-row-sd-cpp')
-    const before = media.getBoundingClientRect().width
+  it.each([
+    ['engine-row-llamacpp-upstream', 'engine-settings'],
+    ['engine-row-sd-cpp', 'media-settings-panel'],
+  ])(
+    'unfolds %s settings under its header, inside the card, without widening it',
+    async (rowId, panelId) => {
+      setTheme(theme)
+      const column = await renderPage(1024, XL_FONT_SIZE, 'en')
+      const row = screen.getByTestId(rowId)
+      const before = row.getBoundingClientRect().width
 
-    within(media).getByRole('button').click()
-    await settle(column)
+      within(row)
+        .getByRole('button', { name: /^Show .* settings$/ })
+        .click()
+      await settle(column)
 
-    const panel = screen.getByTestId('media-settings-panel')
-    expectFits(panel, media)
-    expect(media.getBoundingClientRect().width).toBeCloseTo(before, 0)
-    expectNoHorizontalOverflow(column)
-  })
+      const panel = screen.getByTestId(panelId)
+      expectFits(panel, row)
+      const header = row.firstElementChild!.getBoundingClientRect()
+      expect(panel.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+        header.bottom
+      )
+      expect(row.getBoundingClientRect().width).toBeCloseTo(before, 0)
+      expectNoHorizontalOverflow(column)
+    }
+  )
 })

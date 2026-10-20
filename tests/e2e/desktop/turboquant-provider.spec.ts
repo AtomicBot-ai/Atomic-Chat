@@ -66,7 +66,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('the TurboQuant provider', () => {
       const card = browser.$(`[data-testid="engine-row-${FORK_PROVIDER}"]`)
       await openInferenceEngines(browser)
       await card.waitForDisplayed({ timeout: 30_000 })
-      expect(await card.$('[data-status]').getAttribute('data-status')).toBe('disabled')
+      expect(await card.getText()).toContain('Disabled')
       await openEnginePage(browser, FORK_PROVIDER)
       const toggle = browser.$('//h1[normalize-space(.)="llama.cpp turboquant"]/following::button[@role="switch"][1]')
       await toggle.waitForClickable({ timeout: 30_000 })

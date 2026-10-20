@@ -19,6 +19,10 @@ import {
   setLocalApiServerRunning,
   stopLocalApiServer,
 } from '@/utils/localApiServerControl'
+import {
+  resumeServedHelperModels,
+  turnOffLocalApiServer,
+} from '@/utils/turnOffLocalApiServer'
 
 type StartOptions = {
   /**
@@ -109,7 +113,9 @@ export function useLocalApiServerControl() {
             // active provider is preferred, as it is when the model is loaded.
             const serverModels = activeModels.flatMap((id: string) => {
               const provider = findProviderForModel(id)
-              return provider ? [{ model: id, provider: provider.provider }] : []
+              return provider
+                ? [{ model: id, provider: provider.provider }]
+                : []
             })
             if (serverModels.length > 0) setLastServerModels(serverModels)
           }
@@ -117,6 +123,7 @@ export function useLocalApiServerControl() {
         }
 
         await setLocalApiServerRunning(true)
+        void resumeServedHelperModels(serviceHub)
 
         // The core falls back to a free port when the configured one is taken, and the store
         // follows it. Until now that happened in silence: the user points Codex, OpenCode or a
@@ -139,13 +146,20 @@ export function useLocalApiServerControl() {
     [serviceHub, setLastServerModels, setServerStatus]
   )
 
-  const stop = useCallback(async () => {
-    try {
-      await setLocalApiServerRunning(false)
-    } catch (error) {
-      console.error('Error stopping server:', error)
-    }
-  }, [])
+  // Turning the server off lets the models it served go too
+  // (`turnOffLocalApiServer`); a restart passes `keepModels`, since it only
+  // brings the server back with a new host, key or model.
+  const stop = useCallback(
+    async ({ keepModels = false }: { keepModels?: boolean } = {}) => {
+      try {
+        if (keepModels) await setLocalApiServerRunning(false)
+        else await turnOffLocalApiServer(serviceHub)
+      } catch (error) {
+        console.error('Error stopping server:', error)
+      }
+    },
+    [serviceHub]
+  )
 
   const isRunning = serverStatus !== 'stopped'
 

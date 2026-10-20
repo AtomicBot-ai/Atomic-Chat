@@ -3,6 +3,7 @@ import {
   INTEGRATION_AGENTS,
   type IntegrationAgent,
 } from '@/constants/integrations'
+import { useServerSetup } from '@/hooks/useServerSetup'
 import { useLaunchStore } from '@/stores/launch-store'
 import { useLaunchSettings } from '@/stores/launch-settings-store'
 
@@ -49,16 +50,33 @@ export async function detectIntegrationAgent(
   }
 }
 
+/**
+ * Lists the agents whose own config already points at this server — set up
+ * through an earlier release, before the Server section kept its list — as
+ * configured. When the backend cannot tell, the list stays as it is.
+ */
+export async function adoptConfiguredAgents(): Promise<void> {
+  try {
+    const ids = await invoke<string[]>('detect_configured_agents')
+    const known = new Set(INTEGRATION_AGENTS.map((agent) => agent.id))
+    useServerSetup.getState().adoptAgents(ids.filter((id) => known.has(id)))
+  } catch {
+    // Nothing found is the same as nothing configured.
+  }
+}
+
 let detectedThisSession = false
 
 /**
  * One detection pass per app session for surfaces that only show status (the
- * Server sidebar). The Launch page re-detects on every visit and after each
- * install, so a stale answer here is refreshed there.
+ * Server sidebar): what is installed, and what is already set up. The
+ * Launch page re-detects installs on every visit and after each install, so a
+ * stale answer here is refreshed there.
  */
 export function detectIntegrationAgentsOnce() {
   if (detectedThisSession) return
   detectedThisSession = true
+  void adoptConfiguredAgents()
   const { installed } = useLaunchStore.getState()
   const { customPaths } = useLaunchSettings.getState()
   INTEGRATION_AGENTS.forEach((agent) => {

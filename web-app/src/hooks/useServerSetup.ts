@@ -21,6 +21,11 @@ type ServerSetupState = {
    * actually talks to the server.
    */
   configuredAgents: { id: string; at: number }[]
+  /**
+   * Tools the user removed from the list. Their own config may still point
+   * here, so detection must not bring them back; setting one up again does.
+   */
+  forgottenAgents: string[]
   /** The guide prepared an endpoint for the user's own application. */
   endpointConfigured: boolean
   /** Session only: where the guide starts when it was opened on purpose. */
@@ -35,6 +40,12 @@ type ServerSetupState = {
   closeGuide: () => void
   finishSetup: () => void
   markAgentConfigured: (id: string) => void
+  /**
+   * Tools found already pointing at this server (set up by an earlier
+   * release, before this list existed). Adds the ones not listed yet, except
+   * those the user removed.
+   */
+  adoptAgents: (ids: string[]) => void
   markEndpointConfigured: () => void
   forgetAgent: (id: string) => void
   forgetEndpoint: () => void
@@ -46,6 +57,7 @@ export const useServerSetup = create<ServerSetupState>()(
       setupDone: false,
       setupDismissed: false,
       configuredAgents: [],
+      forgottenAgents: [],
       endpointConfigured: false,
       guide: null,
       guideRevision: 0,
@@ -70,13 +82,36 @@ export const useServerSetup = create<ServerSetupState>()(
             ...state.configuredAgents.filter((agent) => agent.id !== id),
             { id, at: Date.now() },
           ],
+          forgottenAgents: state.forgottenAgents.filter(
+            (agent) => agent !== id
+          ),
         })),
+      adoptAgents: (ids) =>
+        set((state) => {
+          const known = new Set([
+            ...state.configuredAgents.map((agent) => agent.id),
+            ...state.forgottenAgents,
+          ])
+          const found = [...new Set(ids)].filter((id) => !known.has(id))
+          if (found.length === 0) return state
+          const at = Date.now()
+          return {
+            configuredAgents: [
+              ...found.map((id) => ({ id, at })),
+              ...state.configuredAgents,
+            ],
+          }
+        }),
       markEndpointConfigured: () => set({ endpointConfigured: true }),
       forgetAgent: (id) =>
         set((state) => ({
           configuredAgents: state.configuredAgents.filter(
             (agent) => agent.id !== id
           ),
+          forgottenAgents: [
+            ...state.forgottenAgents.filter((agent) => agent !== id),
+            id,
+          ],
         })),
       forgetEndpoint: () => set({ endpointConfigured: false }),
     }),
@@ -88,6 +123,7 @@ export const useServerSetup = create<ServerSetupState>()(
         setupDone: state.setupDone,
         setupDismissed: state.setupDismissed,
         configuredAgents: state.configuredAgents,
+        forgottenAgents: state.forgottenAgents,
         endpointConfigured: state.endpointConfigured,
       }),
     }
