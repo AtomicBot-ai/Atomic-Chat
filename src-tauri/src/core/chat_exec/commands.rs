@@ -425,9 +425,18 @@ async fn run_request<R: Runtime>(
         .as_ref()
         .map(ManagedPython::path_dirs)
         .unwrap_or_default();
+    // Where the command starts. A secure project's chat starts in the
+    // project's first editable folder: a model that writes `file.txt` means
+    // the project, and in the chat folder its files were out of the user's
+    // sight (it then listed the empty project folder and called it
+    // inaccessible). The chat folder keeps `.tmp` and packages either way.
+    let mut cwd = workdir.root.clone();
     let launch = match sandbox {
         Some((environment, wxc_exec)) => {
             let (writable_folders, project_readonly) = environment.existing_roots();
+            if let Some(folder) = writable_folders.first() {
+                cwd = folder.clone();
+            }
             let mut readonly = vec![mxc::system_root()];
             readonly.extend(prepared.bins.dirs.iter().cloned());
             readonly.extend(python.as_ref().map(|python| python.base_prefix.clone()));
@@ -453,6 +462,7 @@ async fn run_request<R: Runtime>(
                 container_id: &container_id,
                 command_line: &command_line,
                 workdir: &workdir.root,
+                cwd: &cwd,
                 writable_folders: &writable_folders,
                 env: &env,
                 readonly_paths: &readonly,
@@ -518,7 +528,7 @@ async fn run_request<R: Runtime>(
         } else {
             SandboxKind::None
         },
-        workdir: workdir.root.display().to_string(),
+        workdir: cwd.display().to_string(),
         duration_ms: u64::try_from(output.duration.as_millis()).unwrap_or(u64::MAX),
         hint,
     })

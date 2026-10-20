@@ -11,6 +11,7 @@ import type {
   ModelCompatibilityRequest,
   ModelSetupService,
   PrismCatalog,
+  PrismCatalogRequest,
   PrismFamiliesResponse,
   PrismPack,
 } from './types'
@@ -33,7 +34,7 @@ export class DefaultModelSetupService implements ModelSetupService {
     throw new Error(MODEL_SETUP_UNSUPPORTED)
   }
 
-  async prismCatalog(): Promise<PrismCatalog> {
+  async prismCatalog(_request?: PrismCatalogRequest): Promise<PrismCatalog> {
     throw new Error(MODEL_SETUP_UNSUPPORTED)
   }
 

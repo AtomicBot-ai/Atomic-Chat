@@ -86,7 +86,7 @@
       }
     },
     "exec": {
-      "openFolder": "Открыть папку чата",
+      "openFolder": "Открыть папку",
       "sandboxed": "Выполнено в песочнице Windows",
       "exitCode": "Код выхода {{code}}",
       "timedOut": "Превышено время",

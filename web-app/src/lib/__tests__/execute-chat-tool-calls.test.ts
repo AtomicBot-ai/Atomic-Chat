@@ -70,13 +70,14 @@ describe('executeChatToolCalls', () => {
     const callMcpTool = vi.fn(async () => ({
       content: [{ type: 'text', text: 'result' }],
     }))
+    const outputs: ChatToolOutput[] = []
 
     await executeChatToolCalls({
       ...baseOptions(),
       toolCalls: [calls[0]],
       signal: new AbortController().signal,
       callMcpTool,
-      addToolOutput: vi.fn(),
+      addToolOutput: (output: ChatToolOutput) => outputs.push(output),
     })
 
     expect(callMcpTool).toHaveBeenCalledWith({
@@ -84,6 +85,13 @@ describe('executeChatToolCalls', () => {
       arguments: { query: 'alpha' },
       threadId: 'thread-1',
     })
+    expect(outputs).toEqual([
+      {
+        tool: 'search',
+        toolCallId: 'call-1',
+        output: [{ type: 'text', text: 'result' }],
+      },
+    ])
   })
 
   it('stops before the next tool when aborted after adding output', async () => {
