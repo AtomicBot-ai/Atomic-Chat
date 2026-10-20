@@ -17,6 +17,7 @@ describe('navigationSection', () => {
     ['/settings/hermes-agent', 'server'],
     ['/hub/', 'models'],
     ['/hub', 'models'],
+    ['/downloads', 'models'],
     ['/cloud/', 'models'],
     ['/settings/providers', 'models'],
     ['/settings/providers/llamacpp-upstream', 'models'],
@@ -34,6 +35,7 @@ describe('navigationSection', () => {
   it('does not match a route that only shares a prefix', () => {
     expect(navigationSection('/hubble')).toBe('chat')
     expect(navigationSection('/apiary')).toBe('chat')
+    expect(navigationSection('/downloadsx')).toBe('chat')
   })
 })
 

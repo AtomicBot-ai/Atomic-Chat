@@ -362,16 +362,13 @@ describe('LeftSidebar', () => {
   })
 
   describe('Models Hub', () => {
-    it('links Downloads and Custom Endpoint to their views', () => {
+    it('links Downloads to its page and Custom Endpoint to its view', () => {
       at('/hub/')
       render(<LeftSidebar />)
 
       const downloads = screen.getByText('common:downloads').closest('a')
-      expect(downloads).toHaveAttribute('href', '/hub/')
-      expect(downloads).toHaveAttribute(
-        'data-search',
-        JSON.stringify({ installed: true })
-      )
+      expect(downloads).toHaveAttribute('href', '/downloads')
+      expect(downloads).not.toHaveAttribute('data-search')
       const custom = screen
         .getByText('common:navigation.customEndpoint')
         .closest('a')
@@ -383,23 +380,24 @@ describe('LeftSidebar', () => {
       expect(screen.getByLabelText('engine navigation')).toBeInTheDocument()
     })
 
-    it('highlights Local models or Downloads by the installed filter', () => {
-      at('/hub/')
+    it('highlights Downloads on its page and Local models on the Hub', () => {
+      at('/downloads')
       const { unmount } = render(<LeftSidebar />)
-      expect(rowFor('common:navigation.localModels')).toHaveAttribute(
-        'data-active',
-        'true'
-      )
-      expect(rowFor('common:downloads')).toHaveAttribute('data-active', 'false')
-      unmount()
-
-      at('/hub/', { installed: true })
-      render(<LeftSidebar />)
       expect(rowFor('common:downloads')).toHaveAttribute('data-active', 'true')
       expect(rowFor('common:navigation.localModels')).toHaveAttribute(
         'data-active',
         'false'
       )
+      unmount()
+
+      // The Hub's installed filter is the Hub, not the Downloads page.
+      at('/hub/', { installed: true })
+      render(<LeftSidebar />)
+      expect(rowFor('common:navigation.localModels')).toHaveAttribute(
+        'data-active',
+        'true'
+      )
+      expect(rowFor('common:downloads')).toHaveAttribute('data-active', 'false')
     })
 
     it('highlights Custom Endpoint while its dialog is open', () => {

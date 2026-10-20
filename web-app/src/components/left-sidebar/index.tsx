@@ -164,20 +164,18 @@ function ModelsNavigation() {
   const params = search as Record<string, unknown>
   const onHub = isPathActive(pathname, route.hub.index)
   const onCloud = isPathActive(pathname, route.cloud.index)
-  // Downloads and Custom Endpoint are views of the Hub and Cloud pages, kept
-  // in the URL so the row that opened them stays highlighted.
-  const installedOnly = onHub && params.installed === true
+  // Custom Endpoint is a view of the Cloud page, kept in the URL so the row
+  // that opened it stays highlighted.
   const addingCustom = onCloud && params.add === 'custom'
 
   return (
     <>
       <SidebarMenu className="px-2">
         <NavRow
-          to={route.hub.index}
-          search={{ installed: true }}
+          to={route.downloads}
           label={t('common:downloads')}
           icon={<Download size={16} />}
-          active={installedOnly}
+          active={isPathActive(pathname, route.downloads)}
         />
       </SidebarMenu>
       <NavGroupLabel>{t('common:navigation.discover')}</NavGroupLabel>
@@ -186,7 +184,7 @@ function ModelsNavigation() {
           to={route.hub.index}
           label={t('common:navigation.localModels')}
           icon={<Blocks size={16} />}
-          active={onHub && !installedOnly}
+          active={onHub}
         />
         <NavRow
           to={route.cloud.index}
