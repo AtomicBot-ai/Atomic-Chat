@@ -78,7 +78,7 @@ const provider = (name: string, models: Partial<Model>[]): ModelProvider =>
     models: models.map((model) => ({ id: 'unset', ...model })),
   }) as ModelProvider
 
-const build = (
+const engineBuild = (
   version: string,
   removable: boolean
 ): EngineVersions['builds'][number] => ({
@@ -134,7 +134,7 @@ beforeEach(() => {
         engine: 'mlx',
         kind: 'engine-build',
         active_choice: 'core',
-        builds: [build('v0.4.0', false), build('v0.3.9', true)],
+        builds: [engineBuild('v0.4.0', false), engineBuild('v0.3.9', true)],
         active: null,
         latest: null,
         update: { needed: false, target: null, apply: 'swap' },
@@ -352,6 +352,8 @@ describe('DownloadsPage', () => {
       )
     )
     expect(toast.success).not.toHaveBeenCalled()
+    // The build the core refused to remove stays on the page.
+    expect(rows().some((row) => within(row).queryByText(/v0\.3\.9/))).toBe(true)
   })
 
   it('lists a running download first and cancels it like the panel does', () => {

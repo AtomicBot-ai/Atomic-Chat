@@ -448,18 +448,22 @@ describe('removeInventoryItem', () => {
   })
 
   it('deletes a model file through the provider registry', async () => {
-    await remove(
-      item({
-        removal: { type: 'model', modelId: 'm', provider: 'llamacpp' },
-      })
-    )
+    await expect(
+      remove(
+        item({
+          removal: { type: 'model', modelId: 'm', provider: 'llamacpp' },
+        })
+      )
+    ).resolves.toBeUndefined()
     expect(deleteLocalModel).toHaveBeenCalledWith(serviceHub, 'm', 'llamacpp')
   })
 
   it('removes a checkpoint through the image-generation store', async () => {
     const removeArtifact = vi.fn().mockResolvedValue(undefined)
     useImageGenerationStore.setState({ removeArtifact })
-    await remove(item({ removal: { type: 'artifact', artifactId: Q4_ID } }))
+    await expect(
+      remove(item({ removal: { type: 'artifact', artifactId: Q4_ID } }))
+    ).resolves.toBeUndefined()
     expect(removeArtifact).toHaveBeenCalledWith(Q4_ID)
   })
 
@@ -481,27 +485,41 @@ describe('removeInventoryItem', () => {
 
   it('removes a decision model and re-reads what is installed', async () => {
     const model = getBaselineDecisionCatalog().models[0]
-    await remove(item({ removal: { type: 'decision', model } }))
+    const resumable = decisionDownloadTaskId(model.id)
+    useDownloadStore.setState({ resumableDownloads: new Set([resumable]) })
+
+    await expect(
+      remove(item({ removal: { type: 'decision', model } }))
+    ).resolves.toBeUndefined()
+
     expect(deleteDecisionModel).toHaveBeenCalledWith(model, null)
     expect(useDecisionStore.getState().refreshInstalled).toHaveBeenCalled()
+    // A half-finished download of it can no longer be resumed.
+    expect(useDownloadStore.getState().resumableDownloads.has(resumable)).toBe(
+      false
+    )
   })
 
   it('removes the voice model through its hook', async () => {
-    await remove(item({ removal: { type: 'voice' } }))
+    await expect(
+      remove(item({ removal: { type: 'voice' } }))
+    ).resolves.toBeUndefined()
     expect(removeVoice).toHaveBeenCalled()
   })
 
   it('removes an engine build through the core and re-reads the builds', async () => {
-    await remove(
-      item({
-        removal: {
-          type: 'engine-build',
-          engine: 'mlx',
-          version: 'v1',
-          variant: 'macos-arm64',
-        },
-      })
-    )
+    await expect(
+      remove(
+        item({
+          removal: {
+            type: 'engine-build',
+            engine: 'mlx',
+            version: 'v1',
+            variant: 'macos-arm64',
+          },
+        })
+      )
+    ).resolves.toBeUndefined()
     expect(deleteEngineBuild).toHaveBeenCalledWith('mlx', 'v1', 'macos-arm64')
     expect(useEngineVersionsStore.getState().refresh).toHaveBeenCalled()
   })

@@ -140,21 +140,45 @@ describe('Server → Activity', () => {
   })
 
   it('clears the log through the feed', async () => {
+    // As the real feed does: the core's log and the store empty together.
+    clearFeed.mockImplementationOnce(async () => {
+      store().reset()
+      store().hydrate([])
+    })
     render(<ApiActivityPage />)
     act(() => {
       store().applyBatch([{ t: 'start', entry: request('a') }])
     })
+    expect(screen.getByText('/chat/completions')).toBeInTheDocument()
+
     fireEvent.click(screen.getByText('api:actions.clearLog'))
-    await waitFor(() => expect(clearFeed).toHaveBeenCalled())
+
+    await waitFor(() =>
+      expect(screen.getByText('api:log.empty')).toBeInTheDocument()
+    )
+    expect(screen.queryByText('/chat/completions')).not.toBeInTheDocument()
+    expect(clearFeed).toHaveBeenCalledTimes(1)
   })
 
   it('refreshes both the server status and the log', async () => {
+    let finishStatus = () => {}
+    control.refreshStatus.mockImplementationOnce(
+      () => new Promise<void>((resolve) => (finishStatus = resolve))
+    )
     render(<ApiActivityPage />)
-    fireEvent.click(screen.getByText('api:actions.refresh'))
+    const refresh = screen.getByText('api:actions.refresh')
+    const icon = () => refresh.closest('button')!.querySelector('svg')!
+
+    fireEvent.click(refresh)
+
     await waitFor(() => {
       expect(control.refreshStatus).toHaveBeenCalled()
       expect(hydrateFeed).toHaveBeenCalled()
     })
+    // The icon spins until both have answered.
+    expect(icon()).toHaveClass('animate-spin')
+    await act(async () => finishStatus())
+    expect(icon()).not.toHaveClass('animate-spin')
   })
 
   it('warns when the backend has no live telemetry, without hiding the controls', () => {

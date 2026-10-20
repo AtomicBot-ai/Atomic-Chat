@@ -43,7 +43,9 @@ describe('integration agent setup', () => {
   })
 
   it('writes the agent config with the URL, the model and the key', async () => {
-    await writeAgentConfig(agent('codex'), 'qwen3.5-4b', SERVER)
+    await expect(
+      writeAgentConfig(agent('codex'), 'qwen3.5-4b', SERVER)
+    ).resolves.toBeUndefined()
     expect(invoke).toHaveBeenCalledWith('configure_codex', {
       apiUrl: 'http://127.0.0.1:1337/v1',
       model: 'qwen3.5-4b',
@@ -52,10 +54,9 @@ describe('integration agent setup', () => {
   })
 
   it('leaves the key out when the server has none, and keeps Hermes at its 64K floor', async () => {
-    await writeAgentConfig(agent('hermes'), 'gemma-4', {
-      ...SERVER,
-      apiKey: '',
-    })
+    await expect(
+      writeAgentConfig(agent('hermes'), 'gemma-4', { ...SERVER, apiKey: '' })
+    ).resolves.toBeUndefined()
     expect(invoke).toHaveBeenCalledWith('configure_hermes_agent', {
       apiUrl: 'http://127.0.0.1:1337/v1',
       model: 'gemma-4',

@@ -151,9 +151,16 @@ describe('Server setup guide', () => {
 
     await configure()
 
-    await screen.findByText(/api:guide\.doneAgentTitle/)
+    expect(
+      await screen.findByText(/api:guide\.doneAgentTitle/)
+    ).toBeInTheDocument()
     expect(settle).not.toHaveBeenCalled()
     expect(restart).not.toHaveBeenCalled()
+    // The agent still counts as set up, against the model already loaded.
+    expect(useServerSetup.getState()).toMatchObject({
+      setupDone: true,
+      configuredAgents: [expect.objectContaining({ id: 'codex' })],
+    })
   })
 
   it('restarts a running server to load another model', async () => {
@@ -167,8 +174,14 @@ describe('Server setup guide', () => {
 
     await configure()
 
-    await screen.findByText(/api:guide\.doneAgentTitle/)
+    expect(
+      await screen.findByText(/api:guide\.doneAgentTitle/)
+    ).toBeInTheDocument()
     expect(restart).toHaveBeenCalledWith(hub, control, { ensureModel: true })
+    // The restart serves the model the guide was set to, not the old one.
+    expect(useLocalApiServer.getState().defaultModelLocalApiServer).toEqual(
+      QWEN
+    )
   })
 
   it('says which step failed and retries from there', async () => {

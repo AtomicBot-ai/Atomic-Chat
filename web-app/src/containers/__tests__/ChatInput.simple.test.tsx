@@ -1300,6 +1300,8 @@ describe('ChatInput', () => {
       )
     )
     expect(open).not.toHaveBeenCalled()
+    // Nothing reaches the thread's attachments either.
+    expect(useChatAttachments.getState().getAttachments()).toEqual([])
     unmount()
   })
 
@@ -1319,6 +1321,9 @@ describe('ChatInput', () => {
         description: 'no portal',
       })
     )
+    // The failed picker attaches nothing, and the composer stays usable.
+    expect(useChatAttachments.getState().getAttachments()).toEqual([])
+    expect(screen.getByTestId('composer-attach')).toBeEnabled()
     unmount()
   })
 
