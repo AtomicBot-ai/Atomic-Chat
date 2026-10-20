@@ -1,5 +1,14 @@
 {
-  "showDownloadProgress": "Show download progress",
+  "cancelDownloadDialog": {
+    "title": "Cancel this download?",
+    "description": "Keep the downloaded files to continue later, or permanently delete this unfinished download folder, including its completed shards. Deleted files cannot be recovered.",
+    "keep": "Cancel download and keep files",
+    "delete": "Cancel download and permanently delete files",
+    "back": "Go back",
+    "busy": "Stopping download and deleting files…",
+    "failed": "Could not finish deleting the files. Some files may already have been deleted. The download remains paused; check its files before retrying.",
+    "unsupported": "Safe file deletion is not available for this download. You can cancel and keep its files."
+  },
   "downloadRecoveryNeedsSource": "Partial download found. Source information needs checking.",
   "downloadAlreadyActive": "This model is already downloading.",
   "downloadDestinationBusy": "Another download is using this model destination.",

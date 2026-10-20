@@ -54,7 +54,7 @@ function load(file) {
 }
 const { modelDownloadKey, saveDownloadRecovery, restoreDownloadRecovery } = load(path.join(root,'lib/downloadRecovery.ts'))
 const { useDownloadStore: store } = load(path.join(root,'hooks/useDownloadStore.ts'))
-const { DefaultModelsService } = load(path.join(root,'services/models/default.ts'))
+const { DefaultModelsService, withStoppedModelDownload } = load(path.join(root,'services/models/default.ts'))
 const { scanLegacyModelDownloads, mergeLegacyModelDownloads, beginLegacyDownloadRecovery } = load(path.join(root,'services/models/downloadRecovery.ts'))
 const { cancelDownload } = load(path.join(root,'lib/downloadCancellation.ts'))
 const modelPath = 'https://huggingface.co/acme/model/resolve/main/model-Q4-00001-of-00002.gguf'
@@ -64,6 +64,26 @@ async function check(name, fn) { await fn(); passed++; console.log('PASS '+name)
 function reset() { store.setState({ downloads:{}, dismissedDownloads:new Set(), resumeParams:{}, localDownloadingModels:new Set(), pausedDownloads:new Set(), resumableDownloads:new Set(), downloadOriginByModelId:{}, downloadRequestOriginByModelId:{} }); imports=[]; emitted=[]; notices=[]; preflights=0; importer=async()=>{} }
 const tick = () => new Promise(r=>setImmediate(r))
 ;(async()=>{
+await check('file disposal waits for stop and importer, blocks retries, and releases its claim on failure', async()=>{
+ reset()
+ const service = new DefaultModelsService()
+ let releaseImport, releaseStop
+ importer = () => new Promise(r=> { releaseImport=r })
+ const running = service.pullModelWithMetadata('acme/disposal',modelPath,undefined,undefined,true,params)
+ await tick()
+ assert.equal(imports.length,1)
+ let disposed=false
+ const operation = withStoppedModelDownload('acme/disposal',()=>new Promise(r=>{releaseStop=r}),async()=>{disposed=true; throw Error('trash failed')})
+ const failure = assert.rejects(operation,/trash failed/)
+ await service.pullModelWithMetadata('acme/disposal',modelPath,undefined,undefined,true,params)
+ assert.equal(imports.length,1)
+ releaseStop(); await tick(); assert.equal(disposed,false)
+ releaseImport(); await running; await failure
+ assert.equal(disposed,true)
+ importer=async()=>{}
+ await service.pullModelWithMetadata('acme/disposal',modelPath,undefined,undefined,true,params)
+ assert.equal(imports.length,2)
+})
 await check('identity groups GGUF shards but separates repo, revision and quant', ()=>{
  assert.equal(modelDownloadKey(params),modelDownloadKey({...params,modelPath:modelPath.replace('00001','00002')}))
  for(const changed of [modelPath.replace('/acme/','/other/'),modelPath.replace('/main/','/v2/'),modelPath.replace('Q4','Q8')]) assert.notEqual(modelDownloadKey(params),modelDownloadKey({...params,modelPath:changed}))

@@ -231,6 +231,7 @@ decision is reversed, add a new one that says which record it supersedes.
 
 ## Models, Hub & downloads (43)
 
+- **2026-10-20** — [Confirm download cancellation and offer permanent disposal](2026-10-20-confirm-download-cancel-and-delete.md)
 - **2026-10-20** — [Keep download cancellation distinct from pause and recovery](2026-10-20-distinguish-download-cancel-from-pause.md)
 - **2026-10-20** — [Recover and reuse unfinished model download requests](2026-10-20-recover-and-reuse-model-download-requests.md)
 

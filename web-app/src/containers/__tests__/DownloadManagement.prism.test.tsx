@@ -22,6 +22,9 @@ const toast = vi.hoisted(() => ({
   dismiss: vi.fn(),
 }))
 vi.mock('sonner', () => ({ toast }))
+vi.mock('@/services/models/default', () => ({
+  withStoppedModelDownload: async (_id: string, stop: () => Promise<void>, operation: () => Promise<void>) => { await stop(); return operation() },
+}))
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }))
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -35,12 +38,14 @@ const hub = vi.hoisted(() => {
   }
   const modelSetup = { checkCompatibility: vi.fn() }
   const providers = { getProviders: vi.fn(async () => []) }
+  const core = { invoke: vi.fn() }
   const serviceHub = {
+    core: () => core,
     models: () => models,
     modelSetup: () => modelSetup,
     providers: () => providers,
   }
-  return { models, modelSetup, serviceHub }
+  return { models, modelSetup, serviceHub, core }
 })
 vi.mock('@/hooks/useServiceHub', () => ({
   useServiceHub: () => hub.serviceHub,
@@ -144,9 +149,12 @@ describe('DownloadManagement — a Bonsai download', () => {
     } as never)
   })
 
-  it('Cancel removes a paused row immediately and late events cannot restore it', () => {
+  it('Cancel asks first; keeping files removes the row and ignores late events', () => {
     render(<DownloadManagement />)
     fireEvent.click(within(screen.getByTestId(ROW)).getByText('cancel'))
+    expect(screen.getByTestId(ROW)).toBeInTheDocument()
+    expect(hub.models.abortDownload).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByText('common:cancelDownloadDialog.keep'))
     expect(screen.queryByTestId(ROW)).not.toBeInTheDocument()
     expect(useDownloadStore.getState().dismissedDownloads.has(MODEL_ID)).toBe(true)
     expect(useDownloadStore.getState().resumeParams[MODEL_ID].modelPath).toBe(URL)
@@ -157,6 +165,37 @@ describe('DownloadManagement — a Bonsai download', () => {
     })
     expect(screen.queryByTestId(ROW)).not.toBeInTheDocument()
     expect(useDownloadStore.getState().downloads[MODEL_ID]).toBeUndefined()
+  })
+
+  it('Going back leaves the download and files alone', () => {
+    render(<DownloadManagement />)
+    fireEvent.click(within(screen.getByTestId(ROW)).getByText('cancel'))
+    fireEvent.click(screen.getByText('common:cancelDownloadDialog.back'))
+    expect(screen.getByTestId(ROW)).toBeInTheDocument()
+    expect(hub.models.abortDownload).not.toHaveBeenCalled()
+    expect(hub.core.invoke).not.toHaveBeenCalled()
+  })
+
+  it('Permanent deletion waits for stop and removes the row only after success', async () => {
+    hub.core.invoke.mockResolvedValue(undefined)
+    render(<DownloadManagement />)
+    fireEvent.click(within(screen.getByTestId(ROW)).getByText('cancel'))
+    fireEvent.click(screen.getByText('common:cancelDownloadDialog.delete'))
+    await waitFor(() => expect(hub.core.invoke).toHaveBeenCalledWith('delete_unfinished_model_download', { provider: 'atomic-prism', id: MODEL_ID }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(screen.queryByTestId(ROW)).not.toBeInTheDocument()
+    expect(useDownloadStore.getState().resumeParams[MODEL_ID]).toBeUndefined()
+  })
+
+  it('Deletion failure restores a paused row and shows an error', async () => {
+    hub.core.invoke.mockRejectedValue(new Error('permission denied'))
+    render(<DownloadManagement />)
+    fireEvent.click(within(screen.getByTestId(ROW)).getByText('cancel'))
+    fireEvent.click(screen.getByText('common:cancelDownloadDialog.delete'))
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('common:cancelDownloadDialog.failed'))
+    expect(screen.getByTestId(ROW)).toHaveTextContent('50/100')
+    expect(useDownloadStore.getState().pausedDownloads.has(MODEL_ID)).toBe(true)
+    expect(useDownloadStore.getState().resumeParams[MODEL_ID].modelPath).toBe(URL)
   })
 
   it('Pause retains the row and offers Resume, unlike Cancel', () => {

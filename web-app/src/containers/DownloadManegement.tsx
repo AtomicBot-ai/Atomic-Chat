@@ -12,12 +12,14 @@ import {
   verifyPrismDownload,
 } from '@/services/model-setup/prism-setup'
 import { DownloadEvent, DownloadState, events } from '@janhq/core'
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { IconCheck } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
+import { CancelDownloadDialog } from '@/containers/downloads/CancelDownloadDialog'
+import { withStoppedModelDownload } from '@/services/models/default'
 import { DownloadPanel } from '@/containers/downloads/DownloadPanel'
 import type { DownloadRowProps } from '@/containers/downloads/DownloadProgressRow'
 import {
@@ -153,6 +155,9 @@ function notifyDownloadFinished(
 export function DownloadManagement() {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const [cancelTarget, setCancelTarget] = useState<{ id: string; name: string }>()
+  const [cancelBusy, setCancelBusy] = useState(false)
+  const [cancelError, setCancelError] = useState<string>()
   const prevDownloadCount = useRef(0)
   // ATO-462 verification: how long the panel actually stayed expanded while
   // something was downloading. Accumulated here (the panel owns the collapsed
@@ -945,16 +950,55 @@ export function DownloadManagement() {
 
   // Shared with the composer's reply widget, which offers the same Cancel on
   // the download it lists.
-  const handleCancelDownload = useCallback(
-    (download: { id: string; name: string }) => {
-      if (useDownloadStore.getState().downloads[download.id]?.recoveryBlocked) {
-        useDownloadStore.getState().dismissDownload(download.id) // Hide an unresolved row; never touch its files.
-        return
-      }
+  const handleCancelDownload = useCallback((download: { id: string; name: string }) => {
+    const state = useDownloadStore.getState()
+    // Engine installers and managed transfers retain their own cancellation contracts.
+    if (!state.resumeParams[download.id] && !state.downloads[download.id]?.recoveryBlocked) {
       cancelDownload(download, serviceHub)
-    },
-    [serviceHub]
-  )
+      return
+    }
+    setCancelError(undefined)
+    setCancelTarget(download)
+  }, [serviceHub])
+
+  const cancelProvider = cancelTarget ? resumeParams[cancelTarget.id]?.provider : undefined
+  const canDeleteFiles = !!cancelProvider && ['llamacpp', 'llamacpp-upstream', 'atomic-prism'].includes(cancelProvider)
+
+  const keepCancelledFiles = () => {
+    if (!cancelTarget || cancelBusy) return
+    if (useDownloadStore.getState().downloads[cancelTarget.id]?.recoveryBlocked) {
+      useDownloadStore.getState().dismissDownload(cancelTarget.id)
+    } else cancelDownload(cancelTarget, serviceHub)
+    setCancelTarget(undefined)
+  }
+
+  const deleteCancelledFiles = async () => {
+    if (!cancelTarget || !canDeleteFiles || cancelBusy) return
+    const target = cancelTarget
+    const snapshot = useDownloadStore.getState().downloads[target.id]
+    setCancelBusy(true)
+    setCancelError(undefined)
+    try {
+      await withStoppedModelDownload(target.id, async () => {
+        // Suppress terminal events while waiting for every importer to release its files.
+        const state = useDownloadStore.getState()
+        state.dismissDownload(target.id)
+        await serviceHub.models().abortDownload(target.id)
+      }, () => serviceHub.core().invoke('delete_unfinished_model_download', { provider: cancelProvider, id: target.id }))
+      const state = useDownloadStore.getState()
+      state.clearResumeParams(target.id)
+      state.clearResumableDownload(target.id)
+      state.clearDownloadOrigin(target.id)
+      setCancelTarget(undefined)
+    } catch (error) {
+      // A failed deletion must retain a row and report failure; some files may already be gone.
+      const state = useDownloadStore.getState()
+      state.clearDismissedDownload(target.id)
+      if (snapshot) useDownloadStore.setState((current) => ({ downloads: { ...current.downloads, [target.id]: snapshot } }))
+      state.markPausedDownload(target.id)
+      setCancelError(String(error))
+    } finally { setCancelBusy(false) }
+  }
 
   const panelItems = useMemo<DownloadRowProps[]>(() => {
     const rows: DownloadRowProps[] = []
@@ -984,9 +1028,10 @@ export function DownloadManagement() {
   ])
 
   return (
-    <DownloadPanel
-      items={panelItems}
-      onCollapsedChange={onPanelCollapsedChange}
-    />
+    <>
+      <DownloadPanel items={panelItems} onCollapsedChange={onPanelCollapsedChange} />
+      <CancelDownloadDialog name={cancelTarget?.name} busy={cancelBusy} error={cancelError} canDeleteFiles={canDeleteFiles}
+        onBack={() => setCancelTarget(undefined)} onKeep={keepCancelledFiles} onDeleteFiles={() => { void deleteCancelledFiles() }} />
+    </>
   )
 }

@@ -62,6 +62,19 @@ import { modelDownloadKey } from '@/lib/downloadRecovery'
 import { waitForLegacyDownloadRecovery } from './downloadRecovery'
 
 // Shared across service instances. Claim synchronously, before metadata or disk probes yield.
+const modelFileOperations = new Set<string>()
+
+/** Exclude retries until the old importer has closed its payload files. */
+export async function withStoppedModelDownload<T>(id: string, stop: () => Promise<void>, operation: () => Promise<T>): Promise<T> {
+  if (modelFileOperations.has(id)) throw new Error('Download files are already being managed')
+  modelFileOperations.add(id)
+  try {
+    await stop()
+    await Promise.all([...activeModelDownloads.values()].filter((job) => job.id === id).map((job) => job.promise.catch(() => undefined)))
+    return await operation()
+  } finally { modelFileOperations.delete(id) }
+}
+
 const pendingModelStops = new Map<string, Promise<void>>()
 const activeModelDownloads = new Map<string, { id: string; promise: Promise<DownloadRefusal | undefined> }>()
 
@@ -689,6 +702,7 @@ export class DefaultModelsService implements ModelsService {
     resume: boolean = false,
     options: PullModelOptions = {}
   ): Promise<DownloadRefusal | undefined> {
+    if (modelFileOperations.has(id)) return
     const wasDismissedAtRequest = useDownloadStore.getState().dismissedDownloads.has(id)
     // Startup discovery must finish before a fresh request can claim a legacy destination.
     await waitForLegacyDownloadRecovery()
@@ -729,6 +743,7 @@ export class DefaultModelsService implements ModelsService {
       store.removeLocalDownloadingModel(id)
       store.clearDownloadOrigin(id)
     }
+    if (modelFileOperations.has(ownerId)) return
     const stopping = pendingModelStops.get(ownerId)
     if (stopping) {
       await stopping
