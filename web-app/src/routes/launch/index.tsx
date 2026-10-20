@@ -23,6 +23,12 @@ import HeaderPage from '@/containers/HeaderPage'
 import { Card } from '@/containers/Card'
 import { AgentIcon } from '@/containers/AgentIcon'
 import { detectIntegrationAgent } from '@/lib/integration-agent-detection'
+import {
+  agentConfiguredDescriptionKey,
+  agentConnectHost,
+  writeAgentConfig,
+} from '@/lib/integration-agent-setup'
+import { useServerSetup } from '@/hooks/useServerSetup'
 import { LocalApiServerStatusRow } from '@/containers/LocalApiServerStatusRow'
 import { startLocalApiServer } from '@/utils/localApiServerControl'
 import { Button } from '@/components/ui/button'
@@ -308,105 +314,15 @@ function LaunchPage() {
         await ensureServerRunning()
       }
 
-      // `serverHost` may be a bind-all address (0.0.0.0 / ::) which clients
-      // cannot connect to; agents need a real loopback address.
-      const connectHost =
-        serverHost === '0.0.0.0' || (serverHost as string) === '::'
-          ? '127.0.0.1'
-          : serverHost
-      const base = `http://${connectHost}:${serverPort}`
-      const apiUrl = agent.endpointWithPrefix ? `${base}${apiPrefix}` : base
-      const key = apiKey || undefined
+      await writeAgentConfig(agent, model, {
+        serverHost,
+        serverPort,
+        apiPrefix,
+        apiKey,
+      })
+      useServerSetup.getState().markAgentConfigured(agent.id)
 
-      switch (agent.id) {
-        case 'claude-code':
-          await invoke('configure_claude_code', {
-            apiUrl,
-            model: model ?? undefined,
-            apiKey: key,
-          })
-          break
-        case 'codex':
-          await invoke('configure_codex', { apiUrl, model, apiKey: key })
-          break
-        case 'opencode':
-          await invoke('configure_opencode', { apiUrl, model, apiKey: key })
-          break
-        case 'openclaude':
-          await invoke('configure_openclaude', { apiUrl, model, apiKey: key })
-          break
-        case 'cline':
-          await invoke('configure_cline', { apiUrl, model, apiKey: key })
-          break
-        case 'mimo':
-          await invoke('configure_mimo', { apiUrl, model, apiKey: key })
-          break
-        case 'zed':
-          await invoke('configure_zed', { apiUrl, model, apiKey: key })
-          break
-        case 'zcode':
-          await invoke('configure_zcode', { apiUrl, model, apiKey: key })
-          break
-        case 'copilot':
-          await invoke('configure_copilot', { apiUrl, model, apiKey: key })
-          break
-        case 'droid':
-          await invoke('configure_droid', { apiUrl, model, apiKey: key })
-          break
-        case 'atomic-agent':
-          await invoke('configure_atomic_agent', { apiUrl, model, apiKey: key })
-          break
-        case 'hermes':
-          await invoke('configure_hermes_agent', {
-            apiUrl,
-            model,
-            apiKey: key,
-            // Hermes Agent refuses to start below a 64K context window, so we
-            // configure 64K (the minimum it accepts).
-            contextLength: 65536,
-          })
-          break
-        case 'pi':
-          await invoke('configure_pi', { apiUrl, model, apiKey: key })
-          break
-        case 'goose':
-          await invoke('configure_goose', { apiUrl, model, apiKey: key })
-          break
-        case 'openhands':
-          await invoke('configure_openhands', { apiUrl, model, apiKey: key })
-          break
-        case 'kilo':
-          await invoke('configure_kilo', { apiUrl, model, apiKey: key })
-          break
-        case 'poolside':
-          await invoke('configure_poolside', { apiUrl, model, apiKey: key })
-          break
-        case 'muse':
-          await invoke('configure_muse', { apiUrl, model, apiKey: key })
-          break
-        case 'openclaw':
-          await invoke('configure_openclaw', { apiUrl, model, apiKey: key })
-          break
-        case 'dsh':
-          await invoke('configure_dsh', { apiUrl, model, apiKey: key })
-          break
-        default:
-          throw new Error(`Unknown agent: ${agent.id}`)
-      }
-
-      const configuredDescKey =
-        agent.id === 'zed'
-          ? 'launch:toast.configuredDescEditor'
-          : agent.id === 'openclaw'
-            ? // OpenClaw's Gateway watches the config file and hot-reloads, so
-              // there is nothing to restart — but a chat that was already pinned
-              // to another model keeps it, and only `/model default` clears that.
-              'launch:toast.configuredDescOpenclaw'
-            : agent.id === 'zcode'
-              ? // ZCode polls its provider file, so a running app switches
-                // over without a restart.
-                'launch:toast.configuredDescZcode'
-              : 'launch:toast.configuredDesc'
+      const configuredDescKey = agentConfiguredDescriptionKey(agent.id)
       toast.success(t('launch:toast.configured', { name: agent.name }), {
         description: t(configuredDescKey, { name: agent.name }),
         duration: 8000,
@@ -546,11 +462,7 @@ function LaunchPage() {
             // itself goes to whatever --base-url points at. `apiUrl` already
             // carries the /v1 prefix (endpointWithPrefix), which is the root
             // Muse appends `/responses` to.
-            const connectHost =
-              serverHost === '0.0.0.0' || (serverHost as string) === '::'
-                ? '127.0.0.1'
-                : serverHost
-            const apiUrl = `http://${connectHost}:${serverPort}${apiPrefix}`
+            const apiUrl = `http://${agentConnectHost(serverHost)}:${serverPort}${apiPrefix}`
             const key = apiKey || 'atomic'
             if (osType() === 'windows') {
               const modelArg = model ? ` --model ${model}` : ''
@@ -560,11 +472,7 @@ function LaunchPage() {
               command = `META_API_KEY='${key}' ${launcher} --provider meta --base-url '${apiUrl}'${modelArg}`
             }
           } else if (agent.id === 'poolside') {
-            const connectHost =
-              serverHost === '0.0.0.0' || (serverHost as string) === '::'
-                ? '127.0.0.1'
-                : serverHost
-            const apiUrl = `http://${connectHost}:${serverPort}${apiPrefix}`
+            const apiUrl = `http://${agentConnectHost(serverHost)}:${serverPort}${apiPrefix}`
             const standaloneBase = apiUrl.replace(/\/v1\/?$/, '')
             const key = apiKey || 'atomic'
             const modelId = model ?? ''
@@ -624,12 +532,8 @@ function LaunchPage() {
   // carries the `/v1` prefix; the key is whatever the server requires (a
   // non-empty placeholder when auth is off, since most editors demand one).
   const editorConnection = useCallback(() => {
-    const connectHost =
-      serverHost === '0.0.0.0' || (serverHost as string) === '::'
-        ? '127.0.0.1'
-        : serverHost
     return {
-      baseUrl: `http://${connectHost}:${serverPort}${apiPrefix}`,
+      baseUrl: `http://${agentConnectHost(serverHost)}:${serverPort}${apiPrefix}`,
       apiKey: apiKey || 'atomic',
       model: activeModel,
     }

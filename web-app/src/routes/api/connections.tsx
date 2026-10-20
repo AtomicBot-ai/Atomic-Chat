@@ -1,6 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 
 import { route } from '@/constants/routes'
+import { ConnectedTools } from '@/containers/server/ConnectedTools'
 import { ConnectionDetails } from '@/containers/server/ConnectionDetails'
 import { ServerPage } from '@/containers/server/ServerPageParts'
 import { TryRequest } from '@/containers/server/TryRequest'
@@ -18,6 +19,7 @@ export function ServerConnectionsPage() {
   return (
     <ServerPage title={t('api:connections.title')}>
       <ConnectionDetails />
+      <ConnectedTools />
       <TryRequest />
     </ServerPage>
   )

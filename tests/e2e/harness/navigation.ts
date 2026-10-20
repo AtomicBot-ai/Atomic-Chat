@@ -74,6 +74,14 @@ export async function openServerConnections(browser: Browser): Promise<void> {
   await link.click()
 }
 
+/** Opens All integrations (the agents' install and run page) from Server → Overview. */
+export async function openAllIntegrations(browser: Browser): Promise<void> {
+  await openServerPage(browser, 'Overview')
+  const link = browser.$('[data-testid="server-all-integrations"]')
+  await link.waitForClickable({ timeout: 30_000 })
+  await link.click()
+}
+
 /** Starts a new chat from the Workspace sidebar, wherever the app is. */
 export async function startNewChat(browser: Browser): Promise<void> {
   await openSection(browser, 'chat')

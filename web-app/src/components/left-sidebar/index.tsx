@@ -8,7 +8,6 @@ import {
   Image,
   MessageCircle,
   Network,
-  Plug,
   RadioTower,
   Search,
   Settings2,
@@ -28,7 +27,6 @@ import { route } from '@/constants/routes'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
-import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useProjectDialog } from '@/hooks/useProjectDialog'
 import { useSearchDialog } from '@/hooks/useSearchDialog'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
@@ -40,7 +38,7 @@ import { NavChats } from './NavChats'
 import { NavPinned } from './NavPinned'
 import { NavProjects } from './NavProjects'
 import { NavServerAgents } from './NavServerAgents'
-import { NavGroupLabel, NavRow, NewBadge } from './NavRow'
+import { NavGroupLabel, NavRow } from './NavRow'
 import { NavigationRail } from './NavigationRail'
 import { isPathActive, navigationSection } from '@/lib/navigation'
 import { WindowTitlebar } from './WindowTitlebar'
@@ -99,9 +97,6 @@ function WorkspaceNavigation({
 function ServerNavigation() {
   const { t } = useTranslation()
   const { pathname } = useLocation()
-  const integrationsBadgeSeen = useGeneralSetting(
-    (state) => state.integrationsBadgeSeen
-  )
 
   return (
     <>
@@ -120,13 +115,6 @@ function ServerNavigation() {
           label={t('common:navigation.activity')}
           icon={<Activity size={16} />}
           active={isPathActive(pathname, route.api.activity)}
-        />
-        <NavRow
-          to={route.launch.index}
-          label={t('common:launch')}
-          icon={<Plug size={16} />}
-          active={isPathActive(pathname, route.launch.index)}
-          trailing={!integrationsBadgeSeen && <NewBadge />}
         />
         {PlatformFeatures[PlatformFeature.LOCAL_API_SERVER] && (
           <>

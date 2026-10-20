@@ -87,7 +87,7 @@ export function ApiActivityPage() {
 
   return (
     <ServerPage
-      wide
+      layout="dashboard"
       title={t('api:activity.title')}
       description={t('api:activity.description')}
       actions={

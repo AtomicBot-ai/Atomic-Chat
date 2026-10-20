@@ -842,6 +842,8 @@
     "configuration": "Configuration",
     "remoteAccess": "Remote access",
     "activity": "Activity",
-    "connections": "Connections"
+    "connections": "Connections",
+    "connectionsCount": "{{count}} set up",
+    "configured": "Configured"
   }
 }

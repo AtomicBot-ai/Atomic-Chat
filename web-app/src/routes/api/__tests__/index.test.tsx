@@ -1,4 +1,4 @@
-import { act, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@tanstack/react-router', () => ({
@@ -6,65 +6,117 @@ vi.mock('@tanstack/react-router', () => ({
   Link: ({
     children,
     to,
+    hash,
     className,
+    ...rest
   }: {
     children: React.ReactNode
     to: string
+    hash?: string
     className?: string
   }) => (
-    <a href={to} className={className}>
+    <a href={hash ? `${to}#${hash}` : to} className={className} {...rest}>
       {children}
     </a>
   ),
+  useNavigate: () => vi.fn(),
 }))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }))
 
-// The request channel is the core's; this page only reads the log store.
+// The request channel, the agent probe and the server are the shell's.
 vi.mock('@/hooks/useApiServerLogFeed', () => ({
   useApiServerLogFeed: () => ({ clear: vi.fn(), hydrate: vi.fn() }),
 }))
 vi.mock('@/hooks/useApiServerModelNotices', () => ({
   useApiServerModelNotices: () => {},
 }))
+vi.mock('@/lib/integration-agent-detection', () => ({
+  detectIntegrationAgentsOnce: vi.fn(),
+}))
+vi.mock('@/hooks/useLocalApiServerControl', () => ({
+  useLocalApiServerControl: () => ({
+    status: 'stopped',
+    isRunning: false,
+    isModelLoading: false,
+    isBusy: false,
+    start: vi.fn(),
+    stop: vi.fn(),
+    toggle: vi.fn(),
+    refreshStatus: vi.fn(),
+  }),
+}))
+vi.mock('@/hooks/useServiceHub', () => ({ useServiceHub: () => ({}) }))
 
 import { useApiServerLog } from '@/hooks/useApiServerLog'
 import { useAppState } from '@/hooks/useAppState'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
+import { useServerSetup } from '@/hooks/useServerSetup'
 
 import { ServerOverviewPage } from '../index'
+
+const SET_UP = {
+  setupDone: true,
+  setupDismissed: false,
+  guide: null,
+  guideActive: false,
+  guideRevision: 0,
+}
 
 describe('Server → Overview', () => {
   beforeEach(() => {
     useApiServerLog.getState().reset()
-    useAppState.setState({ serverStatus: 'stopped' })
+    useAppState.setState({ serverStatus: 'running' })
     useLocalApiServer.setState({
       defaultModelLocalApiServer: {
         model: 'qwen3.5-4b',
         provider: 'llamacpp-upstream',
       },
-      lastServerModels: [{ model: 'gemma-4', provider: 'mlx' }],
+      lastServerModels: [],
     })
+    useServerSetup.setState(SET_UP)
   })
 
-  it('asks for a start while the server is stopped, and links its connection details', () => {
+  it('opens with the setup guide on a first visit', () => {
+    useServerSetup.setState({ setupDone: false })
     render(<ServerOverviewPage />)
 
-    expect(screen.getByText('api:overview.stoppedTitle')).toBeInTheDocument()
-    expect(screen.getByText('api:overview.stoppedHint')).toBeInTheDocument()
     expect(
-      screen.getByText('api:overview.connectionDetails').closest('a')
-    ).toHaveAttribute('href', '/api/connections')
+      screen.getByRole('region', { name: 'api:guide.label' })
+    ).toBeInTheDocument()
+    expect(screen.getByText('api:guide.chooseTitle')).toBeInTheDocument()
+    expect(
+      screen.queryByText('api:overview.readyTitle')
+    ).not.toBeInTheDocument()
   })
 
-  it('names what a running server serves', () => {
-    useAppState.setState({ serverStatus: 'running' })
+  it('names what the server serves once set up, and opens the guide on request', () => {
+    useLocalApiServer.setState({
+      lastServerModels: [{ model: 'gemma-4', provider: 'mlx' }],
+    })
     render(<ServerOverviewPage />)
 
     expect(screen.getByText('api:overview.readyTitle')).toBeInTheDocument()
     expect(screen.getByText('gemma-4 · MLX')).toBeInTheDocument()
+
+    fireEvent.click(
+      screen.getByRole('button', { name: /api:overview\.guideMe/ })
+    )
+    expect(screen.getByText('api:guide.chooseTitle')).toBeInTheDocument()
+  })
+
+  it('lists the agents and tools under the strip', () => {
+    render(<ServerOverviewPage />)
+
+    expect(
+      screen.getByRole('region', { name: 'api:agents.title' })
+    ).toBeInTheDocument()
+    expect(screen.getByTestId('server-all-integrations')).toHaveAttribute(
+      'href',
+      '/launch/'
+    )
   })
 
   it('lists the latest requests and events, newest first, with the way to Activity', () => {

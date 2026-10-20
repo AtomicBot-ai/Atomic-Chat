@@ -126,6 +126,13 @@
   font-size: 11px;
   font-weight: 500;
 }
+.dsc-detail .dsc-count {
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: var(--server-soft);
+  color: var(--server-accent);
+  font-variant-numeric: tabular-nums;
+}
 @keyframes dsc-spin {
   to {
     transform: rotate(360deg);

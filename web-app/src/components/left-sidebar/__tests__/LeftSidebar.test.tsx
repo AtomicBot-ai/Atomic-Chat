@@ -289,9 +289,8 @@ describe('LeftSidebar', () => {
       expect(
         screen.getByText('common:navigation.activity').closest('a')
       ).toHaveAttribute('href', '/api/activity')
-      expect(
-        screen.getByText('common:launch').closest('a')
-      ).toHaveAttribute('href', '/launch/')
+      // All integrations lives on Overview now, not in the sidebar.
+      expect(screen.queryByText('common:launch')).not.toBeInTheDocument()
       expect(
         screen.getByText('common:navigation.configuration').closest('a')
       ).toHaveAttribute('href', '/settings/local-api-server')
@@ -346,18 +345,6 @@ describe('LeftSidebar', () => {
         screen.queryByText('common:navigation.remoteAccess')
       ).not.toBeInTheDocument()
       expect(screen.queryByText('common:https_proxy')).not.toBeInTheDocument()
-    })
-
-    it('keeps the Integrations "New" badge until the page is seen', () => {
-      badges.integrationsBadgeSeen = false
-      at('/api/')
-      render(<LeftSidebar />)
-
-      expect(
-        within(screen.getByText('common:launch').closest('a')!).getByText(
-          'common:newBadge'
-        )
-      ).toBeInTheDocument()
     })
   })
 

@@ -4,19 +4,23 @@ import { ChevronRight } from 'lucide-react'
 import { route } from '@/constants/routes'
 import { INTEGRATION_AGENTS } from '@/constants/integrations'
 import { AgentIcon } from '@/containers/AgentIcon'
+import { useServerSetup } from '@/hooks/useServerSetup'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { detectIntegrationAgentsOnce } from '@/lib/integration-agent-detection'
+import { isGuidedAgent } from '@/lib/integration-agent-setup'
 import { useLaunchStore } from '@/stores/launch-store'
 import { cn } from '@/lib/utils'
 
 /**
- * The integration agents as a palette under the Server navigation. Each row
- * opens that agent's card on the Integrations page; the dot says whether the
- * agent is installed on this machine.
+ * The integration agents as a palette under the Server navigation. An agent
+ * Atomic Chat can configure opens the setup guide on Overview at its review;
+ * an editor set up by hand opens its card on All integrations. The dot is
+ * green once the agent was set up through Atomic Chat.
  */
 export function NavServerAgents() {
   const { t } = useTranslation()
   const installed = useLaunchStore((state) => state.installed)
+  const configured = useServerSetup((state) => state.configuredAgents)
 
   useEffect(() => {
     detectIntegrationAgentsOnce()
@@ -29,14 +33,24 @@ export function NavServerAgents() {
       </p>
       <div className="space-y-0.5">
         {INTEGRATION_AGENTS.map((agent) => {
-          const status = installed[agent.id]
-            ? t('common:navigation.installed')
-            : t('common:navigation.notInstalled')
+          const isConfigured = configured.some((entry) => entry.id === agent.id)
+          const status = isConfigured
+            ? t('common:navigation.configured')
+            : installed[agent.id]
+              ? t('common:navigation.installed')
+              : t('common:navigation.notInstalled')
+          const guided = isGuidedAgent(agent)
           return (
             <Link
               key={agent.id}
-              to={route.launch.index}
-              hash={agent.id}
+              to={guided ? route.api.index : route.launch.index}
+              hash={guided ? undefined : agent.id}
+              onClick={() => {
+                if (guided)
+                  useServerSetup
+                    .getState()
+                    .openGuide({ path: 'agent', agentId: agent.id })
+              }}
               aria-label={`${agent.name}: ${status}`}
               className="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-sidebar-foreground/8"
             >
@@ -52,9 +66,7 @@ export function NavServerAgents() {
                 title={status}
                 className={cn(
                   'size-1.5 shrink-0 rounded-full',
-                  installed[agent.id]
-                    ? 'bg-emerald-400'
-                    : 'bg-muted-foreground/40'
+                  isConfigured ? 'bg-emerald-400' : 'bg-muted-foreground/40'
                 )}
               />
               <ChevronRight

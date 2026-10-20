@@ -18,14 +18,18 @@ import { ServerButton, ServerField } from './ServerPageParts'
 
 export type ServedModel = { provider: string; model: string }
 
-type Engine = { provider: string; title: string; models: Model[] }
+export type ServableEngine = {
+  provider: string
+  title: string
+  models: Model[]
+}
 
 /**
  * Engines that can serve a chat model now: enabled local engines on this
  * platform (the same rules as the sidebar's engine list) with at least one
  * downloaded chat model.
  */
-export function useServableEngines(): Engine[] {
+export function useServableEngines(): ServableEngine[] {
   const providers = useModelProvider((state) => state.providers)
   return useMemo(() => {
     const turboquant = PlatformFeatures[PlatformFeature.TURBOQUANT_ENGINE]
@@ -47,14 +51,14 @@ export function useServableEngines(): Engine[] {
 }
 
 /** The engine's model if it has it, else its first one. */
-const fitModel = (engine: Engine, model: string) =>
+const fitModel = (engine: ServableEngine, model: string) =>
   engine.models.some((m) => m.id === model) ? model : engine.models[0].id
 
 const modelLabel = (model: Model) => model.displayName || model.name || model.id
 
 /** What the picker opens on: the saved choice, else what last ran, else the first. */
-function initialChoice(
-  engines: Engine[],
+export function initialChoice(
+  engines: ServableEngine[],
   saved: ServedModel | null,
   lastRun: ServedModel | undefined
 ): ServedModel | null {
@@ -68,6 +72,62 @@ function initialChoice(
   }
   const first = engines[0]
   return first ? { provider: first.provider, model: first.models[0].id } : null
+}
+
+/**
+ * Engine first, then a model that engine can run; changing the engine keeps
+ * the model when the new engine has it, else takes its first.
+ */
+export function EngineModelFields({
+  engines,
+  choice,
+  onChange,
+}: {
+  engines: ServableEngine[]
+  choice: ServedModel
+  onChange: (next: ServedModel) => void
+}) {
+  const { t } = useTranslation()
+  const engine =
+    engines.find((e) => e.provider === choice.provider) ?? engines[0]
+
+  return (
+    <div className="sp-engine-model">
+      <ServerField label={t('api:model.engine')}>
+        <select
+          value={engine.provider}
+          onChange={(event) => {
+            const next = engines.find((e) => e.provider === event.target.value)
+            if (next)
+              onChange({
+                provider: next.provider,
+                model: fitModel(next, choice.model),
+              })
+          }}
+        >
+          {engines.map((e) => (
+            <option key={e.provider} value={e.provider}>
+              {e.title}
+            </option>
+          ))}
+        </select>
+      </ServerField>
+      <ServerField label={t('api:model.model')} hint={t('api:model.modelHint')}>
+        <select
+          value={choice.model}
+          onChange={(event) =>
+            onChange({ provider: engine.provider, model: event.target.value })
+          }
+        >
+          {engine.models.map((model) => (
+            <option key={model.id} value={model.id}>
+              {modelLabel(model)}
+            </option>
+          ))}
+        </select>
+      </ServerField>
+    </div>
+  )
 }
 
 type Phase = 'idle' | 'saved' | 'restarting' | 'failed'
@@ -147,46 +207,11 @@ export function ServerModelPicker() {
     <>
       <section className="sp-panel">
         <h2>{t('api:model.panelTitle')}</h2>
-        <div className="sp-engine-model">
-          <ServerField label={t('api:model.engine')}>
-            <select
-              value={engine.provider}
-              onChange={(event) => {
-                const next = engines.find(
-                  (e) => e.provider === event.target.value
-                )
-                if (next)
-                  choose({
-                    provider: next.provider,
-                    model: fitModel(next, choice.model),
-                  })
-              }}
-            >
-              {engines.map((e) => (
-                <option key={e.provider} value={e.provider}>
-                  {e.title}
-                </option>
-              ))}
-            </select>
-          </ServerField>
-          <ServerField
-            label={t('api:model.model')}
-            hint={t('api:model.modelHint')}
-          >
-            <select
-              value={choice.model}
-              onChange={(event) =>
-                choose({ provider: engine.provider, model: event.target.value })
-              }
-            >
-              {engine.models.map((model) => (
-                <option key={model.id} value={model.id}>
-                  {modelLabel(model)}
-                </option>
-              ))}
-            </select>
-          </ServerField>
-        </div>
+        <EngineModelFields
+          engines={engines}
+          choice={choice}
+          onChange={choose}
+        />
       </section>
 
       <div className="sp-save">

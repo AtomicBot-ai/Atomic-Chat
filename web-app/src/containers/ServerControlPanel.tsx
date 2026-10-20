@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { Link } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { Box, Cpu, Network, Play, RotateCw, Square } from 'lucide-react'
 import { route } from '@/constants/routes'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useLocalApiServerControl } from '@/hooks/useLocalApiServerControl'
 import { restartLocalApiServer } from '@/hooks/useRemoteAccess'
 import { useServiceHub } from '@/hooks/useServiceHub'
+import { useServerSetup, useSetupDone } from '@/hooks/useServerSetup'
 import { useServedModel } from '@/containers/server/useServedModel'
 import './ServerControlPanel.css'
 
@@ -18,7 +19,13 @@ import './ServerControlPanel.css'
 export function ServerControlPanel() {
   const { t } = useTranslation()
   const hub = useServiceHub()
+  const navigate = useNavigate()
   const control = useLocalApiServerControl()
+  const setupDone = useSetupDone()
+  const connections = useServerSetup(
+    (state) =>
+      state.configuredAgents.length + (state.endpointConfigured ? 1 : 0)
+  )
   const [restarting, setRestarting] = useState(false)
 
   // While running, show what the server actually loaded; otherwise what it
@@ -37,6 +44,17 @@ export function ServerControlPanel() {
     } finally {
       setRestarting(false)
     }
+  }
+
+  // Until the server is set up once, Start opens the setup guide: it picks
+  // the model and what to connect, then starts the server itself.
+  const power = () => {
+    if (!control.isRunning && !setupDone) {
+      useServerSetup.getState().openGuide()
+      void navigate({ to: route.api.index })
+      return
+    }
+    void control.toggle()
   }
 
   const powerLabel = restarting
@@ -59,7 +77,7 @@ export function ServerControlPanel() {
           disabled={busy}
           aria-busy={busy}
           data-testid="server-panel-power"
-          onClick={() => void control.toggle()}
+          onClick={power}
         >
           <span key={powerLabel} className="dsc-power-label">
             {busy ? (
@@ -105,6 +123,11 @@ export function ServerControlPanel() {
         >
           <Network size={15} />
           <span>{t('common:navigation.connections')}</span>
+          {connections > 0 && (
+            <strong className="dsc-count">
+              {t('common:navigation.connectionsCount', { count: connections })}
+            </strong>
+          )}
         </Link>
       </div>
     </section>

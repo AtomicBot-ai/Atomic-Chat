@@ -747,6 +747,8 @@
     "configuration": "Настройки",
     "remoteAccess": "Удалённый доступ",
     "activity": "Активность",
-    "connections": "Подключения"
+    "connections": "Подключения",
+    "connectionsCount": "настроено: {{count}}",
+    "configured": "Настроен"
   }
 }

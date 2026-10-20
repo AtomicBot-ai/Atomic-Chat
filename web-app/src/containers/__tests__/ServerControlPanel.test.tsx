@@ -1,14 +1,17 @@
 import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { useServerSetup } from '@/hooks/useServerSetup'
 import { ServerControlPanel } from '../ServerControlPanel'
 
+const navigate = vi.hoisted(() => vi.fn())
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children, to, className }: any) => (
     <a href={to} className={className}>
       {children}
     </a>
   ),
+  useNavigate: () => navigate,
 }))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
@@ -66,6 +69,13 @@ describe('ServerControlPanel', () => {
     control.stop.mockResolvedValue(undefined)
     control.toggle.mockResolvedValue(undefined)
     restart.mockResolvedValue(true)
+    useServerSetup.setState({
+      setupDone: true,
+      guide: null,
+      guideActive: false,
+      configuredAgents: [],
+      endpointConfigured: false,
+    })
   })
 
   it('starts a stopped server', async () => {
@@ -154,5 +164,31 @@ describe('ServerControlPanel', () => {
     render(<ServerControlPanel />)
 
     expect(screen.getAllByText('common:navigation.notSelected')).toHaveLength(2)
+  })
+
+  it('opens the setup guide on Overview instead of starting a server never set up', async () => {
+    useServerSetup.setState({ setupDone: false })
+    render(<ServerControlPanel />)
+
+    await userEvent.click(screen.getByTestId('server-panel-power'))
+
+    expect(control.toggle).not.toHaveBeenCalled()
+    expect(useServerSetup.getState().guideActive).toBe(true)
+    expect(navigate).toHaveBeenCalledWith({ to: '/api/' })
+  })
+
+  it('counts the tools set up to use the server', () => {
+    useServerSetup.setState({
+      configuredAgents: [
+        { id: 'codex', at: 1 },
+        { id: 'claude-code', at: 2 },
+      ],
+      endpointConfigured: true,
+    })
+    render(<ServerControlPanel />)
+
+    expect(
+      screen.getByText('common:navigation.connectionsCount')
+    ).toBeInTheDocument()
   })
 })
