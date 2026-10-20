@@ -26,7 +26,6 @@ vi.mock('@/hooks/useServiceHub', () => ({
   useServiceHub: () => ({}),
   getServiceHub: () => ({}),
 }))
-vi.mock('@/containers/hub/HubReadme', () => ({ HubReadme: () => null }))
 
 import { DecisionModelDetailPanel } from './DecisionModelDetailPanel'
 

@@ -8,13 +8,14 @@ import type { DiffusionCatalogFamily } from '@/services/diffusion-catalog-regist
 export type MediaFamilyRowProps = {
   family: DiffusionCatalogFamily
   installed?: boolean
+  /** The family's details are open below the row. */
   selected?: boolean
   onSelect: () => void
 }
 
 /**
- * An image or video family in the Hub's left column: the same shape as
- * `ModelListRow`, with a check where a chat model shows its format.
+ * An image or video family in the Hub's list: logo, name and developer, with a
+ * check when it is installed. It opens and closes the family's details below it.
  */
 export function MediaFamilyRow({
   family,
@@ -27,10 +28,10 @@ export function MediaFamilyRow({
     <button
       type="button"
       onClick={onSelect}
-      aria-current={selected ? 'true' : undefined}
+      aria-expanded={selected}
       className={cn(
-        'flex w-full items-center gap-3 rounded-lg border border-transparent px-2 py-3 text-left transition-colors hover:bg-accent',
-        selected && 'border-border bg-accent'
+        'flex w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-3 text-left transition-colors hover:bg-accent',
+        selected && 'rounded-b-none'
       )}
     >
       <ModelLogo

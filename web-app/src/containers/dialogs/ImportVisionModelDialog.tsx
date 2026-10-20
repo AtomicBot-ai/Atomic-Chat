@@ -22,15 +22,28 @@ type ImportVisionModelDialogProps = {
   provider: ModelProvider
   trigger?: React.ReactNode
   onSuccess?: (importedModelName?: string) => void
+  /** Controlled open state, for a caller that picked the file itself. */
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  /** A GGUF file already chosen (the Hub's Import): checked as soon as the dialog opens. */
+  initialModelFile?: string
 }
 
 export const ImportVisionModelDialog = ({
   provider,
   trigger,
   onSuccess,
+  open: controlledOpen,
+  onOpenChange,
+  initialModelFile,
 }: ImportVisionModelDialogProps) => {
   const serviceHub = useServiceHub()
-  const [open, setOpen] = useState(false)
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false)
+  const open = controlledOpen ?? uncontrolledOpen
+  const setOpen = (next: boolean) => {
+    if (controlledOpen === undefined) setUncontrolledOpen(next)
+    onOpenChange?.(next)
+  }
   const [importing, setImporting] = useState(false)
   const [isVisionModel, setIsVisionModel] = useState(false)
   const [modelFile, setModelFile] = useState<string | null>(null)
@@ -158,6 +171,23 @@ export const ImportVisionModelDialog = ({
     [validateGgufFile]
   )
 
+  const selectModelFile = useCallback(
+    async (selectedFile: string) => {
+      const fileName = selectedFile.split(/[\\/]/).pop() || ''
+      setModelFile(selectedFile)
+      // Set temporary model name from filename (will be overridden by baseName from metadata if available)
+      const sanitizedName = fileName
+        .replace(/\s/g, '-')
+        .replace(/\.(gguf|GGUF)$/, '')
+        .replace(/[^a-zA-Z0-9/_.-]/g, '') // Remove any characters not allowed in model IDs
+      setModelName(sanitizedName)
+
+      // Validate the selected model file (this will update model name with baseName from metadata)
+      await validateModelFile(selectedFile)
+    },
+    [validateModelFile]
+  )
+
   const handleFileSelect = async (type: 'model' | 'mmproj') => {
     const selectedFile = await serviceHub.dialog().open({
       multiple: false,
@@ -165,19 +195,8 @@ export const ImportVisionModelDialog = ({
     })
 
     if (selectedFile && typeof selectedFile === 'string') {
-      const fileName = selectedFile.split(/[\\/]/).pop() || ''
-
       if (type === 'model') {
-        setModelFile(selectedFile)
-        // Set temporary model name from filename (will be overridden by baseName from metadata if available)
-        const sanitizedName = fileName
-          .replace(/\s/g, '-')
-          .replace(/\.(gguf|GGUF)$/, '')
-          .replace(/[^a-zA-Z0-9/_.-]/g, '') // Remove any characters not allowed in model IDs
-        setModelName(sanitizedName)
-
-        // Validate the selected model file (this will update model name with baseName from metadata)
-        await validateModelFile(selectedFile)
+        await selectModelFile(selectedFile)
       } else {
         setMmProjFile(selectedFile)
         // Validate the selected mmproj file
@@ -262,6 +281,11 @@ export const ImportVisionModelDialog = ({
     setIsValidatingMmproj(false)
   }
 
+  // A file the caller picked is the dialog's model file from the moment it opens.
+  useEffect(() => {
+    if (open && initialModelFile) void selectModelFile(initialModelFile)
+  }, [open, initialModelFile, selectModelFile])
+
   // Re-validate MMProj file when model name changes
   useEffect(() => {
     if (mmProjFile && modelName && isVisionModel) {
@@ -280,7 +304,7 @@ export const ImportVisionModelDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      {trigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}
       <DialogContent
         className="sm:max-w-lg lg:max-w-lg xl:max-w-lg"
       >

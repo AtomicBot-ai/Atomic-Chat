@@ -4,7 +4,6 @@ import { Button } from '@/components/ui/button'
 import { CopyButton } from '@/containers/CopyButton'
 import EmbeddingModelCard from '@/containers/EmbeddingModelCard'
 import { ModelLogo } from '@/containers/ModelLogo'
-import { HubReadme } from '@/containers/hub/HubReadme'
 import { route } from '@/constants/routes'
 import { useEmbeddingEngineReadiness } from '@/hooks/useEmbeddingEngineReadiness'
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
@@ -370,10 +369,6 @@ function ModelPanel({
           </div>
         </section>
       )}
-
-      <HubReadme
-        url={`https://huggingface.co/${model.repo}/resolve/${model.revision}/README.md`}
-      />
     </div>
   )
 }

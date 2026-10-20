@@ -18,7 +18,12 @@ import type {
 } from '@/services/diffusion-catalog-registry'
 import { artifactId } from '@/lib/diffusion/models'
 
-export type HubCategory = 'chat' | DiffusionModality | 'decision' | 'embedding'
+export type HubCategory =
+  | 'chat'
+  | DiffusionModality
+  | 'decision'
+  | 'embedding'
+  | 'voice'
 
 export const HUB_CATEGORIES: readonly HubCategory[] = [
   'chat',
@@ -26,6 +31,7 @@ export const HUB_CATEGORIES: readonly HubCategory[] = [
   'video',
   'decision',
   'embedding',
+  'voice',
 ]
 
 export const isHubCategory = (value: unknown): value is HubCategory =>

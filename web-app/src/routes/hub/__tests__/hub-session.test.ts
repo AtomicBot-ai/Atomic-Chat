@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { getHubFormat, getHubSearchQuery, setHubFormat, setHubSearchQuery } from '../hub-session'
+import {
+  getHubEngine,
+  getHubFormat,
+  getHubSearchQuery,
+  setHubEngine,
+  setHubFormat,
+  setHubSearchQuery,
+} from '../hub-session'
 
 describe('Hub session state', () => {
   beforeEach(() => {
@@ -21,5 +28,12 @@ describe('Hub session state', () => {
     expect(getHubFormat()).toBeNull()
     setHubFormat('tensorrt-llm')
     expect(getHubFormat()).toBe('tensorrt-llm')
+  })
+
+  it('keeps the picked engine for the launch only, none at first', () => {
+    setHubEngine(null)
+    expect(getHubEngine()).toBeNull()
+    setHubEngine('llamacpp')
+    expect(getHubEngine()).toBe('llamacpp')
   })
 })

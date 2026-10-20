@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-420 records, 2026-05-19 → 2026-10-20.
+421 records, 2026-05-19 → 2026-10-20.
 
 ---
 
@@ -326,9 +326,10 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Windows ships `atomic-chat-cli.exe` as a copy of `jan.exe`](2026-05-22-windows-ships-atomic-chat-cli-exe-as-a-copy-of-jan-exe.md)
 - **2026-05-22** — [Windows auto-updater uses NSIS as sole relauncher](2026-05-22-windows-auto-updater-uses-nsis-as-sole-relauncher.md)
 
-## UI / UX (93)
+## UI / UX (94)
 
 - **2026-10-20** — [Set up the server from Overview with a guide that does the real work](2026-10-20-set-up-the-server-from-overview-with-a-guide.md)
+- **2026-10-20** — [List Hub models in a table whose rows open in place](2026-10-20-list-hub-models-in-a-table-whose-rows-open-in-place.md) — supersedes the split view of the 2026-08-06 staff-picks record.
 - **2026-10-20** — [Split the API screen into Overview, Activity, Connections and Engine & model](2026-10-20-split-the-api-screen-into-overview-activity-connections-and-model.md)
 - **2026-10-20** — [Give the server's configuration and remote access their own pages](2026-10-20-give-server-configuration-and-remote-access-their-own-pages.md)
 - **2026-10-20** — [Put every control on a 36 / 24 / 40 px scale](2026-10-20-put-every-control-on-a-36-24-40-px-scale.md)

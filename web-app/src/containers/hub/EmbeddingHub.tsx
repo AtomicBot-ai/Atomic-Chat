@@ -1,12 +1,12 @@
 import { useEffect, useMemo, type ReactNode } from 'react'
 import { IconCircleCheckFilled } from '@tabler/icons-react'
-import HeaderPage from '@/containers/HeaderPage'
 import { ModelLogo } from '@/containers/ModelLogo'
 import {
   EmbeddingModelDetailPanel,
   LocalEmbeddingModelDetailPanel,
 } from '@/containers/hub/EmbeddingModelDetailPanel'
-import { HubNoResults, HubSearchInput } from '@/containers/hub/HubSearch'
+import { HubNoResults } from '@/containers/hub/HubSearch'
+import { HubSearchToolbar } from '@/containers/hub/HubSearchToolbar'
 import { useLocalEmbeddingModels } from '@/hooks/useEmbeddingModel'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import type { LocalEmbeddingModel } from '@/lib/embedding/models'
@@ -18,13 +18,14 @@ import type { EmbeddingCatalogModel } from '@/services/embedding-catalog-registr
 import { useEmbeddingStore } from '@/stores/embedding-store'
 
 export type EmbeddingHubProps = {
-  /** The model type picker, painted above the list. */
+  /** The model type picker, first in the toolbar. */
   categoryTabs?: ReactNode
   query: string
   onQueryChange: (query: string) => void
-  /** Catalog id named by the URL. */
+  /** Catalog id (or llama.cpp key) of the open model, named by the URL. */
   selectedModelId: string | null
-  onSelectModel: (modelId: string, options?: { replace?: boolean }) => void
+  /** Open a model, or close the open one (`null`). */
+  onSelectModel: (modelId: string | null) => void
 }
 
 const repoOwner = (repo: string) => repo.split('/')[0]
@@ -36,8 +37,6 @@ const repoOwner = (repo: string) => repo.split('/')[0]
 const LOCAL_KEY_PREFIX = 'llamacpp:'
 export const localEmbeddingKey = (model: LocalEmbeddingModel) =>
   `${LOCAL_KEY_PREFIX}${model.id}`
-const isLocalKey = (key: string | null) =>
-  key?.startsWith(LOCAL_KEY_PREFIX) ?? false
 
 /** The catalog's default first, the rest in catalog order. */
 const defaultFirst = (models: EmbeddingCatalogModel[]) => [
@@ -61,10 +60,10 @@ function EmbeddingModelRow({
     <button
       type="button"
       onClick={onSelect}
-      aria-current={selected ? 'true' : undefined}
+      aria-expanded={selected}
       className={cn(
-        'flex w-full items-center gap-3 rounded-lg border border-transparent px-2 py-3 text-left transition-colors hover:bg-accent',
-        selected && 'border-border bg-accent'
+        'flex w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-3 text-left transition-colors hover:bg-accent',
+        selected && 'rounded-b-none'
       )}
     >
       <ModelLogo
@@ -120,10 +119,10 @@ function LocalEmbeddingModelRow({
     <button
       type="button"
       onClick={onSelect}
-      aria-current={selected ? 'true' : undefined}
+      aria-expanded={selected}
       className={cn(
-        'flex w-full items-center gap-3 rounded-lg border border-transparent px-2 py-3 text-left transition-colors hover:bg-accent',
-        selected && 'border-border bg-accent'
+        'flex w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-3 text-left transition-colors hover:bg-accent',
+        selected && 'rounded-b-none'
       )}
     >
       <ModelLogo name={model.name} className="size-9 rounded-lg" />
@@ -142,8 +141,8 @@ function LocalEmbeddingModelRow({
 }
 
 /**
- * The Hub's Embedding category: the curated embedding catalog in the Hub's
- * two-column layout, each model tagged with what it reads beyond text.
+ * The Hub's Embedding category: the curated embedding catalog, one row per
+ * model opening its details below it, each tagged with what it reads beyond text.
  * Downloaded models come first, the catalog's default leads each group; they
  * are started from the llama.cpp provider page, where Open leads. The
  * embedding GGUFs among the user's llama.cpp models (the document-search
@@ -180,22 +179,6 @@ export function EmbeddingHub({
     }
   }, [catalog.models, query, installed, localModels])
 
-  // Resolved against everything on offer: a search that hides the open model
-  // should not blank the panel beside it.
-  const selectedModel =
-    catalog.models.find((model) => model.id === selectedModelId) ?? null
-  const selectedLocal =
-    localModels.find((model) => localEmbeddingKey(model) === selectedModelId) ??
-    null
-  const firstModelId = (sections.installed[0] ?? sections.available[0])?.id
-
-  useEffect(() => {
-    // A llama.cpp model is read from disk after the first render: its key
-    // in the URL is kept until then.
-    if (selectedModel || isLocalKey(selectedModelId) || !firstModelId) return
-    onSelectModel(firstModelId, { replace: true })
-  }, [selectedModel, selectedModelId, firstModelId, onSelectModel])
-
   const isEmpty =
     sections.installed.length === 0 &&
     sections.local.length === 0 &&
@@ -212,47 +195,37 @@ export function EmbeddingHub({
           {label}
         </h2>
         <div className="flex flex-col gap-1">
-          {items.map((model) => (
-            <EmbeddingModelRow
-              key={model.id}
-              model={model}
-              installed={downloaded}
-              selected={model.id === selectedModel?.id}
-              onSelect={() => onSelectModel(model.id)}
-            />
-          ))}
+          {items.map((model) => {
+            const open = model.id === selectedModelId
+            return (
+              <div key={model.id} className="rounded-lg border border-border">
+                <EmbeddingModelRow
+                  model={model}
+                  installed={downloaded}
+                  selected={open}
+                  onSelect={() => onSelectModel(open ? null : model.id)}
+                />
+                {open && <EmbeddingModelDetailPanel model={model} />}
+              </div>
+            )
+          })}
         </div>
       </section>
     )
 
   return (
     <div
-      className="grid h-svh w-full grid-cols-[minmax(320px,420px)_1fr] grid-rows-[auto_minmax(0,1fr)]"
+      className="grid h-svh w-full min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)]"
       data-testid="embedding-hub"
     >
-      <HeaderPage>
-        <div
-          className={cn(
-            'relative z-20 flex h-10 w-full items-center gap-2 py-3 pr-3',
-            !IS_MACOS && !IS_WINDOWS && 'pr-30'
-          )}
-          {...(IS_WINDOWS || IS_MACOS
-            ? { 'data-tauri-drag-region': true }
-            : {})}
-        >
-          <HubSearchInput
-            value={query}
-            onChange={onQueryChange}
-            placeholder={t('hub:searchEmbeddingPlaceholder')}
-          />
-        </div>
-      </HeaderPage>
+      <HubSearchToolbar
+        modelType={categoryTabs}
+        value={query}
+        onChange={onQueryChange}
+        placeholder={t('hub:searchEmbeddingPlaceholder')}
+      />
 
-      <div className="col-start-1 row-start-2 flex min-h-0 min-w-0 flex-col border-r border-border">
-        {categoryTabs && (
-          <div className="border-b border-border p-3">{categoryTabs}</div>
-        )}
-
+      <div className="col-start-1 row-start-2 flex min-h-0 min-w-0 flex-col">
         <div className="min-h-0 flex-1 overflow-y-auto p-2">
           {isEmpty ? (
             <HubNoResults
@@ -270,14 +243,25 @@ export function EmbeddingHub({
                     {t('settings:embedding.localModel')}
                   </h2>
                   <div className="flex flex-col gap-1">
-                    {sections.local.map((model) => (
-                      <LocalEmbeddingModelRow
-                        key={model.id}
-                        model={model}
-                        selected={localEmbeddingKey(model) === selectedModelId}
-                        onSelect={() => onSelectModel(localEmbeddingKey(model))}
-                      />
-                    ))}
+                    {sections.local.map((model) => {
+                      const key = localEmbeddingKey(model)
+                      const open = key === selectedModelId
+                      return (
+                        <div
+                          key={model.id}
+                          className="rounded-lg border border-border"
+                        >
+                          <LocalEmbeddingModelRow
+                            model={model}
+                            selected={open}
+                            onSelect={() => onSelectModel(open ? null : key)}
+                          />
+                          {open && (
+                            <LocalEmbeddingModelDetailPanel model={model} />
+                          )}
+                        </div>
+                      )
+                    })}
                   </div>
                 </section>
               )}
@@ -285,14 +269,6 @@ export function EmbeddingHub({
             </>
           )}
         </div>
-      </div>
-
-      <div className="col-start-2 row-span-2 row-start-1 min-h-0 min-w-0 overflow-y-auto">
-        {selectedLocal ? (
-          <LocalEmbeddingModelDetailPanel model={selectedLocal} />
-        ) : (
-          <EmbeddingModelDetailPanel model={selectedModel} />
-        )}
       </div>
     </div>
   )
