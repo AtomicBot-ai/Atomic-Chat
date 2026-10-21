@@ -29,6 +29,7 @@ import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import Capabilities from '@/containers/Capabilities'
 import { getModelDisplayName, isLocalProvider } from '@/lib/utils'
 import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
+import { resolveServerModels } from '@/utils/ensureModelForServer'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.claude_code as any)({
@@ -164,10 +165,13 @@ function ClaudeCodeIntegration() {
         .getActiveModels()
         .catch(() => [] as string[])
       if (activeModels.length > 0) {
-        const serverModels = activeModels.flatMap((id) => {
-          const p = providers.find((p) => p?.models?.some((m) => m.id === id))
-          return p ? [{ model: id, provider: p.provider }] : []
-        })
+        // Both llama.cpp providers own every GGUF id; record the one whose
+        // engine runs the model, or the Server card names the wrong engine.
+        const serverModels = await resolveServerModels(
+          activeModels,
+          serviceHub.models(),
+          useLocalApiServer.getState().defaultModelLocalApiServer?.provider
+        )
         if (serverModels.length > 0) setLastServerModels(serverModels)
       }
     }

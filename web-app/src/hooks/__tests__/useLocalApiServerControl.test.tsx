@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useAppState } from '@/hooks/useAppState'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
+import { useModelProvider } from '@/hooks/useModelProvider'
 import { initializeServiceHubStore } from '@/hooks/useServiceHub'
 import {
   makeFakeDiffusion,
@@ -18,7 +19,6 @@ const {
   toastDismiss,
   setRunning,
   ensureModel,
-  findProvider,
   turnOff,
   resume,
 } = vi.hoisted(() => ({
@@ -28,7 +28,6 @@ const {
   toastDismiss: vi.fn(),
   setRunning: vi.fn(),
   ensureModel: vi.fn(),
-  findProvider: vi.fn(),
   turnOff: vi.fn(),
   resume: vi.fn(),
 }))
@@ -46,9 +45,10 @@ vi.mock('@/utils/localApiServerControl', async (importOriginal) => ({
   setLocalApiServerRunning: setRunning,
   stopLocalApiServer: vi.fn(),
 }))
-vi.mock('@/utils/ensureModelForServer', () => ({
+// Only the load is faked; which provider gets recorded is the real lookup.
+vi.mock('@/utils/ensureModelForServer', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/utils/ensureModelForServer')>()),
   ensureModelForServer: ensureModel,
-  findProviderForModel: findProvider,
 }))
 vi.mock('@/utils/turnOffLocalApiServer', () => ({
   turnOffLocalApiServer: turnOff,
@@ -118,9 +118,17 @@ describe('starting the local API server', () => {
   })
 })
 
+/** A llama.cpp provider that lists `ids` from the shared models folder. */
+const llamacppProvider = (provider: string, ids: string[]) =>
+  ({
+    provider,
+    active: true,
+    models: ids.map((id) => ({ id })),
+  }) as unknown as ModelProvider
+
 describe('what Start loads before the server comes up', () => {
   const models = {
-    getActiveModels: vi.fn(async () => [] as string[]),
+    getActiveModels: vi.fn(async (_provider?: string) => [] as string[]),
     startModel: vi.fn(),
     stopModel: vi.fn(),
   }
@@ -139,14 +147,34 @@ describe('what Start loads before the server comes up', () => {
         diffusion,
       })
     )
+    // Both llama.cpp providers list the same models folder, TurboQuant first, as they do on a
+    // real install; the server's default is the upstream one.
+    useModelProvider.setState({
+      providers: [
+        llamacppProvider('llamacpp', ['gemma']),
+        llamacppProvider('llamacpp-upstream', ['gemma']),
+      ],
+    })
+    useLocalApiServer.getState().setDefaultModelLocalApiServer({
+      model: 'gemma',
+      provider: 'llamacpp-upstream',
+    })
     // Loading the chat model does what it does on a machine that cannot hold both: the GPU
-    // arbiter unloads the image model to make room.
+    // arbiter unloads the image model to make room. The upstream engine then holds the session,
+    // and each engine reports only its own sessions.
     ensureModel.mockImplementation(async () => {
       diffusion.emit({ type: 'state', status: makeStatus() })
-      models.getActiveModels.mockResolvedValue(['gemma'])
-      return { status: 'loaded', modelId: 'gemma', providerName: 'llamacpp' }
+      models.getActiveModels.mockImplementation(async (provider?: string) =>
+        provider === undefined || provider === 'llamacpp-upstream'
+          ? ['gemma']
+          : []
+      )
+      return {
+        status: 'loaded',
+        modelId: 'gemma',
+        providerName: 'llamacpp-upstream',
+      }
     })
-    findProvider.mockReturnValue({ provider: 'llamacpp' })
   })
 
   async function pressStart(): Promise<void> {
@@ -194,13 +222,31 @@ describe('what Start loads before the server comes up', () => {
     expect(setRunning).toHaveBeenCalledWith(true)
   })
 
-  it('still loads the chat model first when nothing else is resident', async () => {
+  // Both providers own the id and TurboQuant is listed first, so "the first provider that has
+  // it" named TurboQuant while the core ran the upstream build, and the Server card said
+  // "llama.cpp turboquant".
+  it('still loads the chat model first, and records the engine that runs it', async () => {
+    await pressStart()
+
+    expect(useLocalApiServer.getState().lastServerModels).toEqual([
+      { model: 'gemma', provider: 'llamacpp-upstream' },
+    ])
+    expect(setRunning).toHaveBeenCalledWith(true)
+  })
+
+  it('records TurboQuant when that is the engine holding the session', async () => {
+    ensureModel.mockImplementation(async () => {
+      models.getActiveModels.mockImplementation(async (provider?: string) =>
+        provider === undefined || provider === 'llamacpp' ? ['gemma'] : []
+      )
+      return { status: 'loaded', modelId: 'gemma', providerName: 'llamacpp' }
+    })
+
     await pressStart()
 
     expect(useLocalApiServer.getState().lastServerModels).toEqual([
       { model: 'gemma', provider: 'llamacpp' },
     ])
-    expect(setRunning).toHaveBeenCalledWith(true)
   })
 })
 

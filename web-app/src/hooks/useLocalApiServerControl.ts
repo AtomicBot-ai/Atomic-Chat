@@ -11,7 +11,7 @@ import {
 } from '@/utils/activeModelsSync'
 import {
   ensureModelForServer,
-  findProviderForModel,
+  resolveServerModels,
 } from '@/utils/ensureModelForServer'
 import {
   hasResidentEmbeddingModel,
@@ -107,16 +107,15 @@ export function useLocalApiServerControl() {
 
           const activeModels = await serviceHub.models().getActiveModels()
           if (activeModels && activeModels.length > 0) {
-            // Both llama.cpp providers list the same models folder, so "the first
-            // provider that has this id" named TurboQuant — off on a fresh install,
-            // with no backend — for a model the default provider was running. An
-            // active provider is preferred, as it is when the model is loaded.
-            const serverModels = activeModels.flatMap((id: string) => {
-              const provider = findProviderForModel(id)
-              return provider
-                ? [{ model: id, provider: provider.provider }]
-                : []
-            })
+            // Both llama.cpp providers list the same models folder, so "a
+            // provider that has this id" named TurboQuant for a model the
+            // default provider was running, and the Server card showed the
+            // wrong engine. Record the provider whose engine holds the session.
+            const serverModels = await resolveServerModels(
+              activeModels,
+              serviceHub.models(),
+              defaultModelLocalApiServer?.provider
+            )
             if (serverModels.length > 0) setLastServerModels(serverModels)
           }
           syncActiveModelsFromEngines(activeModels || [])

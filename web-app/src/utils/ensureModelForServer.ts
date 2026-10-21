@@ -40,6 +40,63 @@ export function findProviderForModel(modelId: string): ModelProvider | undefined
 }
 
 /**
+ * The provider whose engine holds the loaded session of `modelId`.
+ *
+ * Owning the id says nothing about which provider runs it: both llama.cpp
+ * providers list the same models folder, and the first owner is the
+ * TurboQuant one. Each engine reports only its own sessions
+ * (`getActiveModels(provider)`), so ask the owners. `preferredProvider` (the
+ * server's default) is asked first and wins when both hold the model; when no
+ * engine claims it, it is still the answer if it owns the id, and
+ * {@link findProviderForModel} after that.
+ */
+export async function findServingProvider(
+  modelId: string,
+  modelsService: Pick<EnsureModelDeps['modelsService'], 'getActiveModels'>,
+  preferredProvider?: string
+): Promise<ModelProvider | undefined> {
+  const { providers } = useModelProvider.getState()
+  const owners = providers.filter((p) =>
+    p?.models?.some((m: { id: string }) => m.id === modelId)
+  )
+  const preferred = owners.find((p) => p.provider === preferredProvider)
+  const candidates = preferred
+    ? [preferred, ...owners.filter((p) => p !== preferred)]
+    : owners
+
+  for (const provider of candidates) {
+    const loaded = await modelsService
+      .getActiveModels(provider.provider)
+      .catch(() => [] as string[])
+    if (loaded?.includes(modelId)) return provider
+  }
+  return preferred ?? findProviderForModel(modelId)
+}
+
+/**
+ * The `{ model, provider }` pairs the server serves for `modelIds` (loaded
+ * models), each named by the provider that actually runs it
+ * ({@link findServingProvider}). Ids no provider owns are left out.
+ */
+export async function resolveServerModels(
+  modelIds: string[],
+  modelsService: Pick<EnsureModelDeps['modelsService'], 'getActiveModels'>,
+  preferredProvider?: string
+): Promise<{ model: string; provider: string }[]> {
+  const resolved = await Promise.all(
+    modelIds.map(async (model) => {
+      const provider = await findServingProvider(
+        model,
+        modelsService,
+        preferredProvider
+      )
+      return provider ? [{ model, provider: provider.provider }] : []
+    })
+  )
+  return resolved.flat()
+}
+
+/**
  * Ensure a model is loaded for the local API server.
  *
  * - If a model is already loaded, returns immediately.
