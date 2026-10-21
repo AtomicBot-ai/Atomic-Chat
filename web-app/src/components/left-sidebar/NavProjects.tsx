@@ -36,7 +36,7 @@ import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useSidebarLists } from '@/hooks/useSidebarLists'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
 import { useThreads } from '@/hooks/useThreads'
-import { Link, useNavigate } from '@tanstack/react-router'
+import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import {
   DndContext,
   closestCenter,
@@ -74,6 +74,7 @@ const ProjectItem = memo(function ProjectItem({
   isMobile,
   threads,
   isOpen,
+  isActive,
   onOpenChange,
   onEdit,
   onDelete,
@@ -82,6 +83,8 @@ const ProjectItem = memo(function ProjectItem({
   isMobile: boolean
   threads: Thread[]
   isOpen: boolean
+  /** The project's own page is the one open. */
+  isActive: boolean
   onOpenChange: (projectId: string, open: boolean) => void
   onEdit: (project: ThreadFolder) => void
   onDelete: (project: ThreadFolder) => void
@@ -137,7 +140,9 @@ const ProjectItem = memo(function ProjectItem({
             </CollapsibleTrigger>
             <SidebarMenuButton
               asChild
-              className="min-w-0 flex-1 pr-8"
+              isActive={isActive}
+              // The same highlight as an open chat row (ThreadList).
+              className="min-w-0 flex-1 pr-8 data-[active=true]:bg-sidebar-foreground/15"
               onMouseEnter={() => folderIconRef.current?.startAnimation()}
               onMouseLeave={() => folderIconRef.current?.stopAnimation()}
             >
@@ -213,6 +218,7 @@ export function NavProjects({ onCreate }: { onCreate: () => void }) {
   const { folders, updateFolder, reorderFolders } = useThreadManagement()
   const threads = useThreads((state) => state.threads)
   const currentThreadId = useThreads((state) => state.currentThreadId)
+  const { projectId: activeProjectId } = useParams({ strict: false })
   const projectExpanded = useLeftPanel((state) => state.projectExpanded)
   const setProjectExpanded = useLeftPanel((state) => state.setProjectExpanded)
 
@@ -345,6 +351,7 @@ export function NavProjects({ onCreate }: { onCreate: () => void }) {
                     isMobile={isMobile}
                     threads={projectThreads}
                     isOpen={open}
+                    isActive={item.id === activeProjectId}
                     onOpenChange={handleOpenChange}
                     onEdit={handleEdit}
                     onDelete={handleDelete}
