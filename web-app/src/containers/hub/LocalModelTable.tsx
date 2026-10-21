@@ -7,7 +7,11 @@ import { PendingValue } from '@/containers/hub/PendingValue'
 import { isHuggingFaceCardFailed } from '@/hooks/useHuggingFaceFeed'
 import { useModelLikes } from '@/hooks/useModelLikes'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { HUB_FORMAT_LABELS, modelDownloadSizeText } from '@/lib/hub-filters'
+import {
+  HUB_FORMAT_LABELS,
+  modelDownloadSizeText,
+  SAFETENSORS_FORMAT_LABEL,
+} from '@/lib/hub-filters'
 import { hubEngineLabel, type HubEngineId } from '@/lib/hub-model-engines'
 import {
   hubModelFacts,
@@ -18,6 +22,8 @@ import {
   type HubSortableColumn,
 } from '@/lib/hub-model-facts'
 import { foundryLocalOf } from '@/lib/foundry-local/hub'
+import type { UnservedCheckpoint } from '@/lib/managed-engine/hub-state'
+import type { ManagedEngine } from '@/lib/managed-engines'
 import type { ModelFormat } from '@/lib/model-card'
 import { cn } from '@/lib/utils'
 import type { CatalogModel } from '@/services/models/types'
@@ -37,6 +43,11 @@ export type LocalModelTableItem = {
   section?: string
   /** The format the row reads as instead of the list's: a linked managed checkpoint's engine. */
   format?: ModelFormat
+  /**
+   * A linked safetensors checkpoint where no managed engine is offered: it reads as safetensors,
+   * and its card says what it runs on in place of download options.
+   */
+  unserved?: UnservedCheckpoint<ManagedEngine>
 }
 
 /** How many rows before the end of the list the next page is asked for. */
@@ -82,6 +93,8 @@ export type LocalModelTableProps = {
 type Row = LocalModelTableItem & {
   name: string
   facts: HubModelFacts
+  /** The Format cell: the facts' format, or safetensors for an unserved checkpoint. */
+  formatLabel: string
   engines: HubEngineId[]
   /** Hugging Face has not answered the parameter count for a name that carries none. */
   paramsLoading: boolean
@@ -178,6 +191,9 @@ export function LocalModelTable({
         ...item,
         name: hubModelName(item.model, item.pick),
         facts,
+        formatLabel: item.unserved
+          ? SAFETENSORS_FORMAT_LABEL
+          : HUB_FORMAT_LABELS[facts.format],
         engines: facts.engines.filter((id) => availableEngines.has(id)),
         // Until Hugging Face answers, rather than a "—" that turns into a number.
         paramsLoading: needsParams && !(repo in hubParams),
@@ -351,6 +367,8 @@ export function LocalModelTable({
                           name={row.name}
                           pickIcon={row.pick?.icon}
                           facts={row.facts}
+                          formatLabel={row.formatLabel}
+                          unserved={row.unserved}
                           paramsLoading={row.paramsLoading}
                           cardLoading={row.cardLoading}
                           engines={row.engines}
@@ -426,6 +444,7 @@ const SummaryRow = memo(function SummaryRow({
     fromHuggingFace,
     name,
     facts,
+    formatLabel,
     engines,
     paramsLoading,
     cardLoading,
@@ -434,7 +453,6 @@ const SummaryRow = memo(function SummaryRow({
   const foundry = foundryLocalOf(model)
   const unknown = t('hub:table.unknown')
   const engineText = engines.map(hubEngineLabel).join(', ')
-  const formatLabel = HUB_FORMAT_LABELS[facts.format]
   const verdictInCard = model.is_managed || !!foundry
   const owner = repoOwner(model, pick)
 
@@ -572,7 +590,7 @@ function sameSummary(
     a.model === b.model &&
     a.pick === b.pick &&
     a.fromHuggingFace === b.fromHuggingFace &&
-    a.facts.format === b.facts.format &&
+    a.formatLabel === b.formatLabel &&
     a.facts.params === b.facts.params &&
     a.facts.fit === b.facts.fit &&
     a.paramsLoading === b.paramsLoading &&

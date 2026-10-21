@@ -37,6 +37,7 @@
   "basedOnDevice": "基於 {{device}}：{{memory}}",
   "noFittingPicks": "沒有適合本裝置的推薦模型。關閉裝置篩選即可查看全部。",
   "downloadOptions": "下載選項",
+  "safetensorsNeedsNvidia": "此模型需要配備 NVIDIA RTX 30 系列或更新顯示卡的 Windows 或 Linux。",
   "details": "詳細資料",
   "selectModel": "選擇一個模型以查看詳細資料",
   "openOnWeb": "在網頁中開啟",

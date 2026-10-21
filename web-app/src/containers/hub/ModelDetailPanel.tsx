@@ -12,6 +12,8 @@ import { HUB_FORMAT_LABELS } from '@/lib/hub-filters'
 import { hubEngineLabel, type HubEngineId } from '@/lib/hub-model-engines'
 import { hubRepoId, type HubModelFacts } from '@/lib/hub-model-facts'
 import { foundryLocalOf } from '@/lib/foundry-local/hub'
+import type { UnservedCheckpoint } from '@/lib/managed-engine/hub-state'
+import { hubKey, type ManagedEngine } from '@/lib/managed-engines'
 import { formatDownloads, formatTimeAgo } from '@/lib/model-card'
 import { cn } from '@/lib/utils'
 import type { CatalogModel } from '@/services/models/types'
@@ -63,6 +65,10 @@ export type ModelDetailPanelProps = {
   /** Curated metadata when the row came from staff picks. */
   pickIcon?: string
   facts: HubModelFacts
+  /** The Format value, when the row's differs from the facts' format. */
+  formatLabel?: string
+  /** A linked safetensors checkpoint no engine here serves: a note in place of download options. */
+  unserved?: UnservedCheckpoint<ManagedEngine>
   /** Hugging Face's parameter count is on its way: the row's own, shown the same here. */
   paramsLoading?: boolean
   /** The Hugging Face card with the sizes and download options is on its way. */
@@ -79,7 +85,8 @@ export type ModelDetailPanelProps = {
 
 /**
  * The open row of the Hub's local models table: the model's name with its
- * heart and source, what is known about it, and what can be downloaded.
+ * heart and source, what is known about it, and what can be downloaded — or,
+ * for a linked checkpoint no engine here serves, what it runs on.
  *
  * Its facts are the row's, so opening a row changes no number. What is still
  * on its way (Hugging Face's parameter count, a feed row's card with sizes and
@@ -91,6 +98,8 @@ export function ModelDetailPanel({
   name,
   pickIcon,
   facts,
+  formatLabel = HUB_FORMAT_LABELS[facts.format],
+  unserved,
   paramsLoading = false,
   cardLoading = false,
   engines,
@@ -112,12 +121,21 @@ export function ModelDetailPanel({
     i18n.language
   )
 
+  // An engine's card too old, in that engine's words; otherwise what the model runs on.
+  const unservedNote = ({ tooOld }: UnservedCheckpoint<ManagedEngine>) =>
+    tooOld
+      ? t(hubKey(tooOld.engine)('blocker.compute-capability-too-low'), {
+          required: tooOld.required,
+          actual: tooOld.actual,
+        })
+      : t('hub:safetensorsNeedsNvidia')
+
   const items: [string, ReactNode][] = [
     [
       t('hub:table.column.parameters'),
       facts.params ?? (paramsLoading ? pending('w-12') : unknown),
     ],
-    [t('hub:table.column.format'), HUB_FORMAT_LABELS[facts.format]],
+    [t('hub:table.column.format'), formatLabel],
     [t('hub:table.column.engines'), engineText || unknown],
     [
       t('hub:table.column.capabilities'),
@@ -222,6 +240,13 @@ export function ModelDetailPanel({
               <Skeleton className="h-9 w-28 rounded-full" />
             </div>
           </section>
+        ) : unserved ? (
+          <p
+            data-testid="unserved-checkpoint"
+            className="text-xs text-muted-foreground"
+          >
+            {unservedNote(unserved)}
+          </p>
         ) : (
           <DownloadOptionsSelect model={model} budgetBytes={budgetBytes} />
         )}

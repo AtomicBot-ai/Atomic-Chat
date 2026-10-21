@@ -37,6 +37,7 @@
   "basedOnDevice": "D'après {{device}} : {{memory}}",
   "noFittingPicks": "Aucun modèle recommandé ne tient sur cet appareil. Désactivez le filtre pour tous les voir.",
   "downloadOptions": "Options de téléchargement",
+  "safetensorsNeedsNvidia": "Ce modèle nécessite Windows ou Linux avec une carte graphique NVIDIA de la série RTX 30 ou plus récente.",
   "details": "Détails",
   "selectModel": "Sélectionnez un modèle pour voir ses détails",
   "openOnWeb": "Ouvrir sur le Web",

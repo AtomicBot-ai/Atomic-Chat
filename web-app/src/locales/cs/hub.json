@@ -37,6 +37,7 @@
   "basedOnDevice": "Podle {{device}}: {{memory}}",
   "noFittingPicks": "Do tohoto zařízení se nevejde žádný doporučený model. Vypněte filtr a zobrazte všechny.",
   "downloadOptions": "Možnosti stažení",
+  "safetensorsNeedsNvidia": "Tento model vyžaduje Windows nebo Linux s grafickou kartou NVIDIA řady RTX 30 nebo novější.",
   "details": "Podrobnosti",
   "selectModel": "Vyberte model a zobrazte jeho podrobnosti",
   "openOnWeb": "Otevřít na webu",
