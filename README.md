@@ -207,6 +207,12 @@ chmod +x Atomic.Chat_*_amd64.AppImage
 
 If prompted about FUSE on first launch: `sudo apt install fuse libfuse2` (Debian/Ubuntu) or `sudo dnf install fuse fuse-libs` (Fedora). GPU acceleration (Vulkan) is auto-detected on first launch; only GGUF models run on Linux.
 
+Closing the window keeps Atomic Chat and its local API on `:1337` running in the tray; use **Quit** in the tray menu to stop it. Launching the app again brings the window back.
+
+**Window rules (Hyprland, Sway).** Match the Wayland app id (Hyprland `class`) `chat.atomic.app`, e.g. `^chat\.atomic\.app$`.
+
+**Packaging.** A distro package (AUR, a pacman repo, Flatpak) that owns updates should start the app with `ATOMIC_CHAT_PACKAGE_MANAGED=1`, or place an empty `atomic-chat-package-managed` file next to the executable. The built-in updater then never checks for, offers or installs updates, and Settings points users to their package manager.
+
 ---
 
 ### 🧯 Troubleshooting
