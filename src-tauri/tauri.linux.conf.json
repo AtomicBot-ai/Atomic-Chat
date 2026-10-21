@@ -27,6 +27,13 @@
       }
     ]
   },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["atomic-chat"]
+      }
+    }
+  },
   "bundle": {
     "targets": ["appimage"],
     "resources": [
