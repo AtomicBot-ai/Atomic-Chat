@@ -649,7 +649,7 @@ fn setup_window_theme_listener<R: Runtime>(
 
     // The close handler hides the window instead of destroying it, so keep a
     // clone to call `hide()` from inside the event closure.
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     let window_for_close = window.clone();
 
     window.on_window_event(move |event| match event {
@@ -691,6 +691,19 @@ fn setup_window_theme_listener<R: Runtime>(
             } else {
                 let _ = window_for_close.hide();
                 let _ = app_handle_clone.hide();
+            }
+        }
+        // On Linux closing the only window used to exit the app, which stops
+        // the local API server on :1337 that agents and editors are talking
+        // to. While the tray icon is up, closing hides the window instead and
+        // the tray's "Open Atomic Chat" (or launching the app again) brings it
+        // back; "Quit" still exits through RunEvent::Exit. Without a tray there
+        // would be no way back to a hidden window, so the close goes ahead.
+        #[cfg(target_os = "linux")]
+        WindowEvent::CloseRequested { api, .. } => {
+            if app_handle_clone.tray_by_id("tray").is_some() {
+                api.prevent_close();
+                let _ = window_for_close.hide();
             }
         }
         _ => {}

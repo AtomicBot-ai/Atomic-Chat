@@ -32,6 +32,15 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_single_instance::init(|_app, argv, _cwd| {
           println!("a new app instance was opened with {argv:?} and the deep link event was already triggered");
           // when defining deep link schemes at runtime, you must also check `argv` here
+
+          // Linux closes the window to the tray, so launching the app again
+          // from a launcher is how many users will look for it: show it.
+          #[cfg(target_os = "linux")]
+          if let Some(window) = _app.get_webview_window("main") {
+              let _ = window.unminimize();
+              let _ = window.show();
+              let _ = window.set_focus();
+          }
         }));
         // Launch-at-startup (ATO-96). Registered after single-instance, as the
         // autostart plugin requires. AppleScript mode on macOS registers a real
