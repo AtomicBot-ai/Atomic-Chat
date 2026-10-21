@@ -213,7 +213,33 @@ describe('Hardware Settings', () => {
 
     await waitFor(() => {
       expect(screen.getByText('settings:hardware.os')).toBeInTheDocument()
-      expect(screen.getByText('windows')).toBeInTheDocument()
+      expect(screen.getByText('Windows')).toBeInTheDocument()
+    })
+  })
+
+  it.each([
+    ['macos', 'macOS'],
+    ['linux', 'Linux'],
+    ['ios', 'iOS'],
+    ['android', 'Android'],
+  ])('names the %s platform %s', async (osType, name) => {
+    hardwareStore.state.hardwareData.os_type = osType
+    const Component = Route.component as React.ComponentType
+    render(<Component />)
+
+    await waitFor(() => {
+      expect(screen.getByText(name)).toBeInTheDocument()
+    })
+    expect(screen.queryByText(osType)).not.toBeInTheDocument()
+  })
+
+  it('shows an unknown platform id as the core reported it', async () => {
+    hardwareStore.state.hardwareData.os_type = 'freebsd'
+    const Component = Route.component as React.ComponentType
+    render(<Component />)
+
+    await waitFor(() => {
+      expect(screen.getByText('freebsd')).toBeInTheDocument()
     })
   })
 

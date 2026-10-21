@@ -24,6 +24,19 @@ export const Route = createFileRoute(route.settings.hardware as any)({
   component: HardwareContent,
 })
 
+// `os_type` is a lowercase platform id ("macos", "windows", ...); CSS
+// capitalisation turned "macos" into "Macos".
+const OS_DISPLAY_NAMES: Record<string, string> = {
+  macos: 'macOS',
+  windows: 'Windows',
+  linux: 'Linux',
+  ios: 'iOS',
+  android: 'Android',
+}
+
+const osDisplayName = (osType: string): string =>
+  OS_DISPLAY_NAMES[osType?.toLowerCase()] ?? osType
+
 function HardwareContent() {
   const { t } = useTranslation()
   const [isLoading, setIsLoading] = useState(false)
@@ -172,8 +185,8 @@ function HardwareContent() {
                 <CardItem
                   title={t('settings:hardware.name')}
                   actions={
-                    <span className="text-foreground capitalize">
-                      {hardwareData.os_type}
+                    <span className="text-foreground">
+                      {osDisplayName(hardwareData.os_type)}
                     </span>
                   }
                 />

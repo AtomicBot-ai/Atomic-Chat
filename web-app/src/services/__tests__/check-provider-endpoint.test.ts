@@ -66,7 +66,37 @@ describe('checkProviderEndpoint', () => {
     expect(result.ok).toBe(false)
     expect(result.modelCount).toBe(0)
     expect(result.message).toBe(
-      'Cannot connect to lan-vllm at http://192.168.1.20:8000. Check that the server is running and the address is correct.'
+      'Cannot connect to Lan-vllm at http://192.168.1.20:8000. Check that the server is running and the address is correct.'
+    )
+  })
+
+  it.each([
+    ['ollama', 'Ollama'],
+    ['llamacpp-server', 'llama.cpp server'],
+  ])('names the %s provider by its display name', async (id, title) => {
+    invoke.mockRejectedValueOnce(
+      new Error('Request failed: connection refused')
+    )
+
+    const result = await checkProviderEndpoint(
+      provider({ provider: id, base_url: 'http://localhost:11434/v1' })
+    )
+
+    expect(result.message).toBe(
+      `Cannot connect to ${title} at http://localhost:11434/v1. Check that the server is running and the address is correct.`
+    )
+  })
+
+  it('names the provider by its display name when the answer is not a model list', async () => {
+    invoke.mockResolvedValueOnce('<html>router login</html>')
+
+    const result = await checkProviderEndpoint(
+      provider({ provider: 'ollama', base_url: 'http://localhost:11434/v1' })
+    )
+
+    expect(result.ok).toBe(false)
+    expect(result.message).toMatch(
+      /^Failed to parse JSON response from Ollama: /
     )
   })
 

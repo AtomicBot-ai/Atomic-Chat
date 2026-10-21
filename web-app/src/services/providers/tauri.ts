@@ -19,6 +19,7 @@ import { DefaultProvidersService } from './default'
 import type { EndpointCheckResult } from './types'
 import { getModelCapabilities } from '@/lib/models'
 import { isEngineHidden } from '@/lib/provider-visibility'
+import { getProviderTitle } from '@/lib/utils'
 
 /**
  * Turn a raw `get_local_http` failure (e.g. `HTTP 404: 404 page not found`,
@@ -179,6 +180,8 @@ export async function checkProviderEndpoint(
   provider: ModelProvider
 ): Promise<EndpointCheckResult> {
   const { baseUrl, urls, headers } = modelsRequest(provider)
+  // Messages name the provider the way the UI does ("Ollama", not "ollama").
+  const label = getProviderTitle(provider.provider)
   if (!baseUrl) {
     return {
       ok: false,
@@ -208,7 +211,7 @@ export async function checkProviderEndpoint(
     }
     const latencyMs = Math.round(performance.now() - attemptStarted)
     try {
-      const modelCount = extractModelIds(rawText, provider.provider).length
+      const modelCount = extractModelIds(rawText, label).length
       return { ok: true, latencyMs, modelCount }
     } catch (err) {
       // It answered, but not with a model list (an HTML page, an error
@@ -226,12 +229,7 @@ export async function checkProviderEndpoint(
     ok: false,
     latencyMs: elapsed(),
     modelCount: 0,
-    message: classifyLocalFetchError(
-      provider.provider,
-      baseUrl,
-      urls,
-      lastMessage
-    ),
+    message: classifyLocalFetchError(label, baseUrl, urls, lastMessage),
   }
 }
 
@@ -445,6 +443,7 @@ export class TauriProvidersService extends DefaultProvidersService {
     }
 
     const { baseUrl, urls, headers } = modelsRequest(provider)
+    const label = getProviderTitle(provider.provider)
     const hasApiKey = Boolean(provider.api_key)
     const [primaryUrl, fallbackUrl] = urls
 
@@ -472,7 +471,7 @@ export class TauriProvidersService extends DefaultProvidersService {
             headers,
             timeoutSecs: 30,
           })
-          const ids = extractModelIds(rawText, provider.provider)
+          const ids = extractModelIds(rawText, label)
           console.info(
             `[providers:${provider.provider}] parsed ${ids.length} model ids (url=${url}, attempt=${attempt})`
           )
@@ -507,9 +506,7 @@ export class TauriProvidersService extends DefaultProvidersService {
 
     const msg =
       lastError instanceof Error ? lastError.message : String(lastError)
-    throw new Error(
-      classifyLocalFetchError(provider.provider, baseUrl, urls, msg)
-    )
+    throw new Error(classifyLocalFetchError(label, baseUrl, urls, msg))
   }
 
   async checkProviderEndpoint(
