@@ -5,15 +5,21 @@
 //! tracks.
 //!
 //! A packager opts in with either switch:
-//! - `ATOMIC_CHAT_PACKAGE_MANAGED=1` in the environment (e.g. from the
-//!   `/usr/bin` launcher script), or
 //! - an empty `atomic-chat-package-managed` marker file next to the app
-//!   executable, for installs whose desktop entry runs the binary directly.
+//!   executable — next to the `.AppImage` file itself for an intact AppImage,
+//!   next to `usr/bin/Atomic-Chat` for an extracted one. This is the switch
+//!   to prefer: it also covers launches that bypass a wrapper script, such as
+//!   the autostart entry, which runs the binary (or `$APPIMAGE`) directly;
+//! - `ATOMIC_CHAT_PACKAGE_MANAGED=1` in the environment (e.g. from a
+//!   `/usr/bin` launcher script), for packages that cannot place a file.
 
 use std::path::Path;
 
 pub const PACKAGE_MANAGED_ENV: &str = "ATOMIC_CHAT_PACKAGE_MANAGED";
 pub const PACKAGE_MANAGED_MARKER: &str = "atomic-chat-package-managed";
+/// Set by the AppImage runtime to the path of the mounted `.AppImage` file;
+/// `current_exe()` only sees the payload inside the mount.
+const APPIMAGE_ENV: &str = "APPIMAGE";
 
 fn env_value_enabled(value: Option<&str>) -> bool {
     matches!(
@@ -31,6 +37,8 @@ fn marker_next_to(exe: &Path) -> bool {
 pub fn is_package_managed() -> bool {
     env_value_enabled(std::env::var(PACKAGE_MANAGED_ENV).ok().as_deref())
         || std::env::current_exe().is_ok_and(|exe| marker_next_to(&exe))
+        || std::env::var_os(APPIMAGE_ENV)
+            .is_some_and(|appimage| marker_next_to(Path::new(&appimage)))
 }
 
 /// Lets the frontend hide the update UI and skip the startup check.
@@ -60,5 +68,16 @@ mod tests {
         assert!(!marker_next_to(&exe));
         std::fs::write(dir.path().join(PACKAGE_MANAGED_MARKER), "").unwrap();
         assert!(marker_next_to(&exe));
+    }
+
+    #[test]
+    fn marker_file_is_looked_up_next_to_the_appimage() {
+        // The same lookup serves `$APPIMAGE`, whose parent is the directory
+        // the packager installed the `.AppImage` file into.
+        let dir = tempfile::tempdir().unwrap();
+        let appimage = dir.path().join("Atomic.Chat_2.2.23_amd64.AppImage");
+        assert!(!marker_next_to(&appimage));
+        std::fs::write(dir.path().join(PACKAGE_MANAGED_MARKER), "").unwrap();
+        assert!(marker_next_to(&appimage));
     }
 }

@@ -283,7 +283,7 @@ function General() {
                   }
                 />
               )}
-              {!AUTO_UPDATER_DISABLED && packageManaged && (
+              {packageManaged && (
                 <CardItem
                   title={t('settings:general.updates')}
                   description={t('settings:general.updatesByPackageManager')}

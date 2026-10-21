@@ -493,6 +493,30 @@ describe('General Settings Route', () => {
     ).toBe(false)
   })
 
+  it('still explains a package-managed install when the build has no updater', async () => {
+    // A source-built distro package can set both switches; the explanation
+    // must not disappear with the update button.
+    updater.packageManaged = true
+    global.AUTO_UPDATER_DISABLED = true
+    try {
+      const Component = GeneralRoute.component as React.ComponentType
+      await act(async () => {
+        render(<Component />)
+      })
+
+      expect(
+        screen.getByText('settings:general.updatesByPackageManager')
+      ).toBeInTheDocument()
+      expect(
+        screen
+          .getAllByTestId('button')
+          .some((button) => button.textContent?.includes('checkForUpdates'))
+      ).toBe(false)
+    } finally {
+      global.AUTO_UPDATER_DISABLED = false
+    }
+  })
+
   it('should handle data folder display', async () => {
     const Component = GeneralRoute.component as React.ComponentType
     await act(async () => {
