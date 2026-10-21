@@ -61,7 +61,7 @@
   "profile": "Perfil",
   "reset": "Restablecer",
   "search": "Buscar",
-  "searchThreads": "Buscar hilos...",
+  "searchThreads": "Buscar chats...",
   "toNavigate": "para navegar",
   "toSelect": "para seleccionar",
   "toClose": "para cerrar",
@@ -91,10 +91,10 @@
   "auto": "Automático",
   "english": "English",
   "medium": "Medio",
-  "newThread": "Nuevo hilo",
+  "newThread": "Nuevo chat",
   "noResultsFound": "No se encontraron resultados",
-  "noThreadsYet": "Aún no hay hilos",
-  "noThreadsYetDesc": "Inicia una nueva conversación para ver tu historial de hilos aquí.",
+  "noThreadsYet": "Aún no hay chats",
+  "noThreadsYetDesc": "Inicia una nueva conversación para ver tu historial de chats aquí.",
   "downloads": "Descargas",
   "downloading": "Descargando",
   "cancelDownload": "Cancelar descarga",
@@ -122,15 +122,15 @@
   "jan": "Atomic Bot",
   "metadata": "Metadatos",
   "regenerate": "Regenerar",
-  "threadImage": "Imagen del hilo",
+  "threadImage": "Imagen del chat",
   "editMessage": "Editar mensaje",
   "deleteMessage": "Eliminar mensaje",
-  "deleteThread": "Eliminar hilo",
-  "renameThread": "Renombrar hilo",
-  "threadTitle": "Título del hilo",
-  "deleteAllThreads": "Eliminar todos los hilos",
-  "allThreadsUnfavorited": "Todos los hilos sin estrella",
-  "deleteAllThreadsConfirm": "¿Estás seguro de que deseas eliminar todos los hilos? Esta acción no se puede deshacer.",
+  "deleteThread": "Eliminar chat",
+  "renameThread": "Renombrar chat",
+  "threadTitle": "Título del chat",
+  "deleteAllThreads": "Eliminar todos los chats",
+  "allThreadsUnfavorited": "Todos los chats sin estrella",
+  "deleteAllThreadsConfirm": "¿Estás seguro de que deseas eliminar todos los chats? Esta acción no se puede deshacer.",
   "addProvider": "Agregar proveedor",
   "addOpenAIProvider": "Agregar proveedor OpenAI",
   "enterNameForProvider": "Ingresa un nombre para tu proveedor",
@@ -256,15 +256,15 @@
       "changeLocation": "Cambiar ubicación"
     },
     "deleteAllThreads": {
-      "title": "Eliminar todos los hilos",
-      "description": "Todos los hilos serán eliminados. Esta acción no se puede deshacer."
+      "title": "Eliminar todos los chats",
+      "description": "Todos los chats serán eliminados. Esta acción no se puede deshacer."
     },
     "deleteAllThreadsInProject": {
       "title": "Eliminar todas las conversaciones",
       "description": "Se eliminarán {{count}} conversaciones en \"{{projectName}}\". Esta acción no se puede deshacer."
     },
     "deleteThread": {
-      "description": "¿Estás seguro de que deseas eliminar este hilo? Esta acción no se puede deshacer."
+      "description": "¿Estás seguro de que deseas eliminar este chat? Esta acción no se puede deshacer."
     },
     "messageMetadata": {
       "title": "Metadatos del mensaje"
@@ -292,11 +292,11 @@
     "filesDescription": "Agrega PDFs, documentos u otros textos para usar como referencia en este proyecto.",
     "deleteProjectDialog": {
       "title": "Eliminar proyecto",
-      "permanentDelete": "Esto eliminará permanentemente todos los hilos.",
-      "permanentDeleteWarning": "¡Esta acción eliminará permanentemente TODOS los hilos dentro del proyecto!",
+      "permanentDelete": "Esto eliminará permanentemente todos los chats.",
+      "permanentDeleteWarning": "¡Esta acción eliminará permanentemente TODOS los chats dentro del proyecto!",
       "deleteEmptyProject": "Esta acción eliminará el proyecto \"{{projectName}}\".",
-      "saveThreadsAdvice": "Para guardar hilos, muévelos a tu lista de hilos o a otro proyecto antes de eliminar.",
-      "starredWarning": "Aún tienes hilos destacados dentro del proyecto.",
+      "saveThreadsAdvice": "Para guardar chats, muévelos a tu lista de chats o a otro proyecto antes de eliminar.",
+      "starredWarning": "Aún tienes chats destacados dentro del proyecto.",
       "deleteButton": "Eliminar",
       "successWithName": "Proyecto \"{{projectName}}\" eliminado correctamente",
       "successWithoutName": "Proyecto eliminado correctamente",
@@ -319,7 +319,7 @@
       "updateSuccess": "Proyecto \"{{projectName}}\" actualizado correctamente"
     },
     "noConversationsIn": "No hay conversaciones en {{projectName}}",
-    "startNewConversation": "Inicia una nueva conversación con {{projectName}} a continuación",
+    "startNewConversation": "Escribe un mensaje arriba para iniciar una conversación en {{projectName}}.",
     "conversationsIn": "Conversaciones en {{projectName}}",
     "conversationsDescription": "Haz clic en cualquier conversación para continuar chateando, o inicia una nueva a continuación.",
     "conversation": "Conversación",
@@ -327,8 +327,8 @@
     "setup": "Configuración",
     "instructionsDescription": "Personaliza el tono y estilo de la respuesta",
     "manageInstructions": "Administrar instrucciones",
-    "thread": "hilo",
-    "threads": "hilos",
+    "thread": "chat",
+    "threads": "chats",
     "updated": "Actualizado:",
     "collapseProject": "Colapsar proyecto",
     "expandProject": "Expandir proyecto",
@@ -349,20 +349,20 @@
   "injectedContentTitle": "Contenido del archivo inyectado",
   "toast": {
     "allThreadsUnfavorited": {
-      "title": "Todos los hilos sin estrella",
-      "description": "Todos los hilos han sido removidos de tus favoritos."
+      "title": "Todos los chats sin estrella",
+      "description": "Todos los chats han sido removidos de tus favoritos."
     },
     "deleteAllThreads": {
-      "title": "Eliminar todos los hilos",
-      "description": "Todos los hilos han sido eliminados permanentemente."
+      "title": "Eliminar todos los chats",
+      "description": "Todos los chats han sido eliminados permanentemente."
     },
     "renameThread": {
-      "title": "Renombrar hilo",
-      "description": "El título del hilo ha sido renombrado a '{{title}}'"
+      "title": "Renombrar chat",
+      "description": "El título del chat ha sido renombrado a '{{title}}'"
     },
     "deleteThread": {
-      "title": "Eliminar hilo",
-      "description": "Este hilo ha sido eliminado permanentemente."
+      "title": "Eliminar chat",
+      "description": "Este chat ha sido eliminado permanentemente."
     },
     "editMessage": {
       "title": "Editar mensaje",
@@ -421,12 +421,12 @@
       "description": "Error al eliminar el proyecto. Por favor, inténtalo de nuevo."
     },
     "threadAssignedToProject": {
-      "title": "Hilo asignado",
-      "description": "Hilo asignado a \"{{projectName}}\" correctamente"
+      "title": "Chat asignado",
+      "description": "Chat asignado a \"{{projectName}}\" correctamente"
     },
     "threadRemovedFromProject": {
-      "title": "Hilo removido",
-      "description": "Hilo removido de \"{{projectName}}\" correctamente"
+      "title": "Chat removido",
+      "description": "Chat removido de \"{{projectName}}\" correctamente"
     },
     "fileUploaded": {
       "title": "Archivo subido",

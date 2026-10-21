@@ -53,7 +53,7 @@
   },
   "others": {
     "spellCheck": "スペルチェック",
-    "spellCheckDesc": "スレッドのスペルチェックを有効にします。",
+    "spellCheckDesc": "チャットのスペルチェックを有効にします。",
     "resetFactory": "工場出荷時の設定にリセット",
     "resetFactoryDesc": "アプリケーションを初期状態に戻し、すべてのモデルとチャット履歴を消去します。この操作は元に戻すことができず、アプリケーションが破損している場合にのみ推奨されます。"
   },
@@ -100,7 +100,7 @@
   "interface": {
     "title": "外観",
     "theme": "テーマ",
-    "themeDesc": "OSのテーマに合わせます。",
+    "themeDesc": "ライト、ダーク、またはOSに合わせるかを選びます。",
     "fontSize": "フォントサイズ",
     "fontSizeDesc": "アプリのフォントサイズを調整します。",
     "windowBackground": "ウィンドウの背景",

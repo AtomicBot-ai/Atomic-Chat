@@ -134,10 +134,10 @@
   "auto": "Авто",
   "english": "Английский",
   "medium": "Средний",
-  "newThread": "Новое обсуждение",
+  "newThread": "Новый чат",
   "noResultsFound": "Результаты не найдены",
-  "noThreadsYet": "Обсуждений пока нет",
-  "noThreadsYetDesc": "Начните новый диалог, чтобы увидеть историю ваших обсуждений.",
+  "noThreadsYet": "Чатов пока нет",
+  "noThreadsYetDesc": "Начните новый диалог, чтобы увидеть здесь историю чатов.",
   "downloads": "Загрузки",
   "downloading": "Загрузка",
   "cancelDownload": "Отменить загрузку",
@@ -260,15 +260,15 @@
   "jan": "Atomic Bot",
   "metadata": "Метаданные",
   "regenerate": "Сгенерировать заново",
-  "threadImage": "Изображение обсуждения",
+  "threadImage": "Изображение чата",
   "editMessage": "Редактировать сообщение",
   "deleteMessage": "Удалить сообщение",
-  "deleteThread": "Удалить обсуждение",
-  "renameThread": "Переименовать обсуждение",
-  "threadTitle": "Заголовок обсуждения",
-  "deleteAllThreads": "Удалить все обсуждения",
-  "allThreadsUnfavorited": "Все обсуждения удалены из избранного",
-  "deleteAllThreadsConfirm": "Вы уверены, что хотите удалить все обсуждения? Это действие нельзя отменить.",
+  "deleteThread": "Удалить чат",
+  "renameThread": "Переименовать чат",
+  "threadTitle": "Название чата",
+  "deleteAllThreads": "Удалить все чаты",
+  "allThreadsUnfavorited": "Все чаты удалены из избранного",
+  "deleteAllThreadsConfirm": "Вы уверены, что хотите удалить все чаты? Это действие нельзя отменить.",
   "addProvider": "Добавить поставщика",
   "addOpenAIProvider": "Добавить поставщика OpenAI",
   "enterNameForProvider": "Введите имя для вашего поставщика",
@@ -397,15 +397,15 @@
       "changeLocation": "Изменить расположение"
     },
     "deleteAllThreads": {
-      "title": "Удаление всех обсуждений",
-      "description": "Все обсуждения будут удалены. Это действие нельзя отменить."
+      "title": "Удаление всех чатов",
+      "description": "Все чаты будут удалены. Это действие нельзя отменить."
     },
     "deleteAllAgentThreads": {
       "title": "Удаление всех чатов агента",
       "description": "Все чаты агента будут удалены. Это действие нельзя отменить."
     },
     "deleteThread": {
-      "description": "Вы уверены, что хотите удалить это обсуждение? Это действие нельзя отменить."
+      "description": "Вы уверены, что хотите удалить этот чат? Это действие нельзя отменить."
     },
     "messageMetadata": {
       "title": "Метаданные сообщения"
@@ -429,11 +429,11 @@
     "projectNotFoundDesc": "Проект, который вы ищете, не существует или был удалён.",
     "deleteProjectDialog": {
       "title": "Удалить проект",
-      "permanentDelete": "Это навсегда удалит все обсуждения.",
-      "permanentDeleteWarning": "Это действие навсегда удалит ВСЕ обсуждения в проекте!",
+      "permanentDelete": "Это навсегда удалит все чаты.",
+      "permanentDeleteWarning": "Это действие навсегда удалит ВСЕ чаты в проекте!",
       "deleteEmptyProject": "Это действие удалит проект \"{{projectName}}\".",
-      "saveThreadsAdvice": "Чтобы сохранить обсуждения, переместите их в общий список или в другой проект перед удалением.",
-      "starredWarning": "В этом проекте остались избранные обсуждения.",
+      "saveThreadsAdvice": "Чтобы сохранить чаты, переместите их в общий список или в другой проект перед удалением.",
+      "starredWarning": "В этом проекте остались избранные чаты.",
       "deleteButton": "Удалить",
       "successWithName": "Проект \"{{projectName}}\" успешно удалён",
       "successWithoutName": "Проект успешно удалён",
@@ -452,11 +452,11 @@
       "renameSuccess": "Проект переименован с \"{{oldName}}\" на \"{{newName}}\""
     },
     "noConversationsIn": "В проекте {{projectName}} нет диалогов",
-    "startNewConversation": "Начните новый диалог с {{projectName}} ниже",
+    "startNewConversation": "Напишите сообщение выше, чтобы начать диалог в проекте {{projectName}}.",
     "conversationsIn": "Диалоги в {{projectName}}",
     "conversationsDescription": "Нажмите на любой диалог, чтобы продолжить общение, или начните новый ниже.",
-    "thread": "обсуждение",
-    "threads": "обсуждения",
+    "thread": "чат",
+    "threads": "чаты",
     "updated": "Обновлено:",
     "collapseProject": "Свернуть проект",
     "expandProject": "Развернуть проект",
@@ -495,24 +495,24 @@
   "injectedContentTitle": "Содержимое файла",
   "toast": {
     "allThreadsUnfavorited": {
-      "title": "Все обсуждения удалены из избранного",
-      "description": "Все обсуждения удалены из избранного."
+      "title": "Все чаты удалены из избранного",
+      "description": "Все чаты удалены из избранного."
     },
     "deleteAllThreads": {
-      "title": "Удаление всех обсуждений",
-      "description": "Все обсуждения были удалены безвозвратно."
+      "title": "Удаление всех чатов",
+      "description": "Все чаты были удалены безвозвратно."
     },
     "deleteAllAgentThreads": {
       "title": "Удаление всех чатов агента",
       "description": "Все чаты агента были удалены безвозвратно."
     },
     "renameThread": {
-      "title": "Переименование обсуждения",
-      "description": "Заголовок обсуждения переименован в '{{title}}'"
+      "title": "Переименование чата",
+      "description": "Название чата изменено на '{{title}}'"
     },
     "deleteThread": {
-      "title": "Удаление обсуждения",
-      "description": "Это обсуждение было удалено безвозвратно."
+      "title": "Удаление чата",
+      "description": "Этот чат был удалён безвозвратно."
     },
     "editMessage": {
       "title": "Редактирование сообщения",
@@ -574,12 +574,12 @@
       "description": "Не удалось удалить проект. Пожалуйста, попробуйте ещё раз."
     },
     "threadAssignedToProject": {
-      "title": "Обсуждение назначено",
-      "description": "Обсуждение успешно назначено проекту \"{{projectName}}\""
+      "title": "Чат назначен",
+      "description": "Чат успешно назначен проекту \"{{projectName}}\""
     },
     "threadRemovedFromProject": {
-      "title": "Обсуждение удалено",
-      "description": "Обсуждение успешно удалено из проекта \"{{projectName}}\""
+      "title": "Чат убран из проекта",
+      "description": "Чат успешно убран из проекта \"{{projectName}}\""
     },
     "downloadDiskFull": {
       "title": "Не хватает места на диске",

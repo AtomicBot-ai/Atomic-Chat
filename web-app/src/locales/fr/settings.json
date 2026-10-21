@@ -96,7 +96,7 @@
   "interface": {
     "title": "Interface",
     "theme": "Thème",
-    "themeDesc": "Correspond au thème du système d'exploitation.",
+    "themeDesc": "Choisissez clair, sombre ou identique au système d'exploitation.",
     "fontSize": "Taille de la police",
     "fontSizeDesc": "Ajustez la taille de la police de l'application.",
     "windowBackground": "Arrière-plan de la fenêtre",

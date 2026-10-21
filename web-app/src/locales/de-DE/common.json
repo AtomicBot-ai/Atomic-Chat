@@ -78,10 +78,10 @@
   "auto": "Automatisch",
   "english": "Englisch",
   "medium": "Medium",
-  "newThread": "Neuer Thread",
+  "newThread": "Neuer Chat",
   "noResultsFound": "Keine Ergebnisse gefunden",
-  "noThreadsYet": "Keine Threads bisher",
-  "noThreadsYetDesc": "Starte eine neue Unterhaltung, um deinen Threadverlauf hier anzuzeigen.",
+  "noThreadsYet": "Noch keine Chats",
+  "noThreadsYetDesc": "Starte eine neue Unterhaltung, um deinen Chatverlauf hier anzuzeigen.",
   "downloads": "Downloads",
   "downloading": "Downloading",
   "cancelDownload": "Download abbrechen",
@@ -109,15 +109,15 @@
   "jan": "Atomic Bot",
   "metadata": "Metadaten",
   "regenerate": "Neu generieren",
-  "threadImage": "Thread Bild",
+  "threadImage": "Chat-Bild",
   "editMessage": "Nachricht bearbeiten",
   "deleteMessage": "Nachricht löschen",
-  "deleteThread": "Thread löschen",
-  "renameThread": "Thread umbenennen",
-  "threadTitle": "Thread Titel",
-  "deleteAllThreads": "Alle Threads löschen",
-  "allThreadsUnfavorited": "Alle Threads defavorisieren",
-  "deleteAllThreadsConfirm": "Bist Du sicher, daß Du alle Threads löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden.",
+  "deleteThread": "Chat löschen",
+  "renameThread": "Chat umbenennen",
+  "threadTitle": "Chat-Titel",
+  "deleteAllThreads": "Alle Chats löschen",
+  "allThreadsUnfavorited": "Alle Chats aus den Favoriten entfernt",
+  "deleteAllThreadsConfirm": "Bist du sicher, dass du alle Chats löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden.",
   "addProvider": "Anbieter hinzufügen",
   "addOpenAIProvider": "OpenAI Anbieter hinzufügen",
   "enterNameForProvider": "Gib einen Namen ein für den Anbieter",
@@ -242,11 +242,11 @@
       "changeLocation": "Speicherort ändern"
     },
     "deleteAllThreads": {
-      "title": "Alle Threads löschen",
-      "description": "Alle Threads werden gelöscht. Diese Aktion kann nicht rückgängig gemacht werden."
+      "title": "Alle Chats löschen",
+      "description": "Alle Chats werden gelöscht. Diese Aktion kann nicht rückgängig gemacht werden."
     },
     "deleteThread": {
-      "description": "Bist Du sicher, daß Du diesen Thread löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden."
+      "description": "Bist du sicher, dass du diesen Chat löschen möchtest? Diese Aktion kann nicht rückgängig gemacht werden."
     },
     "messageMetadata": {
       "title": "Nachricht Metadaten"
@@ -270,11 +270,11 @@
     "projectNotFoundDesc": "Das gesuchte Projekt existiert nicht oder wurde gelöscht.",
     "deleteProjectDialog": {
       "title": "Projekt löschen",
-      "permanentDelete": "Dies wird alle Threads permanent löschen.",
-      "permanentDeleteWarning": "Diese Aktion wird ALLE Threads innerhalb des Projekts permanent löschen!",
+      "permanentDelete": "Dies wird alle Chats dauerhaft löschen.",
+      "permanentDeleteWarning": "Diese Aktion wird ALLE Chats innerhalb des Projekts dauerhaft löschen!",
       "deleteEmptyProject": "Diese Aktion wird das Projekt \"{{projectName}}\" löschen.",
-      "saveThreadsAdvice": "Um Threads zu speichern, verschiebe sie zu deiner Threadliste oder zu einem anderen Projekt, bevor du löschst.",
-      "starredWarning": "Du hast noch favorisierte Threads innerhalb des Projekts.",
+      "saveThreadsAdvice": "Um Chats zu behalten, verschiebe sie vor dem Löschen in deine Chatliste oder in ein anderes Projekt.",
+      "starredWarning": "Du hast noch favorisierte Chats innerhalb des Projekts.",
       "description": "Sind Sie sicher, dass Sie dieses Projekt löschen möchten? Diese Aktion kann nicht rückgängig gemacht werden.",
       "deleteButton": "Löschen",
       "successWithName": "Projekt \"{{projectName}}\" erfolgreich gelöscht",
@@ -294,11 +294,11 @@
       "renameSuccess": "Projekt von \"{{oldName}}\" zu \"{{newName}}\" umbenannt"
     },
     "noConversationsIn": "Keine Gespräche in {{projectName}}",
-    "startNewConversation": "Starten Sie ein neues Gespräch mit {{projectName}} unten",
+    "startNewConversation": "Schreiben Sie oben eine Nachricht, um ein Gespräch in {{projectName}} zu beginnen.",
     "conversationsIn": "Gespräche in {{projectName}}",
     "conversationsDescription": "Klicken Sie auf ein Gespräch, um weiterzuchatten, oder starten Sie unten ein neues.",
-    "thread": "Thread",
-    "threads": "Threads",
+    "thread": "Chat",
+    "threads": "Chats",
     "updated": "Aktualisiert:",
     "collapseProject": "Projekt einklappen",
     "expandProject": "Projekt ausklappen",
@@ -309,8 +309,8 @@
   },
   "toast": {
     "allThreadsUnfavorited": {
-      "title": "Alle Threads De-Favorisieren ",
-      "description": "Alle deine Threads wurden defavorisiert."
+      "title": "Alle Chats aus den Favoriten entfernt",
+      "description": "Alle deine Chats wurden aus den Favoriten entfernt."
     },
     "projectCreated": {
       "title": "Projekt erstellt",
@@ -333,24 +333,24 @@
       "description": "Projekt konnte nicht gelöscht werden. Bitte versuchen Sie es erneut."
     },
     "threadAssignedToProject": {
-      "title": "Thread zugewiesen",
-      "description": "Thread erfolgreich zu \"{{projectName}}\" hinzugefügt"
+      "title": "Chat zugewiesen",
+      "description": "Chat erfolgreich zu \"{{projectName}}\" hinzugefügt"
     },
     "threadRemovedFromProject": {
-      "title": "Thread entfernt",
-      "description": "Thread erfolgreich von \"{{projectName}}\" entfernt"
+      "title": "Chat entfernt",
+      "description": "Chat erfolgreich aus \"{{projectName}}\" entfernt"
     },
     "deleteAllThreads": {
-      "title": "Alle Threads löschen",
-      "description": "Alle deine Threads wurden permanent gelöscht."
+      "title": "Alle Chats löschen",
+      "description": "Alle deine Chats wurden dauerhaft gelöscht."
     },
     "renameThread": {
-      "title": "Thread umbenennen",
-      "description": "Thread Titel wurde umbenannt zu '{{title}}'"
+      "title": "Chat umbenennen",
+      "description": "Chat-Titel wurde in '{{title}}' umbenannt"
     },
     "deleteThread": {
-      "title": "Thread löschen",
-      "description": "This thread has been permanently deleted."
+      "title": "Chat löschen",
+      "description": "Dieser Chat wurde dauerhaft gelöscht."
     },
     "editMessage": {
       "title": "Nachricht bearbeiten",

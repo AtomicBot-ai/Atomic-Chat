@@ -53,7 +53,7 @@
   },
   "others": {
     "spellCheck": "Sprawdzanie Pisowni",
-    "spellCheckDesc": "Włącz sprawdzanie pisowni w wątkach.",
+    "spellCheckDesc": "Włącz sprawdzanie pisowni w czatach.",
     "resetFactory": "Przywróć Ustawienia Fabryczne",
     "resetFactoryDesc": "Przywróć aplikację do stanu początkowego, wymazując wszystkie modele i historię czatów. Tej operacji nie można cofnąć. Zalecane tylko przy uszkodzeniach danych aplikacji."
   },
@@ -96,7 +96,7 @@
   "interface": {
     "title": "Wygląd",
     "theme": "Schemat Kolorystyczny",
-    "themeDesc": "Dopasuj do schematu systemowego.",
+    "themeDesc": "Wybierz jasny, ciemny lub zgodny z systemem.",
     "fontSize": "Rozmiar Fontu",
     "fontSizeDesc": "Dostosuj rozmiar fontu w aplikacji.",
     "windowBackground": "Tło Okna",

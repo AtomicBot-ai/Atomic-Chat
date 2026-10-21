@@ -53,7 +53,7 @@
   },
   "others": {
     "spellCheck": "Rechtschreibprüfung",
-    "spellCheckDesc": "Aktiviere die Rechtschreibprüfung für Deine Threads.",
+    "spellCheckDesc": "Aktiviere die Rechtschreibprüfung für Deine Chats.",
     "resetFactory": "Auf Werkseinstellungen zurücksetzen",
     "resetFactoryDesc": "Setzt die Anwendung in den ursprünglichen Zustand zurück und löscht dabei alle Modelle und den Chatverlauf. Diese Aktion ist irreversibel und wird nur empfohlen, wenn die Anwendung beschädigt ist."
   },
@@ -96,7 +96,7 @@
   "interface": {
     "title": "Erscheinungsbild",
     "theme": "Theme",
-    "themeDesc": "Dem Betriebssystem anpassen.",
+    "themeDesc": "Wähle hell, dunkel oder wie das Betriebssystem.",
     "fontSize": "Schriftgröße",
     "fontSizeDesc": "Einstellen der App Schriftgröße",
     "windowBackground": "Fenster Hintergrund",

@@ -78,10 +78,10 @@
   "auto": "Automatycznie",
   "english": "Angielski",
   "medium": "Średni",
-  "newThread": "Nowy Wątek",
+  "newThread": "Nowy Czat",
   "noResultsFound": "Brak wyników",
-  "noThreadsYet": "Brak wątków",
-  "noThreadsYetDesc": "Rozpocznij nową rozmowę aby zobaczyć tutaj historię wątków.",
+  "noThreadsYet": "Brak czatów",
+  "noThreadsYetDesc": "Rozpocznij nową rozmowę, aby zobaczyć tutaj historię czatów.",
   "downloads": "Pobrane",
   "downloading": "Pobieranie",
   "cancelDownload": "Anuluj Pobieranie",
@@ -107,15 +107,15 @@
   "jan": "Atomic Bot",
   "metadata": "Metadane",
   "regenerate": "Odtwórz",
-  "threadImage": "Obraz wątku",
+  "threadImage": "Obraz czatu",
   "editMessage": "Edytuj Wiadomość",
   "deleteMessage": "Usuń Wiadomość",
-  "deleteThread": "Usuń Wątek",
-  "renameThread": "Zmień Nazwę Wątku",
-  "threadTitle": "Tytuł Wątku",
-  "deleteAllThreads": "Usuń Wszystkie Wątki",
-  "allThreadsUnfavorited": "Usunięto wszystkie wątki z ulubionych",
-  "deleteAllThreadsConfirm": "Na pewno chcesz usunąć wszystkie wątki? Tej operacji nie można cofnąć.",
+  "deleteThread": "Usuń Czat",
+  "renameThread": "Zmień Nazwę Czatu",
+  "threadTitle": "Tytuł Czatu",
+  "deleteAllThreads": "Usuń Wszystkie Czaty",
+  "allThreadsUnfavorited": "Usunięto wszystkie czaty z ulubionych",
+  "deleteAllThreadsConfirm": "Na pewno chcesz usunąć wszystkie czaty? Tej operacji nie można cofnąć.",
   "addProvider": "Dodaj Dostawcę",
   "addOpenAIProvider": "Dodaj Dostawcę OpenAI",
   "enterNameForProvider": "Wprowadź nazwę dostawcy",
@@ -236,11 +236,11 @@
       "changeLocation": "Zmień Położenie"
     },
     "deleteAllThreads": {
-      "title": "Usuń Wszystkie Wątki",
-      "description": "Wszystkie wątki zostaną usunięte. Tej operacji nie można cofnąć."
+      "title": "Usuń Wszystkie Czaty",
+      "description": "Wszystkie czaty zostaną usunięte. Tej operacji nie można cofnąć."
     },
     "deleteThread": {
-      "description": "Na pewno chcesz usunąć ten wątek? Tej operacji nie można cofnąć."
+      "description": "Na pewno chcesz usunąć ten czat? Tej operacji nie można cofnąć."
     },
     "messageMetadata": {
       "title": "Metadane Wiadomości"
@@ -265,11 +265,11 @@
     "deleteProjectDialog": {
       "title": "Usuń Projekt",
       "description": "Na pewno chcesz usunąć ten projekt? Tej operacji nie można cofnąć.",
-      "permanentDelete": "To spowoduje trwałe usunięcie wszystkich wątków.",
-      "permanentDeleteWarning": "Ta operacja spowoduje trwałe usunięcie WSZYSTKICH wątków w projekcie!",
+      "permanentDelete": "To spowoduje trwałe usunięcie wszystkich czatów.",
+      "permanentDeleteWarning": "Ta operacja spowoduje trwałe usunięcie WSZYSTKICH czatów w projekcie!",
       "deleteEmptyProject": "Ta operacja usunie projekt \"{{projectName}}\".",
-      "saveThreadsAdvice": "Aby zapisać wątki, przenieś je do listy wątków lub innego projektu przed usunięciem.",
-      "starredWarning": "Nadal masz oznaczone gwiazdką wątki w projekcie.",
+      "saveThreadsAdvice": "Aby zachować czaty, przenieś je do listy czatów lub innego projektu przed usunięciem.",
+      "starredWarning": "Nadal masz oznaczone gwiazdką czaty w projekcie.",
       "deleteButton": "Usuń",
       "successWithName": "Projekt \"{{projectName}}\" został pomyślnie usunięty",
       "successWithoutName": "Projekt został pomyślnie usunięty",
@@ -288,11 +288,11 @@
       "renameSuccess": "Projekt zmieniono z \"{{oldName}}\" na \"{{newName}}\""
     },
     "noConversationsIn": "Brak Rozmów w {{projectName}}",
-    "startNewConversation": "Rozpocznij nową rozmowę z {{projectName}} poniżej",
+    "startNewConversation": "Wpisz wiadomość powyżej, aby rozpocząć rozmowę w {{projectName}}.",
     "conversationsIn": "Rozmowy w {{projectName}}",
     "conversationsDescription": "Kliknij na dowolną rozmowę aby kontynuować czat, lub rozpocznij nową poniżej.",
-    "thread": "wątek",
-    "threads": "wątki",
+    "thread": "czat",
+    "threads": "czaty",
     "updated": "Zaktualizowano:",
     "collapseProject": "Zwiń projekt",
     "expandProject": "Rozwiń projekt",
@@ -303,20 +303,20 @@
   },
   "toast": {
     "allThreadsUnfavorited": {
-      "title": "Wszystkie Wątki Usunięte z Ulubionych",
-      "description": "Wszystkie wątki zostały usunięte z ulubionych."
+      "title": "Wszystkie Czaty Usunięte z Ulubionych",
+      "description": "Wszystkie czaty zostały usunięte z ulubionych."
     },
     "deleteAllThreads": {
-      "title": "Usuń Wszystkie Wątki",
-      "description": "Wszystkie wątki zostały usunięte."
+      "title": "Usuń Wszystkie Czaty",
+      "description": "Wszystkie czaty zostały usunięte."
     },
     "renameThread": {
-      "title": "Zmień Tytuł Wątku",
-      "description": "Tytuł wątku został zmieniony na '{{title}}'."
+      "title": "Zmień Tytuł Czatu",
+      "description": "Tytuł czatu został zmieniony na '{{title}}'."
     },
     "deleteThread": {
-      "title": "Usuń Wątek",
-      "description": "Wątek został usunięty."
+      "title": "Usuń Czat",
+      "description": "Czat został usunięty."
     },
     "editMessage": {
       "title": "Edytuj Wiadomość",
@@ -375,12 +375,12 @@
       "description": "Nie udało się usunąć projektu. Spróbuj ponownie."
     },
     "threadAssignedToProject": {
-      "title": "Wątek Przypisany",
-      "description": "Wątek został pomyślnie przypisany do \"{{projectName}}\""
+      "title": "Czat Przypisany",
+      "description": "Czat został pomyślnie przypisany do \"{{projectName}}\""
     },
     "threadRemovedFromProject": {
-      "title": "Wątek Usunięty",
-      "description": "Wątek został pomyślnie usunięty z \"{{projectName}}\""
+      "title": "Czat Usunięty",
+      "description": "Czat został pomyślnie usunięty z \"{{projectName}}\""
     }
   },
   "failedToLoadModels": "Nie udało się wczytać modeli",

@@ -70,7 +70,7 @@
   },
   "others": {
     "spellCheck": "Spell Check",
-    "spellCheckDesc": "Enable spell check for your threads.",
+    "spellCheckDesc": "Enable spell check for your chats.",
     "resetFactory": "Reset To Factory Settings",
     "resetFactoryDesc": "Restore application to its initial state, erasing all models and chat history. This action is irreversible and recommended only if the application is corrupted."
   },
@@ -115,7 +115,7 @@
   "interface": {
     "title": "Interface",
     "theme": "Theme",
-    "themeDesc": "Match the OS theme.",
+    "themeDesc": "Choose light, dark, or match the OS.",
     "fontSize": "Font Size",
     "fontSizeDesc": "Adjust the app's font size.",
     "windowBackground": "Window Background",
