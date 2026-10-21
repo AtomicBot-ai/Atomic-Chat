@@ -804,7 +804,7 @@ function General() {
                   description={t('settings:general.discordDesc')}
                   actions={
                     <a
-                      href="https://discord.com/invite/FTk2MvZwJH"
+                      href="https://discord.com/invite/8wGSsvmg4V"
                       target="_blank"
                       rel="noopener noreferrer"
                     >

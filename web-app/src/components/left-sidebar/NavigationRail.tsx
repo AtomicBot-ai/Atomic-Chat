@@ -27,7 +27,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 
-const DISCORD_URL = 'https://discord.com/invite/FTk2MvZwJH'
+const DISCORD_URL = 'https://discord.com/invite/8wGSsvmg4V'
 const NEW_ISSUE_URL = 'https://github.com/AtomicBot-ai/Atomic-Chat/issues/new'
 const SUPPORT_EMAIL = 'mailto:support@atomic.chat'
 
