@@ -9,6 +9,9 @@
   "sendMessage": "메시지 보내기",
   "newConversation": "새 대화",
   "clearHistory": "기록 지우기",
+  "activity": {
+    "completedActions": "작업 {{count}}개 완료"
+  },
   "agentMode": {
     "menuItem": "에이전트 모드",
     "agent": "에이전트",

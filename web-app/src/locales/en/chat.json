@@ -72,6 +72,8 @@
   "activity": {
     "working": "Working...",
     "completedActions": "Completed {{count}} actions",
+    "completedActions_one": "Completed {{count}} action",
+    "completedActions_other": "Completed {{count}} actions",
     "reading": "Reading: {{count}}%",
     "reasoned": "Reasoned",
     "thinking": "Thinking...",

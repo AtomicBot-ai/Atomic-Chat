@@ -9,6 +9,12 @@
   "sendMessage": "Enviar Mensagem",
   "newConversation": "Nova Conversa",
   "clearHistory": "Limpar Histórico",
+  "activity": {
+    "completedActions": "{{count}} ações concluídas",
+    "completedActions_one": "{{count}} ação concluída",
+    "completedActions_many": "{{count}} ações concluídas",
+    "completedActions_other": "{{count}} ações concluídas"
+  },
   "agentMode": {
     "menuItem": "Modo agente",
     "agent": "Agente",

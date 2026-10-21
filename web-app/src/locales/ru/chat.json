@@ -46,6 +46,9 @@
   "activity": {
     "working": "Выполняется",
     "completedActions": "Выполнено действий: {{count}}",
+    "completedActions_one": "Выполнено {{count}} действие",
+    "completedActions_few": "Выполнено {{count}} действия",
+    "completedActions_many": "Выполнено {{count}} действий",
     "reading": "Чтение: {{count}}%",
     "reasoned": "Обдумано",
     "thinking": "Думаю...",
