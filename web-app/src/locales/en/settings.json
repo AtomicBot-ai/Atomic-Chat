@@ -372,6 +372,8 @@
     "checkForUpdates": "Check for Updates",
     "checkForUpdatesDesc": "Check if a newer version of Atomic Chat is available.",
     "checkingForUpdates": "Checking for updates...",
+    "updates": "Updates",
+    "updatesByPackageManager": "Atomic Chat was installed by your package manager. Update it there.",
     "copied": "Copied",
     "copyPath": "Copy Path",
     "changeLocation": "Change Location",
