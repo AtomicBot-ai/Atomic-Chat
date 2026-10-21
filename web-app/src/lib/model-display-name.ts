@@ -20,9 +20,10 @@ const FORMAT_TOKENS = new Set([
   'hf',
 ])
 
-/** Quantization markers: q4_k_m, iq3_xxs, f16, bf16, 4bit, mxfp4, i1… */
+/** Quantization markers: q4_k_m, iq3_xxs, pq2_0 (PrismML), f16, bf16, 4bit,
+ *  mxfp4, i1… */
 const QUANT_BODY =
-  '(?:i?q\\d+(?:_[a-z0-9]+)*|f16|fp16|bf16|f32|fp32|int4|int8|\\d+bits?|mxfp\\d|i1)'
+  '(?:[ip]?q\\d+(?:_[a-z0-9]+)*|f16|fp16|bf16|f32|fp32|int4|int8|\\d+bits?|mxfp\\d|i1)'
 
 /** A quant is a whole segment, and its own underscores belong to it: splitting
  *  on separators first would leave a stray "K M" behind from "Q4_K_M". */
@@ -159,11 +160,55 @@ export function prettyModelName(name?: string): string {
     })
     .map(formatToken)
 
-  // "…-Instruct-it" and the like would otherwise read twice.
-  const deduped = tokens.filter((token, i) => token !== tokens[i - 1])
-
-  const pretty = deduped.join(' ').trim()
+  const pretty = dropRepeats(tokens).join(' ').trim()
   return pretty || withoutExt || name
+}
+
+/**
+ * Drop what reads twice. A word repeated in place ("…-Instruct-it") goes, and
+ * so does a run of two or more words already read: some ids glue the repo
+ * name to its file name ("Qwen3_5-9B-GGUF-Qwen3_5-9B-IQ4_XS"), which would
+ * otherwise read "Qwen3.5 9B Qwen3.5 9B".
+ */
+function dropRepeats(tokens: string[]): string[] {
+  const kept: string[] = []
+  let i = 0
+  while (i < tokens.length) {
+    const read = ` ${kept.join(' ').toLowerCase()} `
+    let repeated = 0
+    for (let length = tokens.length - i; length >= 2; length--) {
+      const run = tokens
+        .slice(i, i + length)
+        .join(' ')
+        .toLowerCase()
+      if (read.includes(` ${run} `)) {
+        repeated = length
+        break
+      }
+    }
+    if (repeated > 0) {
+      i += repeated
+      continue
+    }
+    if (tokens[i] !== kept.at(-1)) kept.push(tokens[i])
+    i += 1
+  }
+  return kept
+}
+
+/**
+ * The quantization of a model file id ("IQ4_XS", "Q4_K_M", "PQ2_0"), spelled
+ * as the file spells it, or undefined when the id names none. With several
+ * markers ("…_i1-IQ4_XS") the last one is the quant.
+ */
+function modelQuantLabel(id?: string): string | undefined {
+  if (!id) return undefined
+  const file = (id.replace(/\\/g, '/').split('/').pop() ?? id).replace(
+    /\.(gguf|safetensors|bin|mlx)$/i,
+    ''
+  )
+  const markers = file.match(QUANT_SEGMENT)
+  return markers?.at(-1)?.slice(1)
 }
 
 /**
@@ -177,14 +222,34 @@ export function compactModelDisplayName(model: Model): string {
 }
 
 /**
- * Readable model name with its repository owner. The compact composer pill
- * deliberately omits this namespace, while the model details and full picker
- * need it to distinguish otherwise identical rows from different authors.
+ * Readable model name with its repository owner and quantization. The compact
+ * composer pill deliberately omits both, while the model details and full
+ * picker need them to tell apart otherwise identical rows: the same model from
+ * different authors, or two quants of one repo. A user nickname is shown as
+ * given, after the owner. A namespace segment is shown once, even when the id
+ * repeats it ("prism-ml/prism-ml/…") or the nickname already starts with it.
  */
 export function qualifiedModelDisplayName(model: Model): string {
   const compact = compactModelDisplayName(model)
+  const quant = model.displayName?.trim()
+    ? undefined
+    : modelQuantLabel(model.id)
+  const name =
+    quant && !compact.toLowerCase().includes(quant.toLowerCase())
+      ? `${compact} ${quant}`
+      : compact
   const normalizedId = model.id.replace(/\\/g, '/')
   const separator = normalizedId.lastIndexOf('/')
-  if (separator <= 0) return compact
-  return `${normalizedId.slice(0, separator)}/${compact}`
+  if (separator <= 0) return name
+  const namespace = normalizedId
+    .slice(0, separator)
+    .split('/')
+    .filter(
+      (segment, i, segments) =>
+        segment.toLowerCase() !== segments[i - 1]?.toLowerCase()
+    )
+  if (name.toLowerCase().startsWith(`${namespace.at(-1)?.toLowerCase()}/`)) {
+    namespace.pop()
+  }
+  return [...namespace, name].join('/')
 }
