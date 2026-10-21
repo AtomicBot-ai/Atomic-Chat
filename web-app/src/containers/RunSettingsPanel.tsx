@@ -132,7 +132,10 @@ export function RunSettingsPanel({ onClose }: RunSettingsPanelProps) {
   return (
     <div className="h-full p-2 pl-0">
       <aside className="flex h-full min-w-0 flex-col overflow-hidden rounded-xl border border-sidebar-border bg-clip-padding bg-linear-to-b from-sidebar to-background text-sidebar-foreground shadow dark:from-sidebar/70">
-        <div className="min-h-0 flex-1 space-y-3 overflow-auto p-3 [scrollbar-gutter:stable]">
+        {/* The header stays put while the settings scroll, so the panel can
+            be closed or reset from anywhere in it. It reserves the same
+            scrollbar gutter as the list, so its edges line up with it. */}
+        <div className="shrink-0 overflow-hidden p-3 [scrollbar-gutter:stable]">
           <div className="space-y-2">
             <div className="flex h-8 items-center justify-between gap-2">
               <h2 className="min-w-0 truncate text-sm font-medium">
@@ -163,7 +166,9 @@ export function RunSettingsPanel({ onClose }: RunSettingsPanelProps) {
               </Button>
             )}
           </div>
+        </div>
 
+        <div className="min-h-0 flex-1 space-y-3 overflow-auto p-3 pt-0 [scrollbar-gutter:stable]">
           {/* Assistant: whose persona and sampling this chat uses. */}
           <div className="space-y-1.5">
             <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground/70">
