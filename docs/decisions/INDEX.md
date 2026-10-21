@@ -308,8 +308,8 @@ decision is reversed, add a new one that says which record it supersedes.
 ## Packaging, installers, autostart & platform policy (26)
 
 - **2026-10-21** — [Give the Linux window a stable app id](2026-10-21-give-the-linux-window-a-stable-app-id.md) — Wayland `app_id` / Hyprland class is `chat.atomic.app`, matched by the desktop entry's `StartupWMClass`.
-- **2026-10-21** — [Close the Linux window to the tray](2026-10-21-close-the-linux-window-to-the-tray.md) — closing no longer exits and stops `:1337`; tray "Quit" does.
-- **2026-10-21** — [Let a package manager own updates](2026-10-21-let-a-package-manager-own-updates.md) — `ATOMIC_CHAT_PACKAGE_MANAGED=1` or a marker file beside the binary turns the updater off, including its startup check.
+- **2026-10-21** — [Close the Linux window to the tray](2026-10-21-close-the-linux-window-to-the-tray.md) — under a bar with a tray, closing hides the window instead of stopping `:1337`; tray "Quit" exits; without a StatusNotifier host closing still quits.
+- **2026-10-21** — [Let a package manager own updates](2026-10-21-let-a-package-manager-own-updates.md) — a marker file beside the AppImage or binary, or `ATOMIC_CHAT_PACKAGE_MANAGED=1`, turns the updater off, including its startup check and the updater service's plugin fallback.
 - **2026-10-19** — [Reveal files in the file manager from the blocking pool](2026-10-19-reveal-files-from-the-blocking-pool-on-linux.md) — the opener plugin's async reveal blocks on D-Bus inside tokio and aborts the Linux app.
 - **2026-10-09** — [Hide the CLI in the app, and stop installing it on launch](2026-10-09-hide-the-cli-in-the-app.md)
 - **2026-10-09** — [Gate releases beside the builds and warm their caches on main](2026-10-09-gate-releases-beside-the-builds-and-warm-caches-on-main.md) — installers reach the draft only after build and gate; caches are written on `main`, read by releases.
