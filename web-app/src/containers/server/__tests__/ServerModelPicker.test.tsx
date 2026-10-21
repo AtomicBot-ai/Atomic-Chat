@@ -278,6 +278,11 @@ describe('Server → Engine & model', () => {
         description: 'llama.cpp b11400 is too old',
       })
     )
+    // The field goes back to what runs and the bar leaves: nothing was kept.
+    expect(dropdown('api:model.embeddingModel')).toHaveTextContent(
+      'api:model.none'
+    )
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
   it('leaves out a kind this desktop cannot run, and offers only None without downloads', () => {

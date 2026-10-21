@@ -1,6 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { useAppState } from '@/hooks/useAppState'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { initializeServiceHubStore } from '@/hooks/useServiceHub'
 import {
@@ -206,6 +207,8 @@ describe('what Start loads before the server comes up', () => {
 describe('stopping and starting the server with its models', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    useAppState.setState({ serverStatus: 'stopped' })
+    turnOff.mockResolvedValue(undefined)
     useLocalApiServer.getState().setServerPort(1337)
     bindsPort(1337)
     ensureModel.mockResolvedValue({ status: 'already_loaded' })
@@ -223,7 +226,13 @@ describe('stopping and starting the server with its models', () => {
     return result
   }
 
+  /** The server's status as the real calls leave it, which the panel reads. */
+  const serverIs = (status: 'running' | 'stopped') =>
+    useAppState.getState().setServerStatus(status)
+
   it('turns the server off together with the models it served', async () => {
+    serverIs('running')
+    turnOff.mockImplementation(async () => serverIs('stopped'))
     const control = await mount()
 
     await act(async () => {
@@ -232,9 +241,14 @@ describe('stopping and starting the server with its models', () => {
 
     expect(turnOff).toHaveBeenCalledTimes(1)
     expect(setRunning).not.toHaveBeenCalled()
+    expect(control.current.isRunning).toBe(false)
   })
 
   it('keeps the models for a restart, which only brings the server back', async () => {
+    serverIs('running')
+    setRunning.mockImplementation(async (running: boolean) =>
+      serverIs(running ? 'running' : 'stopped')
+    )
     const control = await mount()
 
     await act(async () => {
@@ -243,6 +257,7 @@ describe('stopping and starting the server with its models', () => {
 
     expect(setRunning).toHaveBeenCalledWith(false)
     expect(turnOff).not.toHaveBeenCalled()
+    expect(control.current.isRunning).toBe(false)
   })
 
   it('switches back on what the last turn-off switched off, once the server is up', async () => {
@@ -260,7 +275,10 @@ describe('stopping and starting the server with its models', () => {
   })
 
   it('switches nothing back on when the server would not start', async () => {
-    setRunning.mockRejectedValue(new Error('Address already in use'))
+    setRunning.mockImplementation(async () => {
+      serverIs('stopped')
+      throw new Error('Address already in use')
+    })
     const control = await mount()
 
     await act(async () => {
@@ -268,5 +286,8 @@ describe('stopping and starting the server with its models', () => {
     })
 
     expect(resume).not.toHaveBeenCalled()
+    // Start can be pressed again.
+    expect(control.current.status).toBe('stopped')
+    expect(control.current.isBusy).toBe(false)
   })
 })

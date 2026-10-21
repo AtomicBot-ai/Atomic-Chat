@@ -134,6 +134,10 @@ describe('turning the Local API Server off', () => {
     await turnOffLocalApiServer(hub)
 
     expect(stopDecision).toHaveBeenCalledTimes(1)
+    expect(decision.config.enabled).toBe(false)
+    expect(useLocalApiServer.getState().pausedHelperModels).toEqual([
+      'decision',
+    ])
     expect(warn).toHaveBeenCalledWith(
       '[LocalAPI] could not unload the chat model:',
       expect.any(Error)
@@ -170,5 +174,8 @@ describe('turning the Local API Server off', () => {
     await resumeServedHelperModels(hub)
 
     expect(embedding.setConfig).not.toHaveBeenCalled()
+    expect(embedding.config.enabled).toBe(false)
+    // Forgotten, so a later start does not try it again.
+    expect(useLocalApiServer.getState().pausedHelperModels).toEqual([])
   })
 })

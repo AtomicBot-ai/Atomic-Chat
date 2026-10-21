@@ -171,12 +171,15 @@ describe('the embedding and decision models the server serves', () => {
   })
 
   it('switches the embedding model off for None', async () => {
+    useLocalApiServer.setState({ pausedHelperModels: ['embedding'] })
     const { result } = renderHook(() => useServedEmbeddingModels())
 
     await act(() => result.current.apply(NO_HELPER_MODEL))
 
     expect(stopEmbedding).toHaveBeenCalledTimes(1)
     expect(raiseServer).not.toHaveBeenCalled()
+    // Nor does the next server start switch the paused one back on.
+    expect(useLocalApiServer.getState().pausedHelperModels).toEqual([])
   })
 
   it('offers the downloaded decision models with their engine, and names the one served', () => {
@@ -202,12 +205,19 @@ describe('the embedding and decision models the server serves', () => {
   })
 
   it('starts the chosen decision model and brings the server up with it', async () => {
+    useLocalApiServer.setState({
+      pausedHelperModels: ['embedding', 'decision'],
+    })
     const { result } = renderHook(() => useServedDecisionModels())
 
     await act(() => result.current.apply('laya'))
 
     expect(activateDecision).toHaveBeenCalledWith(laya)
     expect(raiseServer).toHaveBeenCalledTimes(1)
+    // The paused embedding model still comes back; the decision one is chosen.
+    expect(useLocalApiServer.getState().pausedHelperModels).toEqual([
+      'embedding',
+    ])
   })
 
   it('offers neither where the desktop cannot run local models', () => {

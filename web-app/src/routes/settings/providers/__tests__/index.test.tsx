@@ -357,6 +357,9 @@ describe('Inference engines overview', () => {
       params: { providerName: 'vllm' },
       search: { engineUpdate: true },
     })
+    // Nothing started here: the row still offers the update.
+    expect(statusOf('engine-row-vllm')).toBe('available')
+    expect(screen.getByRole('button', { name: /^Update/ })).toBeEnabled()
   })
 
   it('says when an update would not install, and offers it again', async () => {
@@ -408,6 +411,7 @@ describe('Inference engines overview', () => {
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith('All engines are up to date')
     )
+    expect(statusOf('engine-row-llamacpp-upstream')).toBe('upToDate')
   })
 
   it('says when the check could not reach the core', async () => {
@@ -429,6 +433,11 @@ describe('Inference engines overview', () => {
         { description: 'offline' }
       )
     )
+    // No row claims to be current, and the check can be run again.
+    expect(statusOf('engine-row-llamacpp-upstream')).toBeUndefined()
+    expect(
+      screen.getByRole('button', { name: 'Check for updates' })
+    ).toBeEnabled()
   })
 
   it('offers Find optimal backend on the llama.cpp rows on Linux and Windows, and installs what it finds', async () => {
