@@ -1,0 +1,12 @@
+{
+  "kind": {
+    "partial": "unvollständiger Download",
+    "draft": "Entwurfsmodell für spekulatives Decoding"
+  },
+  "blocked": {
+    "draftInUse": "Spekulatives Decoding für MLX ist aktiviert. Deaktiviere es in den MLX-Engine-Einstellungen, um Entwurfsmodelle zu entfernen."
+  },
+  "error": {
+    "downloadActive": "Dieser Download läuft oder ist pausiert. Brich ihn zuerst ab."
+  }
+}

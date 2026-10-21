@@ -8,6 +8,10 @@
  * page is a merge of them, built here without React so the rules can be tested
  * directly. Sizes are what is on disk where a source knows it, and `null`
  * where it does not: the core reports no size for an installed engine build.
+ *
+ * What no source lists is read off the disk (`downloads-disk`): the size of an
+ * MLX model whose `model.yml` records none, the drafts MLX caches, and the
+ * partial files of downloads that never finished.
  */
 
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
@@ -39,6 +43,12 @@ import {
   MLX_PROVIDER,
   managedProviderIds,
 } from '@/lib/hub-installed'
+import {
+  LLAMACPP_MODELS_ROOT,
+  type DownloadRoot,
+  type MlxDraft,
+  type PartialDownload,
+} from '@/lib/downloads-disk'
 import { isManagedDownloadId } from '@/lib/managed-engine/download-id'
 import { getProviderTitle } from '@/lib/utils'
 import {
@@ -87,6 +97,10 @@ export type InventoryKind =
   | 'video'
   | 'voice'
   | 'engine'
+  /** What a download that never finished left on disk. */
+  | 'partial'
+  /** A speculative-decoding draft MLX keeps beside the models. */
+  | 'draft'
 
 /** What removing an item asks of its owner; one entry per owner. */
 export type InventoryRemoval =
@@ -101,6 +115,10 @@ export type InventoryRemoval =
       version: string
       variant: string
     }
+  /** Partial files on disk, refused while a download for `downloadId` runs or waits to resume. */
+  | { type: 'partial'; paths: string[]; downloadId: string }
+  /** A draft folder, refused while MLX speculative decoding is on. */
+  | { type: 'draft'; path: string }
 
 /** A download still running: the panel's row, which the page offers to cancel. */
 export type InventoryDownload = {
@@ -136,6 +154,8 @@ export type InventoryItem = {
   removal: InventoryRemoval | null
   /** Set when the owner refuses removal; the core's reason for an engine build. */
   notRemovableReason?: EngineNotRemovableReason
+  /** Set while removal would break something running: a draft MLX may load. */
+  removalBlocked?: 'draftInUse'
   /** Set while the item is still downloading. */
   download?: InventoryDownload
 }
@@ -189,6 +209,133 @@ export function providerModelItems(
     }
   }
   return items
+}
+
+/**
+ * Fill in the sizes the engines did not record from what is on disk: an MLX
+ * model's `model.yml` says `size_bytes: 0` for every Hub download, which left
+ * its row at "—" and out of the total.
+ */
+export function withMeasuredSizes(
+  items: InventoryItem[],
+  mlxModelBytes: Record<string, number>
+): InventoryItem[] {
+  return items.map((item) => {
+    const removal = item.removal
+    if (
+      item.bytes !== null ||
+      removal?.type !== 'model' ||
+      removal.provider !== MLX_PROVIDER
+    ) {
+      return item
+    }
+    const bytes = validBytes(mlxModelBytes[removal.modelId])
+    return bytes === null ? item : { ...item, bytes }
+  })
+}
+
+/** The ids the download store holds a download under: running, starting, paused or resumable. */
+export function activeDownloadIds(state: {
+  downloads: Record<string, Pick<DownloadProgressProps, 'id' | 'name'>>
+  localDownloadingModels: ReadonlySet<string>
+  pausedDownloads: ReadonlySet<string>
+  resumableDownloads: ReadonlySet<string>
+}): string[] {
+  const ids = new Set<string>()
+  for (const [key, entry] of Object.entries(state.downloads)) {
+    for (const id of [key, entry.id, entry.name]) if (id) ids.add(id)
+  }
+  for (const set of [
+    state.localDownloadingModels,
+    state.pausedDownloads,
+    state.resumableDownloads,
+  ]) {
+    for (const id of set) ids.add(id)
+  }
+  return [...ids]
+}
+
+/**
+ * A download id the way its folder is named: lower case, the characters a task
+ * id may not carry as `_`, without a provider prefix (`mlx/…`, `llamacpp-upstream/…`)
+ * or a drafter tag (`mlx/dflash:<repo>`).
+ */
+const folderKey = (id: string): string =>
+  id
+    .toLowerCase()
+    .replace(/[^a-z0-9_/:-]/g, '_')
+    .replace(/^.*:/, '')
+    .replace(/^(llamacpp|llamacpp-upstream|atomic-prism|mlx)\//, '')
+
+/**
+ * Whether a download the app holds writes into the folder `partialId`. Erring
+ * towards "yes": a folder that only might be a running download's is left alone.
+ */
+export function isDownloadActive(
+  partialId: string,
+  activeIds: readonly string[]
+): boolean {
+  const folder = folderKey(partialId)
+  return activeIds.some((id) => {
+    const key = folderKey(id)
+    return key !== '' && (key.startsWith(folder) || folder.startsWith(key))
+  })
+}
+
+/** Whether MLX loads a draft with its next model: one of its drafter switches is on. */
+export function mlxDraftersOn(providers: readonly ModelProvider[]): boolean {
+  const mlx = providers.find((provider) => provider.provider === MLX_PROVIDER)
+  return (mlx?.settings ?? []).some(
+    (setting) =>
+      ['dflash_enabled', 'mtp_enabled', 'eagle3_enabled'].includes(
+        setting.key
+      ) && Boolean((setting.controller_props as { value?: unknown })?.value)
+  )
+}
+
+const rootEngine = (root: DownloadRoot): string =>
+  getProviderTitle(root === LLAMACPP_MODELS_ROOT ? 'llamacpp-upstream' : 'mlx')
+
+/**
+ * Downloads that never finished, from the disk, without the ones the app is
+ * still running or can resume: their partial files are what a resume needs.
+ */
+export function partialDownloadItems(
+  partials: readonly PartialDownload[],
+  activeIds: readonly string[]
+): InventoryItem[] {
+  return partials
+    .filter((partial) => !isDownloadActive(partial.id, activeIds))
+    .map((partial) => ({
+      key: `partial:${partial.root}:${partial.id}`,
+      category: 'local' as const,
+      kind: 'partial' as const,
+      name: partial.id,
+      details: [rootEngine(partial.root)],
+      bytes: validBytes(partial.bytes),
+      removal: {
+        type: 'partial' as const,
+        paths: partial.paths,
+        downloadId: partial.id,
+      },
+    }))
+}
+
+/** MLX drafts on disk; not removable while a drafter switch would load one. */
+export function draftItems(
+  drafts: readonly MlxDraft[],
+  draftersOn: boolean
+): InventoryItem[] {
+  return drafts.map((draft) => ({
+    key: `draft:${draft.path}`,
+    category: 'local' as const,
+    kind: 'draft' as const,
+    name: draft.id,
+    details: [getProviderTitle(MLX_PROVIDER)],
+    bytes: validBytes(draft.bytes),
+    removal: { type: 'draft' as const, path: draft.path },
+    ...(draftersOn ? { removalBlocked: 'draftInUse' as const } : {}),
+  }))
 }
 
 /** The voice model, sized by what its engine recorded. */

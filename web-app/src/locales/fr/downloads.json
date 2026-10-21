@@ -1,0 +1,12 @@
+{
+  "kind": {
+    "partial": "téléchargement incomplet",
+    "draft": "modèle brouillon pour le décodage spéculatif"
+  },
+  "blocked": {
+    "draftInUse": "Le décodage spéculatif MLX est activé. Désactivez-le dans les paramètres du moteur MLX pour supprimer les modèles brouillons."
+  },
+  "error": {
+    "downloadActive": "Ce téléchargement est en cours ou en pause. Annulez-le d’abord."
+  }
+}

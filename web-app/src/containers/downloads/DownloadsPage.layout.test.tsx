@@ -57,6 +57,30 @@ vi.mock('@/stores/provider-registry-store', () => ({
   ensureRegistryLoaded: async () => [],
 }))
 
+// What the disk holds without an owner: a download that never finished, under
+// a long id, and a draft MLX speculative decoding may load.
+vi.mock('@/lib/downloads-disk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/downloads-disk')>()),
+  scanDownloadsDisk: async () => ({
+    mlxModelBytes: {},
+    partials: [
+      {
+        root: 'llamacpp/models',
+        id: 'mradermacher/gemma-4-31B-it-qat-q4_0-unquantized-heretic_i1-Q3_K_S',
+        paths: ['/data/llamacpp/models/x'],
+        bytes: 13.2 * 1024 ** 3,
+      },
+    ],
+    drafts: [
+      {
+        id: 'z-lab_Qwen3.5-9B-DFlash',
+        path: '/data/mlx/models/z-lab_Qwen3.5-9B-DFlash',
+        bytes: 2 * 1024 ** 3,
+      },
+    ],
+  }),
+}))
+
 // A worst-case id: a long-tail Hugging Face GGUF the catalog never named.
 const LONG_ID =
   'unsloth/' + 'VeryLongFineTunedModelName'.repeat(5) + '-UD-Q4_K_XL'
@@ -79,7 +103,18 @@ function seed() {
         { id: LONG_ID, sizeBytes: 48.7 * GB },
         { id: 'unsloth/Qwen3.5-4B-Q4_K_M', sizeBytes: 2.5 * GB },
       ]),
-      provider('mlx', [{ id: 'Qwen3.5-4B-4bit', sizeBytes: 2.4 * GB }]),
+      {
+        ...provider('mlx', [{ id: 'Qwen3.5-4B-4bit', sizeBytes: 2.4 * GB }]),
+        settings: [
+          {
+            key: 'dflash_enabled',
+            title: 'DFlash Draft',
+            description: '',
+            controller_type: 'checkbox',
+            controller_props: { value: true },
+          } as ProviderSetting,
+        ],
+      },
     ],
   })
   const catalog = makeCatalog([Z_IMAGE])
@@ -233,6 +268,14 @@ describe.each(['light', 'dark'] as const)('Downloads, %s theme', (theme) => {
         within(row).queryByText(/b6500/)
       ) as HTMLElement
       expectOneLine(within(kept).getByText(/a model runs from it/))
+
+      // An unfinished download and a draft in use say what they are on one line.
+      const partial = await screen.findByText(/incomplete download/)
+      expectOneLine(partial)
+      expectOneLine(screen.getByText(/speculative decoding is on/))
+      const partialRow = rows.find((row) => row.contains(partial))
+      expect(partialRow).toBeDefined()
+      expectOneLine(within(partialRow as HTMLElement).getByText('13.2 GB'))
 
       // Remove and Cancel form one column of equal controls.
       const actions = rows.map(

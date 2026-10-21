@@ -1,0 +1,12 @@
+{
+  "kind": {
+    "partial": "未完成的下载",
+    "draft": "推测解码草稿模型"
+  },
+  "blocked": {
+    "draftInUse": "MLX 推测解码已开启。请在 MLX 引擎设置中关闭后再删除草稿模型。"
+  },
+  "error": {
+    "downloadActive": "此下载正在进行或已暂停，请先取消。"
+  }
+}

@@ -3,6 +3,7 @@ import {
   Box,
   Clapperboard,
   Cpu,
+  FileClock,
   HardDrive,
   Image,
   Mic,
@@ -10,6 +11,7 @@ import {
   Search,
   Trash2,
   X,
+  Zap,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -47,6 +49,8 @@ const KIND_ICONS: Record<InventoryKind, typeof Box> = {
   video: Clapperboard,
   voice: Mic,
   engine: Cpu,
+  partial: FileClock,
+  draft: Zap,
 }
 
 /** `—` where the source does not say; never a made-up size. */
@@ -91,20 +95,29 @@ export function DownloadsPage() {
     [t]
   )
 
-  const detailLine = useCallback(
-    (item: InventoryItem) =>
-      [
-        ...item.details,
-        kindLabel(item.kind),
-        item.notRemovableReason &&
-          t(`settings:engineBuilds.notRemovable.${item.notRemovableReason}`),
-      ]
-        .filter(Boolean)
-        .join(' · '),
-    [kindLabel, t]
+  /** Why the remove button is off, when it is: the owner's reason or ours. */
+  const blockedReason = useCallback(
+    (item: InventoryItem): string | null =>
+      item.notRemovableReason
+        ? t(`settings:engineBuilds.notRemovable.${item.notRemovableReason}`)
+        : item.removalBlocked
+          ? t(`downloads:blocked.${item.removalBlocked}`)
+          : null,
+    [t]
   )
 
-  const installedCount = items.filter((item) => !item.download).length
+  const detailLine = useCallback(
+    (item: InventoryItem) =>
+      [...item.details, kindLabel(item.kind), blockedReason(item)]
+        .filter(Boolean)
+        .join(' · '),
+    [kindLabel, blockedReason]
+  )
+
+  // What a download that never finished left behind is not a downloaded item.
+  const installedCount = items.filter(
+    (item) => !item.download && item.kind !== 'partial'
+  ).length
   const hasEngineBuilds = items.some((item) => item.kind === 'engine')
 
   const visible = useMemo(() => {
@@ -129,6 +142,8 @@ export function DownloadsPage() {
       return t('settings:engineBuilds.error.inUse', { message: text })
     if (code === 'INVALID_REQUEST')
       return t('settings:engineBuilds.error.invalid', { message: text })
+    if (code === 'DOWNLOAD_ACTIVE') return t('downloads:error.downloadActive')
+    if (code === 'DRAFT_IN_USE') return t('downloads:blocked.draftInUse')
     return text
   }
 
@@ -341,15 +356,10 @@ export function DownloadsPage() {
                               .join(' · '),
                           })}
                           title={
-                            item.notRemovableReason
-                              ? t(
-                                  `settings:engineBuilds.notRemovable.${item.notRemovableReason}`
-                                )
-                              : t('downloads:removeTitle')
+                            blockedReason(item) ?? t('downloads:removeTitle')
                           }
                           disabled={
-                            Boolean(item.notRemovableReason) ||
-                            removing !== null
+                            blockedReason(item) !== null || removing !== null
                           }
                           aria-busy={removing === item.key}
                           onClick={() => setConfirming(item)}

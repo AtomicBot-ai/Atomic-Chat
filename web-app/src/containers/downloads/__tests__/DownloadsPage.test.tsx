@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { EMPTY_DISK_SCAN, type DownloadsDiskScan } from '@/lib/downloads-disk'
 import type { ServiceHub } from '@/services'
 import type { EngineVersions } from '@/services/engines/types'
 import type { ModelSetupService } from '@/services/model-setup/types'
@@ -67,6 +68,17 @@ vi.mock('@/lib/downloadCancellation', async (importOriginal) => ({
   cancelDownload,
 }))
 
+// What the disk holds without an owner comes from `downloads-disk`, tested on
+// its own; here it answers a scan and records what removal deletes.
+const disk = vi.hoisted(() => ({
+  scanDownloadsDisk: vi.fn(),
+  removeDiskPaths: vi.fn(),
+}))
+vi.mock('@/lib/downloads-disk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/downloads-disk')>()),
+  ...disk,
+}))
+
 const GB = 1024 ** 3
 
 const provider = (name: string, models: Partial<Model>[]): ModelProvider =>
@@ -96,6 +108,8 @@ const diskAvailable = vi.fn()
 
 beforeEach(() => {
   vi.clearAllMocks()
+  disk.scanDownloadsDisk.mockResolvedValue(EMPTY_DISK_SCAN)
+  disk.removeDiskPaths.mockResolvedValue(undefined)
   diskAvailable.mockResolvedValue(512 * GB)
   deleteLocalModel.mockResolvedValue(undefined)
   deleteEngineBuild.mockResolvedValue({})
@@ -148,6 +162,7 @@ beforeEach(() => {
     downloads: {},
     localDownloadingModels: new Set(),
     pausedDownloads: new Set(),
+    resumableDownloads: new Set(),
     downloadOriginByModelId: {},
   })
 })
@@ -402,5 +417,143 @@ describe('DownloadsPage', () => {
 
     expect(rows()).toHaveLength(0)
     expect(screen.getByText('downloads:empty')).toBeInTheDocument()
+  })
+
+  describe('what the disk holds without an owner', () => {
+    const LEFTOVERS: DownloadsDiskScan = {
+      mlxModelBytes: { 'gemma-4-e4b-it-4bit': 4.9 * GB },
+      partials: [
+        {
+          root: 'llamacpp/models',
+          id: 'Meta-Llama-3_1-8B-Instruct-IQ4_XS',
+          paths: ['/data/llamacpp/models/Meta-Llama-3_1-8B-Instruct-IQ4_XS'],
+          bytes: 3 * GB,
+        },
+      ],
+      drafts: [
+        {
+          id: 'z-lab_Qwen3.5-9B-DFlash',
+          path: '/data/mlx/models/z-lab_Qwen3.5-9B-DFlash',
+          bytes: 2 * GB,
+        },
+      ],
+    }
+    const mlx = (dflash: boolean) =>
+      ({
+        ...provider('mlx', [{ id: 'gemma-4-e4b-it-4bit', sizeBytes: 0 }]),
+        settings: [
+          {
+            key: 'dflash_enabled',
+            title: 'DFlash Draft',
+            description: '',
+            controller_type: 'checkbox',
+            controller_props: { value: dflash },
+          },
+        ],
+      }) as ModelProvider
+
+    const removeButton = (row: HTMLElement) =>
+      within(row).getByRole('button', { name: /^downloads:remove/ })
+    /** The row once the page has read the disk. */
+    const findRow = async (name: string) => {
+      await waitFor(() => expect(rowNamed(name)).toBeDefined())
+      return rowNamed(name)
+    }
+
+    beforeEach(() => {
+      disk.scanDownloadsDisk.mockResolvedValue(LEFTOVERS)
+      useEngineVersionsStore.setState({ engines: {} })
+    })
+
+    it('sizes an MLX model from disk and lists what an unfinished download left and the drafts', async () => {
+      useModelProvider.setState({ providers: [mlx(false)] })
+      render(<DownloadsPage />)
+
+      const partial = await findRow('Meta-Llama-3_1-8B-Instruct-IQ4_XS')
+      expect(
+        within(rowNamed('gemma-4-e4b-it-4bit')).getByText('4.9 GB')
+      ).toBeInTheDocument()
+      expect(
+        within(partial).getByText('llama.cpp · downloads:kind.partial')
+      ).toBeInTheDocument()
+      expect(within(partial).getByText('3.0 GB')).toBeInTheDocument()
+      const draft = rowNamed('z-lab_Qwen3.5-9B-DFlash')
+      expect(
+        within(draft).getByText('MLX · downloads:kind.draft')
+      ).toBeInTheDocument()
+      expect(removeButton(draft)).toBeEnabled()
+      // All of it takes room; the leftovers of a download are no downloaded item.
+      expect(
+        screen.getByLabelText('downloads:summary.totalStorage')
+      ).toHaveTextContent('9.9 GB')
+      expect(
+        screen.getByLabelText('downloads:summary.items')
+      ).toHaveTextContent('2')
+    })
+
+    it('keeps a draft while MLX speculative decoding may load it, and says why', async () => {
+      useModelProvider.setState({ providers: [mlx(true)] })
+      render(<DownloadsPage />)
+
+      const draft = await findRow('z-lab_Qwen3.5-9B-DFlash')
+      expect(removeButton(draft)).toBeDisabled()
+      expect(removeButton(draft)).toHaveAttribute(
+        'title',
+        'downloads:blocked.draftInUse'
+      )
+      expect(
+        within(draft).getByText(/downloads:blocked\.draftInUse/)
+      ).toBeInTheDocument()
+    })
+
+    it('deletes an unfinished download once confirmed, and its row goes', async () => {
+      useModelProvider.setState({ providers: [mlx(false)] })
+      render(<DownloadsPage />)
+      const partial = await findRow('Meta-Llama-3_1-8B-Instruct-IQ4_XS')
+      disk.scanDownloadsDisk.mockResolvedValue({ ...LEFTOVERS, partials: [] })
+
+      fireEvent.click(removeButton(partial))
+      fireEvent.click(
+        within(await screen.findByRole('dialog')).getByRole('button', {
+          name: 'downloads:confirm.remove',
+        })
+      )
+
+      await waitFor(() =>
+        expect(toast.success).toHaveBeenCalledWith(
+          'downloads:removed(Meta-Llama-3_1-8B-Instruct-IQ4_XS)'
+        )
+      )
+      expect(disk.removeDiskPaths).toHaveBeenCalledWith([
+        '/data/llamacpp/models/Meta-Llama-3_1-8B-Instruct-IQ4_XS',
+      ])
+      expect(rowNamed('Meta-Llama-3_1-8B-Instruct-IQ4_XS')).toBeUndefined()
+    })
+
+    it('refuses, and says so, when the download started again before the confirmation', async () => {
+      useModelProvider.setState({ providers: [mlx(false)] })
+      render(<DownloadsPage />)
+      const partial = await findRow('Meta-Llama-3_1-8B-Instruct-IQ4_XS')
+
+      fireEvent.click(removeButton(partial))
+      const dialog = await screen.findByRole('dialog')
+      // The store learns of the download only after the row was read.
+      const state = useDownloadStore.getState()
+      state.localDownloadingModels.add('Meta-Llama-3.1-8B-Instruct-IQ4_XS')
+      fireEvent.click(
+        within(dialog).getByRole('button', { name: 'downloads:confirm.remove' })
+      )
+
+      await waitFor(() =>
+        expect(toast.error).toHaveBeenCalledWith(
+          'downloads:removeFailed(Meta-Llama-3_1-8B-Instruct-IQ4_XS)',
+          { description: 'downloads:error.downloadActive' }
+        )
+      )
+      expect(disk.removeDiskPaths).not.toHaveBeenCalled()
+      expect(toast.success).not.toHaveBeenCalled()
+      // Nothing was deleted, so the row is still offered for removal.
+      expect(rowNamed('Meta-Llama-3_1-8B-Instruct-IQ4_XS')).toBeDefined()
+    })
   })
 })

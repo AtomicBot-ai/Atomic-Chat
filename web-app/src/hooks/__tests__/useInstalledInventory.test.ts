@@ -1,4 +1,4 @@
-import { renderHook } from '@testing-library/react'
+import { act, renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
@@ -27,6 +27,7 @@ import {
   listInstalledArtifacts,
 } from '@/lib/diffusion/models'
 import { decisionDownloadTaskId } from '@/lib/decision/models'
+import { EMPTY_DISK_SCAN, type DownloadsDiskScan } from '@/lib/downloads-disk'
 import { embeddingDownloadTaskId } from '@/lib/embedding/models'
 import type { InventoryItem } from '@/lib/installed-inventory'
 import type { ServiceHub } from '@/services'
@@ -93,6 +94,17 @@ vi.mock('@/lib/decision/models', async (importOriginal) => ({
 const releaseVoiceEngine = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/voice/engine', () => ({ releaseVoiceEngine }))
 
+// The disk is read and written by `downloads-disk`, tested on its own; here it
+// answers what a scan would and records what removal deletes.
+const disk = vi.hoisted(() => ({
+  scanDownloadsDisk: vi.fn(),
+  removeDiskPaths: vi.fn(),
+}))
+vi.mock('@/lib/downloads-disk', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/downloads-disk')>()),
+  ...disk,
+}))
+
 const GB = 1024 ** 3
 
 const provider = (name: string, models: Partial<Model>[]): ModelProvider =>
@@ -129,6 +141,8 @@ let serviceHub: ServiceHub
 
 beforeEach(() => {
   vi.clearAllMocks()
+  disk.scanDownloadsDisk.mockResolvedValue(EMPTY_DISK_SCAN)
+  disk.removeDiskPaths.mockResolvedValue(undefined)
   serviceHub = seedServiceHub({
     decision: { isSupported: () => false } as never,
   })
@@ -162,6 +176,7 @@ beforeEach(() => {
     downloads: {},
     localDownloadingModels: new Set(),
     pausedDownloads: new Set(),
+    resumableDownloads: new Set(),
     downloadOriginByModelId: {},
   })
 })
@@ -557,5 +572,134 @@ describe('removeInventoryItem', () => {
       )
     ).rejects.toBeInstanceOf(InventoryNotRemovableError)
     expect(deleteEngineBuild).not.toHaveBeenCalled()
+  })
+})
+
+describe('what the disk holds without an owner', () => {
+  const LEFTOVERS: DownloadsDiskScan = {
+    mlxModelBytes: { 'gemma-4-e4b-it-4bit': 4.9 * GB },
+    partials: [
+      {
+        root: 'llamacpp/models',
+        id: 'Meta-Llama-3_1-8B-Instruct-IQ4_XS',
+        paths: ['/data/llamacpp/models/Meta-Llama-3_1-8B-Instruct-IQ4_XS'],
+        bytes: 3 * GB,
+      },
+    ],
+    drafts: [
+      {
+        id: 'z-lab/Qwen3.5-4B-DFlash',
+        path: '/data/mlx/draft-models/z-lab/Qwen3.5-4B-DFlash',
+        bytes: 1 * GB,
+      },
+    ],
+  }
+  const PARTIAL_KEY =
+    'partial:llamacpp/models:Meta-Llama-3_1-8B-Instruct-IQ4_XS'
+  const DRAFT_KEY = 'draft:/data/mlx/draft-models/z-lab/Qwen3.5-4B-DFlash'
+
+  const withDrafter = (on: boolean): ModelProvider => ({
+    ...provider('mlx', [{ id: 'gemma-4-e4b-it-4bit', sizeBytes: 0 }]),
+    settings: [
+      {
+        key: 'dflash_enabled',
+        title: 'DFlash Draft',
+        description: '',
+        controller_type: 'checkbox',
+        controller_props: { value: on },
+      } as ProviderSetting,
+    ],
+  })
+
+  /** Mount the hook and let its first read of the disk land. */
+  const mounted = async () => {
+    let result!: ReturnType<typeof inventory>
+    await act(async () => {
+      result = inventory()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    return result
+  }
+
+  beforeEach(() => {
+    disk.scanDownloadsDisk.mockResolvedValue(LEFTOVERS)
+  })
+
+  it('sizes an MLX model from its folder and lists drafts and unfinished downloads', async () => {
+    useModelProvider.setState({ providers: [withDrafter(false)] })
+
+    const result = await mounted()
+
+    // Only the model the engine recorded no size for is measured.
+    expect(disk.scanDownloadsDisk).toHaveBeenCalledWith(['gemma-4-e4b-it-4bit'])
+    expect(
+      byKey(result.current.items, 'model:local:gemma-4-e4b-it-4bit')?.bytes
+    ).toBe(4.9 * GB)
+    expect(byKey(result.current.items, PARTIAL_KEY)).toMatchObject({
+      kind: 'partial',
+      bytes: 3 * GB,
+    })
+    expect(byKey(result.current.items, DRAFT_KEY)).toMatchObject({
+      kind: 'draft',
+      bytes: 1 * GB,
+    })
+    expect(byKey(result.current.items, DRAFT_KEY)?.removalBlocked).toBe(
+      undefined
+    )
+    expect(result.current.totalBytes).toBe((4.9 + 3 + 1) * GB)
+  })
+
+  it('keeps a draft while an MLX drafter switch is on', async () => {
+    useModelProvider.setState({ providers: [withDrafter(true)] })
+
+    const result = await mounted()
+    expect(byKey(result.current.items, DRAFT_KEY)?.removalBlocked).toBe(
+      'draftInUse'
+    )
+
+    await expect(
+      act(() => result.current.remove(byKey(result.current.items, DRAFT_KEY)!))
+    ).rejects.toMatchObject({ code: 'DRAFT_IN_USE' })
+    expect(disk.removeDiskPaths).not.toHaveBeenCalled()
+  })
+
+  it('deletes an unfinished download and reads the disk again, so its row goes', async () => {
+    useModelProvider.setState({ providers: [withDrafter(false)] })
+    const result = await mounted()
+    expect(byKey(result.current.items, PARTIAL_KEY)).toBeDefined()
+    disk.scanDownloadsDisk.mockResolvedValue({ ...LEFTOVERS, partials: [] })
+
+    await act(() =>
+      result.current.remove(byKey(result.current.items, PARTIAL_KEY)!)
+    )
+
+    expect(disk.removeDiskPaths).toHaveBeenCalledWith([
+      '/data/llamacpp/models/Meta-Llama-3_1-8B-Instruct-IQ4_XS',
+    ])
+    expect(byKey(result.current.items, PARTIAL_KEY)).toBeUndefined()
+    expect(result.current.totalBytes).toBe((4.9 + 1) * GB)
+  })
+
+  it('refuses the partial files of a download that started again since the list was read', async () => {
+    useModelProvider.setState({ providers: [withDrafter(false)] })
+    const result = await mounted()
+    expect(byKey(result.current.items, PARTIAL_KEY)).toBeDefined()
+    const row = byKey(result.current.items, PARTIAL_KEY)!
+
+    await act(async () => {
+      useDownloadStore.setState({
+        localDownloadingModels: new Set(['Meta-Llama-3.1-8B-Instruct-IQ4_XS']),
+      })
+    })
+
+    await expect(act(() => result.current.remove(row))).rejects.toMatchObject({
+      code: 'DOWNLOAD_ACTIVE',
+    })
+    expect(disk.removeDiskPaths).not.toHaveBeenCalled()
+    // A running download is listed as the download, not as its partial files.
+    expect(byKey(result.current.items, PARTIAL_KEY)).toBeUndefined()
+    expect(
+      byKey(result.current.items, 'download:Meta-Llama-3.1-8B-Instruct-IQ4_XS')
+    ).toBeDefined()
   })
 })

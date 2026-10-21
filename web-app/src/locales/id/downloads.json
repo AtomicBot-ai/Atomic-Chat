@@ -1,0 +1,12 @@
+{
+  "kind": {
+    "partial": "unduhan tidak selesai",
+    "draft": "model draf untuk decoding spekulatif"
+  },
+  "blocked": {
+    "draftInUse": "Decoding spekulatif MLX aktif. Matikan di pengaturan mesin MLX untuk menghapus model draf."
+  },
+  "error": {
+    "downloadActive": "Unduhan ini sedang berjalan atau dijeda. Batalkan terlebih dahulu."
+  }
+}
