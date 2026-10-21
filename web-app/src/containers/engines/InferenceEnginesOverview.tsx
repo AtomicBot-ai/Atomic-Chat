@@ -77,8 +77,15 @@ function joinFacts(parts: Array<string | false | undefined>): string {
 /**
  * What a row says about its engine's build: the core's answer
  * (`useEngineVersionsStore`), nothing while none came for it.
+ * `noActiveBuild`: builds are installed, but none is the one the next load
+ * runs; "Not installed" is for an engine with no build at all.
  */
-type UpdateStatus = 'updating' | 'available' | 'upToDate' | 'notInstalled'
+type UpdateStatus =
+  | 'updating'
+  | 'available'
+  | 'upToDate'
+  | 'noActiveBuild'
+  | 'notInstalled'
 
 function updateStatusOf(
   versions: EngineVersions | undefined,
@@ -86,7 +93,8 @@ function updateStatusOf(
 ): UpdateStatus | null {
   if (updating) return 'updating'
   if (!versions) return null
-  if (!versions.active) return 'notInstalled'
+  if (!versions.active)
+    return versions.builds.length > 0 ? 'noActiveBuild' : 'notInstalled'
   return engineUpdateOfferFrom(versions) ? 'available' : 'upToDate'
 }
 

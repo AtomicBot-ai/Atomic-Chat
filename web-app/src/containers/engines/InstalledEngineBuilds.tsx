@@ -145,13 +145,20 @@ export function InstalledEngineBuilds({
                 )}
               </div>
               <div className="flex shrink-0 flex-wrap items-center gap-2">
-                {!build.removable && build.not_removable_reason && (
-                  <span className="text-[11px] text-muted-foreground">
-                    {t(
-                      `settings:engineBuilds.notRemovable.${build.not_removable_reason}`
-                    )}
-                  </span>
-                )}
+                {/* A bundled build's origin chip already says it comes with
+                    the app; the same words again beside it are noise. */}
+                {!build.removable &&
+                  build.not_removable_reason &&
+                  !(
+                    build.not_removable_reason === 'bundled' &&
+                    build.origin === 'bundled'
+                  ) && (
+                    <span className="text-[11px] text-muted-foreground">
+                      {t(
+                        `settings:engineBuilds.notRemovable.${build.not_removable_reason}`
+                      )}
+                    </span>
+                  )}
                 {clientPicks && !build.active && (
                   <Button
                     variant="outline"

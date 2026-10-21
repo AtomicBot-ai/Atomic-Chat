@@ -643,7 +643,8 @@
       "updating": "Updating…",
       "available": "Update available",
       "upToDate": "Up to date",
-      "notInstalled": "Not installed"
+      "notInstalled": "Not installed",
+      "noActiveBuild": "No active build"
     },
     "update": "Update",
     "updateEngine": "Update {{name}}",

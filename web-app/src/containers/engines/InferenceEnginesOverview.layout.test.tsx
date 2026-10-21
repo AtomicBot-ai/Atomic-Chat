@@ -123,7 +123,12 @@ function seed() {
   useEngineVersionsStore.setState({
     engines: {
       'llamacpp-upstream': versions('llamacpp-upstream', 'b10840', true),
-      'llamacpp': versions('llamacpp', 'b9999-9.9.9', false),
+      // Builds on disk, none of them active: the longest status a row says.
+      'llamacpp': {
+        ...versions('llamacpp', 'b9999-9.9.9', false),
+        builds: [{ version: 'b9999-9.9.9', variant: 'macos-arm64' }],
+        active: null,
+      } as unknown as EngineVersions,
       'atomic-prism': versions('atomic-prism', 'prism-b10777', true),
       'vllm': versions('vllm', LONG_BUILD, true),
       'sd-cpp': versions('sd-cpp', 'master-883-137f740-a36f1b1a', true),

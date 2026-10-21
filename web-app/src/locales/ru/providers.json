@@ -542,7 +542,8 @@
       "updating": "Обновляется…",
       "available": "Есть обновление",
       "upToDate": "Актуальная версия",
-      "notInstalled": "Не установлен"
+      "notInstalled": "Не установлен",
+      "noActiveBuild": "Нет активной сборки"
     },
     "update": "Обновить",
     "updateEngine": "Обновить {{name}}",
