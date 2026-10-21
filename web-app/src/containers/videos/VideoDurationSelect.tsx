@@ -19,13 +19,15 @@ type VideoDurationSelectProps = {
   onChange: (frames: number) => void
 }
 
+/** The Images size pill (`ImageSizeControl`), so the two columns read alike. */
 const pillClass =
   'flex h-9 min-w-0 flex-1 items-center gap-2 rounded-full border border-input bg-background px-3.5 text-sm shadow-xs transition-colors focus-within:border-ring dark:bg-input/30 dark:border-input'
 
 /**
- * The clip length as a pill menu: seconds first, the frame count the model
- * actually renders beside it. The options come from the family's frame
- * lattice, so every one is a count the engine accepts as is.
+ * The clip length as a pill menu: seconds on the left, the frame count the
+ * model actually renders as the muted readout on the right — the place the
+ * megapixels take on the Resolution pill. The options come from the family's
+ * frame lattice, so every one is a count the engine accepts as is.
  */
 export const VideoDurationSelect = memo(function VideoDurationSelect({
   frames,
@@ -34,13 +36,13 @@ export const VideoDurationSelect = memo(function VideoDurationSelect({
   onChange,
 }: VideoDurationSelectProps) {
   const { t } = useTranslation()
-  const label = (option: DurationOption) =>
-    t('videos:form.durationOption', {
+  const seconds = (option: DurationOption) =>
+    t('videos:form.durationSeconds', {
       seconds: formatSeconds(option.seconds),
-      frames: option.frames,
     })
-  const current =
-    options.find((option) => option.frames === frames) ??
+  const frameCount = (option: DurationOption) =>
+    t('videos:form.durationFrames', { frames: option.frames })
+  const current = options.find((option) => option.frames === frames) ??
     options[0] ?? { frames, seconds: 0 }
 
   return (
@@ -48,44 +50,57 @@ export const VideoDurationSelect = memo(function VideoDurationSelect({
       label={t('videos:form.duration')}
       hint={t('videos:form.durationHint')}
     >
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            disabled={disabled}
-            aria-label={t('videos:form.duration')}
-            data-testid="video-duration"
-            className={cn(
-              pillClass,
-              'cursor-pointer justify-between outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50'
-            )}
-          >
-            <span className="truncate tabular-nums">{label(current)}</span>
-            <IconChevronDown
-              size={16}
-              className="ml-auto shrink-0 text-muted-foreground"
-            />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent
-          align="start"
-          className="max-h-72 w-(--radix-dropdown-menu-trigger-width) min-w-48 overflow-y-auto"
-        >
-          {options.map((option) => (
-            <DropdownMenuItem
-              key={option.frames}
-              data-testid={`video-duration-${option.frames}`}
+      {/* A row, as on Images: in the field's column the pill's `flex-1`
+          would size its height and squash it to one text line. */}
+      <div className="flex items-center">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              disabled={disabled}
+              aria-label={t('videos:form.duration')}
+              data-testid="video-duration"
               className={cn(
-                'cursor-pointer tabular-nums',
-                option.frames === frames && 'bg-secondary-foreground/8'
+                pillClass,
+                'cursor-pointer justify-between outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50'
               )}
-              onClick={() => onChange(option.frames)}
             >
-              {label(option)}
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
+              <span className="truncate tabular-nums">{seconds(current)}</span>
+              <span
+                className="ml-auto shrink-0 text-xs tabular-nums text-muted-foreground"
+                data-testid="video-duration-frames"
+              >
+                {frameCount(current)}
+              </span>
+              <IconChevronDown
+                size={16}
+                className="shrink-0 text-muted-foreground"
+              />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="start"
+            className="max-h-72 w-(--radix-dropdown-menu-trigger-width) min-w-48 overflow-y-auto"
+          >
+            {options.map((option) => (
+              <DropdownMenuItem
+                key={option.frames}
+                data-testid={`video-duration-${option.frames}`}
+                className={cn(
+                  'cursor-pointer justify-between tabular-nums',
+                  option.frames === frames && 'bg-secondary-foreground/8'
+                )}
+                onClick={() => onChange(option.frames)}
+              >
+                <span>{seconds(option)}</span>
+                <span className="text-xs text-muted-foreground">
+                  {frameCount(option)}
+                </span>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
     </ImageField>
   )
 })

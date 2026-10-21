@@ -16,8 +16,12 @@ import { useVideoGallery } from '@/hooks/useVideoGallery'
 import { useVideoSetting } from '@/hooks/useVideoSetting'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import type { DiffusionErrorAction } from '@/lib/diffusion/errors'
-import { artifactId } from '@/lib/diffusion/models'
+import { artifactId, type InstalledArtifact } from '@/lib/diffusion/models'
 import { formatSeconds, secondsForFrames } from '@/lib/video/duration'
+import {
+  findFamily,
+  type DiffusionCatalog,
+} from '@/services/diffusion-catalog-registry'
 import {
   selectHasInstalledModel,
   useImageGenerationStore,
@@ -49,6 +53,22 @@ const VIDEO_ERROR_COPY = {
   },
 } as const
 
+/**
+ * The first complete video checkpoint on disk the local picker offers, in
+ * its own order (catalog families, then quants), or null.
+ */
+function firstInstalledVideoArtifactId(
+  catalog: DiffusionCatalog,
+  installed: readonly InstalledArtifact[]
+): string | null {
+  const first = installed.find((artifact) => {
+    if (!artifact.complete) return false
+    const family = findFamily(catalog, artifact.family)
+    return family?.modality === 'video' && family.engines.includes('sdcpp')
+  })
+  return first?.id ?? null
+}
+
 type VideoGenerationPageProps = {
   /** `?model=&quant=` from the route: preselect (and offer to fetch) that checkpoint. */
   search: { model?: string; quant?: string }
@@ -77,6 +97,9 @@ export const VideoGenerationPage = memo(function VideoGenerationPage({
   )
   const hasModel = useImageGenerationStore(selectHasInstalledModel('video'))
   const catalog = useImageGenerationStore((state) => state.catalog)
+  const installedArtifacts = useImageGenerationStore(
+    (state) => state.installedArtifacts
+  )
   const modelError = useImageGenerationStore((state) =>
     state.lastErrorModality === 'video' ? state.lastError : null
   )
@@ -106,8 +129,8 @@ export const VideoGenerationPage = memo(function VideoGenerationPage({
   const hasRemote = useHasRemoteMedia('video')
   const remoteTarget = useRemoteMediaTarget('video')
   const studioReady = engine.installed || hasRemote
-  const modelPicked =
-    useMediaTarget('video').artifactId !== null || remoteTarget !== null
+  const targetArtifactId = useMediaTarget('video').artifactId
+  const modelPicked = targetArtifactId !== null || remoteTarget !== null
   const showLivePreview = generating && viewerMode === 'live'
   // An older core never says; absent reads as no slowdown.
   const slowedDown = generating && currentJob?.progress?.slowdown === true
@@ -151,6 +174,31 @@ export const VideoGenerationPage = memo(function VideoGenerationPage({
       setModelsOpen(true)
     }
   }, [search.model, search.quant, setSelectedArtifactId])
+
+  // Images opens on its model because the pick is stored when a checkpoint
+  // is downloaded, started or opened from the Hub. A video checkpoint on
+  // disk with no stored pick (never recorded, or cleared by removing another
+  // model) left this page on "Select video model" beside a model it could
+  // run. With nothing picked, the page takes the resident video model, else
+  // the first complete one on disk. A pick, a provider's model or a deep
+  // link is the user's and is never replaced; the store is read here, after
+  // the deep link above has written it.
+  useEffect(() => {
+    if (!catalog || (search.model && search.quant)) return
+    const settings = useVideoSetting.getState()
+    if (settings.selectedArtifactId !== null) return
+    if (settings.selectedRemote !== null) return
+    const fallback =
+      targetArtifactId ??
+      firstInstalledVideoArtifactId(catalog, installedArtifacts)
+    if (fallback) settings.setSelectedArtifactId(fallback)
+  }, [
+    catalog,
+    installedArtifacts,
+    search.model,
+    search.quant,
+    targetArtifactId,
+  ])
 
   const offerLoad = useCallback(
     (id: string) => {

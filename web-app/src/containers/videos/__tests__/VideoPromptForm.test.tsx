@@ -19,17 +19,21 @@ import { seedServiceHub } from '@/test/service-hub'
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({
     t: (key: string, values?: Record<string, unknown>) =>
-      key === 'videos:form.durationOption'
-        ? `${values?.seconds}s · ${values?.frames} frames`
-        : key === 'videos:form.fps'
-          ? `${values?.fps} fps`
-          : key === 'videos:estimate.duration'
-            ? `Takes ${values?.range}`
-            : key === 'videos:estimate.exceeds'
-              ? `Needs ${values?.required} GB, ${values?.available} GB available`
-              : key.startsWith('videos:estimate.units.')
-                ? key.slice('videos:estimate.units.'.length)
-                : key,
+      key === 'videos:form.durationSeconds'
+        ? `${values?.seconds}s`
+        : key === 'videos:form.durationFrames'
+          ? `${values?.frames} frames`
+          : key === 'images:size.megapixels'
+            ? `${values?.mp} MP`
+            : key === 'videos:form.fps'
+              ? `${values?.fps} fps`
+              : key === 'videos:estimate.duration'
+                ? `Takes ${values?.range}`
+                : key === 'videos:estimate.exceeds'
+                  ? `Needs ${values?.required} GB, ${values?.available} GB available`
+                  : key.startsWith('videos:estimate.units.')
+                    ? key.slice('videos:estimate.units.'.length)
+                    : key,
   }),
 }))
 vi.mock('@tanstack/react-router', () => ({
@@ -164,14 +168,23 @@ describe('VideoPromptForm', () => {
     useVideoForm.setState({ frames: 49 })
     render(<VideoPromptForm />)
     expect(screen.getByTestId('video-resolution')).toHaveTextContent('768 × 512')
-    expect(screen.getByTestId('video-duration')).toHaveTextContent('2.0s · 49 frames')
+    // The secondary readout on the right, as the Images Resolution pill has.
+    expect(screen.getByTestId('video-resolution-megapixels')).toHaveTextContent(
+      '0.4 MP'
+    )
+    expect(screen.getByTestId('video-duration')).toHaveTextContent('2.0s')
+    expect(screen.getByTestId('video-duration-frames')).toHaveTextContent(
+      '49 frames'
+    )
     expect(screen.getByTestId('video-frame-rate')).toHaveTextContent('24 fps')
 
     await act(async () => {
       await userEvent.click(screen.getByTestId('video-resolution'))
     })
     const portrait = await screen.findByTestId('video-resolution-704x1216')
-    expect(portrait).toHaveTextContent('704 × 1216videos:form.portraitSuffix')
+    expect(portrait).toHaveTextContent(
+      '704 × 1216videos:form.portraitSuffix0.9 MP'
+    )
     await act(async () => {
       await userEvent.click(portrait)
     })
@@ -181,11 +194,15 @@ describe('VideoPromptForm', () => {
       await userEvent.click(screen.getByTestId('video-duration'))
     })
     const options = await screen.findAllByTestId(/^video-duration-\d+$/)
-    expect(options.map((o) => o.textContent)).toEqual([
-      '1.0s · 25 frames',
-      '2.0s · 49 frames',
-      '3.0s · 73 frames',
-      '5.0s · 121 frames',
+    expect(
+      options.map((o) =>
+        Array.from(o.querySelectorAll('span'), (part) => part.textContent)
+      )
+    ).toEqual([
+      ['1.0s', '25 frames'],
+      ['2.0s', '49 frames'],
+      ['3.0s', '73 frames'],
+      ['5.0s', '121 frames'],
     ])
     await act(async () => {
       await userEvent.click(screen.getByTestId('video-duration-121'))

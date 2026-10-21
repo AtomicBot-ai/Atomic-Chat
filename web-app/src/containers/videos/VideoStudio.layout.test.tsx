@@ -23,6 +23,7 @@ import {
   DEFAULT_FONT_SIZE,
   expectNoHorizontalOverflow,
   expectOneLine,
+  expectSameHeight,
   settle,
   setFontSize,
   setTheme,
@@ -32,6 +33,7 @@ import {
 import { seedServiceHub } from '@/test/service-hub'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 import { useVideoGenerationStore } from '@/stores/video-generation-store'
+import { ImageSizeControl } from '@/containers/images/ImageSizeControl'
 import { VideoPromptForm } from './VideoPromptForm'
 
 vi.mock('@tanstack/react-router', () => ({
@@ -134,7 +136,10 @@ describe('Video studio form geometry', () => {
       const resolution = screen.getByTestId('video-resolution')
       const duration = screen.getByTestId('video-duration')
       expect(resolution).toHaveTextContent('704 × 1216 (portrait)')
-      expect(duration).toHaveTextContent('5.0s · 121 frames')
+      expect(duration.querySelector('span')).toHaveTextContent('5.0s')
+      expect(screen.getByTestId('video-duration-frames')).toHaveTextContent(
+        '121 frames'
+      )
       expectOneLine(resolution.querySelector('span')!)
       expectOneLine(duration.querySelector('span')!)
       expect(screen.getByTestId('video-frame-rate')).toHaveTextContent('24 fps')
@@ -146,6 +151,95 @@ describe('Video studio form geometry', () => {
       // A distilled family: no negative prompt, no guidance knob.
       expect(screen.queryByText('Negative prompt')).toBeNull()
       expect(screen.queryByLabelText('Guidance')).toBeNull()
+    }
+  )
+
+  it.each([
+    { fontSize: DEFAULT_FONT_SIZE, theme: 'light' as const },
+    { fontSize: XL_FONT_SIZE, theme: 'dark' as const },
+  ])(
+    'draws Resolution and Duration as the Images pills, with the secondary readout on the right, at $fontSize/$theme',
+    async ({ fontSize, theme }) => {
+      setFontSize(fontSize)
+      setTheme(theme)
+      render(
+        withTranslations(
+          <div className="flex gap-4">
+            <div className="flex h-[900px] w-[340px] overflow-hidden">
+              <VideoPromptForm />
+            </div>
+            {/* The Images column's own Resolution pill, as the reference. */}
+            <div className="w-[300px]">
+              <ImageSizeControl
+                value={{
+                  width: 1024,
+                  height: 1024,
+                  aspect: 'square',
+                  portrait: false,
+                }}
+                constraints={{ minDim: 256, maxDim: 2048, dimMultiple: 16 }}
+                onChange={() => {}}
+              />
+            </div>
+          </div>
+        )
+      )
+      await act(async () => {
+        await settle()
+      })
+
+      const reference = screen.getByTestId('image-size-preset')
+      const resolution = screen.getByTestId('video-resolution')
+      const duration = screen.getByTestId('video-duration')
+      // The seed box and the model trigger are the Images components; the
+      // two video pills must stand at their height, not shrink to a line.
+      expectSameHeight([
+        reference,
+        resolution,
+        duration,
+        document.getElementById('video-seed')!,
+        screen.getByTestId('image-models-toggle'),
+      ])
+      expect(resolution.getBoundingClientRect().height).toBeGreaterThan(30)
+
+      const ref = getComputedStyle(reference)
+      for (const pill of [resolution, duration]) {
+        const style = getComputedStyle(pill)
+        expect(style.borderTopLeftRadius).toBe(ref.borderTopLeftRadius)
+        expect(style.borderTopWidth).toBe(ref.borderTopWidth)
+        expect(style.fontSize).toBe(ref.fontSize)
+        expect(style.paddingLeft).toBe(ref.paddingLeft)
+        expect(style.paddingRight).toBe(ref.paddingRight)
+      }
+
+      // Value left, a muted readout at the right edge — the megapixels on
+      // Resolution as on Images, the frame count on Duration.
+      const referenceReadout = reference.querySelectorAll('span')[1]!
+      const megapixels = screen.getByTestId('video-resolution-megapixels')
+      const frames = screen.getByTestId('video-duration-frames')
+      expect(resolution).toHaveTextContent('704 × 1216 (portrait)')
+      expect(megapixels).toHaveTextContent('0.9 MP')
+      expect(duration).toHaveTextContent('5.0s')
+      expect(frames).toHaveTextContent('121 frames')
+      for (const [pill, readout] of [
+        [resolution, megapixels],
+        [duration, frames],
+      ] as const) {
+        expectOneLine(pill.querySelector('span')!)
+        expectOneLine(readout)
+        expect(getComputedStyle(readout).fontSize).toBe(
+          getComputedStyle(referenceReadout).fontSize
+        )
+        expect(getComputedStyle(readout).color).toBe(
+          getComputedStyle(referenceReadout).color
+        )
+        const chevron = pill.querySelector('svg')!.getBoundingClientRect()
+        const gap = chevron.left - readout.getBoundingClientRect().right
+        const referenceGap =
+          reference.querySelector('svg')!.getBoundingClientRect().left -
+          referenceReadout.getBoundingClientRect().right
+        expect(gap).toBeCloseTo(referenceGap, 0)
+      }
     }
   )
 

@@ -18,7 +18,10 @@ import {
   makeVideoItem,
   makeVideoJob,
   makeVideoLoadedStatus,
+  WAN_22,
+  WAN_Q4_ID,
 } from '@/lib/diffusion/__tests__/video-fixtures'
+import { listInstalledArtifacts } from '@/lib/diffusion/models'
 import { seedServiceHub } from '@/test/service-hub'
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
@@ -58,6 +61,7 @@ import { useVideoSetting } from '@/hooks/useVideoSetting'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 import { useVideoGalleryStore } from '@/stores/video-gallery-store'
 import { useVideoGenerationStore } from '@/stores/video-generation-store'
+import { ImageModelPicker } from '@/containers/images/ImageModelPicker'
 import { VideoGenerationPage } from '../VideoGenerationPage'
 
 const completeImage = {
@@ -150,6 +154,8 @@ describe('VideoGenerationPage', () => {
     const empty = screen.getByTestId('image-empty-state')
     expect(empty).toHaveAttribute('data-modality', 'video')
     expect(empty).toHaveTextContent('videos:gallery.emptyNoModel')
+    // An image checkpoint is not a video model: nothing is picked for this page.
+    expect(useVideoSetting.getState().selectedArtifactId).toBeNull()
     // An image checkpoint on disk is not a video model: the download offer stays.
     await userEvent.click(screen.getByTestId('image-empty-download'))
     expect(screen.getByTestId('video-prompt-form')).toHaveAttribute('data-models-open', 'true')
@@ -169,6 +175,100 @@ describe('VideoGenerationPage', () => {
       'videos:gallery.empty.description'
     )
     expect(screen.getByTestId('video-prompt-form')).toHaveAttribute('data-models-open', 'true')
+  })
+
+  describe('the model it opens on', () => {
+    const catalog = makeCatalog([Z_IMAGE, LTX_2, WAN_22])
+    // LTX's transformer alone: on disk, but not a model that can run.
+    const ltxTransformer = makeFilesFor(LTX_2, 'q4_k_m').filter((file) =>
+      file.relativePath.endsWith('ltx-2.3-22b-distilled-Q4_K_M.gguf')
+    )
+    const seedDisk = (files: ReturnType<typeof makeFilesFor>) =>
+      useImageGenerationStore.setState({
+        catalog,
+        status: makeStatus(),
+        modelFiles: files,
+        installedArtifacts: listInstalledArtifacts(catalog, files),
+      })
+
+    it('opens on the downloaded video model when none is picked, as Images opens on its own', async () => {
+      seedDisk([
+        ...makeFilesFor(Z_IMAGE, 'q4_k_m'),
+        ...ltxTransformer,
+        ...makeFilesFor(WAN_22, 'q4_k_m'),
+      ])
+      render(
+        <>
+          <VideoGenerationPage search={{}} />
+          {/* The form's model trigger, which the mocked form would hold. */}
+          <ImageModelPicker
+            open={false}
+            onOpenChange={() => {}}
+            modality="video"
+          />
+        </>
+      )
+      await waitFor(() =>
+        expect(useVideoGalleryStore.getState().initialized).toBe(true)
+      )
+      // Not the image checkpoint, not the half-downloaded LTX listed first.
+      expect(useVideoSetting.getState().selectedArtifactId).toBe(WAN_Q4_ID)
+      const trigger = screen.getByTestId('image-models-toggle')
+      expect(trigger).toHaveTextContent('Wan 2.2 TI2V 5B')
+      expect(trigger).toHaveTextContent('Q4_K_M')
+      expect(trigger).not.toHaveTextContent('videos:model.select')
+      // The canvas asks for a prompt, not for a model.
+      expect(screen.getByTestId('image-empty-state')).toHaveTextContent(
+        'videos:gallery.empty.description'
+      )
+      expect(
+        screen.queryByTestId('image-empty-download')
+      ).not.toBeInTheDocument()
+    })
+
+    it('takes the resident video model over the first one on disk', async () => {
+      seedDisk([
+        ...makeFilesFor(LTX_2, 'q4_k_m'),
+        ...makeFilesFor(WAN_22, 'q4_k_m'),
+      ])
+      useImageGenerationStore.setState({
+        status: makeVideoLoadedStatus(WAN_Q4_ID, 'wan2.2-ti2v-5b'),
+      })
+      await renderPage()
+      expect(useVideoSetting.getState().selectedArtifactId).toBe(WAN_Q4_ID)
+    })
+
+    it('keeps a pick that is not on disk yet, and a provider model', async () => {
+      seedDisk(makeFilesFor(WAN_22, 'q4_k_m'))
+      useVideoSetting.setState({ selectedArtifactId: 'ltx-2:q8_0' })
+      const { unmount } = render(<VideoGenerationPage search={{}} />)
+      await waitFor(() =>
+        expect(useVideoGalleryStore.getState().initialized).toBe(true)
+      )
+      expect(useVideoSetting.getState().selectedArtifactId).toBe('ltx-2:q8_0')
+      unmount()
+
+      const remote = { provider: 'openai', model: 'sora-2' }
+      useVideoSetting.setState({
+        selectedArtifactId: null,
+        selectedRemote: remote,
+      })
+      await renderPage()
+      expect(useVideoSetting.getState()).toMatchObject({
+        selectedArtifactId: null,
+        selectedRemote: remote,
+      })
+    })
+
+    it('keeps a deep-linked checkpoint that is not on disk, so the picker can offer it', async () => {
+      seedDisk(makeFilesFor(WAN_22, 'q4_k_m'))
+      await renderPage({ model: 'ltx-2', quant: 'q8_0' })
+      expect(useVideoSetting.getState().selectedArtifactId).toBe('ltx-2:q8_0')
+      expect(screen.getByTestId('video-prompt-form')).toHaveAttribute(
+        'data-models-open',
+        'true'
+      )
+    })
   })
 
   it('shows the running clip as a live placeholder above a pending tile', async () => {
@@ -389,6 +489,8 @@ describe('VideoGenerationPage', () => {
       status: makeStatus(),
       installedArtifacts: [completeVideo],
     })
+    // Another video model is picked: restoring the LTX clip swaps the pick.
+    useVideoSetting.setState({ selectedArtifactId: WAN_Q4_ID })
     const load = vi.spyOn(useImageGenerationStore.getState(), 'loadModel').mockResolvedValue()
     await renderPage()
     await act(async () => {
