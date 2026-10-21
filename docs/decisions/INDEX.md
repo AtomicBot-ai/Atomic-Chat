@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-434 records, 2026-05-19 → 2026-10-21.
+435 records, 2026-05-19 → 2026-10-21.
 
 ---
 
@@ -305,8 +305,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-10** — [Throttle crashloop `model_load` failure spam client-side; confirm `model_load.status` / api 404-noise are already-fixed-pending-rollout, not code bugs (ATO-130: ATO-133 + ATO-131 + ATO-132)](2026-06-10-throttle-crashloop-model-load-failure-spam-client-side-confirm.md)
 - **2026-06-09** — [Add zero-PII Sentry crash/error tracking to both the React frontend and the Rust/Tauri desktop, gated behind `productAnalytic` (ATO-113)](2026-06-09-add-zero-pii-sentry-crash-error-tracking-to-both-the-react.md)
 
-## Packaging, installers, autostart & platform policy (25)
+## Packaging, installers, autostart & platform policy (26)
 
+- **2026-10-21** — [Give the Linux window a stable app id](2026-10-21-give-the-linux-window-a-stable-app-id.md) — Wayland `app_id` / Hyprland class is `chat.atomic.app`, matched by the desktop entry's `StartupWMClass`.
 - **2026-10-21** — [Close the Linux window to the tray](2026-10-21-close-the-linux-window-to-the-tray.md) — closing no longer exits and stops `:1337`; tray "Quit" does.
 - **2026-10-21** — [Let a package manager own updates](2026-10-21-let-a-package-manager-own-updates.md) — `ATOMIC_CHAT_PACKAGE_MANAGED=1` or a marker file beside the binary turns the updater off, including its startup check.
 - **2026-10-19** — [Reveal files in the file manager from the blocking pool](2026-10-19-reveal-files-from-the-blocking-pool-on-linux.md) — the opener plugin's async reveal blocks on D-Bus inside tokio and aborts the Linux app.
