@@ -165,6 +165,7 @@ export const DIFFUSION_FAMILY_ICON_KEYS: Readonly<
 > = {
   'z-image': 'z-image',
   'flux.2-klein': 'bfl',
+  'flux.3-klein': 'bfl',
   'flux.1': 'bfl',
   'flux.1-uncensored': 'bfl',
   'flux.1-abliterated': 'bfl',
