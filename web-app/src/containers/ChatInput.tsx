@@ -217,6 +217,10 @@ const ChatInput = memo(function ChatInput({
   const pendingAgentSkillCaretRef = useRef<number | null>(null)
   const composerAnchorRef = useRef<HTMLDivElement>(null)
   const [compactComposer, setCompactComposer] = useState(false)
+  const toolbarStartRef = useRef<HTMLDivElement>(null)
+  const toolbarStartContentRef = useRef<HTMLDivElement>(null)
+  const modelPillSlotRef = useRef<HTMLDivElement>(null)
+  const [compactModelPill, setCompactModelPill] = useState(false)
   const [isFocused, setIsFocused] = useState(false)
   const [rows, setRows] = useState(1)
   const serviceHub = useServiceHub()
@@ -359,6 +363,56 @@ const ChatInput = memo(function ChatInput({
       if (typeof width === 'number') update(width)
     })
     observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
+
+  // What the DOM shows: a resize can be measured between deciding to fold and
+  // React committing that, so the unfolded width is read only from a commit.
+  const committedCompactModelPillRef = useRef(compactModelPill)
+  useLayoutEffect(() => {
+    committedCompactModelPillRef.current = compactModelPill
+  }, [compactModelPill])
+
+  // The model pill folds down to its mark only when the toolbar has no room
+  // for the whole pill. Its room is its own slot plus the width the controls
+  // on the left leave unused; folding only moves width between the two, so
+  // the sum, and with it the decision, holds once taken. The unfolded width
+  // is remembered in rem, so a font size change while folded stays right.
+  useLayoutEffect(() => {
+    const start = toolbarStartRef.current
+    const startContent = toolbarStartContentRef.current
+    const slot = modelPillSlotRef.current
+    if (
+      !start ||
+      !startContent ||
+      !slot ||
+      typeof ResizeObserver === 'undefined'
+    ) {
+      return
+    }
+    let unfoldedRem = 0
+    const update = () => {
+      const startBox = start.getBoundingClientRect()
+      // Not laid out (hidden, or a test DOM without layout): nothing to fit.
+      if (startBox.width === 0) return
+      const rem =
+        parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
+      const startStyle = getComputedStyle(start)
+      const unused =
+        startBox.width -
+        parseFloat(startStyle.paddingLeft) -
+        parseFloat(startStyle.paddingRight) -
+        startContent.getBoundingClientRect().width
+      const slotWidth = slot.getBoundingClientRect().width
+      if (!committedCompactModelPillRef.current) unfoldedRem = slotWidth / rem
+      // Half a pixel of slack keeps subpixel rounding from flipping it.
+      setCompactModelPill(unused + slotWidth + 0.5 < unfoldedRem * rem)
+    }
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(start)
+    observer.observe(startContent)
+    observer.observe(slot)
     return () => observer.disconnect()
   }, [])
 
@@ -3087,10 +3141,16 @@ const ChatInput = memo(function ChatInput({
             )}
           >
             <div className="flex justify-between items-center w-full">
-              <div className="px-1 flex items-center gap-1 flex-1 min-w-0">
+              <div
+                ref={toolbarStartRef}
+                className="px-1 flex items-center gap-1 flex-1 min-w-0"
+              >
+                {/* Sized to its controls, not the row: its width is what
+                    the model pill measures its room against. */}
                 <div
+                  ref={toolbarStartContentRef}
                   className={cn(
-                    'px-1 flex items-center w-full gap-1',
+                    'px-1 flex items-center w-max gap-1',
                     isStreaming && 'opacity-50 pointer-events-none'
                   )}
                 >
@@ -3425,10 +3485,12 @@ const ChatInput = memo(function ChatInput({
                     on, how hard it thinks — its panel holds the effort slider,
                     whose first stop switches thinking off, and leads into the
                     model list. */}
-                <DropdownModelProvider
-                  className="mb-1 mr-2"
-                  compact={compactComposer}
-                />
+                <div ref={modelPillSlotRef} className="flex shrink-0">
+                  <DropdownModelProvider
+                    className="mb-1 mr-2"
+                    compact={compactModelPill}
+                  />
+                </div>
 
                 {/* Beside Send, which is where users expect a microphone.
                     Note this cluster has no streaming guard of its own (the

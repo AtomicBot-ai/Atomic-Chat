@@ -383,12 +383,15 @@ describe('ChatInput', () => {
       send.querySelector('[data-test-id="send-message-button"]')
     ).toBeInTheDocument()
 
-    // One cluster on the right...
-    expect(model!.parentElement).toBe(send.parentElement)
+    // One cluster on the right, the pill in a slot of its own that the
+    // composer measures it by...
+    const slot = model!.parentElement!
+    expect(slot.childElementCount).toBe(1)
+    expect(slot.parentElement).toBe(send.parentElement)
     expect(mic!.parentElement).toBe(send.parentElement)
     // ...reading [model] [mic] [send], with nothing ahead of the pill: the
     // reasoning bulb is gone, thinking is switched off on the effort slider.
-    expect(send.parentElement!.firstElementChild).toBe(model)
+    expect(send.parentElement!.firstElementChild).toBe(slot)
     expect(
       model!.compareDocumentPosition(mic!) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy()

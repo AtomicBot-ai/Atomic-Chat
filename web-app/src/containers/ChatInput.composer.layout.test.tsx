@@ -35,16 +35,30 @@ vi.mock('@/containers/chatInput/useTauriDragDrop', () => ({
 vi.mock('@/lib/extension', () => ({
   ExtensionManager: { getInstance: () => ({ get: () => undefined }) },
 }))
-// A model pill as wide as a real one with a long name, and a microphone of
-// the real toggle's size: the reveal is measured against its neighbours.
+// A model pill as wide as the real shell, named or folded down to its mark,
+// and a microphone of the real toggle's size: the reveal is measured against
+// its neighbours.
 vi.mock('@/containers/DropdownModelProvider', () => ({
-  default: ({ className }: { className?: string }) => (
+  default: ({
+    className,
+    compact,
+  }: {
+    className?: string
+    compact?: boolean
+  }) => (
     <button
       data-testid="model-pill"
+      data-compact={compact ? 'true' : 'false'}
       className={className}
-      style={{ width: 180, height: 28, flexShrink: 0 }}
+      style={{
+        width: compact ? '5rem' : '10.5rem',
+        height: 28,
+        flexShrink: 0,
+        overflow: 'hidden',
+        whiteSpace: 'nowrap',
+      }}
     >
-      Qwen3.5 35B A3B Instruct
+      {compact ? null : 'Qwen3.5 35B A3B Instruct'}
     </button>
   ),
 }))
@@ -167,6 +181,93 @@ describe('Composer toolbar and Send reveal (Chromium)', () => {
       expect(pill.getBoundingClientRect().left).toBeCloseTo(pillBefore.left, 0)
     }
   )
+
+  // QA on 2.2.21: the New Chat composer at a 1024 px window, and the one
+  // beside open Run settings at 1228 px, folded the pill down to its mark with
+  // most of the toolbar empty. The widths are the composer's own there.
+  it.each(
+    [
+      { viewport: 1024, composer: 560 },
+      { viewport: 1228, composer: 531 },
+    ].flatMap((size) =>
+      ['16px', XL_FONT_SIZE].map((fontSize) => ({ ...size, fontSize }))
+    )
+  )(
+    'names the model while the toolbar has room: $composer px composer / $fontSize',
+    async ({ viewport, composer: width, fontSize }) => {
+      await page.viewport(viewport, 800)
+      setFontSize(fontSize)
+      motionPrefs.reduced = true
+      render(
+        withTranslations(
+          <div className="app-shell">
+            <div style={{ width }}>
+              <ChatInput />
+            </div>
+          </div>
+        )
+      )
+      await settle()
+
+      const composer = screen
+        .getByTestId('chat-input')
+        .closest<HTMLElement>('.border-input')!
+      const pill = screen.getByTestId('model-pill')
+      const access = screen.getByRole('button', { name: 'Restricted' })
+
+      expect(pill).toHaveAttribute('data-compact', 'false')
+      expect(pill).toHaveTextContent('Qwen3.5 35B A3B Instruct')
+      expect(pill.getBoundingClientRect().width).toBeCloseTo(168, 0)
+      expect(access.getBoundingClientRect().right).toBeLessThanOrEqual(
+        pill.getBoundingClientRect().left
+      )
+      expectNoHorizontalOverflow(composer)
+    }
+  )
+
+  it('folds the pill down only when the full pill would not fit', async () => {
+    await page.viewport(360, 800)
+    motionPrefs.reduced = true
+    renderComposer(360)
+    await settle()
+
+    const pill = screen.getByTestId('model-pill')
+    const access = screen.getByRole('button', { name: 'Restricted' })
+    expect(pill).toHaveAttribute('data-compact', 'true')
+    // Unfolding would push the pill 88 px into the controls on its left.
+    expect(
+      pill.getBoundingClientRect().left - access.getBoundingClientRect().right
+    ).toBeLessThan(88)
+  })
+
+  it('folds and unfolds the pill as the composer narrows and widens', async () => {
+    await page.viewport(1024, 800)
+    motionPrefs.reduced = true
+    render(
+      withTranslations(
+        <div className="app-shell">
+          <div data-testid="composer-column" style={{ width: 560 }}>
+            <ChatInput />
+          </div>
+        </div>
+      )
+    )
+    await settle()
+    const column = screen.getByTestId('composer-column')
+    const pill = screen.getByTestId('model-pill')
+    const resizeTo = async (width: number) => {
+      column.style.width = `${width}px`
+      await nextFrames()
+      await nextFrames()
+    }
+
+    expect(pill).toHaveAttribute('data-compact', 'false')
+    await resizeTo(300)
+    expect(pill).toHaveAttribute('data-compact', 'true')
+    await resizeTo(560)
+    expect(pill).toHaveAttribute('data-compact', 'false')
+    expect(pill.getBoundingClientRect().width).toBeCloseTo(168, 0)
+  })
 
   it('grows Send in from nothing over a quarter second', async () => {
     renderComposer(1280)
