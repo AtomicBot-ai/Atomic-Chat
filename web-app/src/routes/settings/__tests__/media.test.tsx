@@ -14,9 +14,6 @@ import {
 import type { ServiceHub } from '@/services'
 import { seedServiceHub } from '@/test/service-hub'
 
-vi.mock('@/containers/SettingsMenu', () => ({
-  default: () => <div data-testid="settings-menu" />,
-}))
 vi.mock('@/containers/HeaderPage', () => ({
   default: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="header-page">{children}</div>
@@ -143,7 +140,6 @@ describe('Media settings', () => {
   it('renders the page chrome with the media and image API cards', () => {
     render(<Component />)
     expect(screen.getByTestId('header-page')).toBeInTheDocument()
-    expect(screen.getByTestId('settings-menu')).toBeInTheDocument()
     expect(screen.getByText('settings:media.engineTitle')).toBeInTheDocument()
     expect(screen.getByText('settings:media.modelsTitle')).toBeInTheDocument()
     expect(screen.getByText('settings:media.outputTitle')).toBeInTheDocument()

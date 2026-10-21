@@ -78,10 +78,10 @@
   "auto": "Otomatis",
   "english": "Inggris",
   "medium": "Sedang",
-  "newThread": "Utas Baru",
+  "newThread": "Obrolan Baru",
   "noResultsFound": "Tidak ada hasil yang ditemukan",
-  "noThreadsYet": "Belum ada utas",
-  "noThreadsYetDesc": "Mulai percakapan baru untuk melihat riwayat utas Anda di sini.",
+  "noThreadsYet": "Belum ada obrolan",
+  "noThreadsYetDesc": "Mulai percakapan baru untuk melihat riwayat obrolan Anda di sini.",
   "downloads": "Unduhan",
   "downloading": "Mengunduh",
   "cancelDownload": "Batalkan unduhan",
@@ -109,15 +109,15 @@
   "jan": "Atomic Bot",
   "metadata": "Metadata",
   "regenerate": "Hasilkan Ulang",
-  "threadImage": "Gambar utas",
+  "threadImage": "Gambar obrolan",
   "editMessage": "Edit Pesan",
   "deleteMessage": "Hapus Pesan",
-  "deleteThread": "Hapus Utas",
-  "renameThread": "Ubah Nama Utas",
-  "threadTitle": "Judul Utas",
-  "deleteAllThreads": "Hapus Semua Utas",
-  "allThreadsUnfavorited": "Semua Utas Batal Difavoritkan",
-  "deleteAllThreadsConfirm": "Apakah Anda yakin ingin menghapus semua utas? Tindakan ini tidak dapat dibatalkan.",
+  "deleteThread": "Hapus Obrolan",
+  "renameThread": "Ubah Nama Obrolan",
+  "threadTitle": "Judul Obrolan",
+  "deleteAllThreads": "Hapus Semua Obrolan",
+  "allThreadsUnfavorited": "Semua Obrolan Batal Difavoritkan",
+  "deleteAllThreadsConfirm": "Apakah Anda yakin ingin menghapus semua obrolan? Tindakan ini tidak dapat dibatalkan.",
   "addProvider": "Tambah Penyedia",
   "addOpenAIProvider": "Tambah Penyedia OpenAI",
   "enterNameForProvider": "Masukkan nama untuk penyedia Anda",
@@ -242,11 +242,11 @@
       "changeLocation": "Ubah Lokasi"
     },
     "deleteAllThreads": {
-      "title": "Hapus Semua Utas",
-      "description": "Semua utas akan dihapus. Tindakan ini tidak dapat dibatalkan."
+      "title": "Hapus Semua Obrolan",
+      "description": "Semua obrolan akan dihapus. Tindakan ini tidak dapat dibatalkan."
     },
     "deleteThread": {
-      "description": "Apakah Anda yakin ingin menghapus thread ini? Tindakan ini tidak dapat dibatalkan."
+      "description": "Apakah Anda yakin ingin menghapus obrolan ini? Tindakan ini tidak dapat dibatalkan."
     },
     "messageMetadata": {
       "title": "Metadata Pesan"
@@ -254,20 +254,20 @@
   },
   "toast": {
     "allThreadsUnfavorited": {
-      "title": "Semua Utas Batal Difavoritkan",
-      "description": "Semua utas telah dihapus dari favorit Anda."
+      "title": "Semua Obrolan Batal Difavoritkan",
+      "description": "Semua obrolan telah dihapus dari favorit Anda."
     },
     "deleteAllThreads": {
-      "title": "Hapus Semua Utas",
-      "description": "Semua utas telah dihapus secara permanen."
+      "title": "Hapus Semua Obrolan",
+      "description": "Semua obrolan telah dihapus secara permanen."
     },
     "renameThread": {
-      "title": "Ubah Nama Utas",
-      "description": "Judul utas telah diubah menjadi '{{title}}'"
+      "title": "Ubah Nama Obrolan",
+      "description": "Judul obrolan telah diubah menjadi '{{title}}'"
     },
     "deleteThread": {
-      "title": "Hapus Utas",
-      "description": "Utas ini telah dihapus secara permanen."
+      "title": "Hapus Obrolan",
+      "description": "Obrolan ini telah dihapus secara permanen."
     },
     "editMessage": {
       "title": "Edit Pesan",
@@ -326,12 +326,12 @@
       "description": "Gagal menghapus proyek. Silakan coba lagi."
     },
     "threadAssignedToProject": {
-      "title": "Thread Ditugaskan",
-      "description": "Thread berhasil ditugaskan ke \"{{projectName}}\""
+      "title": "Obrolan Ditugaskan",
+      "description": "Obrolan berhasil ditugaskan ke \"{{projectName}}\""
     },
     "threadRemovedFromProject": {
-      "title": "Thread Dihapus",
-      "description": "Thread berhasil dihapus dari \"{{projectName}}\""
+      "title": "Obrolan Dihapus",
+      "description": "Obrolan berhasil dihapus dari \"{{projectName}}\""
     }
   },
   "projects": {
@@ -352,11 +352,11 @@
     "projectNotFoundDesc": "Proyek yang Anda cari tidak ada atau telah dihapus.",
     "deleteProjectDialog": {
       "title": "Hapus Proyek",
-      "permanentDelete": "Ini akan menghapus semua utas secara permanen.",
-      "permanentDeleteWarning": "Tindakan ini akan menghapus SEMUA utas dalam proyek secara permanen!",
+      "permanentDelete": "Ini akan menghapus semua obrolan secara permanen.",
+      "permanentDeleteWarning": "Tindakan ini akan menghapus SEMUA obrolan dalam proyek secara permanen!",
       "deleteEmptyProject": "Tindakan ini akan menghapus proyek \"{{projectName}}\".",
-      "saveThreadsAdvice": "Untuk menyimpan utas, pindahkan ke daftar utas Anda atau proyek lain sebelum menghapus.",
-      "starredWarning": "Anda masih memiliki utas yang dibintangi dalam proyek.",
+      "saveThreadsAdvice": "Untuk menyimpan obrolan, pindahkan ke daftar obrolan Anda atau proyek lain sebelum menghapus.",
+      "starredWarning": "Anda masih memiliki obrolan yang dibintangi dalam proyek.",
       "description": "Apakah Anda yakin ingin menghapus proyek ini? Tindakan ini tidak dapat dibatalkan.",
       "deleteButton": "Hapus",
       "successWithName": "Proyek \"{{projectName}}\" berhasil dihapus",
@@ -376,11 +376,11 @@
       "renameSuccess": "Proyek diubah dari \"{{oldName}}\" menjadi \"{{newName}}\""
     },
     "noConversationsIn": "Tidak Ada Percakapan di {{projectName}}",
-    "startNewConversation": "Mulai percakapan baru dengan {{projectName}} di bawah",
+    "startNewConversation": "Ketik pesan di atas untuk memulai percakapan di {{projectName}}.",
     "conversationsIn": "Percakapan di {{projectName}}",
     "conversationsDescription": "Klik percakapan mana pun untuk melanjutkan chatting, atau mulai yang baru di bawah.",
-    "thread": "utas",
-    "threads": "utas",
+    "thread": "obrolan",
+    "threads": "obrolan",
     "updated": "Diperbarui:",
     "collapseProject": "Tutup proyek",
     "expandProject": "Buka proyek",

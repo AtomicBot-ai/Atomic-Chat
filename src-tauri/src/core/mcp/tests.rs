@@ -815,3 +815,75 @@ async fn bundled_search_is_discoverable_after_exa_startup_403() {
     assert_eq!(fetch.description.as_deref(), Some("Read webpages"));
     assert_eq!(fetch.input_schema["required"], serde_json::json!(["urls"]));
 }
+
+/// A secure project's chat reaches only the MCP servers its project lists:
+/// named or discovered by tool, the rest are refused before any server is
+/// asked — the bundled web search included. Calls without a thread are not
+/// affected.
+#[tokio::test]
+async fn a_secure_projects_chat_calls_only_the_servers_it_allows() {
+    use crate::core::secure_env::{save, SecureEnvironment};
+
+    let data = tempfile::tempdir().unwrap();
+    let app = mock_app();
+    app.manage(AppState::default());
+    app.manage(crate::test_support::TestDataRoot(data.path().to_path_buf()));
+    save(
+        data.path(),
+        "secure-project",
+        Some(SecureEnvironment {
+            folders: Vec::new(),
+            network: true,
+            allowed_mcp_servers: vec!["notion".into()],
+        }),
+    )
+    .unwrap();
+    let thread_dir = data.path().join("threads").join("secure-thread");
+    std::fs::create_dir_all(&thread_dir).unwrap();
+    std::fs::write(
+        thread_dir.join("thread.json"),
+        serde_json::json!({ "id": "secure-thread", "metadata": { "project": { "id": "secure-project" } } })
+            .to_string(),
+    )
+    .unwrap();
+    app.state::<AppState>()
+        .mcp_active_servers
+        .lock()
+        .await
+        .insert(
+            "exa".into(),
+            serde_json::json!({ "type": "http", "url": "https://mcp.exa.ai/mcp", "active": true }),
+        );
+
+    let call = |tool: &str, server: Option<&str>, thread: Option<&str>| {
+        super::commands::call_tool(
+            app.handle().clone(),
+            app.state::<AppState>(),
+            tool.into(),
+            server.map(Into::into),
+            None,
+            None,
+            thread.map(Into::into),
+        )
+    };
+
+    let named = call("web_search_exa", Some("exa"), Some("secure-thread"))
+        .await
+        .unwrap_err();
+    assert!(named.contains("secure environment project"), "{named}");
+    let discovered = call("web_search_exa", None, Some("secure-thread"))
+        .await
+        .unwrap_err();
+    assert!(
+        discovered.contains("secure environment project"),
+        "{discovered}"
+    );
+
+    // An allowed server is looked up as before (it is not connected here).
+    let allowed = call("search", Some("notion"), Some("secure-thread"))
+        .await
+        .unwrap_err();
+    assert_eq!(allowed, "Server 'notion' not found");
+    let unrestricted = call("search", None, None).await.unwrap_err();
+    assert_eq!(unrestricted, "Tool search not found");
+}

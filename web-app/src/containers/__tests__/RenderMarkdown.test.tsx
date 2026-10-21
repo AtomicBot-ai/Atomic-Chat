@@ -51,6 +51,47 @@ describe('RenderMarkdown', () => {
     ).toHaveTextContent('** fenced **')
   })
 
+  // QA on 2.2.21: the short reply showed its backticks while the long one
+  // rendered a chip. Both are what an assistant turn stores after a tool call.
+  it.each([
+    [
+      'The output is `atomic-qa-ok`.',
+      'atomic-qa-ok',
+      'The output is atomic-qa-ok.',
+    ],
+    [
+      'Готово! Файл `пример.txt` создан на вашем рабочем столе. В нём содержится текст: "Это пример файла.".',
+      'пример.txt',
+      'Готово! Файл пример.txt создан на вашем рабочем столе. В нём содержится текст: "Это пример файла.".',
+    ],
+  ])('renders inline code as a chip in %j', (content, code, text) => {
+    const { container } = render(
+      <RenderMarkdown content={content} enableHtmlPreview />
+    )
+
+    const chip = container.querySelector('[data-streamdown="inline-code"]')
+    expect(chip?.tagName).toBe('CODE')
+    expect(chip).toHaveTextContent(code)
+    expect(container.querySelector('.markdown')).toHaveTextContent(text)
+    expect(container.querySelector('.markdown')).not.toHaveTextContent('`')
+  })
+
+  it.each([
+    ['*fine*', 'em'],
+    ['_fine_', 'em'],
+    ['~~gone~~', 'del'],
+    ['[docs](#docs)', 'a'],
+    ['# Done', 'h1'],
+    ['- one\n- two', 'li'],
+  ])(
+    'renders short Markdown %j instead of showing its syntax',
+    (content, tag) => {
+      const { container } = render(<RenderMarkdown content={content} />)
+
+      expect(container.querySelector(tag)).toBeInTheDocument()
+    }
+  )
+
   it('turns bare URLs into visibly styled links', () => {
     const { container } = render(
       <RenderMarkdown

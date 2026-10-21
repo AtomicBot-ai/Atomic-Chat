@@ -19,33 +19,6 @@ vi.mock('sonner', () => ({
   },
 }))
 
-vi.mock('@/containers/SettingsMenu', () => ({ default: () => <div /> }))
-vi.mock('@/containers/HeaderPage', () => ({
-  default: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-}))
-vi.mock('@/containers/Card', () => ({
-  Card: ({ header, children }: { header?: React.ReactNode; children: React.ReactNode }) => (
-    <div>
-      {header}
-      {children}
-    </div>
-  ),
-  CardItem: ({
-    title,
-    description,
-    actions,
-  }: {
-    title?: React.ReactNode
-    description?: React.ReactNode
-    actions?: React.ReactNode
-  }) => (
-    <div>
-      {title}
-      {description}
-      {actions}
-    </div>
-  ),
-}))
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }))
@@ -66,6 +39,61 @@ const clickTest = async () => {
   const user = userEvent.setup()
   await user.click(screen.getByText('settings:httpsProxy.test'))
 }
+
+// QA 2.2.21: the page sat in the Server section under the old settings header, which read
+// "Settings", while every other Server page names itself in the section's title block.
+describe('HTTPS proxy page', () => {
+  beforeEach(() => {
+    useProxyConfig.setState({
+      proxyEnabled: false,
+      proxyUrl: '',
+      proxyUsername: '',
+      proxyPassword: '',
+      proxyIgnoreSSL: false,
+      noProxy: '',
+    })
+  })
+
+  it('is titled HTTPS Proxy in the Server section title block', () => {
+    renderPage()
+
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'common:https_proxy' })
+    ).toBeInTheDocument()
+    expect(screen.queryByText('common:settings')).not.toBeInTheDocument()
+  })
+
+  it('keeps every proxy setting on the page, wired to the proxy config', async () => {
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(
+      screen.getByRole('checkbox', { name: 'settings:httpsProxy.proxy' })
+    )
+    await user.type(
+      screen.getByLabelText('settings:httpsProxy.proxyUrl'),
+      'http://proxy:8080'
+    )
+    await user.type(screen.getByLabelText('settings:httpsProxy.username'), 'u')
+    await user.type(screen.getByLabelText('settings:httpsProxy.password'), 'p')
+    await user.type(
+      screen.getByLabelText('settings:httpsProxy.noProxy'),
+      'localhost'
+    )
+    await user.click(
+      screen.getByRole('checkbox', { name: 'settings:httpsProxy.ignoreSsl' })
+    )
+
+    expect(useProxyConfig.getState()).toMatchObject({
+      proxyEnabled: true,
+      proxyUrl: 'http://proxy:8080',
+      proxyUsername: 'u',
+      proxyPassword: 'p',
+      noProxy: 'localhost',
+      proxyIgnoreSSL: true,
+    })
+  })
+})
 
 /**
  * ATO — #290/#289: `validate_proxy_config` only ever checked URL syntax, so a

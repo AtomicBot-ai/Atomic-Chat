@@ -3,10 +3,6 @@ import { render, screen } from '@testing-library/react'
 import { Route as ExtensionsRoute } from '../extensions'
 
 // Mock dependencies
-vi.mock('@/containers/SettingsMenu', () => ({
-  default: () => <div data-testid="settings-menu">Settings Menu</div>,
-}))
-
 vi.mock('@/containers/HeaderPage', () => ({
   default: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="header-page">{children}</div>
@@ -92,7 +88,6 @@ describe('Extensions Settings Route', () => {
     render(<Component />)
 
     expect(screen.getByTestId('header-page')).toBeInTheDocument()
-    expect(screen.getByTestId('settings-menu')).toBeInTheDocument()
     expect(screen.getByText('common:settings')).toBeInTheDocument()
   })
 
@@ -170,9 +165,6 @@ describe('Extensions Settings Route', () => {
 
     const headerPage = screen.getByTestId('header-page')
     expect(headerPage).toBeInTheDocument()
-    
-    const settingsMenu = screen.getByTestId('settings-menu')
-    expect(settingsMenu).toBeInTheDocument()
   })
 
   it('should render card items with proper structure', () => {
@@ -223,7 +215,10 @@ describe('Extensions Settings Route', () => {
     const Component = ExtensionsRoute.component as React.ComponentType
     render(<Component />)
 
-    const settingsContent = screen.getByTestId('settings-menu').nextElementSibling
+    // Settings navigation lives in the app sidebar, so the content area is
+    // the only column under the header.
+    const settingsContent =
+      screen.getByTestId('header-page').nextElementSibling?.firstElementChild
     expect(settingsContent).toHaveClass('p-4', 'pt-0', 'w-full', 'overflow-y-auto')
   })
 })

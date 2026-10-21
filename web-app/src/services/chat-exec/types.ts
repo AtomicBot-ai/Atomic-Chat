@@ -59,7 +59,7 @@ export type ChatExecResult = {
   timedOut: boolean
   cancelled: boolean
   sandbox: ChatExecSandboxKind
-  /** The chat's folder the call ran in. */
+  /** The folder the call ran in: the chat's own, or a secure project's first editable folder. */
   workdir: string
   durationMs: number
   /** A refusal the OS made, explained for the model (macOS privacy, the Windows sandbox). */
@@ -75,9 +75,39 @@ export const UNSUPPORTED_CHAT_EXEC_STATUS: ChatExecStatus = {
   userFolders: [],
 }
 
+/** A folder a secure environment project's commands may reach. */
+export type SecureFolder = {
+  /** Absolute, as the folder picker returned it. */
+  path: string
+  canEdit: boolean
+}
+
+/**
+ * A secure environment project: its chats' commands reach only these folders
+ * (and the chat's own scratch folder), the network only when `network`, and
+ * only the listed MCP servers.
+ * Mirrors `src-tauri/src/core/secure_env`, which enforces it.
+ */
+export type SecureEnvironment = {
+  folders: SecureFolder[]
+  network: boolean
+  /**
+   * MCP servers (their `mcp_config.json` keys) the project's chats may use.
+   * Every other server is off there; these run outside the sandbox.
+   */
+  allowedMcpServers: string[]
+}
+
 export interface ChatExecService {
   status(): Promise<ChatExecStatus>
   run(request: ChatExecRequest): Promise<ChatExecResult>
   /** `false` when the call is not running (any more). */
   cancel(callId: string): Promise<boolean>
+  /** Every secure environment project's policy, by project id. */
+  secureEnvironments(): Promise<Record<string, SecureEnvironment>>
+  /** Set a project's policy; `null` makes it an ordinary project again. */
+  setSecureEnvironment(
+    projectId: string,
+    environment: SecureEnvironment | null
+  ): Promise<void>
 }

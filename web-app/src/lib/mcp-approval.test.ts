@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { useChatExecStatus } from '@/hooks/useChatExecStatus'
-import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useToolApproval } from '@/hooks/useToolApproval'
 import {
   approveChatToolCall,
@@ -55,7 +54,6 @@ describe('approveChatToolCall', () => {
       allowAllMCPPermissions: true,
       showApprovalModal,
     })
-    useGeneralSetting.setState({ chatExecEnabled: true })
     useChatExecStatus.setState({
       status: {
         supported: true,
@@ -99,7 +97,7 @@ describe('approveChatToolCall', () => {
   })
 
   it('treats a same-named MCP tool as MCP while chat offers no commands', async () => {
-    useGeneralSetting.setState({ chatExecEnabled: false })
+    useChatExecStatus.setState({ status: null })
 
     await expect(approveChatToolCall('run_command', 't1', {})).resolves.toBe(
       true

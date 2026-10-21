@@ -53,7 +53,7 @@
   },
   "others": {
     "spellCheck": "Pemeriksaan Ejaan",
-    "spellCheckDesc": "Aktifkan pemeriksaan ejaan untuk utas Anda.",
+    "spellCheckDesc": "Aktifkan pemeriksaan ejaan untuk obrolan Anda.",
     "resetFactory": "Setel Ulang ke Pengaturan Pabrik",
     "resetFactoryDesc": "Kembalikan aplikasi ke keadaan semula, menghapus semua model dan riwayat obrolan. Tindakan ini tidak dapat diurungkan dan hanya disarankan jika aplikasi rusak."
   },
@@ -96,7 +96,7 @@
   "interface": {
     "title": "Tampilan",
     "theme": "Tema",
-    "themeDesc": "Sesuaikan dengan tema OS.",
+    "themeDesc": "Pilih terang, gelap, atau ikuti OS.",
     "fontSize": "Ukuran Font",
     "fontSizeDesc": "Sesuaikan ukuran font aplikasi.",
     "windowBackground": "Latar Belakang Jendela",

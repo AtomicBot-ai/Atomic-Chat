@@ -8,7 +8,11 @@
 
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { deleteLocalModel } from '@/lib/model-deletion'
-import { planPrismSetup, PRISM_PROVIDER } from '@/lib/model-setup'
+import {
+  planPrismSetup,
+  prismCatalogRequest,
+  PRISM_PROVIDER,
+} from '@/lib/model-setup'
 import type { ServiceHub } from '@/services'
 import { sanitizeTaskId } from '@/services/diffusion/transfer'
 import { getDownloadFreeSpace } from '@/services/models/downloadPreflight'
@@ -17,25 +21,28 @@ import {
   followCoreDownload,
 } from '@/services/engine-builds/install'
 
-import type {
-  CompatibilityVerdict,
-  ModelSetupService,
-  PrismPack,
-  PrismSetupPlan,
-  PrismSetupRequest,
+import {
+  BACKEND_BUILD_UNAVAILABLE,
+  type CompatibilityVerdict,
+  type CoreCallError,
+  type ModelSetupService,
+  type PrismPack,
+  type PrismSetupPlan,
+  type PrismSetupRequest,
 } from './types'
 
 /**
  * The plan for one file, from what the core knows now: its verdict (the conf
  * rules and the file's remote header, as the core's own setup read it), the
- * Bonsai families, the PrismML catalog and the free space. Asked afresh every
- * time, so a plan is never older than the sheet that shows it.
+ * Bonsai families, the PrismML catalog asked with the verdict's requirements
+ * (so the build is the core's pick for this file) and the free space. Asked
+ * afresh every time, so a plan is never older than the sheet that shows it.
  */
 export async function loadPrismSetupPlan(
   service: ModelSetupService,
   request: PrismSetupRequest
 ): Promise<PrismSetupPlan> {
-  const [verdict, families, catalog, freeBytes, space] = await Promise.all([
+  const [verdict, families, freeBytes, space] = await Promise.all([
     service.checkCompatibility({
       repo: request.repo,
       file: request.file,
@@ -43,10 +50,17 @@ export async function loadPrismSetupPlan(
       inspect_remote: true,
     }),
     service.families(),
-    service.prismCatalog(),
     service.diskAvailable().catch(() => null),
     getDownloadFreeSpace(),
   ])
+  // After the verdict: the catalog's pick depends on what the file requires.
+  const catalog = await service
+    .prismCatalog(prismCatalogRequest(verdict))
+    .catch((error: unknown) => {
+      if ((error as CoreCallError | null)?.code === BACKEND_BUILD_UNAVAILABLE)
+        return null
+      throw error
+    })
   return planPrismSetup({
     request,
     verdict,

@@ -10,21 +10,28 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { chooseFromMenu, pageShows, pageText, pickModel, send, waitForChat } from '../harness/chat.js'
+import { pageShows, pageText, pickModel, send, waitForChat } from '../harness/chat.js'
 import { coreRequest } from '../harness/core.js'
 import { startFakeCloud, type FakeCloud } from '../harness/fixtures.js'
 import { CAN_RUN_FAKE_BACKEND } from '../harness/platform.js'
 import { endSession, startSession, withArtifacts, type Session } from '../harness/session.js'
+import { openSection, openServerConnections, openSidebarRow, startNewChat, waitForServerPower } from '../harness/navigation.js'
 
 const PROVIDER_NAME = 'e2e-cloud'
+/** How the page titles a provider it does not know: the name, capitalised. */
+const PROVIDER_TITLE = 'E2e-cloud'
 const MODEL = 'e2e-cloud-model'
 const REPLY = 'ATOMIC-E2E-CLOUD 3fa9'
 const API_KEY = 'e2e-cloud-key-7d1c'
 const LOCAL_API_KEY = 'e2e-local-api-key'
 
-/** The input of the settings row whose title a user reads. */
-const rowInput = (title: string) =>
-  `//*[normalize-space(text())="${title}"]/ancestor::*[.//input][1]//input`
+/** The input of the dialog field whose label a user reads. */
+const fieldInput = (label: string) =>
+  `//label[starts-with(normalize-space(.), "${label}")]//input`
+
+/** A button inside the Custom Endpoint card of `provider`. */
+const endpointButton = (provider: string, text: string) =>
+  `//article[@aria-label="${provider}"]//button[normalize-space(.)="${text}"]`
 
 describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a cloud provider added in the UI', () => {
   let session: Session
@@ -52,35 +59,32 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a cloud provider added in the UI', () =>
       await browser.$('button=Skip').click()
       await waitForChat(session)
 
-      await browser.$('//*[normalize-space(text())="Cloud"]').click()
-      await chooseFromMenu(session, '[data-test-id="cloud-provider-select"]', 'Custom (OpenAI-compatible)')
-      await browser.$('input[placeholder="Enter name for provider"]').setValue(PROVIDER_NAME)
-      await browser.$('button=Create').click()
+      // A server of one's own is added on Custom Endpoint: a name, its
+      // address and its key, in one dialog.
+      await openSection(browser, 'models')
+      await openSidebarRow(browser, 'Custom Endpoint')
+      await browser.$('button=Add New Endpoint').click()
+      await browser.$(fieldInput('Name')).waitForDisplayed({ timeout: 30_000 })
+      await browser.$(fieldInput('Name')).setValue(PROVIDER_NAME)
+      await browser.$(fieldInput('Base URL')).setValue(cloud.baseUrl)
+      expect(await browser.$(fieldInput('Base URL')).getValue()).toBe(cloud.baseUrl)
+      await browser.$(fieldInput('API key')).setValue(API_KEY)
+      await browser.$('button=Save endpoint').click()
 
-      await browser.$(rowInput('Base URL')).waitForDisplayed({ timeout: 30_000 })
-      await browser.$(rowInput('Base URL')).setValue(cloud.baseUrl)
-      expect(await browser.$(rowInput('Base URL')).getValue()).toBe(cloud.baseUrl)
-      await browser.$(rowInput('API key')).setValue(API_KEY)
-      await browser.$('button=Connect').click()
-      await pageShows(session, 'Connected', 30_000)
-
-      // Connecting already asked the provider for its models, with the key.
+      // Saving asked the provider for its models, with the key, and kept the
+      // one it lists.
       await expect
         .poll(() => cloud.requests(), { timeout: 30_000 })
         .toContainEqual({ method: 'GET', path: '/v1/models', authorization: `Bearer ${API_KEY}`, status: 200 })
+      await pageShows(session, 'Connected · 1 model', 30_000)
 
-      // The model is added by hand, the way the page offers for a provider of
-      // one's own. "Reload models" cannot be used here: it refreshes the provider
-      // registry first and gives up when that is unreachable, which it is in an
-      // e2e build by design — before it ever asks the provider itself.
-      await browser
-        .$('//button[normalize-space(.)="Reload models" or normalize-space(.)="Refreshing..."]/following-sibling::button[1]')
-        .click()
-      await browser.$('input[placeholder="Enter model ID"]').setValue(MODEL)
-      await browser.$('button=Add Model').click()
-      await pageShows(session, '1 model', 15_000)
+      // Ping asks the same listing once more and reports how it answered.
+      const listings = cloud.requests().filter((r) => r.path === '/v1/models').length
+      await browser.$(endpointButton(PROVIDER_TITLE, 'Ping')).click()
+      await pageShows(session, 'Ping successful', 15_000)
+      expect(cloud.requests().filter((r) => r.path === '/v1/models')).toHaveLength(listings + 1)
 
-      await browser.$('//*[normalize-space(text())="New Chat"]').click()
+      await startNewChat(browser)
       await waitForChat(session)
       await pickModel(session, MODEL)
       await send(session, 'hello, cloud')
@@ -114,8 +118,8 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a cloud provider added in the UI', () =>
       // Nobody started the server: auto-start is off in this profile. The chat
       // above did, because the app itself reaches a cloud provider through the
       // core's local API — which is what makes that chat a test of the core.
-      await browser.$('a=API').click()
-      await browser.$('button=Stop server').waitForDisplayed({ timeout: 60_000 })
+      await openServerConnections(browser)
+      await waitForServerPower(browser, 'Stop')
       await pageShows(session, 'Ready', 15_000)
       const localApi = `http://127.0.0.1:${session.apiPort}/v1`
       const local = { authorization: `Bearer ${LOCAL_API_KEY}`, 'content-type': 'application/json' }

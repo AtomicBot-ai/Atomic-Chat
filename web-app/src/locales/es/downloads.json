@@ -1,0 +1,12 @@
+{
+  "kind": {
+    "partial": "descarga incompleta",
+    "draft": "modelo borrador para decodificación especulativa"
+  },
+  "blocked": {
+    "draftInUse": "La decodificación especulativa de MLX está activada. Desactívala en los ajustes del motor MLX para eliminar los modelos borrador."
+  },
+  "error": {
+    "downloadActive": "Esta descarga está en curso o en pausa. Cancélala primero."
+  }
+}

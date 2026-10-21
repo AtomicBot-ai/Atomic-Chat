@@ -108,7 +108,8 @@ pub struct ChatExecResult {
     pub timed_out: bool,
     pub cancelled: bool,
     pub sandbox: SandboxKind,
-    /// The chat's folder the command ran in.
+    /// The folder the command ran in: the chat's own, or a secure project's
+    /// first editable folder.
     pub workdir: String,
     pub duration_ms: u64,
     /// What the model should know about a failure the OS caused (a macOS

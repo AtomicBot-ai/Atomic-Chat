@@ -273,6 +273,93 @@ describe('loadPrismSetupPlan', () => {
     })
   })
 
+  /** A service answering an `engine_required` verdict for a file that needs `pq2_0`. */
+  const needsPq2 = (prismCatalog: DefaultModelSetupService['prismCatalog']) =>
+    new (class extends DefaultModelSetupService {
+      override checkCompatibility = vi.fn(async () => ({
+        ...verdict('engine_required'),
+        requires: ['pq2_0'],
+        min_prism_build: 9100,
+      }))
+      override families = vi.fn(async () => ({
+        rules_version: 1,
+        families: [],
+      }))
+      override prismCatalog = vi.fn(prismCatalog)
+      override diskAvailable = vi.fn(async () => 1_000_000)
+    })()
+  const bonsai = {
+    repo: 'prism-ml/Bonsai-8B-gguf',
+    file: 'Bonsai-8B-PQ2_0.gguf',
+    model_id: 'prism-ml/Bonsai-8B-PQ2_0',
+    include_projector: true,
+  }
+
+  it("asks the catalog for a build that fits the verdict's requirements and takes the core's pick", async () => {
+    const service = needsPq2(async () => ({
+      installed: [],
+      available: [
+        { version: 'prism-b9200-aaaaaaa', backend: 'macos-arm64' },
+        { version: 'prism-b9100-1234567', backend: 'macos-arm64' },
+      ],
+      recommended: 'prism-b9100-1234567/macos-arm64',
+    }))
+
+    const loaded = await loadPrismSetupPlan(service, bonsai)
+
+    expect(service.prismCatalog).toHaveBeenCalledWith({
+      requires: ['pq2_0'],
+      min_build: 9100,
+    })
+    expect(loaded.engine).toMatchObject({ version: 'prism-b9100-1234567' })
+    expect(loaded.blockers).toEqual([])
+  })
+
+  it('is blocked when the core has no build for the file', async () => {
+    const service = needsPq2(async () => {
+      throw {
+        code: 'BACKEND_BUILD_UNAVAILABLE',
+        message: 'No engine build this machine can run meets the model file',
+        details: '{"requires":["pq2_0"],"min_build":9100}',
+      }
+    })
+
+    const loaded = await loadPrismSetupPlan(service, bonsai)
+
+    expect(loaded.engine).toBeNull()
+    expect(loaded.blockers).toEqual([{ code: 'no_engine_build' }])
+  })
+
+  it('passes on any other refusal of the catalog', async () => {
+    const offline = { code: 'CORE_UNREACHABLE', message: 'No core' }
+    const service = needsPq2(async () => {
+      throw offline
+    })
+
+    await expect(loadPrismSetupPlan(service, bonsai)).rejects.toBe(offline)
+  })
+
+  it('asks the catalog for no requirements when PrismML already runs the file', async () => {
+    class Service extends DefaultModelSetupService {
+      override checkCompatibility = vi.fn(async () => verdict('compatible'))
+      override families = vi.fn(async () => ({ rules_version: 1, families: [] }))
+      override prismCatalog = vi.fn(async () => ({
+        installed: [],
+        available: [],
+        recommended: null,
+      }))
+      override diskAvailable = vi.fn(async () => null)
+    }
+    const service = new Service()
+
+    const loaded = await loadPrismSetupPlan(service, bonsai)
+
+    expect(service.prismCatalog).toHaveBeenCalledWith({})
+    // Nothing to install for a file PrismML runs: no build, and nothing blocks it.
+    expect(loaded.engine).toBeNull()
+    expect(loaded.blockers).toEqual([])
+  })
+
   it('plans without the free space when the core cannot say', async () => {
     class Service extends DefaultModelSetupService {
       override checkCompatibility = vi.fn(async () => verdict('compatible'))

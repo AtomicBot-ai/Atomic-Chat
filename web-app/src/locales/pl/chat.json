@@ -7,6 +7,13 @@
   "sendMessage": "Wyślij Wiadomość",
   "newConversation": "Nowa Rozmowa",
   "clearHistory": "Wyczyść Historię",
+  "activity": {
+    "completedActions": "Ukończone działania: {{count}}",
+    "completedActions_one": "Ukończono {{count}} działanie",
+    "completedActions_few": "Ukończono {{count}} działania",
+    "completedActions_many": "Ukończono {{count}} działań",
+    "completedActions_other": "Ukończono {{count}} działania"
+  },
   "temporaryChat": "Tymczasowy Czat",
   "temporaryChatDescription": "Rozpocznij tymczasową rozmowę, która nie zostanie zapisana w historii czatów.",
   "agentMode": {

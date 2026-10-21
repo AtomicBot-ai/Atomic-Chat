@@ -625,5 +625,40 @@
     "installing": "Installing…",
     "installFailed": "Could not install the engine: {{error}}",
     "findModels": "Bonsai models"
+  },
+  "overview": {
+    "language": "Language models",
+    "media": "Media models",
+    "voice": "Voice models",
+    "modelCountOne": "1 model",
+    "modelCountOther": "{{count}} models",
+    "build": "Build {{version}}",
+    "mediaDescription": "Images and videos",
+    "voiceDescription": "{{model}} · speech recognition",
+    "enable": "Turn {{name}} on or off",
+    "status": {
+      "disabled": "Disabled"
+    },
+    "updateStatus": {
+      "updating": "Updating…",
+      "available": "Update available",
+      "upToDate": "Up to date",
+      "notInstalled": "Not installed",
+      "noActiveBuild": "No active build"
+    },
+    "update": "Update",
+    "updateEngine": "Update {{name}}",
+    "updateFailed": "Could not update the engine",
+    "checkForUpdates": "Check for updates",
+    "checkFailed": "Could not check for engine updates",
+    "allUpToDate": "All engines are up to date",
+    "updatesFound": "Engines with an update: {{count}}",
+    "expandSettings": "Show {{name}} settings",
+    "collapseSettings": "Hide {{name}} settings",
+    "settingsOf": "{{name}} settings",
+    "engineEnabled": "Engine enabled",
+    "installedModels": "Installed models: {{models}}",
+    "noModels": "none",
+    "openEnginePage": "Models and all settings"
   }
 }

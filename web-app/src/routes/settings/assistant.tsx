@@ -11,7 +11,6 @@ import { DeleteAssistantDialog } from '@/containers/dialogs'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { Button } from '@/components/ui/button'
-import SettingsMenu from '@/containers/SettingsMenu'
 import { cn } from '@/lib/utils'
 import { Card, CardItem } from '@/containers/Card'
 import {
@@ -85,7 +84,6 @@ function AssistantContent() {
       </HeaderPage>
       <div className="flex h-[calc(100%-60px)]">
         <div className="flex size-full">
-          <SettingsMenu />
           <div className="flex flex-col gap-4 p-4 pt-4 w-full overflow-y-auto">
             {/* Default Assistant */}
             <Card>

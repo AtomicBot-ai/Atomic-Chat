@@ -120,7 +120,7 @@ export function RouteRow({
       <Button
         type="button"
         variant={textAction ? 'link' : primary ? 'default' : 'secondary'}
-        size="sm"
+        size={iconAction ? 'icon-sm' : 'sm'}
         aria-label={label}
         disabled={disabled}
         onClick={onClick}
@@ -130,7 +130,7 @@ export function RouteRow({
             : ROUTE_ROW_ACTION_CLASS,
           textAction &&
             'h-auto border-0 bg-transparent px-2 font-normal text-muted-foreground shadow-none hover:bg-transparent hover:text-foreground hover:underline underline-offset-4',
-          iconAction && 'size-8 min-w-8 rounded-full px-0',
+          iconAction && 'min-w-0 rounded-full px-0',
           !primary && !textAction && ROUTE_ROW_BUTTON_HOVER
         )}
       >

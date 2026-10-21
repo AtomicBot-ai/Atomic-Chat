@@ -96,6 +96,25 @@ describe('TauriModelSetupService commands', () => {
       },
     ])
   })
+
+  it("sends the catalog the file's requirements with the app's own fields", async () => {
+    const service = new TauriModelSetupService()
+
+    await service.prismCatalog({ requires: ['pq2_0'], min_build: 9100 })
+
+    expect(calls).toEqual([
+      {
+        method: 'POST',
+        path: '/backends/atomic-prism/catalog',
+        body: {
+          app_version: 'test',
+          proxy: null,
+          requires: ['pq2_0'],
+          min_build: 9100,
+        },
+      },
+    ])
+  })
 })
 
 describe('TauriModelSetupService.onCoreReset', () => {

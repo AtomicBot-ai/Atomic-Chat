@@ -293,7 +293,7 @@
       "renameSuccess": "Projet renommé de \"{{oldName}}\" en \"{{newName}}\""
     },
     "noConversationsIn": "Aucune conversation dans {{projectName}}",
-    "startNewConversation": "Commencez une nouvelle conversation avec {{projectName}} ci-dessous",
+    "startNewConversation": "Écrivez un message ci-dessus pour commencer une conversation dans {{projectName}}.",
     "conversationsIn": "Conversations dans {{projectName}}",
     "conversationsDescription": "Cliquez sur n'importe quelle conversation pour continuer à discuter, ou commencez-en une nouvelle ci-dessous.",
     "thread": "discussion",

@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-414 records, 2026-05-19 → 2026-10-16.
+432 records, 2026-05-19 → 2026-10-21.
 
 ---
 
@@ -85,8 +85,10 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-02** — [Add a `/v1/responses` translation shim to the local proxy so Codex CLI works on llama.cpp models](2026-06-02-add-a-v1-responses-translation-shim-to-the-local-proxy-so-codex.md)
 - **2026-06-01** — [Add a "Launch" page to install + configure external coding agents / assistants against the local OpenAI-compatible API](2026-06-01-add-a-launch-page-to-install-configure-external-coding-agents.md)
 
-## Agent mode — autonomous loop, tools, skills, workspace (51)
+## Agent mode — autonomous loop, tools, skills, workspace (53)
 
+- **2026-10-20** — [Always offer chat commands, with no Run commands switch](2026-10-20-always-offer-chat-commands-without-a-switch.md)
+- **2026-10-17** — [Confine a secure project's commands to its folders with MXC](2026-10-17-confine-secure-projects-commands-to-their-folders-with-mxc.md)
 - **2026-10-15** — [Grant directory enumeration and decode Windows chat output](2026-10-15-fix-windows-chat-directory-enumeration-and-output.md)
 - **2026-10-15** — [Let chat commands reach the user's Desktop, Documents and Downloads](2026-10-15-let-chat-commands-reach-the-users-own-folders.md)
 - **2026-10-15** — [Hide Agent mode; every turn runs on the chat pipeline](2026-10-15-hide-agent-mode.md)
@@ -229,10 +231,12 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Ship `janhq/llama.cpp` cudart DLLs with every Windows CUDA backend](2026-05-22-ship-janhq-llama-cpp-cudart-dlls-with-every-windows-cuda-backend.md)
 - **2026-05-19** — [Windows uses upstream `ggml-org/llama.cpp`, not the TurboQuant fork](2026-05-19-windows-uses-upstream-ggml-org-llama-cpp-not-the-turboquant-fork.md)
 
-## Models, Hub & downloads (42)
+## Models, Hub & downloads (44)
 
+- **2026-10-21** — [List and remove download leftovers on the Downloads page](2026-10-21-list-and-remove-download-leftovers-on-the-downloads-page.md)
 - **2026-10-16** — [Run Foundry Local through the core; download its models in the app](2026-10-16-run-foundry-local-through-the-core-and-download-its-models-in-the-app.md)
 - **2026-10-15** — [Download Bonsai with the app's own downloader, not the core's model setup](2026-10-15-download-bonsai-with-the-apps-own-downloader.md)
+- **2026-10-12** — [Open a linked safetensors repository as a managed checkpoint](2026-10-12-open-a-linked-safetensors-repository-as-a-managed-checkpoint.md)
 - **2026-10-06** — [List Bonsai models under a PrismML format in the Hub, and install the engine from its row](2026-10-06-list-bonsai-models-under-a-prismml-format-in-the-hub.md)
 - **2026-10-06** — [List PrismML model setups in the download panel, and set a deleted Bonsai up again](2026-10-06-list-prismml-model-setups-in-the-download-panel.md)
 - **2026-10-03** — [Choose TensorRT-LLM models in the Model Hub, as its third format](2026-10-03-choose-tensorrt-llm-models-in-the-model-hub.md)
@@ -274,8 +278,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-04** — [Recover from unsupported multimodal projector (`gemma4a`) by falling back to text-only instead of crashing the load (issue #44)](2026-06-04-recover-from-unsupported-multimodal-projector-gemma4a-by.md)
 - **2026-05-27** — [Replace `janhq/model-catalog` + Fuse.js with curated `AtomicBot-ai/atomic-chat-model-catalog` and a pre-built MiniSearch index](2026-05-27-replace-janhq-model-catalog-fuse-js-with-curated-atomicbot-ai.md)
 
-## Local API server & OpenAI compatibility (9)
+## Local API server & OpenAI compatibility (10)
 
+- **2026-10-20** — [Turn the served models off with the server](2026-10-20-turn-the-served-models-off-with-the-server.md)
 - **2026-10-08** — [Stop closes the local stream's connection in Rust](2026-10-08-stop-closes-the-local-stream-connection-in-rust.md)
 - **2026-09-25** — [Raise the Local API Server for a resident image or video model](2026-09-25-raise-the-local-api-server-for-a-resident-image-or-video-model.md)
 - **2026-09-19** — [Reload the served model when the API listener is recovered](2026-09-19-reload-the-served-model-when-the-api-listener-is-recovered.md)
@@ -300,8 +305,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-10** — [Throttle crashloop `model_load` failure spam client-side; confirm `model_load.status` / api 404-noise are already-fixed-pending-rollout, not code bugs (ATO-130: ATO-133 + ATO-131 + ATO-132)](2026-06-10-throttle-crashloop-model-load-failure-spam-client-side-confirm.md)
 - **2026-06-09** — [Add zero-PII Sentry crash/error tracking to both the React frontend and the Rust/Tauri desktop, gated behind `productAnalytic` (ATO-113)](2026-06-09-add-zero-pii-sentry-crash-error-tracking-to-both-the-react.md)
 
-## Packaging, installers, autostart & platform policy (22)
+## Packaging, installers, autostart & platform policy (23)
 
+- **2026-10-19** — [Reveal files in the file manager from the blocking pool](2026-10-19-reveal-files-from-the-blocking-pool-on-linux.md) — the opener plugin's async reveal blocks on D-Bus inside tokio and aborts the Linux app.
 - **2026-10-09** — [Hide the CLI in the app, and stop installing it on launch](2026-10-09-hide-the-cli-in-the-app.md)
 - **2026-10-09** — [Gate releases beside the builds and warm their caches on main](2026-10-09-gate-releases-beside-the-builds-and-warm-caches-on-main.md) — installers reach the draft only after build and gate; caches are written on `main`, read by releases.
 - **2026-10-02** — [Publish releases with make release-prod and feed the landing page from conf](2026-10-02-publish-releases-with-make-release-prod-and-feed-the-landing-from-conf.md)
@@ -325,8 +331,22 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Windows ships `atomic-chat-cli.exe` as a copy of `jan.exe`](2026-05-22-windows-ships-atomic-chat-cli-exe-as-a-copy-of-jan-exe.md)
 - **2026-05-22** — [Windows auto-updater uses NSIS as sole relauncher](2026-05-22-windows-auto-updater-uses-nsis-as-sole-relauncher.md)
 
-## UI / UX (88)
+## UI / UX (2)
 
+- **2026-10-20** — [Set up the server from Overview with a guide that does the real work](2026-10-20-set-up-the-server-from-overview-with-a-guide.md)
+- **2026-10-20** — [List Hub models in a table whose rows open in place](2026-10-20-list-hub-models-in-a-table-whose-rows-open-in-place.md) — supersedes the split view of the 2026-08-06 staff-picks record.
+## UI / UX (2)
+- **2026-10-20** — [Show hosted providers on Cloud and the user's own servers on Custom Endpoint](2026-10-20-show-hosted-providers-on-cloud-and-own-servers-on-custom-endpoint.md)
+- **2026-10-20** — [List everything downloaded on a Downloads page](2026-10-20-list-everything-downloaded-on-a-downloads-page.md)
+## UI / UX (96)
+- **2026-10-20** — [Name every Hub row's parameters and hold the place of what loads](2026-10-20-name-every-hub-rows-parameters-and-hold-the-place-of-what-loads.md)
+- **2026-10-20** — [Unfold engine settings and offer engine updates on the overview](2026-10-20-unfold-engine-settings-and-offer-engine-updates-on-the-overview.md) — supersedes the status, card link and switch of the grouped overview.
+- **2026-10-20** — [List the inference engines on one grouped overview](2026-10-20-list-inference-engines-on-one-grouped-overview.md)
+- **2026-10-20** — [Split the API screen into Overview, Activity, Connections and Engine & model](2026-10-20-split-the-api-screen-into-overview-activity-connections-and-model.md)
+- **2026-10-20** — [Give the server's configuration and remote access their own pages](2026-10-20-give-server-configuration-and-remote-access-their-own-pages.md)
+- **2026-10-20** — [Put every control on a 36 / 24 / 40 px scale](2026-10-20-put-every-control-on-a-36-24-40-px-scale.md)
+- **2026-10-20** — [Attach with one paperclip and gather what the model may do in the access menu](2026-10-20-attach-with-one-paperclip-and-gather-access-in-one-menu.md)
+- **2026-10-19** — [Navigate with an icon rail and a contextual sidebar](2026-10-19-navigate-with-an-icon-rail-and-a-contextual-sidebar.md)
 - **2026-10-09** — [Match file_ids by name, and tell the model documents are attached](2026-10-09-match-file-ids-by-name-and-tell-the-model-documents-are-attached.md)
 - **2026-10-09** — [A send waits for web search that is still connecting](2026-10-09-a-send-waits-for-web-search-that-is-still-connecting.md)
 - **2026-10-08** — [Cite documents by name, and retrieve one query per fact (ATO-551, ATO-552)](2026-10-08-cite-documents-by-name-and-retrieve-one-query-per-fact.md)

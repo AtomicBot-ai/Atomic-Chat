@@ -6,12 +6,13 @@
  * state changes here.
  */
 
+import { hubEngine, type HubEngineId } from '@/lib/hub-model-engines'
 import { isManagedProvider, managedEngines } from '@/lib/managed-engines'
 import {
   estimateFit,
   modelFormat,
   parseFileSizeToBytes,
-  pickMedianQuant,
+  pickListedQuant,
   type ModelFormat,
 } from '@/lib/model-card'
 import { getMlxTotalFileSize, getTotalDownloadFileSize } from '@/lib/models'
@@ -33,6 +34,11 @@ export const HUB_SORT_KEYS: readonly HubSortKey[] = [
 export type HubFilterState = {
   /** The UI keeps exactly one active model format. */
   formats: ModelFormat[]
+  /**
+   * Rows one engine runs (`modelEngineIds`), within its format. Like the format, kept for this
+   * launch only (`hub-session.ts`) and never saved.
+   */
+  engine?: HubEngineId
   sort: HubSortKey
   /** Hide entries that cannot fit the detected memory budget. */
   onlyFitting: boolean
@@ -132,8 +138,12 @@ export function normalizeHubFilters(
       : DEFAULT_HUB_FILTERS.formats[0],
   ]
 
+  // An engine reads one format: an engine of another format (or of a format this machine does
+  // not offer) filters nothing.
+  const engine = hubEngine(value.engine)
   return {
     formats,
+    ...(engine && engine.format === formats[0] ? { engine: engine.id } : {}),
     sort: isSortKey(value.sort) ? value.sort : DEFAULT_HUB_FILTERS.sort,
     onlyFitting:
       typeof value.onlyFitting === 'boolean'
@@ -161,9 +171,13 @@ export function readHubFilters(storage?: Storage | null): HubFilterState {
   try {
     const raw = ls.getItem(HUB_FILTERS_STORAGE_KEY)
     if (!raw) return { ...DEFAULT_HUB_FILTERS }
-    // Sort and the toggles come back; the format does not — the Hub opens on GGUF on every launch
-    // (`hub-session.ts` keeps a format picked within one launch).
-    return { ...normalizeHubFilters(JSON.parse(raw)), formats: [...DEFAULT_HUB_FILTERS.formats] }
+    // Sort and the toggles come back; the format and the engine do not — the Hub opens on GGUF on
+    // every launch (`hub-session.ts` keeps what was picked within one launch).
+    return {
+      ...normalizeHubFilters(JSON.parse(raw)),
+      formats: [...DEFAULT_HUB_FILTERS.formats],
+      engine: undefined,
+    }
   } catch {
     return { ...DEFAULT_HUB_FILTERS }
   }
@@ -193,14 +207,15 @@ function safeLocalStorage(): Storage | null {
 
 /**
  * Download size of the entry as shown on its row: the whole safetensors set
- * for MLX, the median quant plus its mmproj companion for GGUF.
+ * for MLX; for GGUF the quant the download panel opens on (the house default,
+ * else the median) plus its mmproj companion.
  */
 export function modelDownloadSizeText(
   model: CatalogModel
 ): string | undefined {
   return model.is_mlx
     ? getMlxTotalFileSize(model)
-    : getTotalDownloadFileSize(model, pickMedianQuant(model.quants))
+    : getTotalDownloadFileSize(model, pickListedQuant(model))
 }
 
 /**

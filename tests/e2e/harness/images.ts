@@ -14,6 +14,7 @@ import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { Browser } from 'webdriverio'
 import { coreRequest } from './core.js'
+import { openSection } from './navigation.js'
 import { CORE_REPO } from './fixtures.js'
 import { listProcesses } from './platform.js'
 import type { Profile } from './profile.js'
@@ -367,6 +368,7 @@ export const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).dige
  */
 export async function openImages(session: Session, workflow = 'create'): Promise<void> {
   const browser = session.app.browser
+  await openSection(browser, 'chat')
   await browser.$('[data-testid="images-link"]').click()
   await browser.$('[data-testid="image-generation-page"]').waitForDisplayed({ timeout: 30_000 })
   if (workflow === 'create') return

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { IconLoader2 } from '@tabler/icons-react'
+import { IconExternalLink, IconLoader2 } from '@tabler/icons-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
@@ -17,11 +17,8 @@ import { CloudProviderSelect } from '@/containers/cloud/CloudProviderSelect'
 import DeleteProvider from '@/containers/dialogs/DeleteProvider'
 import { InputControl } from '@/containers/dynamicControllerSetting/InputControl'
 import { RenderMarkdown } from '@/containers/RenderMarkdown'
-import {
-  isMediaConnected,
-  mediaDialectOf,
-  withListedModels,
-} from '@/lib/media-models'
+import { useConnectMediaServer } from '@/hooks/useConnectMediaServer'
+import { isMediaConnected } from '@/lib/media-models'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   isProviderConnected,
@@ -30,44 +27,25 @@ import {
 } from '@/lib/cloud-providers'
 import { isOnboardingPending } from '@/lib/onboarding'
 import { buildApiKeyUpdate, saveProviderApiKey } from '@/lib/provider-api-key'
+import { buildBaseUrlUpdate } from '@/lib/provider-base-url'
 import { getProviderTitle } from '@/lib/utils'
 import { getLocalApiServerUrl } from '@/utils/localApiServerControl'
-import {
-  isKeylessRemoteProvider,
-  registerRemoteProvider,
-} from '@/utils/registerRemoteProvider'
+import { isKeylessRemoteProvider } from '@/utils/registerRemoteProvider'
 import type { ServiceHub } from '@/services'
-import type { MediaKind } from '@/services/media/types'
-import { useMediaCatalog } from '@/stores/media-catalog-store'
 
 type CloudConnectionCardProps = {
+  /**
+   * The Cloud page picks the provider in its own list, so the card drops its
+   * dropdown and titles itself with the provider instead.
+   */
+  hideProviderSelect?: boolean
   providers: ProviderObject[]
   selected: ProviderObject | undefined
   onSelect: (providerName: string) => void
-  onAddCustom: () => void
+  onAddCustom?: () => void
   onDeleted: () => void
   updateProvider: (providerName: string, data: Partial<ModelProvider>) => void
   serviceHub: Pick<ServiceHub, 'providers'>
-}
-
-/** The `base-url` setting entry and the top-level mirror, written together. */
-function buildBaseUrlUpdate(
-  provider: ProviderObject,
-  rawUrl: string
-): Pick<ModelProvider, 'settings' | 'base_url'> {
-  // Trim so a stray leading/trailing space (common on paste) doesn't leak into
-  // request URLs as `/v1 /models` → 404. Normalise the stored setting value
-  // too, not just the mirror field.
-  const baseUrl = rawUrl.trim()
-  const index = provider.settings.findIndex((s) => s.key === 'base-url')
-  if (index === -1) return { settings: provider.settings, base_url: baseUrl }
-
-  const settings = [...provider.settings]
-  settings[index] = {
-    ...settings[index],
-    controller_props: { ...settings[index].controller_props, value: baseUrl },
-  }
-  return { settings, base_url: baseUrl }
 }
 
 /**
@@ -80,6 +58,7 @@ function buildBaseUrlUpdate(
  * to keep in sync.
  */
 export function CloudConnectionCard({
+  hideProviderSelect = false,
   providers,
   selected,
   onSelect,
@@ -90,8 +69,8 @@ export function CloudConnectionCard({
 }: CloudConnectionCardProps) {
   const { t } = useTranslation()
   const [keyDraft, setKeyDraft] = useState('')
-  const [connectingMedia, setConnectingMedia] = useState(false)
-  const listMediaModels = useMediaCatalog((state) => state.listModels)
+  const { connecting: connectingMedia, connect: connectMediaServer } =
+    useConnectMediaServer(updateProvider)
 
   // Reset the draft whenever the selection changes, so a key typed for one
   // provider can never be saved onto another.
@@ -141,64 +120,6 @@ export function CloudConnectionCard({
     )
   }
 
-  /**
-   * Ask a media server for its models through the core and enable every one it lists: what makes it
-   * connected. The core asks at the address it has registered, so the one on screen goes first.
-   */
-  const handleConnectMediaServer = async () => {
-    if (!selected) return
-    const title = getProviderTitle(selected.provider)
-    setConnectingMedia(true)
-    try {
-      await registerRemoteProvider(selected)
-      const catalog =
-        useMediaCatalog.getState().catalog ??
-        (await useMediaCatalog.getState().load())
-      const kinds = (['image', 'video'] as const).filter(
-        (kind): kind is MediaKind =>
-          mediaDialectOf(selected, kind, catalog) !== undefined
-      )
-      const listings = await Promise.all(
-        kinds.map((kind) => listMediaModels(selected.provider, kind))
-      )
-      const failed = listings.find(
-        (listing) => listing.status === 'error' || !listing.live
-      )
-      if (failed) {
-        toast.error(t('cloud:connection.mediaFailed', { provider: title }), {
-          description: failed.error ?? undefined,
-        })
-        return
-      }
-      const listed = listings.flatMap((listing, index) =>
-        listing.models.map((model) => ({
-          id: model.id,
-          kind: kinds[index] as MediaKind,
-          name: model.name,
-        }))
-      )
-      if (listed.length === 0) {
-        toast.error(t('cloud:connection.mediaNoModels', { provider: title }))
-        return
-      }
-      updateProvider(selected.provider, {
-        media: withListedModels(selected.media, listed),
-      })
-      toast.success(
-        t('cloud:connection.mediaConnected', {
-          provider: title,
-          count: listed.length,
-        })
-      )
-    } catch (error) {
-      toast.error(t('cloud:connection.mediaFailed', { provider: title }), {
-        description: error instanceof Error ? error.message : String(error),
-      })
-    } finally {
-      setConnectingMedia(false)
-    }
-  }
-
   const handleDisconnect = () => {
     if (!selected) return
     updateProvider(selected.provider, buildApiKeyUpdate(selected, ''))
@@ -221,24 +142,52 @@ export function CloudConnectionCard({
     })
   }
 
+  // Titled with the provider, the card says something about that provider or
+  // nothing: the generic "OpenAI, Anthropic, or a compatible endpoint" read as
+  // the subtitle of OpenAI and of the ChatGPT subscription alike. What the
+  // catalogue knows of each is where its models are listed.
+  const providerTitle =
+    hideProviderSelect && selected
+      ? getProviderTitle(selected.provider)
+      : undefined
+  const exploreModelsUrl = selected?.explore_models_url
+
   return (
     <Card
       header={
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="space-y-1">
             <h2 className="font-studio text-base font-medium text-foreground">
-              {t('cloud:connection.title')}
+              {providerTitle ?? t('cloud:connection.title')}
             </h2>
-            <p className="text-muted-foreground">
-              {t('cloud:connection.description')}
-            </p>
+            {providerTitle === undefined ? (
+              <p className="text-muted-foreground">
+                {t('cloud:connection.description')}
+              </p>
+            ) : (
+              exploreModelsUrl && (
+                <a
+                  href={exploreModelsUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground hover:underline"
+                >
+                  {t('providers:addModel.exploreModels', {
+                    provider: providerTitle,
+                  })}
+                  <IconExternalLink size={12} className="shrink-0" />
+                </a>
+              )
+            )}
           </div>
-          <CloudProviderSelect
-            providers={providers}
-            selected={selected}
-            onSelect={onSelect}
-            onAddCustom={onAddCustom}
-          />
+          {!hideProviderSelect && (
+            <CloudProviderSelect
+              providers={providers}
+              selected={selected}
+              onSelect={onSelect}
+              onAddCustom={onAddCustom ?? (() => {})}
+            />
+          )}
         </div>
       }
     >
@@ -400,7 +349,7 @@ export function CloudConnectionCard({
                       className="shrink-0"
                       variant={connected ? 'secondary' : 'default'}
                       disabled={connectingMedia || !selected.base_url?.trim()}
-                      onClick={() => void handleConnectMediaServer()}
+                      onClick={() => void connectMediaServer(selected)}
                       data-testid="cloud-media-server-connect"
                     >
                       {connectingMedia && (

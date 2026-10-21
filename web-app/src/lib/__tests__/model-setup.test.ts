@@ -5,6 +5,7 @@ import {
   parseHubFileUrl,
   planPrismSetup,
   prismFamilyCard,
+  prismCatalogRequest,
   prismFamilyCards,
   prismTagBuild,
   requiresPrism,
@@ -157,6 +158,34 @@ describe('prismTagBuild', () => {
   })
 })
 
+describe('prismCatalogRequest: what the PrismML catalog is asked to fit', () => {
+  it("passes on the capabilities and the build a file that needs PrismML's engine requires", () => {
+    for (const outcome of ['engine_required', 'engine_update_required'] as const)
+      expect(
+        prismCatalogRequest({
+          ...verdict(outcome, 'atomic-prism'),
+          requires: ['pq2_0'],
+          min_prism_build: 9100,
+        })
+      ).toEqual({ requires: ['pq2_0'], min_build: 9100 })
+  })
+
+  it('leaves out a minimum build the verdict does not name', () => {
+    expect(
+      prismCatalogRequest({
+        ...verdict('engine_required', 'atomic-prism'),
+        requires: ['pq2_0'],
+      })
+    ).toEqual({ requires: ['pq2_0'] })
+  })
+
+  it('asks for no requirements when no PrismML build is to be chosen', () => {
+    expect(prismCatalogRequest(verdict('compatible', 'atomic-prism'))).toEqual({})
+    expect(prismCatalogRequest(verdict('unsupported'))).toEqual({})
+    expect(prismCatalogRequest(verdict('engine_required', 'mlx'))).toEqual({})
+  })
+})
+
 describe('planPrismSetup: what a Bonsai download takes, from what the core reports', () => {
   const repo = 'prism-ml/Bonsai-8B-gguf'
   const family: PrismFamily = {
@@ -257,21 +286,28 @@ describe('planPrismSetup: what a Bonsai download takes, from what the core repor
     expect(plan.total_download_bytes).toBe(30 + 2_000)
   })
 
-  it('takes no build older than the file needs', () => {
+  it("installs the build the core picked for the file's requirements, not one of its own choosing", () => {
+    // The core was asked with the verdict's `requires`/`min_build` and chose;
+    // the plan takes that build as is and never re-checks or re-picks it,
+    // even against a build number it could read off the tag itself.
     const plan = planPrismSetup(
       input({
         verdict: {
           ...verdict('engine_update_required', 'atomic-prism'),
+          requires: ['pq2_0'],
           min_prism_build: 9050,
         },
         catalog: catalog({ recommended: 'prism-b9000-abcdef0/macos-arm64' }),
       })
     )
 
-    expect(plan.engine).toMatchObject({
-      version: 'prism-b9100-1234567',
+    expect(plan.engine).toEqual({
+      version: 'prism-b9000-abcdef0',
       backend: 'macos-arm64',
+      installed: false,
+      download_size: 20,
     })
+    expect(plan.blockers).toEqual([])
   })
 
   it('counts nothing to download for a build already on disk', () => {
@@ -315,19 +351,32 @@ describe('planPrismSetup: what a Bonsai download takes, from what the core repor
     expect(isPrismDownloadOnly(plan)).toBe(true)
   })
 
-  it('is blocked when no offered build is new enough', () => {
+  it('is blocked, with no build to download, when the core has no build for the file', () => {
+    // `null`: the core answered BACKEND_BUILD_UNAVAILABLE to the file's requirements.
     const plan = planPrismSetup(
       input({
         verdict: {
           ...verdict('engine_update_required', 'atomic-prism'),
+          requires: ['pq2_0'],
           min_prism_build: 9999,
         },
+        catalog: null,
       })
     )
 
     expect(plan.engine).toBeNull()
     expect(plan.blockers).toEqual([{ code: 'no_engine_build' }])
+    expect(plan.total_download_bytes).toBe(2_000 + 500)
     expect(isPrismDownloadOnly(plan)).toBe(false)
+  })
+
+  it('is blocked when the core offers no build at all', () => {
+    const plan = planPrismSetup(
+      input({ catalog: catalog({ available: [], recommended: null }) })
+    )
+
+    expect(plan.engine).toBeNull()
+    expect(plan.blockers).toEqual([{ code: 'no_engine_build' }])
   })
 
   it('is blocked when the drive cannot take the download', () => {

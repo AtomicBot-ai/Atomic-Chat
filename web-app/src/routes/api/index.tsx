@@ -1,156 +1,73 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { CircleHelp } from 'lucide-react'
 
-import { Skeleton } from '@/components/ui/skeleton'
 import { route } from '@/constants/routes'
-import { ApiConnectionStrip } from '@/containers/api/ApiConnectionStrip'
-import { ApiPageHeaderActions } from '@/containers/api/ApiPageHeaderActions'
-import { ApiRequestInspector } from '@/containers/api/ApiRequestInspector'
-import { ApiRequestList } from '@/containers/api/ApiRequestList'
-import { ApiStatTiles } from '@/containers/api/ApiStatTiles'
-import HeaderPage from '@/containers/HeaderPage'
-import { RemoteLanSection } from '@/containers/remote-lan/RemoteLanSection'
-import { useApiServerLog, filterEntries } from '@/hooks/useApiServerLog'
-import { useApiServerLogFeed } from '@/hooks/useApiServerLogFeed'
-import { useApiServerModelNotices } from '@/hooks/useApiServerModelNotices'
-import { useLocalApiServerControl } from '@/hooks/useLocalApiServerControl'
+import { ServerActivityPanel } from '@/containers/server/ServerActivityPanel'
+import { ServerAgents } from '@/containers/server/ServerAgents'
+import { ServerButton, ServerPage } from '@/containers/server/ServerPageParts'
+import { ServerSetupGuide } from '@/containers/server/ServerSetupGuide'
+import { useServedModel } from '@/containers/server/useServedModel'
+import { useAppState } from '@/hooks/useAppState'
+import {
+  useServerSetup,
+  useSetupDone,
+  useSetupGuideVisible,
+} from '@/hooks/useServerSetup'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { PlatformFeatures } from '@/lib/platform/const'
-import { PlatformFeature } from '@/lib/platform/types'
-import { cn } from '@/lib/utils'
-import { computeApiServerStats } from '@/utils/apiServerStats'
 
+/**
+ * Server → Overview: the setup guide on a first visit (or when asked for),
+ * otherwise whether the server is ready for the user's tools; then the
+ * agents and tools, and the latest activity.
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.api.index as any)({
-  component: ApiPage,
+  component: ServerOverviewPage,
 })
 
-/** How often the sliding stats window is recomputed. */
-const STATS_TICK_MS = 2000
-
-function useNowTick(intervalMs: number) {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    const tick = () => {
-      // No point recomputing a window nobody is looking at.
-      if (document.visibilityState === 'visible') setNow(Date.now())
-    }
-    const id = setInterval(tick, intervalMs)
-    return () => clearInterval(id)
-  }, [intervalMs])
-  return now
-}
-
-export function ApiPage() {
+export function ServerOverviewPage() {
   const { t } = useTranslation()
-  const { clear, hydrate } = useApiServerLogFeed()
-  useApiServerModelNotices()
-  const control = useLocalApiServerControl()
-  const [refreshing, setRefreshing] = useState(false)
-
-  const entries = useApiServerLog((state) => state.entries)
-  const filter = useApiServerLog((state) => state.filter)
-  const query = useApiServerLog((state) => state.query)
-  const selectedId = useApiServerLog((state) => state.selectedId)
-  const hydrated = useApiServerLog((state) => state.hydrated)
-  const feedUnavailable = useApiServerLog((state) => state.feedUnavailable)
-  const { select, setFilter, setQuery } = useApiServerLog.getState()
-
-  const now = useNowTick(STATS_TICK_MS)
-  const stats = useMemo(
-    () => computeApiServerStats(entries, now),
-    [entries, now]
-  )
-  const visible = useMemo(
-    () => filterEntries(entries, filter, query),
-    [entries, filter, query]
-  )
-  const selected = useMemo(
-    () => entries.find((entry) => entry.id === selectedId),
-    [entries, selectedId]
-  )
-
-  const handleRefresh = useCallback(async () => {
-    setRefreshing(true)
-    try {
-      await Promise.all([control.refreshStatus(), hydrate()])
-    } finally {
-      setRefreshing(false)
-    }
-  }, [control, hydrate])
-
-  const clearFilters = useCallback(() => {
-    setFilter('all')
-    setQuery('')
-  }, [setFilter, setQuery])
+  const running = useAppState((state) => state.serverStatus === 'running')
+  const { engine, model } = useServedModel(running)
+  const guideVisible = useSetupGuideVisible()
+  const guide = useServerSetup((state) => state.guide)
+  const guideRevision = useServerSetup((state) => state.guideRevision)
+  const setupDone = useSetupDone()
+  const openGuide = useServerSetup((state) => state.openGuide)
 
   return (
-    <div className="flex h-svh w-full flex-col">
-      <HeaderPage>
-        <div
-          className={cn(
-            'flex items-center justify-between w-full mr-2 pr-3',
-            !IS_MACOS && 'pr-30'
-          )}
-        >
-          <span className="font-medium text-base font-studio">
-            {t('api:title')}
-          </span>
-          <ApiPageHeaderActions
-            isRunning={control.isRunning}
-            isBusy={control.isBusy}
-            isModelLoading={control.isModelLoading}
-            status={control.status}
-            onToggleServer={() => void control.toggle()}
-            onRefresh={() => void handleRefresh()}
-            onClear={() => void clear()}
-            refreshing={refreshing}
-          />
-        </div>
-      </HeaderPage>
-
-      <div className="flex h-[calc(100%-60px)] flex-col gap-3 overflow-y-auto p-4 pt-0">
-        <ApiConnectionStrip />
-
-        {/* Both expose the Local API Server, which only desktop has. */}
-        {PlatformFeatures[PlatformFeature.LOCAL_API_SERVER] && (
-          <RemoteLanSection server={control} />
-        )}
-
-        {hydrated ? (
-          <ApiStatTiles stats={stats} />
-        ) : (
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
-            {Array.from({ length: 6 }, (_, index) => (
-              <Skeleton key={index} className="h-[86px] rounded-lg" />
-            ))}
+    <ServerPage layout="wide">
+      {guideVisible ? (
+        // Opened again (a card's Configure, the endpoint shortcut, Guide me),
+        // it starts afresh.
+        <ServerSetupGuide
+          key={guideRevision}
+          entry={guide ?? { path: 'choose' }}
+        />
+      ) : (
+        <div className="sp-ready-strip">
+          <div>
+            <strong>
+              {setupDone
+                ? t('api:overview.readyTitle')
+                : t('api:overview.stoppedTitle')}
+            </strong>
+            <p>
+              {setupDone
+                ? [model ?? t('api:strip.noModel'), engine]
+                    .filter(Boolean)
+                    .join(' · ')
+                : t('api:overview.setupHint')}
+            </p>
           </div>
-        )}
-
-        {feedUnavailable && (
-          <p className="rounded-lg border border-border bg-secondary/30 px-3 py-2 text-xs text-muted-foreground">
-            {t('api:log.feedUnavailable')}
-          </p>
-        )}
-
-        <div className="grid h-[clamp(320px,46vh,620px)] grid-cols-1 gap-3 lg:grid-cols-[minmax(300px,380px)_1fr]">
-          <ApiRequestList
-            entries={visible}
-            filter={filter}
-            query={query}
-            selectedId={selectedId}
-            onSelect={select}
-            onFilterChange={setFilter}
-            onQueryChange={setQuery}
-            onClearFilters={clearFilters}
-            emptyLog={entries.length === 0}
-          />
-          <ApiRequestInspector
-            entry={selected}
-            hasSelection={selectedId !== null}
-          />
+          <ServerButton onClick={() => openGuide()}>
+            <CircleHelp size={15} />
+            {t('api:overview.guideMe')}
+          </ServerButton>
         </div>
-      </div>
-    </div>
+      )}
+      <ServerAgents />
+      <ServerActivityPanel />
+    </ServerPage>
   )
 }

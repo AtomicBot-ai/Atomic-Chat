@@ -284,6 +284,12 @@ export default class FoundryLocalExtension extends AIEngine {
       try {
         // The core loads with its own copy of the settings; hand the person's over first.
         await this.coreSettings.ensureReady()
+        // Foundry Local hands the template tools without their `function` wrapper;
+        // Gemma 4's template then fails every request that offers tools. The app
+        // rewrites such a template once, before the host reads it.
+        await invoke<boolean>('foundry_local_repair_chat_template', { modelId }).catch((e) =>
+          logger.warn(`could not repair the chat template of ${modelId}: ${describeCoreError(e)}`)
+        )
         this.loadCancel.throwIfCancelled(modelId)
         const session = await this.loadCancel.loadInCore(modelId, () =>
           this.core.load(modelId, overrideSettings ? { settings: overrideSettings } : {})

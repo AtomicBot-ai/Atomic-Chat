@@ -18,11 +18,11 @@ export function AppLogo({ className, wordmarkClassName }: AppLogoProps) {
     <div className={cn('flex items-center gap-2', className)}>
       <div
         className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-neutral-950 p-[3px] shadow-sm dark:bg-white dark:shadow-none"
-        title="Atomic Bot"
+        title="Atomic Chat"
       >
         <img
           src="/images/transparent-logo.png"
-          alt="Atomic Bot"
+          alt="Atomic Chat"
           className="size-full min-h-0 min-w-0 object-contain invert dark:invert-0"
         />
       </div>

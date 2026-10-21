@@ -53,7 +53,7 @@
   },
   "others": {
     "spellCheck": "Kiểm tra chính tả",
-    "spellCheckDesc": "Bật kiểm tra chính tả cho các chủ đề của bạn.",
+    "spellCheckDesc": "Bật kiểm tra chính tả cho các cuộc trò chuyện của bạn.",
     "resetFactory": "Đặt lại về cài đặt gốc",
     "resetFactoryDesc": "Khôi phục ứng dụng về trạng thái ban đầu, xóa tất cả các mô hình và lịch sử trò chuyện. Hành động này không thể đảo ngược và chỉ được khuyến nghị nếu ứng dụng bị hỏng."
   },
@@ -96,7 +96,7 @@
   "interface": {
     "title": "Giao diện",
     "theme": "Chủ đề",
-    "themeDesc": "Khớp với chủ đề hệ điều hành.",
+    "themeDesc": "Chọn sáng, tối hoặc theo hệ điều hành.",
     "fontSize": "Kích thước phông chữ",
     "fontSizeDesc": "Điều chỉnh kích thước phông chữ của ứng dụng.",
     "windowBackground": "Nền cửa sổ",

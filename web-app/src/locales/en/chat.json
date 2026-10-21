@@ -72,6 +72,8 @@
   "activity": {
     "working": "Working...",
     "completedActions": "Completed {{count}} actions",
+    "completedActions_one": "Completed {{count}} action",
+    "completedActions_other": "Completed {{count}} actions",
     "reading": "Reading: {{count}}%",
     "reasoned": "Reasoned",
     "thinking": "Thinking...",
@@ -171,7 +173,7 @@
       }
     },
     "exec": {
-      "openFolder": "Open chat folder",
+      "openFolder": "Open folder",
       "sandboxed": "Ran in the Windows sandbox",
       "exitCode": "Exit code {{code}}",
       "timedOut": "Timed out",
@@ -190,8 +192,8 @@
     "modelWithoutTools": "This model cannot call tools, so Agent mode is off for it and your messages go to chat. Pick a model with tool calling to use Agent mode."
   },
   "agentApprovals": {
-    "manualSelected": "Ask for approval",
-    "manual": "Ask for approval",
+    "manualSelected": "Restricted",
+    "manual": "Restricted",
     "manualDescription": "Always ask before tool calls edit files or use the internet",
     "skipSelected": "Full access",
     "skip": "Full access",
@@ -297,7 +299,9 @@
     "chat": "Chat thread",
     "agent": "Agent thread"
   },
-  "chatExec": {
-    "menuItem": "Run commands"
+  "composer": {
+    "attachFiles": "Attach files",
+    "supportedFiles": "Supported files",
+    "attachFailed": "Failed to attach files"
   }
 }

@@ -17,6 +17,7 @@ use super::{
     SandboxKind, SandboxStatus, ScriptLanguage, UserFolder,
 };
 use crate::core::app::commands::get_jan_data_folder_path;
+use crate::core::secure_env::{self, SecureEnvironment};
 
 const DEFAULT_TIMEOUT_SECS: u64 = 120;
 /// Same ceiling as the agent's `os.shell.run`.
@@ -25,8 +26,9 @@ const MAX_SOURCE_CHARS: usize = 200_000;
 
 const SUPPORTED: bool = cfg!(not(any(target_os = "android", target_os = "ios")));
 
-/// What chat can run here, and whether it runs sandboxed. Probed once per
-/// session (on Windows the probe starts a test container).
+/// What chat can run here, and whether secure environment projects can use
+/// the sandbox. Probed once per session (on Windows the probe starts a test
+/// container).
 #[tauri::command]
 pub async fn chat_exec_status<R: Runtime>(
     app_handle: AppHandle<R>,
@@ -104,7 +106,6 @@ async fn detect<R: Runtime>(app: &AppHandle<R>) -> Prepared {
         bins,
         wxc_exec,
         search_path,
-        user_folders: folders.into_iter().map(|(_, path)| path).collect(),
     }
 }
 
@@ -135,25 +136,40 @@ fn folder_for_model(path: &Path, home: Option<&Path>) -> String {
     path.display().to_string()
 }
 
-/// What the model should be told when the OS, not the command, refused: it
-/// otherwise concludes the folder is simply out of its reach.
-fn failure_hint(os: &str, sandboxed: bool, exit_code: Option<i32>, output: &str) -> Option<String> {
+/// What the model should be told when the OS or the sandbox, not the
+/// command, refused: it otherwise concludes the folder is simply out of its
+/// reach. `secure` is set only for a run that went through MXC.
+fn failure_hint(
+    os: &str,
+    secure: Option<&SecureEnvironment>,
+    exit_code: Option<i32>,
+    output: &str,
+) -> Option<String> {
     if exit_code == Some(0) {
         return None;
     }
     let denied = |patterns: &[&str]| patterns.iter().any(|pattern| output.contains(pattern));
-    if sandboxed
-        && denied(&[
+    if let Some(environment) = secure {
+        if denied(&[
             "Access is denied",
+            // PowerShell: "Access to the path '…' is denied."
+            "Access to the path",
             "Permission denied",
             "[WinError 5]",
             "Отказано в доступе",
-        ])
-    {
-        return Some(
-            "The Windows sandbox lets commands reach only this chat's folder and the user's Desktop, Documents and Downloads; other locations are blocked on purpose."
-                .into(),
-        );
+        ]) {
+            return Some(
+                "This chat belongs to a secure environment project: commands reach only this chat's folder and the project's folders (read-only ones cannot be changed); every other location is blocked on purpose. `dir` and `cd` fail even on the project's folders in this sandbox: list a folder with `for %f in (\"<folder>\\*\") do @echo %~nxf` instead."
+                    .into(),
+            );
+        }
+        if !environment.network {
+            return Some(
+                "This chat belongs to a secure environment project with the network turned off: commands cannot reach the internet. If the failure looks like a network error, tell the user that instead of retrying."
+                    .into(),
+            );
+        }
+        return None;
     }
     if os == "macos" && denied(&["Operation not permitted"]) {
         return Some(
@@ -162,6 +178,18 @@ fn failure_hint(os: &str, sandboxed: bool, exit_code: Option<i32>, output: &str)
         );
     }
     None
+}
+
+/// Why a secure environment project's command did not run: there is no
+/// sandbox to keep it inside the project's folders. The model reads this.
+fn secure_without_sandbox(sandbox: &SandboxStatus) -> String {
+    let why = sandbox
+        .reason
+        .as_deref()
+        .unwrap_or("this computer has no sandbox for commands");
+    format!(
+        "This chat belongs to a secure environment project. Its commands run only inside the Windows sandbox, which is not available here ({why}). Nothing was run; tell the user instead of retrying."
+    )
 }
 
 /// Sidecars sit beside the executable; bundled resources under
@@ -264,8 +292,8 @@ fn no_sandbox(reason: &str) -> SandboxStatus {
 }
 
 /// After MXC reported a failure before its workload started: probe again,
-/// and drop to unsandboxed runs (which the approval then says) only when
-/// the probe — not the workload's stderr, which it controls — agrees.
+/// and stop running secure projects' commands only when the probe — not the
+/// workload's stderr, which it controls — agrees.
 async fn recheck_sandbox<R: Runtime>(app: &AppHandle<R>, state: &ChatExecState) {
     let (sandbox, wxc_exec) = detect_sandbox(app).await;
     let mut slot = state.prepared.lock().await;
@@ -283,7 +311,6 @@ async fn recheck_sandbox<R: Runtime>(app: &AppHandle<R>, state: &ChatExecState) 
         bins: current.bins.clone(),
         wxc_exec,
         search_path: current.search_path.clone(),
-        user_folders: current.user_folders.clone(),
     }));
 }
 
@@ -330,6 +357,23 @@ async fn run_request<R: Runtime>(
         ));
     }
     let data_folder = get_jan_data_folder_path(app.clone());
+    // Only a secure environment project's commands go through MXC, and
+    // there they run inside it or not at all: on the host they would reach
+    // every folder the user can. Every other chat runs on the host, gated by
+    // its approval mode.
+    let secure = secure_env::for_thread(&data_folder, &request.thread_id)?;
+    let sandbox = match &secure {
+        Some(environment) => {
+            let wxc_exec = prepared
+                .wxc_exec
+                .as_deref()
+                .filter(|_| prepared.status.sandbox.kind == SandboxKind::Mxc)
+                .ok_or_else(|| secure_without_sandbox(&prepared.status.sandbox))?;
+            Some((environment, wxc_exec))
+        }
+        None => None,
+    };
+    let sandboxed = sandbox.is_some();
     let workdir = workdir::ensure_chat_workdir(&data_folder, &request.thread_id)?;
     let timeout_secs = request
         .timeout_seconds
@@ -381,9 +425,18 @@ async fn run_request<R: Runtime>(
         .as_ref()
         .map(ManagedPython::path_dirs)
         .unwrap_or_default();
-    let sandboxed = prepared.wxc_exec.is_some() && prepared.status.sandbox.kind == SandboxKind::Mxc;
-    let launch = match prepared.wxc_exec.as_deref().filter(|_| sandboxed) {
-        Some(wxc_exec) => {
+    // Where the command starts. A secure project's chat starts in the
+    // project's first editable folder: a model that writes `file.txt` means
+    // the project, and in the chat folder its files were out of the user's
+    // sight (it then listed the empty project folder and called it
+    // inaccessible). The chat folder keeps `.tmp` and packages either way.
+    let mut cwd = workdir.root.clone();
+    let launch = match sandbox {
+        Some((environment, wxc_exec)) => {
+            let (writable_folders, project_readonly) = environment.existing_roots();
+            if let Some(folder) = writable_folders.first() {
+                cwd = folder.clone();
+            }
             let mut readonly = vec![mxc::system_root()];
             readonly.extend(prepared.bins.dirs.iter().cloned());
             readonly.extend(python.as_ref().map(|python| python.base_prefix.clone()));
@@ -394,6 +447,7 @@ async fn run_request<R: Runtime>(
             );
             let host_path = host_path_dirs(prepared.search_path.as_deref());
             readonly.extend(host_path.iter().cloned());
+            readonly.extend(project_readonly);
             let mut workload_path = path_dirs.clone();
             workload_path.extend(prepared.bins.dirs.iter().cloned());
             workload_path.extend(host_path);
@@ -408,10 +462,12 @@ async fn run_request<R: Runtime>(
                 container_id: &container_id,
                 command_line: &command_line,
                 workdir: &workdir.root,
-                user_folders: &prepared.user_folders,
+                cwd: &cwd,
+                writable_folders: &writable_folders,
                 env: &env,
                 readonly_paths: &readonly,
                 timeout_ms: timeout_secs * 1000,
+                network: environment.network,
             });
             mxc::executor_launch(wxc_exec, mxc::encode_policy(&policy)?)
         }
@@ -456,7 +512,7 @@ async fn run_request<R: Runtime>(
     drop(run);
     let hint = failure_hint(
         prepared.status.os,
-        sandboxed,
+        secure.as_ref(),
         output.exit_code,
         &format!("{}\n{}", output.stdout, output.stderr),
     );
@@ -472,7 +528,7 @@ async fn run_request<R: Runtime>(
         } else {
             SandboxKind::None
         },
-        workdir: workdir.root.display().to_string(),
+        workdir: cwd.display().to_string(),
         duration_ms: u64::try_from(output.duration.as_millis()).unwrap_or(u64::MAX),
         hint,
     })
@@ -704,23 +760,57 @@ mod tests {
     fn explains_a_refusal_the_os_made() {
         let mac = failure_hint(
             "macos",
-            false,
+            None,
             Some(1),
             "ls: Desktop: Operation not permitted",
         );
         assert!(mac.unwrap().contains("Files and Folders"));
 
-        let windows = failure_hint("windows", true, Some(1), "Access is denied.");
-        assert!(windows
-            .unwrap()
-            .contains("Desktop, Documents and Downloads"));
-        assert!(failure_hint("windows", true, Some(1), "Отказано в доступе.").is_some());
+        // Not the OS's doing, or nothing failed: no hint. An ordinary chat's
+        // command runs on the host, so an access error there is the user's own.
+        assert!(failure_hint("windows", None, Some(1), "Access is denied.").is_none());
+        assert!(failure_hint("linux", None, Some(1), "Operation not permitted").is_none());
+        assert!(failure_hint("macos", None, Some(0), "Operation not permitted").is_none());
+        assert!(failure_hint("macos", None, Some(2), "No such file or directory").is_none());
+    }
 
-        // Not the OS's doing, or nothing failed: no hint.
-        assert!(failure_hint("windows", false, Some(1), "Access is denied.").is_none());
-        assert!(failure_hint("linux", false, Some(1), "Operation not permitted").is_none());
-        assert!(failure_hint("macos", false, Some(0), "Operation not permitted").is_none());
-        assert!(failure_hint("macos", false, Some(2), "No such file or directory").is_none());
+    #[test]
+    fn a_secure_project_explains_its_own_reach() {
+        let closed = SecureEnvironment {
+            folders: Vec::new(),
+            network: false,
+            allowed_mcp_servers: Vec::new(),
+        };
+        let denied = failure_hint("windows", Some(&closed), Some(1), "Access is denied.");
+        assert!(denied.unwrap().contains("project's folders"));
+        assert!(failure_hint("windows", Some(&closed), Some(1), "Отказано в доступе.").is_some());
+        let powershell = failure_hint(
+            "windows",
+            Some(&closed),
+            Some(1),
+            "Get-ChildItem : Access to the path 'C:\\Users\\me\\Documents' is denied.",
+        );
+        assert!(powershell.unwrap().contains("project's folders"));
+        let offline = failure_hint("windows", Some(&closed), Some(1), "getaddrinfo failed");
+        assert!(offline.unwrap().contains("network turned off"));
+
+        let open = SecureEnvironment {
+            folders: Vec::new(),
+            network: true,
+            allowed_mcp_servers: Vec::new(),
+        };
+        assert!(failure_hint("windows", Some(&open), Some(1), "SyntaxError").is_none());
+    }
+
+    #[test]
+    fn a_secure_project_refuses_to_run_without_the_sandbox() {
+        let message = secure_without_sandbox(&SandboxStatus {
+            kind: SandboxKind::None,
+            reason: Some("Windows 11 24H2 is required".into()),
+        });
+        assert!(message.contains("secure environment"));
+        assert!(message.contains("Windows 11 24H2 is required"));
+        assert!(message.contains("Nothing was run"));
     }
 
     #[test]

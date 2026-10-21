@@ -218,6 +218,11 @@ describe('ModelSetupSheet', () => {
       ...verdict('engine_update_required'),
       min_prism_build: 9999,
     })
+    // The core picks the build: none it offers is new enough.
+    service.prismCatalog.mockRejectedValue({
+      code: 'BACKEND_BUILD_UNAVAILABLE',
+      message: 'No engine build this machine can run meets the model file',
+    })
     renderSheet()
 
     expect(

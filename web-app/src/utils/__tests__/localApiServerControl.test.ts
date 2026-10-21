@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { appState, localApiState, startServer, stopServer } = vi.hoisted(() => ({
+const { appState, localApiState, startServer, stopServer, invoke } = vi.hoisted(() => ({
   appState: {
     serverStatus: 'stopped' as 'running' | 'stopped' | 'pending',
     setServerStatus: vi.fn(),
@@ -19,7 +19,10 @@ const { appState, localApiState, startServer, stopServer } = vi.hoisted(() => ({
   },
   startServer: vi.fn(),
   stopServer: vi.fn(),
+  invoke: vi.fn(),
 }))
+
+vi.mock('@tauri-apps/api/core', () => ({ invoke }))
 
 vi.mock('@/hooks/useAppState', () => ({
   useAppState: { getState: () => appState },
@@ -37,6 +40,7 @@ import type { EmbeddingStatus } from '@/services/embedding/types'
 
 import {
   getLocalApiServerUrl,
+  probeLocalApiServer,
   hasResidentEmbeddingModel,
   hasResidentMediaModel,
   raiseLocalApiServerForMediaModel,
@@ -275,6 +279,54 @@ describe('localApiServerControl', () => {
     it('normalises a prefix without a leading slash', () => {
       localApiState.apiPrefix = 'v1'
       expect(getLocalApiServerUrl()).toBe('http://127.0.0.1:1337/v1')
+    })
+  })
+
+  describe('probeLocalApiServer', () => {
+    it('asks for the model list with the key and counts what came back', async () => {
+      invoke.mockResolvedValue(
+        JSON.stringify({ object: 'list', data: [{ id: 'a' }, { id: 'b' }] })
+      )
+
+      const result = await probeLocalApiServer(
+        'http://127.0.0.1:1337/v1/',
+        'secret'
+      )
+
+      expect(invoke).toHaveBeenCalledWith('get_local_http', {
+        url: 'http://127.0.0.1:1337/v1/models',
+        headers: { Authorization: 'Bearer secret' },
+        timeoutSecs: 10,
+      })
+      expect(result).toMatchObject({ ok: true, modelCount: 2 })
+    })
+
+    it('sends no key header when the server has none', async () => {
+      invoke.mockResolvedValue('{"data":[]}')
+
+      await probeLocalApiServer('http://127.0.0.1:1337/v1', '  ')
+
+      expect(invoke.mock.calls[0][1].headers).toEqual({})
+    })
+
+    it('reports the HTTP status of a refusal', async () => {
+      invoke.mockRejectedValue('HTTP 401: {"error":"unauthorized"}')
+
+      const result = await probeLocalApiServer('http://127.0.0.1:1337/v1', 'x')
+
+      expect(result).toMatchObject({ ok: false, httpStatus: 401 })
+    })
+
+    it('reports a server that is not there without a status', async () => {
+      invoke.mockRejectedValue(new Error('Request failed: connection refused'))
+
+      const result = await probeLocalApiServer('http://127.0.0.1:1337/v1', '')
+
+      expect(result).toMatchObject({
+        ok: false,
+        httpStatus: null,
+        message: 'Request failed: connection refused',
+      })
     })
   })
 })

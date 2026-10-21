@@ -317,8 +317,9 @@ describe('model selector geometry', () => {
             within(footer).getByText('Download from Hugging Face')
           )
           const footerBounds = footer.getBoundingClientRect()
-          // A regular small button, not a tall call-to-action.
-          expect(footerBounds.height).toBeCloseTo(32, 0)
+          // A regular small button on the 36px control scale, not a tall
+          // call-to-action.
+          expect(footerBounds.height).toBeCloseTo(36, 0)
           const footerStyle = getComputedStyle(footer)
           const renderedRadius = Math.min(
             parseFloat(footerStyle.borderTopLeftRadius),

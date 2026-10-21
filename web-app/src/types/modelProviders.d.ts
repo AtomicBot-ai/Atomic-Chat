@@ -54,6 +54,8 @@ type Model = {
     | 'llamacpp-cache'
   // Runtime-computed: weights file (or Ollama symlink target) is gone — a "broken link".
   missing?: boolean
+  // On-disk bytes the engine recorded (shards and projector summed); 0 or absent when it did not.
+  sizeBytes?: number
   // Resolved absolute weights path; used to dedupe scan candidates vs imported models.
   path?: string
 }

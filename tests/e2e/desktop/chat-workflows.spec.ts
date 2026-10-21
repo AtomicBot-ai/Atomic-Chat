@@ -48,9 +48,9 @@ async function storedMessages(dataFolder: string): Promise<StoredMessage[]> {
 }
 
 // The stop button carries no name of its own; it is the composer's only
-// destructive button, shown in place of Send while a reply streams.
+// destructive button, shown in place of Send while a reply streams. An empty
+// composer shows no Send at all, so a finished reply is Stop going away.
 const STOP = 'button[data-variant="destructive"].rounded-full'
-const SEND = '[data-test-id="send-message-button"]'
 
 describe.skipIf(!CAN_RUN_FAKE_BACKEND)('stopping a reply', () => {
   // The scripted backend sends a word every 5 ms: long enough to be stopped
@@ -84,8 +84,8 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('stopping a reply', () => {
       await pageShows(session, FIRST, 90_000)
       await browser.$(STOP).click()
 
-      // Send is back, the answer stays where it was cut, and its end never comes.
-      await browser.$(SEND).waitForDisplayed({ timeout: 15_000 })
+      // Stop is gone, the answer stays where it was cut, and its end never comes.
+      await browser.$(STOP).waitForDisplayed({ reverse: true, timeout: 15_000 })
       const cutAt = (await browser.$('body').getText()).length
       await new Promise((r) => setTimeout(r, 2_000))
       expect((await browser.$('body').getText()).length).toBe(cutAt)
@@ -108,7 +108,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('stopping a reply', () => {
       await send(session, 'and again')
       await pageShows(session, FIRST, 60_000, 2)
       await browser.$(STOP).click()
-      await browser.$(SEND).waitForDisplayed({ timeout: 15_000 })
+      await browser.$(STOP).waitForDisplayed({ reverse: true, timeout: 15_000 })
       expect((await coreSessions(dataFolder)).map((s) => s.pid)).toEqual(before.map((s) => s.pid))
     })
   })

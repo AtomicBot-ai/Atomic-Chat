@@ -11,12 +11,14 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SystemMonitorRouteImport } from './routes/system-monitor'
 import { Route as LogsRouteImport } from './routes/logs'
+import { Route as DownloadsRouteImport } from './routes/downloads'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as VideosIndexRouteImport } from './routes/videos/index'
 import { Route as SkillsIndexRouteImport } from './routes/skills/index'
 import { Route as LaunchIndexRouteImport } from './routes/launch/index'
 import { Route as ImagesIndexRouteImport } from './routes/images/index'
 import { Route as HubIndexRouteImport } from './routes/hub/index'
+import { Route as EndpointsIndexRouteImport } from './routes/endpoints/index'
 import { Route as ConnectorsIndexRouteImport } from './routes/connectors/index'
 import { Route as CloudIndexRouteImport } from './routes/cloud/index'
 import { Route as ApiIndexRouteImport } from './routes/api/index'
@@ -41,6 +43,9 @@ import { Route as ProjectProjectIdRouteImport } from './routes/project/$projectI
 import { Route as LocalApiServerLogsRouteImport } from './routes/local-api-server/logs'
 import { Route as ImagesWorkflowRouteImport } from './routes/images/$workflow'
 import { Route as HubModelIdRouteImport } from './routes/hub/$modelId'
+import { Route as ApiModelRouteImport } from './routes/api/model'
+import { Route as ApiConnectionsRouteImport } from './routes/api/connections'
+import { Route as ApiActivityRouteImport } from './routes/api/activity'
 import { Route as SettingsProvidersIndexRouteImport } from './routes/settings/providers/index'
 import { Route as SettingsProvidersProviderNameRouteImport } from './routes/settings/providers/$providerName'
 
@@ -52,6 +57,11 @@ const SystemMonitorRoute = SystemMonitorRouteImport.update({
 const LogsRoute = LogsRouteImport.update({
   id: '/logs',
   path: '/logs',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DownloadsRoute = DownloadsRouteImport.update({
+  id: '/downloads',
+  path: '/downloads',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -82,6 +92,11 @@ const ImagesIndexRoute = ImagesIndexRouteImport.update({
 const HubIndexRoute = HubIndexRouteImport.update({
   id: '/hub/',
   path: '/hub/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EndpointsIndexRoute = EndpointsIndexRouteImport.update({
+  id: '/endpoints/',
+  path: '/endpoints/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ConnectorsIndexRoute = ConnectorsIndexRouteImport.update({
@@ -204,6 +219,21 @@ const HubModelIdRoute = HubModelIdRouteImport.update({
   path: '/hub/$modelId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiModelRoute = ApiModelRouteImport.update({
+  id: '/api/model',
+  path: '/api/model',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiConnectionsRoute = ApiConnectionsRouteImport.update({
+  id: '/api/connections',
+  path: '/api/connections',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiActivityRoute = ApiActivityRouteImport.update({
+  id: '/api/activity',
+  path: '/api/activity',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SettingsProvidersIndexRoute = SettingsProvidersIndexRouteImport.update({
   id: '/settings/providers/',
   path: '/settings/providers/',
@@ -218,8 +248,12 @@ const SettingsProvidersProviderNameRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/downloads': typeof DownloadsRoute
   '/logs': typeof LogsRoute
   '/system-monitor': typeof SystemMonitorRoute
+  '/api/activity': typeof ApiActivityRoute
+  '/api/connections': typeof ApiConnectionsRoute
+  '/api/model': typeof ApiModelRoute
   '/hub/$modelId': typeof HubModelIdRoute
   '/images/$workflow': typeof ImagesWorkflowRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
@@ -244,6 +278,7 @@ export interface FileRoutesByFullPath {
   '/api/': typeof ApiIndexRoute
   '/cloud/': typeof CloudIndexRoute
   '/connectors/': typeof ConnectorsIndexRoute
+  '/endpoints/': typeof EndpointsIndexRoute
   '/hub/': typeof HubIndexRoute
   '/images/': typeof ImagesIndexRoute
   '/launch/': typeof LaunchIndexRoute
@@ -254,8 +289,12 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/downloads': typeof DownloadsRoute
   '/logs': typeof LogsRoute
   '/system-monitor': typeof SystemMonitorRoute
+  '/api/activity': typeof ApiActivityRoute
+  '/api/connections': typeof ApiConnectionsRoute
+  '/api/model': typeof ApiModelRoute
   '/hub/$modelId': typeof HubModelIdRoute
   '/images/$workflow': typeof ImagesWorkflowRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
@@ -280,6 +319,7 @@ export interface FileRoutesByTo {
   '/api': typeof ApiIndexRoute
   '/cloud': typeof CloudIndexRoute
   '/connectors': typeof ConnectorsIndexRoute
+  '/endpoints': typeof EndpointsIndexRoute
   '/hub': typeof HubIndexRoute
   '/images': typeof ImagesIndexRoute
   '/launch': typeof LaunchIndexRoute
@@ -291,8 +331,12 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/downloads': typeof DownloadsRoute
   '/logs': typeof LogsRoute
   '/system-monitor': typeof SystemMonitorRoute
+  '/api/activity': typeof ApiActivityRoute
+  '/api/connections': typeof ApiConnectionsRoute
+  '/api/model': typeof ApiModelRoute
   '/hub/$modelId': typeof HubModelIdRoute
   '/images/$workflow': typeof ImagesWorkflowRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
@@ -317,6 +361,7 @@ export interface FileRoutesById {
   '/api/': typeof ApiIndexRoute
   '/cloud/': typeof CloudIndexRoute
   '/connectors/': typeof ConnectorsIndexRoute
+  '/endpoints/': typeof EndpointsIndexRoute
   '/hub/': typeof HubIndexRoute
   '/images/': typeof ImagesIndexRoute
   '/launch/': typeof LaunchIndexRoute
@@ -329,8 +374,12 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/downloads'
     | '/logs'
     | '/system-monitor'
+    | '/api/activity'
+    | '/api/connections'
+    | '/api/model'
     | '/hub/$modelId'
     | '/images/$workflow'
     | '/local-api-server/logs'
@@ -355,6 +404,7 @@ export interface FileRouteTypes {
     | '/api/'
     | '/cloud/'
     | '/connectors/'
+    | '/endpoints/'
     | '/hub/'
     | '/images/'
     | '/launch/'
@@ -365,8 +415,12 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/downloads'
     | '/logs'
     | '/system-monitor'
+    | '/api/activity'
+    | '/api/connections'
+    | '/api/model'
     | '/hub/$modelId'
     | '/images/$workflow'
     | '/local-api-server/logs'
@@ -391,6 +445,7 @@ export interface FileRouteTypes {
     | '/api'
     | '/cloud'
     | '/connectors'
+    | '/endpoints'
     | '/hub'
     | '/images'
     | '/launch'
@@ -401,8 +456,12 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/downloads'
     | '/logs'
     | '/system-monitor'
+    | '/api/activity'
+    | '/api/connections'
+    | '/api/model'
     | '/hub/$modelId'
     | '/images/$workflow'
     | '/local-api-server/logs'
@@ -427,6 +486,7 @@ export interface FileRouteTypes {
     | '/api/'
     | '/cloud/'
     | '/connectors/'
+    | '/endpoints/'
     | '/hub/'
     | '/images/'
     | '/launch/'
@@ -438,8 +498,12 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  DownloadsRoute: typeof DownloadsRoute
   LogsRoute: typeof LogsRoute
   SystemMonitorRoute: typeof SystemMonitorRoute
+  ApiActivityRoute: typeof ApiActivityRoute
+  ApiConnectionsRoute: typeof ApiConnectionsRoute
+  ApiModelRoute: typeof ApiModelRoute
   HubModelIdRoute: typeof HubModelIdRoute
   ImagesWorkflowRoute: typeof ImagesWorkflowRoute
   LocalApiServerLogsRoute: typeof LocalApiServerLogsRoute
@@ -464,6 +528,7 @@ export interface RootRouteChildren {
   ApiIndexRoute: typeof ApiIndexRoute
   CloudIndexRoute: typeof CloudIndexRoute
   ConnectorsIndexRoute: typeof ConnectorsIndexRoute
+  EndpointsIndexRoute: typeof EndpointsIndexRoute
   HubIndexRoute: typeof HubIndexRoute
   ImagesIndexRoute: typeof ImagesIndexRoute
   LaunchIndexRoute: typeof LaunchIndexRoute
@@ -487,6 +552,13 @@ declare module '@tanstack/react-router' {
       path: '/logs'
       fullPath: '/logs'
       preLoaderRoute: typeof LogsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/downloads': {
+      id: '/downloads'
+      path: '/downloads'
+      fullPath: '/downloads'
+      preLoaderRoute: typeof DownloadsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -529,6 +601,13 @@ declare module '@tanstack/react-router' {
       path: '/hub'
       fullPath: '/hub/'
       preLoaderRoute: typeof HubIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/endpoints/': {
+      id: '/endpoints/'
+      path: '/endpoints'
+      fullPath: '/endpoints/'
+      preLoaderRoute: typeof EndpointsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/connectors/': {
@@ -699,6 +778,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HubModelIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/model': {
+      id: '/api/model'
+      path: '/api/model'
+      fullPath: '/api/model'
+      preLoaderRoute: typeof ApiModelRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/connections': {
+      id: '/api/connections'
+      path: '/api/connections'
+      fullPath: '/api/connections'
+      preLoaderRoute: typeof ApiConnectionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/activity': {
+      id: '/api/activity'
+      path: '/api/activity'
+      fullPath: '/api/activity'
+      preLoaderRoute: typeof ApiActivityRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/settings/providers/': {
       id: '/settings/providers/'
       path: '/settings/providers'
@@ -718,8 +818,12 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  DownloadsRoute: DownloadsRoute,
   LogsRoute: LogsRoute,
   SystemMonitorRoute: SystemMonitorRoute,
+  ApiActivityRoute: ApiActivityRoute,
+  ApiConnectionsRoute: ApiConnectionsRoute,
+  ApiModelRoute: ApiModelRoute,
   HubModelIdRoute: HubModelIdRoute,
   ImagesWorkflowRoute: ImagesWorkflowRoute,
   LocalApiServerLogsRoute: LocalApiServerLogsRoute,
@@ -744,6 +848,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiIndexRoute: ApiIndexRoute,
   CloudIndexRoute: CloudIndexRoute,
   ConnectorsIndexRoute: ConnectorsIndexRoute,
+  EndpointsIndexRoute: EndpointsIndexRoute,
   HubIndexRoute: HubIndexRoute,
   ImagesIndexRoute: ImagesIndexRoute,
   LaunchIndexRoute: LaunchIndexRoute,

@@ -145,6 +145,16 @@ const UnmemoizedCodePre: Components['pre'] = ({ children }) => {
   return <Inner {...(child.props as Record<string, unknown>)} />
 }
 
+/**
+ * Anything Markdown would turn into markup: inline code, emphasis, links,
+ * HTML, math, escapes, entities, tables, autolinks (URLs and e-mail
+ * addresses) and block markers at a line start (headings, quotes, lists,
+ * rules, setext underlines). Short text without any of it renders the same
+ * as plain text, so only such text may skip the Markdown renderer.
+ */
+const MARKDOWN_SYNTAX =
+  /[`*_~[\]<>#|\\$&@]|^[ \t]*(?:[-+=]|\d+[.)])|https?:\/\/|www\./im
+
 // Cache for normalized LaTeX content
 const latexCache = new Map<string, string>()
 
@@ -426,19 +436,11 @@ function RenderMarkdownComponent({
     return { a: LinkRenderer, code: CodeRenderer, ...(components ?? {}) }
   }, [enableHtmlPreview, components, delegateProps])
 
-  const containsMath =
-    normalizedContent.includes('$$') ||
-    /(^|[^\\])\$[^$\n]+\$/.test(normalizedContent)
-  const containsUrl = /(?:https?:\/\/|www\.)/i.test(normalizedContent)
-  const containsStrong = /\*\*(?=\S)[^\r\n]*?\S\*\*/.test(normalizedContent)
-
   if (
     content.length > 0 &&
     content.length < 32 &&
     !components &&
-    !containsMath &&
-    !containsUrl &&
-    !containsStrong
+    !MARKDOWN_SYNTAX.test(content)
   ) {
     return (
       <div

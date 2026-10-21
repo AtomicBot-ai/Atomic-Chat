@@ -1,24 +1,42 @@
+import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
+
+const { control, sectionServer } = vi.hoisted(() => ({
+  control: { status: 'stopped' },
+  sectionServer: vi.fn(),
+}))
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (options: Record<string, unknown>) => options,
-  redirect: (options: Record<string, unknown>) =>
-    Object.assign(new Error('redirect'), { redirect: options }),
 }))
 
-import { Route } from '../remote-lan'
+vi.mock('@/i18n/react-i18next-compat', () => ({
+  useTranslation: () => ({ t: (key: string) => key }),
+}))
+
+vi.mock('@/hooks/useLocalApiServerControl', () => ({
+  useLocalApiServerControl: () => control,
+}))
+
+vi.mock('@/containers/remote-lan/RemoteLanSection', () => ({
+  RemoteLanSection: ({ server }: { server: unknown }) => {
+    sectionServer(server)
+    return <section aria-label="remote-lan" />
+  },
+}))
+
+import { RemoteAccessPage } from '../remote-lan'
 
 describe('/settings/remote-lan', () => {
-  it('forwards older links to the API screen, where Remote & LAN lives', () => {
-    let thrown: unknown
-    try {
-      ;(Route as unknown as { beforeLoad: () => void }).beforeLoad()
-    } catch (error) {
-      thrown = error
-    }
+  it('is the Server section’s Remote access page, with one control for both cards', () => {
+    render(<RemoteAccessPage />)
 
-    expect((thrown as { redirect: { to: string } }).redirect).toEqual({
-      to: '/api/',
-    })
+    expect(
+      screen.getByRole('heading', { name: 'settings:remoteLan.pageTitle' })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('region', { name: 'remote-lan' })
+    ).toBeInTheDocument()
+    expect(sectionServer).toHaveBeenCalledWith(control)
   })
 })

@@ -107,5 +107,10 @@
       "details": "Details",
       "actionFailed": "Could not do it from here ({{error}}). Do it yourself; the installation continues afterwards."
     }
+  },
+  "overview": {
+    "updateStatus": {
+      "noActiveBuild": "有効なビルドなし"
+    }
   }
 }

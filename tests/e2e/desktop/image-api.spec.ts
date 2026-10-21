@@ -1,10 +1,10 @@
 /**
- * The image endpoint for outside clients: Settings → Media shows where it is
+ * The image endpoint for outside clients: Models Hub → Media shows where it is
  * and how to call it; an OpenAI-style client gets a picture through the local
  * API with the same key gate as chat; and the picture it made shows up in the
  * app's gallery without a restart. An image-only user — no chat model at all —
  * gets the server that serves it: with the image model when auto-start is on,
- * from "Start server" or from the Images page's own card when it is off.
+ * from the Server sidebar or from the Images page's own card when it is off.
  */
 import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -24,6 +24,7 @@ import {
 } from '../harness/images.js'
 import { CAN_RUN_FAKE_BACKEND } from '../harness/platform.js'
 import { endSession, startSession, withArtifacts, type Session } from '../harness/session.js'
+import { openMediaEngineSettings, startServerFromSidebar, stopServerFromSidebar } from '../harness/navigation.js'
 
 const LOCAL_API_KEY = 'e2e-images-api-key'
 
@@ -52,11 +53,8 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('the image endpoint for outside clients',
       const dataFolder = session.profile.dataFolder
       const endpoint = `http://127.0.0.1:${session.apiPort}/v1/images/generations`
 
-      // Settings → Media names the endpoint and gives a curl for it.
-      await browser.$('//*[normalize-space(text())="Settings"]').click()
-      const media = browser.$('//a[normalize-space(.)="Media"]')
-      await media.waitForClickable({ timeout: 30_000 })
-      await media.click()
+      // Models Hub → Inference engines → Media names the endpoint and gives a curl for it.
+      await openMediaEngineSettings(browser)
       await browser.$('[data-testid="image-api-settings-card"]').waitForDisplayed({ timeout: 30_000 })
       expect(await browser.$('[data-testid="image-api-endpoint"]').getText()).toContain('/v1/images/generations')
       expect(await browser.$('[data-testid="image-api-endpoint"]').getText()).toContain(String(session.apiPort))
@@ -188,13 +186,10 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('the image endpoint for an image-only use
       // Auto-start is off: the model is resident and nothing listens.
       await expect(fetch(models)).rejects.toThrow()
 
-      // "Start server" used to load a chat model first; with none on disk it never started.
-      await browser.$('a=API').click()
-      await browser.$('button=Start server').click()
-      await browser.$('button=Stop server').waitForDisplayed({ timeout: 60_000 })
+      // Starting the server used to load a chat model first; with none on disk it never started.
+      await startServerFromSidebar(browser)
       await expectPicture(session, 'a cube for a client of the API screen')
-      await browser.$('button=Stop server').click()
-      await browser.$('button=Start server').waitForDisplayed({ timeout: 30_000 })
+      await stopServerFromSidebar(browser)
       await expect(fetch(models)).rejects.toThrow()
 
       // The Images page's own card says the server is down and brings it up in place.

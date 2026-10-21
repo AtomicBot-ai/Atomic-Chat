@@ -10,6 +10,7 @@ import {
   type ChatExecResult,
   type ChatExecService,
   type ChatExecStatus,
+  type SecureEnvironment,
 } from './types'
 
 export class DefaultChatExecService implements ChatExecService {
@@ -23,5 +24,18 @@ export class DefaultChatExecService implements ChatExecService {
 
   async cancel(_callId: string): Promise<boolean> {
     return false
+  }
+
+  async secureEnvironments(): Promise<Record<string, SecureEnvironment>> {
+    return {}
+  }
+
+  async setSecureEnvironment(
+    _projectId: string,
+    environment: SecureEnvironment | null
+  ): Promise<void> {
+    // Nothing is stored here, so turning one off is already done.
+    if (environment === null) return
+    throw new Error('Secure environments are not available on this platform')
   }
 }

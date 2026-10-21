@@ -253,7 +253,7 @@ export function AgentWorkspaceLayout({
 
   if (!shouldUseAgentWorkspaceLayout(isDesktop)) {
     return (
-      <main className="flex h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))] w-full min-w-0 overflow-hidden">
+      <main className="flex h-full w-full min-w-0 overflow-hidden">
         {children}
         <ArtifactPanel />
       </main>
@@ -263,7 +263,7 @@ export function AgentWorkspaceLayout({
   return (
     <main
       ref={workspaceRef}
-      className="relative flex h-[calc(100dvh-(env(safe-area-inset-bottom)+env(safe-area-inset-top)))] w-full min-w-0 overflow-hidden"
+      className="relative flex h-full w-full min-w-0 overflow-hidden"
     >
       {rightPanel === null && (
         // top-3.5 centres these 32px buttons on the h-15 (60px) page header,

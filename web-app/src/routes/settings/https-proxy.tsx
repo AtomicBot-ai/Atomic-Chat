@@ -1,12 +1,12 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
-import HeaderPage from '@/containers/HeaderPage'
-import SettingsMenu from '@/containers/SettingsMenu'
-import { Card, CardItem } from '@/containers/Card'
-import { Switch } from '@/components/ui/switch'
+import {
+  ServerButton,
+  ServerField,
+  ServerPage,
+  ServerSettingRow,
+} from '@/containers/server/ServerPageParts'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
 import { EyeOff, Eye } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
@@ -27,6 +27,10 @@ type ProxyTestResult = {
   detail: string
 }
 
+/**
+ * Server → HTTPS Proxy: the proxy downloads and uploads go through, laid out
+ * like the section's other pages (`ServerPage`).
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.https_proxy as any)({
   component: HTTPSProxyContent,
@@ -153,133 +157,99 @@ function HTTPSProxyContent() {
   ])
 
   return (
-    <div className="flex flex-col h-svh w-full">
-      <HeaderPage>
-        <div className="flex items-center gap-2 w-full">
-          <span className='font-medium text-base font-studio'>{t('common:settings')}</span>
+    <ServerPage title={t('common:https_proxy')}>
+      <section className="sp-panel" aria-label={t('settings:httpsProxy.proxy')}>
+        <div className="sp-row">
+          <h2>{t('settings:httpsProxy.proxy')}</h2>
+          <input
+            type="checkbox"
+            aria-label={t('settings:httpsProxy.proxy')}
+            checked={proxyEnabled}
+            onChange={(event) => toggleProxy(event.target.checked)}
+          />
         </div>
-      </HeaderPage>
-      <div className="flex h-[calc(100%-60px)]">
-        <SettingsMenu />
-        <div className="p-4 pt-0 w-full overflow-y-auto">
-          <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
-            {/* Proxy Configuration */}
-            <Card
-              header={
-                <div className="flex items-center justify-between">
-                  <h1 className="text-foreground font-studio font-medium text-base mb-2">
-                    {t('settings:httpsProxy.proxy')}
-                  </h1>
-                  <Switch
-                    checked={proxyEnabled}
-                    onCheckedChange={toggleProxy}
-                  />
-                </div>
-              }
-            >
-              <CardItem
-                title={t('settings:httpsProxy.proxyUrl')}
-                className="block"
-                description={
-                  <div className="space-y-2">
-                    <p>{t('settings:httpsProxy.proxyUrlDesc')}</p>
-                    <div className="flex gap-2">
-                      <Input
-                        className="w-full"
-                        placeholder={t(
-                          'settings:httpsProxy.proxyUrlPlaceholder'
-                        )}
-                        value={proxyUrl}
-                        onChange={(e) => setProxyUrl(e.target.value)}
-                      />
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        className="shrink-0"
-                        onClick={testProxy}
-                        disabled={testing}
-                      >
-                        {testing && (
-                          <IconLoader
-                            size={16}
-                            className="animate-spin text-muted-foreground"
-                          />
-                        )}
-                        <span>
-                          {testing
-                            ? t('settings:httpsProxy.testing')
-                            : t('settings:httpsProxy.test')}
-                        </span>
-                      </Button>
-                    </div>
-                  </div>
-                }
+        <div className="mb-[18px] grid gap-[18px]">
+          <div className="sp-field">
+            <label htmlFor="https-proxy-url">
+              {t('settings:httpsProxy.proxyUrl')}
+            </label>
+            <div className="sp-key-controls">
+              <input
+                id="https-proxy-url"
+                spellCheck={false}
+                placeholder={t('settings:httpsProxy.proxyUrlPlaceholder')}
+                value={proxyUrl}
+                onChange={(event) => setProxyUrl(event.target.value)}
               />
-              <CardItem
-                title={t('settings:httpsProxy.authentication')}
-                className="block"
-                description={
-                  <div className="space-y-2">
-                    <p>{t('settings:httpsProxy.authenticationDesc')}</p>
-                    <div className="flex gap-2">
-                      <Input
-                        placeholder={t('settings:httpsProxy.username')}
-                        value={proxyUsername}
-                        onChange={(e) => setProxyUsername(e.target.value)}
-                      />
-                      <div className="relative shrink-0 w-1/2">
-                        <Input
-                          type={showPassword ? 'text' : 'password'}
-                          placeholder={t('settings:httpsProxy.password')}
-                          className="pr-16"
-                          value={proxyPassword}
-                          onChange={(e) => setProxyPassword(e.target.value)}
-                        />
-                        <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex items-center gap-1">
-                          <button
-                            onClick={() => setShowPassword(!showPassword)}
-                            className="p-1 rounded hover:bg-foreground/5 text-foreground/70"
-                          >
-                            {showPassword ? (
-                              <EyeOff size={16} />
-                            ) : (
-                              <Eye size={16} />
-                            )}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                }
-              />
-              <CardItem
-                title={t('settings:httpsProxy.noProxy')}
-                className="block"
-                description={
-                  <div className="space-y-2">
-                    <p>{t('settings:httpsProxy.noProxyDesc')}</p>
-                    <Input
-                      placeholder={t('settings:httpsProxy.noProxyPlaceholder')}
-                      value={noProxyList}
-                      onChange={(e) => setNoProxy(e.target.value)}
-                    />
-                  </div>
-                }
-              />
-              <CardItem
-                title={t('settings:httpsProxy.ignoreSsl')}
-                description={t('settings:httpsProxy.ignoreSslDesc')}
-                actions={
-                  <Switch
-                    checked={proxyIgnoreSSL}
-                    onCheckedChange={(checked) => setProxyIgnoreSSL(checked)}
-                  />
-                }
-              />
-            </Card>
+              <ServerButton onClick={testProxy} disabled={testing}>
+                {testing && <IconLoader size={14} className="animate-spin" />}
+                {testing
+                  ? t('settings:httpsProxy.testing')
+                  : t('settings:httpsProxy.test')}
+              </ServerButton>
+            </div>
+            <small>{t('settings:httpsProxy.proxyUrlDesc')}</small>
           </div>
+          <div
+            className="sp-field"
+            role="group"
+            aria-label={t('settings:httpsProxy.authentication')}
+          >
+            <span>{t('settings:httpsProxy.authentication')}</span>
+            <div className="sp-key-controls">
+              <input
+                aria-label={t('settings:httpsProxy.username')}
+                autoComplete="off"
+                spellCheck={false}
+                placeholder={t('settings:httpsProxy.username')}
+                value={proxyUsername}
+                onChange={(event) => setProxyUsername(event.target.value)}
+              />
+              <div className="relative flex min-w-[160px] flex-[1_1_220px]">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  aria-label={t('settings:httpsProxy.password')}
+                  autoComplete="off"
+                  placeholder={t('settings:httpsProxy.password')}
+                  className="pr-10"
+                  value={proxyPassword}
+                  onChange={(event) => setProxyPassword(event.target.value)}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-foreground/70 hover:bg-foreground/5"
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
+            <small>{t('settings:httpsProxy.authenticationDesc')}</small>
+          </div>
+          <ServerField
+            label={t('settings:httpsProxy.noProxy')}
+            hint={t('settings:httpsProxy.noProxyDesc')}
+          >
+            <input
+              spellCheck={false}
+              placeholder={t('settings:httpsProxy.noProxyPlaceholder')}
+              value={noProxyList}
+              onChange={(event) => setNoProxy(event.target.value)}
+            />
+          </ServerField>
         </div>
-      </div>
-    </div>
+        <ServerSettingRow
+          title={t('settings:httpsProxy.ignoreSsl')}
+          description={t('settings:httpsProxy.ignoreSslDesc')}
+        >
+          <input
+            type="checkbox"
+            aria-label={t('settings:httpsProxy.ignoreSsl')}
+            checked={proxyIgnoreSSL}
+            onChange={(event) => setProxyIgnoreSSL(event.target.checked)}
+          />
+        </ServerSettingRow>
+      </section>
+    </ServerPage>
   )
 }

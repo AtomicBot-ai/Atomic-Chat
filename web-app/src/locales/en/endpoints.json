@@ -1,0 +1,44 @@
+{
+  "title": "Custom Endpoint",
+  "description": "Connect any OpenAI-compatible server or a model endpoint on your network.",
+  "add": "Add New Endpoint",
+  "empty": {
+    "title": "Your own models, wherever they run",
+    "description": "Add your first custom endpoint."
+  },
+  "noAddress": "No address yet",
+  "status": {
+    "notChecked": "Not checked",
+    "checking": "Checking…",
+    "connected": "Connected · {{models}}",
+    "reachable": "Ping successful · {{latency}} ms · {{models}}",
+    "failed": "No answer"
+  },
+  "actions": {
+    "ping": "Ping",
+    "models": "Models",
+    "showModels": "Models of {{name}}",
+    "configure": "Configure {{name}}",
+    "remove": "Remove {{name}}"
+  },
+  "dialog": {
+    "addTitle": "Add New Endpoint",
+    "configureTitle": "Configure endpoint",
+    "description": "Enter a name and the server’s base URL.",
+    "name": "Name",
+    "namePlaceholder": "My local server",
+    "nameLocked": "The name identifies the endpoint and cannot be changed.",
+    "baseUrl": "Base URL",
+    "baseUrlPlaceholder": "http://localhost:8080/v1",
+    "apiKey": "API key (optional)",
+    "invalidUrl": "Enter a valid HTTP or HTTPS URL.",
+    "cancel": "Cancel",
+    "save": "Save endpoint"
+  },
+  "remove": {
+    "title": "Remove {{name}}?",
+    "description": "This removes the endpoint, its models and its configuration.",
+    "cancel": "Cancel",
+    "confirm": "Remove endpoint"
+  }
+}

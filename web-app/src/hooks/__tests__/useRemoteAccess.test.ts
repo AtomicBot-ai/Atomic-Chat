@@ -518,6 +518,17 @@ describe('restartLocalApiServer', () => {
     expect(server.start).toHaveBeenCalledWith({ ensureModel: false })
   })
 
+  it('loads the chosen model when a new one is applied', async () => {
+    const { hub } = makeHub()
+    tunnel().applyStatus(OFF, 'event')
+
+    await expect(
+      restartLocalApiServer(hub, server, { ensureModel: true })
+    ).resolves.toBe(true)
+
+    expect(server.start).toHaveBeenCalledWith({ ensureModel: true })
+  })
+
   it('leaves a tunnel that was off alone', async () => {
     const { app, hub } = makeHub()
     tunnel().applyStatus(OFF, 'event')

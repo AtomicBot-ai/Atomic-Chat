@@ -16,8 +16,10 @@ import { ExtensionManager } from '@/lib/extension'
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 import { invoke } from '@tauri-apps/api/core'
 import { DefaultProvidersService } from './default'
+import type { EndpointCheckResult } from './types'
 import { getModelCapabilities } from '@/lib/models'
 import { isEngineHidden } from '@/lib/provider-visibility'
+import { getProviderTitle } from '@/lib/utils'
 
 /**
  * Turn a raw `get_local_http` failure (e.g. `HTTP 404: 404 page not found`,
@@ -114,6 +116,121 @@ function extractModelIds(rawText: string, providerLabel: string): string[] {
   // Some aggregators (e.g. AIML API) list the same model id more than once —
   // dedupe so the UI doesn't show identical rows. Preserve first-seen order.
   return Array.from(new Set(ids))
+}
+
+/**
+ * The model-listing request for a provider: `{base}/models`, and
+ * `{base}/v1/models` to try on a 404 when the base URL has no `/v1` segment.
+ *
+ * Most OpenAI-compatible servers (vLLM, llama.cpp, Ollama, …) expose models at
+ * /v1/models, but users commonly type the bare host without the prefix — and
+ * some serve a bare /models. Trying /models first then /v1/models on a 404
+ * covers both shapes without breaking already-prefixed URLs (ATO-211).
+ */
+function modelsRequest(provider: ModelProvider): {
+  baseUrl: string
+  urls: string[]
+  headers: Record<string, string>
+} {
+  // Normalise: trim surrounding whitespace (a stray trailing space, e.g.
+  // from a paste, otherwise leaks into the path as `/v1 /models` → 404) and
+  // strip trailing slashes for consistent URL construction.
+  const baseUrl = (provider.base_url ?? '').trim().replace(/\/+$/, '')
+  const primaryUrl = `${baseUrl}/models`
+  const hasV1Segment = /\/v1(\/|$)/.test(baseUrl)
+  const urls = hasV1Segment ? [primaryUrl] : [primaryUrl, `${baseUrl}/v1/models`]
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  }
+
+  // Add Origin header for local providers to avoid CORS issues
+  // Some local providers (like Ollama) require an Origin header
+  if (baseUrl.includes('localhost:') || baseUrl.includes('127.0.0.1:')) {
+    headers['Origin'] = 'tauri://localhost'
+  }
+
+  // Only add authentication headers if API key is provided
+  if (provider.api_key) {
+    headers['x-api-key'] = provider.api_key
+    headers['Authorization'] = `Bearer ${provider.api_key}`
+  }
+
+  if (provider.custom_header) {
+    provider.custom_header.forEach((header) => {
+      headers[header.header] = header.value
+    })
+  }
+
+  return { baseUrl, urls, headers }
+}
+
+/** How long a ping waits: a LAN server answers well within it. */
+const ENDPOINT_CHECK_TIMEOUT_SECS = 8
+
+/**
+ * Custom Endpoint's "Ping": does the server answer its model listing, how
+ * fast, and with how many models.
+ *
+ * One attempt per URL — unlike the model fetch, no retries — so the latency is
+ * that of one request and a server that is not there reads as such within the
+ * timeout. It writes nothing: the model list changes only on a reload.
+ */
+export async function checkProviderEndpoint(
+  provider: ModelProvider
+): Promise<EndpointCheckResult> {
+  const { baseUrl, urls, headers } = modelsRequest(provider)
+  // Messages name the provider the way the UI does ("Ollama", not "ollama").
+  const label = getProviderTitle(provider.provider)
+  if (!baseUrl) {
+    return {
+      ok: false,
+      latencyMs: 0,
+      modelCount: 0,
+      message: 'Provider must have base_url configured',
+    }
+  }
+
+  const started = performance.now()
+  const elapsed = () => Math.round(performance.now() - started)
+  let lastMessage = ''
+  for (const url of urls) {
+    const attemptStarted = performance.now()
+    let rawText: string
+    try {
+      rawText = await invoke<string>('get_local_http', {
+        url,
+        headers,
+        timeoutSecs: ENDPOINT_CHECK_TIMEOUT_SECS,
+      })
+    } catch (err) {
+      lastMessage = err instanceof Error ? err.message : String(err)
+      // Only a wrong path is worth the /v1/models fallback.
+      if (lastMessage.startsWith('HTTP 404')) continue
+      break
+    }
+    const latencyMs = Math.round(performance.now() - attemptStarted)
+    try {
+      const modelCount = extractModelIds(rawText, label).length
+      return { ok: true, latencyMs, modelCount }
+    } catch (err) {
+      // It answered, but not with a model list (an HTML page, an error
+      // envelope): reachable, and still not something the app can use.
+      return {
+        ok: false,
+        latencyMs,
+        modelCount: 0,
+        message: err instanceof Error ? err.message : String(err),
+      }
+    }
+  }
+
+  return {
+    ok: false,
+    latencyMs: elapsed(),
+    modelCount: 0,
+    message: classifyLocalFetchError(label, baseUrl, urls, lastMessage),
+  }
 }
 
 /** A context length worth keeping: a positive number, or a string of one. */
@@ -325,21 +442,10 @@ export class TauriProvidersService extends DefaultProvidersService {
       throw new Error('Provider must have base_url configured')
     }
 
-    // Normalise: trim surrounding whitespace (a stray trailing space, e.g.
-    // from a paste, otherwise leaks into the path as `/v1 /models` → 404) and
-    // strip trailing slashes for consistent URL construction.
-    const baseUrl = provider.base_url.trim().replace(/\/+$/, '')
+    const { baseUrl, urls, headers } = modelsRequest(provider)
+    const label = getProviderTitle(provider.provider)
     const hasApiKey = Boolean(provider.api_key)
-
-    // Build the primary URL and, when the base_url does not already contain a
-    // /v1 path segment, a fallback URL to try automatically on 404. Most
-    // OpenAI-compatible servers (vLLM, llama.cpp, Ollama, …) expose models at
-    // /v1/models, but users commonly type the bare host without the prefix —
-    // and some serve a bare /models. Trying /models first then /v1/models on a
-    // 404 covers both shapes without breaking already-prefixed URLs (ATO-211).
-    const primaryUrl = `${baseUrl}/models`
-    const hasV1Segment = /\/v1(\/|$)/.test(baseUrl)
-    const fallbackUrl = hasV1Segment ? null : `${baseUrl}/v1/models`
+    const [primaryUrl, fallbackUrl] = urls
 
     // The Tauri HTTP plugin runs requests through the Rust IPC layer, which
     // means they DO NOT appear in the WebView Network tab. Surface them via
@@ -348,39 +454,12 @@ export class TauriProvidersService extends DefaultProvidersService {
       `[providers:${provider.provider}] GET ${primaryUrl} (api_key=${hasApiKey ? 'present' : 'missing'})${fallbackUrl ? ` (fallback: ${fallbackUrl})` : ''}`
     )
 
-    // Build request headers once; shared across primary and fallback attempts.
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    }
-
-    // Add Origin header for local providers to avoid CORS issues
-    // Some local providers (like Ollama) require an Origin header
-    if (
-      provider.base_url.includes('localhost:') ||
-      provider.base_url.includes('127.0.0.1:')
-    ) {
-      headers['Origin'] = 'tauri://localhost'
-    }
-
-    // Only add authentication headers if API key is provided
-    if (provider.api_key) {
-      headers['x-api-key'] = provider.api_key
-      headers['Authorization'] = `Bearer ${provider.api_key}`
-    }
-
-    if (provider.custom_header) {
-      provider.custom_header.forEach((header) => {
-        headers[header.header] = header.value
-      })
-    }
-
     // All providers — cloud, self-hosted (vLLM/llama.cpp on a LAN host), and
     // loopback (Ollama/LM Studio) — go through the Rust `reqwest` command
     // rather than the Tauri HTTP plugin. The plugin's webview body-streaming
     // has been observed to hang reading the response for many providers
     // (GitHub #90 Home-Lab: "Reading response body timed out after 15s" on a
     // perfectly healthy server). Doing the GET server-side also sidesteps CORS.
-    const urls = fallbackUrl ? [primaryUrl, fallbackUrl] : [primaryUrl]
     const MAX_ATTEMPTS = 3
     let lastError: unknown
 
@@ -392,7 +471,7 @@ export class TauriProvidersService extends DefaultProvidersService {
             headers,
             timeoutSecs: 30,
           })
-          const ids = extractModelIds(rawText, provider.provider)
+          const ids = extractModelIds(rawText, label)
           console.info(
             `[providers:${provider.provider}] parsed ${ids.length} model ids (url=${url}, attempt=${attempt})`
           )
@@ -427,9 +506,13 @@ export class TauriProvidersService extends DefaultProvidersService {
 
     const msg =
       lastError instanceof Error ? lastError.message : String(lastError)
-    throw new Error(
-      classifyLocalFetchError(provider.provider, baseUrl, urls, msg)
-    )
+    throw new Error(classifyLocalFetchError(label, baseUrl, urls, msg))
+  }
+
+  async checkProviderEndpoint(
+    provider: ModelProvider
+  ): Promise<EndpointCheckResult> {
+    return checkProviderEndpoint(provider)
   }
 
   async updateSettings(

@@ -1,5 +1,4 @@
 import type { UIMessage } from '@ai-sdk/react'
-import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import {
   refreshChatExecStatus,
   useChatExecStatus,
@@ -14,13 +13,14 @@ import type {
   ChatExecService,
   ChatExecStatus,
   ChatExecUserFolder,
+  SecureEnvironment,
 } from '@/services/chat-exec/types'
 import type { MCPTool } from '@/types/completion'
 
 /**
  * Built-in chat tools that run a terminal command or a script on the user's
  * computer (`src-tauri/src/core/chat_exec`). They ride next to the MCP tools
- * in every chat request while the composer's "Run commands" item is on, and
+ * in every chat request where the platform and the machine can run them, and
  * each call goes through the thread's approval mode first (lib/mcp-approval).
  */
 export const RUN_COMMAND_TOOL = 'run_command'
@@ -64,7 +64,6 @@ export function isChatExecOffered(
 ): boolean {
   return (
     Boolean(PlatformFeatures[PlatformFeature.CHAT_EXEC]) &&
-    useGeneralSetting.getState().chatExecEnabled &&
     Boolean(status?.supported)
   )
 }
@@ -85,7 +84,23 @@ const USER_FOLDER_NAMES: Record<ChatExecUserFolder['kind'], string> = {
  * model asked about "my desktop" looks in the scratch folder, finds nothing
  * and reports it as the user's desktop.
  */
-function placeSentence(status: ChatExecStatus): string {
+function placeSentence(
+  status: ChatExecStatus,
+  secure?: SecureEnvironment
+): string {
+  // A secure project names only its own folders: naming the user's (even as
+  // blocked) contradicts a project folder that lives inside one of them.
+  if (secure) {
+    // The backend starts the command in the project's first editable folder
+    // (`chat_exec_run`), so a relative path lands where the user looks.
+    const start = secure.folders.find((folder) => folder.canEdit)
+    return [
+      start
+        ? `The working directory is the project's folder ${start.path}: a relative path such as notes.txt lands there.`
+        : 'The working directory is a scratch folder of this chat (its files stay between calls); a relative path lands in it.',
+      secureEnvironmentSentence(secure),
+    ].join(' ')
+  }
   const sentences = [
     "The working directory is a scratch folder of this chat (its files stay between calls), not the user's home: a relative path such as Desktop/notes.txt lands in it.",
   ]
@@ -103,13 +118,35 @@ function placeSentence(status: ChatExecStatus): string {
     )
   }
   if (status.os === 'windows') {
-    sentences.push(
-      status.sandbox.kind === 'mxc'
-        ? 'It runs in a Windows sandbox: only the chat folder and those user folders can be reached; the rest of the computer cannot be read or written.'
-        : "It runs directly on the user's Windows computer."
-    )
+    sentences.push("It runs directly on the user's Windows computer.")
   }
   return sentences.join(' ')
+}
+
+/**
+ * A secure environment project replaces the user's folders with the
+ * project's; the backend's MXC policy enforces exactly this.
+ */
+function secureEnvironmentSentence(secure: SecureEnvironment): string {
+  const folders = secure.folders
+    .map(
+      (folder) =>
+        `${folder.path} (${folder.canEdit ? 'can be changed' : 'read-only'})`
+    )
+    .join('; ')
+  return [
+    'This chat belongs to a secure environment project and runs in a Windows sandbox:',
+    folders
+      ? `besides the chat folder it can reach only the project's folders: ${folders}. When the user asks about their files, these are the folders to use.`
+      : 'it can reach only the chat folder.',
+    'Everything else on the computer is blocked on purpose, folder listings included.',
+    // MXC grants no directory enumeration here (it would open the whole
+    // drive's listings), so `dir` fails even on the granted folders.
+    '`dir` and `cd` fail even on these folders in this sandbox: list a folder with `for %f in ("<folder>\\*") do @echo %~nxf` instead.',
+    secure.network ? '' : 'There is no internet access.',
+  ]
+    .filter(Boolean)
+    .join(' ')
 }
 
 const TIMEOUT_SENTENCE = `It is stopped after timeout_seconds (default ${DEFAULT_TIMEOUT_SECONDS}, at most ${MAX_TIMEOUT_SECONDS}); interactive programs, servers and anything that waits for input will not work.`
@@ -123,8 +160,14 @@ function timeoutProperty() {
   }
 }
 
-/** `run_command` and `run_script`, described for this machine. */
-export function chatExecTools(status: ChatExecStatus): MCPTool[] {
+/**
+ * `run_command` and `run_script`, described for this machine — and, in a
+ * secure environment project's chat, for that project's folders.
+ */
+export function chatExecTools(
+  status: ChatExecStatus,
+  secure?: SecureEnvironment
+): MCPTool[] {
   if (!status.supported) return []
   const shell =
     status.shell === 'cmd'
@@ -137,7 +180,7 @@ export function chatExecTools(status: ChatExecStatus): MCPTool[] {
       description: [
         "Run a terminal command on the user's computer and get its output and exit code.",
         shell,
-        placeSentence(status),
+        placeSentence(status, secure),
         "`python -m pip install <package>` installs Python packages into this chat, where run_script's Python finds them.",
         TIMEOUT_SENTENCE,
         'The user approves each call.',
@@ -163,7 +206,7 @@ export function chatExecTools(status: ChatExecStatus): MCPTool[] {
         'Run a complete script and get its output and exit code.',
         `Languages available here: ${status.languages.map((language) => LANGUAGE_NAMES[language]).join(', ')}.`,
         'Print what you need to see; nothing is returned implicitly.',
-        placeSentence(status),
+        placeSentence(status, secure),
         'Files the script writes stay in that folder.',
         TIMEOUT_SENTENCE,
         'The user approves each call.',
@@ -362,8 +405,8 @@ export async function runChatExecToolCall({
     return { error: error instanceof Error ? error.message : String(error) }
   } finally {
     signal.removeEventListener('abort', stop)
-    // A sandbox that failed to start is dropped for the session; the next
-    // approval has to say so.
+    // A sandbox that failed to start is dropped for the session; a secure
+    // project's tools and approval have to say so.
     void refreshChatExecStatus()
   }
 }

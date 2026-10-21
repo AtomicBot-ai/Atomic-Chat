@@ -32,6 +32,7 @@ import { describeHardware, type HardwareProfile } from '@/lib/hardware-tier'
 import { notifyWhenAway } from '@/lib/notifications'
 import {
   supportsDiffusionFamily,
+  requiredEngineTag,
   MODERN_IMAGE_ENGINE_TAG,
 } from '@/services/diffusion/compatibility'
 import {
@@ -838,6 +839,9 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
       }
       set({ pendingEngineArtifactId: null })
       const quantId = parsed.quantId
+      // The build an engine refusal offers; the core's refusal names the same.
+      const requiredTag =
+        requiredEngineTag(family.id) ?? MODERN_IMAGE_ENGINE_TAG
       const settings = useImageSetting.getState()
       const workflow = useImageForm.getState().workflow
       const teOnCpu = IS_MACOS
@@ -878,13 +882,13 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
             pendingEngineArtifactId: artifactId,
             engineUpdate: {
               ...noUpdate,
-              availableTag: MODERN_IMAGE_ENGINE_TAG,
+              availableTag: requiredTag,
               checkedAt: Date.now(),
             },
           })
           throw {
             code: 'ENGINE_UPDATE_REQUIRED',
-            message: `${family.name} requires ${MODERN_IMAGE_ENGINE_TAG} or newer. Update the media engine and retry.`,
+            message: `${family.name} requires ${requiredTag} or newer. Update the media engine and retry.`,
           }
         }
         await acquireGpuForDiffusion({
@@ -939,7 +943,7 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
             pendingEngineArtifactId: artifactId,
             engineUpdate: {
               ...noUpdate,
-              availableTag: MODERN_IMAGE_ENGINE_TAG,
+              availableTag: requiredTag,
               checkedAt: Date.now(),
             },
           })

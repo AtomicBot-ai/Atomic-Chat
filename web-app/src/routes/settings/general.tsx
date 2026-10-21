@@ -1,7 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { isEnabled as isAutostartEnabled } from '@tauri-apps/plugin-autostart'
 import { route } from '@/constants/routes'
-import SettingsMenu from '@/containers/SettingsMenu'
 import HeaderPage from '@/containers/HeaderPage'
 import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
@@ -262,7 +261,6 @@ function General() {
         </div>
       </HeaderPage>
       <div className="flex h-[calc(100%-60px)]">
-        <SettingsMenu />
         <div className="p-4 pt-0 w-full overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             {/* General */}

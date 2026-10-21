@@ -55,19 +55,18 @@ type GeneralSettingState = {
   connectorsBadgeSeen: boolean
   markConnectorsBadgeSeen: () => void
   /**
+   * The Cloud page's first-visit guide was finished or skipped. After that it
+   * opens only from its "Guide me" button.
+   */
+  cloudGuideDone: boolean
+  markCloudGuideDone: () => void
+  /**
    * Global opt-in for the agent engine. Off = every turn runs on the chat
    * pipeline. Toggled from the composer "+" menu; while on, an "Agent" chip
    * sits in the composer toolbar until the user removes it.
    */
   agentModeEnabled: boolean
   setAgentModeEnabled: (value: boolean) => void
-  /**
-   * Offer the model `run_command` / `run_script` in chat. On by default; each
-   * call still goes through the thread's approval mode. Toggled from the
-   * composer "+" menu.
-   */
-  chatExecEnabled: boolean
-  setChatExecEnabled: (value: boolean) => void
   setHuggingfaceToken: (token: string) => void
   setSpellCheckChatInput: (value: boolean) => void
   setTokenCounterCompact: (value: boolean) => void
@@ -106,10 +105,13 @@ export const useGeneralSetting = create<GeneralSettingState>()(
         set((state) =>
           state.connectorsBadgeSeen ? state : { connectorsBadgeSeen: true }
         ),
+      cloudGuideDone: false,
+      markCloudGuideDone: () =>
+        set((state) =>
+          state.cloudGuideDone ? state : { cloudGuideDone: true }
+        ),
       agentModeEnabled: false,
       setAgentModeEnabled: (value) => set({ agentModeEnabled: value }),
-      chatExecEnabled: true,
-      setChatExecEnabled: (value) => set({ chatExecEnabled: value }),
       setSpellCheckChatInput: (value) => set({ spellCheckChatInput: value }),
       setTokenCounterCompact: (value) => set({ tokenCounterCompact: value }),
       setDisableReasoning: (value) => set({ disableReasoning: value }),
@@ -156,7 +158,7 @@ export const useGeneralSetting = create<GeneralSettingState>()(
     {
       name: localStorageKey.settingGeneral,
       storage: createJSONStorage(() => localStorage),
-      version: 4,
+      version: 5,
       migrate: (persistedState: unknown, version: number) => {
         const state = (persistedState ?? {}) as Partial<GeneralSettingState> &
           Record<string, unknown>
@@ -188,6 +190,14 @@ export const useGeneralSetting = create<GeneralSettingState>()(
           // that had the button unpinned still carries the key — drop it.
           // Each connector's own on/off state lives elsewhere and is kept.
           delete state.connectorsPinned
+        }
+        if (version < 5) {
+          // v4 → v5: "Run commands" left the access menu; commands and
+          // scripts are always offered where the platform and the machine
+          // can run them, and each run still goes through the approval mode.
+          // An install that had switched them off would carry that choice
+          // with no way back — drop the key.
+          delete state.chatExecEnabled
         }
         return state as GeneralSettingState
       },

@@ -41,7 +41,7 @@ describe('ModelPickerDownloads', () => {
     expect(action).toHaveAttribute('data-slot', 'button')
     expect(action).toHaveAttribute('data-variant', 'secondary')
     expect(action).toHaveAttribute('data-size', 'sm')
-    expect(action).toHaveClass('h-8', 'w-full')
+    expect(action).toHaveClass('h-[var(--control-height,2.25rem)]', 'w-full')
     const logo = action.querySelector('img')
     expect(logo).toHaveAttribute('aria-hidden')
     expect(logo).toHaveClass('size-4')

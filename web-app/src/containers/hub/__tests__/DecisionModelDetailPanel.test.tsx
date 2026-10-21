@@ -24,12 +24,6 @@ vi.mock('@/hooks/useDecisionModel', () => ({
   }),
 }))
 
-vi.mock('@/containers/hub/HubReadme', () => ({
-  HubReadme: ({ url }: { url: string }) => (
-    <div data-testid="readme">{url}</div>
-  ),
-}))
-
 vi.mock('@/containers/DecisionModelCard', () => ({
   default: ({
     model,
@@ -82,12 +76,14 @@ describe('DecisionModelDetailPanel', () => {
     expect(screen.getByText('apache-2.0')).toBeVisible()
   })
 
-  it('reads the README at the revision the files come from', () => {
+  it('links the repo on Hugging Face in place of its README', () => {
     render(<DecisionModelDetailPanel model={model} />)
 
-    expect(screen.getByTestId('readme')).toHaveTextContent(
-      `https://huggingface.co/convaiinnovations/laya-multilingual/resolve/${model.revision}/README.md`
+    expect(screen.getByRole('link', { name: /hub:openOnWeb/ })).toHaveAttribute(
+      'href',
+      'https://huggingface.co/convaiinnovations/laya-multilingual'
     )
+    expect(screen.queryByText('hub:readme')).not.toBeInTheDocument()
   })
 
   it('opens the llama.cpp TurboQuant page, where the model is started', async () => {

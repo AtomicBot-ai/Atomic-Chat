@@ -36,7 +36,7 @@ import { VideoGenerationProvider } from '@/providers/VideoGenerationProvider'
 import { TranslationProvider } from '@/i18n/TranslationContext'
 import AttachmentIngestionDialog from '@/containers/dialogs/AttachmentIngestionDialog'
 import WhatsNewDialog from '@/containers/dialogs/WhatsNewDialog'
-import { useEffect } from 'react'
+import { useEffect, type CSSProperties } from 'react'
 import { useSetupCompleted } from '@/hooks/useSetupCompleted'
 import GlobalError from '@/containers/GlobalError'
 import * as Sentry from '@sentry/react'
@@ -82,6 +82,15 @@ const AppLayout = () => {
   return (
     <div className="bg-neutral-50 dark:bg-background size-full relative">
       <SidebarProvider
+        // The navigation shell: a title bar row on top, the icon rail on the
+        // left. The sidebar panel and every page offset themselves by these.
+        className="app-shell"
+        style={
+          {
+            '--navigation-rail-width': '60px',
+            '--window-titlebar-height': '42px',
+          } as CSSProperties
+        }
         open={isLeftPanelOpen}
         onOpenChange={setLeftPanel}
         defaultWidth={sidebarWidth}

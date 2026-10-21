@@ -2,6 +2,8 @@ import {
   Folder,
   MoreHorizontal,
   Pencil,
+  Pin,
+  PinOff,
   SquareArrowOutUpRight,
   Trash2,
   X,
@@ -10,7 +12,14 @@ import { useThreads } from '@/hooks/useThreads'
 import { useMessages } from '@/hooks/useMessages'
 import { useThreadManagementStore } from '@/hooks/useThreadManagement'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { useEffect, useRef } from 'react'
+import {
+  useEffect,
+  useRef,
+  type CSSProperties,
+  type ReactNode,
+  type Ref,
+} from 'react'
+import { togglePinnedThread } from '@/hooks/useSidebarLists'
 
 import {
   DropdownMenu,
@@ -48,19 +57,26 @@ const WELCOME_THREAD_TITLES = new Set([
   'What is Overchat?',
 ])
 
-const ThreadItem = memo(
+export const ThreadItem = memo(
   ({
     thread,
     isActive,
     isMobile,
     currentProjectId,
     subItem,
+    rowRef,
+    rowStyle,
+    dragHandle,
   }: {
     thread: Thread
     isActive: boolean
     isMobile: boolean
     currentProjectId?: string
     subItem?: boolean
+    /** Sortable lists (Pinned) attach their drag node, transform and handle. */
+    rowRef?: Ref<HTMLLIElement>
+    rowStyle?: CSSProperties
+    dragHandle?: ReactNode
   }) => {
     const deleteThread = useThreads((state) => state.deleteThread)
     const renameThread = useThreads((state) => state.renameThread)
@@ -208,12 +224,15 @@ const ThreadItem = memo(
       // action anchors to this row and reveals only when THIS chat is hovered —
       // not when hovering the project or sibling chats.
       <MenuItemWrapper
+        ref={rowRef}
+        style={rowStyle}
         className={cn(subItem && 'group/menu-sub-item relative')}
         onContextMenu={(event: MouseEvent<HTMLLIElement>) => {
           event.preventDefault()
           setMenuOpen(true)
         }}
       >
+        {dragHandle}
         {currentProjectId ? (
           <Link
             to="/threads/$threadId"
@@ -223,7 +242,7 @@ const ThreadItem = memo(
               isActive && 'bg-secondary dark:bg-secondary/80'
             )}
           >
-            <span className="flex items-center gap-2 pr-8 min-w-0">
+            <span className="flex items-center gap-2 pr-14 min-w-0">
               {showStatusDot && <ThreadStatusDot pulsing={isBusy} />}
               <span className="truncate flex-1 min-w-0">{threadTitle}</span>
             </span>
@@ -237,7 +256,11 @@ const ThreadItem = memo(
           <MenuButtonWrapper
             asChild
             isActive={isActive}
-            className="data-[active=true]:bg-sidebar-foreground/15"
+            // Room for the pin and "…" actions, and for the drag handle.
+            className={cn(
+              'data-[active=true]:bg-sidebar-foreground/15 pr-14!',
+              dragHandle && 'pl-7'
+            )}
           >
             <Link to="/threads/$threadId" params={{ threadId: thread.id }}>
               <span className="flex w-full items-center gap-2 min-w-0">
@@ -247,6 +270,28 @@ const ThreadItem = memo(
             </Link>
           </MenuButtonWrapper>
         )}
+        <SidebarMenuAction
+          showOnHover={!subItem}
+          aria-label={
+            thread.isFavorite
+              ? t('common:navigation.unpinChat')
+              : t('common:navigation.pinChat')
+          }
+          title={
+            thread.isFavorite
+              ? t('common:navigation.unpinChat')
+              : t('common:navigation.pinChat')
+          }
+          onClick={() => togglePinnedThread(thread.id)}
+          className={cn(
+            'right-7 hover:bg-sidebar-foreground/8',
+            currentProjectId && 'mt-4 mr-2',
+            subItem &&
+              'top-1 transition-opacity group-hover/menu-sub-item:opacity-100 group-focus-within/menu-sub-item:opacity-100 md:opacity-0'
+          )}
+        >
+          {thread.isFavorite ? <PinOff /> : <Pin />}
+        </SidebarMenuAction>
         <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
           <DropdownMenuTrigger asChild>
             <SidebarMenuAction

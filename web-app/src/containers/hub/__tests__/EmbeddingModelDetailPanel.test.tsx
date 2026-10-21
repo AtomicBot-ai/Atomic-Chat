@@ -33,12 +33,6 @@ vi.mock('@/lib/clipboard', () => ({
   },
 }))
 
-vi.mock('@/containers/hub/HubReadme', () => ({
-  HubReadme: ({ url }: { url: string }) => (
-    <div data-testid="readme">{url}</div>
-  ),
-}))
-
 vi.mock('@/containers/EmbeddingModelCard', () => ({
   default: ({
     model,
@@ -228,12 +222,14 @@ describe('EmbeddingModelDetailPanel', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('reads the README at the revision the files come from', () => {
+  it('links the repo on Hugging Face in place of its README', () => {
     render(<EmbeddingModelDetailPanel model={gemma2} />)
 
-    expect(screen.getByTestId('readme')).toHaveTextContent(
-      `https://huggingface.co/unsloth/embeddinggemma-2-GGUF/resolve/${gemma2.revision}/README.md`
+    expect(screen.getByRole('link', { name: /hub:openOnWeb/ })).toHaveAttribute(
+      'href',
+      'https://huggingface.co/unsloth/embeddinggemma-2-GGUF'
     )
+    expect(screen.queryByText('hub:readme')).not.toBeInTheDocument()
   })
 
   it('opens the llama.cpp page, where the model is started', async () => {

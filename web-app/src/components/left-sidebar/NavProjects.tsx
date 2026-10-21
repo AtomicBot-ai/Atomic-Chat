@@ -4,6 +4,7 @@ import {
   FolderOpenIcon,
   GripVertical,
   MoreHorizontal,
+  Plus,
   Trash2,
 } from 'lucide-react'
 
@@ -22,6 +23,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import {
   SidebarGroup,
+  SidebarGroupAction,
   SidebarGroupLabel,
   SidebarMenu,
   SidebarMenuAction,
@@ -31,9 +33,10 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
+import { useSidebarLists } from '@/hooks/useSidebarLists'
 import { useThreadManagement } from '@/hooks/useThreadManagement'
 import { useThreads } from '@/hooks/useThreads'
-import { Link, useNavigate } from '@tanstack/react-router'
+import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import {
   DndContext,
   closestCenter,
@@ -71,6 +74,7 @@ const ProjectItem = memo(function ProjectItem({
   isMobile,
   threads,
   isOpen,
+  isActive,
   onOpenChange,
   onEdit,
   onDelete,
@@ -79,6 +83,8 @@ const ProjectItem = memo(function ProjectItem({
   isMobile: boolean
   threads: Thread[]
   isOpen: boolean
+  /** The project's own page is the one open. */
+  isActive: boolean
   onOpenChange: (projectId: string, open: boolean) => void
   onEdit: (project: ThreadFolder) => void
   onDelete: (project: ThreadFolder) => void
@@ -134,7 +140,9 @@ const ProjectItem = memo(function ProjectItem({
             </CollapsibleTrigger>
             <SidebarMenuButton
               asChild
-              className="min-w-0 flex-1 pr-8"
+              isActive={isActive}
+              // The same highlight as an open chat row (ThreadList).
+              className="min-w-0 flex-1 pr-8 data-[active=true]:bg-sidebar-foreground/15"
               onMouseEnter={() => folderIconRef.current?.startAnimation()}
               onMouseLeave={() => folderIconRef.current?.stopAnimation()}
             >
@@ -198,12 +206,19 @@ const ProjectItem = memo(function ProjectItem({
   )
 })
 
-export function NavProjects() {
+/**
+ * "Projects": a collapsible group whose "+" is the way to start a project, so
+ * the group shows even before the first one exists.
+ */
+export function NavProjects({ onCreate }: { onCreate: () => void }) {
   const { t } = useTranslation()
+  const collapsed = useSidebarLists((state) => state.collapsed.projects)
+  const toggleGroup = useSidebarLists((state) => state.toggleGroup)
   const { isMobile } = useSidebar()
   const { folders, updateFolder, reorderFolders } = useThreadManagement()
   const threads = useThreads((state) => state.threads)
   const currentThreadId = useThreads((state) => state.currentThreadId)
+  const { projectId: activeProjectId } = useParams({ strict: false })
   const projectExpanded = useLeftPanel((state) => state.projectExpanded)
   const setProjectExpanded = useLeftPanel((state) => state.setProjectExpanded)
 
@@ -288,15 +303,34 @@ export function NavProjects() {
     }
   }
 
-  if (folders.length === 0) {
-    return null
-  }
-
   return (
     <>
       <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-        <SidebarGroupLabel>{t('common:projects.title')}</SidebarGroupLabel>
-        <SidebarMenu>
+        <SidebarGroupLabel asChild>
+          <button
+            type="button"
+            aria-expanded={!collapsed}
+            onClick={() => toggleGroup('projects')}
+          >
+            <ChevronRight
+              size={12}
+              className={cn(
+                'mr-1 transition-transform',
+                !collapsed && 'rotate-90'
+              )}
+            />
+            {t('common:projects.title')}
+          </button>
+        </SidebarGroupLabel>
+        <SidebarGroupAction
+          className="hover:bg-sidebar-foreground/8"
+          aria-label={t('common:projects.new')}
+          title={t('common:projects.new')}
+          onClick={onCreate}
+        >
+          <Plus className="text-muted-foreground" />
+        </SidebarGroupAction>
+        <SidebarMenu className={cn(collapsed && 'hidden')}>
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
@@ -317,6 +351,7 @@ export function NavProjects() {
                     isMobile={isMobile}
                     threads={projectThreads}
                     isOpen={open}
+                    isActive={item.id === activeProjectId}
                     onOpenChange={handleOpenChange}
                     onEdit={handleEdit}
                     onDelete={handleDelete}

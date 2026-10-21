@@ -46,6 +46,9 @@
   "activity": {
     "working": "Выполняется",
     "completedActions": "Выполнено действий: {{count}}",
+    "completedActions_one": "Выполнено {{count}} действие",
+    "completedActions_few": "Выполнено {{count}} действия",
+    "completedActions_many": "Выполнено {{count}} действий",
     "reading": "Чтение: {{count}}%",
     "reasoned": "Обдумано",
     "thinking": "Думаю...",
@@ -86,7 +89,7 @@
       }
     },
     "exec": {
-      "openFolder": "Открыть папку чата",
+      "openFolder": "Открыть папку",
       "sandboxed": "Выполнено в песочнице Windows",
       "exitCode": "Код выхода {{code}}",
       "timedOut": "Превышено время",
@@ -104,8 +107,8 @@
     "providerKeyMissing": "Добавьте API-ключ этого провайдера в настройках, чтобы включить режим агента."
   },
   "agentApprovals": {
-    "manualSelected": "Спрашивать разрешение",
-    "manual": "Спрашивать разрешение",
+    "manualSelected": "Ограниченный доступ",
+    "manual": "Ограниченный доступ",
     "manualDescription": "Всегда спрашивать, прежде чем инструменты изменят файлы или выйдут в интернет",
     "skipSelected": "Полный доступ",
     "skip": "Полный доступ",
@@ -207,7 +210,9 @@
     "chat": "Чат",
     "agent": "Тред агента"
   },
-  "chatExec": {
-    "menuItem": "Запуск команд"
+  "composer": {
+    "attachFiles": "Прикрепить файлы",
+    "supportedFiles": "Поддерживаемые файлы",
+    "attachFailed": "Не удалось прикрепить файлы"
   }
 }

@@ -28,10 +28,14 @@ export const route = {
   cloud: {
     index: '/cloud/',
   },
+  endpoints: {
+    index: '/endpoints/',
+  },
   hub: {
     index: '/hub/',
     model: '/hub/$modelId',
   },
+  downloads: '/downloads',
   images: {
     index: '/images/',
     workflow: '/images/$workflow',
@@ -47,6 +51,9 @@ export const route = {
   },
   api: {
     index: '/api/',
+    activity: '/api/activity',
+    connections: '/api/connections',
+    model: '/api/model',
   },
   skills: {
     index: '/skills/',

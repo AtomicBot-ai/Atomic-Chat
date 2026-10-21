@@ -1,11 +1,11 @@
 import { IconLoader2 } from '@tabler/icons-react'
 import type { ReactNode } from 'react'
 
-import { Button } from '@/components/ui/button'
 import {
   StatusDot,
   type StatusTone,
 } from '@/containers/api/ApiStatusIndicators'
+import { ServerButton } from '@/containers/server/ServerPageParts'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import type { AccessAction, AccessMessage } from '@/lib/remoteLan'
 
@@ -16,10 +16,10 @@ const MESSAGE_TONE: Record<AccessMessage['tone'], string> = {
 }
 
 /**
- * Top of both Remote & LAN cards on the API screen: what it is, the state it
- * is in, the one action, and the one line that explains the state.
+ * Top of the Remote access and Local network cards: what it is, the state it
+ * is in, the one action, and the lines that explain the state.
  *
- * The action is a button rather than a `Switch` on purpose. It is asynchronous
+ * The action is a button rather than a switch on purpose. It is asynchronous
  * and it can fail; a switch would have to show "on" before anything is, or
  * jump back on its own.
  */
@@ -30,6 +30,8 @@ export function AccessCardHeader({
   tone,
   stateLabel,
   action,
+  startLabel,
+  stopLabel,
   busy,
   disabled,
   onAction,
@@ -42,6 +44,8 @@ export function AccessCardHeader({
   tone: StatusTone
   stateLabel: string
   action: AccessAction
+  startLabel: string
+  stopLabel: string
   busy: AccessAction | null
   disabled: boolean
   onAction: () => void
@@ -57,43 +61,30 @@ export function AccessCardHeader({
       : busy === 'stop'
         ? t('settings:remoteLan.stopping')
         : action === 'stop'
-          ? t('settings:remoteLan.stop')
-          : t('settings:remoteLan.start')
+          ? stopLabel
+          : startLabel
 
   return (
-    <div className="border-b border-border/40 pb-3">
-      <div className="flex items-start gap-3">
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-secondary text-foreground">
+    <>
+      <div className="sp-access-heading">
+        <span className="shrink-0 text-foreground" aria-hidden="true">
           {icon}
+        </span>
+        <div>
+          <h2>{title}</h2>
+          <p>{description}</p>
         </div>
-        <div className="min-w-0 flex-1 space-y-1">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <h1 className="text-foreground font-studio font-medium text-base">
-              {title}
-            </h1>
-            <output
-              aria-live="polite"
-              className="flex items-center gap-1.5 text-xs text-muted-foreground"
-            >
-              <StatusDot tone={tone} />
-              {stateLabel}
-            </output>
-          </div>
-          <p className="leading-normal text-muted-foreground">{description}</p>
-        </div>
-        <Button
-          size="sm"
-          variant={action === 'stop' ? 'destructive' : 'default'}
-          className="shrink-0"
-          disabled={disabled}
-          onClick={onAction}
-        >
+        <output aria-live="polite" className="sp-status">
+          <StatusDot tone={tone} />
+          {stateLabel}
+        </output>
+        <ServerButton disabled={disabled} onClick={onAction}>
           {busy !== null && <IconLoader2 size={14} className="animate-spin" />}
           {actionLabel}
-        </Button>
+        </ServerButton>
       </div>
       {(message || notes.length > 0) && (
-        <div className="mt-3 space-y-1.5 text-xs leading-normal">
+        <div className="sp-access-notes">
           {message && (
             <p
               role={message.tone === 'destructive' ? 'alert' : undefined}
@@ -103,12 +94,10 @@ export function AccessCardHeader({
             </p>
           )}
           {notes.map((note) => (
-            <p key={note} className="text-muted-foreground">
-              {note}
-            </p>
+            <p key={note}>{note}</p>
           ))}
         </div>
       )}
-    </div>
+    </>
   )
 }

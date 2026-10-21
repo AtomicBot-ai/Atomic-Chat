@@ -277,8 +277,11 @@ export async function startLocalApiServerAndSettle(
 }
 
 /**
- * Restarts the Local API Server so it picks up a new host or key: `start` is a
- * no-op while the proxy is up, so every such change goes stop → start.
+ * Restarts the Local API Server so it picks up a new host, key or model:
+ * `start` is a no-op while the proxy is up, so every such change goes
+ * stop → start. The stop keeps the models (it is not a turn-off). A new host
+ * or key leaves the loaded model alone; a new model passes `ensureModel` so
+ * the start loads it in place of the old one.
  *
  * The core drops the tunnel together with the server. With auto-start on,
  * `useRemoteAccessSync` brings it back when the server returns; otherwise this
@@ -287,14 +290,15 @@ export async function startLocalApiServerAndSettle(
  */
 export async function restartLocalApiServer(
   hub: ServiceHub,
-  server: Pick<LocalApiServerControl, 'start' | 'stop'>
+  server: Pick<LocalApiServerControl, 'start' | 'stop'>,
+  { ensureModel = false }: { ensureModel?: boolean } = {}
 ): Promise<boolean> {
   const tunnelWasOnline =
     useRemoteAccessStore.getState().status?.state === 'online'
 
-  await server.stop()
+  await server.stop({ keepModels: true })
   const running = await startLocalApiServerAndSettle(server.start, {
-    ensureModel: false,
+    ensureModel,
   })
 
   if (
@@ -365,7 +369,7 @@ export function useRemoteAccess({ server }: { server: LocalApiServerControl }) {
         if (!running) {
           running = await startLocalApiServerAndSettle(startServer)
         } else if (restartToApplyKey) {
-          await stopServer()
+          await stopServer({ keepModels: true })
           running = await startLocalApiServerAndSettle(startServer, {
             ensureModel: false,
           })

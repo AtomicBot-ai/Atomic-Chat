@@ -21,6 +21,7 @@ import { coreRequest } from '../harness/core.js'
 import { FAKE_BACKEND, FAKE_PROVIDER, installFakeBackend, writeFakeModel } from '../harness/fixtures.js'
 import { CAN_RUN_FAKE_BACKEND } from '../harness/platform.js'
 import { bundledBackends, endSession, startSession, withArtifacts, type Session } from '../harness/session.js'
+import { startNewChat } from '../harness/navigation.js'
 
 const MODEL_ID = 'e2e/fake-model'
 const OLD_TAG = 'b99990'
@@ -108,7 +109,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('switching and removing installed llama.c
     await withArtifacts(session, async () => {
       const browser = session.app.browser
       const dataFolder = session.profile.dataFolder
-      await browser.$('//*[normalize-space(text())="New Chat"]').click()
+      await startNewChat(browser)
       await waitForChat(session)
       await pickModel(session, MODEL_ID)
       await send(session, 'which backend are you')

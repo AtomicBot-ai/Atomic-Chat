@@ -48,9 +48,11 @@ type ExecuteChatToolCallsOptions = {
     projectId?: string
     scope: 'project' | 'thread'
   }) => Promise<ToolResult>
+  /** `threadId` lets the backend refuse servers a secure project does not allow. */
   callMcpTool: (args: {
     toolName: string
     arguments: object
+    threadId: string
   }) => Promise<ToolResult>
   /** Runs an approved command/script; stops it when `signal` aborts. */
   callExecTool?: (args: {
@@ -141,6 +143,7 @@ export async function executeChatToolCalls({
         result = await callMcpTool({
           toolName: toolCall.toolName,
           arguments: toolCall.input,
+          threadId,
         })
       } else {
         result = {

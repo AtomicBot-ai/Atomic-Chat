@@ -83,6 +83,61 @@
   "decisionReadsImages": "reads images",
   "licenseNonCommercial": "non-commercial",
   "frameRate": "Frame rate",
+  "categoryVoice": "Voice",
+  "categoryVoiceHint": "Speech recognition and voice models",
+  "searchVoicePlaceholder": "Search voice models…",
+  "voiceModels": "Voice models · speech recognition",
+  "voiceTagline": "Speech to text · Multilingual",
+  "noVoiceModels": "No voice models match your search.",
+  "sort": "Sort",
+  "sortModels": "Sort models",
+  "filters": {
+    "button": "Filters",
+    "label": "Filter models",
+    "engine": "Engine",
+    "allEngines": "All engines",
+    "format": "Format",
+    "showOnly": "Show only",
+    "liked": "Liked models",
+    "clear": "Clear filters"
+  },
+  "import": {
+    "button": "Import file",
+    "ggufFile": "GGUF model file…",
+    "mlxFolder": "MLX model folder…",
+    "unsupportedTitle": "This file can't be imported",
+    "unsupportedGguf": "Atomic Chat imports GGUF model files.",
+    "unsupportedGgufOrMlx": "Atomic Chat imports GGUF model files and MLX model folders."
+  },
+  "table": {
+    "label": "Local models",
+    "count": "Models: {{count}}",
+    "resetSort": "Reset sorting",
+    "sortBy": "Sort by {{column}}",
+    "expand": "Expand {{name}}",
+    "collapse": "Collapse {{name}}",
+    "like": "Like {{name}}",
+    "unlike": "Unlike {{name}}",
+    "unknown": "Unknown",
+    "notSpecified": "Not specified",
+    "sizeHint": "Representative download: the quantization the download options open on (IQ4_XS or Q4_K_M when the repo has one, otherwise the median) with its companion files, or the complete MLX weights.",
+    "deviceInCard": "In the download options",
+    "deviceInCardHint": "This engine checks the model against this computer when you open it.",
+    "footnote": "This device compares the listed download with this computer’s memory. Context length and engine settings add to the memory a model uses.",
+    "column": {
+      "model": "Model",
+      "parameters": "Parameters",
+      "format": "Format",
+      "capabilities": "Capabilities",
+      "downloadSize": "Download size",
+      "thisDevice": "This device",
+      "engines": "Engines"
+    },
+    "loading": "Loading"
+  },
+  "source": {
+    "huggingFace": "Hugging Face"
+  },
   "vllm": {
     "checking": "Checking whether vLLM can run on this computer…",
     "blocked": {

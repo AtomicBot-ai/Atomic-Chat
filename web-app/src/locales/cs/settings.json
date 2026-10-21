@@ -53,7 +53,7 @@
   },
   "others": {
     "spellCheck": "Kontrola pravopisu",
-    "spellCheckDesc": "Povolit kontrolu pravopisu pro vaše vlákna.",
+    "spellCheckDesc": "Povolit kontrolu pravopisu ve vašich chatech.",
     "resetFactory": "Obnovit tovární nastavení",
     "resetFactoryDesc": "Obnoví aplikaci do původního stavu, vymaže všechny modely a historii chatů. Tato akce je nevratná a doporučuje se pouze v případě, že je aplikace poškozena."
   },
@@ -96,7 +96,7 @@
   "interface": {
     "title": "Rozhraní",
     "theme": "Motiv",
-    "themeDesc": "Přizpůsobit motivu OS.",
+    "themeDesc": "Zvolte světlý nebo tmavý motiv, případně podle OS.",
     "fontSize": "Velikost písma",
     "fontSizeDesc": "Upravit velikost písma aplikace.",
     "windowBackground": "Pozadí okna",

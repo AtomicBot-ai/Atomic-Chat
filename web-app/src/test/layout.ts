@@ -82,7 +82,14 @@ export function setTheme(theme: Theme): void {
 export async function settle(root: Element = document.body): Promise<void> {
   await document.fonts.ready
   await Promise.allSettled(
-    root.getAnimations({ subtree: true }).map((animation) => animation.finished)
+    root
+      .getAnimations({ subtree: true })
+      // A looping one (a loading pulse) never finishes; wait for the rest.
+      .filter(
+        (animation) =>
+          animation.effect?.getComputedTiming().endTime !== Infinity
+      )
+      .map((animation) => animation.finished)
   )
   await new Promise<void>((resolve) =>
     requestAnimationFrame(() => requestAnimationFrame(() => resolve()))

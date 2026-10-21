@@ -4,6 +4,7 @@ import { useParams } from '@tanstack/react-router'
 import ThreadList from '../ThreadList'
 import type { MessagesService } from '@/services/messages/types'
 import { seedServiceHub } from '@/test/service-hub'
+import { togglePinnedThread } from '@/hooks/useSidebarLists'
 
 // Render Link as a plain anchor, forwarding any extra props (e.g. the
 // data-active / className the sidebar button merges onto it).
@@ -44,9 +45,15 @@ vi.mock('@/components/ui/sidebar', () => ({
       {children}
     </div>
   ),
-  SidebarMenuAction: ({ children }: any) => (
-    <button type="button">{children}</button>
+  SidebarMenuAction: ({ children, showOnHover: _showOnHover, ...props }: any) => (
+    <button type="button" {...props}>
+      {children}
+    </button>
   ),
+}))
+
+vi.mock('@/hooks/useSidebarLists', () => ({
+  togglePinnedThread: vi.fn(),
 }))
 
 // Dropdown menu and dialogs are not under test — collapse them to passthroughs.
@@ -297,5 +304,60 @@ describe('ThreadList right-click menu', () => {
       label: 'thread-thread-1',
       title: 'First chat',
     })
+  })
+})
+
+describe('ThreadList pin action', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(useParams).mockReturnValue({} as never)
+    seedServiceHub({
+      messages: { fetchMessages: vi.fn() } as unknown as MessagesService,
+    })
+  })
+
+  it('offers to pin an unpinned chat and to unpin a pinned one', async () => {
+    await act(async () => {
+      render(
+        <ThreadList
+          threads={[
+            { id: 'thread-1', title: 'First chat', updated: 2 },
+            {
+              id: 'thread-2',
+              title: 'Second chat',
+              updated: 1,
+              isFavorite: true,
+            },
+          ]}
+        />
+      )
+    })
+
+    const first = screen.getByText('First chat').closest('li')!
+    const second = screen.getByText('Second chat').closest('li')!
+    expect(
+      first.querySelector('[aria-label="common:navigation.pinChat"]')
+    ).not.toBeNull()
+    expect(
+      second.querySelector('[aria-label="common:navigation.unpinChat"]')
+    ).not.toBeNull()
+  })
+
+  it('pins the chat the action belongs to', async () => {
+    await act(async () => {
+      render(<ThreadList threads={threads} />)
+    })
+
+    const row = screen.getByText('Second chat').closest('li')!
+    const pin = row.querySelector<HTMLButtonElement>(
+      '[aria-label="common:navigation.pinChat"]'
+    )!
+    expect(pin).toHaveAttribute('title', 'common:navigation.pinChat')
+    await act(async () => {
+      pin.click()
+    })
+
+    expect(togglePinnedThread).toHaveBeenCalledTimes(1)
+    expect(togglePinnedThread).toHaveBeenCalledWith('thread-2')
   })
 })
