@@ -44,6 +44,7 @@
   "basedOnDevice": "На основе {{device}}: {{memory}}",
   "noFittingPicks": "Ни одна рекомендованная модель не подходит этому устройству. Отключите фильтр, чтобы увидеть все.",
   "downloadOptions": "Варианты загрузки",
+  "safetensorsNeedsNvidia": "Этой модели нужна Windows или Linux с видеокартой NVIDIA серии RTX 30 или новее.",
   "details": "Подробности",
   "selectModel": "Выберите модель, чтобы увидеть подробности",
   "openOnWeb": "Открыть в браузере",

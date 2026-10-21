@@ -1,0 +1,12 @@
+---
+date: 2026-10-21
+title: "Say what a linked safetensors checkpoint runs on where no managed engine is offered"
+---
+
+# 2026-10-21 — Say what a linked safetensors checkpoint runs on where no managed engine is offered
+
+- **Context:** A link to a safetensors repository opens as a managed checkpoint wherever a managed engine is visible (2026-10-12, "Open a linked safetensors repository as a managed checkpoint"). Where none is — macOS, a machine without NVIDIA, a card older than Ampere — that record left the card as before: `DownloadOptionsSelect` renders nothing for a model that is not managed, not MLX and has no quants, and `modelFormat` reads such a model as GGUF, so the row and the card said "GGUF" over an empty space. Saying why was left to a later change.
+- **Decision:** There, the linked row carries `unserved` (`LocalModelTableItem`), built by `unservedCheckpoint` from the managed engines' Hub states. Its Format reads "Safetensors" instead of a Hub format, and its card shows one line in place of download options: the first engine's own compute-capability blocker copy, with the core's numbers, when its plan finds the card older than Ampere; otherwise that the model needs Windows or Linux with an NVIDIA RTX 30 series card or newer — a requirement, not a promise: the Hub has checked nothing about the checkpoint itself, and an NVFP4 repository, say, still wants a newer card than that. Nothing else changes: no new Hub format, no filter, and the column sort still compares the facts' format.
+- **Consequences:** A Hugging Face "Use this model" link no longer opens an empty card on a machine that cannot run the checkpoint. The general line names the platforms and the card generation the managed engines need between them; it does not tell a capable Linux machine why its engine is hidden (conf has not published the runtime yet). Only the linked row is covered: a safetensors repository reached otherwise is unchanged.
+- **Owner:** `team`
+- **Links:** `web-app/src/lib/managed-engine/hub-state.ts` (`unservedCheckpoint`), `web-app/src/routes/hub/index.tsx` (`deepLinkedItem`), `web-app/src/containers/hub/LocalModelTable.tsx`, `web-app/src/containers/hub/ModelDetailPanel.tsx`, `web-app/src/lib/hub-filters.ts` (`SAFETENSORS_FORMAT_LABEL`), `hub:safetensorsNeedsNvidia` in `web-app/src/locales/*/hub.json`; [2026-10-12 — Open a linked safetensors repository as a managed checkpoint](2026-10-12-open-a-linked-safetensors-repository-as-a-managed-checkpoint.md).

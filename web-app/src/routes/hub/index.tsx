@@ -40,7 +40,10 @@ import { useManagedCurated } from '@/hooks/useManagedCurated'
 import { useManagedHubStates } from '@/hooks/useManagedHubState'
 import { usePrismFamilies, usePrismHubVisible } from '@/hooks/useModelSetup'
 import { useFoundryLocalHub, useFoundryLocalHubVisible } from '@/hooks/useFoundryLocalHub'
-import { UNKNOWN_HUB_STATE } from '@/lib/managed-engine/hub-state'
+import {
+  UNKNOWN_HUB_STATE,
+  unservedCheckpoint,
+} from '@/lib/managed-engine/hub-state'
 import { hubKey, managedEngine } from '@/lib/managed-engines'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
@@ -1173,11 +1176,18 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   // safetensors checkpoint opened that way is a managed engine's wherever one
   // is offered: its card then asks every visible engine for a verdict, whatever
   // format the list shows. Outside a managed format the row reads as the first
-  // engine offered, in registry order. Where none is offered it stays as it is.
+  // engine offered, in registry order. Where none is offered it reads as
+  // safetensors, and its card says what it runs on instead of offering nothing.
   const deepLinkedItem = useMemo<HubListItem | null>(() => {
     if (!deepLinkedModel) return null
-    if (visibleManaged === '' || !isSafetensorsCheckpoint(deepLinkedModel)) {
+    if (!isSafetensorsCheckpoint(deepLinkedModel)) {
       return { model: deepLinkedModel }
+    }
+    if (visibleManaged === '') {
+      return {
+        model: deepLinkedModel,
+        unserved: unservedCheckpoint(managedHubs),
+      }
     }
     return {
       model: { ...deepLinkedModel, is_mlx: false, is_managed: true },
@@ -1185,7 +1195,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
         ? undefined
         : (visibleManaged.split(',')[0] as ModelFormat),
     }
-  }, [deepLinkedModel, visibleManaged, managedSelected])
+  }, [deepLinkedModel, visibleManaged, managedSelected, managedHubs])
 
   const selectedItem = useMemo<HubListItem | null>(() => {
     if (!selectedRepo) return null

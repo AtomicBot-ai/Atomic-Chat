@@ -79,6 +79,9 @@ export const HUB_FORMAT_LABELS: Record<ModelFormat, string> = {
   'foundry-local': 'Foundry Local',
 }
 
+/** What a linked safetensors checkpoint reads as where no managed engine is offered: no Hub format. */
+export const SAFETENSORS_FORMAT_LABEL = 'Safetensors'
+
 /** Whether the format is a managed engine's (its provider id): a safetensors checkpoint's. */
 export function isManagedFormat(format: ModelFormat | undefined): boolean {
   return isManagedProvider(format)

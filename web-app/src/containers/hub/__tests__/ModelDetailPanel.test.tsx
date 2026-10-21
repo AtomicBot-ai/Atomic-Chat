@@ -141,6 +141,45 @@ describe('ModelDetailPanel', () => {
     ).toBeTruthy()
   })
 
+  describe('a linked checkpoint no engine here serves', () => {
+    const checkpoint = () =>
+      model({
+        model_name: 'nvidia/Gemma-4-31B-IT-NVFP4',
+        developer: 'nvidia',
+        num_quants: 0,
+        quants: [],
+        num_safetensors: 1,
+      })
+
+    it('says what it runs on in place of the download options, and reads as safetensors', () => {
+      renderPanel(checkpoint(), { formatLabel: 'Safetensors', unserved: {} })
+
+      expect(fact('hub:table.column.format')).toHaveTextContent('Safetensors')
+      expect(screen.getByTestId('unserved-checkpoint')).toHaveTextContent(
+        /^hub:safetensorsNeedsNvidia$/
+      )
+      expect(screen.queryByTestId('download-options')).not.toBeInTheDocument()
+    })
+
+    it("says, in the engine's own words, that the card is too old", () => {
+      renderPanel(checkpoint(), {
+        formatLabel: 'Safetensors',
+        unserved: {
+          tooOld: {
+            engine: { id: 'vllm', label: 'vLLM', i18n: 'vllm' } as never,
+            required: '8.0',
+            actual: '7.5',
+          },
+        },
+      })
+
+      expect(screen.getByTestId('unserved-checkpoint')).toHaveTextContent(
+        'hub:vllm.blocker.compute-capability-too-low {"required":"8.0","actual":"7.5"}'
+      )
+      expect(screen.queryByTestId('download-options')).not.toBeInTheDocument()
+    })
+  })
+
   it('names the parameters the row names, and asks Hugging Face nothing itself', () => {
     const entry = model({ model_name: 'inclusionAI/Ling-3.0-flash-GGUF' })
     renderPanel(entry, {

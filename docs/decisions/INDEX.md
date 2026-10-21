@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-432 records, 2026-05-19 → 2026-10-21.
+434 records, 2026-05-19 → 2026-10-21.
 
 ---
 
@@ -231,8 +231,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Ship `janhq/llama.cpp` cudart DLLs with every Windows CUDA backend](2026-05-22-ship-janhq-llama-cpp-cudart-dlls-with-every-windows-cuda-backend.md)
 - **2026-05-19** — [Windows uses upstream `ggml-org/llama.cpp`, not the TurboQuant fork](2026-05-19-windows-uses-upstream-ggml-org-llama-cpp-not-the-turboquant-fork.md)
 
-## Models, Hub & downloads (44)
+## Models, Hub & downloads (45)
 
+- **2026-10-21** — [Say what a linked safetensors checkpoint runs on where no managed engine is offered](2026-10-21-say-what-a-linked-safetensors-checkpoint-runs-on.md)
 - **2026-10-21** — [List and remove download leftovers on the Downloads page](2026-10-21-list-and-remove-download-leftovers-on-the-downloads-page.md)
 - **2026-10-16** — [Run Foundry Local through the core; download its models in the app](2026-10-16-run-foundry-local-through-the-core-and-download-its-models-in-the-app.md)
 - **2026-10-15** — [Download Bonsai with the app's own downloader, not the core's model setup](2026-10-15-download-bonsai-with-the-apps-own-downloader.md)
@@ -305,8 +306,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-10** — [Throttle crashloop `model_load` failure spam client-side; confirm `model_load.status` / api 404-noise are already-fixed-pending-rollout, not code bugs (ATO-130: ATO-133 + ATO-131 + ATO-132)](2026-06-10-throttle-crashloop-model-load-failure-spam-client-side-confirm.md)
 - **2026-06-09** — [Add zero-PII Sentry crash/error tracking to both the React frontend and the Rust/Tauri desktop, gated behind `productAnalytic` (ATO-113)](2026-06-09-add-zero-pii-sentry-crash-error-tracking-to-both-the-react.md)
 
-## Packaging, installers, autostart & platform policy (23)
+## Packaging, installers, autostart & platform policy (24)
 
+- **2026-10-21** — [Register the atomic-chat:// link scheme on Windows and Linux](2026-10-21-register-the-atomic-chat-link-scheme-on-windows-and-linux.md) — the scheme lives in the per-platform configs; macOS keeps `Info.plist`, e2e builds never register.
 - **2026-10-19** — [Reveal files in the file manager from the blocking pool](2026-10-19-reveal-files-from-the-blocking-pool-on-linux.md) — the opener plugin's async reveal blocks on D-Bus inside tokio and aborts the Linux app.
 - **2026-10-09** — [Hide the CLI in the app, and stop installing it on launch](2026-10-09-hide-the-cli-in-the-app.md)
 - **2026-10-09** — [Gate releases beside the builds and warm their caches on main](2026-10-09-gate-releases-beside-the-builds-and-warm-caches-on-main.md) — installers reach the draft only after build and gate; caches are written on `main`, read by releases.
