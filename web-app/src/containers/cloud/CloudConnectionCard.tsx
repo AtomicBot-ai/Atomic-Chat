@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { IconLoader2 } from '@tabler/icons-react'
+import { IconExternalLink, IconLoader2 } from '@tabler/icons-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
@@ -142,19 +142,43 @@ export function CloudConnectionCard({
     })
   }
 
+  // Titled with the provider, the card says something about that provider or
+  // nothing: the generic "OpenAI, Anthropic, or a compatible endpoint" read as
+  // the subtitle of OpenAI and of the ChatGPT subscription alike. What the
+  // catalogue knows of each is where its models are listed.
+  const providerTitle =
+    hideProviderSelect && selected
+      ? getProviderTitle(selected.provider)
+      : undefined
+  const exploreModelsUrl = selected?.explore_models_url
+
   return (
     <Card
       header={
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="space-y-1">
             <h2 className="font-studio text-base font-medium text-foreground">
-              {hideProviderSelect && selected
-                ? getProviderTitle(selected.provider)
-                : t('cloud:connection.title')}
+              {providerTitle ?? t('cloud:connection.title')}
             </h2>
-            <p className="text-muted-foreground">
-              {t('cloud:connection.description')}
-            </p>
+            {providerTitle === undefined ? (
+              <p className="text-muted-foreground">
+                {t('cloud:connection.description')}
+              </p>
+            ) : (
+              exploreModelsUrl && (
+                <a
+                  href={exploreModelsUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground hover:underline"
+                >
+                  {t('providers:addModel.exploreModels', {
+                    provider: providerTitle,
+                  })}
+                  <IconExternalLink size={12} className="shrink-0" />
+                </a>
+              )
+            )}
           </div>
           {!hideProviderSelect && (
             <CloudProviderSelect
