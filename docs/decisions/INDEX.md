@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-430 records, 2026-05-19 → 2026-10-20.
+431 records, 2026-05-19 → 2026-10-20.
 
 ---
 
@@ -231,10 +231,11 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Ship `janhq/llama.cpp` cudart DLLs with every Windows CUDA backend](2026-05-22-ship-janhq-llama-cpp-cudart-dlls-with-every-windows-cuda-backend.md)
 - **2026-05-19** — [Windows uses upstream `ggml-org/llama.cpp`, not the TurboQuant fork](2026-05-19-windows-uses-upstream-ggml-org-llama-cpp-not-the-turboquant-fork.md)
 
-## Models, Hub & downloads (42)
+## Models, Hub & downloads (43)
 
 - **2026-10-16** — [Run Foundry Local through the core; download its models in the app](2026-10-16-run-foundry-local-through-the-core-and-download-its-models-in-the-app.md)
 - **2026-10-15** — [Download Bonsai with the app's own downloader, not the core's model setup](2026-10-15-download-bonsai-with-the-apps-own-downloader.md)
+- **2026-10-12** — [Open a linked safetensors repository as a managed checkpoint](2026-10-12-open-a-linked-safetensors-repository-as-a-managed-checkpoint.md)
 - **2026-10-06** — [List Bonsai models under a PrismML format in the Hub, and install the engine from its row](2026-10-06-list-bonsai-models-under-a-prismml-format-in-the-hub.md)
 - **2026-10-06** — [List PrismML model setups in the download panel, and set a deleted Bonsai up again](2026-10-06-list-prismml-model-setups-in-the-download-panel.md)
 - **2026-10-03** — [Choose TensorRT-LLM models in the Model Hub, as its third format](2026-10-03-choose-tensorrt-llm-models-in-the-model-hub.md)

@@ -35,6 +35,8 @@ export type LocalModelTableItem = {
    * heading row is drawn wherever the section changes.
    */
   section?: string
+  /** The format the row reads as instead of the list's: a linked managed checkpoint's engine. */
+  format?: ModelFormat
 }
 
 /** How many rows before the end of the list the next page is asked for. */
@@ -145,7 +147,7 @@ export function LocalModelTable({
     const ask = new Map<string, string>()
     const built = items.map((item) => {
       const listed = hubModelFacts(item.model, {
-        format,
+        format: item.format ?? format,
         budgetBytes,
         categories: item.pick?.categories,
       })

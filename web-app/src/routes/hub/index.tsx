@@ -170,6 +170,13 @@ function isUnsupportedBaseGemmaMlx(model: CatalogModel) {
   return !isInstruct && !isDrafterArtifact
 }
 
+// A card with safetensors weights and nothing a llama.cpp or MLX provider
+// loads: what the managed engines (vLLM, TensorRT-LLM) serve.
+function isSafetensorsCheckpoint(model: CatalogModel) {
+  const is_mlx = model.is_mlx ?? model.library_name === 'mlx'
+  return !is_mlx && !model.quants?.length && (model.num_safetensors ?? 0) > 0
+}
+
 export const Route = createFileRoute(route.hub.index as any)({
   component: HubContent,
   validateSearch: (search: Record<string, unknown>): SearchParams => ({
@@ -1162,6 +1169,24 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
 
   const selectedRepo = modelSearchParam ?? null
 
+  // A link names a repository and no format, and the Hub opens on GGUF. A
+  // safetensors checkpoint opened that way is a managed engine's wherever one
+  // is offered: its card then asks every visible engine for a verdict, whatever
+  // format the list shows. Outside a managed format the row reads as the first
+  // engine offered, in registry order. Where none is offered it stays as it is.
+  const deepLinkedItem = useMemo<HubListItem | null>(() => {
+    if (!deepLinkedModel) return null
+    if (visibleManaged === '' || !isSafetensorsCheckpoint(deepLinkedModel)) {
+      return { model: deepLinkedModel }
+    }
+    return {
+      model: { ...deepLinkedModel, is_mlx: false, is_managed: true },
+      format: managedSelected
+        ? undefined
+        : (visibleManaged.split(',')[0] as ModelFormat),
+    }
+  }, [deepLinkedModel, visibleManaged, managedSelected])
+
   const selectedItem = useMemo<HubListItem | null>(() => {
     if (!selectedRepo) return null
     const fromList = listItems.find(
@@ -1172,11 +1197,11 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     if (fromSources) {
       return { model: fromSources, pick: pickByRepo.get(selectedRepo) }
     }
-    if (deepLinkedModel && deepLinkedModel.model_name === selectedRepo) {
-      return { model: deepLinkedModel, pick: pickByRepo.get(selectedRepo) }
+    if (deepLinkedItem && deepLinkedItem.model.model_name === selectedRepo) {
+      return { ...deepLinkedItem, pick: pickByRepo.get(selectedRepo) }
     }
     return null
-  }, [selectedRepo, listItems, sources, deepLinkedModel, pickByRepo])
+  }, [selectedRepo, listItems, sources, deepLinkedItem, pickByRepo])
 
   // Deep link into a repo the catalog does not carry: resolve it from HF once.
   useEffect(() => {
