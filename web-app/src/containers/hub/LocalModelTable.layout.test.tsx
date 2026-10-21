@@ -193,6 +193,14 @@ describe('LocalModelTable layout', () => {
             within(row).getByRole('button', { name: /^(Like|Unlike) / }),
             cells[0]
           )
+          // A Hugging Face upload names its owner under the name, inside the cell.
+          const owner = row.querySelector<HTMLElement>('.model-row-owner')
+          if (row.dataset.source === 'huggingface') {
+            expect(owner, row.dataset.modelRow).not.toBeNull()
+            expectFits(owner!, cells[0])
+          } else {
+            expect(owner, row.dataset.modelRow).toBeNull()
+          }
           for (const badge of within(row).queryAllByText(
             /^(Good fit|Might fit|Won’t fit)$/
           )) {

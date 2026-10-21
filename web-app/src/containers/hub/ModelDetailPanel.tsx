@@ -12,30 +12,9 @@ import { HUB_FORMAT_LABELS } from '@/lib/hub-filters'
 import { hubEngineLabel, type HubEngineId } from '@/lib/hub-model-engines'
 import { hubRepoId, type HubModelFacts } from '@/lib/hub-model-facts'
 import { foundryLocalOf } from '@/lib/foundry-local/hub'
-import { formatDownloads } from '@/lib/model-card'
+import { formatDownloads, formatTimeAgo } from '@/lib/model-card'
 import { cn } from '@/lib/utils'
 import type { CatalogModel } from '@/services/models/types'
-
-const relativeTime = (dateString?: string): string | undefined => {
-  if (!dateString) return undefined
-  const parsed = Date.parse(dateString)
-  if (!Number.isFinite(parsed)) return undefined
-  const days = Math.max(
-    1,
-    Math.ceil(Math.abs(Date.now() - parsed) / (1000 * 60 * 60 * 24))
-  )
-  if (days < 7) return `${days} days ago`
-  if (days < 30) {
-    const weeks = Math.floor(days / 7)
-    return `${weeks} week${weeks > 1 ? 's' : ''} ago`
-  }
-  if (days < 365) {
-    const months = Math.floor(days / 30)
-    return `${months} month${months > 1 ? 's' : ''} ago`
-  }
-  const years = Math.floor(days / 365)
-  return `${years} year${years > 1 ? 's' : ''} ago`
-}
 
 /**
  * Where a model comes from, as the expanded row links it: its Hugging Face
@@ -121,14 +100,17 @@ export function ModelDetailPanel({
   onCollapse,
   className,
 }: ModelDetailPanelProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const foundry = foundryLocalOf(model)
   const unknown = t('hub:table.unknown')
   const pending = (width: string) => (
     <PendingValue className={cn('h-4', width)} />
   )
   const engineText = engines.map(hubEngineLabel).join(', ')
-  const updated = relativeTime(model.last_modified ?? model.created_at)
+  const updated = formatTimeAgo(
+    model.last_modified ?? model.created_at,
+    i18n.language
+  )
 
   const items: [string, ReactNode][] = [
     [

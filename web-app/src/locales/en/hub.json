@@ -120,7 +120,7 @@
     "unlike": "Unlike {{name}}",
     "unknown": "Unknown",
     "notSpecified": "Not specified",
-    "sizeHint": "Representative download: the median quantization with its companion files, or the complete MLX weights.",
+    "sizeHint": "Representative download: the quantization the download options open on (IQ4_XS or Q4_K_M when the repo has one, otherwise the median) with its companion files, or the complete MLX weights.",
     "deviceInCard": "In the download options",
     "deviceInCardHint": "This engine checks the model against this computer when you open it.",
     "footnote": "This device compares the listed download with this computer’s memory. Context length and engine settings add to the memory a model uses.",

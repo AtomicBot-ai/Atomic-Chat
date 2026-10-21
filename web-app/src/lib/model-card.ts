@@ -90,6 +90,59 @@ export function pickMedianQuant(
   return sized[Math.floor((sized.length - 1) / 2)].quant
 }
 
+/** The BCP 47 tag `Intl` reads for an app language: `vn` is the app's own tag for Vietnamese. */
+export function intlLocale(language?: string): string {
+  if (!language) return 'en'
+  return language === 'vn' ? 'vi' : language
+}
+
+const MINUTE_MS = 60 * 1000
+const HOUR_MS = 60 * MINUTE_MS
+const DAY_MS = 24 * HOUR_MS
+
+/**
+ * How long ago a date was, in the interface language: "3 days ago", "vor 3 Tagen",
+ * "3 дня назад". `Intl.RelativeTimeFormat` carries each language's plural forms and
+ * word order, which a hand-built "N days ago" got wrong ("1 days ago") and never
+ * translated.
+ *
+ * Minutes under an hour, hours under a day, then days, weeks under a month, 30-day
+ * months under a year, and years. `undefined` for a missing or unreadable date.
+ */
+export function formatTimeAgo(
+  date: string | undefined,
+  language: string | undefined,
+  now: number = Date.now()
+): string | undefined {
+  if (!date) return undefined
+  const parsed = Date.parse(date)
+  if (!Number.isFinite(parsed)) return undefined
+  const elapsed = Math.max(0, now - parsed)
+  const days = Math.floor(elapsed / DAY_MS)
+  const [value, unit]: [number, Intl.RelativeTimeFormatUnit] =
+    elapsed < HOUR_MS
+      ? [Math.max(1, Math.floor(elapsed / MINUTE_MS)), 'minute']
+      : elapsed < DAY_MS
+        ? [Math.floor(elapsed / HOUR_MS), 'hour']
+        : days < 7
+          ? [days, 'day']
+          : days < 30
+            ? [Math.floor(days / 7), 'week']
+            : days < 365
+              ? [Math.floor(days / 30), 'month']
+              : [Math.floor(days / 365), 'year']
+  let format: Intl.RelativeTimeFormat
+  try {
+    format = new Intl.RelativeTimeFormat(intlLocale(language), {
+      numeric: 'always',
+    })
+  } catch {
+    // A malformed language tag reads as English rather than failing the row.
+    format = new Intl.RelativeTimeFormat('en', { numeric: 'always' })
+  }
+  return format.format(-value, unit)
+}
+
 /** Full download count with thin-space grouping, e.g. 1163988 -> "1 163 988". */
 export function formatDownloads(n?: number): string {
   if (!n || n <= 0) return '0'
@@ -338,6 +391,29 @@ export function estimateFit(
 }
 
 /**
+ * The quant a repo is quoted by before this device has a say: the house default
+ * (`iq4_xs` / `q4_k_m`) whenever the repo ships it, else the median quant.
+ *
+ * It is where the download panel starts ({@link pickDownloadQuant}), so a list row
+ * that quotes it names the size the panel opens on. Quoting the median there while
+ * the panel opened on the house default is how bartowski's SmolLM2-135M read
+ * 93.0 MB (Q3_K_L, the median of 23 quants) in the row and 86.7 MB (IQ4_XS) in the
+ * panel, and AtomicChat's Qwen3.5-9B 6.0 GB (Q5_K_M) against 5.2 GB (Q4_K_M).
+ */
+export function pickListedQuant(
+  model: Pick<CatalogModel, 'quants'>
+): ModelQuant | undefined {
+  const quants = model.quants
+  if (!quants?.length) return undefined
+  const preferred = quants.find((quant) =>
+    DEFAULT_MODEL_QUANTIZATIONS.some((scheme) =>
+      quant.model_id.toLowerCase().includes(scheme)
+    )
+  )
+  return preferred ?? pickMedianQuant(quants)
+}
+
+/**
  * Quant the download panel opens on.
  *
  * The house default (`iq4_xs` / `q4_k_m`) wins whenever the repo ships it. Repos
@@ -356,12 +432,7 @@ export function pickDownloadQuant(
   const quants = model.quants
   if (!quants?.length) return undefined
 
-  const preferred = quants.find((quant) =>
-    DEFAULT_MODEL_QUANTIZATIONS.some((scheme) =>
-      quant.model_id.toLowerCase().includes(scheme)
-    )
-  )
-  const candidate = preferred ?? pickMedianQuant(quants)
+  const candidate = pickListedQuant(model)
   if (!candidate || !budgetBytes) return candidate
 
   const bytesOf = (quant: ModelQuant) =>

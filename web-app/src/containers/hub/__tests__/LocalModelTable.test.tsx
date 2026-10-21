@@ -237,6 +237,40 @@ describe('LocalModelTable', () => {
     ).toBeInTheDocument()
   })
 
+  it("tells same-named uploads apart by their owner, and leaves a pick's title alone", () => {
+    renderTable({
+      items: [
+        {
+          model: gguf('Qwen/Qwen3.5-4B-GGUF', '2.50 GB'),
+          pick: { model_name: 'Qwen/Qwen3.5-4B-GGUF', title: 'Qwen3.5 4B' },
+        },
+        ...['bartowski', 'unsloth', 'QuantFactory'].map((owner) => ({
+          model: gguf(`${owner}/SmolLM2-135M-Instruct-GGUF`, '93.00 MB'),
+          fromHuggingFace: true,
+        })),
+      ],
+    })
+
+    const [pick, ...uploads] = summaryRows()
+    expect(pick.querySelector('.model-row-owner')).toBeNull()
+    expect(cell(pick, 'model')).toHaveTextContent('Qwen3.5 4B')
+    expect(
+      uploads.map((row) => row.querySelector('.model-row-owner')?.textContent)
+    ).toEqual(['bartowski', 'unsloth', 'QuantFactory'])
+    for (const row of uploads) {
+      expect(cell(row, 'model')).toHaveTextContent('SmolLM2-135M-Instruct-GGUF')
+    }
+    // The expand control says whose upload it opens, not only its name.
+    expect(
+      screen.getByRole('button', {
+        name: /hub:table.expand .*unsloth\/SmolLM2-135M-Instruct-GGUF/,
+      })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /hub:table.expand .*"Qwen3.5 4B"/ })
+    ).toBeInTheDocument()
+  })
+
   it('names only the engines this machine offers', () => {
     renderTable({
       availableEngines: new Set<HubEngineId>(['llamacpp-upstream']),

@@ -6,12 +6,14 @@ import type { CatalogModel } from '@/services/models/types'
 
 const mocks = vi.hoisted(() => ({
   fetch: vi.fn(),
+  language: 'en',
 }))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({
     t: (key: string, options?: Record<string, unknown>) =>
       options ? `${key} ${JSON.stringify(options)}` : key,
+    i18n: { language: mocks.language },
   }),
 }))
 
@@ -70,12 +72,14 @@ const fact = (label: string) =>
 describe('ModelDetailPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.language = 'en'
     // The open row asks nothing itself: its facts are the row's.
     vi.stubGlobal('fetch', mocks.fetch)
   })
 
   afterEach(() => {
     vi.unstubAllGlobals()
+    vi.useRealTimers()
   })
 
   it('heads the open row with the name, the repo and its numbers', () => {
@@ -92,6 +96,26 @@ describe('ModelDetailPanel', () => {
     expect(within(collapse).getByText(/^4.200$/)).toBeInTheDocument()
     expect(within(collapse).getByText('77')).toBeInTheDocument()
     expect(within(collapse).getByText(/^hub:updatedAgo/)).toBeInTheDocument()
+  })
+
+  it('says when the repo was updated in the interface language, plural forms and all', () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-08-02T12:00:00Z'))
+    renderPanel(model({ last_modified: '2026-08-01T00:00:00Z' }))
+    // One day, not the hand-built "1 days ago".
+    expect(
+      screen.getByText('hub:updatedAgo {"ago":"1 day ago"}')
+    ).toBeInTheDocument()
+  })
+
+  it('formats the age in Russian with its own plural form', () => {
+    mocks.language = 'ru'
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-08-04T12:00:00Z'))
+    renderPanel(model({ last_modified: '2026-08-01T00:00:00Z' }))
+    expect(
+      screen.getByText('hub:updatedAgo {"ago":"3 дня назад"}')
+    ).toBeInTheDocument()
   })
 
   it('lists what the listing knows, then the download options', () => {

@@ -94,6 +94,21 @@ const needsHubParams = (model: CatalogModel, facts: HubModelFacts) =>
   !facts.params && !model.is_managed && !foundryLocalOf(model)
 
 /**
+ * Whose repository a row is, when the row is named after the repository: four uploads of one
+ * model (bartowski's, unsloth's…) otherwise read alike until opened. A pick's title and a
+ * Foundry Local model's name are names of their own and need none.
+ */
+const repoOwner = (
+  model: CatalogModel,
+  pick: StaffPick | undefined
+): string | undefined => {
+  if (pick?.title || foundryLocalOf(model)) return undefined
+  const repo = hubRepoId(model)
+  const slash = repo.indexOf('/')
+  return slash > 0 ? repo.slice(0, slash) : undefined
+}
+
+/**
  * A feed row lists only the repo; its sizes, fit and download options arrive with its card,
  * fetched once the row is on screen or open, unless that fetch failed.
  */
@@ -421,6 +436,7 @@ const SummaryRow = memo(function SummaryRow({
   const engineText = engines.map(hubEngineLabel).join(', ')
   const formatLabel = HUB_FORMAT_LABELS[facts.format]
   const verdictInCard = model.is_managed || !!foundry
+  const owner = repoOwner(model, pick)
 
   return (
     <tr
@@ -432,7 +448,9 @@ const SummaryRow = memo(function SummaryRow({
         <button
           type="button"
           aria-expanded={false}
-          aria-label={t('hub:table.expand', { name })}
+          aria-label={t('hub:table.expand', {
+            name: owner ? hubRepoId(model) : name,
+          })}
           onClick={() => onExpand(id)}
           className="local-model-toggle flex w-full min-w-0 cursor-pointer items-center gap-2 py-2 text-left"
         >
@@ -453,6 +471,14 @@ const SummaryRow = memo(function SummaryRow({
                 title={t('hub:fromHuggingFace')}
                 className="ml-1 inline-block size-3.5"
               />
+            )}
+            {owner && (
+              <span
+                className="model-row-owner mt-0.5 block truncate text-[10px] font-normal text-muted-foreground"
+                title={owner}
+              >
+                {owner}
+              </span>
             )}
             {foundry?.origin === 'microsoft' && (
               <span className="mt-1 block text-[10px] font-normal text-muted-foreground">
