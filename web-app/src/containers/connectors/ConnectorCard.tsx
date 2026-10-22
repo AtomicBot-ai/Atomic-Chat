@@ -156,35 +156,22 @@ export function ConnectorCard({
       <div className="grid min-w-0 grid-cols-[40px_minmax(0,1fr)_auto] items-center gap-x-3">
         <ServerIcon connector={connector} name={name} className="size-10" />
         <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center gap-2">
-            <h2
-              className={cn(
-                'font-studio truncate text-base font-medium text-foreground',
-                !connector && 'capitalize'
-              )}
-            >
-              {name}
-            </h2>
-            {connector?.featured && (
-              <span className="shrink-0 rounded-full bg-blue-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-600 dark:bg-blue-400/15 dark:text-blue-400">
-                {t('mcp-connectors:featuredBadge')}
-              </span>
+          {/* The name has the title row to itself: beside a badge and the
+              header action it lost the width and read "Atomic …" at the
+              minimum window. */}
+          <h2
+            className={cn(
+              'font-studio truncate text-base font-medium text-foreground',
+              !connector && 'capitalize'
             )}
-            {config?.official && (
-              <div className="flex shrink-0 items-center gap-1.5 px-2 py-0.5 text-xs bg-secondary border rounded-sm">
-                <img
-                  src="/images/transparent-logo.png"
-                  alt="Atomic Chat"
-                  className="w-3 h-3 object-contain"
-                />
-                <span>Official</span>
-              </div>
-            )}
-          </div>
+          >
+            {name}
+          </h2>
           {/* One stable secondary slot: authorship before setup, runtime state
               after setup. Showing both made Error grow a third text line and
-              pushed otherwise identical cards out of alignment. */}
-          <div className="mt-0.5 flex h-4 min-w-0 items-start">
+              pushed otherwise identical cards out of alignment. Badges follow
+              it; the byline truncates before a badge or the state does. */}
+          <div className="mt-0.5 flex h-4 min-w-0 items-center gap-1.5">
             {installed ? (
               <span
                 className={cn(
@@ -207,16 +194,31 @@ export function ConnectorCard({
                 {statusLabel}
               </span>
             ) : connector ? (
-              <p className="truncate text-xs text-muted-foreground">
+              <p className="min-w-0 truncate text-xs text-muted-foreground">
                 {t('mcp-connectors:by', { name: connector.author })}
               </p>
             ) : (
               <p
-                className="truncate text-xs text-muted-foreground"
+                className="min-w-0 truncate text-xs text-muted-foreground"
                 title={summary}
               >
                 {summary}
               </p>
+            )}
+            {connector?.featured && (
+              <span className="shrink-0 rounded-full bg-blue-500/15 px-1.5 py-0.5 text-[10px] leading-none font-semibold uppercase tracking-wide text-blue-600 dark:bg-blue-400/15 dark:text-blue-400">
+                {t('mcp-connectors:featuredBadge')}
+              </span>
+            )}
+            {config?.official && (
+              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-secondary px-1.5 py-0.5 text-[10px] leading-none font-medium text-foreground">
+                <img
+                  src="/images/transparent-logo.png"
+                  alt="Atomic Chat"
+                  className="size-2.5 object-contain"
+                />
+                <span>Official</span>
+              </span>
             )}
           </div>
         </div>

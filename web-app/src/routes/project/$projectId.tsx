@@ -199,13 +199,12 @@ function ProjectPageContent() {
                 </h3>
                 {projectAssistant ? (
                   <div className="flex items-center gap-1.5 mt-1">
-                    {projectAssistant.avatar && (
-                      <AvatarEmoji
-                        avatar={projectAssistant.avatar}
-                        imageClassName="w-4 h-4 object-contain"
-                        textClassName="text-sm"
-                      />
-                    )}
+                    <AvatarEmoji
+                      avatar={projectAssistant.avatar}
+                      name={projectAssistant.name}
+                      imageClassName="w-4 h-4 object-contain"
+                      textClassName="text-sm"
+                    />
                     <span className="text-sm text-muted-foreground">
                       {projectAssistant.name}
                     </span>

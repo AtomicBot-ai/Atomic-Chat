@@ -185,6 +185,7 @@ export function RunSettingsPanel({ onClose }: RunSettingsPanelProps) {
                     {activeAssistant ? (
                       <AvatarEmoji
                         avatar={activeAssistant.avatar}
+                        name={activeAssistant.name}
                         imageClassName="size-4 object-contain"
                         textClassName="text-sm"
                       />
@@ -223,6 +224,7 @@ export function RunSettingsPanel({ onClose }: RunSettingsPanelProps) {
                     >
                       <AvatarEmoji
                         avatar={assistant.avatar}
+                        name={assistant.name}
                         imageClassName="size-4 object-contain"
                         textClassName="text-sm"
                       />

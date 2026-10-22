@@ -24,6 +24,15 @@ afterEach(async () => {
 const exa = MCP_CONNECTORS.find((c) => c.serverKey === 'exa')!
 const linear = MCP_CONNECTORS.find((c) => c.serverKey === 'linear')!
 const github = MCP_CONNECTORS.find((c) => c.serverKey === 'github')!
+const atomicMail = MCP_CONNECTORS.find((c) => c.serverKey === 'atomicmail')!
+
+const RAIL = 60
+const SIDEBAR = 240
+/** The Connectors page's scroll area: the window less the rail and the open sidebar. */
+const pageWidth = (window: number) => window - RAIL - SIDEBAR
+
+const overlaps = (a: DOMRect, b: DOMRect) =>
+  a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
 
 for (const width of [1024, 1280]) {
   for (const font of [DEFAULT_FONT_SIZE, XL_FONT_SIZE]) {
@@ -125,12 +134,14 @@ for (const width of [1024, 1280]) {
             )
             expect(query.queryByText(/^By /)).toBeNull()
             const referenceByline = within(cards[0]).getByText(/^By /)
-            expect(
-              status.getBoundingClientRect().top -
-                card.getBoundingClientRect().top
-            ).toBeCloseTo(
-              referenceByline.getBoundingClientRect().top -
-                cards[0].getBoundingClientRect().top,
+            // The status pill and the taller byline share the slot's centre
+            // line, which badges beside either also sit on.
+            const centre = (el: Element, of: Element) => {
+              const box = el.getBoundingClientRect()
+              return box.top + box.height / 2 - of.getBoundingClientRect().top
+            }
+            expect(centre(status, card)).toBeCloseTo(
+              centre(referenceByline, cards[0]),
               1
             )
             expect(
@@ -218,3 +229,103 @@ it.each(['light', 'dark'] as const)(
     ).toBeCloseTo(toggle.width, 0)
   }
 )
+
+// QA 2.2.23 #01: at the minimum window with the sidebar open the featured
+// "Atomic Mail" card read "Atomic …" — its Featured badge shared the title
+// row with the name and Set Up, so the short product name lost the width.
+for (const width of [1024, 1280]) {
+  for (const font of [DEFAULT_FONT_SIZE, XL_FONT_SIZE]) {
+    for (const theme of ['light', 'dark'] as const) {
+      it(`keeps a featured product name whole beside its badge and actions (${width}px / ${font} / ${theme})`, async () => {
+        await page.viewport(width, 900)
+        setFontSize(font)
+        setTheme(theme)
+        const { container } = render(
+          withTranslations(
+            <main style={{ width: pageWidth(width) }} className="p-4">
+              <div className="mx-auto grid max-w-3xl auto-rows-fr grid-cols-2 gap-3">
+                <ConnectorCard
+                  connector={exa}
+                  installed={{
+                    key: 'exa',
+                    config: { ...exa.config, active: false },
+                  }}
+                  busy={false}
+                />
+                <ConnectorCard connector={atomicMail} busy={false} />
+                <ConnectorCard
+                  connector={atomicMail}
+                  installed={{
+                    key: 'atomicmail',
+                    config: { ...atomicMail.config, active: false },
+                  }}
+                  activationError="spawn npx ENOENT: the command was not found on PATH"
+                  onRetry={() => {}}
+                  onEdit={() => {}}
+                  busy={false}
+                />
+                <ConnectorCard
+                  connector={atomicMail}
+                  installed={{
+                    key: 'atomicmail',
+                    config: { ...atomicMail.config, active: true },
+                  }}
+                  connecting
+                  busy
+                />
+              </div>
+            </main>
+          )
+        )
+        await settle(container)
+        expectNoHorizontalOverflow(container)
+        const cards = Array.from(
+          container.querySelectorAll<HTMLElement>('.bg-card')
+        )
+        expect(cards).toHaveLength(4)
+        cards.forEach((card) => {
+          const query = within(card)
+          const heading = query.getByRole('heading')
+          // `truncate` clips silently; a clipped name is wider inside than out.
+          expect(
+            heading.scrollWidth,
+            `"${heading.textContent}" is clipped to ${heading.clientWidth} px`
+          ).toBeLessThanOrEqual(heading.clientWidth)
+          const badge = query.getByText('Featured')
+          const badgeBox = badge.getBoundingClientRect()
+          const cardBox = card.getBoundingClientRect()
+          expect(badgeBox.left).toBeGreaterThanOrEqual(cardBox.left)
+          expect(badgeBox.right).toBeLessThanOrEqual(cardBox.right)
+          expect(badge.scrollWidth).toBeLessThanOrEqual(badge.clientWidth)
+          for (const control of [
+            ...query.queryAllByRole('button'),
+            ...query.queryAllByRole('switch'),
+          ]) {
+            expect(
+              overlaps(badgeBox, control.getBoundingClientRect()),
+              `Featured overlaps "${control.textContent || control.getAttribute('aria-label')}"`
+            ).toBe(false)
+          }
+          expect(
+            overlaps(badgeBox, heading.getBoundingClientRect()),
+            'Featured overlaps the name'
+          ).toBe(false)
+          // Level with the state or byline it follows, not hung below it.
+          expectVerticallyCentered(
+            badge,
+            query.queryByTestId('connector-status') ?? query.getByText(/^By /),
+            0.5
+          )
+        })
+        // Retry and Edit of the failed card stay inside it.
+        const failed = within(cards[2])
+        for (const name of ['Retry', 'Edit']) {
+          const button = failed.getByRole('button', { name })
+          expect(button.getBoundingClientRect().right).toBeLessThanOrEqual(
+            cards[2].getBoundingClientRect().right - 16 + 1
+          )
+        }
+      })
+    }
+  }
+}

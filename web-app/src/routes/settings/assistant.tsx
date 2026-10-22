@@ -121,14 +121,18 @@ function AssistantContent() {
                   className="group flex items-center gap-3 px-3 py-3 rounded-lg my-1 bg-secondary/20 hover:bg-secondary dark:hover:bg-secondary/20 transition-colors"
                   key={assistant.id}
                 >
-                  <div className="size-9 shrink-0 flex items-center justify-center bg-secondary dark:bg-secondary/40 rounded-lg">
-                    {assistant?.avatar && (
-                      <AvatarEmoji
-                        avatar={assistant?.avatar}
-                        imageClassName="size-6 object-contain"
-                        textClassName="text-2xl"
-                      />
-                    )}
+                  <div
+                    className="size-9 shrink-0 flex items-center justify-center bg-secondary dark:bg-secondary/40 rounded-lg"
+                    data-testid="assistant-avatar-tile"
+                  >
+                    {/* The tile is the fill; a missing avatar shows the name's initial. */}
+                    <AvatarEmoji
+                      avatar={assistant.avatar}
+                      name={assistant.name}
+                      imageClassName="size-6 object-contain"
+                      textClassName="text-2xl"
+                      fallbackClassName="size-6 text-base"
+                    />
                   </div>
                   <div className="flex flex-col min-w-0 flex-1">
                     <div className="flex items-center gap-2">
