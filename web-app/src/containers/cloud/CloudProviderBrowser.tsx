@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type RefObject } from 'react'
 import { ChevronRight, CircleCheck, Search, TriangleAlert } from 'lucide-react'
 
 import { Input } from '@/components/ui/input'
@@ -26,6 +26,10 @@ type CloudProviderBrowserProps = {
   providers: ProviderObject[]
   selected?: string
   onSelect: (provider: string, model?: string) => void
+  /** Merged onto the pane: the page hides it while a narrow page configures. */
+  className?: string
+  /** The pane, for the page to put focus back on its selected row. */
+  catalogRef?: RefObject<HTMLElement | null>
 }
 
 /**
@@ -41,6 +45,8 @@ export function CloudProviderBrowser({
   providers,
   selected,
   onSelect,
+  className,
+  catalogRef,
 }: CloudProviderBrowserProps) {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
@@ -96,7 +102,14 @@ export function CloudProviderBrowser({
       >
         <ProvidersAvatar provider={provider} className="size-6 shrink-0" />
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-medium">{title}</span>
+          {/* A long name ("ChatGPT subscription (Codex)") takes a second
+              line instead of an ellipsis. */}
+          <span
+            className="line-clamp-2 text-sm font-medium break-words"
+            title={title}
+          >
+            {title}
+          </span>
           <span className="mt-0.5 block truncate text-xs text-muted-foreground">
             {countLabel(listedModels(provider).length)}
             {connected && ` · ${t('cloud:connection.connected')}`}
@@ -133,7 +146,11 @@ export function CloudProviderBrowser({
 
   return (
     <aside
-      className="flex min-h-0 min-w-0 flex-col border-r border-border"
+      ref={catalogRef}
+      className={cn(
+        'flex min-h-0 min-w-0 flex-col border-r border-border',
+        className
+      )}
       aria-label={t('cloud:browser.label')}
     >
       <div className="p-3 pb-2">

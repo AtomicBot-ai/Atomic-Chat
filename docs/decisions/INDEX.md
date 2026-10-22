@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-449 records, 2026-05-19 → 2026-10-22.
+450 records, 2026-05-19 → 2026-10-22.
 
 ---
 
@@ -348,10 +348,11 @@ decision is reversed, add a new one that says which record it supersedes.
 ## UI / UX (2)
 - **2026-10-20** — [Show hosted providers on Cloud and the user's own servers on Custom Endpoint](2026-10-20-show-hosted-providers-on-cloud-and-own-servers-on-custom-endpoint.md)
 - **2026-10-20** — [List everything downloaded on a Downloads page](2026-10-20-list-everything-downloaded-on-a-downloads-page.md)
-## UI / UX (106)
+## UI / UX (107)
 - **2026-10-22** — [Fold the sidebar over the page when the window is narrow, and bound its width](2026-10-22-fold-the-sidebar-over-the-page-when-the-window-is-narrow.md)
 - **2026-10-22** — [Show full names in the sidebar, and tell colliding rows apart by their last activity](2026-10-22-show-full-names-and-tell-colliding-sidebar-rows-apart.md)
 - **2026-10-22** — [Stack the Skills list and instructions when the page is narrow](2026-10-22-stack-the-skills-list-and-instructions-when-the-page-is-narrow.md)
+- **2026-10-22** — [Show the Cloud catalog and a provider's configuration in turn on a narrow page](2026-10-22-show-the-cloud-catalog-and-configuration-in-turn-on-a-narrow-page.md)
 - **2026-10-22** — [Give model picker rows a second line for quant, owner and source](2026-10-22-give-model-picker-rows-a-second-line-for-quant-owner-and-source.md)
 - **2026-10-21** — [Check a cloud key before calling it connected](2026-10-21-check-a-cloud-key-before-calling-it-connected.md) — supersedes the "no key error state" clause of the 2026-10-20 Cloud record.
 - **2026-10-21** — [Say on the card why an MCP server did not start](2026-10-21-say-on-the-card-why-an-mcp-server-did-not-start.md)

@@ -756,6 +756,51 @@ describe('CloudPage guide and catalog', () => {
     )
   })
 
+  /**
+   * The pane a page too narrow for both shows. Which one is visible is CSS
+   * (a container query) that jsdom does not apply; the layout suite measures
+   * it in Chromium.
+   */
+  const pane = () =>
+    document.querySelector('[data-pane]')?.getAttribute('data-pane')
+
+  it('opens on the catalog from the sidebar, and on the configuration from a link naming a provider', () => {
+    const { unmount } = render(<CloudPage />)
+    expect(pane()).toBe('catalog')
+    unmount()
+
+    searchState.current = { provider: 'openrouter' }
+    render(<CloudPage />)
+    expect(pane()).toBe('configuration')
+  })
+
+  it('shows a picked provider in place of the catalog, and Back returns to it', () => {
+    render(<CloudPage />)
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'cloud:browser.configure:OpenRouter' })
+    )
+    expect(pane()).toBe('configuration')
+    expect(navigate).toHaveBeenLastCalledWith({
+      to: '/cloud/',
+      search: { provider: 'openrouter' },
+      replace: true,
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'cloud:browser.back' }))
+    expect(pane()).toBe('catalog')
+  })
+
+  it('lands on the catalog when the guide is left', () => {
+    useGeneralSetting.setState({ cloudGuideDone: false })
+    searchState.current = { provider: 'openrouter' }
+    render(<CloudPage />)
+
+    fireEvent.click(screen.getByText('cloud:guide.browse'))
+    expect(guide()).not.toBeInTheDocument()
+    expect(pane()).toBe('catalog')
+  })
+
   it('says so when nothing matches', () => {
     render(<CloudPage />)
 
