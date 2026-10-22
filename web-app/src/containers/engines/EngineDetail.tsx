@@ -6,6 +6,8 @@ import HeaderPage from '@/containers/HeaderPage'
 import { ManagedEngineSetupPanel } from '@/containers/managed-engine/ManagedEngineSetupPanel'
 import { FoundryLocalAccelerators } from '@/containers/foundry-local/FoundryLocalAccelerators'
 import { FoundryLocalEnginePanel } from '@/containers/foundry-local/FoundryLocalEnginePanel'
+import { LiteRtLmAccelerators } from '@/containers/litert-lm/LiteRtLmAccelerators'
+import { LiteRtLmEnginePanel } from '@/containers/litert-lm/LiteRtLmEnginePanel'
 import { useEngineVersionsStore } from '@/stores/engine-versions-store'
 import { ManagedEngineHubLink } from '@/containers/managed-engine/ManagedEngineHubLink'
 import { ManagedEngineSettingsCard } from '@/containers/managed-engine/ManagedEngineSettingsCard'
@@ -314,6 +316,10 @@ export function EngineDetail({
   const managed = managedEngine(providerName)
   const foundryLocalBuild = useEngineVersionsStore((state) => {
     const active = state.engines['foundry-local']?.active
+    return active ? `${active.version}/${active.variant}` : null
+  })
+  const liteRtLmBuild = useEngineVersionsStore((state) => {
+    const active = state.engines['litert-lm']?.active
     return active ? `${active.version}/${active.variant}` : null
   })
   const managedInstalled = useManagedEnvironmentStore(
@@ -1941,6 +1947,12 @@ export function EngineDetail({
               // Read again when the active build changes: a new build is probed afresh.
               <FoundryLocalAccelerators key={foundryLocalBuild ?? 'none'} />
             )}
+            {/* LiteRT-LM: the library and, on an Intel NPU, OpenVINO come before its settings and models. */}
+            {providerName === 'litert-lm' && <LiteRtLmEnginePanel />}
+            {providerName === 'litert-lm' && (
+              // Read again when the active build changes: OpenVINO's version follows the release.
+              <LiteRtLmAccelerators key={liteRtLmBuild ?? 'none'} />
+            )}
             {managed && provider && (
               <ManagedEngineSettingsCard
                 engine={managed}
@@ -2751,7 +2763,8 @@ export function EngineDetail({
                             provider.provider !== 'llamacpp-upstream' &&
                             provider.provider !== 'atomic-prism' &&
                             provider.provider !== 'mlx' &&
-                            provider.provider !== 'foundry-local' && (
+                            provider.provider !== 'foundry-local' &&
+                            provider.provider !== 'litert-lm' && (
                               <>
                                 <Button
                                   variant="secondary"

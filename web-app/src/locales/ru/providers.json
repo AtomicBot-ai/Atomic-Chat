@@ -447,6 +447,36 @@
     },
     "telemetry": "Библиотека Microsoft Foundry Local всегда отправляет одно событие ProcessInfo (название приложения, операционная система и архитектура, имя процесса, признак виртуальной машины или контейнера, число ядер CPU и объём памяти; без идентификатора устройства). Atomic Chat выключает её необязательную телеметрию, а это событие выключить нельзя."
   },
+  "liteRtLm": {
+    "engine": {
+      "title": "Движок LiteRT-LM",
+      "notInstalled": "LiteRT-LM не установлен",
+      "installDescription": "Библиотека Google LiteRT-LM {{version}}, около {{size}} для скачивания. Atomic Chat проверяет её и запускает каждую модель в отдельном процессе.",
+      "install": "Установить {{version}}",
+      "installing": "Скачивание… {{percent}}%",
+      "noBuild": "Сборки LiteRT-LM для этого компьютера сейчас нет.",
+      "installed": "LiteRT-LM {{version}}",
+      "installedDescription": "Библиотека, из которой запускаются модели — на CPU, GPU или Intel NPU.",
+      "update": "Обновить до {{version}}",
+      "checking": "Проверяем, что установлено…",
+      "checkAgain": "Проверить снова"
+    },
+    "accelerators": {
+      "title": "Intel NPU",
+      "description": "Моделям для Intel NPU этого компьютера нужны библиотеки Intel OpenVINO. Они скачиваются, только когда вы их подготовите.",
+      "openvino": "Intel OpenVINO {{version}}",
+      "detail": "Для NPU {{npu}}, {{size}} для скачивания",
+      "ready": "Готов",
+      "notPrepared": "Не подготовлен",
+      "preparing": "Подготовка…",
+      "downloading": "Скачивание… {{percent}}%",
+      "retry": "Повторить",
+      "prepare": "Подготовить ({{size}})",
+      "busy": "OpenVINO уже готовится, прогресс показан выше.",
+      "prepareFailed": "Не удалось подготовить OpenVINO: {{message}}",
+      "checkAgain": "Проверить снова"
+    }
+  },
   "tensorrt": {
     "checkAgain": "Проверить снова",
     "version": "Установленный релиз: {{version}}",
