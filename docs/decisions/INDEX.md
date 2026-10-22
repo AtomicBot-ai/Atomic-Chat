@@ -350,7 +350,8 @@ decision is reversed, add a new one that says which record it supersedes.
 ## UI / UX (2)
 - **2026-10-20** — [Show hosted providers on Cloud and the user's own servers on Custom Endpoint](2026-10-20-show-hosted-providers-on-cloud-and-own-servers-on-custom-endpoint.md)
 - **2026-10-20** — [List everything downloaded on a Downloads page](2026-10-20-list-everything-downloaded-on-a-downloads-page.md)
-## UI / UX (111)
+## UI / UX (112)
+- **2026-10-22** — [Replace the Welcome screen with a full-screen first-run flow](2026-10-22-replace-the-welcome-screen-with-a-full-screen-first-run-flow.md) — supersedes in part 2026-08-12, 2026-09-16, 2026-08-19 and 2026-09-11.
 - **2026-10-22** — [Fold the sidebar over the page when the window is narrow, and bound its width](2026-10-22-fold-the-sidebar-over-the-page-when-the-window-is-narrow.md)
 - **2026-10-22** — [Show full names in the sidebar, and tell colliding rows apart by their last activity](2026-10-22-show-full-names-and-tell-colliding-sidebar-rows-apart.md)
 - **2026-10-22** — [Name the served model readably on the Server card](2026-10-22-name-the-served-model-readably-on-the-server-card.md)

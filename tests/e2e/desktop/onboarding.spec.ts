@@ -14,6 +14,7 @@ import { endSession, restartApp, startSession, withArtifacts, type Session } fro
 import { skipOnboarding } from '../harness/chat.js'
 
 const ONBOARDING_HEADING = 'h1=Meet Atomic Chat.'
+const MODEL_HEADING = 'h1=Choose your first model.'
 const CHAT_INPUT = '[data-testid="chat-input"]'
 
 describe('first launch on a clean profile', () => {
@@ -62,6 +63,49 @@ describe('first launch on a clean profile', () => {
       await browser.$(CHAT_INPUT).waitForDisplayed({ timeout: 60_000 })
       expect(await browser.$(ONBOARDING_HEADING).isExisting()).toBe(false)
       expect(await browser.execute(() => localStorage.getItem('setup-completed'))).toBe('true')
+    })
+  })
+})
+
+describe('a first run interrupted by a relaunch', () => {
+  let session: Session
+
+  beforeAll(async () => {
+    // Windows and Linux would offer the GPU backend between Welcome and the
+    // model; this scenario is about the relaunch, not that step.
+    session = await startSession('onboarding-resume', {
+      webviewSeed: { llama_cpp_onboarding_done: 'skipped' },
+    })
+  })
+
+  afterAll(async () => {
+    if (session) expect(await endSession(session)).toEqual([])
+  })
+
+  // The Windows/Linux backend step relaunches the app halfway through; any
+  // quit does the same. The run is kept, so the next launch is the same step.
+  it('comes back to the step it was on, then lets the user leave', async () => {
+    await withArtifacts(session, async () => {
+      let browser = session.app.browser
+
+      await browser.$(ONBOARDING_HEADING).waitForDisplayed({ timeout: 60_000 })
+      await browser.$('button*=set up').click()
+      await browser.$(MODEL_HEADING).waitForDisplayed({ timeout: 30_000 })
+
+      await restartApp(session)
+      browser = session.app.browser
+
+      await browser.$(MODEL_HEADING).waitForDisplayed({ timeout: 60_000 })
+      expect(await browser.$(CHAT_INPUT).isExisting()).toBe(false)
+
+      await skipOnboarding(session)
+      await browser.$(CHAT_INPUT).waitForDisplayed({ timeout: 30_000 })
+
+      await restartApp(session)
+      browser = session.app.browser
+
+      await browser.$(CHAT_INPUT).waitForDisplayed({ timeout: 60_000 })
+      expect(await browser.$(MODEL_HEADING).isExisting()).toBe(false)
     })
   })
 })

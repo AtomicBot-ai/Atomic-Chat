@@ -49,6 +49,7 @@ vi.mock('../steps/ModelStep', () => ({
 }))
 
 import { Onboarding } from '../Onboarding'
+import { OnboardingRuntime } from '../OnboardingRuntime'
 
 const qwen = {
   source: 'download' as const,
@@ -107,7 +108,8 @@ describe('leaving the first-run flow', () => {
   it('stays in setup when the chosen model lands in the library mid-run', () => {
     // The old screen handed off on the click and had to ignore the later
     // import; the run now carries on through its steps and only marks the
-    // download done.
+    // download done. The runtime that marks it is mounted beside the screen,
+    // as in the app.
     const store = useOnboardingStore.getState()
     store.begin('full', 'model')
     store.choose(qwen)
@@ -118,7 +120,12 @@ describe('leaving the first-run flow', () => {
       taskId: 'Qwen3.5-4B-Q4_K_M',
       phase: 'running',
     })
-    render(<Onboarding />)
+    render(
+      <>
+        <Onboarding />
+        <OnboardingRuntime />
+      </>
+    )
 
     act(() => {
       useModelProvider.setState({

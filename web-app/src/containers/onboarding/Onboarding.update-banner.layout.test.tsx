@@ -10,6 +10,8 @@ import { settle, withTranslations } from '@/test/layout'
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => vi.fn(),
+  // The server step reaches the Server pages' model picker, which links out.
+  Link: ({ children }: { children?: React.ReactNode }) => <a>{children}</a>,
 }))
 
 vi.mock('posthog-js', () => ({

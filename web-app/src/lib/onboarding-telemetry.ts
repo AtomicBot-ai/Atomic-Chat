@@ -506,10 +506,9 @@ const BACKEND_DETECTION_FAILED = 'BACKEND_DETECTION_FAILED'
 /**
  * Classify a thrown detection error.
  *
- * Lives here, not in `SetupBackendStep`, because that component is a shell
- * whose branch-coverage floor is satisfied by never executing: the moment a
- * conditional lands in it, it has to be exercised or the floor breaks. So the
- * call site stays `ref.current = classifyDetectionFailure(err)`.
+ * Lives here, not in `SetupBackendStep`, so the classification is tested on
+ * its own and the component's call site stays
+ * `ref.current = classifyDetectionFailure(err)`.
  */
 export function classifyDetectionFailure(
   err: unknown
