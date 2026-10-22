@@ -5,6 +5,7 @@ import { localStorageKey } from '@/constants/localStorage'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { isOnboardingPending, resetForcedOnboardingRun } from '@/lib/onboarding'
 import { useOnboardingStore } from '@/stores/onboarding-store'
 
 import { exitPathOf, handOffOnboarding } from '../handoff'
@@ -125,6 +126,57 @@ describe('leaving the setup screen', () => {
       exit_path: 'dismissed',
       step_reached: 'welcome',
     })
+  })
+
+  it('ends a forced re-run over an installed model without selecting it', () => {
+    // A `FORCE_ONBOARDING` build replays setup for a returning user: a model
+    // is installed and was the last one used. Leaving empty-handed must not
+    // hand it back behind the user, nor start or remove anything.
+    vi.stubGlobal('FORCE_ONBOARDING', true)
+    try {
+      const installed = {
+        provider: 'llamacpp-upstream',
+        active: true,
+        models: [{ id: 'installed.gguf' }],
+      }
+      useModelProvider.setState({
+        providers: [installed],
+        selectedProvider: 'llamacpp-upstream',
+        selectedModel: { id: 'installed.gguf' },
+      } as never)
+      localStorage.setItem(localStorageKey.setupCompleted, 'true')
+      localStorage.setItem(
+        localStorageKey.lastUsedModel,
+        JSON.stringify({
+          provider: 'llamacpp-upstream',
+          model: 'installed.gguf',
+        })
+      )
+      resetForcedOnboardingRun()
+      useOnboardingStore.getState().begin('full', 'welcome')
+      expect(isOnboardingPending([installed])).toBe(true)
+
+      handOffOnboarding({
+        destination: 'chat',
+        stepReached: 'welcome',
+        navigate,
+      })
+
+      expect(useModelProvider.getState()).toMatchObject({
+        providers: [installed],
+        selectedProvider: '',
+        selectedModel: null,
+      })
+      expect(localStorage.getItem(localStorageKey.lastUsedModel)).toBeNull()
+      expect(useModelLoad.getState().modelSelectionDeferred).toBe(true)
+      expect(localStorage.getItem(localStorageKey.setupCompleted)).toBe('true')
+      expect(isOnboardingPending([installed])).toBe(false)
+      expect(navigate.mock.calls).toEqual([
+        [{ to: '/', replace: true, search: {} }],
+      ])
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('reports completion once, even after "Back to setup"', () => {

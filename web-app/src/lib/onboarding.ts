@@ -115,15 +115,15 @@ function isSetupCompleted(): boolean {
 
 /**
  * Whether the onboarding screen will be shown for this launch. Deterministic
- * (derived from providers + the persisted `setupCompleted` flag), so it does
- * NOT depend on whether SetupScreen has mounted yet — unlike a runtime flag,
- * which races against DataProvider's own startup effect.
+ * (derived from providers, the persisted `setupCompleted` flag and the saved
+ * run), so it does NOT depend on whether `/onboarding` has mounted yet —
+ * unlike a runtime flag, which races against DataProvider's own startup effect.
  *
  * `FORCE_ONBOARDING` decides whether onboarding is *entered* despite installed
  * models; it deliberately does not decide whether it can be *left*, or the
- * auto-exit, the chat handoff and the model reminder would be unreachable in
- * the one build made for exercising them. `resetForcedOnboardingRun()` clears
- * the completion flag once per launch so the forced run still repeats.
+ * chat handoff and the model reminder would be unreachable in the one build
+ * made for exercising them. `resetForcedOnboardingRun()` clears the completion
+ * flag once per launch so the forced run still repeats.
  */
 export function isOnboardingPending(providers: ProviderLike[]): boolean {
   if (isOnboardingInProgress()) return true

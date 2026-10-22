@@ -28,7 +28,7 @@ export function BackendStep({ next }: StepProps) {
     <>
       <h1 tabIndex={-1}>{t('setup:backendStep.title')}</h1>
       <p className="ob-lead">{t('setup:backendStep.description')}</p>
-      <SetupBackendStep embedded onDone={done} />
+      <SetupBackendStep onDone={done} />
     </>
   )
 }

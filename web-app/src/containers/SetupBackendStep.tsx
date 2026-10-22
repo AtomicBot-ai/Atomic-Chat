@@ -10,7 +10,6 @@ import {
 
 import { Button } from '@/components/ui/button'
 import { ExtensionManager } from '@/lib/extension'
-import HeaderPage from '@/containers/HeaderPage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useBackendUpdater } from '@/hooks/useBackendUpdater'
 import { cn, LOCAL_LLAMACPP_EXTENSION_NAME } from '@/lib/utils'
@@ -63,9 +62,6 @@ interface SetupBackendStepProps {
   /// backend, or no recommendation applies for the current device. The
   /// parent advances to the next onboarding step (model selection).
   onDone: (status: 'downloaded' | 'skipped') => void
-  /// Inside the first-run flow, which draws its own page, title and logo:
-  /// render the card and its Skip only.
-  embedded?: boolean
 }
 
 function getLlamacppExtension(): LlamacppLikeExtension | null {
@@ -89,10 +85,7 @@ function getLlamacppExtension(): LlamacppLikeExtension | null {
   return (candidate as unknown as LlamacppLikeExtension) ?? null
 }
 
-export default function SetupBackendStep({
-  onDone,
-  embedded = false,
-}: SetupBackendStepProps) {
+export default function SetupBackendStep({ onDone }: SetupBackendStepProps) {
   const { t } = useTranslation()
   const {
     recommendation,
@@ -319,8 +312,8 @@ export default function SetupBackendStep({
     }
   }, [finish, recommendation])
 
-  const card = (
-    <>
+  return (
+    <div className="flex w-full flex-col">
       <div
         className={cn(
           'w-full shrink-0 rounded-lg border bg-secondary/50 p-5 sm:p-6'
@@ -458,44 +451,6 @@ export default function SetupBackendStep({
           </Button>
         </div>
       )}
-    </>
-  )
-
-  if (embedded) return <div className="flex w-full flex-col">{card}</div>
-
-  return (
-    <div className="relative flex h-svh w-full flex-col overflow-hidden">
-      <div className="flex h-svh min-h-0 w-full flex-col">
-        <HeaderPage />
-
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-          <div className="pointer-events-auto mx-auto my-auto flex w-full max-w-[640px] flex-col px-6 py-8 sm:px-10 sm:py-10">
-            <div className="mb-5 shrink-0 text-center">
-              <div className="mb-5 flex items-center justify-center gap-3 font-studio text-4xl font-semibold leading-none tracking-tight sm:text-5xl">
-                <div className="flex h-[1em] w-[1em] shrink-0 items-center justify-center rounded-lg bg-neutral-950 p-[3px] shadow-sm dark:bg-white dark:shadow-none">
-                  <img
-                    src="/images/transparent-logo.png"
-                    alt=""
-                    className="size-full min-h-0 min-w-0 object-contain invert dark:invert-0"
-                    draggable={false}
-                  />
-                </div>
-                <span>Atomic Chat</span>
-              </div>
-              <div className="mb-2 min-w-0">
-                <span className="inline-block text-lg font-bold leading-snug sm:text-xl md:text-2xl">
-                  {t('setup:backendStep.title')}
-                </span>
-              </div>
-              <p className="text-muted-foreground mx-auto max-w-full text-sm leading-relaxed sm:text-base">
-                {t('setup:backendStep.description')}
-              </p>
-            </div>
-
-            {card}
-          </div>
-        </div>
-      </div>
     </div>
   )
 }
