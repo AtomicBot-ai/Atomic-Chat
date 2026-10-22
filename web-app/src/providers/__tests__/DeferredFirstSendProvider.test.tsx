@@ -1,7 +1,18 @@
 import { act, render, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { TEMPORARY_CHAT_ID } from '@/constants/chat'
+import {
+  useAgentMode,
+  type AgentThreadState,
+  type AgentWorkspace,
+} from '@/hooks/useAgentMode'
 import { useAppState } from '@/hooks/useAppState'
+import { useToolApproval } from '@/hooks/useToolApproval'
+import {
+  resolveExecAutoApprove,
+  resolveMcpAutoApprove,
+} from '@/lib/mcp-approval'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { usePrompt } from '@/hooks/usePrompt'
 import { useDeferredFirstSend } from '@/stores/deferred-first-send-store'
@@ -80,7 +91,7 @@ describe('DeferredFirstSendProvider', () => {
       assistants: [],
     })
     seedServiceHub()
-    usePrompt.setState({ prompt: 'Queued prompt' })
+    usePrompt.setState({ prompt: 'Queued prompt', draftKey: null, drafts: {} })
     useDeferredFirstSend.setState({ queued: null })
     useAppState.setState({ activeModels: [] })
     useModelProvider.setState({
@@ -171,5 +182,140 @@ describe('DeferredFirstSendProvider', () => {
     expect(useModelProvider.getState().selectedModel).toBeNull()
     expect(usePrompt.getState().prompt).toBe('Queued prompt')
     expect(useDeferredFirstSend.getState().queued?.id).toBe('queue-2')
+  })
+
+  it('clears the sent text from New Chat, not from the chat the user opened since', async () => {
+    // The user left New Chat for another chat and started typing there; the
+    // queued text waits, parked, in New Chat's composer.
+    usePrompt.setState({
+      prompt: 'My reply in the open chat',
+      draftKey: 'existing-thread',
+      drafts: { [TEMPORARY_CHAT_ID]: 'Queued prompt' },
+    })
+    render(<DeferredFirstSendProvider />)
+    act(() => {
+      useDeferredFirstSend.getState().enqueue({
+        id: 'queue-3',
+        prompt: 'Queued prompt',
+        downloadModelIds: ['owner/model'],
+        createdAt: Date.now(),
+      })
+      useModelProvider.setState({
+        providers: [
+          {
+            provider: 'llamacpp-upstream',
+            active: true,
+            models: [
+              { id: 'owner/model', capabilities: [], settings: {} } as Model,
+            ],
+            settings: [],
+          } as ModelProvider,
+        ],
+      })
+    })
+    await waitFor(() => expect(mocks.switchToModel).toHaveBeenCalled())
+    act(() => {
+      useAppState.setState({ activeModels: ['owner/model'] })
+    })
+
+    await waitFor(() => expect(mocks.sendMessage).toHaveBeenCalled())
+    // Sent, so New Chat no longer offers it again...
+    expect(usePrompt.getState().getDraft(TEMPORARY_CHAT_ID)).toBe('')
+    // ...and the open chat keeps what the user is typing.
+    expect(usePrompt.getState().prompt).toBe('My reply in the open chat')
+    expect(usePrompt.getState().draftKey).toBe('existing-thread')
+  })
+
+  describe("New Chat's approval mode and workspace at Send", () => {
+    const workspace: AgentWorkspace = {
+      primaryRoot: {
+        rootId: 'root-1',
+        path: '/Users/me/project',
+        name: 'project',
+        canEdit: true,
+      },
+      externalRoots: [],
+    }
+
+    // Send pressed on New Chat while the model downloads; the user leaves, and
+    // the model comes up later.
+    const sendAfterLeaving = async (agentState: AgentThreadState) => {
+      render(<DeferredFirstSendProvider />)
+      act(() => {
+        useDeferredFirstSend.getState().enqueue({
+          id: 'queue-agent',
+          prompt: 'Queued prompt',
+          downloadModelIds: ['owner/model'],
+          createdAt: Date.now(),
+          agentState,
+        })
+        useModelProvider.setState({
+          providers: [
+            {
+              provider: 'llamacpp-upstream',
+              active: true,
+              models: [
+                { id: 'owner/model', capabilities: [], settings: {} } as Model,
+              ],
+              settings: [],
+            } as ModelProvider,
+          ],
+        })
+      })
+      await waitFor(() => expect(mocks.switchToModel).toHaveBeenCalled())
+      act(() => {
+        useAppState.setState({ activeModels: ['owner/model'] })
+      })
+      await waitFor(() => expect(mocks.sendMessage).toHaveBeenCalled())
+    }
+
+    beforeEach(() => {
+      // The global auto-approve switch is on, as it is for everyone.
+      useToolApproval.setState({ allowAllMCPPermissions: true })
+      useAgentMode.setState({ approvalModes: {}, workspaces: {} })
+    })
+
+    it('starts the background chat on the Restricted the user saw, so its tool calls ask', async () => {
+      useAgentMode.setState({
+        approvalModes: { [TEMPORARY_CHAT_ID]: 'manual' },
+        workspaces: { [TEMPORARY_CHAT_ID]: workspace },
+      })
+
+      await sendAfterLeaving({ approvalMode: 'manual', workspace })
+
+      const agent = useAgentMode.getState()
+      expect(agent.approvalModes['background-thread']).toBe('manual')
+      expect(agent.workspaces['background-thread']).toEqual(workspace)
+      // What the send's approval step reads: web search and commands ask.
+      expect(resolveMcpAutoApprove('background-thread')).toBe(false)
+      expect(resolveExecAutoApprove('background-thread')).toBe(false)
+      // New Chat is done with them, as after a direct send.
+      expect(agent.approvalModes[TEMPORARY_CHAT_ID]).toBeUndefined()
+      expect(agent.workspaces[TEMPORARY_CHAT_ID]).toBeUndefined()
+    })
+
+    it('keeps the mode from Send even if New Chat was switched since, and leaves that new pick', async () => {
+      // Full access at Send; back on New Chat later the user picked
+      // Restricted for their next chat.
+      useAgentMode.setState({
+        approvalModes: { [TEMPORARY_CHAT_ID]: 'manual' },
+      })
+
+      await sendAfterLeaving({ approvalMode: 'skip' })
+
+      const agent = useAgentMode.getState()
+      expect(agent.approvalModes['background-thread']).toBe('skip')
+      expect(resolveExecAutoApprove('background-thread')).toBe(true)
+      expect(agent.approvalModes[TEMPORARY_CHAT_ID]).toBe('manual')
+    })
+
+    it('leaves an untouched mode untouched, so the chat follows the global switch like a direct send', async () => {
+      await sendAfterLeaving({})
+
+      expect(
+        useAgentMode.getState().approvalModes['background-thread']
+      ).toBeUndefined()
+      expect(resolveMcpAutoApprove('background-thread')).toBe(true)
+    })
   })
 })

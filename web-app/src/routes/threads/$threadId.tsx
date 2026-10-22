@@ -2256,6 +2256,7 @@ function ThreadDetail() {
             {/* Chat Input - Fixed at bottom */}
             <div className="py-4 mx-auto w-full md:w-4/5 xl:w-4/6">
               <ChatInput
+                threadId={threadId}
                 model={threadModel}
                 onSubmit={handleSubmit}
                 onStop={handleStop}

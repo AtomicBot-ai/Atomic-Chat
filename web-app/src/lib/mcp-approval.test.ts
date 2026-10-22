@@ -2,10 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { useChatExecStatus } from '@/hooks/useChatExecStatus'
 import { useToolApproval } from '@/hooks/useToolApproval'
+import { act, renderHook } from '@testing-library/react'
 import {
   approveChatToolCall,
   resolveExecAutoApprove,
   resolveMcpAutoApprove,
+  useGlobalAutoApproveOverridesSelect,
 } from '@/lib/mcp-approval'
 
 const platformFeatures = vi.hoisted(() => ({}) as Record<string, boolean>)
@@ -41,6 +43,45 @@ describe('resolveMcpAutoApprove', () => {
     expect(resolveMcpAutoApprove('t1')).toBe(false)
     // Other threads are untouched by t1's choice.
     expect(resolveMcpAutoApprove('t2')).toBe(true)
+  })
+})
+
+describe('useGlobalAutoApproveOverridesSelect', () => {
+  beforeEach(() => {
+    useAgentMode.setState({ approvalModes: {} })
+    useToolApproval.setState({ allowAllMCPPermissions: true })
+  })
+
+  it('flags a Restricted composer whose connector tools the global switch runs unasked', () => {
+    const { result } = renderHook(() =>
+      useGlobalAutoApproveOverridesSelect('t1')
+    )
+
+    expect(result.current).toBe(true)
+    // What the flag discloses is what happens: the select reads Restricted,
+    // yet an MCP call (web search) is auto-approved.
+    expect(useAgentMode.getState().getApprovalMode('t1')).toBe('manual')
+    expect(resolveMcpAutoApprove('t1')).toBe(true)
+  })
+
+  it('drops the flag once the switch is off or a mode is picked', () => {
+    const { result } = renderHook(() =>
+      useGlobalAutoApproveOverridesSelect('t1')
+    )
+
+    act(() => useToolApproval.setState({ allowAllMCPPermissions: false }))
+    expect(result.current).toBe(false)
+
+    act(() => {
+      useToolApproval.setState({ allowAllMCPPermissions: true })
+      useAgentMode.setState({ approvalModes: { t1: 'manual' } })
+    })
+    // An explicit Restricted asks, so there is nothing to disclose.
+    expect(result.current).toBe(false)
+    expect(resolveMcpAutoApprove('t1')).toBe(false)
+
+    act(() => useAgentMode.setState({ approvalModes: { t1: 'skip' } }))
+    expect(result.current).toBe(false)
   })
 })
 

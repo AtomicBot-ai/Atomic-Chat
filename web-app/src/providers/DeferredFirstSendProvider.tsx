@@ -10,6 +10,7 @@ import { toast } from 'sonner'
 
 import { route } from '@/constants/routes'
 import { useAppState } from '@/hooks/useAppState'
+import { useAgentMode } from '@/hooks/useAgentMode'
 import { useAssistant } from '@/hooks/useAssistant'
 import { useChat } from '@/hooks/use-chat'
 import { useMessages } from '@/hooks/useMessages'
@@ -37,6 +38,7 @@ import { useDeferredFirstSend } from '@/stores/deferred-first-send-store'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { switchToModel } from '@/utils/switchModel'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { composerThreadKey } from '@/lib/composer-thread-key'
 
 type Worker = {
   queueId: string
@@ -46,6 +48,9 @@ type Worker = {
   navigateWhenStarted: boolean
   systemMessage?: string
 }
+
+// Only the home composer queues a first send (ChatInput's `canRunFromRoot`).
+const HOME_COMPOSER_KEY = composerThreadKey({ isComposer: true })
 
 const matchesModelId = (candidate: string, expected: string) =>
   candidate === expected || candidate.replace(/\\/g, '/') === expected
@@ -238,6 +243,12 @@ export function DeferredFirstSendProvider() {
       if (!navigateWhenStarted) {
         useThreads.setState({ currentThreadId: previousThreadId })
       }
+      // Before the send: its tool calls are approved by this thread's mode.
+      if (queued.agentState) {
+        useAgentMode
+          .getState()
+          .handOffThreadState(HOME_COMPOSER_KEY, thread.id, queued.agentState)
+      }
       setWorker({
         queueId: queued.id,
         threadId: thread.id,
@@ -287,8 +298,11 @@ export function DeferredFirstSendProvider() {
       metadata: userMessage.metadata,
     })
 
-    if (usePrompt.getState().prompt === worker.prompt) {
-      usePrompt.getState().setPrompt('')
+    // The queued text is the home composer's draft. Clear it there, not in
+    // whichever chat the user has opened since.
+    const prompts = usePrompt.getState()
+    if (prompts.getDraft(HOME_COMPOSER_KEY) === worker.prompt) {
+      prompts.setDraft(HOME_COMPOSER_KEY, '')
     }
     useAssistant.getState().setPendingAssistant(undefined)
 

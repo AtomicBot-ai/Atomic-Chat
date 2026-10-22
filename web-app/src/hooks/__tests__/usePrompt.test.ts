@@ -7,7 +7,7 @@ describe('usePrompt', () => {
     vi.clearAllMocks()
     localStorage.clear()
     sessionStorage.clear()
-    usePrompt.setState({ prompt: '' })
+    usePrompt.setState({ prompt: '', draftKey: null, drafts: {} })
   })
 
   it('should initialize with empty prompt', () => {
@@ -114,6 +114,70 @@ describe('usePrompt', () => {
     expect(secondMount.result.current).toBe(
       'Keep this while I change routes'
     )
+  })
+
+  it('keeps a project draft out of unrelated chats and brings it back to the project', () => {
+    const { bindDraft, setPrompt } = usePrompt.getState()
+    act(() => {
+      bindDraft('project:p1')
+      setPrompt('Unsent project question')
+    })
+
+    act(() => bindDraft('thread-a'))
+    expect(usePrompt.getState().prompt).toBe('')
+    act(() => bindDraft('thread-b'))
+    expect(usePrompt.getState().prompt).toBe('')
+
+    act(() => bindDraft('project:p1'))
+    expect(usePrompt.getState().prompt).toBe('Unsent project question')
+  })
+
+  it('gives each chat back its own draft when the user returns to it', () => {
+    const { bindDraft, setPrompt } = usePrompt.getState()
+    act(() => {
+      bindDraft('thread-a')
+      setPrompt('Reply for A')
+      bindDraft('thread-b')
+      setPrompt('Reply for B')
+      bindDraft('thread-a')
+    })
+    expect(usePrompt.getState().prompt).toBe('Reply for A')
+
+    act(() => bindDraft('thread-b'))
+    expect(usePrompt.getState().prompt).toBe('Reply for B')
+    // A cleared composer leaves nothing parked behind.
+    act(() => {
+      setPrompt('')
+      bindDraft('thread-a')
+    })
+    expect(usePrompt.getState().drafts).toEqual({})
+  })
+
+  it('reads and writes a parked draft without disturbing the open composer', () => {
+    const { bindDraft, setPrompt, getDraft, setDraft } = usePrompt.getState()
+    act(() => {
+      bindDraft('home')
+      setPrompt('Queued on home')
+      bindDraft('thread-a')
+      setPrompt('Typing in A')
+    })
+    expect(getDraft('home')).toBe('Queued on home')
+    expect(getDraft('thread-a')).toBe('Typing in A')
+
+    act(() => setDraft('home', ''))
+    expect(getDraft('home')).toBe('')
+    expect(usePrompt.getState().prompt).toBe('Typing in A')
+
+    act(() => bindDraft('home'))
+    expect(usePrompt.getState().prompt).toBe('')
+  })
+
+  it('hands text typed before any composer bound to the first one that binds', () => {
+    act(() => usePrompt.getState().setPrompt('Seeded'))
+    act(() => usePrompt.getState().bindDraft('thread-a'))
+
+    expect(usePrompt.getState().prompt).toBe('Seeded')
+    expect(usePrompt.getState().draftKey).toBe('thread-a')
   })
 
   it('starts empty in a fresh app session instead of rehydrating draft text', async () => {

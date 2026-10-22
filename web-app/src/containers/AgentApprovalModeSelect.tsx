@@ -1,6 +1,6 @@
 import type { LucideIcon } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
-import { Check, ChevronDown, CircleAlert, Hand } from 'lucide-react'
+import { Fragment, useState, type ReactNode } from 'react'
+import { Check, ChevronDown, CircleAlert, Hand, Settings } from 'lucide-react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -53,6 +53,16 @@ type AgentApprovalModeSelectProps = {
   skipConfirmCancel: string
   skipConfirmAccept: string
   toggles?: ApprovalMenuToggle[]
+  /**
+   * A setting outside this menu keeps part of Restricted's promise from
+   * holding (global auto-approve): `notice` says so inside the Restricted
+   * row, and an item right under it opens that setting.
+   */
+  manualOverride?: {
+    notice: string
+    actionLabel: string
+    onAction: () => void
+  }
 }
 
 /**
@@ -82,6 +92,7 @@ export function AgentApprovalModeSelect({
   skipConfirmCancel,
   skipConfirmAccept,
   toggles = [],
+  manualOverride,
 }: AgentApprovalModeSelectProps) {
   // Picking Full access asks first, every time: the mode only changes from
   // the dialog's accept button, and Cancel / Escape leave it as it was.
@@ -141,30 +152,52 @@ export function AgentApprovalModeSelect({
           {options.map((option) => {
             const Icon = MODE_ICONS[option.value]
             const selected = mode === option.value
+            const override =
+              option.value === 'manual' ? manualOverride : undefined
             return (
-              // The item's own `items-center` keeps the icon and the checkmark
-              // on the middle of the title + description block. Pinned to the
-              // title line they sat at the top of the three-line Full access
-              // row and read as "flown up".
-              <DropdownMenuItem
-                key={option.value}
-                onSelect={() => handleSelect(option.value)}
-                className="gap-2.5 px-2 py-2"
-              >
-                <Icon className="size-4 text-muted-foreground" />
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm">{option.label}</span>
-                  <span className="mt-0.5 block text-xs leading-4 text-muted-foreground">
-                    {option.description}
+              <Fragment key={option.value}>
+                {/* The item's own `items-center` keeps the icon and the
+                    checkmark on the middle of the title + description block.
+                    Pinned to the title line they sat at the top of the
+                    three-line Full access row and read as "flown up". */}
+                <DropdownMenuItem
+                  onSelect={() => handleSelect(option.value)}
+                  className="gap-2.5 px-2 py-2"
+                >
+                  <Icon className="size-4 text-muted-foreground" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm">{option.label}</span>
+                    <span className="mt-0.5 block text-xs leading-4 text-muted-foreground">
+                      {option.description}
+                    </span>
+                    {/* Part of the row, so the promise and what overrides
+                        it are read together. */}
+                    {override && (
+                      <span className="mt-1 block text-xs leading-4 text-amber-600 dark:text-amber-400">
+                        {override.notice}
+                      </span>
+                    )}
                   </span>
-                </span>
-                <Check
-                  className={cn(
-                    'size-4 text-foreground',
-                    !selected && 'invisible'
-                  )}
-                />
-              </DropdownMenuItem>
+                  <Check
+                    className={cn(
+                      'size-4 text-foreground',
+                      !selected && 'invisible'
+                    )}
+                  />
+                </DropdownMenuItem>
+                {/* Lined up with the row's text column above. */}
+                {override && (
+                  <DropdownMenuItem
+                    onSelect={override.onAction}
+                    className="gap-1.5 py-1 pr-2 pl-8.5 text-xs text-muted-foreground"
+                  >
+                    <Settings className="size-3.5" />
+                    <span className="min-w-0 truncate">
+                      {override.actionLabel}
+                    </span>
+                  </DropdownMenuItem>
+                )}
+              </Fragment>
             )
           })}
           {toggles.length > 0 && <DropdownMenuSeparator />}

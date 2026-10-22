@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ComponentProps } from 'react'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
@@ -40,11 +40,15 @@ function Harness({
   onChange,
   compact,
   toggles,
+  manualOverride,
 }: {
   initial?: AgentApprovalMode
   onChange: (mode: AgentApprovalMode) => void
   compact?: boolean
   toggles?: ApprovalMenuToggle[]
+  manualOverride?: ComponentProps<
+    typeof AgentApprovalModeSelect
+  >['manualOverride']
 }) {
   const [mode, setMode] = useState<AgentApprovalMode>(initial)
   return (
@@ -52,6 +56,7 @@ function Harness({
       mode={mode}
       compact={compact}
       toggles={toggles}
+      manualOverride={manualOverride}
       onChange={(next) => {
         onChange(next)
         setMode(next)
@@ -163,6 +168,51 @@ describe('AgentApprovalModeSelect', () => {
       'Runs every tool call without asking, including access to files and the internet.'
     )
     expect(screen.queryByText(/sandbox/i)).not.toBeInTheDocument()
+  })
+
+  it('says inside Restricted when global auto-approve overrides it, with the way to that setting', async () => {
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+    const onAction = vi.fn()
+    render(
+      <Harness
+        onChange={onChange}
+        manualOverride={{
+          notice: chat.agentApprovals.autoApproveOverride,
+          actionLabel: chat.agentApprovals.openAutoApproveSetting,
+          onAction,
+        }}
+      />
+    )
+
+    await openMenu(user)
+
+    // The promise and what overrides it are one row, read together.
+    const restricted = screen.getByRole('menuitem', { name: /Restricted/ })
+    expect(restricted).toHaveTextContent(COPY.manualDescription)
+    expect(restricted).toHaveTextContent(
+      '“Auto-approve tool calls” is on in Settings, so web search and other connector tools run without asking.'
+    )
+    // The setting is one pick away, right under that row, and opening it
+    // changes no mode.
+    const items = screen.getAllByRole('menuitem')
+    const open = screen.getByRole('menuitem', { name: 'Open Settings' })
+    expect(items.indexOf(open)).toBe(items.indexOf(restricted) + 1)
+    await user.click(open)
+    expect(onAction).toHaveBeenCalledTimes(1)
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('shows no override note or settings item while Restricted holds', async () => {
+    const user = userEvent.setup()
+    render(<Harness onChange={vi.fn()} />)
+
+    await openMenu(user)
+
+    expect(screen.getAllByRole('menuitem')).toHaveLength(2)
+    expect(
+      screen.queryByText(chat.agentApprovals.autoApproveOverride)
+    ).not.toBeInTheDocument()
   })
 
   it('asks before enabling Full access instead of switching at once', async () => {
