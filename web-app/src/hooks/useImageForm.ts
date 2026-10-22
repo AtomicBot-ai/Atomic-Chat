@@ -3,7 +3,10 @@ import { createJSONStorage, persist } from 'zustand/middleware'
 
 import { localStorageKey } from '@/constants/localStorage'
 import { ALL_SIDES, type OutpaintSides } from '@/lib/diffusion/outpaint'
-import type { ImageFormDraft } from '@/lib/diffusion/recipe'
+import type {
+  ImageFormDraft,
+  RestoredImageFormDraft,
+} from '@/lib/diffusion/recipe'
 import { matchAspect, snapDim, type DimConstraints } from '@/lib/diffusion/size'
 import { MAX_EXTRA_REFERENCES } from '@/lib/diffusion/workflows'
 import type {
@@ -107,7 +110,11 @@ type ImageFormState = ImageFormDraft &
      * Replace the whole draft, e.g. from a recipe, together with the family
      * its numbers are for, so picking that recipe's model keeps them.
      */
-    applyDraft: (draft: ImageFormDraft, recipeFamily?: string | null) => void
+    /** A knob the draft leaves out (one a recipe cannot vouch for) keeps the form's value. */
+    applyDraft: (
+      draft: RestoredImageFormDraft,
+      recipeFamily?: string | null
+    ) => void
     /** A new source: the mask painted over the old one is meaningless now. */
     setSourceImage: (source: ImageSourceFile | null) => void
     clearMask: () => void

@@ -4,6 +4,7 @@ import { Progress } from '@/components/ui/progress'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import type { ImageJobProgress } from '@/services/diffusion/types'
 import { cn } from '@/lib/utils'
+import { mediaPreviewFrameStyle } from './mediaPreview'
 import './ImageGenerationPlaceholder.css'
 
 /** What the placeholder reads of a job's progress; an image and a video job both carry it. */
@@ -240,22 +241,22 @@ export const ImageGenerationPlaceholder = memo(
       )
     }
 
+    // The viewer's geometry: the frame is the picture's or clip's frame-to-be
+    // (same width, same height cap), and the bottom padding holds the
+    // toolbar row the result will bring, so the gallery under the preview
+    // does not move when the result replaces it.
     return (
       <div
-        className="flex size-full min-h-48 items-center justify-center px-6 py-4"
+        className="flex min-w-0 justify-center px-6 pt-4 pb-[calc(var(--control-height,2.25rem)+1rem)] [container-type:inline-size]"
         data-testid="image-generation-preview"
         role="status"
         aria-live="polite"
         aria-atomic="true"
       >
-        <div className="relative grid max-h-full max-w-full overflow-hidden rounded-xl border border-border/70 bg-secondary/25 shadow-sm">
-          <svg
-            width={Math.max(width, 1)}
-            height={Math.max(height, 1)}
-            viewBox={`0 0 ${Math.max(width, 1)} ${Math.max(height, 1)}`}
-            className="col-start-1 row-start-1 max-h-full max-w-full"
-            aria-hidden
-          />
+        <div
+          className="relative shrink-0 overflow-hidden rounded-xl border border-border/70 bg-secondary/25 shadow-sm"
+          style={mediaPreviewFrameStyle(width, height)}
+        >
           <span
             className="sr-only"
             data-testid="image-generation-progress-announcement"

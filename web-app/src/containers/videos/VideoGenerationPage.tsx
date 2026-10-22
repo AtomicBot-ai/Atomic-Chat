@@ -340,9 +340,15 @@ export const VideoGenerationPage = memo(function VideoGenerationPage({
             />
           </div>
         ) : (
-          <>
+          // The media pane: the viewer is as tall as the clip and its actions
+          // (capped at three fifths of this pane, in `cqh`), and the gallery
+          // takes the rest.
+          <div
+            className="flex min-h-0 min-w-0 flex-1 flex-col [container-type:size]"
+            data-testid="video-media-pane"
+          >
             <div
-              className="min-h-0 min-w-0 flex-[3] overflow-hidden"
+              className="min-w-0 shrink-0 overflow-hidden"
               data-testid="video-viewer-section"
             >
               {showLivePreview ? (
@@ -360,7 +366,7 @@ export const VideoGenerationPage = memo(function VideoGenerationPage({
                 />
               )}
             </div>
-            <div className="flex min-h-0 flex-[2] flex-col border-t border-border/60">
+            <div className="flex min-h-0 flex-1 flex-col border-t border-border/60">
               <div className="flex shrink-0 items-center gap-2 px-6 py-2 text-xs text-muted-foreground">
                 <IconMovie size={14} />
                 <span>{t('videos:gallery.title')}</span>
@@ -396,7 +402,7 @@ export const VideoGenerationPage = memo(function VideoGenerationPage({
                 />
               </div>
             </div>
-          </>
+          </div>
         )}
         {!catalog && !gallery.initialized && (
           <div className="absolute bottom-4 left-6 flex items-center gap-2 text-xs text-muted-foreground">

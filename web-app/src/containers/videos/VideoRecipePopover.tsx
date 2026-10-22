@@ -14,6 +14,7 @@ import {
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { captureVideoGalleryAction } from '@/lib/diffusion/telemetry'
 import { formatSeconds, secondsForFrames } from '@/lib/video/duration'
+import { videoRecipeSettings } from '@/lib/video/recipe'
 import type { VideoRecipe } from '@/services/diffusion/types'
 
 function engineLabel(engine: DiffusionRecipeEngine): string {
@@ -42,12 +43,14 @@ export const VideoRecipePopover = memo(function VideoRecipePopover({
   const { t } = useTranslation()
 
   const remote = isRemoteRecipeEngine(recipe.engine)
+  const settings = videoRecipeSettings(recipe)
   const seconds = recipe.durationSecs ?? secondsForFrames(recipe.frameCount, recipe.fps)
   const rows: Array<[string, string]> = [
     [t('videos:viewer.details.model'), recipe.model.displayName],
     [t('videos:viewer.details.size'), `${recipe.width}×${recipe.height}`],
   ]
-  // A provider's clip says its length, not its frames, and has no steps or CFG of its own.
+  // A provider's clip says its length, not its frames; the steps, CFG and
+  // seed it was never sent have no row (`videoRecipeSettings`).
   if (!remote)
     rows.push([
       t('videos:viewer.details.frames'),
@@ -60,14 +63,18 @@ export const VideoRecipePopover = memo(function VideoRecipePopover({
     t('videos:viewer.details.duration'),
     t('videos:viewer.details.seconds', { seconds: formatSeconds(seconds) }),
   ])
-  if (!remote) {
-    rows.push([t('videos:viewer.details.steps'), String(recipe.steps)])
-    rows.push([t('videos:viewer.details.cfg'), String(recipe.cfgScale)])
+  if (settings.steps !== undefined) {
+    rows.push([t('videos:viewer.details.steps'), String(settings.steps)])
+  }
+  if (settings.cfgScale !== undefined) {
+    rows.push([t('videos:viewer.details.cfg'), String(settings.cfgScale)])
   }
   if (recipe.guidance !== null) {
     rows.push([t('videos:viewer.details.guidance'), String(recipe.guidance)])
   }
-  rows.push([t('videos:viewer.details.seed'), String(recipe.seed)])
+  if (settings.seed !== undefined) {
+    rows.push([t('videos:viewer.details.seed'), String(settings.seed)])
+  }
   if (recipe.samplingMethod) {
     rows.push([t('videos:viewer.details.sampler'), recipe.samplingMethod])
   }

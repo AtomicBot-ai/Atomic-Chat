@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-454 records, 2026-05-19 → 2026-10-22.
+456 records, 2026-05-19 → 2026-10-22.
 
 ---
 
@@ -33,8 +33,10 @@ decision is reversed, add a new one that says which record it supersedes.
 
 ---
 
-## Local image & video generation (26)
+## Local image & video generation (28)
 
+- **2026-10-22** — [Size the media viewer to its preview and give the gallery the rest](2026-10-22-size-the-media-viewer-to-its-preview-and-give-the-gallery-the-rest.md)
+- **2026-10-22** — [Show only the generation settings a recipe can vouch for](2026-10-22-show-only-the-generation-settings-a-recipe-can-vouch-for.md)
 - **2026-10-13** — [Offer providers' media models beside the local ones, through the core](2026-10-13-offer-providers-media-models-beside-the-local-ones.md)
 - **2026-10-09** — [Run Qwen-Image-2.1-Turbo as a Qwen-Image-2.1 sibling](2026-10-09-run-qwen-image-2-1-turbo-as-a-qwen-image-2-1-sibling.md)
 - **2026-10-07** — [Install the media engine and MLX through the core, and ship mlx-server by conf's manifest](2026-10-07-install-media-and-mlx-engines-through-the-core.md) — supersedes the desktop-installer parts of the 2026-10-06 probe-fallback record.
