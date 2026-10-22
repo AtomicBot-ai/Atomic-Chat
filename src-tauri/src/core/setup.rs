@@ -502,6 +502,9 @@ pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
                 // un-hide it first before showing/focusing the window.
                 #[cfg(target_os = "macos")]
                 let _ = app.show();
+                // A close may still be deciding between hide and exit.
+                #[cfg(target_os = "linux")]
+                cancel_pending_close();
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.unminimize();
                     let _ = window.show();
@@ -661,6 +664,20 @@ async fn status_notifier_host_registered() -> Result<bool, Box<dyn std::error::E
     Ok(registered)
 }
 
+/// Generation of the latest close decision. A close bumps it and acts on the
+/// host lookup only while its generation is still current; the tray's "Open"
+/// and a relaunch bump it too, so a decision still in flight cannot hide or
+/// exit a window the user has just brought back, and two overlapping closes
+/// cannot end in opposite outcomes.
+#[cfg(target_os = "linux")]
+static CLOSE_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Supersede any close decision still waiting on the StatusNotifier lookup.
+#[cfg(target_os = "linux")]
+pub fn cancel_pending_close() {
+    CLOSE_GENERATION.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+}
+
 fn setup_window_theme_listener<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     window: tauri::WebviewWindow<R>,
@@ -727,7 +744,10 @@ fn setup_window_theme_listener<R: Runtime>(
         #[cfg(target_os = "linux")]
         WindowEvent::CloseRequested { api, .. } => {
             if app_handle_clone.tray_by_id("tray").is_some() {
+                use std::sync::atomic::Ordering;
+
                 api.prevent_close();
+                let generation = CLOSE_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
                 let win = window_for_close.clone();
                 let app = app_handle_clone.clone();
                 tauri::async_runtime::spawn(async move {
@@ -736,6 +756,12 @@ fn setup_window_theme_listener<R: Runtime>(
                         status_notifier_host_registered(),
                     )
                     .await;
+                    if CLOSE_GENERATION.load(Ordering::SeqCst) != generation {
+                        log::debug!(
+                            "Close decision superseded while the StatusNotifier lookup ran"
+                        );
+                        return;
+                    }
                     match host {
                         Ok(Ok(true)) => {
                             let _ = win.hide();

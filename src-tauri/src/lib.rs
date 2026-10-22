@@ -37,6 +37,7 @@ pub fn run() {
           // from a launcher is how many users will look for it: show it.
           #[cfg(target_os = "linux")]
           if let Some(window) = _app.get_webview_window("main") {
+              core::setup::cancel_pending_close();
               let _ = window.unminimize();
               let _ = window.show();
               let _ = window.set_focus();

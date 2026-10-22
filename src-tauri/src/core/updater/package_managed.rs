@@ -33,12 +33,20 @@ fn marker_next_to(exe: &Path) -> bool {
         .is_some_and(|dir| dir.join(PACKAGE_MANAGED_MARKER).is_file())
 }
 
+/// The decision itself, with the process environment passed in so it can be
+/// tested without touching the real one.
+fn decide(env_switch: Option<&str>, exe: Option<&Path>, appimage: Option<&Path>) -> bool {
+    env_value_enabled(env_switch)
+        || exe.is_some_and(marker_next_to)
+        || appimage.is_some_and(marker_next_to)
+}
+
 /// Whether a package manager, not the app, owns updates for this install.
 pub fn is_package_managed() -> bool {
-    env_value_enabled(std::env::var(PACKAGE_MANAGED_ENV).ok().as_deref())
-        || std::env::current_exe().is_ok_and(|exe| marker_next_to(&exe))
-        || std::env::var_os(APPIMAGE_ENV)
-            .is_some_and(|appimage| marker_next_to(Path::new(&appimage)))
+    let env_switch = std::env::var(PACKAGE_MANAGED_ENV).ok();
+    let exe = std::env::current_exe().ok();
+    let appimage = std::env::var_os(APPIMAGE_ENV).map(std::path::PathBuf::from);
+    decide(env_switch.as_deref(), exe.as_deref(), appimage.as_deref())
 }
 
 /// Lets the frontend hide the update UI and skip the startup check.
@@ -71,13 +79,30 @@ mod tests {
     }
 
     #[test]
-    fn marker_file_is_looked_up_next_to_the_appimage() {
-        // The same lookup serves `$APPIMAGE`, whose parent is the directory
-        // the packager installed the `.AppImage` file into.
+    fn marker_beside_the_appimage_counts_even_when_the_mounted_exe_has_none() {
+        // An intact AppImage runs its payload from a FUSE mount, so
+        // `current_exe()` is `<mount>/usr/bin/Atomic-Chat` while the packager
+        // put the marker next to the `.AppImage` file (`$APPIMAGE`).
+        let install = tempfile::tempdir().unwrap();
+        let mount = tempfile::tempdir().unwrap();
+        let appimage = install.path().join("Atomic.Chat_2.2.23_amd64.AppImage");
+        let exe = mount.path().join("usr/bin/Atomic-Chat");
+
+        assert!(!decide(None, Some(&exe), Some(&appimage)));
+        std::fs::write(install.path().join(PACKAGE_MANAGED_MARKER), "").unwrap();
+        assert!(decide(None, Some(&exe), Some(&appimage)));
+        // Without `$APPIMAGE` (an extracted AppImage) the marker beside the
+        // `.AppImage` file is out of reach, and the mount has none.
+        assert!(!decide(None, Some(&exe), None));
+    }
+
+    #[test]
+    fn any_single_switch_is_enough() {
         let dir = tempfile::tempdir().unwrap();
-        let appimage = dir.path().join("Atomic.Chat_2.2.23_amd64.AppImage");
-        assert!(!marker_next_to(&appimage));
+        let exe = dir.path().join("Atomic-Chat");
+        assert!(!decide(None, Some(&exe), None));
+        assert!(decide(Some("1"), Some(&exe), None));
         std::fs::write(dir.path().join(PACKAGE_MANAGED_MARKER), "").unwrap();
-        assert!(marker_next_to(&appimage));
+        assert!(decide(None, Some(&exe), None));
     }
 }
