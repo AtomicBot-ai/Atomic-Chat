@@ -1,10 +1,15 @@
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { page } from '@vitest/browser/context'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CSSProperties } from 'react'
 
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
+import {
+  MIN_PAGE_WIDTH,
+  NAVIGATION_RAIL_WIDTH,
+  WINDOW_TITLEBAR_HEIGHT,
+} from '@/lib/navigation'
 import {
   XL_FONT_SIZE,
   expectNoHorizontalOverflow,
@@ -80,8 +85,10 @@ vi.mock('@/lib/platform/const', async (importOriginal) => {
   }
 })
 
-const TITLEBAR = 42
-const RAIL = 60
+const TITLEBAR = WINDOW_TITLEBAR_HEIGHT
+const RAIL = NAVIGATION_RAIL_WIDTH
+/** The sidebar's minimum width (14rem). */
+const MIN_SIDEBAR = 224
 
 function Shell() {
   return withTranslations(
@@ -93,6 +100,8 @@ function Shell() {
           '--window-titlebar-height': `${TITLEBAR}px`,
         } as CSSProperties
       }
+      insetOffset={RAIL}
+      minInsetWidth={MIN_PAGE_WIDTH}
     >
       <LeftSidebar />
       <SidebarInset>
@@ -140,6 +149,13 @@ describe.each(['light', 'dark'] as const)('navigation shell in %s theme', (theme
       location.pathname = pathname
       render(<Shell />)
       await settle()
+      // At 1024 px there is no room to dock the sidebar beside the page, so
+      // it starts folded and the toggle opens it over the page.
+      const overlay = width < RAIL + MIN_SIDEBAR + MIN_PAGE_WIDTH
+      if (overlay) {
+        fireEvent.click(screen.getByRole('button', { name: 'Toggle sidebar' }))
+        await settle()
+      }
 
       // The title bar spans the window above both navigation layers.
       const titlebar = screen
@@ -170,11 +186,16 @@ describe.each(['light', 'dark'] as const)('navigation shell in %s theme', (theme
       expect(container.top).toBe(TITLEBAR)
       expect(Math.round(container.bottom)).toBe(800)
 
-      // The page fills the rest, its h-svh mapped below the title bar.
+      // The page fills the rest, its h-svh mapped below the title bar; under
+      // the overlay it keeps the whole window beside the rail.
       const pageBox = screen.getByTestId('page').getBoundingClientRect()
       expect(pageBox.top).toBe(TITLEBAR)
-      expect(Math.round(pageBox.left)).toBe(Math.round(container.right))
+      expect(Math.round(pageBox.left)).toBe(
+        overlay ? RAIL : Math.round(container.right)
+      )
+      expect(Math.round(pageBox.right)).toBe(width)
       expect(pageBox.bottom).toBe(800)
+      expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(width)
 
       // dnd-kit's screen-reader live region is a 1 px box pulled to -1 px by
       // design; it is never painted, so it is not part of the layout.

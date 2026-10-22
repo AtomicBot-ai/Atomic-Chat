@@ -22,6 +22,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { localStorageKey } from '@/constants/localStorage'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+import { SidebarProvider } from '@/components/ui/sidebar'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useRunSettingsPanel } from '@/stores/run-settings-panel-store'
 import type { ModelsService } from '@/services/models/types'
@@ -181,7 +182,6 @@ describe('DropdownModelProvider - the composer pill', () => {
       disableReasoning: false,
       reasoningBudget: 'medium',
     })
-    useLeftPanel.setState({ open: false })
     useRunSettingsPanel.setState({ isOpen: false })
     selectModel(thinkingModel)
   })
@@ -398,10 +398,13 @@ describe('DropdownModelProvider - the composer pill', () => {
   })
 
   it('folds down to the model mark while both side bars are open', () => {
-    useLeftPanel.setState({ open: true })
     useRunSettingsPanel.setState({ isOpen: true })
 
-    render(<DropdownModelProvider />)
+    render(
+      <SidebarProvider defaultOpen>
+        <DropdownModelProvider />
+      </SidebarProvider>
+    )
 
     // The name leaves the pill but not the pill's name, nor its hover title.
     expect(pill()).not.toHaveTextContent('Qwen 3')
@@ -415,15 +418,53 @@ describe('DropdownModelProvider - the composer pill', () => {
   })
 
   it('keeps the name with one bar open, or with nothing to fold down to', () => {
-    useLeftPanel.setState({ open: true })
-    const oneBar = render(<DropdownModelProvider />)
+    const oneBar = render(
+      <SidebarProvider defaultOpen>
+        <DropdownModelProvider />
+      </SidebarProvider>
+    )
     expect(pill()).toHaveTextContent('Qwen 3')
     oneBar.unmount()
 
     useRunSettingsPanel.setState({ isOpen: true })
     selectModel(undefined)
-    render(<DropdownModelProvider />)
+    render(
+      <SidebarProvider defaultOpen>
+        <DropdownModelProvider />
+      </SidebarProvider>
+    )
     expect(pill()).toHaveTextContent('common:selectAModel')
+  })
+
+  it('keeps the name when the window is too narrow to dock the sidebar', () => {
+    // Saved open, but a 1024 px window folds it over the page, where it
+    // takes no room from the composer.
+    useLeftPanel.setState({ open: true })
+    useRunSettingsPanel.setState({ isOpen: true })
+    const matchMedia = vi.spyOn(window, 'matchMedia').mockImplementation(
+      (query: string) =>
+        ({
+          matches: query.startsWith('(max-width'),
+          media: query,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+        }) as unknown as MediaQueryList
+    )
+
+    render(
+      <SidebarProvider
+        open={useLeftPanel.getState().open}
+        insetOffset={60}
+        minInsetWidth={768}
+      >
+        <DropdownModelProvider />
+      </SidebarProvider>
+    )
+    expect(pill()).toHaveTextContent('Qwen 3')
+    expect(screen.getByTestId('model-picker-pill-shell')).not.toHaveClass(
+      'w-20'
+    )
+    matchMedia.mockRestore()
   })
 
   it('carries no level for a model without a thinking phase', () => {

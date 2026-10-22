@@ -64,6 +64,8 @@ import {
   FoldersIcon,
   type FoldersIconHandle,
 } from '@/components/animated-icon/folders'
+import { collidingRowIds } from '@/lib/sidebar-row-names'
+import { NavRowActivity, NavRowTooltip } from './NavRowName'
 
 // Shared empty list so a project without threads keeps a stable `threads` prop
 // across renders (a fresh `[]` would defeat the memo below).
@@ -75,6 +77,7 @@ const ProjectItem = memo(function ProjectItem({
   threads,
   isOpen,
   isActive,
+  nameCollides,
   onOpenChange,
   onEdit,
   onDelete,
@@ -85,6 +88,8 @@ const ProjectItem = memo(function ProjectItem({
   isOpen: boolean
   /** The project's own page is the one open. */
   isActive: boolean
+  /** Another project's name starts the same way. */
+  nameCollides: boolean
   onOpenChange: (projectId: string, open: boolean) => void
   onEdit: (project: ThreadFolder) => void
   onDelete: (project: ThreadFolder) => void
@@ -105,6 +110,11 @@ const ProjectItem = memo(function ProjectItem({
     transition,
     opacity: isDragging ? 0.5 : 1,
   }
+  // The project's latest chat, or the project itself when it has none newer.
+  const lastActivity = threads.reduce(
+    (latest, thread) => Math.max(latest, (thread.updated || 0) * 1000),
+    item.updated_at || 0
+  )
 
   return (
     <div ref={setNodeRef} style={style} className={cn(isDragging && 'z-10')}>
@@ -138,23 +148,34 @@ const ProjectItem = memo(function ProjectItem({
                 />
               </button>
             </CollapsibleTrigger>
-            <SidebarMenuButton
-              asChild
-              isActive={isActive}
-              // The same highlight as an open chat row (ThreadList).
-              className="min-w-0 flex-1 pr-8 data-[active=true]:bg-sidebar-foreground/15"
-              onMouseEnter={() => folderIconRef.current?.startAnimation()}
-              onMouseLeave={() => folderIconRef.current?.stopAnimation()}
+            <NavRowTooltip
+              name={item.name}
+              lastActivity={lastActivity || undefined}
+              always={nameCollides}
             >
-              <Link to="/project/$projectId" params={{ projectId: item.id }}>
-                <FoldersIcon
-                  ref={folderIconRef}
-                  className="text-foreground/70"
-                  size={16}
-                />
-                <span className="truncate">{item.name}</span>
-              </Link>
-            </SidebarMenuButton>
+              <SidebarMenuButton
+                asChild
+                isActive={isActive}
+                // The same highlight as an open chat row (ThreadList).
+                className="min-w-0 flex-1 pr-8 data-[active=true]:bg-sidebar-foreground/15"
+                onMouseEnter={() => folderIconRef.current?.startAnimation()}
+                onMouseLeave={() => folderIconRef.current?.stopAnimation()}
+              >
+                <Link to="/project/$projectId" params={{ projectId: item.id }}>
+                  <FoldersIcon
+                    ref={folderIconRef}
+                    className="text-foreground/70"
+                    size={16}
+                  />
+                  <span data-row-name className="min-w-0 flex-1 truncate">
+                    {item.name}
+                  </span>
+                  {nameCollides && lastActivity > 0 && (
+                    <NavRowActivity at={lastActivity} />
+                  )}
+                </Link>
+              </SidebarMenuButton>
+            </NavRowTooltip>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <SidebarMenuAction className="hover:bg-sidebar-foreground/8 transition-opacity group-hover/project-row:opacity-100 group-focus-within/project-row:opacity-100 data-[state=open]:opacity-100 md:opacity-0">
@@ -230,6 +251,15 @@ export function NavProjects({ onCreate }: { onCreate: () => void }) {
 
   const sortableProjectIds = useMemo(
     () => folders.map((f) => f.id),
+    [folders]
+  )
+  const collidingProjectIds = useMemo(
+    () =>
+      collidingRowIds(
+        folders,
+        (folder) => folder.id,
+        (folder) => folder.name
+      ),
     [folders]
   )
 
@@ -352,6 +382,7 @@ export function NavProjects({ onCreate }: { onCreate: () => void }) {
                     threads={projectThreads}
                     isOpen={open}
                     isActive={item.id === activeProjectId}
+                    nameCollides={collidingProjectIds.has(item.id)}
                     onOpenChange={handleOpenChange}
                     onEdit={handleEdit}
                     onDelete={handleDelete}

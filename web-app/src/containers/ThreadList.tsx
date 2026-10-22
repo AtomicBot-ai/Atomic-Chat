@@ -49,6 +49,11 @@ import { ThreadMessage } from '@janhq/core'
 import { useChatSessions, isSessionBusy } from '@/stores/chat-session-store'
 import { useThreadReadStatus } from '@/stores/thread-read-store'
 import { ThreadStatusDot } from '@/components/left-sidebar/ThreadStatusDot'
+import {
+  NavRowActivity,
+  NavRowTooltip,
+} from '@/components/left-sidebar/NavRowName'
+import { collidingThreadIds } from '@/lib/sidebar-row-names'
 import { isPlatformTauri } from '@/lib/platform/utils'
 
 //* Welcome thread title: the new brand and the old string from previous versions
@@ -214,6 +219,12 @@ export const ThreadItem = memo(
     )
     const showStatusDot = isBusy || isUnread
     const threadTitle = thread.title || t('common:newThread')
+    // A title that starts like another chat's shows the same truncated text;
+    // the row then also says when it was last active.
+    const titleCollides = useThreads((state) =>
+      collidingThreadIds(state.threads).has(thread.id)
+    )
+    const lastActivity = thread.updated ? thread.updated * 1000 : undefined
 
     const MenuItemWrapper = subItem ? SidebarMenuSubItem : SidebarMenuItem
     const MenuButtonWrapper = subItem ? SidebarMenuSubButton : SidebarMenuButton
@@ -253,22 +264,33 @@ export const ThreadItem = memo(
             )}
           </Link>
         ) : (
-          <MenuButtonWrapper
-            asChild
-            isActive={isActive}
-            // Room for the pin and "…" actions, and for the drag handle.
-            className={cn(
-              'data-[active=true]:bg-sidebar-foreground/15 pr-14!',
-              dragHandle && 'pl-7'
-            )}
+          <NavRowTooltip
+            name={threadTitle}
+            lastActivity={lastActivity}
+            always={titleCollides}
           >
-            <Link to="/threads/$threadId" params={{ threadId: thread.id }}>
-              <span className="flex w-full items-center gap-2 min-w-0">
-                {showStatusDot && <ThreadStatusDot pulsing={isBusy} />}
-                <span className="truncate flex-1 min-w-0">{threadTitle}</span>
-              </span>
-            </Link>
-          </MenuButtonWrapper>
+            <MenuButtonWrapper
+              asChild
+              isActive={isActive}
+              // Room for the pin and "…" actions, and for the drag handle.
+              className={cn(
+                'data-[active=true]:bg-sidebar-foreground/15 pr-14!',
+                dragHandle && 'pl-7'
+              )}
+            >
+              <Link to="/threads/$threadId" params={{ threadId: thread.id }}>
+                <span className="flex w-full items-center gap-2 min-w-0">
+                  {showStatusDot && <ThreadStatusDot pulsing={isBusy} />}
+                  <span data-row-name className="truncate flex-1 min-w-0">
+                    {threadTitle}
+                  </span>
+                  {titleCollides && lastActivity !== undefined && (
+                    <NavRowActivity at={lastActivity} />
+                  )}
+                </span>
+              </Link>
+            </MenuButtonWrapper>
+          </NavRowTooltip>
         )}
         <SidebarMenuAction
           showOnHover={!subItem}

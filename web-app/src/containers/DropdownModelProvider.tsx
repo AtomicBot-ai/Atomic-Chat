@@ -52,7 +52,7 @@ import {
   qualifiedModelDisplayName,
 } from '@/lib/model-display-name'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
-import { useLeftPanel } from '@/hooks/useLeftPanel'
+import { useSidebarDocked } from '@/components/ui/sidebar'
 import { useRunSettingsPanel } from '@/stores/run-settings-panel-store'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { formatDownloadReadout } from '@/lib/downloadFormat'
@@ -287,7 +287,9 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   // narrowest, so the pill folds down to the model's mark; the name stays on
   // hover and in the panel. With nothing selected there is no mark to fold
   // down to, so "Select a model" stays.
-  const leftBarOpen = useLeftPanel((state) => state.open)
+  // The sidebar as it is, not the saved preference: in a window too narrow
+  // to dock it, an open sidebar lies over the page and takes no room.
+  const leftBarOpen = useSidebarDocked()
   const rightBarOpen = useRunSettingsPanel((state) => state.isOpen)
   const compact =
     (compactOverride ?? (leftBarOpen && rightBarOpen)) && !!selectedModel?.id

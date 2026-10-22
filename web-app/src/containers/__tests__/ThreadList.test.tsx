@@ -94,6 +94,7 @@ vi.mock('@/lib/utils', () => ({
 vi.mock('@/hooks/useThreads', () => ({
   useThreads: (selector: any) =>
     selector({
+      threads: {},
       deleteThread: vi.fn(),
       renameThread: vi.fn(),
       updateThread: vi.fn(),

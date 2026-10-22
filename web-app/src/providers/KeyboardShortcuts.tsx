@@ -1,5 +1,5 @@
 import { useKeyboardShortcut } from '@/hooks/useHotkeys'
-import { useLeftPanel } from '@/hooks/useLeftPanel'
+import { useSidebar } from '@/components/ui/sidebar'
 import { useSearchDialog } from '@/hooks/useSearchDialog'
 import { useProjectDialog } from '@/hooks/useProjectDialog'
 import { useRouter } from '@tanstack/react-router'
@@ -7,8 +7,9 @@ import { route } from '@/constants/routes'
 import { PlatformShortcuts, ShortcutAction } from '@/lib/shortcuts'
 
 export function KeyboardShortcutsProvider() {
-  const open = useLeftPanel((state) => state.open)
-  const setLeftPanel = useLeftPanel((state) => state.setLeftPanel)
+  // Through the sidebar, so in a window too narrow to dock it the shortcut
+  // opens and closes the overlay without touching the saved preference.
+  const { toggleSidebar } = useSidebar()
   const { setOpen: setSearchOpen } = useSearchDialog()
   const { setOpen: setProjectDialogOpen } = useProjectDialog()
   const router = useRouter()
@@ -23,9 +24,7 @@ export function KeyboardShortcutsProvider() {
   // Toggle Sidebar
   useKeyboardShortcut({
     ...sidebarShortcut,
-    callback: () => {
-      setLeftPanel(!open)
-    },
+    callback: toggleSidebar,
   })
 
   // New Chat
