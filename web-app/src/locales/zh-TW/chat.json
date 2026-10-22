@@ -7,6 +7,9 @@
   "sendMessage": "傳送訊息",
   "newConversation": "新對話",
   "clearHistory": "清除歷史記錄",
+  "activity": {
+    "completedActions": "已完成 {{count}} 項操作"
+  },
   "temporaryChat": "臨時聊天",
   "temporaryChatDescription": "開始一個不會儲存到聊天歷史記錄的臨時對話。",
   "agentMode": {

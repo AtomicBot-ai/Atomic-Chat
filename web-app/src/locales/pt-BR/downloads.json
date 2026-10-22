@@ -1,0 +1,12 @@
+{
+  "kind": {
+    "partial": "download incompleto",
+    "draft": "modelo de rascunho para decodificação especulativa"
+  },
+  "blocked": {
+    "draftInUse": "A decodificação especulativa do MLX está ativada. Desative-a nas configurações do mecanismo MLX para remover os modelos de rascunho."
+  },
+  "error": {
+    "downloadActive": "Este download está em andamento ou pausado. Cancele-o primeiro."
+  }
+}

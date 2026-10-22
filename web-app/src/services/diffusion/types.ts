@@ -50,6 +50,7 @@ export type DiffusionOffloadPolicy = 'none' | 'group' | 'model'
 export type DiffusionFamilyId =
   | 'z-image'
   | 'flux.2-klein'
+  | 'flux.3-klein'
   | 'flux.1'
   | 'flux.1-uncensored'
   | 'flux.1-abliterated'

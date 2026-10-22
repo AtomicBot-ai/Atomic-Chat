@@ -18,6 +18,10 @@ import { bumpAgentSkillRevision } from '../agent-skill-revision'
 import { ModelFactory } from '../model-factory'
 import { trackMcpActivation } from '../mcp-activation'
 import { useChatExecStatus } from '@/hooks/useChatExecStatus'
+import { useSecureEnvironments } from '@/hooks/useSecureEnvironments'
+import { useThreads } from '@/hooks/useThreads'
+import { getServiceHub } from '@/hooks/useServiceHub'
+import type { SecureEnvironment } from '@/services/chat-exec/types'
 
 // The skill-body loader is Tauri-only (IS_TAURI is false under vitest), so it
 // is mocked at the boundary; the pure collect/render/compose helpers run real.
@@ -1134,6 +1138,63 @@ describe('CustomChatTransport muted connectors and tool cost', () => {
     )
   })
 
+  describe('in a secure environment project', () => {
+    const inSecureProject = (environment: SecureEnvironment) => {
+      useThreads.setState({
+        threads: {
+          'secure-thread': {
+            id: 'secure-thread',
+            title: 'Secure',
+            updated: 0,
+            metadata: { project: { id: 'p1', name: 'P1', updated_at: 0 } },
+          },
+        },
+      } as never)
+      useSecureEnvironments.setState({ environments: { p1: environment } })
+      // Whether or not the store already loaded, it holds this policy.
+      vi.spyOn(getServiceHub().chatExec(), 'secureEnvironments').mockResolvedValue(
+        { p1: environment }
+      )
+      return new CustomChatTransport('', 'secure-thread')
+    }
+
+    it('sends only the connectors the project allows', async () => {
+      const transport = inSecureProject({
+        folders: [],
+        network: true,
+        allowedMcpServers: ['linear'],
+      })
+
+      expect(await sendAndCaptureTools(transport)).toEqual(
+        linearTools.map((t) => t.name).sort()
+      )
+    })
+
+    it('drops web search with the network off even when it is allowed', async () => {
+      useMCPServers.setState({
+        mcpServers: {
+          exa: {
+            command: '',
+            args: [],
+            env: {},
+            active: true,
+            type: 'http',
+            url: 'https://mcp.exa.ai/mcp',
+          },
+        },
+      })
+      const transport = inSecureProject({
+        folders: [],
+        network: false,
+        allowedMcpServers: ['exa', 'linear'],
+      })
+
+      expect(await sendAndCaptureTools(transport)).toEqual(
+        linearTools.map((t) => t.name).sort()
+      )
+    })
+  })
+
   it('drops a muted connector from the request but keeps the others', async () => {
     useToolAvailable.setState({ defaultMutedServers: ['linear'] })
 
@@ -1325,7 +1386,6 @@ describe('CustomChatTransport commands and scripts', () => {
 
   beforeEach(() => {
     useChatExecStatus.setState({ status: null })
-    useGeneralSetting.setState({ chatExecEnabled: true })
     seedServiceHub({
       rag: { getTools: vi.fn().mockResolvedValue([]) } as never,
       chatExec: {
@@ -1373,8 +1433,17 @@ describe('CustomChatTransport commands and scripts', () => {
     expect(await sentToolNames()).toEqual(['run_command', 'run_script'])
   })
 
-  it('offers neither once the composer toggle is off', async () => {
-    useGeneralSetting.setState({ chatExecEnabled: false })
+  it('offers neither where the machine cannot run them', async () => {
+    useChatExecStatus.setState({
+      status: {
+        supported: false,
+        os: 'macos',
+        shell: 'sh',
+        languages: [],
+        sandbox: { kind: 'none', reason: null },
+        userFolders: [],
+      },
+    })
     expect(await sentToolNames()).toBeUndefined()
   })
 })

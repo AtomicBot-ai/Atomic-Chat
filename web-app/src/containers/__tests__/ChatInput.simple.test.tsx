@@ -9,6 +9,7 @@ import {
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ChatInput from '../ChatInput'
 import { useChatAttachments } from '@/hooks/useChatAttachments'
+import { useAttachments } from '@/hooks/useAttachments'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useMCPServers } from '@/hooks/useMCPServers'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -35,6 +36,26 @@ vi.mock('@/lib/platform/const', async (importOriginal) => {
     chatExec: true,
   })
   return { ...actual, PlatformFeatures: platformFeatures }
+})
+
+const toast = vi.hoisted(() => ({
+  info: vi.fn(),
+  error: vi.fn(),
+  warning: vi.fn(),
+  success: vi.fn(),
+  message: vi.fn(),
+  loading: vi.fn(),
+  dismiss: vi.fn(),
+}))
+vi.mock('sonner', () => ({ toast }))
+
+// The paperclip opens the native picker only in the desktop app; the web
+// build clicks a hidden file input instead. Tests pick the desktop path.
+const platform = vi.hoisted(() => ({ tauri: true }))
+vi.mock('@/lib/platform/utils', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/lib/platform/utils')>()
+  return { ...actual, isPlatformTauri: () => platform.tauri }
 })
 
 const mocks = vi.hoisted(() => ({
@@ -178,7 +199,10 @@ vi.mock('@/containers/dialogs/JanBrowserExtensionDialog', () => ({
 }))
 
 vi.mock('@/containers/dialogs/VisionModelDialog', () => ({
-  VisionModelDialog: () => null,
+  // A marker while open: picking images for a model that cannot see them
+  // offers a vision model, the way the old "Add Images" item did.
+  VisionModelDialog: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="vision-model-dialog" /> : null,
 }))
 
 // Stubbed to a marker that also hands the composer's callbacks back to the
@@ -197,7 +221,31 @@ vi.mock('@/containers/ReplyModelGate', () => ({
 
 vi.mock('@/containers/AgentApprovalModeSelect', () => ({
   // A marker: the project-composer test asserts the agent affordances render.
-  AgentApprovalModeSelect: () => <span data-test-id="approval-mode-select" />,
+  // The menu's switches are rendered as plain buttons, so the composer's
+  // wiring of Agent mode can be driven from here; the select's own suite
+  // covers how the menu draws them.
+  AgentApprovalModeSelect: ({
+    toggles = [],
+  }: {
+    toggles?: Array<{
+      id: string
+      label: string
+      checked: boolean
+      onCheckedChange: (checked: boolean) => void
+    }>
+  }) => (
+    <span data-test-id="approval-mode-select">
+      {toggles.map((toggle) => (
+        <button
+          key={toggle.id}
+          aria-pressed={toggle.checked}
+          onClick={() => toggle.onCheckedChange(!toggle.checked)}
+        >
+          {toggle.label}
+        </button>
+      ))}
+    </span>
+  ),
 }))
 
 vi.mock('@/containers/AgentExternalFolderButton', () => ({
@@ -215,12 +263,11 @@ describe('ChatInput', () => {
     seedServiceHub()
     usePrompt.setState({ prompt: '' })
     useChatAttachments.setState({ attachmentsByThread: {} })
-    useGeneralSetting.setState({
-      agentModeEnabled: false,
-      chatExecEnabled: true,
-    })
+    useGeneralSetting.setState({ agentModeEnabled: false })
     platformFeatures.agentMode = true
     platformFeatures.chatExec = true
+    platform.tauri = true
+    useAttachments.setState({ enabled: true })
     useDownloadStore.setState({
       downloads: {},
       localDownloadingModels: new Set(),
@@ -285,30 +332,66 @@ describe('ChatInput', () => {
       'placeholder',
       'common:placeholder.chatInput'
     )
+    // Nothing to send yet, so there is no Send button at all.
     expect(
       document.querySelector('[data-test-id="send-message-button"]')
-    ).toBeDisabled()
+    ).not.toBeInTheDocument()
+    unmount()
+  })
+
+  it('shows Send once there is text, and Stop while a reply streams', async () => {
+    const { rerender, unmount } = render(<ChatInput />)
+    const input = screen.getByTestId('chat-input')
+
+    expect(screen.queryByTestId('send-control')).not.toBeInTheDocument()
+
+    fireEvent.change(input, { target: { value: 'Hello' } })
+    expect(
+      document.querySelector('[data-test-id="send-message-button"]')
+    ).toBeEnabled()
+
+    // Whitespace is not a message: the control leaves again.
+    fireEvent.change(input, { target: { value: '   ' } })
+    await waitFor(() =>
+      expect(screen.queryByTestId('send-control')).not.toBeInTheDocument()
+    )
+
+    // A streaming reply keeps Stop in that corner with an empty field.
+    rerender(<ChatInput chatStatus="streaming" />)
+    const control = screen.getByTestId('send-control')
+    expect(
+      within(control).getByRole('button').getAttribute('data-variant')
+    ).toBe('destructive')
     unmount()
   })
 
   it('puts the model and the microphone beside Send', () => {
     const { unmount } = render(<ChatInput />)
+    fireEvent.change(screen.getByTestId('chat-input'), {
+      target: { value: 'Hello' },
+    })
 
     const model = document.querySelector(
       '[data-test-id="model-picker-trigger"]'
     )
     const mic = document.querySelector('[data-test-id="voice-input-toggle"]')
-    const send = document.querySelector('[data-test-id="send-message-button"]')
+    // Send sits in its reveal wrapper, which is the cluster's member.
+    const send = screen.getByTestId('send-control')
     expect(model).toBeInTheDocument()
     expect(mic).toBeInTheDocument()
-    expect(send).toBeInTheDocument()
+    expect(
+      send.querySelector('[data-test-id="send-message-button"]')
+    ).toBeInTheDocument()
 
-    // One cluster on the right...
-    expect(model!.parentElement).toBe(send!.parentElement)
-    expect(mic!.parentElement).toBe(send!.parentElement)
+    // One cluster on the right, the pill in a slot of its own that the
+    // composer measures it by...
+    const slot = model!.parentElement!
+    expect(slot.childElementCount).toBe(1)
+    expect(slot.parentElement).toBe(send.parentElement)
+    expect(mic!.parentElement).toBe(send.parentElement)
     // ...reading [model] [mic] [send], with nothing ahead of the pill: the
     // reasoning bulb is gone, thinking is switched off on the effort slider.
-    expect(send!.parentElement!.firstElementChild).toBe(model)
+    expect(send.parentElement!.firstElementChild).toBe(slot)
     expect(
       model!.compareDocumentPosition(mic!) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy()
@@ -323,12 +406,13 @@ describe('ChatInput', () => {
     const onSubmit = vi.fn()
     const { unmount } = render(<ChatInput onSubmit={onSubmit} />)
     const input = screen.getByTestId('chat-input')
-    const sendButton = document.querySelector(
-      '[data-test-id="send-message-button"]'
-    )
 
     fireEvent.change(input, { target: { value: 'Invoke the machine spirit' } })
 
+    // Send only exists once there is text to send.
+    const sendButton = document.querySelector(
+      '[data-test-id="send-message-button"]'
+    )
     expect(input).toHaveValue('Invoke the machine spirit')
     expect(sendButton).toBeEnabled()
     fireEvent.click(sendButton!)
@@ -339,6 +423,10 @@ describe('ChatInput', () => {
       undefined
     )
     await waitFor(() => expect(input).toHaveValue(''))
+    // The field is empty again, so Send leaves with it.
+    await waitFor(() =>
+      expect(screen.queryByTestId('send-control')).not.toBeInTheDocument()
+    )
     unmount()
   })
 
@@ -999,10 +1087,10 @@ describe('ChatInput', () => {
     expect(
       document.querySelector('[data-testid="agent-mode-chip"]')
     ).toBeInTheDocument()
-    // ...while the workspace-folder item stays off this page: it has no
+    // ...while the workspace-folder button stays off this page: it has no
     // files panel to surface the folder in.
     expect(
-      screen.queryByText('chat:agentWorkspace.addFolder')
+      screen.queryByRole('button', { name: 'chat:agentWorkspace.addFolder' })
     ).not.toBeInTheDocument()
     unmount()
   })
@@ -1027,13 +1115,19 @@ describe('ChatInput', () => {
     unmount()
   })
 
-  it('offers Add folder in the attach menu of a plain composer', () => {
+  it('offers Add folder beside the paperclip of a plain composer', () => {
     selectLocalProvider()
     const { unmount } = render(<ChatInput initialMessage />)
 
+    const addFolder = screen.getByRole('button', {
+      name: 'chat:agentWorkspace.addFolder',
+    })
     expect(
-      screen.getByText('chat:agentWorkspace.addFolder')
-    ).toBeInTheDocument()
+      screen
+        .getByTestId('composer-attach')
+        .compareDocumentPosition(addFolder) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
     unmount()
   })
 
@@ -1112,23 +1206,141 @@ describe('ChatInput', () => {
     unmount()
   })
 
-  it('offers no Plugins item in the attach menu', () => {
-    // With the button a toolbar fixture there is nothing to pin or unpin:
-    // the "+" menu is back to attachments and Agent mode.
+  it('attaches through one paperclip, with no menu and no Plugins item', () => {
+    // Plugins is a toolbar fixture of its own; the paperclip is a plain
+    // button that opens the picker, and Agent mode moved to the access menu.
     selectToolCapableModel()
 
     const { unmount } = render(<ChatInput />)
 
-    const addImages = screen.getByText('Add Images').closest('button')!
-    const items = within(addImages.parentElement!).getAllByRole('button')
-    expect(items.map((item) => item.textContent)).toEqual([
-      'Add Images',
-      'Add documents or files',
-      'chat:agentMode.menuItem',
-      'chat:chatExec.menuItem',
-    ])
+    const attach = screen.getByRole('button', {
+      name: 'chat:composer.attachFiles',
+    })
+    expect(attach).toHaveAttribute('data-testid', 'composer-attach')
+    expect(attach).not.toHaveAttribute('aria-haspopup')
+    expect(screen.queryByText('Add Images')).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('Add documents or files')
+    ).not.toBeInTheDocument()
     expect(screen.queryByText('plugins')).not.toBeInTheDocument()
 
+    unmount()
+  })
+
+  // The paperclip's picker hands its paths to the drop path: one native
+  // dialog for every supported type, then the same per-type rules.
+  const seedPicker = (paths: string[] | null) => {
+    const open = vi.fn().mockResolvedValue(paths)
+    seedServiceHub({
+      dialog: { open, save: vi.fn() } as unknown as ReturnType<
+        ServiceHub['dialog']
+      >,
+    })
+    return open
+  }
+
+  it('offers every supported type in one picker and routes the pick like a drop', async () => {
+    const open = seedPicker([
+      '/Users/me/notes.pdf',
+      '/Users/me/photo.png',
+      '/Users/me/clip.mp3',
+      '/Users/me/setup.exe',
+    ])
+    useThreads.setState({ currentThreadId: undefined })
+    const { unmount } = render(<ChatInput />)
+
+    fireEvent.click(screen.getByTestId('composer-attach'))
+
+    await waitFor(() => expect(open).toHaveBeenCalledTimes(1))
+    const options = open.mock.calls[0][0]
+    expect(options.multiple).toBe(true)
+    expect(options.filters).toHaveLength(1)
+    expect(options.filters[0].name).toBe('chat:composer.supportedFiles')
+    expect(options.filters[0].extensions).toEqual(
+      expect.arrayContaining(['png', 'jpg', 'webp', 'mp3', 'wav', 'pdf', 'md'])
+    )
+
+    // Documents go to the thread's attachments (retrieval decides later).
+    await waitFor(() =>
+      expect(useChatAttachments.getState().getAttachments()).toEqual([
+        expect.objectContaining({
+          type: 'document',
+          name: 'notes.pdf',
+          path: '/Users/me/notes.pdf',
+        }),
+      ])
+    )
+    // The model cannot see images: offer a vision model, as "Add Images" did.
+    expect(screen.getByTestId('vision-model-dialog')).toBeInTheDocument()
+    // Nor hear audio; and an unknown type is named, not dropped silently.
+    expect(toast.error).toHaveBeenCalledWith(
+      'Audio model required',
+      expect.anything()
+    )
+    expect(toast.warning).toHaveBeenCalledWith(
+      'Unsupported file type',
+      expect.objectContaining({
+        description: expect.stringContaining('setup.exe'),
+      })
+    )
+    unmount()
+  })
+
+  it('opens no picker while attachments are off in Settings', async () => {
+    const open = seedPicker(['/Users/me/notes.pdf'])
+    useAttachments.setState({ enabled: false })
+    const { unmount } = render(<ChatInput />)
+
+    fireEvent.click(screen.getByTestId('composer-attach'))
+
+    await waitFor(() =>
+      expect(toast.info).toHaveBeenCalledWith(
+        'Attachments are disabled in Settings'
+      )
+    )
+    expect(open).not.toHaveBeenCalled()
+    // Nothing reaches the thread's attachments either.
+    expect(useChatAttachments.getState().getAttachments()).toEqual([])
+    unmount()
+  })
+
+  it('says so when the picker fails to open', async () => {
+    const open = vi.fn().mockRejectedValue(new Error('no portal'))
+    seedServiceHub({
+      dialog: { open, save: vi.fn() } as unknown as ReturnType<
+        ServiceHub['dialog']
+      >,
+    })
+    const { unmount } = render(<ChatInput />)
+
+    fireEvent.click(screen.getByTestId('composer-attach'))
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith('chat:composer.attachFailed', {
+        description: 'no portal',
+      })
+    )
+    // The failed picker attaches nothing, and the composer stays usable.
+    expect(useChatAttachments.getState().getAttachments()).toEqual([])
+    expect(screen.getByTestId('composer-attach')).toBeEnabled()
+    unmount()
+  })
+
+  it('falls back to the file input on the web build', () => {
+    platform.tauri = false
+    const open = seedPicker(['/Users/me/notes.pdf'])
+    const { unmount } = render(<ChatInput />)
+    const input = document.querySelector<HTMLInputElement>(
+      'input[type="file"]'
+    )!
+    const click = vi.spyOn(input, 'click')
+
+    fireEvent.click(screen.getByTestId('composer-attach'))
+
+    expect(click).toHaveBeenCalledTimes(1)
+    expect(open).not.toHaveBeenCalled()
+    expect(input.accept).toContain('.pdf')
+    expect(input.accept).toContain('.png')
     unmount()
   })
 
@@ -1153,7 +1365,7 @@ describe('ChatInput', () => {
       document.querySelector('[data-testid="agent-mode-chip"]')
     ).toBeInTheDocument()
     expect(
-      screen.getByText('chat:agentWorkspace.addFolder')
+      screen.getByRole('button', { name: 'chat:agentWorkspace.addFolder' })
     ).toBeInTheDocument()
     unmount()
   })
@@ -1192,7 +1404,7 @@ describe('ChatInput', () => {
     unmount()
   })
 
-  it('toggles the global agent mode from the attach menu', () => {
+  it('toggles the global agent mode from the access menu', () => {
     const { unmount } = render(<ChatInput />)
 
     fireEvent.click(screen.getByText('chat:agentMode.menuItem'))
@@ -1222,25 +1434,18 @@ describe('ChatInput', () => {
     unmount()
   })
 
-  it('toggles running commands from the attach menu', () => {
+  it('puts no Run commands switch in the access menu: commands are always on', () => {
+    // The platform can run commands, yet the menu's only switch is Agent mode.
     const { unmount } = render(<ChatInput />)
 
-    fireEvent.click(screen.getByText('chat:chatExec.menuItem'))
-    expect(useGeneralSetting.getState().chatExecEnabled).toBe(false)
-
-    fireEvent.click(screen.getByText('chat:chatExec.menuItem'))
-    expect(useGeneralSetting.getState().chatExecEnabled).toBe(true)
-    unmount()
-  })
-
-  it('offers no command toggle where the platform cannot run commands', () => {
-    platformFeatures.chatExec = false
-
-    const { unmount } = render(<ChatInput />)
-
+    const menu = document.querySelector<HTMLElement>(
+      '[data-test-id="approval-mode-select"]'
+    )!
     expect(
-      screen.queryByText('chat:chatExec.menuItem')
-    ).not.toBeInTheDocument()
+      within(menu)
+        .getAllByRole('button')
+        .map((toggle) => toggle.textContent)
+    ).toEqual(['chat:agentMode.menuItem'])
     unmount()
   })
 

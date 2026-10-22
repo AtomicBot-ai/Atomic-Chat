@@ -1,7 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import HeaderPage from '@/containers/HeaderPage'
-import SettingsMenu from '@/containers/SettingsMenu'
 import { Card, CardItem } from '@/containers/Card'
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -25,6 +24,7 @@ import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import Capabilities from '@/containers/Capabilities'
 import { getModelDisplayName, isLocalProvider } from '@/lib/utils'
 import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
+import { resolveServerModels } from '@/utils/ensureModelForServer'
 import { copyToClipboard } from '@/lib/clipboard'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -191,10 +191,13 @@ function HermesAgentIntegration() {
         .getActiveModels()
         .catch(() => [] as string[])
       if (activeModels.length > 0) {
-        const serverModels = activeModels.flatMap((id) => {
-          const p = providers.find((p) => p?.models?.some((m) => m.id === id))
-          return p ? [{ model: id, provider: p.provider }] : []
-        })
+        // Both llama.cpp providers own every GGUF id; record the one whose
+        // engine runs the model, or the Server card names the wrong engine.
+        const serverModels = await resolveServerModels(
+          activeModels,
+          serviceHub.models(),
+          useLocalApiServer.getState().defaultModelLocalApiServer?.provider
+        )
         if (serverModels.length > 0) setLastServerModels(serverModels)
       }
     }
@@ -260,7 +263,6 @@ function HermesAgentIntegration() {
         </div>
       </HeaderPage>
       <div className="flex h-[calc(100%-60px)]">
-        <SettingsMenu />
         <div className="p-4 pt-0 w-full overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             <Card

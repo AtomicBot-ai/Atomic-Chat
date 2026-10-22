@@ -1,0 +1,12 @@
+{
+  "kind": {
+    "partial": "nedokončené stahování",
+    "draft": "návrhový model pro spekulativní dekódování"
+  },
+  "blocked": {
+    "draftInUse": "Spekulativní dekódování MLX je zapnuté. Vypněte ho v nastavení enginu MLX, abyste mohli návrhové modely odstranit."
+  },
+  "error": {
+    "downloadActive": "Toto stahování probíhá nebo je pozastavené. Nejprve ho zrušte."
+  }
+}

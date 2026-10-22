@@ -524,5 +524,40 @@
     "installing": "Установка…",
     "installFailed": "Не удалось установить движок: {{error}}",
     "findModels": "Модели Bonsai"
+  },
+  "overview": {
+    "language": "Языковые модели",
+    "media": "Медиамодели",
+    "voice": "Голосовые модели",
+    "modelCountOne": "1 модель",
+    "modelCountOther": "Моделей: {{count}}",
+    "build": "Сборка {{version}}",
+    "mediaDescription": "Изображения и видео",
+    "voiceDescription": "{{model}} · распознавание речи",
+    "enable": "Включить или выключить {{name}}",
+    "status": {
+      "disabled": "Выключен"
+    },
+    "updateStatus": {
+      "updating": "Обновляется…",
+      "available": "Есть обновление",
+      "upToDate": "Актуальная версия",
+      "notInstalled": "Не установлен",
+      "noActiveBuild": "Нет активной сборки"
+    },
+    "update": "Обновить",
+    "updateEngine": "Обновить {{name}}",
+    "updateFailed": "Не удалось обновить движок",
+    "checkForUpdates": "Проверить обновления",
+    "checkFailed": "Не удалось проверить обновления движков",
+    "allUpToDate": "Все движки обновлены",
+    "updatesFound": "Движков с обновлением: {{count}}",
+    "expandSettings": "Показать настройки {{name}}",
+    "collapseSettings": "Скрыть настройки {{name}}",
+    "settingsOf": "Настройки {{name}}",
+    "engineEnabled": "Движок включён",
+    "installedModels": "Установленные модели: {{models}}",
+    "noModels": "нет",
+    "openEnginePage": "Модели и все настройки"
   }
 }

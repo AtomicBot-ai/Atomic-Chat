@@ -1,0 +1,12 @@
+{
+  "kind": {
+    "partial": "niedokończone pobieranie",
+    "draft": "model szkicowy do dekodowania spekulatywnego"
+  },
+  "blocked": {
+    "draftInUse": "Dekodowanie spekulatywne MLX jest włączone. Wyłącz je w ustawieniach silnika MLX, aby usunąć modele szkicowe."
+  },
+  "error": {
+    "downloadActive": "To pobieranie trwa lub jest wstrzymane. Najpierw je anuluj."
+  }
+}

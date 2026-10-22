@@ -78,10 +78,10 @@
   "auto": "Tự động",
   "english": "Tiếng Anh",
   "medium": "Trung bình",
-  "newThread": "Chủ đề mới",
+  "newThread": "Trò chuyện Mới",
   "noResultsFound": "Không tìm thấy kết quả nào",
-  "noThreadsYet": "Chưa có chủ đề nào",
-  "noThreadsYetDesc": "Bắt đầu một cuộc trò chuyện mới để xem lịch sử chủ đề của bạn ở đây.",
+  "noThreadsYet": "Chưa có cuộc trò chuyện nào",
+  "noThreadsYetDesc": "Bắt đầu một cuộc trò chuyện mới để xem lịch sử trò chuyện của bạn ở đây.",
   "downloads": "Tải xuống",
   "downloading": "Đang tải xuống",
   "cancelDownload": "Hủy tải xuống",
@@ -114,15 +114,15 @@
   "jan": "Atomic Bot",
   "metadata": "Siêu dữ liệu",
   "regenerate": "Tái tạo",
-  "threadImage": "Hình ảnh chủ đề",
+  "threadImage": "Hình ảnh cuộc trò chuyện",
   "editMessage": "Chỉnh sửa tin nhắn",
   "deleteMessage": "Xóa tin nhắn",
-  "deleteThread": "Xóa chủ đề",
-  "renameThread": "Đổi tên chủ đề",
-  "threadTitle": "Tiêu đề chủ đề",
-  "deleteAllThreads": "Xóa tất cả các chủ đề",
-  "allThreadsUnfavorited": "Tất cả các chủ đề đã được bỏ yêu thích",
-  "deleteAllThreadsConfirm": "Bạn có chắc chắn muốn xóa tất cả các chủ đề không? Hành động này không thể hoàn tác.",
+  "deleteThread": "Xóa cuộc trò chuyện",
+  "renameThread": "Đổi tên cuộc trò chuyện",
+  "threadTitle": "Tiêu đề cuộc trò chuyện",
+  "deleteAllThreads": "Xóa tất cả cuộc trò chuyện",
+  "allThreadsUnfavorited": "Tất cả cuộc trò chuyện đã được bỏ yêu thích",
+  "deleteAllThreadsConfirm": "Bạn có chắc chắn muốn xóa tất cả cuộc trò chuyện không? Hành động này không thể hoàn tác.",
   "addProvider": "Thêm nhà cung cấp",
   "addOpenAIProvider": "Thêm nhà cung cấp OpenAI",
   "enterNameForProvider": "Nhập tên cho nhà cung cấp của bạn",
@@ -249,11 +249,11 @@
     "addToProject": "Thêm vào dự án",
     "removeFromProject": "Xóa khỏi dự án",
     "noConversationsIn": "Chưa có cuộc trò chuyện nào trong {{projectName}}",
-    "startNewConversation": "Bắt đầu một cuộc trò chuyện mới với {{projectName}} bên dưới",
+    "startNewConversation": "Nhập tin nhắn ở trên để bắt đầu cuộc trò chuyện trong {{projectName}}.",
     "conversationsIn": "Cuộc trò chuyện trong {{projectName}}",
     "conversationsDescription": "Nhấp vào bất kỳ cuộc trò chuyện nào để tiếp tục trò chuyện hoặc bắt đầu một cuộc trò chuyện mới bên dưới.",
-    "thread": "chủ đề",
-    "threads": "chủ đề",
+    "thread": "cuộc trò chuyện",
+    "threads": "cuộc trò chuyện",
     "updated": "Đã cập nhật:",
     "collapseProject": "Thu gọn dự án",
     "expandProject": "Mở rộng dự án",
@@ -264,11 +264,11 @@
     "tryDifferentSearch": "Thử từ khóa tìm kiếm khác",
     "deleteProjectDialog": {
       "title": "Xóa dự án",
-      "permanentDelete": "Điều này sẽ xóa vĩnh viễn tất cả các chủ đề.",
-      "permanentDeleteWarning": "Hành động này sẽ xóa vĩnh viễn TẤT CẢ các chủ đề trong dự án!",
+      "permanentDelete": "Điều này sẽ xóa vĩnh viễn tất cả cuộc trò chuyện.",
+      "permanentDeleteWarning": "Hành động này sẽ xóa vĩnh viễn TẤT CẢ cuộc trò chuyện trong dự án!",
       "deleteEmptyProject": "Hành động này sẽ xóa dự án \"{{projectName}}\".",
-      "saveThreadsAdvice": "Để lưu các chủ đề, hãy di chuyển chúng vào danh sách chủ đề của bạn hoặc dự án khác trước khi xóa.",
-      "starredWarning": "Bạn vẫn có các chủ đề đã gắn dấu sao trong dự án.",
+      "saveThreadsAdvice": "Để lưu các cuộc trò chuyện, hãy di chuyển chúng vào danh sách trò chuyện của bạn hoặc dự án khác trước khi xóa.",
+      "starredWarning": "Bạn vẫn có các cuộc trò chuyện đã gắn dấu sao trong dự án.",
       "deleteButton": "Xóa",
       "successWithName": "Dự án \"{{projectName}}\" đã được xóa thành công",
       "successWithoutName": "Dự án đã được xóa thành công",
@@ -297,8 +297,8 @@
       "changeLocation": "Thay đổi vị trí"
     },
     "deleteAllThreads": {
-      "title": "Xóa tất cả các chủ đề",
-      "description": "Tất cả các chủ đề sẽ bị xóa. Hành động này không thể hoàn tác."
+      "title": "Xóa tất cả cuộc trò chuyện",
+      "description": "Tất cả cuộc trò chuyện sẽ bị xóa. Hành động này không thể hoàn tác."
     },
     "deleteThread": {
       "description": "Bạn có chắc chắn muốn xóa cuộc trò chuyện này không? Hành động này không thể hoàn tác."
@@ -309,20 +309,20 @@
   },
   "toast": {
     "allThreadsUnfavorited": {
-      "title": "Tất cả các chủ đề đã được bỏ yêu thích",
-      "description": "Tất cả các chủ đề đã được xóa khỏi danh sách yêu thích của bạn."
+      "title": "Tất cả cuộc trò chuyện đã được bỏ yêu thích",
+      "description": "Tất cả cuộc trò chuyện đã được xóa khỏi danh sách yêu thích của bạn."
     },
     "deleteAllThreads": {
-      "title": "Xóa tất cả các chủ đề",
-      "description": "Tất cả các chủ đề đã bị xóa vĩnh viễn."
+      "title": "Xóa tất cả cuộc trò chuyện",
+      "description": "Tất cả cuộc trò chuyện đã bị xóa vĩnh viễn."
     },
     "renameThread": {
-      "title": "Đổi tên chủ đề",
-      "description": "Tiêu đề chủ đề đã được đổi thành '{{title}}'"
+      "title": "Đổi tên cuộc trò chuyện",
+      "description": "Tiêu đề cuộc trò chuyện đã được đổi thành '{{title}}'"
     },
     "deleteThread": {
-      "title": "Xóa chủ đề",
-      "description": "Chủ đề này đã bị xóa vĩnh viễn."
+      "title": "Xóa cuộc trò chuyện",
+      "description": "Cuộc trò chuyện này đã bị xóa vĩnh viễn."
     },
     "editMessage": {
       "title": "Chỉnh sửa tin nhắn",
@@ -381,12 +381,12 @@
       "description": "Không thể xóa dự án. Vui lòng thử lại."
     },
     "threadAssignedToProject": {
-      "title": "Chủ đề đã được gán",
-      "description": "Chủ đề đã được gán cho \"{{projectName}}\" thành công"
+      "title": "Cuộc trò chuyện đã được gán",
+      "description": "Cuộc trò chuyện đã được gán cho \"{{projectName}}\" thành công"
     },
     "threadRemovedFromProject": {
-      "title": "Chủ đề đã được xóa",
-      "description": "Chủ đề đã được xóa khỏi \"{{projectName}}\" thành công"
+      "title": "Cuộc trò chuyện đã được gỡ",
+      "description": "Cuộc trò chuyện đã được gỡ khỏi \"{{projectName}}\" thành công"
     }
   },
   "skills": "Kỹ năng",

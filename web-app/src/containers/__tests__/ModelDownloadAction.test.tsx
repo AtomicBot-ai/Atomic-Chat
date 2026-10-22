@@ -77,6 +77,7 @@ describe('ModelDownloadAction', () => {
     vi.clearAllMocks()
     mocks.pullModelWithMetadata.mockResolvedValue(undefined)
     useDownloadStore.setState({
+      controlRequests: [],
       downloads: {},
       pausedDownloads: new Set(),
       localDownloadingModels: new Set(),
@@ -347,6 +348,28 @@ describe('ModelDownloadAction', () => {
       expect(mocks.installPrismBuild).not.toHaveBeenCalled()
     })
 
+    it('installs and downloads nothing when the core has no build for the file', async () => {
+      known('engine_required')
+      planVerdict = { ...verdict('engine_required'), requires: ['pq2_0'] }
+      mocks.prismCatalog.mockRejectedValue({
+        code: 'BACKEND_BUILD_UNAVAILABLE',
+        message: 'No engine build this machine can run meets the model file',
+      })
+      render(
+        <ModelDownloadAction variant={bonsai} model={bonsaiModel} asButton />
+      )
+      fireEvent.click(downloadButton())
+
+      expect(
+        await screen.findByText('hub:prismBlocker_no_engine_build')
+      ).toBeInTheDocument()
+      expect(mocks.prismCatalog).toHaveBeenCalledWith({ requires: ['pq2_0'] })
+      expect(screen.getByTestId('model-setup-start')).toBeDisabled()
+      fireEvent.click(screen.getByTestId('model-setup-start'))
+      expect(mocks.installPrismBuild).not.toHaveBeenCalled()
+      expect(mocks.pullModelWithMetadata).not.toHaveBeenCalled()
+    })
+
     it('asks the core on click when the verdict has not arrived yet', async () => {
       rowVerdict = verdict('engine_required')
       render(
@@ -547,9 +570,10 @@ describe('ModelDownloadAction', () => {
         screen.getByRole('button', { name: 'common:cancelDownload' })
       )
 
-      await waitFor(() =>
-        expect(mocks.abortDownload).toHaveBeenCalledWith(prismId)
-      )
+      expect(mocks.abortDownload).not.toHaveBeenCalled()
+      expect(useDownloadStore.getState().controlRequests).toEqual([
+        expect.objectContaining({ action: 'cancel', id: prismId }),
+      ])
       expect(screen.queryByRole('button', { name: 'hub:download' })).toBeNull()
     })
 
@@ -566,12 +590,12 @@ describe('ModelDownloadAction', () => {
         screen.getByRole('button', { name: 'common:cancelDownload' })
       )
 
-      await waitFor(() =>
-        expect(mocks.abortDownload).toHaveBeenCalledWith(prismId)
-      )
-      expect(useDownloadStore.getState().resumableDownloads.has(prismId)).toBe(
-        true
-      )
+      expect(mocks.abortDownload).not.toHaveBeenCalled()
+      expect(useDownloadStore.getState().controlRequests).toEqual([
+        expect.objectContaining({ action: 'cancel', id: prismId }),
+      ])
+      // Cancel does not alter the download until the shared confirmation is answered.
+      expect(useDownloadStore.getState().localDownloadingModels.has(prismId)).toBe(true)
     })
   })
 })

@@ -9,79 +9,95 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { MoreHorizontal } from 'lucide-react'
-import { useMemo, useRef, useState } from 'react'
+import { ChevronRight, MoreHorizontal, Plus } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useThreads } from '@/hooks/useThreads'
+import { useSidebarLists } from '@/hooks/useSidebarLists'
 import ThreadList from '@/containers/ThreadList'
 import { DeleteAllThreadsDialog } from '@/containers/dialogs/DeleteAllThreadsDialog'
-import { useSearchDialog } from '@/hooks/useSearchDialog'
+import { route } from '@/constants/routes'
+import { cn } from '@/lib/utils'
 import {
   filterDeletableSidebarHistoryThreads,
   filterSidebarHistoryThreads,
 } from '@/lib/sidebar-thread-mode'
-import {
-  SearchIcon,
-  type SearchIconHandle,
-} from '@/components/animated-icon/search'
 
+/** "Recents": chats outside any project, minus the pinned ones shown above. */
 export function NavChats() {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const getFilteredThreads = useThreads((state) => state.getFilteredThreads)
   const threads = useThreads((state) => state.threads)
   const deleteThread = useThreads((state) => state.deleteThread)
-  const setSearchOpen = useSearchDialog((state) => state.setOpen)
+  const collapsed = useSidebarLists((state) => state.collapsed.recents)
+  const toggleGroup = useSidebarLists((state) => state.toggleGroup)
   const [dropdownOpen, setDropdownOpen] = useState(false)
-  const searchIconRef = useRef<SearchIconHandle>(null)
 
-  const threadsWithoutProject = useMemo(() => {
-    return filterSidebarHistoryThreads(getFilteredThreads(''))
+  const recentThreads = useMemo(() => {
+    return filterSidebarHistoryThreads(getFilteredThreads('')).filter(
+      (thread) => !thread.isFavorite
+    )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [getFilteredThreads, threads])
 
   const deleteModeThreads = () => {
-    filterDeletableSidebarHistoryThreads(threadsWithoutProject).forEach(
-      (thread) => deleteThread(thread.id)
+    filterDeletableSidebarHistoryThreads(recentThreads).forEach((thread) =>
+      deleteThread(thread.id)
     )
-  }
-
-  if (threadsWithoutProject.length === 0) {
-    return null
   }
 
   return (
     <SidebarGroup className="group-data-[collapsible=icon]:hidden">
-      <SidebarGroupLabel>{t('common:chats')}</SidebarGroupLabel>
-      <SidebarGroupAction
-        className="right-10 hover:bg-sidebar-foreground/8 [&>svg]:size-3"
-        onClick={() => setSearchOpen(true)}
-        onMouseEnter={() => searchIconRef.current?.startAnimation()}
-        onMouseLeave={() => searchIconRef.current?.stopAnimation()}
-        aria-label={t('common:search')}
-      >
-        <SearchIcon
-          ref={searchIconRef}
-          className="text-muted-foreground"
-          size={14}
-        />
-      </SidebarGroupAction>
-      <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
-        <DropdownMenuTrigger asChild>
-          <SidebarGroupAction className="hover:bg-sidebar-foreground/8">
-            <MoreHorizontal className="text-muted-foreground" />
-            <span className="sr-only">More</span>
-          </SidebarGroupAction>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent side="right" align="start">
-          <DeleteAllThreadsDialog
-            onDeleteAll={deleteModeThreads}
-            onDropdownClose={() => setDropdownOpen(false)}
+      <SidebarGroupLabel asChild>
+        <button
+          type="button"
+          aria-expanded={!collapsed}
+          onClick={() => toggleGroup('recents')}
+        >
+          <ChevronRight
+            size={12}
+            className={cn(
+              'mr-1 transition-transform',
+              !collapsed && 'rotate-90'
+            )}
           />
-        </DropdownMenuContent>
-      </DropdownMenu>
-      <SidebarMenu>
-        <ThreadList threads={threadsWithoutProject} />
-      </SidebarMenu>
+          {t('common:recents')}
+        </button>
+      </SidebarGroupLabel>
+      <SidebarGroupAction
+        className={cn(
+          'hover:bg-sidebar-foreground/8',
+          recentThreads.length > 0 && 'right-10'
+        )}
+        aria-label={t('common:newChat')}
+        title={t('common:newChat')}
+        onClick={() => navigate({ to: route.home })}
+      >
+        <Plus className="text-muted-foreground" />
+      </SidebarGroupAction>
+      {recentThreads.length > 0 && (
+        <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
+          <DropdownMenuTrigger asChild>
+            <SidebarGroupAction className="hover:bg-sidebar-foreground/8">
+              <MoreHorizontal className="text-muted-foreground" />
+              <span className="sr-only">More</span>
+            </SidebarGroupAction>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="right" align="start">
+            <DeleteAllThreadsDialog
+              onDeleteAll={deleteModeThreads}
+              onDropdownClose={() => setDropdownOpen(false)}
+            />
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+      {!collapsed && (
+        <SidebarMenu>
+          <ThreadList threads={recentThreads} />
+        </SidebarMenu>
+      )}
     </SidebarGroup>
   )
 }

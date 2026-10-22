@@ -8,7 +8,6 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { useToolApproval } from '@/hooks/useToolApproval'
-import { useChatExecStatus } from '@/hooks/useChatExecStatus'
 import { AlertTriangle } from 'lucide-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
@@ -18,7 +17,8 @@ import {
   MAX_TIMEOUT_SECONDS,
   RUN_COMMAND_TOOL,
 } from '@/lib/chat-exec-tools'
-import type { ChatExecStatus } from '@/services/chat-exec/types'
+import { secureEnvironmentForThread } from '@/hooks/useSecureEnvironments'
+import type { SecureEnvironment } from '@/services/chat-exec/types'
 
 type ExecCall = {
   title: string
@@ -53,30 +53,46 @@ function describeExecCall(
 }
 
 function sandboxNotice(
-  status: ChatExecStatus | null,
+  secure: SecureEnvironment | undefined,
   t: (key: string, options?: Record<string, unknown>) => string
 ): string {
-  if (status?.sandbox.kind === 'mxc')
-    return t('tools:toolApproval.exec.sandboxed')
-  if (status?.os === 'windows' && status.sandbox.reason) {
-    return t('tools:toolApproval.exec.unsandboxedWindows', {
-      reason: status.sandbox.reason,
-    })
+  if (secure) {
+    // The backend refuses a secure project's command outside MXC, so there
+    // is no "runs on the host" variant to word.
+    const folders = secure.folders
+      .map((folder) =>
+        t(
+          folder.canEdit
+            ? 'tools:toolApproval.exec.secureFolderEditable'
+            : 'tools:toolApproval.exec.secureFolderReadOnly',
+          { path: folder.path }
+        )
+      )
+      .join(', ')
+    return [
+      folders
+        ? t('tools:toolApproval.exec.secure', { folders })
+        : t('tools:toolApproval.exec.secureNoFolders'),
+      secure.network ? '' : t('tools:toolApproval.exec.secureOffline'),
+    ]
+      .filter(Boolean)
+      .join(' ')
   }
+  // Every other chat runs its commands on the host.
   return t('tools:toolApproval.exec.unsandboxed')
 }
 
 export default function ToolApproval() {
   const { t } = useTranslation()
   const { isModalOpen, modalProps, setModalOpen } = useToolApproval()
-  const execStatus = useChatExecStatus((state) => state.status)
 
   if (!modalProps) {
     return null
   }
 
-  const { toolName, toolParameters, onApprove, onDeny } = modalProps
+  const { toolName, threadId, toolParameters, onApprove, onDeny } = modalProps
   const exec = describeExecCall(toolName, toolParameters, t)
+  const secure = exec ? secureEnvironmentForThread(threadId) : undefined
 
   const handleAllowOnce = () => {
     onApprove(true) // true = allow once only
@@ -154,7 +170,7 @@ export default function ToolApproval() {
         <div className="p-2 border bg-secondary rounded-lg">
           <p className="text-xs text-muted-foreground leading-relaxed">
             {exec
-              ? `${sandboxNotice(execStatus, t)} ${t('tools:toolApproval.exec.timeout', { seconds: exec.timeoutSeconds })}`
+              ? `${sandboxNotice(secure, t)} ${t('tools:toolApproval.exec.timeout', { seconds: exec.timeoutSeconds })}`
               : t('tools:toolApproval.securityNotice')}
           </p>
         </div>

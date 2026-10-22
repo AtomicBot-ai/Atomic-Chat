@@ -62,6 +62,7 @@ export default defineConfig({
         'path',
         '@radix-ui/react-progress',
         '@tauri-apps/api/webview',
+        'lodash/cloneDeep',
       ]),
     ],
   },

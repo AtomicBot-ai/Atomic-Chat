@@ -1,0 +1,12 @@
+{
+  "kind": {
+    "partial": "bản tải xuống chưa hoàn tất",
+    "draft": "mô hình nháp cho giải mã suy đoán"
+  },
+  "blocked": {
+    "draftInUse": "Giải mã suy đoán MLX đang bật. Hãy tắt nó trong cài đặt công cụ MLX để xóa các mô hình nháp."
+  },
+  "error": {
+    "downloadActive": "Lượt tải xuống này đang chạy hoặc đang tạm dừng. Hãy hủy nó trước."
+  }
+}

@@ -52,7 +52,7 @@
   "models": "Models",
   "modelHub": "Model Hub",
   "images": "Images",
-  "video": "Video",
+  "video": "Videos",
   "media": "Media",
   "launch": "Integrations",
   "api": "API",
@@ -130,7 +130,7 @@
   "profile": "Profile",
   "reset": "Reset",
   "search": "Search",
-  "searchThreads": "Search threads...",
+  "searchThreads": "Search chats...",
   "toNavigate": "to navigate",
   "toSelect": "to select",
   "toClose": "to close",
@@ -160,13 +160,14 @@
   "auto": "Auto",
   "english": "English",
   "medium": "Medium",
-  "newThread": "New Thread",
+  "newThread": "New Chat",
   "noResultsFound": "No results found",
-  "noThreadsYet": "No threads yet",
-  "noThreadsYetDesc": "Start a new conversation to see your thread history here.",
+  "noThreadsYet": "No chats yet",
+  "noThreadsYetDesc": "Start a new conversation to see your chat history here.",
   "downloads": "Downloads",
   "downloading": "Downloading",
   "cancelDownload": "Cancel download",
+  "showDownloadProgress": "Show download progress",
   "pauseDownload": "Pause download",
   "resumeDownload": "Resume download",
   "downloadCancelled": "Download Cancelled",
@@ -296,15 +297,15 @@
   "jan": "Atomic Bot",
   "metadata": "Metadata",
   "regenerate": "Regenerate",
-  "threadImage": "Thread image",
+  "threadImage": "Chat image",
   "editMessage": "Edit Message",
   "deleteMessage": "Delete Message",
-  "deleteThread": "Delete Thread",
-  "renameThread": "Rename Thread",
-  "threadTitle": "Thread Title",
-  "deleteAllThreads": "Delete All Threads",
-  "allThreadsUnfavorited": "All Threads Unfavorited",
-  "deleteAllThreadsConfirm": "Are you sure you want to delete all threads? This action cannot be undone.",
+  "deleteThread": "Delete Chat",
+  "renameThread": "Rename Chat",
+  "threadTitle": "Chat Title",
+  "deleteAllThreads": "Delete All Chats",
+  "allThreadsUnfavorited": "All Chats Unfavorited",
+  "deleteAllThreadsConfirm": "Are you sure you want to delete all chats? This action cannot be undone.",
   "addProvider": "Add Provider",
   "addOpenAIProvider": "Add OpenAI Provider",
   "enterNameForProvider": "Enter a name for your provider",
@@ -433,8 +434,8 @@
       "changeLocation": "Change Location"
     },
     "deleteAllThreads": {
-      "title": "Delete All Threads",
-      "description": "All threads will be deleted. This action cannot be undone."
+      "title": "Delete All Chats",
+      "description": "All chats will be deleted. This action cannot be undone."
     },
     "deleteAllAgentThreads": {
       "title": "Delete All Agent Chats",
@@ -445,7 +446,7 @@
       "description": "{{count}} conversations in \"{{projectName}}\" will be deleted. This action cannot be undone."
     },
     "deleteThread": {
-      "description": "Are you sure you want to delete this thread? This action cannot be undone."
+      "description": "Are you sure you want to delete this chat? This action cannot be undone."
     },
     "messageMetadata": {
       "title": "Message Metadata"
@@ -477,11 +478,11 @@
     "filesLoadFailed": "Couldn't load the project's files",
     "deleteProjectDialog": {
       "title": "Delete Project",
-      "permanentDelete": "This will permanently delete all threads.",
-      "permanentDeleteWarning": "This action will permanently delete ALL threads within the project!",
+      "permanentDelete": "This will permanently delete all chats.",
+      "permanentDeleteWarning": "This action will permanently delete ALL chats within the project!",
       "deleteEmptyProject": "This action will delete project \"{{projectName}}\".",
-      "saveThreadsAdvice": "To save threads, move them to your thread list or another project before deleting.",
-      "starredWarning": "You still have starred threads within the project.",
+      "saveThreadsAdvice": "To save chats, move them to your chat list or another project before deleting.",
+      "starredWarning": "You still have starred chats within the project.",
       "deleteButton": "Delete",
       "successWithName": "Project \"{{projectName}}\" deleted successfully",
       "successWithoutName": "Project deleted successfully",
@@ -504,7 +505,7 @@
       "updateSuccess": "Project \"{{projectName}}\" updated successfully"
     },
     "noConversationsIn": "No Conversations in {{projectName}}",
-    "startNewConversation": "Start a new conversation with {{projectName}} below",
+    "startNewConversation": "Type a message above to start a conversation in {{projectName}}.",
     "conversationsIn": "Conversations in {{projectName}}",
     "conversationsDescription": "Click on any conversation to continue chatting, or start a new one below.",
     "conversation": "Conversation",
@@ -512,15 +513,33 @@
     "setup": "Setup",
     "instructionsDescription": "Customize tone and style of response",
     "manageInstructions": "Manage Instructions",
-    "thread": "thread",
-    "threads": "threads",
+    "thread": "chat",
+    "threads": "chats",
     "updated": "Updated:",
     "collapseProject": "Collapse project",
     "expandProject": "Expand project",
     "update": "Update",
     "searchProjects": "Search projects...",
     "noProjectsFound": "No projects found",
-    "tryDifferentSearch": "Try a different search term"
+    "tryDifferentSearch": "Try a different search term",
+    "secureEnvironment": {
+      "title": "Secure environment",
+      "description": "Commands and scripts in this project's chats can reach only the folders below and their own chat folder. Everything else on this computer is blocked by the Windows sandbox.",
+      "unavailable": "Not available on this computer: {{reason}}",
+      "unknownReason": "the Windows sandbox did not start",
+      "noFolders": "No folders yet: commands can use only their own chat folder.",
+      "addFolder": "Add folder",
+      "removeFolder": "Remove folder",
+      "canEdit": "Can change",
+      "network": "Internet access",
+      "networkDescription": "Lets commands download packages and reach websites. When off, commands cannot reach the internet and web search is turned off in this project's chats.",
+      "saveError": "Could not save the secure environment: {{error}}",
+      "createdWithoutIt": "Project \"{{projectName}}\" was created, but its secure environment could not be saved, so it is an ordinary project for now: {{error}}",
+      "connectors": "Connectors",
+      "connectorsDescription": "Off in this project's chats unless ticked. Connectors run outside the sandbox with your own access to files and the internet, so allow only those you trust with this project.",
+      "needsNetwork": "needs internet access",
+      "serverRemoved": "removed"
+    }
   },
   "attachmentsIngestion": {
     "title": "Choose how to ingest attachments",
@@ -534,24 +553,24 @@
   "injectedContentTitle": "Injected file content",
   "toast": {
     "allThreadsUnfavorited": {
-      "title": "All Threads Unfavorited",
-      "description": "All threads have been removed from your favorites."
+      "title": "All Chats Unfavorited",
+      "description": "All chats have been removed from your favorites."
     },
     "deleteAllThreads": {
-      "title": "Delete All Threads",
-      "description": "All threads have been permanently deleted."
+      "title": "Delete All Chats",
+      "description": "All chats have been permanently deleted."
     },
     "deleteAllAgentThreads": {
       "title": "Delete All Agent Chats",
       "description": "All Agent chats have been permanently deleted."
     },
     "renameThread": {
-      "title": "Rename Thread",
-      "description": "Thread title has been renamed to '{{title}}'"
+      "title": "Rename Chat",
+      "description": "Chat title has been renamed to '{{title}}'"
     },
     "deleteThread": {
-      "title": "Delete Thread",
-      "description": "This thread has been permanently deleted."
+      "title": "Delete Chat",
+      "description": "This chat has been permanently deleted."
     },
     "editMessage": {
       "title": "Edit Message",
@@ -613,12 +632,12 @@
       "description": "Failed to delete project. Please try again."
     },
     "threadAssignedToProject": {
-      "title": "Thread Assigned",
-      "description": "Thread assigned to \"{{projectName}}\" successfully"
+      "title": "Chat Assigned",
+      "description": "Chat assigned to \"{{projectName}}\" successfully"
     },
     "threadRemovedFromProject": {
-      "title": "Thread Removed",
-      "description": "Thread removed from \"{{projectName}}\" successfully"
+      "title": "Chat Removed",
+      "description": "Chat removed from \"{{projectName}}\" successfully"
     },
     "fileUploaded": {
       "title": "File Uploaded",
@@ -679,6 +698,10 @@
     "downloadNetworkUnreachable": {
       "title": "Could not reach the download server",
       "description": "The connection never got through. Check your internet connection, VPN or firewall, then start the download again."
+    },
+    "fileDialogFailed": {
+      "title": "Couldn't open the file dialog",
+      "description": "The system did not show the file or folder picker. Try again; if it keeps failing, restart Atomic Chat."
     }
   },
   "errors": {
@@ -790,5 +813,49 @@
     "engineReadyTitle": "Engine installed",
     "chatEngineReadyBody": "llama.cpp is ready to run models.",
     "mediaEngineReadyBody": "The image and video engine is ready."
+  },
+  "secureEnvironmentBlock": {
+    "notAllowed": "Not allowed in this secure project. Allow it in the project's settings under Connectors.",
+    "webSearchOffline": "This secure project has internet access turned off."
+  },
+  "navigation": {
+    "primary": "Primary navigation",
+    "workspace": "Workspace",
+    "server": "Server",
+    "modelsHub": "Models Hub",
+    "help": "Help",
+    "helpTitle": "How can we help?",
+    "emailSupport": "Email support",
+    "discord": "Discord",
+    "newGithubIssue": "New GitHub issue",
+    "toggleSidebar": "Toggle sidebar",
+    "searchChats": "Search chats",
+    "pinned": "Pinned",
+    "pinChat": "Pin chat",
+    "unpinChat": "Unpin chat",
+    "dragToReorder": "Drag to reorder",
+    "moveChat": "Move {{title}}",
+    "overview": "Overview",
+    "agentsAndTools": "Agents & tools",
+    "installed": "Installed",
+    "notInstalled": "Not installed",
+    "discover": "Discover",
+    "localModels": "Local models",
+    "cloudProviders": "Cloud providers",
+    "customEndpoint": "Custom Endpoint",
+    "inferenceEngines": "Inference engines",
+    "mcpConnectors": "MCP connectors",
+    "serverStart": "Start",
+    "serverStop": "Stop",
+    "serverStarting": "Starting…",
+    "engine": "Engine",
+    "model": "Model",
+    "notSelected": "Not selected",
+    "configuration": "Configuration",
+    "remoteAccess": "Remote access",
+    "activity": "Activity",
+    "connections": "Connections",
+    "connectionsCount": "{{count}} set up",
+    "configured": "Configured"
   }
 }

@@ -53,6 +53,20 @@ describe('prettyModelName', () => {
     )
   })
 
+  it('reads a repo name glued to its file name once', () => {
+    expect(prettyModelName('unsloth/Qwen3_5-9B-GGUF-Qwen3_5-9B-IQ4_XS')).toBe(
+      'Qwen3.5 9B'
+    )
+    expect(
+      prettyModelName(
+        'unsloth/Qwen3_5-35B-A3B-Instruct-GGUF-Qwen3_5-35B-A3B-Q4_K_M'
+      )
+    ).toBe('Qwen3.5 35B A3B')
+    expect(prettyModelName('prism-ml/Ternary-Bonsai-1.7B-PQ2_0.gguf')).toBe(
+      'Ternary Bonsai 1.7B'
+    )
+  })
+
   it('never renders blank', () => {
     expect(prettyModelName('someone/GGUF')).toBe('GGUF')
     expect(prettyModelName('')).toBe('')
@@ -80,12 +94,62 @@ describe('compactModelDisplayName', () => {
 })
 
 describe('qualifiedModelDisplayName', () => {
-  it('keeps the author namespace while cleaning the packaged filename', () => {
+  it('keeps the author namespace and the quant while cleaning the filename', () => {
     expect(
       qualifiedModelDisplayName({
         id: 'LiquidAI/LFM2.5-2.6B-Q4_K_M',
       } as Model)
-    ).toBe('LiquidAI/LFM2.5 2.6B')
+    ).toBe('LiquidAI/LFM2.5 2.6B Q4_K_M')
+  })
+
+  // QA on 2.2.21: the picker read "unsloth/Qwen3.5 9B Qwen3.5 9B" for both
+  // quants of the repo, and "prism-ml/prism-ml/Ternary Bonsai 1.7B P…".
+  it('names a repo glued to its file once, with the quant that tells them apart', () => {
+    const iq4 = { id: 'unsloth/Qwen3_5-9B-GGUF-Qwen3_5-9B-IQ4_XS' } as Model
+    const q4 = { id: 'unsloth/Qwen3_5-9B-GGUF-Qwen3_5-9B-Q4_K_M' } as Model
+
+    expect(qualifiedModelDisplayName(iq4)).toBe('unsloth/Qwen3.5 9B IQ4_XS')
+    expect(qualifiedModelDisplayName(q4)).toBe('unsloth/Qwen3.5 9B Q4_K_M')
+    expect(compactModelDisplayName(iq4)).toBe('Qwen3.5 9B')
+  })
+
+  it('shows a repeated namespace once and keeps the PrismML quant', () => {
+    for (const id of [
+      'prism-ml/prism-ml/Ternary-Bonsai-1_7B-PQ2_0',
+      'prism-ml/Ternary-Bonsai-1_7B-PQ2_0',
+    ]) {
+      expect(qualifiedModelDisplayName({ id } as Model)).toBe(
+        'prism-ml/Ternary Bonsai 1.7B PQ2_0'
+      )
+      expect(compactModelDisplayName({ id } as Model)).toBe(
+        'Ternary Bonsai 1.7B'
+      )
+    }
+    expect(
+      qualifiedModelDisplayName({
+        id: 'prism-ml/Ternary-Bonsai-1_7B-Q2_0_g64',
+      } as Model)
+    ).toBe('prism-ml/Ternary Bonsai 1.7B Q2_0_g64')
+  })
+
+  it('does not repeat a namespace the nickname already starts with', () => {
+    expect(
+      qualifiedModelDisplayName({
+        id: 'prism-ml/Ternary-Bonsai-1_7B-PQ2_0',
+        displayName: 'prism-ml/Ternary Bonsai',
+      } as Model)
+    ).toBe('prism-ml/Ternary Bonsai')
+  })
+
+  it('takes the last marker as the quant', () => {
+    expect(
+      qualifiedModelDisplayName({
+        id: 'mradermacher/Huihui-Ornith-1_5-9B-abliterated_i1-IQ4_XS',
+      } as Model)
+    ).toBe('mradermacher/Huihui Ornith 1.5 9B Abliterated IQ4_XS')
+    expect(
+      qualifiedModelDisplayName({ id: 'author/Model-Name' } as Model)
+    ).toBe('author/Model Name')
   })
 
   it('uses a nickname after the namespace and leaves unqualified ids alone', () => {
@@ -97,6 +161,6 @@ describe('qualifiedModelDisplayName', () => {
     ).toBe('author/My Model')
     expect(
       qualifiedModelDisplayName({ id: 'model-Q4_K_M.gguf' } as Model)
-    ).toBe('Model')
+    ).toBe('Model Q4_K_M')
   })
 })

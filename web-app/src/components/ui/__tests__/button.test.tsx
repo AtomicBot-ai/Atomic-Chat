@@ -58,14 +58,18 @@ describe('Button', () => {
     render(<Button>Default Size</Button>)
 
     const button = screen.getByRole('button')
-    expect(button).toHaveClass('h-9', 'px-4', 'py-2')
+    expect(button).toHaveClass(
+      'h-[var(--control-height,2.25rem)]',
+      'px-4',
+      'py-2'
+    )
   })
 
   it('applies small size classes', () => {
     render(<Button size="sm">Small Button</Button>)
 
     const button = screen.getByRole('button')
-    expect(button).toHaveClass('h-8', 'px-3')
+    expect(button).toHaveClass('h-[var(--control-height,2.25rem)]', 'px-3')
   })
 
   it('applies large size classes', () => {

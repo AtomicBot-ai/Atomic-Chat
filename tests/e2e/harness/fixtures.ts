@@ -302,6 +302,10 @@ export async function startHubFixture(options: {
   quantId: string
   title: string
   modelBytes?: number
+  /** Public source identity routed through a scenario-owned HTTPS mirror. */
+  modelUrl?: string
+  /** Hold a real transfer long enough to pause/restart it through the UI. */
+  chunkDelayMs?: number
   /**
    * The size the catalog advertises, which is what the app's disk preflight judges before it asks
    * for a single byte. A scenario that wants the refusal declares more than the machine has.
@@ -334,7 +338,7 @@ export async function startHubFixture(options: {
         downloads: 0,
         num_quants: 1,
         quants: [
-          { model_id: options.quantId, path: `${origin}/model.gguf`, file_size: options.sizeLabel ?? '0.03 GB' },
+          { model_id: options.quantId, path: options.modelUrl ?? `${origin}/model.gguf`, file_size: options.sizeLabel ?? '0.03 GB' },
         ],
         num_mmproj: 0,
         mmproj_models: [],
@@ -399,7 +403,7 @@ export async function startHubFixture(options: {
         const end = Math.min(offset + 1024 * 1024, model.length)
         res.write(model.subarray(offset, end))
         offset = end
-        setTimeout(pump, 150)
+        setTimeout(pump, options.chunkDelayMs ?? 150)
       }
       return pump()
     }

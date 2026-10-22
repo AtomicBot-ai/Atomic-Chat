@@ -50,7 +50,7 @@ export default function GlobalError({ error }: GlobalErrorProps) {
           <a
             rel="noopener noreferrer"
             className="text-accent! hover:underline"
-            href="https://discord.gg/FTk2MvZwJH"
+            href="https://discord.com/invite/8wGSsvmg4V"
             target="_blank"
           >
             contact us

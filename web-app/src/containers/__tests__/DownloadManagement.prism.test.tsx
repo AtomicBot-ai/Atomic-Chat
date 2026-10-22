@@ -130,6 +130,7 @@ describe('DownloadManagement — a Bonsai download', () => {
     })
     hub.models.deleteModel.mockResolvedValue(undefined)
     useDownloadStore.setState({
+      controlRequests: [],
       dismissedDownloads: new Set(),
       downloads: {
         [MODEL_ID]: { name: MODEL_ID, progress: 0.5, current: 50, total: 100 },
@@ -174,6 +175,39 @@ describe('DownloadManagement — a Bonsai download', () => {
     expect(screen.getByTestId(ROW)).toBeInTheDocument()
     expect(hub.models.abortDownload).not.toHaveBeenCalled()
     expect(hub.core.invoke).not.toHaveBeenCalled()
+  })
+
+  it('opens the confirmation for Cancel requested by the Downloads page', async () => {
+    render(<DownloadManagement />)
+    act(() => useDownloadStore.getState().requestControl('cancel', { id: MODEL_ID, name: MODEL_ID }))
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument())
+    expect(hub.models.abortDownload).not.toHaveBeenCalled()
+    expect(useDownloadStore.getState().controlRequests).toHaveLength(0)
+    fireEvent.click(screen.getByText('common:cancelDownloadDialog.back'))
+    expect(useDownloadStore.getState().downloads[MODEL_ID]).toBeDefined()
+  })
+
+  it('resumes a Downloads page request through the same provider-aware handler', async () => {
+    render(<DownloadManagement />)
+    act(() => useDownloadStore.getState().requestControl('resume', { id: MODEL_ID, name: MODEL_ID }))
+    await waitFor(() => expect(hub.models.pullModelWithMetadata).toHaveBeenCalledWith(MODEL_ID, URL, undefined, undefined, true, true, expect.objectContaining({ provider: 'atomic-prism' })))
+    await waitFor(() => expect(within(screen.getByTestId(ROW)).getByText('pause')).toBeInTheDocument())
+    expect(useDownloadStore.getState().pausedDownloads.has(MODEL_ID)).toBe(false)
+  })
+
+  it('keeps consecutive cancellation confirmations in order instead of replacing the first', async () => {
+    const second = 'org/second'
+    useDownloadStore.getState().setResumeParams(second, { provider: 'llamacpp-upstream', modelPath: URL })
+    render(<DownloadManagement />)
+    act(() => {
+      useDownloadStore.getState().requestControl('cancel', { id: MODEL_ID, name: MODEL_ID })
+      useDownloadStore.getState().requestControl('cancel', { id: second, name: second })
+    })
+    await waitFor(() => expect(within(screen.getByRole('dialog')).getByText('Bonsai-8B-PQ2_0')).toBeInTheDocument())
+    expect(useDownloadStore.getState().controlRequests).toHaveLength(1)
+    fireEvent.click(screen.getByText('common:cancelDownloadDialog.back'))
+    await waitFor(() => expect(within(screen.getByRole('dialog')).getByText('second')).toBeInTheDocument())
+    expect(hub.models.abortDownload).not.toHaveBeenCalled()
   })
 
   it('Permanent deletion waits for stop and removes the row only after success', async () => {

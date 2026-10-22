@@ -3,6 +3,7 @@ import {
   IconArrowsSplit,
   IconChartScatter3d,
   IconMessage,
+  IconMicrophone,
   IconMovie,
   IconPhoto,
   type IconProps,
@@ -40,6 +41,11 @@ const CATEGORY: Record<
     title: 'hub:categoryEmbedding',
     hint: 'hub:categoryEmbeddingHint',
   },
+  voice: {
+    icon: IconMicrophone,
+    title: 'hub:categoryVoice',
+    hint: 'hub:categoryVoiceHint',
+  },
 }
 
 export type HubCategorySelectProps = {
@@ -73,6 +79,7 @@ export function HubCategorySelect({
   )
   return (
     <MediaModeSelect
+      compact
       modes={modes}
       value={value}
       onChange={onChange}

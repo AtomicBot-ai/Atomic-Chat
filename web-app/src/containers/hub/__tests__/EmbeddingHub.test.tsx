@@ -14,12 +14,15 @@ vi.mock('@/containers/HeaderPage', () => ({
   ),
 }))
 
+// Import has tests of its own and needs the service hub.
+vi.mock('@/containers/hub/ImportLocalFile', () => ({
+  ImportLocalFile: () => null,
+}))
+
 vi.mock('@/containers/hub/EmbeddingModelDetailPanel', () => ({
-  EmbeddingModelDetailPanel: ({
-    model,
-  }: {
-    model: EmbeddingCatalogModel | null
-  }) => <aside data-testid="detail">{model?.id ?? 'none'}</aside>,
+  EmbeddingModelDetailPanel: ({ model }: { model: EmbeddingCatalogModel }) => (
+    <aside data-testid="detail">{model.id}</aside>
+  ),
   LocalEmbeddingModelDetailPanel: ({
     model,
   }: {
@@ -119,25 +122,25 @@ describe('EmbeddingHub', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('marks the open model and reports a pick', async () => {
+  it('opens the model the URL names below its row, and reports a pick', async () => {
     const { onSelectModel } = renderHub()
 
-    expect(screen.getByRole('button', { current: true })).toHaveTextContent(
-      'BGE-M3'
-    )
+    const open = screen.getByRole('button', { expanded: true })
+    expect(open).toHaveTextContent('BGE-M3')
+    expect(open.nextElementSibling).toBe(screen.getByTestId('detail'))
     expect(screen.getByTestId('detail')).toHaveTextContent('bge-m3')
 
     await userEvent.click(screen.getByRole('button', { name: /Nomic Embed/ }))
     expect(onSelectModel).toHaveBeenCalledWith('nomic-embed-text-v1.5')
+    await userEvent.click(open)
+    expect(onSelectModel).toHaveBeenLastCalledWith(null)
   })
 
-  it('opens on the default model when the URL names none', () => {
+  it('opens nothing until a model is picked', () => {
     const { onSelectModel } = renderHub({ selectedModelId: null })
 
-    expect(screen.getByTestId('detail')).toHaveTextContent('none')
-    expect(onSelectModel).toHaveBeenCalledWith('embeddinggemma-2', {
-      replace: true,
-    })
+    expect(screen.queryByTestId('detail')).not.toBeInTheDocument()
+    expect(onSelectModel).not.toHaveBeenCalled()
   })
 
   it('lists the embedding GGUFs among the llama.cpp models after the downloaded ones, the document-search model among them', async () => {
@@ -165,17 +168,21 @@ describe('EmbeddingHub', () => {
   })
 
   it('opens a llama.cpp model the URL names, and keeps its key while the models are read', () => {
-    local.models = [miniLm]
     const { onSelectModel } = renderHub({
       selectedModelId: 'llamacpp:sentence-transformer-mini',
     })
+    // Not read from disk yet: nothing open, and the key stays in the URL.
+    expect(screen.queryByTestId('detail')).not.toBeInTheDocument()
+    expect(onSelectModel).not.toHaveBeenCalled()
+
+    local.models = [miniLm]
+    renderHub({ selectedModelId: 'llamacpp:sentence-transformer-mini' })
     expect(screen.getByTestId('detail')).toHaveTextContent(
       'local sentence-transformer-mini'
     )
-    expect(screen.getByRole('button', { current: true })).toHaveTextContent(
+    expect(screen.getByRole('button', { expanded: true })).toHaveTextContent(
       'sentence-transformer-mini'
     )
-    expect(onSelectModel).not.toHaveBeenCalled()
   })
 
   it('finds a llama.cpp model by the search too', () => {

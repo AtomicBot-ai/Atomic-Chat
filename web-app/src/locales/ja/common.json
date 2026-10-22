@@ -76,10 +76,10 @@
   "auto": "自動",
   "english": "英語",
   "medium": "中",
-  "newThread": "新しいスレッド",
+  "newThread": "新しいチャット",
   "noResultsFound": "結果が見つかりません",
-  "noThreadsYet": "スレッドはまだありません",
-  "noThreadsYetDesc": "新しい会話を始めると、ここにスレッドの履歴が表示されます。",
+  "noThreadsYet": "チャットはまだありません",
+  "noThreadsYetDesc": "新しい会話を始めると、ここにチャットの履歴が表示されます。",
   "downloads": "ダウンロード",
   "downloading": "ダウンロード中",
   "cancelDownload": "ダウンロードをキャンセル",
@@ -106,15 +106,15 @@
   "jan": "Atomic Bot",
   "metadata": "メタデータ",
   "regenerate": "再生成",
-  "threadImage": "スレッド画像",
+  "threadImage": "チャット画像",
   "editMessage": "メッセージを編集",
   "deleteMessage": "メッセージを削除",
-  "deleteThread": "スレッドを削除",
-  "renameThread": "スレッド名を変更",
-  "threadTitle": "スレッドのタイトル",
-  "deleteAllThreads": "すべてのスレッドを削除",
-  "allThreadsUnfavorited": "すべてのスレッドのお気に入りを解除しました",
-  "deleteAllThreadsConfirm": "本当にすべてのスレッドを削除しますか？この操作は元に戻せません。",
+  "deleteThread": "チャットを削除",
+  "renameThread": "チャット名を変更",
+  "threadTitle": "チャットのタイトル",
+  "deleteAllThreads": "すべてのチャットを削除",
+  "allThreadsUnfavorited": "すべてのチャットのお気に入りを解除しました",
+  "deleteAllThreadsConfirm": "本当にすべてのチャットを削除しますか？この操作は元に戻せません。",
   "addProvider": "プロバイダーを追加",
   "addOpenAIProvider": "OpenAIプロバイダーを追加",
   "enterNameForProvider": "プロバイダーの名前を入力してください",
@@ -239,11 +239,11 @@
       "changeLocation": "場所を変更"
     },
     "deleteAllThreads": {
-      "title": "すべてのスレッドを削除",
-      "description": "すべてのスレッドが削除されます。この操作は元に戻せません。"
+      "title": "すべてのチャットを削除",
+      "description": "すべてのチャットが削除されます。この操作は元に戻せません。"
     },
     "deleteThread": {
-      "description": "本当にこのスレッドを削除しますか？この操作は元に戻せません。"
+      "description": "本当にこのチャットを削除しますか？この操作は元に戻せません。"
     },
     "messageMetadata": {
       "title": "メッセージメタデータ"
@@ -281,11 +281,11 @@
       "successWithoutName": "プロジェクトを正常に削除しました",
       "error": "プロジェクトの削除に失敗しました。もう一度お試しください。",
       "ariaLabel": "{{projectName}}を削除",
-      "permanentDelete": "これによりすべてのスレッドが完全に削除されます。",
-      "permanentDeleteWarning": "この操作により、プロジェクト内のすべてのスレッドが完全に削除されます！",
+      "permanentDelete": "これによりすべてのチャットが完全に削除されます。",
+      "permanentDeleteWarning": "この操作により、プロジェクト内のすべてのチャットが完全に削除されます！",
       "deleteEmptyProject": "プロジェクト「{{projectName}}」を削除します。",
-      "saveThreadsAdvice": "スレッドを保存するには、削除する前にスレッドリストまたは別のプロジェクトに移動してください。",
-      "starredWarning": "プロジェクト内にスター付きのスレッドが残っています。"
+      "saveThreadsAdvice": "チャットを保存するには、削除する前にチャットリストまたは別のプロジェクトに移動してください。",
+      "starredWarning": "プロジェクト内にスター付きのチャットが残っています。"
     },
     "addProjectDialog": {
       "createTitle": "新しいプロジェクトを作成",
@@ -304,14 +304,14 @@
       "updateSuccess": "プロジェクト「{{projectName}}」を正常に更新しました"
     },
     "noConversationsIn": "{{projectName}}には会話がありません",
-    "startNewConversation": "以下で{{projectName}}との新しい会話を開始します",
+    "startNewConversation": "上にメッセージを入力して、{{projectName}}で会話を始めましょう。",
     "conversationsIn": "{{projectName}}での会話",
     "conversationsDescription": "会話をクリックしてチャットを続けるか、以下で新しい会話を開始してください。",
-    "thread": "スレッド",
-    "threads": "スレッド",
+    "thread": "チャット",
+    "threads": "チャット",
     "updated": "更新日時:",
-    "collapseThreads": "スレッドを折りたたむ",
-    "expandThreads": "スレッドを展開する",
+    "collapseThreads": "チャットを折りたたむ",
+    "expandThreads": "チャットを展開する",
     "update": "更新",
     "selectAssistant": "アシスタントを選択",
     "noAssistantAssigned": "このプロジェクトに割り当てられたアシスタントはありません",
@@ -330,20 +330,20 @@
   },
   "toast": {
     "allThreadsUnfavorited": {
-      "title": "すべてのスレッドのお気に入りを解除しました",
-      "description": "すべてのスレッドがお気に入りから削除されました。"
+      "title": "すべてのチャットのお気に入りを解除しました",
+      "description": "すべてのチャットがお気に入りから削除されました。"
     },
     "deleteAllThreads": {
-      "title": "すべてのスレッドを削除",
-      "description": "すべてのスレッドが完全に削除されました。"
+      "title": "すべてのチャットを削除",
+      "description": "すべてのチャットが完全に削除されました。"
     },
     "renameThread": {
-      "title": "スレッド名を変更",
-      "description": "スレッドのタイトルが「{{title}}」に変更されました"
+      "title": "チャット名を変更",
+      "description": "チャットのタイトルが「{{title}}」に変更されました"
     },
     "deleteThread": {
-      "title": "スレッドを削除",
-      "description": "このスレッドは完全に削除されました。"
+      "title": "チャットを削除",
+      "description": "このチャットは完全に削除されました。"
     },
     "editMessage": {
       "title": "メッセージを編集",
@@ -402,12 +402,12 @@
       "description": "プロジェクトの削除に失敗しました。もう一度お試しください。"
     },
     "threadAssignedToProject": {
-      "title": "スレッドが割り当てられました",
-      "description": "スレッドは「{{projectName}}」に正常に割り当てられました"
+      "title": "チャットが割り当てられました",
+      "description": "チャットは「{{projectName}}」に正常に割り当てられました"
     },
     "threadRemovedFromProject": {
-      "title": "スレッドが削除されました",
-      "description": "スレッドは「{{projectName}}」から正常に削除されました"
+      "title": "チャットが外されました",
+      "description": "チャットは「{{projectName}}」から正常に外されました"
     },
     "deleteAllAgentThreads": {
       "title": "すべてのエージェントチャットを削除",
@@ -501,7 +501,7 @@
   "skillInstructions": "指示",
   "deleteSkill": "スキルを削除",
   "deleteSkillDescription": "カスタムスキル「{{name}}」を削除しますか？この操作は元に戻せません。",
-  "searchThreads": "スレッドを検索...",
+  "searchThreads": "チャットを検索...",
   "toNavigate": "で移動",
   "toSelect": "で選択",
   "toClose": "で閉じる",

@@ -13,7 +13,7 @@ function sourceKey(path: string): string {
 }
 
 export function modelDownloadKey(params: DownloadResumeParams): string {
-  const provider = params.provider === 'llamacpp' || params.provider === 'llamacpp-upstream'
+  const provider = params.provider === 'llamacpp' || params.provider === 'llamacpp-upstream' || params.provider === 'atomic-prism'
     ? 'llamacpp' : params.provider ?? 'llamacpp'
   const source = sourceKey(params.modelPath)
   // MLX downloads the whole repository; which safetensors file was listed first is immaterial.

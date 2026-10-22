@@ -4,8 +4,7 @@ use tauri::Runtime;
 
 fn unfinished_directory(data: &Path, provider: &str, id: &str) -> Result<Option<PathBuf>, String> {
     let engine = match provider {
-        "llamacpp" | "llamacpp-upstream" => "llamacpp",
-        "atomic-prism" => "atomic-prism",
+        "llamacpp" | "llamacpp-upstream" | "atomic-prism" => "llamacpp",
         _ => return Err("This provider does not support safe download disposal yet".into()),
     };
     let relative = Path::new(id);
@@ -59,13 +58,22 @@ fn unfinished_directory(data: &Path, provider: &str, id: &str) -> Result<Option<
             return Err("Refusing a directory containing linked files or nested models".into());
         }
         let name = entry.file_name().to_string_lossy().to_string();
-        if ![".gguf", ".gguf.tmp", ".gguf.url", ".gguf.parts"]
-            .iter()
-            .any(|suffix| name.ends_with(suffix))
+        if ![
+            ".gguf",
+            ".gguf.tmp",
+            ".gguf.url",
+            ".gguf.parts",
+            ".gguf.parts.new",
+        ]
+        .iter()
+        .any(|suffix| name.ends_with(suffix))
         {
             return Err("Unexpected files in unfinished model directory; refusing deletion".into());
         }
-        has_partial |= name.ends_with(".tmp") || name.ends_with(".parts") || name.ends_with(".url");
+        has_partial |= name.ends_with(".tmp")
+            || name.ends_with(".parts")
+            || name.ends_with(".url")
+            || name.ends_with(".parts.new");
     }
     if has_files && !has_partial {
         return Err("No unfinished download artifacts found".into());
@@ -87,7 +95,7 @@ fn delete_unfinished_files(data: &Path, provider: &str, id: &str) -> Result<(), 
     files.sort_by_key(|path| {
         matches!(
             path.extension().and_then(|value| value.to_str()),
-            Some("url" | "parts")
+            Some("url" | "parts" | "new")
         )
     });
     for path in files {
@@ -175,13 +183,19 @@ mod tests {
         std::fs::create_dir_all(&installed).unwrap();
         std::fs::write(installed.join("finished.gguf"), b"keep").unwrap();
         assert!(delete_unfinished_files(temp.path(), "llamacpp", "org/complete").is_err());
-        assert_eq!(std::fs::read(installed.join("finished.gguf")).unwrap(), b"keep");
+        assert_eq!(
+            std::fs::read(installed.join("finished.gguf")).unwrap(),
+            b"keep"
+        );
     }
 
     #[test]
     fn unavailable_data_root_does_not_clear_recovery_state() {
         let temp = tempfile::tempdir().unwrap();
-        assert!(delete_unfinished_files(&temp.path().join("unmounted"), "llamacpp", "org/model").is_err());
+        assert!(
+            delete_unfinished_files(&temp.path().join("unmounted"), "llamacpp", "org/model")
+                .is_err()
+        );
     }
 
     #[cfg(unix)]
@@ -191,6 +205,16 @@ mod tests {
         let outside = tempfile::tempdir().unwrap();
         std::os::unix::fs::symlink(outside.path(), temp.path().join("llamacpp")).unwrap();
         assert!(delete_unfinished_files(temp.path(), "llamacpp", "org/missing").is_err());
+    }
+
+    #[test]
+    fn prism_uses_the_shared_gguf_root_and_new_manifest_sidecar() {
+        let temp = tempfile::tempdir().unwrap();
+        let target = temp.path().join("llamacpp/models/org/prism");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(target.join("model.gguf.parts.new"), b"manifest").unwrap();
+        delete_unfinished_files(temp.path(), "atomic-prism", "org/prism").unwrap();
+        assert!(!target.exists());
     }
 
     #[cfg(unix)]

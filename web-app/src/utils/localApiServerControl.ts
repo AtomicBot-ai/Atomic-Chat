@@ -7,6 +7,8 @@
  * wraps this with toasts and model loading.
  */
 
+import { invoke } from '@tauri-apps/api/core'
+
 import { useAppState } from '@/hooks/useAppState'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { SERVER_START_WATCHDOG_MS, withTimeout } from '@/lib/utils'
@@ -155,4 +157,53 @@ export function getLocalApiServerUrl(): string {
   const host = serverHost === '0.0.0.0' ? '127.0.0.1' : serverHost
   const prefix = apiPrefix.startsWith('/') ? apiPrefix : `/${apiPrefix}`
   return `http://${host}:${serverPort}${prefix}`
+}
+
+export type LocalApiServerProbe =
+  | { ok: true; latencyMs: number; modelCount: number }
+  | {
+      ok: false
+      latencyMs: number
+      httpStatus: number | null
+      message: string
+    }
+
+/**
+ * One `GET {base}/models`, an OpenAI client's usual first call, through the
+ * Rust HTTP client (no webview CORS): proves the address, the prefix and the
+ * key without running a model. It is a real request, so Activity lists it.
+ */
+export async function probeLocalApiServer(
+  baseUrl: string,
+  apiKey: string
+): Promise<LocalApiServerProbe> {
+  const headers: Record<string, string> = {}
+  if (apiKey.trim()) headers.Authorization = `Bearer ${apiKey}`
+  const started = performance.now()
+  const elapsed = () => Math.round(performance.now() - started)
+  try {
+    const body = await invoke<string>('get_local_http', {
+      url: `${baseUrl.replace(/\/+$/, '')}/models`,
+      headers,
+      timeoutSecs: 10,
+    })
+    const latencyMs = elapsed()
+    let modelCount = 0
+    try {
+      const data = (JSON.parse(body) as { data?: unknown }).data
+      modelCount = Array.isArray(data) ? data.length : 0
+    } catch {
+      // An answer that is not JSON still proves the server is there.
+    }
+    return { ok: true, latencyMs, modelCount }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    const status = /^HTTP (\d{3})/.exec(message)?.[1]
+    return {
+      ok: false,
+      latencyMs: elapsed(),
+      httpStatus: status ? Number(status) : null,
+      message,
+    }
+  }
 }

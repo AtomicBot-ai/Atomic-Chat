@@ -53,7 +53,7 @@
   },
   "others": {
     "spellCheck": "拼写检查",
-    "spellCheckDesc": "为您的线程启用拼写检查。",
+    "spellCheckDesc": "为您的聊天启用拼写检查。",
     "resetFactory": "恢复出厂设置",
     "resetFactoryDesc": "将应用程序恢复到其初始状态，清除所有模型和聊天记录。此操作不可逆，仅在应用程序损坏时建议使用。"
   },
@@ -96,7 +96,7 @@
   "interface": {
     "title": "外观",
     "theme": "主题",
-    "themeDesc": "匹配操作系统主题。",
+    "themeDesc": "选择浅色、深色或跟随操作系统。",
     "fontSize": "字号",
     "fontSizeDesc": "调整应用的字号。",
     "windowBackground": "窗口背景",

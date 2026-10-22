@@ -139,7 +139,7 @@ fn put_guest_scope(data_folder: &std::path::Path, kept: Option<Vec<u8>>) {
 
 /// Detect the user's default shell and return the appropriate env file path.
 /// Returns (shell_name, env_file_path).
-fn detect_shell_env_file(home_dir: &str, is_macos: bool) -> (&'static str, String) {
+pub(crate) fn detect_shell_env_file(home_dir: &str, is_macos: bool) -> (&'static str, String) {
     let shell = std::env::var("SHELL").unwrap_or_default();
     if shell.ends_with("/bash") {
         // macOS uses login shells in Terminal, so ~/.bash_profile is sourced.
@@ -330,6 +330,29 @@ pub fn open_file_explorer(path: String) {
             .status()
             .expect("Failed to open file explorer");
     }
+}
+
+/// Select a file or folder in the system file manager, from the blocking pool.
+///
+/// Do not call the opener plugin's own `reveal_item_in_dir` command from the
+/// webview. It is an async command, so it runs on a tokio runtime worker, and
+/// on Linux it asks the file manager over D-Bus through
+/// `zbus::blocking::Connection`. This crate enables zbus's `tokio` feature, so
+/// that blocking wrapper calls `Runtime::block_on` on the worker and panics
+/// ("Cannot start a runtime from within a runtime"). Release builds use
+/// `panic = "abort"`, so every "Show in folder" / "Open containing folder"
+/// click closed the app on Linux. Same mechanism as
+/// `show_desktop_notification` below. On a blocking-pool thread `block_on` is
+/// allowed. macOS and Windows already ran the call off the main thread, so a
+/// blocking-pool thread changes nothing for them.
+#[tauri::command]
+pub async fn reveal_in_file_manager(path: String) -> Result<(), String> {
+    let path = PathBuf::from(path);
+    tauri::async_runtime::spawn_blocking(move || {
+        tauri_plugin_opener::reveal_item_in_dir(&path).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("Reveal task failed: {e}"))?
 }
 
 /// Deliver a desktop notification from the blocking pool.
@@ -1440,7 +1463,7 @@ custom_providers: []
 /// (mirroring Hermes' own official desktop app, which hit and fixed this
 /// exact gap) avoids ever writing to a config file the `hermes` CLI won't
 /// read.
-fn resolve_hermes_dir() -> Result<std::path::PathBuf, String> {
+pub(crate) fn resolve_hermes_dir() -> Result<std::path::PathBuf, String> {
     if cfg!(windows) {
         if let Some(home) = read_windows_user_env("HERMES_HOME").filter(|s| !s.is_empty()) {
             return Ok(std::path::PathBuf::from(home));
@@ -1493,7 +1516,9 @@ fn read_windows_user_env(_name: &str) -> Option<String> {
 
 /// Split the config into (before, entries, after) around `custom_providers:`.
 /// `entries` is a Vec of Vec<String>, one per YAML list item.
-fn split_custom_providers(content: &str) -> (Vec<String>, Vec<Vec<String>>, Vec<String>) {
+pub(crate) fn split_custom_providers(
+    content: &str,
+) -> (Vec<String>, Vec<Vec<String>>, Vec<String>) {
     let mut before: Vec<String> = Vec::new();
     let mut block_lines: Vec<String> = Vec::new();
     let mut after: Vec<String> = Vec::new();
@@ -1561,7 +1586,7 @@ fn split_custom_providers(content: &str) -> (Vec<String>, Vec<Vec<String>>, Vec<
     (before, entries, after)
 }
 
-fn entry_is_ours(entry: &[String]) -> bool {
+pub(crate) fn entry_is_ours(entry: &[String]) -> bool {
     entry.iter().any(|l| {
         let t = l.trim();
         let name_val = if t.starts_with("- name:") {
@@ -1742,7 +1767,7 @@ const ATOMIC_MANAGED_BEGIN: &str = "# >>> Atomic Chat (managed) >>>";
 const ATOMIC_MANAGED_END: &str = "# <<< Atomic Chat (managed) <<<";
 
 /// Resolve the user's home directory in a platform-aware way.
-fn agent_home_dir() -> Result<String, String> {
+pub(crate) fn agent_home_dir() -> Result<String, String> {
     if cfg!(windows) {
         std::env::var("USERPROFILE").map_err(|e| e.to_string())
     } else {
@@ -3032,9 +3057,9 @@ pub fn configure_opencode(
     Ok(())
 }
 
-const OPENCLAUDE_ATOMIC_PROFILE_ID: &str = "provider_atomic_chat";
+pub(crate) const OPENCLAUDE_ATOMIC_PROFILE_ID: &str = "provider_atomic_chat";
 
-fn openclaude_global_config_path(home: &str) -> PathBuf {
+pub(crate) fn openclaude_global_config_path(home: &str) -> PathBuf {
     PathBuf::from(home).join(".openclaude.json")
 }
 
@@ -3309,7 +3334,7 @@ pub fn configure_droid(
 }
 
 /// Display name (and provider id) of the custom provider we register in Zed.
-const ZED_PROVIDER_ID: &str = "Atomic Chat";
+pub(crate) const ZED_PROVIDER_ID: &str = "Atomic Chat";
 
 /// Configure Zed by upserting a custom OpenAI-compatible provider named
 /// "Atomic Chat" under `language_models.openai_compatible` in
@@ -3492,7 +3517,7 @@ pub fn launch_zed() -> Result<(), String> {
 
 /// Provider id we own inside `provider_config.json`. Personal providers may use
 /// any id that does not start with `account:`.
-const ZCODE_PROVIDER_ID: &str = "atomic-chat";
+pub(crate) const ZCODE_PROVIDER_ID: &str = "atomic-chat";
 const ZCODE_PROVIDER_NAME: &str = "Atomic Chat";
 /// ZCode only admits a provider whose API key is non-blank; the local server
 /// ignores it when auth is off.
@@ -3521,7 +3546,7 @@ const ZCODE_LOCK_STALE_AFTER: std::time::Duration = std::time::Duration::from_se
 /// ZCode's `.zcode/v2` directory, resolved the way the desktop app does it:
 /// `dataBaseDir` from `~/.zcode/v2/setting.json` (set when the user moves the
 /// data folder in ZCode's settings), then `$ZCODE_DATA_BASE_DIR`, then home.
-fn zcode_config_dir(home: &Path, env_base: Option<&str>) -> PathBuf {
+pub(crate) fn zcode_config_dir(home: &Path, env_base: Option<&str>) -> PathBuf {
     let from_setting = std::fs::read_to_string(home.join(".zcode").join("v2").join("setting.json"))
         .ok()
         .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
@@ -4105,7 +4130,7 @@ pub fn launch_openclaw_app() -> OpenclawAppStatus {
 
 /// Provider id we own inside `openclaw.json`. Model refs are `<provider>/<id>`,
 /// so this is also the prefix of every ref we write.
-const OPENCLAW_PROVIDER_ID: &str = "atomic";
+pub(crate) const OPENCLAW_PROVIDER_ID: &str = "atomic";
 
 /// Whether an `agents.defaults.modelPolicy.allow` list already permits
 /// `model_ref`. OpenClaw matches exact refs plus trailing prefix wildcards
@@ -4260,6 +4285,16 @@ fn openclaw_patch_config(
     Ok(root)
 }
 
+/// `openclaw.json` location: `$OPENCLAW_CONFIG_PATH` when set, else
+/// `~/.openclaw/openclaw.json`.
+pub(crate) fn openclaw_config_path(home: &str) -> PathBuf {
+    std::env::var("OPENCLAW_CONFIG_PATH")
+        .ok()
+        .filter(|p| !p.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(home).join(".openclaw").join("openclaw.json"))
+}
+
 /// Configure OpenClaw by upserting `models.providers.atomic`, the agent's
 /// primary model, and its per-model settings entry in `~/.openclaw/openclaw.json`.
 ///
@@ -4273,11 +4308,7 @@ pub fn configure_openclaw(
     api_key: Option<String>,
 ) -> Result<(), String> {
     let home = agent_home_dir()?;
-    let config_path = std::env::var("OPENCLAW_CONFIG_PATH")
-        .ok()
-        .filter(|p| !p.is_empty())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(&home).join(".openclaw").join("openclaw.json"));
+    let config_path = openclaw_config_path(&home);
 
     if let Some(parent) = config_path.parent() {
         std::fs::create_dir_all(parent)
@@ -4613,11 +4644,11 @@ pub fn configure_pi(api_url: String, model: String, api_key: Option<String>) -> 
 /// mounted dormant by the shipped base bundle — zero routes until a `llm-pi-ai:`
 /// section supplies profiles, at which point they register live with no
 /// restart, so writing the file is the whole integration.
-const DSH_SECTION: &str = "llm-pi-ai";
+pub(crate) const DSH_SECTION: &str = "llm-pi-ai";
 /// Our route id. It doubles as the stem of the credential reference below, and
 /// as the settings key the harness' own Models page addresses, so it must stay
 /// a lowercase-leading POSIX-identifier-safe word.
-const DSH_ROUTE_ID: &str = "atomic";
+pub(crate) const DSH_ROUTE_ID: &str = "atomic";
 /// Credential *reference* (an env var name, never the secret). The harness'
 /// Models page derives `<ROUTE>_API_KEY` for routes it creates, so matching
 /// that derivation keeps our route editable — and deletable — from inside dsh.
@@ -4805,7 +4836,7 @@ fn login_shell_dsh_home() -> Option<String> {
 }
 
 /// Resolve dsh's home directory: `$DSH_HOME` when set, else `~/.dsh`.
-fn dsh_home_dir() -> Result<PathBuf, String> {
+pub(crate) fn dsh_home_dir() -> Result<PathBuf, String> {
     let from_env = std::env::var("DSH_HOME")
         .ok()
         .filter(|v| !v.trim().is_empty())
@@ -5474,7 +5505,7 @@ pub fn configure_cline(
 
 /// Provider id written into Atomic Agent's `llm.providers` registry. Must match
 /// its `PROVIDER_ID_RE` (`^[a-z][a-z0-9-]{0,31}$`, `src/config/llm-config.ts`).
-const ATOMIC_AGENT_PROVIDER_ID: &str = "atomic-chat";
+pub(crate) const ATOMIC_AGENT_PROVIDER_ID: &str = "atomic-chat";
 
 /// The `llama-server` provider Atomic Agent synthesises for itself when the
 /// config file carries no `llm` block (`parseUserLlmFileConfig`'s defaults in
@@ -5513,7 +5544,7 @@ const ATOMIC_AGENT_REQUEST_TIMEOUT_MS: u64 = 300_000;
 /// User-scope variable set after this process started is invisible to
 /// `std::env::var`, which only sees the block snapshotted at app startup — see
 /// `docs/decisions/2026-07-01-fix-hermes-agent-config-on-windows-writing-to-the-wrong-file.md`.
-fn resolve_atomic_agent_state_dir() -> Result<PathBuf, String> {
+pub(crate) fn resolve_atomic_agent_state_dir() -> Result<PathBuf, String> {
     if let Some(dir) =
         read_windows_user_env("ATOMIC_AGENT_STATE_DIR").filter(|s| !s.trim().is_empty())
     {
@@ -6140,6 +6171,35 @@ mod tests {
             })
             .await
             .expect("notification task panicked");
+        });
+    }
+
+    /// Regression test for the abort on "Open containing folder" (Linux
+    /// AppImage, 2.2.14): the opener plugin's async `reveal_item_in_dir`
+    /// command opened a blocking zbus connection on a runtime worker and
+    /// panicked with "Cannot start a runtime from within a runtime". Linux
+    /// only: on macOS and Windows a successful call opens a real file manager
+    /// window.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn reveal_in_file_manager_is_safe_on_runtime_worker() {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .expect("failed to build runtime");
+
+        // An existing path, so the call gets past canonicalization and reaches
+        // the D-Bus code that used to panic.
+        let path = std::env::temp_dir().to_string_lossy().to_string();
+        rt.block_on(async move {
+            tokio::spawn(async move {
+                // CI has no session bus or file manager, so the reveal may
+                // fail; the test only asserts it does not panic.
+                let _ = reveal_in_file_manager(path).await;
+            })
+            .await
+            .expect("reveal task panicked");
         });
     }
 

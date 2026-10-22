@@ -78,10 +78,10 @@
   "auto": "Automaticky",
   "english": "Angličtina",
   "medium": "Střední",
-  "newThread": "Nové vlákno",
+  "newThread": "Nový chat",
   "noResultsFound": "Nebyly nalezeny žádné výsledky",
-  "noThreadsYet": "Zatím žádná vlákna",
-  "noThreadsYetDesc": "Začněte novou konverzaci a uvidíte zde historii vláken.",
+  "noThreadsYet": "Zatím žádné chaty",
+  "noThreadsYetDesc": "Začněte novou konverzaci a uvidíte zde historii chatů.",
   "downloads": "Stahování",
   "downloading": "Stahování",
   "cancelDownload": "Zrušit stahování",
@@ -109,15 +109,15 @@
   "jan": "Atomic Bot",
   "metadata": "Metadata",
   "regenerate": "Regenerovat",
-  "threadImage": "Obrázek vlákna",
+  "threadImage": "Obrázek chatu",
   "editMessage": "Upravit zprávu",
   "deleteMessage": "Smazat zprávu",
-  "deleteThread": "Smazat vlákno",
-  "renameThread": "Přejmenovat vlákno",
-  "threadTitle": "Název vlákna",
-  "deleteAllThreads": "Smazat všechna vlákna",
-  "allThreadsUnfavorited": "Všechna vlákna odebrána z oblíbených",
-  "deleteAllThreadsConfirm": "Opravdu chcete smazat všechna vlákna? Tuto akci nelze vrátit zpět.",
+  "deleteThread": "Smazat chat",
+  "renameThread": "Přejmenovat chat",
+  "threadTitle": "Název chatu",
+  "deleteAllThreads": "Smazat všechny chaty",
+  "allThreadsUnfavorited": "Všechny chaty odebrány z oblíbených",
+  "deleteAllThreadsConfirm": "Opravdu chcete smazat všechny chaty? Tuto akci nelze vrátit zpět.",
   "addProvider": "Přidat poskytovatele",
   "addOpenAIProvider": "Přidat OpenAI poskytovatele",
   "enterNameForProvider": "Zadejte název pro vašeho poskytovatele",
@@ -243,11 +243,11 @@
       "changeLocation": "Změnit umístění"
     },
     "deleteAllThreads": {
-      "title": "Smazat všechna vlákna",
-      "description": "Všechna vlákna budou smazána. Tuto akci nelze vrátit zpět."
+      "title": "Smazat všechny chaty",
+      "description": "Všechny chaty budou smazány. Tuto akci nelze vrátit zpět."
     },
     "deleteThread": {
-      "description": "Opravdu chcete smazat toto vlákno? Tuto akci nelze vrátit zpět."
+      "description": "Opravdu chcete smazat tento chat? Tuto akci nelze vrátit zpět."
     },
     "messageMetadata": {
       "title": "Metadata zprávy"
@@ -271,11 +271,11 @@
     "projectNotFoundDesc": "Projekt, který hledáte, neexistuje nebo byl smazán.",
     "deleteProjectDialog": {
       "title": "Smazat projekt",
-      "permanentDelete": "Tímto trvale smažete všechna vlákna.",
-      "permanentDeleteWarning": "Tato akce trvale smaže VŠECHNA vlákna v rámci projektu!",
+      "permanentDelete": "Tímto trvale smažete všechny chaty.",
+      "permanentDeleteWarning": "Tato akce trvale smaže VŠECHNY chaty v rámci projektu!",
       "deleteEmptyProject": "Tato akce smaže projekt \"{{projectName}}\".",
-      "saveThreadsAdvice": "Chcete-li uložit vlákna, přesuňte je do seznamu vláken nebo jiného projektu před smazáním.",
-      "starredWarning": "Stále máte oblíbená vlákna v rámci projektu.",
+      "saveThreadsAdvice": "Chcete-li chaty zachovat, přesuňte je před smazáním do seznamu chatů nebo do jiného projektu.",
+      "starredWarning": "Stále máte oblíbené chaty v rámci projektu.",
       "deleteButton": "Smazat",
       "successWithName": "Projekt \"{{projectName}}\" byl úspěšně smazán",
       "successWithoutName": "Projekt byl úspěšně smazán",
@@ -294,11 +294,11 @@
       "renameSuccess": "Projekt byl přejmenován z \"{{oldName}}\" na \"{{newName}}\""
     },
     "noConversationsIn": "Žádné konverzace v {{projectName}}",
-    "startNewConversation": "Začněte novou konverzaci s {{projectName}} níže",
+    "startNewConversation": "Napište zprávu výše a začněte konverzaci v {{projectName}}.",
     "conversationsIn": "Konverzace v {{projectName}}",
     "conversationsDescription": "Kliknutím na kteroukoli konverzaci pokračujte v chatování nebo začněte novou níže.",
-    "thread": "vlákno",
-    "threads": "vlákna",
+    "thread": "chat",
+    "threads": "chaty",
     "updated": "Aktualizováno:",
     "collapseProject": "Sbalit projekt",
     "expandProject": "Rozbalit projekt",
@@ -309,20 +309,20 @@
   },
   "toast": {
     "allThreadsUnfavorited": {
-      "title": "Všechna vlákna odebrána z oblíbených",
-      "description": "Všechna vlákna byla odebrána z vašich oblíbených."
+      "title": "Všechny chaty odebrány z oblíbených",
+      "description": "Všechny chaty byly odebrány z vašich oblíbených."
     },
     "deleteAllThreads": {
-      "title": "Smazat všechna vlákna",
-      "description": "Všechna vlákna byla trvale smazána."
+      "title": "Smazat všechny chaty",
+      "description": "Všechny chaty byly trvale smazány."
     },
     "renameThread": {
-      "title": "Přejmenovat vlákno",
-      "description": "Název vlákna byl přejmenován na '{{title}}'"
+      "title": "Přejmenovat chat",
+      "description": "Název chatu byl změněn na '{{title}}'"
     },
     "deleteThread": {
-      "title": "Smazat vlákno",
-      "description": "Toto vlákno bylo trvale smazáno."
+      "title": "Smazat chat",
+      "description": "Tento chat byl trvale smazán."
     },
     "editMessage": {
       "title": "Upravit zprávu",
@@ -381,12 +381,12 @@
       "description": "Nepodařilo se smazat projekt. Zkuste to prosím znovu."
     },
     "threadAssignedToProject": {
-      "title": "Vlákno přiřazeno",
-      "description": "Vlákno bylo úspěšně přiřazeno k \"{{projectName}}\""
+      "title": "Chat přiřazen",
+      "description": "Chat byl úspěšně přiřazen k \"{{projectName}}\""
     },
     "threadRemovedFromProject": {
-      "title": "Vlákno odebráno",
-      "description": "Vlákno bylo úspěšně odebráno z \"{{projectName}}\""
+      "title": "Chat odebrán",
+      "description": "Chat byl úspěšně odebrán z \"{{projectName}}\""
     }
   },
   "skills": "Dovednosti",

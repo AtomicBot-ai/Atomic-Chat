@@ -18,6 +18,7 @@ import {
   type FakeImageEngine,
   type FakeSdOptions,
 } from './images.js'
+import { openSection } from './navigation.js'
 import type { Profile } from './profile.js'
 import type { Session } from './session.js'
 
@@ -221,6 +222,7 @@ export async function videoPostersOnDisk(dir: string): Promise<string[]> {
 /** Opens Video from the sidebar and waits for the studio. */
 export async function openVideos(session: Session): Promise<void> {
   const browser = session.app.browser
+  await openSection(browser, 'chat')
   await browser.$('[data-testid="videos-link"]').click()
   await browser.$('[data-testid="video-generation-page"]').waitForDisplayed({ timeout: 30_000 })
 }

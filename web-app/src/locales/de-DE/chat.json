@@ -9,6 +9,11 @@
   "sendMessage": "Nachricht senden",
   "newConversation": "Neue Konversation",
   "clearHistory": "Verlauf löschen",
+  "activity": {
+    "completedActions": "{{count}} Aktionen abgeschlossen",
+    "completedActions_one": "{{count}} Aktion abgeschlossen",
+    "completedActions_other": "{{count}} Aktionen abgeschlossen"
+  },
   "agentMode": {
     "menuItem": "Agentenmodus",
     "agent": "Agent",

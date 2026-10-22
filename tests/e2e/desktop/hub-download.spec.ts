@@ -16,6 +16,7 @@ import { coreSessions, pageShows, send, waitForChat } from '../harness/chat.js'
 import { installFakeBackend, startHubFixture, type HubFixture } from '../harness/fixtures.js'
 import { CAN_RUN_FAKE_BACKEND } from '../harness/platform.js'
 import { endSession, startSession, withArtifacts, type Session } from '../harness/session.js'
+import { openSection } from '../harness/navigation.js'
 
 const MODEL_NAME = 'e2e/hub-fixture-GGUF'
 const QUANT_ID = 'e2e/hub-fixture-Q4_K_M'
@@ -52,7 +53,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('downloading a model from the Hub', () =>
       // No model yet, so the app opens on onboarding; the Hub is the way in here.
       await browser.$('button=Skip').click()
       await waitForChat(session)
-      await browser.$('//*[normalize-space(text())="Model Hub"]').click()
+      await openSection(browser, 'models')
 
       // The landing page shows the pick the fixture published.
       const card = browser.$(`//*[normalize-space(text())="${TITLE}"]`)
@@ -132,7 +133,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('cancelling a Hub download', () => {
     expect(left).toEqual([])
   })
 
-  it('stops the transfer, leaves no model behind, and lets the same model be downloaded again', async () => {
+  it('confirms cancellation, leaves no registered model, and lets the same model be downloaded again', async () => {
     await withArtifacts(session, async () => {
       const browser = session.app.browser
       const modelDir = join(session.profile.dataFolder, 'llamacpp', 'models', ...QUANT_ID.split('/'))
@@ -143,7 +144,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('cancelling a Hub download', () => {
 
       await browser.$('button=Skip').click()
       await waitForChat(session)
-      await browser.$('//*[normalize-space(text())="Model Hub"]').click()
+      await openSection(browser, 'models')
       const card = browser.$(`//*[normalize-space(text())="${TITLE}"]`)
       await card.waitForDisplayed({ timeout: 60_000 })
       await card.click()
@@ -154,16 +155,20 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('cancelling a Hub download', () => {
       // Part of it has arrived; then the user changes their mind.
       await expect.poll(panelStatus, { timeout: 60_000, interval: 100 }).toMatch(/\b[1-9]\d?% · /)
       await browser.$('[role="region"][aria-label="Downloads"] button[aria-label="Cancel download"]').click()
+      // Cancellation now asks what to do with the partial files before stopping.
+      await browser.$('button=Cancel download and keep files').waitForDisplayed()
+      await browser.$('button=Cancel download and keep files').click()
 
       // The panel goes away, the Hub offers the model again, and no model was
       // registered: nothing the app would list, nothing a load could pick up.
       await expect.poll(panelStatus, { timeout: 30_000 }).toBe('')
-      await download.waitForDisplayed({ timeout: 30_000 })
+      // The confirmation replaces the active control; reacquire its new DOM node.
+      await browser.$('//button[normalize-space(.)="Download"]').waitForClickable({ timeout: 30_000 })
       await expect(stat(join(modelDir, 'model.yml'))).rejects.toThrow()
       expect(await pageShows(session, 'Download Complete', 3_000).then(() => true, () => false)).toBe(false)
 
       // Cancelling left nothing in the way of doing it properly.
-      await download.click()
+      await browser.$('//button[normalize-space(.)="Download"]').click()
       await pageShows(session, 'Download Complete', 120_000)
       expect((await stat(join(modelDir, 'model.gguf'))).size).toBe(hub.modelBytes)
       // The model's description is written a moment after the toast.
@@ -207,7 +212,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('pausing a Hub download', () => {
 
       await browser.$('button=Skip').click()
       await waitForChat(session)
-      await browser.$('//*[normalize-space(text())="Model Hub"]').click()
+      await openSection(browser, 'models')
       const card = browser.$(`//*[normalize-space(text())="${TITLE}"]`)
       await card.waitForDisplayed({ timeout: 60_000 })
       await card.click()
@@ -255,15 +260,19 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a Hub download the server refuses', () =
   const modelYml = (): string =>
     join(session.profile.dataFolder, 'llamacpp', 'models', ...REFUSED_QUANT_ID.split('/'), 'model.yml')
 
-  /** Open the fixture's model card and ask for it. Leaves the card open for the next attempt. */
+  /** Open the fixture's model row and ask for it. Leaves the row open for the next attempt. */
   async function askForTheModel(): Promise<void> {
     const browser = session.app.browser
     const card = browser.$(`//*[normalize-space(text())="${REFUSED_TITLE}"]`)
     if (!(await card.isDisplayed().catch(() => false))) {
-      await browser.$('//*[normalize-space(text())="Model Hub"]').click()
+      await openSection(browser, 'models')
       await card.waitForDisplayed({ timeout: 60_000 })
     }
-    await card.click()
+    // A row opens in place, and a click on an open row closes it: open it only while it is closed.
+    const closedRow = browser.$(
+      `//button[@aria-expanded="false"][.//*[normalize-space(text())="${REFUSED_TITLE}"]]`
+    )
+    if (await closedRow.isExisting()) await closedRow.click()
     const download = browser.$('//button[normalize-space(.)="Download"]')
     await download.waitForClickable({ timeout: 30_000 })
     await download.click()
@@ -362,7 +371,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a Hub download that has to retry', () =>
       const dataFolder = session.profile.dataFolder
       await browser.$('button=Skip').click()
       await waitForChat(session)
-      await browser.$('//*[normalize-space(text())="Model Hub"]').click()
+      await openSection(browser, 'models')
       const card = browser.$(`//*[normalize-space(text())="${TITLE}"]`)
       await card.waitForDisplayed({ timeout: 60_000 })
       await card.click()

@@ -49,6 +49,7 @@ import { useMCPServers } from '@/hooks/useMCPServers'
 import { useAppState } from '@/hooks/useAppState'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { awaitMcpActivations } from '@/lib/mcp-activation'
+import { useSecureEnvironments } from '@/hooks/useSecureEnvironments'
 
 const EXA = {
   command: '',
@@ -93,6 +94,37 @@ describe('WebSearchToggle', () => {
       defaultDisabledTools: [],
       mutedServers: {},
       defaultMutedServers: [],
+    })
+  })
+
+  describe('in a secure project that blocks web search', () => {
+    it.each([
+      {
+        why: 'does not allow it',
+        policy: { network: true, allowedMcpServers: [] },
+        reason: 'common:secureEnvironmentBlock.notAllowed',
+      },
+      {
+        why: 'has the internet off',
+        policy: { network: false, allowedMcpServers: ['exa'] },
+        reason: 'common:secureEnvironmentBlock.webSearchOffline',
+      },
+    ])('shows it off and locked, and says why, when the project $why', async ({ policy, reason }) => {
+      useMCPServers.setState({ mcpServers: { exa: { ...EXA, active: true } } })
+      useSecureEnvironments.setState({
+        environments: { p1: { folders: [], ...policy } },
+      })
+      const user = userEvent.setup()
+      render(<WebSearchToggle initialMessage projectId="p1" />)
+      const button = screen.getByRole('button')
+
+      expect(button).toBeDisabled()
+      expect(button).toHaveAttribute('aria-pressed', 'false')
+      await user.hover(button.parentElement as HTMLElement)
+      expect(await screen.findByRole('tooltip')).toHaveTextContent(reason)
+      await user.click(button)
+      expect(activateMCPServer).not.toHaveBeenCalled()
+      expect(deactivateMCPServer).not.toHaveBeenCalled()
     })
   })
 

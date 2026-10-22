@@ -2,11 +2,11 @@
 //! (`run_command` / `run_script`).
 //!
 //! The frontend asks for approval (the thread's approval mode) before it calls
-//! `chat_exec_run`; this side runs the call in the chat's own folder. On
-//! Windows the run goes through Microsoft MXC (`mxc`) whenever this machine
-//! supports it, whatever the approval mode; elsewhere it runs on the host.
+//! `chat_exec_run`; this side runs the call in the chat's own folder, on the
+//! host. Only a secure environment project's call goes through Microsoft MXC
+//! (`mxc`), confined to the project's folders; without MXC it does not run.
 //! ADRs: 2026-10-15-run-commands-and-scripts-from-chat,
-//! 2026-10-15-sandbox-chat-commands-with-mxc-on-windows.
+//! 2026-10-17-confine-secure-projects-commands-to-their-folders-with-mxc.
 
 pub mod commands;
 mod mxc;
@@ -43,8 +43,6 @@ pub(crate) struct Prepared {
     pub wxc_exec: Option<PathBuf>,
     /// The PATH commands inherit and interpreters are found on.
     pub search_path: Option<OsString>,
-    /// The user's Desktop, Documents and Downloads (writable under MXC too).
-    pub user_folders: Vec<PathBuf>,
 }
 
 #[derive(Default)]

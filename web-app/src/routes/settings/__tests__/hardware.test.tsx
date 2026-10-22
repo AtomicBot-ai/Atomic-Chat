@@ -11,10 +11,6 @@ const hardwareService = {
 }
 
 // Mock all the dependencies with minimal implementation
-vi.mock('@/containers/SettingsMenu', () => ({
-  default: () => <div data-testid="settings-menu">Settings Menu</div>,
-}))
-
 vi.mock('@/containers/HeaderPage', () => ({
   default: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="header-page">{children}</div>
@@ -209,7 +205,6 @@ describe('Hardware Settings', () => {
       ).not.toBeInTheDocument()
     })
     expect(screen.getByTestId('header-page')).toBeInTheDocument()
-    expect(screen.getByTestId('settings-menu')).toBeInTheDocument()
   })
 
   it('displays OS information', async () => {
@@ -218,7 +213,33 @@ describe('Hardware Settings', () => {
 
     await waitFor(() => {
       expect(screen.getByText('settings:hardware.os')).toBeInTheDocument()
-      expect(screen.getByText('windows')).toBeInTheDocument()
+      expect(screen.getByText('Windows')).toBeInTheDocument()
+    })
+  })
+
+  it.each([
+    ['macos', 'macOS'],
+    ['linux', 'Linux'],
+    ['ios', 'iOS'],
+    ['android', 'Android'],
+  ])('names the %s platform %s', async (osType, name) => {
+    hardwareStore.state.hardwareData.os_type = osType
+    const Component = Route.component as React.ComponentType
+    render(<Component />)
+
+    await waitFor(() => {
+      expect(screen.getByText(name)).toBeInTheDocument()
+    })
+    expect(screen.queryByText(osType)).not.toBeInTheDocument()
+  })
+
+  it('shows an unknown platform id as the core reported it', async () => {
+    hardwareStore.state.hardwareData.os_type = 'freebsd'
+    const Component = Route.component as React.ComponentType
+    render(<Component />)
+
+    await waitFor(() => {
+      expect(screen.getByText('freebsd')).toBeInTheDocument()
     })
   })
 

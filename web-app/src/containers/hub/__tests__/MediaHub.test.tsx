@@ -27,14 +27,19 @@ vi.mock('@/containers/HeaderPage', () => ({
   ),
 }))
 
+// Import has tests of its own and needs the service hub.
+vi.mock('@/containers/hub/ImportLocalFile', () => ({
+  ImportLocalFile: () => null,
+}))
+
 // The panel has tests of its own; here it only has to say which family the
 // Hub handed it.
 vi.mock('@/containers/hub/MediaFamilyDetailPanel', () => ({
   MediaFamilyDetailPanel: ({
     family,
   }: {
-    family: DiffusionCatalogFamily | null
-  }) => <aside data-testid="media-panel">{family?.id ?? 'none'}</aside>,
+    family: DiffusionCatalogFamily
+  }) => <aside data-testid="media-panel">{family.id}</aside>,
 }))
 
 import { MediaHub, type MediaHubProps } from '../MediaHub'
@@ -124,11 +129,20 @@ describe('MediaHub', () => {
     expect(screen.queryByText('wan name')).not.toBeInTheDocument()
   })
 
-  it('narrows the list to the search and keeps the open family in the panel', () => {
+  it('opens the family the URL names below its row', () => {
+    renderHub()
+
+    const open = screen.getByRole('button', { expanded: true })
+    expect(within(open).getByText(/ name$/)).toHaveTextContent('z-image name')
+    expect(open.nextElementSibling).toBe(screen.getByTestId('media-panel'))
+    expect(screen.getByTestId('media-panel')).toHaveTextContent('z-image')
+  })
+
+  it('narrows the list to the search, open family included', () => {
     renderHub({ query: 'flux' })
 
     expect(rowNames()).toEqual(['flux.1-schnell name'])
-    expect(screen.getByTestId('media-panel')).toHaveTextContent('z-image')
+    expect(screen.queryByTestId('media-panel')).not.toBeInTheDocument()
   })
 
   it('reports each keystroke of the search box', async () => {
@@ -142,28 +156,26 @@ describe('MediaHub', () => {
     expect(onQueryChange.mock.calls).toEqual([['q'], ['w']])
   })
 
-  it('selects a family when its row is clicked', async () => {
+  it('opens a family when its row is clicked, and closes the open one', async () => {
     const { onSelectFamily } = renderHub()
 
     await userEvent.click(
       screen.getByRole('button', { name: /flux.1-schnell/ })
     )
-
     expect(onSelectFamily.mock.calls.at(-1)).toEqual(['flux.1-schnell'])
-    expect(
-      screen
-        .getByRole('button', { name: /z-image/ })
-        .getAttribute('aria-current')
-    ).toBe('true')
+
+    await userEvent.click(screen.getByRole('button', { name: /z-image/ }))
+    expect(onSelectFamily.mock.calls.at(-1)).toEqual([null])
   })
 
-  it('opens on the first family when the URL names none of this modality', () => {
+  it('opens nothing when the URL names no family of this modality', () => {
     const { onSelectFamily } = renderHub({ selectedFamilyId: 'wan' })
 
-    expect(onSelectFamily.mock.calls).toEqual([
-      ['qwen-image', { replace: true }],
-    ])
-    expect(screen.getByTestId('media-panel')).toHaveTextContent('none')
+    expect(onSelectFamily.mock.calls).toEqual([])
+    expect(screen.queryByTestId('media-panel')).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { expanded: true })
+    ).not.toBeInTheDocument()
   })
 
   it('searches video models in the Video category', () => {

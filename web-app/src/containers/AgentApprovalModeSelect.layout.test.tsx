@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import { AgentApprovalModeSelect } from './AgentApprovalModeSelect'
 import type { AgentApprovalMode } from '@/hooks/useAgentMode'
+import { RobotHeadIcon } from '@/components/icons/robot-head'
 import chat from '@/locales/en/chat.json'
 import {
   expectNoHorizontalOverflow,
@@ -67,6 +68,17 @@ async function openMenu({
           skipConfirmBody={copy.skipConfirmBody}
           skipConfirmCancel={copy.skipConfirmCancel}
           skipConfirmAccept={copy.skipConfirmAccept}
+          toggles={[
+            {
+              id: 'agent-mode',
+              label: chat.agentMode.menuItem,
+              icon: (
+                <RobotHeadIcon size={16} className="text-muted-foreground" />
+              ),
+              checked: true,
+              onCheckedChange: () => {},
+            },
+          ]}
         />
       </div>
     </div>
@@ -157,6 +169,30 @@ describe('Approval menu geometry (Chromium)', () => {
       }
       expect(iconLefts[0]).toBe(iconLefts[1])
       expect(checkLefts[0]).toBe(checkLefts[1])
+
+      // Agent mode under the modes: the same row width and icon column, its
+      // switch ending where the checkmarks end, its title on one line.
+      const toggle = within(menu).getByRole('menuitemcheckbox')
+      expectSameWidth([...rows, toggle])
+      const toggleTitle = within(toggle).getByText(chat.agentMode.menuItem)
+      expectOneLine(toggleTitle)
+      const toggleIcon = toggle.querySelector('svg')!
+      const toggleSwitch = toggle.querySelector<HTMLElement>(
+        '[data-state="checked"]'
+      )!
+      expect(toggleIcon.getBoundingClientRect().left).toBe(iconLefts[0])
+      expect(toggleIcon.getBoundingClientRect().width).toBe(16)
+      expect(toggleSwitch.getBoundingClientRect().right).toBeCloseTo(
+        rows[0].querySelectorAll('svg')[1].getBoundingClientRect().right,
+        0
+      )
+      expectVerticallyCentered(toggleIcon, toggleTitle.parentElement!)
+      expectVerticallyCentered(toggleSwitch, toggleTitle.parentElement!)
+      // The thumb sits inside its track.
+      const thumb = toggleSwitch.firstElementChild!.getBoundingClientRect()
+      const track = toggleSwitch.getBoundingClientRect()
+      expect(thumb.left).toBeGreaterThanOrEqual(track.left)
+      expect(thumb.right).toBeLessThanOrEqual(track.right)
     }
   )
 })

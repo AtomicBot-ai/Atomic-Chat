@@ -1,11 +1,11 @@
-//! Microsoft MXC (`wxc-exec.exe`, contract 1.0.0) around chat commands on
-//! Windows.
+//! Microsoft MXC (`wxc-exec.exe`, contract 1.0.0) around a secure environment
+//! project's chat commands on Windows. Other chats' commands run on the host.
 //!
 //! Only the built-in process isolation (the "base-container" tier) is used:
 //! it needs no administrator and changes no folder permissions. The AppContainer
-//! fallback that rewrites ACLs is refused (`allowDaclMutation: false`), so a
-//! machine without a recent enough Windows 11 runs chat commands on the host —
-//! with an approval that says so — instead of being prepared as admin.
+//! fallback that rewrites ACLs is refused (`allowDaclMutation: false`), so on a
+//! machine without a recent enough Windows 11 secure projects cannot run
+//! commands at all, instead of the machine being prepared as admin.
 //!
 //! The policy builder, quoting and output parsing are plain functions so they
 //! are tested on every OS; only `probe` launches anything.
@@ -32,30 +32,31 @@ pub(crate) const HOST_TIMEOUT_GRACE_SECS: u64 = 15;
 pub(crate) struct PolicyInput<'a> {
     pub container_id: &'a str,
     pub command_line: &'a str,
+    /// The chat's own folder: always writable, home of `.tmp` and packages.
     pub workdir: &'a Path,
-    /// The user's Desktop, Documents and Downloads: writable like the chat
-    /// folder, so "put it on my desktop" works on every OS.
-    pub user_folders: &'a [PathBuf],
+    /// Where the command starts: the chat folder, or a secure project's first
+    /// editable folder, so a relative path lands where the user looks. Must be
+    /// the chat folder or one of `writable_folders`.
+    pub cwd: &'a Path,
+    /// Writable beside the chat folder: the secure environment project's
+    /// editable folders.
+    pub writable_folders: &'a [PathBuf],
     pub env: &'a [(String, String)],
     pub readonly_paths: &'a [PathBuf],
     pub timeout_ms: u64,
+    /// Outgoing network, as the secure environment project sets it.
+    pub network: bool,
 }
 
-/// The MXC request for one call: the chat folder and the user's Desktop,
-/// Documents and Downloads are the only writable places, the runtime folders
-/// are read-only, everything else (AppData, `.ssh`, the rest of the profile,
-/// the system) stays out of reach. The network is open (the user approved the
-/// call; `pip install` and `curl` are what commands are for), and nothing can
-/// reach the clipboard or other windows.
+/// The MXC request for one call: the chat folder and the project's editable
+/// folders are the only writable places, the runtime folders and the
+/// project's read-only folders are read-only, everything else (AppData,
+/// `.ssh`, the rest of the profile, the system) stays out of reach. The
+/// network is as the project sets it, and nothing can reach the clipboard or
+/// other windows.
 pub(crate) fn build_policy(input: &PolicyInput<'_>) -> Value {
-    let writable = writable_roots(input.workdir, input.user_folders);
+    let writable = writable_roots(input.workdir, input.writable_folders);
     let readonly = readonly_roots(input.readonly_paths, &writable);
-    let enumerate = ancestor_directories(
-        writable
-            .iter()
-            .copied()
-            .chain(readonly.iter().map(Path::new)),
-    );
     json!({
         "version": CONTRACT_VERSION,
         "containerId": input.container_id,
@@ -63,7 +64,7 @@ pub(crate) fn build_policy(input: &PolicyInput<'_>) -> Value {
         "lifecycle": { "destroyOnExit": true, "preservePolicy": false },
         "process": {
             "commandLine": input.command_line,
-            "cwd": path_text(input.workdir),
+            "cwd": path_text(input.cwd),
             "env": input
                 .env
                 .iter()
@@ -79,7 +80,7 @@ pub(crate) fn build_policy(input: &PolicyInput<'_>) -> Value {
         },
         "fallback": { "allowDaclMutation": false },
         "network": {
-            "egress": { "default": "allow" },
+            "egress": { "default": if input.network { "allow" } else { "deny" } },
             "ingress": { "default": "deny" },
         },
         // Console programs still load user32; a disabled UI breaks them. The
@@ -87,37 +88,23 @@ pub(crate) fn build_policy(input: &PolicyInput<'_>) -> Value {
         "ui": { "disable": false, "clipboard": "none", "injection": false },
         "processContainer": {
             "leastPrivilege": false,
-            "capabilities": ["internetClient"],
-            "filesystem": { "enumeratePaths": enumerate },
+            "capabilities": if input.network { vec!["internetClient"] } else { Vec::new() },
+            // No enumeration grants. MXC applies one to the whole subtree, and
+            // `dir` needs every ancestor up to the volume root, so the grant
+            // that made `dir` work listed every folder on the drive (names,
+            // sizes, dates) — Documents included, for a secure project. Without
+            // it `dir`/`cd` fail even on granted folders; `for`, PowerShell
+            // and Python list them (the tool description says so).
+            "filesystem": { "enumeratePaths": [] },
         },
     })
 }
 
-/// `dir` and runtime path resolution query ancestors (including the volume
-/// root) even when the target folder itself is granted. Enumeration permits
-/// those queries without exposing file contents. Never turn these ancestors
-/// into read-only grants: that can expose unrelated files on the same volume.
-fn ancestor_directories<'a>(paths: impl Iterator<Item = &'a Path>) -> Vec<String> {
-    let mut ancestors = Vec::new();
-    for path in paths {
-        for parent in path.ancestors().skip(1).filter(|path| path.is_absolute()) {
-            let parent = path_text(parent);
-            if !ancestors
-                .iter()
-                .any(|existing: &String| existing.eq_ignore_ascii_case(&parent))
-            {
-                ancestors.push(parent);
-            }
-        }
-    }
-    ancestors
-}
-
-/// The chat folder first, then each user folder that is not already inside
-/// it or another; never a drive root.
-fn writable_roots<'a>(workdir: &'a Path, user_folders: &'a [PathBuf]) -> Vec<&'a Path> {
+/// The chat folder first, then each writable folder that is not already
+/// inside it or another; never a drive root.
+fn writable_roots<'a>(workdir: &'a Path, folders: &'a [PathBuf]) -> Vec<&'a Path> {
     let mut roots = vec![workdir];
-    for folder in user_folders {
+    for folder in folders {
         let folder = folder.as_path();
         if folder.parent().is_none() || roots.iter().any(|root| folder.starts_with(root)) {
             continue;
@@ -278,12 +265,6 @@ pub(crate) fn check_probe_output(stdout: &str) -> Result<(), String> {
         .and_then(Value::as_str)
         .unwrap_or_default();
     if normalized(tier) == "basecontainer" {
-        if value["probes"]["baseContainerSupportsEnumeratePaths"].as_bool() != Some(true) {
-            return Err(
-                "This Windows does not support the sandbox's directory-enumeration permissions. Update Windows to use sandboxed chat commands."
-                    .into(),
-            );
-        }
         return Ok(());
     }
     let warning = value
@@ -326,10 +307,14 @@ pub(crate) async fn probe(wxc_exec: &Path, scratch: &Path) -> Result<(), String>
     let result = async {
         let system_root = system_root();
         let cmd = system_root.join("System32").join("cmd.exe");
+        // Lists with `for` (`dir` needs ancestor enumeration, which the
+        // policy no longer grants), then checks that neither the canary's
+        // contents nor its folder's listing is reachable.
         let script = format!(
-            "dir \"{}\" >nul && echo inside>inside.txt && (type \"{}\" >nul 2>&1 && echo ATOMIC-LEAK || echo ATOMIC-DENIED)",
+            "echo inside>inside.txt && (for %f in (\"{}\\*\") do @echo ATOMIC-LISTED-%~nxf) && (type \"{}\" >nul 2>&1 && echo ATOMIC-LEAK || echo ATOMIC-DENIED) && (for %f in (\"{}\\*\") do @echo ATOMIC-NEIGHBOR-%~nxf)",
             workdir.display(),
-            canary.display()
+            canary.display(),
+            run_root.display()
         );
         let command_line = format!("{} {}", quote_windows_arg(&cmd.display().to_string()), cmd_arguments(&script));
         let env = workload_base_env(&workdir, &[]);
@@ -338,10 +323,12 @@ pub(crate) async fn probe(wxc_exec: &Path, scratch: &Path) -> Result<(), String>
             container_id: &container_id,
             command_line: &command_line,
             workdir: &workdir,
-            user_folders: &[],
+            cwd: &workdir,
+            writable_folders: &[],
             env: &env,
             readonly_paths: &[system_root],
             timeout_ms: 20_000,
+            network: true,
         });
         let launch = executor_launch(wxc_exec, encode_policy(&policy)?);
         let output = super::runner::run(&launch, Duration::from_secs(35), &CancellationToken::new()).await?;
@@ -349,7 +336,12 @@ pub(crate) async fn probe(wxc_exec: &Path, scratch: &Path) -> Result<(), String>
             return Err(format!("The Windows sandbox refused a test run: {} ({})", error.message, error.code));
         }
         let wrote_inside = workdir.join("inside.txt").is_file();
-        if output.exit_code != Some(0) || !wrote_inside || !output.stdout.contains("ATOMIC-DENIED") {
+        if output.exit_code != Some(0)
+            || !wrote_inside
+            || !output.stdout.contains("ATOMIC-LISTED-inside.txt")
+            || !output.stdout.contains("ATOMIC-DENIED")
+            || output.stdout.contains("ATOMIC-NEIGHBOR-")
+        {
             return Err("The Windows sandbox test run did not behave as isolated".into());
         }
         Ok(())
@@ -441,10 +433,12 @@ mod tests {
             container_id: "atomic-1",
             command_line: r#""C:\Windows\System32\cmd.exe" /d /s /c "dir""#,
             workdir: Path::new(r"C:\data\chat\t1"),
-            user_folders: &[],
+            cwd: Path::new(r"C:\data\chat\t1"),
+            writable_folders: &[],
             env: &[("SYSTEMROOT".into(), r"C:\Windows".into())],
             readonly_paths: &[PathBuf::from(r"C:\Windows")],
             timeout_ms: 120_000,
+            network: true,
         })
     }
 
@@ -466,6 +460,26 @@ mod tests {
     }
 
     #[test]
+    fn starts_the_command_in_its_cwd_and_keeps_the_chat_folder_writable() {
+        let policy = build_policy(&PolicyInput {
+            container_id: "atomic-1",
+            command_line: "cmd",
+            workdir: Path::new(r"C:\data\chat\t1"),
+            cwd: Path::new(r"C:\Users\me\Desktop\ClientC"),
+            writable_folders: &[PathBuf::from(r"C:\Users\me\Desktop\ClientC")],
+            env: &[],
+            readonly_paths: &[],
+            timeout_ms: 1,
+            network: true,
+        });
+        assert_eq!(policy["process"]["cwd"], r"C:\Users\me\Desktop\ClientC");
+        assert_eq!(
+            policy["filesystem"]["readwritePaths"],
+            json!([r"C:\data\chat\t1", r"C:\Users\me\Desktop\ClientC"])
+        );
+    }
+
+    #[test]
     fn never_lets_mxc_rewrite_folder_permissions() {
         assert_eq!(policy()["fallback"], json!({ "allowDaclMutation": false }));
     }
@@ -479,14 +493,39 @@ mod tests {
     }
 
     #[test]
-    fn lets_the_user_folders_be_written_beside_the_chat_folder() {
+    fn a_closed_network_denies_egress_and_drops_the_internet_capability() {
+        assert_eq!(policy()["network"]["egress"]["default"], "allow");
+        assert_eq!(
+            policy()["processContainer"]["capabilities"],
+            json!(["internetClient"])
+        );
+
+        let closed = build_policy(&PolicyInput {
+            container_id: "atomic-1",
+            command_line: "cmd",
+            workdir: Path::new(r"C:\data\chat\t1"),
+            cwd: Path::new(r"C:\data\chat\t1"),
+            writable_folders: &[],
+            env: &[],
+            readonly_paths: &[],
+            timeout_ms: 1,
+            network: false,
+        });
+        assert_eq!(closed["network"]["egress"]["default"], "deny");
+        assert_eq!(closed["network"]["ingress"]["default"], "deny");
+        assert_eq!(closed["processContainer"]["capabilities"], json!([]));
+    }
+
+    #[test]
+    fn lets_the_projects_folders_be_written_beside_the_chat_folder() {
         let base = std::env::temp_dir();
         let chat = base.join("chat");
         let policy = build_policy(&PolicyInput {
             container_id: "atomic-1",
             command_line: "cmd",
             workdir: &chat,
-            user_folders: &[
+            cwd: &chat,
+            writable_folders: &[
                 base.join("Desktop"),
                 base.join("Documents"),
                 chat.join("inner"),
@@ -494,6 +533,7 @@ mod tests {
             env: &[],
             readonly_paths: &[base.join("Documents").join("tools"), base.join("py")],
             timeout_ms: 1,
+            network: true,
         });
 
         assert_eq!(
@@ -570,10 +610,12 @@ mod tests {
             container_id: "atomic-1",
             command_line: &long,
             workdir: Path::new(r"C:\w"),
-            user_folders: &[],
+            cwd: Path::new(r"C:\w"),
+            writable_folders: &[],
             env: &[],
             readonly_paths: &[],
             timeout_ms: 1,
+            network: true,
         });
         assert!(encode_policy(&policy).unwrap_err().contains("run_script"));
     }
@@ -639,56 +681,43 @@ mod tests {
     }
 
     #[test]
-    fn requires_enumeration_support_before_offering_the_sandbox() {
+    fn the_base_container_is_enough_without_enumeration_support() {
         for probe in [
             r#"{"tier":"base-container"}"#,
             r#"{"tier":"base-container","probes":{"baseContainerSupportsEnumeratePaths":false}}"#,
         ] {
-            assert!(check_probe_output(probe)
-                .unwrap_err()
-                .contains("directory-enumeration"));
+            assert!(check_probe_output(probe).is_ok(), "{probe}");
         }
     }
 
     #[test]
-    fn grants_ancestors_only_enumeration_not_file_access() {
+    fn grants_no_enumeration_so_nothing_outside_the_grants_can_be_listed() {
         let base = std::env::temp_dir();
         let chat = base.join("chat");
-        let downloads = base.join("profile").join("Downloads");
+        let project = base.join("profile").join("Downloads").join("Project");
         let runtime = base.join("tools").join("python");
         let policy = build_policy(&PolicyInput {
             container_id: "atomic-1",
             command_line: "cmd",
             workdir: &chat,
-            user_folders: &[downloads.clone()],
+            cwd: &chat,
+            writable_folders: &[project.clone()],
             env: &[],
             readonly_paths: &[runtime.clone()],
             timeout_ms: 1,
+            network: true,
         });
         assert_eq!(
             policy["filesystem"]["readwritePaths"],
-            json!([chat, downloads])
+            json!([chat, project])
         );
         assert_eq!(policy["filesystem"]["readonlyPaths"], json!([runtime]));
-        let enumerate = policy["processContainer"]["filesystem"]["enumeratePaths"]
-            .as_array()
-            .unwrap();
-        for path in [&chat, &downloads, &runtime] {
-            for parent in path.ancestors().skip(1) {
-                assert!(
-                    enumerate.contains(&json!(parent)),
-                    "missing {}",
-                    parent.display()
-                );
-            }
-        }
-        let mut unique = enumerate
-            .iter()
-            .map(|value| value.as_str().unwrap())
-            .collect::<Vec<_>>();
-        unique.sort_unstable();
-        unique.dedup();
-        assert_eq!(unique.len(), enumerate.len());
+        // An ancestor's enumeration grant covers its whole subtree in MXC 1.0:
+        // granting the profile or the drive would list every folder in it.
+        assert_eq!(
+            policy["processContainer"]["filesystem"]["enumeratePaths"],
+            json!([])
+        );
     }
 
     #[test]

@@ -1,0 +1,199 @@
+/*
+ * The Models Hub's toolbar and local models table (approved interface
+ * prototype). The table answers to its own width, not the window's: the
+ * sidebar can be open or resized, so its columns give way through container
+ * queries. Rows are grids rather than table layout, so a hidden cell or an
+ * expanded row spanning every column never reserves a phantom column.
+ */
+
+.hub-search-field {
+  height: var(--control-height);
+}
+.hub-search-field input {
+  height: 100%;
+  font-size: 0.875rem;
+}
+
+/* Search takes the spare width; the other controls keep their own. */
+.hub-search-toolbar {
+  flex-wrap: nowrap;
+  padding-block: 8px;
+}
+.hub-search-toolbar .hub-search-field {
+  flex: 1 1 140px;
+  min-width: 120px;
+}
+.hub-model-type {
+  flex: 0 0 148px;
+  min-width: 0;
+}
+/* The page header holding the toolbar: as tall as one row of controls, taller
+   when a narrow window wraps them. */
+.hub-toolbar-header {
+  height: auto;
+  min-height: 60px;
+  container: hub-toolbar / inline-size;
+}
+@container hub-toolbar (max-width: 620px) {
+  .hub-search-toolbar {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  .hub-model-type {
+    flex-basis: 116px;
+  }
+}
+
+.local-models-responsive {
+  container: local-models / inline-size;
+  /* The table's own size: its column minimums and the steps below are in em of it. */
+  font-size: var(--text-xs);
+}
+.local-model-table-frame {
+  width: 100%;
+  min-width: 0;
+}
+.local-model-table {
+  display: block;
+  width: 100%;
+}
+.local-model-table :is(thead, tbody) {
+  display: block;
+  width: 100%;
+}
+.local-model-table thead tr,
+.local-model-table .local-model-summary {
+  display: grid;
+  /* Each data column keeps room for its heading on one line (in em, so it grows
+     with the font size); past that they share the width with the name. */
+  grid-template-columns:
+    minmax(0, 2.5fr) minmax(8.5em, 1fr) minmax(7em, 1fr) minmax(9em, 1fr)
+    minmax(10em, 1fr) minmax(7.5em, 1fr) minmax(7.5em, 1fr);
+  width: 100%;
+  align-items: center;
+}
+.local-model-table :is(th, td) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+/* A header wraps between its words; only a word wider than its column breaks. */
+.local-model-table th {
+  overflow-wrap: break-word;
+}
+.local-model-table th button {
+  white-space: normal;
+  min-width: 0;
+}
+.local-model-table th svg,
+.local-model-toggle > svg {
+  flex-shrink: 0;
+}
+.local-model-table tbody > tr:not(.local-model-summary),
+.local-model-table :is(td, th)[colspan] {
+  display: block;
+  width: 100%;
+}
+.local-model-table .model-inline-meta,
+.local-model-table .model-inline-engines {
+  display: none;
+}
+.local-model-table :is(td, th)[colspan] > div {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.local-model-summary > td:first-child {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+/* A Hugging Face row is warmer than a curated one, as in the prototype. */
+.local-model-summary[data-source='huggingface'] {
+  background: color-mix(in srgb, #e8be61 4%, transparent);
+}
+.local-model-summary[data-source='huggingface']:hover {
+  background: color-mix(in srgb, #e8be61 8%, transparent);
+}
+.model-like {
+  flex-shrink: 0;
+}
+
+/*
+ * Columns: 1 model, 2 parameters, 3 format, 4 capabilities, 5 download size,
+ * 6 this device, 7 engines. As the column narrows they go least useful first;
+ * the parameters and engines move under the name rather than disappear, and
+ * the download size and this device always stay. The steps are in em, so a
+ * larger font size gives way sooner.
+ */
+@container local-models (max-width: 91.5em) {
+  .local-model-table thead tr,
+  .local-model-table .local-model-summary {
+    grid-template-columns:
+      minmax(0, 2.5fr) minmax(8.5em, 1fr) minmax(7em, 1fr)
+      minmax(10em, 1fr) minmax(7.5em, 1fr) minmax(7.5em, 1fr);
+  }
+  .local-model-table th:nth-child(4),
+  .local-model-summary td:nth-child(4) {
+    display: none;
+  }
+}
+@container local-models (max-width: 75em) {
+  .local-model-table thead tr,
+  .local-model-table .local-model-summary {
+    grid-template-columns:
+      minmax(0, 2.4fr) minmax(8.5em, 1fr) minmax(10em, 1fr)
+      minmax(7.5em, 1fr) minmax(7.5em, 1fr);
+  }
+  .local-model-table th:nth-child(3),
+  .local-model-summary td:nth-child(3) {
+    display: none;
+  }
+}
+@container local-models (max-width: 58.5em) {
+  .local-model-table thead tr,
+  .local-model-table .local-model-summary {
+    grid-template-columns:
+      minmax(0, 2.3fr) minmax(8.5em, 1fr) minmax(10em, 1fr)
+      minmax(7.5em, 1fr);
+  }
+  .local-model-table th:nth-child(7),
+  .local-model-summary td:nth-child(7) {
+    display: none;
+  }
+  .local-model-table .model-inline-engines {
+    display: block;
+  }
+}
+@container local-models (max-width: 43.5em) {
+  .local-model-table thead tr,
+  .local-model-table .local-model-summary {
+    grid-template-columns: minmax(0, 2fr) minmax(10em, 1fr) minmax(7.5em, 1fr);
+  }
+  .local-model-table th:nth-child(2),
+  .local-model-summary td:nth-child(2) {
+    display: none;
+  }
+  .local-model-table .model-inline-meta {
+    display: block;
+  }
+  .local-model-table :is(th, td) {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+  .local-model-table .model-row-logo {
+    display: none;
+  }
+  .local-model-toggle {
+    gap: 5px;
+  }
+}
+
+.model-expanded-facts {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@container local-models (min-width: 700px) {
+  .model-expanded-facts {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}

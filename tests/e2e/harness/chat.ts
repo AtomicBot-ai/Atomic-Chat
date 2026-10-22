@@ -200,7 +200,9 @@ export async function chooseFromMenu(session: Session, trigger: string, item: st
   const browser = session.app.browser
   const button = browser.$(trigger)
   await button.waitForExist({ timeout: 15_000 })
-  const entry = browser.$(`//*[@role="menuitem"][starts-with(normalize-space(.), "${item}")]`)
+  // A switch in a menu (the access menu's "Run commands", "Agent mode") is a
+  // menuitemcheckbox; picking it closes the menu like any other item.
+  const entry = browser.$(`//*[@role="menuitem" or @role="menuitemcheckbox"][starts-with(normalize-space(.), "${item}")]`)
   // Opened again only while it is shut: focus can be taken from the trigger
   // between the two steps (a finishing reply returns it to the composer), and
   // Enter then goes elsewhere. A second Enter on an open menu would pick from it.

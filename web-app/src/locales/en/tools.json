@@ -12,10 +12,13 @@
       "commandTitle": "Run this command?",
       "scriptTitle": "Run this {{language}} script?",
       "description": "The assistant wants to run it on your computer. Permissions granted apply only to this conversation.",
-      "sandboxed": "Runs in the Windows sandbox: it can change only this chat's folder and your Desktop, Documents and Downloads, and cannot read your other files.",
-      "unsandboxedWindows": "Runs on your computer without the Windows sandbox ({{reason}}), with your permissions. Review it before you allow it.",
       "unsandboxed": "Runs on your computer with your permissions, in this chat's folder. Review it before you allow it.",
-      "timeout": "Stops after {{seconds}} s."
+      "timeout": "Stops after {{seconds}} s.",
+      "secure": "Runs in the Windows sandbox of this secure project: it can reach only this chat's folder and the project's folders ({{folders}}); everything else on your computer is blocked.",
+      "secureNoFolders": "Runs in the Windows sandbox of this secure project: it can reach only this chat's folder; everything else on your computer is blocked.",
+      "secureFolderEditable": "{{path}} — can change",
+      "secureFolderReadOnly": "{{path}} — read only",
+      "secureOffline": "No internet access."
     }
   }
 }

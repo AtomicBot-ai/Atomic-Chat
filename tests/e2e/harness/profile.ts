@@ -111,6 +111,10 @@ export async function createProfile(options: ProfileOptions): Promise<Profile> {
       state: { enableOnStartup: false, ...options.apiServer, serverPort: options.apiPort },
       version: 3,
     }),
+    // Until the server is set up once, the sidebar's Start opens Server →
+    // Overview's setup guide instead of starting it. Scenarios start it
+    // directly; the guide's own scenario seeds a first visit.
+    'atomic-server-setup': JSON.stringify({ state: { setupDone: true }, version: 1 }),
     ...options.webviewSeed,
   }
   await writeFile(join(root, 'webview-seed.json'), JSON.stringify(seed))

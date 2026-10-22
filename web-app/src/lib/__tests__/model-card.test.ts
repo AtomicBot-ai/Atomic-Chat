@@ -4,8 +4,11 @@ import {
   deriveCapabilities,
   estimateFit,
   findPinnedQuant,
+  formatTimeAgo,
+  intlLocale,
   parseFileSizeToBytes,
   pickDownloadQuant,
+  pickListedQuant,
   pickMedianQuant,
   quantLabel,
 } from '../model-card'
@@ -165,6 +168,78 @@ describe('pickDownloadQuant', () => {
   })
 })
 
+describe('pickListedQuant', () => {
+  // bartowski/SmolLM2-135M-Instruct-GGUF as Hugging Face lists it: 23 quants whose
+  // median is Q3_K_L (93.0 MB), while the house default IQ4_XS is 86.7 MB.
+  const smollm = repo(
+    (
+      [
+        ['IQ3_M', '86.0 MB'],
+        ['IQ3_XS', '84.1 MB'],
+        ['IQ4_XS', '86.7 MB'],
+        ['Q2_K', '84.1 MB'],
+        ['Q2_K_L', '84.1 MB'],
+        ['Q3_K_L', '93.0 MB'],
+        ['Q3_K_M', '89.2 MB'],
+        ['Q3_K_S', '84.1 MB'],
+        ['Q3_K_XL', '93.0 MB'],
+        ['Q4_0', '87.6 MB'],
+        ['Q4_0_4_4', '87.5 MB'],
+        ['Q4_0_4_8', '87.5 MB'],
+        ['Q4_0_8_8', '87.5 MB'],
+        ['Q4_K_L', '100.6 MB'],
+        ['Q4_K_M', '100.6 MB'],
+        ['Q4_K_S', '97.3 MB'],
+        ['Q5_K_L', '106.9 MB'],
+        ['Q5_K_M', '106.9 MB'],
+        ['Q5_K_S', '104.9 MB'],
+        ['Q6_K', '132.0 MB'],
+        ['Q6_K_L', '132.0 MB'],
+        ['Q8_0', '138.1 MB'],
+        ['f16', '258.3 MB'],
+      ] as const
+    ).map(([quant, size]) => ({
+      model_id: `bartowski/SmolLM2-135M-Instruct-${quant}`,
+      path: `${quant}.gguf`,
+      file_size: size,
+    }))
+  )
+
+  it('quotes the house default the download panel opens on, not the median', () => {
+    expect(pickMedianQuant(smollm.quants)?.file_size).toBe('93.0 MB')
+    expect(pickListedQuant(smollm)?.file_size).toBe('86.7 MB')
+    expect(pickDownloadQuant(smollm, 16 * GB)).toBe(pickListedQuant(smollm))
+
+    const qwen = repo(
+      (
+        [
+          ['Q4_K_M', '5.24 GB'],
+          ['Q5_K_M', '6.02 GB'],
+          ['Q6_K', '6.85 GB'],
+          ['Q8_0', '8.87 GB'],
+          ['UD-Q4_K_XL', '5.95 GB'],
+        ] as const
+      ).map(([quant, size]) => ({
+        model_id: `AtomicChat/qwen35-9b-${quant}`,
+        path: `${quant}.gguf`,
+        file_size: size,
+      }))
+    )
+    expect(pickListedQuant(qwen)?.model_id).toBe('AtomicChat/qwen35-9b-Q4_K_M')
+    expect(pickDownloadQuant(qwen, 16 * GB)).toBe(pickListedQuant(qwen))
+  })
+
+  it('falls back to the median for a repo without the house default', () => {
+    const model = repo([
+      { model_id: 'model-Q2_K', path: 'q2.gguf', file_size: '2 GB' },
+      { model_id: 'model-Q5_K_M', path: 'q5.gguf', file_size: '6 GB' },
+      { model_id: 'model-Q8_0', path: 'q8.gguf', file_size: '9 GB' },
+    ])
+    expect(pickListedQuant(model)?.model_id).toBe('model-Q5_K_M')
+    expect(pickListedQuant(repo([]))).toBeUndefined()
+  })
+})
+
 describe('model card hardware fit', () => {
   it('judges the median variant, not the quant nobody runs', () => {
     const quant = pickMedianQuant([
@@ -304,5 +379,46 @@ describe('findPinnedQuant', () => {
     expect(findPinnedQuant(undefined, 'Q8_0')).toBeUndefined()
     expect(findPinnedQuant([], 'Q8_0')).toBeUndefined()
     expect(findPinnedQuant(quants, 'IQ4_XS')).toBeUndefined()
+  })
+})
+
+describe('formatTimeAgo', () => {
+  const NOW = Date.parse('2026-10-21T12:00:00Z')
+  const ago = (ms: number) => new Date(NOW - ms).toISOString()
+  const HOUR = 60 * 60 * 1000
+  const DAY = 24 * HOUR
+
+  it('picks the unit by age and words it with the right plural', () => {
+    expect(formatTimeAgo(ago(30 * 1000), 'en', NOW)).toBe('1 minute ago')
+    expect(formatTimeAgo(ago(5 * HOUR), 'en', NOW)).toBe('5 hours ago')
+    expect(formatTimeAgo(ago(DAY), 'en', NOW)).toBe('1 day ago')
+    expect(formatTimeAgo(ago(3 * DAY), 'en', NOW)).toBe('3 days ago')
+    expect(formatTimeAgo(ago(8 * DAY), 'en', NOW)).toBe('1 week ago')
+    expect(formatTimeAgo(ago(21 * DAY), 'en', NOW)).toBe('3 weeks ago')
+    expect(formatTimeAgo(ago(65 * DAY), 'en', NOW)).toBe('2 months ago')
+    expect(formatTimeAgo(ago(800 * DAY), 'en', NOW)).toBe('2 years ago')
+  })
+
+  it("speaks the interface language, with that language's plural forms", () => {
+    expect(formatTimeAgo(ago(DAY), 'ru', NOW)).toBe('1 день назад')
+    expect(formatTimeAgo(ago(3 * DAY), 'ru', NOW)).toBe('3 дня назад')
+    expect(formatTimeAgo(ago(5 * DAY), 'ru', NOW)).toBe('5 дней назад')
+    expect(formatTimeAgo(ago(3 * DAY), 'de-DE', NOW)).toBe('vor 3 Tagen')
+    // The app tags Vietnamese `vn`; Intl knows it as `vi`.
+    expect(formatTimeAgo(ago(3 * DAY), 'vn', NOW)).toBe('3 ngày trước')
+  })
+
+  it('says nothing for a missing or unreadable date, and never a future age', () => {
+    expect(formatTimeAgo(undefined, 'en', NOW)).toBeUndefined()
+    expect(formatTimeAgo('not a date', 'en', NOW)).toBeUndefined()
+    expect(formatTimeAgo(new Date(NOW + DAY).toISOString(), 'en', NOW)).toBe(
+      '1 minute ago'
+    )
+  })
+
+  it('reads a malformed language tag as English', () => {
+    expect(formatTimeAgo(ago(3 * DAY), 'not a tag!', NOW)).toBe('3 days ago')
+    expect(intlLocale(undefined)).toBe('en')
+    expect(intlLocale('zh-TW')).toBe('zh-TW')
   })
 })

@@ -13,6 +13,7 @@ import { isAlive, pageShows, pickModel, send, waitForChat } from '../harness/cha
 import { FAKE_BACKEND, FAKE_PROVIDER, installFakeBackend, writeFakeModel } from '../harness/fixtures.js'
 import { CAN_RUN_FAKE_BACKEND } from '../harness/platform.js'
 import { endSession, startSession, withArtifacts, type Session } from '../harness/session.js'
+import { openEnginePage, openInferenceEngines, startNewChat } from '../harness/navigation.js'
 
 const MODEL_ID = 'e2e/fake-model'
 const FORK_PROVIDER = 'llamacpp'
@@ -60,15 +61,13 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('the TurboQuant provider', () => {
       const dataFolder = session.profile.dataFolder
       await waitForChat(session)
 
-      // Off on a fresh install; the user turns it on.
-      await browser.$('//*[normalize-space(text())="Settings"]').click()
-      // Disabled providers sit under a fold in the settings menu, which may
-      // already be open.
-      const entry = browser.$('//span[normalize-space(.)="llama.cpp turboquant"]')
-      const fold = browser.$('//button[contains(normalize-space(.), "1 disabled")]')
-      await fold.waitForDisplayed({ timeout: 30_000 })
-      if (!(await entry.isExisting())) await fold.click()
-      await entry.click()
+      // Off on a fresh install; the user opens it from Models Hub → Inference
+      // engines and turns it on on its own page.
+      const card = browser.$(`[data-testid="engine-row-${FORK_PROVIDER}"]`)
+      await openInferenceEngines(browser)
+      await card.waitForDisplayed({ timeout: 30_000 })
+      expect(await card.getText()).toContain('Disabled')
+      await openEnginePage(browser, FORK_PROVIDER)
       const toggle = browser.$('//h1[normalize-space(.)="llama.cpp turboquant"]/following::button[@role="switch"][1]')
       await toggle.waitForClickable({ timeout: 30_000 })
       expect(await toggle.getAttribute('aria-checked')).toBe('false')
@@ -76,7 +75,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('the TurboQuant provider', () => {
       await browser.waitUntil(async () => (await toggle.getAttribute('aria-checked')) === 'true', { timeout: 15_000 })
 
       // The model under the fork: the fork's backend answers, run by the core.
-      await browser.$('//*[normalize-space(text())="New Chat"]').click()
+      await startNewChat(browser)
       await waitForChat(session)
       await pickModel(session, MODEL_ID, FORK_PROVIDER)
       await send(session, 'who runs you')
@@ -86,7 +85,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('the TurboQuant provider', () => {
       expect(underFork[0]!.exe).toContain(`/${FORK_PROVIDER}/backends/${FORK_VERSION}/`)
 
       // The same model under the default provider: the other backend answers.
-      await browser.$('//*[normalize-space(text())="New Chat"]').click()
+      await startNewChat(browser)
       await waitForChat(session)
       await pickModel(session, MODEL_ID, FAKE_PROVIDER)
       await send(session, 'and now')

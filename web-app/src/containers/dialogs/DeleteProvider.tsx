@@ -10,15 +10,12 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 
-import { toast } from 'sonner'
 import { CardItem } from '../Card'
-import { EngineManager } from '@janhq/core'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { canDeleteProvider, useDeleteProvider } from '@/hooks/useDeleteProvider'
 import { useRouter } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { isKnownProvider } from '@/stores/provider-registry-store'
-import { useFavoriteModel } from '@/hooks/useFavoriteModel'
 
 type Props = {
   provider?: ProviderObject
@@ -31,32 +28,13 @@ type Props = {
 }
 const DeleteProvider = ({ provider, onDeleted }: Props) => {
   const { t } = useTranslation()
-  const { deleteProvider, providers } = useModelProvider()
-  const { favoriteModels, removeFavorite } = useFavoriteModel()
+  const { providers } = useModelProvider()
+  const deleteProvider = useDeleteProvider()
   const router = useRouter()
-  if (
-    !provider ||
-    isKnownProvider(provider.provider) ||
-    EngineManager.instance().get(provider.provider)
-  )
-    return null
+  if (!canDeleteProvider(provider)) return null
 
   const removeProvider = async () => {
-    // Remove favorite models that belong to this provider
-    const providerModelIds = provider.models.map((model) => model.id)
-    favoriteModels.forEach((favoriteModel) => {
-      if (providerModelIds.includes(favoriteModel.id)) {
-        removeFavorite(favoriteModel.id)
-      }
-    })
-
-    deleteProvider(provider.provider)
-    toast.success(t('providers:deleteProvider.title'), {
-      id: `delete-provider-${provider.provider}`,
-      description: t('providers:deleteProvider.success', {
-        provider: provider.provider,
-      }),
-    })
+    deleteProvider(provider)
     setTimeout(() => {
       if (onDeleted) {
         onDeleted()

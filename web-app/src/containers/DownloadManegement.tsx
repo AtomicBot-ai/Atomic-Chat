@@ -155,6 +155,7 @@ function notifyDownloadFinished(
 export function DownloadManagement() {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const controlRequest = useDownloadStore((state) => state.controlRequests[0])
   const [cancelTarget, setCancelTarget] = useState<{ id: string; name: string }>()
   const [cancelBusy, setCancelBusy] = useState(false)
   const [cancelError, setCancelError] = useState<string>()
@@ -960,6 +961,15 @@ export function DownloadManagement() {
     setCancelError(undefined)
     setCancelTarget(download)
   }, [serviceHub])
+
+  useEffect(() => {
+    if (controlRequest?.action === 'cancel' && cancelTarget) return
+    if (!controlRequest || !useDownloadStore.getState().takeControlRequest(controlRequest.requestId)) return
+    // Consume before running: StrictMode or handler re-renders must not repeat an action.
+    if (controlRequest.action === 'cancel') handleCancelDownload(controlRequest)
+    else if (controlRequest.action === 'pause') handlePauseDownload(controlRequest)
+    else handleResumeDownload(controlRequest)
+  }, [controlRequest, cancelTarget, handleCancelDownload, handlePauseDownload, handleResumeDownload])
 
   const cancelProvider = cancelTarget ? resumeParams[cancelTarget.id]?.provider : undefined
   const canDeleteFiles = !!cancelProvider && ['llamacpp', 'llamacpp-upstream', 'atomic-prism'].includes(cancelProvider)

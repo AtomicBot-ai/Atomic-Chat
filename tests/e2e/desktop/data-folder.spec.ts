@@ -17,6 +17,7 @@ import { readLock } from '../harness/core.js'
 import { answerNextDialog, installFakeBackend, writeFakeModel } from '../harness/fixtures.js'
 import { CAN_RUN_FAKE_BACKEND } from '../harness/platform.js'
 import { endSession, restartApp, startSession, withArtifacts, type Session } from '../harness/session.js'
+import { openSection } from '../harness/navigation.js'
 
 const MODEL_ID = 'e2e/fake-model'
 const REPLY = 'ATOMIC-E2E-FOLDER 9c35'
@@ -35,7 +36,7 @@ async function chatOnce(session: Session, prompt: string, replies: number): Prom
 async function askToMoveTo(session: Session, folder: string): Promise<void> {
   const browser = session.app.browser
   await answerNextDialog(session.profile, folder)
-  await browser.$('//*[normalize-space(text())="Settings"]').click()
+  await openSection(browser, 'settings')
   await browser.$('button=Change Location').waitForClickable({ timeout: 30_000 })
   await browser.$('button=Change Location').click()
   await pageShows(session, folder, 15_000)

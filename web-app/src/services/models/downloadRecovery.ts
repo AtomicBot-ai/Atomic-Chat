@@ -209,14 +209,13 @@ export function beginLegacyDownloadRecovery(hub: RecoveryServices): Promise<void
     const roots = [
       { path: normalize(folder) + '/llamacpp/models', provider: LOCAL_LLAMACPP_PROVIDER },
       { path: normalize(folder) + '/mlx/models', provider: 'mlx' },
-      { path: normalize(folder) + '/atomic-prism/models', provider: 'atomic-prism' },
     ]
     const result = await scanLegacyModelDownloads(io, roots)
     // Completion can land immediately before an app exit. Retire stale journal
     // descriptions only when an installed model exists and no partial was found.
     for (const [id, params] of Object.entries(result.truncated ? {} : useDownloadStore.getState().resumeParams)) {
       if (useDownloadStore.getState().localDownloadingModels.has(id) || result.candidates.some((candidate) => candidate.id === id)) continue
-      const provider = params.provider === 'mlx' ? 'mlx' : params.provider === 'atomic-prism' ? 'atomic-prism' : LOCAL_LLAMACPP_PROVIDER
+      const provider = params.provider === 'mlx' ? 'mlx' : LOCAL_LLAMACPP_PROVIDER
       const root = roots.find((entry) => entry.provider === provider)
       if (!root || !safeId(id)) continue
       const installed = await io.stat(root.path + '/' + id + '/model.yml').catch(() => null)

@@ -22,6 +22,18 @@ import { toast } from 'sonner'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { ChevronDown, Plus } from 'lucide-react'
 import AddEditAssistant from './AddEditAssistant'
+import { SecureEnvironmentFields } from './SecureEnvironmentFields'
+import {
+  ensureChatExecStatus,
+  useChatExecStatus,
+} from '@/hooks/useChatExecStatus'
+import {
+  ensureSecureEnvironmentsLoaded,
+  saveSecureEnvironment,
+  secureEnvironmentAvailability,
+  useSecureEnvironments,
+} from '@/hooks/useSecureEnvironments'
+import type { SecureEnvironment } from '@/services/chat-exec/types'
 
 interface AddProjectDialogProps {
   open: boolean
@@ -33,8 +45,14 @@ interface AddProjectDialogProps {
     updated_at: number
     assistantId?: string
   }
-  onSave: (name: string, assistantId?: string) => void
+  /** Creating: resolves to the new project's id, so its secure environment can be saved. */
+  onSave: (name: string, assistantId?: string) => void | Promise<string | void>
 }
+
+const sameEnvironment = (
+  a: SecureEnvironment | null,
+  b: SecureEnvironment | null
+) => JSON.stringify(a) === JSON.stringify(b)
 
 export default function AddProjectDialog({
   open,
@@ -47,20 +65,44 @@ export default function AddProjectDialog({
   const [name, setName] = useState(initialData?.name || '')
   const [selectedAssistantId, setSelectedAssistantId] = useState<string | undefined>(initialData?.assistantId)
   const { folders } = useThreadManagement()
-  const { assistants, addAssistant } = useAssistant()
+  const { assistants, addAssistant, defaultAssistantId } = useAssistant()
   const [addAssistantDialogOpen, setAddAssistantDialogOpen] = useState(false)
+  const chatExecStatus = useChatExecStatus((state) => state.status)
+  const savedEnvironment = useSecureEnvironments((state) =>
+    editingKey ? (state.environments[editingKey] ?? null) : null
+  )
+  const [secureEnvironment, setSecureEnvironment] =
+    useState<SecureEnvironment | null>(savedEnvironment)
+  const [saving, setSaving] = useState(false)
 
   const selectedAssistant = assistants.find((a) => a.id === selectedAssistantId)
 
   useEffect(() => {
     if (open) {
       setName(initialData?.name || '')
-      setSelectedAssistantId(initialData?.assistantId)
+      // A new project starts with the default assistant (Settings); editing
+      // keeps the project's own choice, "No assistant" included.
+      setSelectedAssistantId(
+        editingKey
+          ? initialData?.assistantId
+          : assistants.some((assistant) => assistant.id === defaultAssistantId)
+            ? defaultAssistantId
+            : undefined
+      )
+      void ensureSecureEnvironmentsLoaded()
+      void ensureChatExecStatus()
     }
+    // Only on open: re-running on an `assistants` change would throw away the
+    // assistant the user just created from inside this dialog.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initialData])
 
-  const handleSave = () => {
-    if (!name.trim()) return
+  useEffect(() => {
+    if (open) setSecureEnvironment(savedEnvironment)
+  }, [open, savedEnvironment])
+
+  const handleSave = async () => {
+    if (!name.trim() || saving) return
 
     const trimmedName = name.trim()
 
@@ -76,7 +118,38 @@ export default function AddProjectDialog({
       return
     }
 
-    onSave(trimmedName, selectedAssistantId)
+    const environmentChanged = !sameEnvironment(
+      secureEnvironment,
+      savedEnvironment
+    )
+    setSaving(true)
+    try {
+      // Editing: the policy is saved first, so a folder the backend refuses
+      // keeps the dialog open with nothing changed.
+      if (editingKey && environmentChanged) {
+        await saveSecureEnvironment(editingKey, secureEnvironment)
+      }
+    } catch (error) {
+      toast.error(
+        t('projects.secureEnvironment.saveError', { error: String(error) })
+      )
+      setSaving(false)
+      return
+    }
+    const projectId = await onSave(trimmedName, selectedAssistantId)
+    if (!editingKey && secureEnvironment && typeof projectId === 'string') {
+      try {
+        await saveSecureEnvironment(projectId, secureEnvironment)
+      } catch (error) {
+        toast.error(
+          t('projects.secureEnvironment.createdWithoutIt', {
+            projectName: trimmedName,
+            error: String(error),
+          })
+        )
+      }
+    }
+    setSaving(false)
 
     // Show success message
     if (editingKey) {
@@ -86,6 +159,7 @@ export default function AddProjectDialog({
     }
     setName('')
     setSelectedAssistantId(undefined)
+    setSecureEnvironment(null)
   }
 
   const handleCancel = () => {
@@ -96,9 +170,11 @@ export default function AddProjectDialog({
 
   // Check if the button should be disabled
   const hasChanged = editingKey
-    ? name.trim() !== initialData?.name || selectedAssistantId !== initialData?.assistantId
+    ? name.trim() !== initialData?.name ||
+      selectedAssistantId !== initialData?.assistantId ||
+      !sameEnvironment(secureEnvironment, savedEnvironment)
     : true
-  const isButtonDisabled = !name.trim() || (editingKey && !hasChanged)
+  const isButtonDisabled = !name.trim() || saving || (editingKey && !hasChanged)
 
   return (
     <>
@@ -109,7 +185,10 @@ export default function AddProjectDialog({
             {editingKey ? t('projects.addProjectDialog.editTitle') : t('projects.addProjectDialog.createTitle')}
           </DialogTitle>
         </DialogHeader>
-        <div className="space-y-5 py-1">
+        {/* min-w-0: a grid item otherwise widens its column to its longest
+            unbreakable text (a project folder's path), pushing the dialog
+            past its edge instead of letting the path truncate. */}
+        <div className="min-w-0 space-y-5 py-1">
           <div>
             <label className="text-sm font-medium mb-1.5 block">
               {t('projects.addProjectDialog.nameLabel')}
@@ -121,7 +200,7 @@ export default function AddProjectDialog({
               autoFocus
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !isButtonDisabled) {
-                  handleSave()
+                  void handleSave()
                 }
               }}
             />
@@ -192,12 +271,17 @@ export default function AddProjectDialog({
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
+          <SecureEnvironmentFields
+            value={secureEnvironment}
+            onChange={setSecureEnvironment}
+            availability={secureEnvironmentAvailability(chatExecStatus)}
+          />
         </div>
         <DialogFooter>
           <Button size="sm" variant="ghost" onClick={handleCancel}>
             {t('cancel')}
           </Button>
-          <Button size="sm" onClick={handleSave} disabled={Boolean(isButtonDisabled)}>
+          <Button size="sm" onClick={() => void handleSave()} disabled={Boolean(isButtonDisabled)}>
             {editingKey ? t('projects.addProjectDialog.updateButton') : t('projects.addProjectDialog.createButton')}
           </Button>
         </DialogFooter>

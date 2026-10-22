@@ -10,6 +10,7 @@ import { pageShows, pageText } from '../harness/chat.js'
 import { installFakeBackend, writeFakeModel } from '../harness/fixtures.js'
 import { CAN_RUN_FAKE_BACKEND } from '../harness/platform.js'
 import { endSession, startSession, withArtifacts, type Session } from '../harness/session.js'
+import { openServerPage, startServerFromSidebar } from '../harness/navigation.js'
 
 const MODEL_ID = 'e2e/fake-model'
 const REPLY = 'ATOMIC-E2E-INSPECTED 6b1f'
@@ -38,9 +39,9 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('the API request log', () => {
       const browser = session.app.browser
       const baseUrl = `http://127.0.0.1:${session.apiPort}/v1`
       await browser.$('[data-testid="chat-input"]').waitForDisplayed({ timeout: 60_000 })
-      await browser.$('a=API').click()
-      await browser.$('button=Start server').click()
-      await browser.$('button=Stop server').waitForDisplayed({ timeout: 60_000 })
+      await startServerFromSidebar(browser)
+      // Requests are recorded while a Server page shows them: open Activity first.
+      await openServerPage(browser, 'Activity')
 
       const completion = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',

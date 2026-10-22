@@ -88,6 +88,10 @@ export const localStorageKey = {
   // flag, so the composer can read it reactively without the storage-event
   // dance `useSetupCompleted` needs for `setup-completed`.
   settingVoice: 'setting-voice',
+  // Server → Overview's setup guide: whether it ran (or the server was in use
+  // before it existed), whether the first-visit guide was closed, and the
+  // tools set up through Atomic Chat. Wizard drafts are never persisted.
+  serverSetup: 'atomic-server-setup',
   // Local image generation preferences: setup completion, the selected
   // checkpoint, engine override and the unload policies. Same shape of bag as
   // `settingVoice`, for the same reason.

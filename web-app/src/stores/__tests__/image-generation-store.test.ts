@@ -804,6 +804,23 @@ describe('image-generation-store', () => {
       expect(state.pendingEngineArtifactId).toBe('qwen-image-2.1:q4_k_m')
     })
 
+    it('holds FLUX.3 Klein on the 883 engine and offers its own floor', async () => {
+      const status = makeStatus()
+      if (status.install.state !== 'installed') throw new Error('fixture')
+      status.install.tag = QWEN_TAG
+      fake.emit({ type: 'state', status })
+      useImageGenerationStore.setState({
+        catalog: makeCatalog([{ ...Z_IMAGE, id: 'flux.3-klein' }]),
+      })
+      await useImageGenerationStore.getState().loadModel('flux.3-klein:q4_k_m')
+      const state = useImageGenerationStore.getState()
+      expect(fake.loadModel).not.toHaveBeenCalled()
+      expect(state.lastError?.code).toBe('ENGINE_UPDATE_REQUIRED')
+      expect(state.lastError?.message).toContain('master-968-8cd731e')
+      expect(state.engineUpdate.availableTag).toBe('master-968-8cd731e')
+      expect(state.pendingEngineArtifactId).toBe('flux.3-klein:q4_k_m')
+    })
+
     it('loads Qwen with an already compatible engine without requesting an update', async () => {
       const status = makeStatus()
       if (status.install.state !== 'installed') throw new Error('fixture')

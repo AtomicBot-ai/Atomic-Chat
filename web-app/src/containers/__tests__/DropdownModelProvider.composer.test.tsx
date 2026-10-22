@@ -293,10 +293,12 @@ describe('DropdownModelProvider - the composer pill', () => {
 
     expect(pill()).toHaveTextContent('LFM2.5 2.6B')
     expect(pill()).not.toHaveTextContent('LiquidAI/')
-    expect(modelRow()).toHaveTextContent('LiquidAI/LFM2.5 2.6B')
+    expect(pill()).not.toHaveTextContent('Q4_K_M')
+    // The quant tells two files of one repo apart where there is room.
+    expect(modelRow()).toHaveTextContent('LiquidAI/LFM2.5 2.6B Q4_K_M')
 
     fireEvent.click(modelRow()!)
-    expect(screen.getByText('LiquidAI/LFM2.5 2.6B')).toBeVisible()
+    expect(screen.getByText('LiquidAI/LFM2.5 2.6B Q4_K_M')).toBeVisible()
   })
 
   it('opens on the model row with the effort slider under it', () => {

@@ -1,6 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
-import SettingsMenu from '@/containers/SettingsMenu'
 import HeaderPage from '@/containers/HeaderPage'
 import { Card, CardItem } from '@/containers/Card'
 import { Switch } from '@/components/ui/switch'
@@ -24,6 +23,19 @@ import { buildFallbackDevices } from '@/lib/gpuFallback'
 export const Route = createFileRoute(route.settings.hardware as any)({
   component: HardwareContent,
 })
+
+// `os_type` is a lowercase platform id ("macos", "windows", ...); CSS
+// capitalisation turned "macos" into "Macos".
+const OS_DISPLAY_NAMES: Record<string, string> = {
+  macos: 'macOS',
+  windows: 'Windows',
+  linux: 'Linux',
+  ios: 'iOS',
+  android: 'Android',
+}
+
+const osDisplayName = (osType: string): string =>
+  OS_DISPLAY_NAMES[osType?.toLowerCase()] ?? osType
 
 function HardwareContent() {
   const { t } = useTranslation()
@@ -159,7 +171,6 @@ function HardwareContent() {
         </div>
       </HeaderPage>
       <div className="flex h-[calc(100%-60px)]">
-        <SettingsMenu />
         <div className="p-4 pt-0 w-full overflow-y-auto">
           {isLoading ? (
             <div className="flex items-center justify-center h-32">
@@ -174,8 +185,8 @@ function HardwareContent() {
                 <CardItem
                   title={t('settings:hardware.name')}
                   actions={
-                    <span className="text-foreground capitalize">
-                      {hardwareData.os_type}
+                    <span className="text-foreground">
+                      {osDisplayName(hardwareData.os_type)}
                     </span>
                   }
                 />

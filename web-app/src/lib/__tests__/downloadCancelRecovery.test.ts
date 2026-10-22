@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
-import { restoreDownloadRecovery, saveDownloadRecovery } from '@/lib/downloadRecovery'
-import { mergeLegacyModelDownloads } from '@/services/models/downloadRecovery'
+import { modelDownloadKey, restoreDownloadRecovery, saveDownloadRecovery } from '@/lib/downloadRecovery'
+import { beginLegacyDownloadRecovery, mergeLegacyModelDownloads } from '@/services/models/downloadRecovery'
 
 const id = 'acme/model-Q4'
 const params = {
@@ -13,6 +13,51 @@ const params = {
 describe('explicit model cancellation recovery', () => {
   beforeEach(() => {
     useDownloadStore.setState(useDownloadStore.getInitialState())
+  })
+
+  it('shares GGUF source identity across Prism and both llama.cpp providers', () => {
+    const key = modelDownloadKey(params)
+    expect(modelDownloadKey({ ...params, provider: 'atomic-prism' })).toBe(key)
+    expect(modelDownloadKey({ ...params, provider: 'llamacpp' })).toBe(key)
+    expect(modelDownloadKey({ ...params, modelPath: params.modelPath.replace('/v1/', '/v2/') })).not.toBe(key)
+  })
+
+  it('queues controls once in order without persisting pending user actions', () => {
+    const state = useDownloadStore.getState()
+    state.requestControl('cancel', { id, name: id })
+    state.requestControl('cancel', { id, name: id })
+    state.requestControl('resume', { id: 'org/next', name: 'org/next' })
+    const requests = useDownloadStore.getState().controlRequests
+    expect(requests.map((request) => request.action)).toEqual(['cancel', 'resume'])
+    expect(state.takeControlRequest(requests[1].requestId)).toBe(false)
+    expect(state.takeControlRequest(requests[0].requestId)).toBe(true)
+    expect(state.takeControlRequest(requests[0].requestId)).toBe(false)
+    expect(JSON.parse(localStorage.getItem('atomic-model-downloads-v1')!).state).toHaveProperty('recovery')
+    expect(JSON.parse(localStorage.getItem('atomic-model-downloads-v1')!).state).not.toHaveProperty('controlRequests')
+  })
+
+  it('retires an installed Prism request using its shared GGUF directory', async () => {
+    const modelId = 'org/installed'
+    const state = useDownloadStore.getState()
+    state.setResumeParams(modelId, { ...params, provider: 'atomic-prism' })
+    state.updateProgress(modelId, 0.4, modelId, 40, 100)
+    state.markPausedDownload(modelId)
+    const checked: string[] = []
+    await beginLegacyDownloadRecovery({
+      app: () => ({ getJanDataFolder: async () => '/data' }),
+      core: () => ({ async invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+        if (command === 'readdir_sync') return [] as T
+        const path = args?.args as string
+        checked.push(path)
+        return (path === '/data/llamacpp/models/org/installed/model.yml'
+          ? { isDirectory: false, size: 100 }
+          : path === '/data/llamacpp/models' || path === '/data/mlx/models'
+            ? { isDirectory: true, size: 0 } : null) as T
+      } }),
+    })
+    expect(checked).toContain('/data/llamacpp/models/org/installed/model.yml')
+    expect(useDownloadStore.getState().downloads[modelId]).toBeUndefined()
+    expect(useDownloadStore.getState().resumeParams[modelId]).toBeUndefined()
   })
 
   it('keeps Pause visible after reload but keeps Cancel hidden and its source reusable', () => {

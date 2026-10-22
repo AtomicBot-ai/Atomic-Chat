@@ -115,6 +115,7 @@ vi.mock('@/components/ui/dropdrawer', () => {
 import DropdownPlugins from '../DropdownPlugins'
 import { useAppState } from '@/hooks/useAppState'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+import { useSecureEnvironments } from '@/hooks/useSecureEnvironments'
 import { useMCPServers } from '@/hooks/useMCPServers'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import type { AgentSkill } from '@/services/agent/skills'
@@ -204,6 +205,38 @@ describe('DropdownPlugins', () => {
     ).toContain('common:connectorsMenu.toolCount')
     expect(screen.queryByText('web_search_exa')).toBeNull()
     // One connector connected out of two.
+    expect(screen.getByText('connectors:1')).toBeInTheDocument()
+  })
+
+  it("locks a connector a secure project does not allow and leaves it out of the chat's count", () => {
+    useMCPServers.setState({
+      mcpServers: {
+        exa: { command: '', args: [], env: {}, active: true },
+        resend: { command: 'npx', args: [], env: {}, active: true },
+      },
+    })
+    useAppState.setState({
+      tools: [tool('exa', 'web_search_exa'), tool('resend', 'send_email')],
+    })
+    useSecureEnvironments.setState({
+      environments: {
+        p1: { folders: [], network: true, allowedMcpServers: ['resend'] },
+      },
+    })
+
+    renderDropdown({ initialMessage: true, projectId: 'p1' })
+
+    const exa = screen.getByRole('switch', { name: 'Exa' })
+    expect(exa).toBeDisabled()
+    expect(exa).not.toBeChecked()
+    expect(screen.getByTestId('connector-blocked-exa')).toHaveAttribute(
+      'title',
+      'common:secureEnvironmentBlock.notAllowed'
+    )
+    const resend = screen.getByRole('switch', { name: 'Resend' })
+    expect(resend).toBeEnabled()
+    expect(resend).toBeChecked()
+    // Only the allowed connector rides this chat.
     expect(screen.getByText('connectors:1')).toBeInTheDocument()
   })
 

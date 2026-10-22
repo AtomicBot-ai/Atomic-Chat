@@ -1,5 +1,5 @@
 /**
- * Settings → Media: the video folder moved to one the user picks (through
+ * Models Hub → Inference engines → Media: the video folder moved to one the user picks (through
  * the native folder dialog the e2e build answers), the next clip put there,
  * and the choice kept across a restart; and a clip deleted from the viewer
  * after the confirmation, gone from disk with its recipe and poster.
@@ -23,14 +23,10 @@ import {
   videoTiles,
   writeFakeVideoModel,
 } from '../harness/videos.js'
+import { openMediaEngineSettings } from '../harness/navigation.js'
 
 async function openMediaSettings(session: Session): Promise<void> {
-  const browser = session.app.browser
-  await browser.$('//*[normalize-space(text())="Settings"]').click()
-  const media = browser.$('//a[normalize-space(.)="Media"]')
-  await media.waitForClickable({ timeout: 30_000 })
-  await media.click()
-  await browser.$('[data-testid="media-settings-panel"]').waitForDisplayed({ timeout: 30_000 })
+  await openMediaEngineSettings(session.app.browser)
 }
 
 describe.skipIf(!CAN_RUN_FAKE_BACKEND)('the video folder and the gallery', () => {

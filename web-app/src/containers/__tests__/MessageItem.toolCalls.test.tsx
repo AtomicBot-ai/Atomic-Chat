@@ -158,6 +158,45 @@ describe('MessageItem tool calls', () => {
     )
   })
 
+  // QA on 2.2.21: a short answer after a command showed `atomic-qa-ok` with
+  // its backticks, while a longer one rendered the chip.
+  it.each([
+    ['The output is `atomic-qa-ok`.', 'atomic-qa-ok'],
+    ['Готово! Файл `пример.txt` создан на вашем рабочем столе.', 'пример.txt'],
+  ])('renders inline code in the answer after a command: %j', (text, code) => {
+    const { container } = renderLast(
+      {
+        id: `command-answer-${code}`,
+        role: 'assistant',
+        parts: [
+          {
+            type: 'tool-run_command',
+            toolCallId: 'run-1',
+            state: 'output-available',
+            input: { command: 'echo atomic-qa-ok' },
+            output: {
+              kind: 'chat-exec',
+              text: 'atomic-qa-ok',
+              exitCode: 0,
+              timedOut: false,
+              cancelled: false,
+              sandbox: 'none',
+              workdir: '/w',
+              durationMs: 5,
+            },
+          } as UIMessage['parts'][number],
+          { type: 'text', text },
+        ],
+      },
+      'ready'
+    )
+
+    const chip = container.querySelector('[data-streamdown="inline-code"]')
+    expect(chip?.tagName).toBe('CODE')
+    expect(chip).toHaveTextContent(code)
+    expect(container.querySelector('.markdown')).not.toHaveTextContent('`')
+  })
+
   it('blocks the pseudo URL without invoking a native path opener on web', async () => {
     const path = '/Users/atomic/Desktop/report.pdf'
     const href = `https://atomic.local/open-file?path=${encodeURIComponent(path)}`

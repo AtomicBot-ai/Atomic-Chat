@@ -12,6 +12,7 @@ import { fakeBackendCommands, pickModel, waitForChat } from '../harness/chat.js'
 import { FAKE_PROVIDER, installFakeBackend, writeFakeModel } from '../harness/fixtures.js'
 import { CAN_RUN_FAKE_BACKEND } from '../harness/platform.js'
 import { endSession, restartApp, startSession, withArtifacts, type Session } from '../harness/session.js'
+import { startNewChat } from '../harness/navigation.js'
 
 const FIRST_MODEL = 'e2e/model-one'
 const SECOND_MODEL = 'e2e/model-two'
@@ -93,7 +94,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a provider setting changed in the UI', (
       }
 
       // The next load carries it: the core was told, and told the backend.
-      await browser.$('//*[normalize-space(text())="New Chat"]').click()
+      await startNewChat(browser)
       await waitForChat(session)
       await pickModel(session, FIRST_MODEL)
       await expect.poll(() => fitArgs(dataFolder), { timeout: 60_000 }).toEqual(['off'])
@@ -114,7 +115,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a provider setting changed in the UI', (
       // the override.
       await browser.$(FIT_SWITCH).click()
       await expect.poll(() => browser.$(FIT_SWITCH).getAttribute('aria-checked')).toBe('true')
-      await browser.$('//*[normalize-space(text())="New Chat"]').click()
+      await startNewChat(browser)
       await waitForChat(session)
       await pickModel(session, SECOND_MODEL)
       await expect.poll(() => fitArgs(dataFolder), { timeout: 60_000 }).not.toContain('off')

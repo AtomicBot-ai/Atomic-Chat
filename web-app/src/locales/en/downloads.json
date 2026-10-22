@@ -1,0 +1,54 @@
+{
+  "title": "Downloads",
+  "summary": {
+    "totalStorage": "Total storage",
+    "enginesNotCounted": "Engine builds not included",
+    "items": "Downloaded items",
+    "freeSpace": "Free space"
+  },
+  "search": "Search downloads…",
+  "searchLabel": "Search downloads",
+  "categoryLabel": "Download category",
+  "category": {
+    "all": "All downloads",
+    "local": "Local models",
+    "image": "Images",
+    "video": "Videos",
+    "voice": "Voice",
+    "engine": "Engines"
+  },
+  "column": {
+    "download": "Download",
+    "storage": "Storage",
+    "actions": "Actions"
+  },
+  "kind": {
+    "embedding": "document embeddings",
+    "decision": "decision model",
+    "image": "image generation",
+    "video": "video generation",
+    "voice": "speech recognition",
+    "engine": "inference engine",
+    "partial": "incomplete download",
+    "draft": "speculative decoding draft"
+  },
+  "unknownSize": "The size of this item is not known",
+  "remove": "Remove {{name}}",
+  "removeTitle": "Remove download",
+  "confirm": {
+    "title": "Remove {{name}}?",
+    "description": "It will be deleted from this computer. You can download it again later.",
+    "cancel": "Cancel",
+    "remove": "Remove"
+  },
+  "removed": "{{name}} removed",
+  "removeFailed": "Could not remove {{name}}",
+  "empty": "Nothing downloaded yet. Models, media models and engines you download appear here.",
+  "noMatch": "No downloads match your search.",
+  "blocked": {
+    "draftInUse": "MLX speculative decoding is on. Turn it off in the MLX engine settings to remove drafts."
+  },
+  "error": {
+    "downloadActive": "Its download is running or paused. Cancel it first."
+  }
+}

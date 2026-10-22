@@ -522,10 +522,39 @@ pub fn normalize_backend_layout<R: Runtime>(
     }
 }
 
+/// `rfd` turns a picker that failed to open (`IFileDialog::Show` returning an
+/// error) into "nothing chosen", which reads exactly like Cancel: a click then
+/// seemed to do nothing, with no trace anywhere. Nobody dismisses a dialog
+/// faster than it can be drawn, so an empty answer this quick is treated as a
+/// failure.
+const DIALOG_FAILURE_WINDOW: std::time::Duration = std::time::Duration::from_millis(300);
+
+/// Log one picker call (never its paths) and turn an instantly empty answer
+/// into an error; the frontend's dialog service shows it and still hands its
+/// caller "nothing chosen".
+pub(super) fn dialog_outcome(
+    kind: &str,
+    elapsed: std::time::Duration,
+    chosen: usize,
+) -> Result<(), String> {
+    let ms = elapsed.as_millis();
+    if chosen > 0 {
+        log::info!("{kind}: {chosen} chosen after {ms} ms");
+        return Ok(());
+    }
+    if elapsed < DIALOG_FAILURE_WINDOW {
+        log::warn!("{kind}: came back empty after {ms} ms, the dialog most likely failed to open");
+        return Err("The system file dialog could not be opened".into());
+    }
+    log::info!("{kind}: cancelled after {ms} ms");
+    Ok(())
+}
+
 // rfd native file dialog
 #[tauri::command]
 #[cfg_attr(feature = "e2e", allow(unreachable_code, unused_variables, unused_mut))]
-pub async fn open_dialog(
+pub async fn open_dialog<R: Runtime>(
+    window: tauri::Window<R>,
     options: Option<DialogOpenOptions>,
 ) -> Result<Option<serde_json::Value>, String> {
     // A native file dialog cannot be driven from a test and would sit on the
@@ -534,7 +563,10 @@ pub async fn open_dialog(
     #[cfg(feature = "e2e")]
     return Ok(crate::core::e2e::take_dialog_answer(&crate::core::e2e::data_root()));
 
-    let mut dialog = AsyncFileDialog::new();
+    // Owned by the calling window: on Windows an ownerless picker opens
+    // behind the app (it cannot take the foreground from a worker thread), so
+    // a click looked like it did nothing while the dialog waited out of sight.
+    let mut dialog = AsyncFileDialog::new().set_parent(&window);
 
     if let Some(opts) = options {
         // Set default path
@@ -552,7 +584,13 @@ pub async fn open_dialog(
 
         // Handle directory vs file selection
         if opts.directory == Some(true) {
+            let started = std::time::Instant::now();
             let result = dialog.pick_folder().await;
+            dialog_outcome(
+                "open_dialog (folder)",
+                started.elapsed(),
+                usize::from(result.is_some()),
+            )?;
             return Ok(result.map(|folder| {
                 serde_json::Value::String(folder.path().to_string_lossy().to_string())
             }));
@@ -560,7 +598,13 @@ pub async fn open_dialog(
 
         // Handle multiple file selection
         if opts.multiple == Some(true) {
+            let started = std::time::Instant::now();
             let result = dialog.pick_files().await;
+            dialog_outcome(
+                "open_dialog (files)",
+                started.elapsed(),
+                result.as_ref().map_or(0, Vec::len),
+            )?;
             return Ok(result.map(|files| {
                 let paths: Vec<String> = files
                     .iter()
@@ -572,18 +616,28 @@ pub async fn open_dialog(
     }
 
     // Default: single file selection
+    let started = std::time::Instant::now();
     let result = dialog.pick_file().await;
+    dialog_outcome(
+        "open_dialog (file)",
+        started.elapsed(),
+        usize::from(result.is_some()),
+    )?;
     Ok(result.map(|file| serde_json::Value::String(file.path().to_string_lossy().to_string())))
 }
 
 #[tauri::command]
 #[cfg_attr(feature = "e2e", allow(unreachable_code, unused_variables, unused_mut))]
-pub async fn save_dialog(options: Option<DialogOpenOptions>) -> Result<Option<String>, String> {
+pub async fn save_dialog<R: Runtime>(
+    window: tauri::Window<R>,
+    options: Option<DialogOpenOptions>,
+) -> Result<Option<String>, String> {
     #[cfg(feature = "e2e")]
     return Ok(crate::core::e2e::take_dialog_answer(&crate::core::e2e::data_root())
         .and_then(|answer| answer.as_str().map(str::to_string)));
 
-    let mut dialog = AsyncFileDialog::new();
+    // Owned by the calling window, like `open_dialog`.
+    let mut dialog = AsyncFileDialog::new().set_parent(&window);
 
     if let Some(opts) = options {
         // `default_path` may be a bare filename ("file.py") or a full path.
@@ -611,6 +665,12 @@ pub async fn save_dialog(options: Option<DialogOpenOptions>) -> Result<Option<St
         }
     }
 
+    let started = std::time::Instant::now();
     let result = dialog.save_file().await;
+    dialog_outcome(
+        "save_dialog",
+        started.elapsed(),
+        usize::from(result.is_some()),
+    )?;
     Ok(result.map(|file| file.path().to_string_lossy().to_string()))
 }

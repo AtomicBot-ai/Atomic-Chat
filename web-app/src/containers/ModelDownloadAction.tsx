@@ -11,7 +11,6 @@ import { ModelSetupSheet } from '@/containers/hub/ModelSetupSheet'
 import { useCompatibilityVerdict } from '@/hooks/useModelSetup'
 import {
   isDownloadCancellationError,
-  markDownloadCancellationRequested,
   wasDownloadCancellationRequested,
 } from '@/lib/downloadCancellation'
 import {
@@ -379,10 +378,8 @@ export const ModelDownloadAction = ({
   ])
 
   const handleCancelDownload = useCallback(() => {
-    markResumableDownload(rowModelId)
-    markDownloadCancellationRequested(rowModelId)
-    void serviceHub.models().abortDownload(rowModelId)
-  }, [markResumableDownload, serviceHub, rowModelId])
+    useDownloadStore.getState().requestControl('cancel', { id: rowModelId, name: rowModelId })
+  }, [rowModelId])
 
   // See ``DownloadButton.tsx`` for the rationale -- defensive UI guard
   // against catalog-level ``quant.model_id`` collisions across repos.
@@ -588,11 +585,10 @@ export const ModelDownloadAction = ({
       <Button
         type="button"
         variant="ghost"
-        size="icon-sm"
+        size="icon-xs"
         aria-label={t('hub:downloadModel')}
         title={t('hub:downloadModel')}
         onClick={() => void requestDownload()}
-        className="size-6"
       >
         <IconDownload size={16} className="text-muted-foreground" />
       </Button>

@@ -11,17 +11,8 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 
 import ToolApproval from '../ToolApproval'
 import { useToolApproval } from '@/hooks/useToolApproval'
-import { useChatExecStatus } from '@/hooks/useChatExecStatus'
-import type { ChatExecStatus } from '@/services/chat-exec/types'
-
-const windows = (sandbox: ChatExecStatus['sandbox']): ChatExecStatus => ({
-  supported: true,
-  os: 'windows',
-  shell: 'cmd',
-  languages: ['python'],
-  sandbox,
-  userFolders: [],
-})
+import { useSecureEnvironments } from '@/hooks/useSecureEnvironments'
+import { useThreads } from '@/hooks/useThreads'
 
 function open(toolName: string, toolParameters: object) {
   useToolApproval.setState({
@@ -39,12 +30,13 @@ function open(toolName: string, toolParameters: object) {
 
 describe('ToolApproval for commands and scripts', () => {
   beforeEach(() => {
-    useChatExecStatus.setState({
-      status: windows({ kind: 'mxc', reason: null }),
-    })
+    useThreads.setState({
+      threads: { t1: { id: 't1', title: 'Chat', updated: 0 } },
+    } as never)
+    useSecureEnvironments.setState({ environments: {} })
   })
 
-  it('shows the command itself and that it runs in the Windows sandbox', () => {
+  it('shows the command itself and that an ordinary chat runs it on the computer', () => {
     open('run_command', { command: 'dir /s', timeout_seconds: 30 })
 
     expect(
@@ -54,16 +46,32 @@ describe('ToolApproval for commands and scripts', () => {
       'dir /s'
     )
     expect(
-      screen.getByText(/tools:toolApproval\.exec\.sandboxed/)
+      screen.getByText(/tools:toolApproval\.exec\.unsandboxed/)
     ).toHaveTextContent('{"seconds":30}')
     expect(
       screen.queryByText('tools:toolApproval.parameters')
     ).not.toBeInTheDocument()
   })
 
-  it('names the script language and says why Windows runs it unsandboxed', () => {
-    useChatExecStatus.setState({
-      status: windows({ kind: 'none', reason: 'Windows is too old' }),
+  it("names the script language and, in a secure project, the project's folders", () => {
+    useThreads.setState({
+      threads: {
+        t1: {
+          id: 't1',
+          title: 'Chat',
+          updated: 0,
+          metadata: { project: { id: 'p1', name: 'P1', updated_at: 0 } },
+        },
+      },
+    } as never)
+    useSecureEnvironments.setState({
+      environments: {
+        p1: {
+          folders: [{ path: 'D:\\Work', canEdit: false }],
+          network: false,
+          allowedMcpServers: [],
+        },
+      },
     })
 
     open('run_script', { language: 'python', code: 'print(42)' })
@@ -76,9 +84,10 @@ describe('ToolApproval for commands and scripts', () => {
     expect(screen.getByTestId('exec-approval-source')).toHaveTextContent(
       'print(42)'
     )
-    expect(
-      screen.getByText(/tools:toolApproval\.exec\.unsandboxedWindows/)
-    ).toHaveTextContent('Windows is too old')
+    const notice = screen.getByText(/tools:toolApproval\.exec\.secure /)
+    expect(notice).toHaveTextContent('secureFolderReadOnly')
+    expect(notice).toHaveTextContent('tools:toolApproval.exec.secureOffline')
+    expect(notice).not.toHaveTextContent('unsandboxed')
   })
 
   it('keeps the parameter view for any other tool', () => {

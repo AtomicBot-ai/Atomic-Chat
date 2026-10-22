@@ -1,6 +1,5 @@
 import type { UIMessage } from '@ai-sdk/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useChatExecStatus } from '@/hooks/useChatExecStatus'
 import {
   chatExecOutputsForModel,
@@ -100,30 +99,11 @@ describe('chatExecTools', () => {
     expect(command).toContain('inside quotes write "$HOME/…"')
   })
 
-  it('names the Windows folders by full path and says the sandbox reaches them', () => {
-    const command = description(windowsSandboxed, 'run_command')
-
-    expect(command).toContain('Desktop: C:\\Users\\me\\OneDrive\\Desktop')
-    expect(command).toContain('only the chat folder and those user folders')
-  })
-
-  it('describes cmd and the sandbox when Windows runs it in MXC', () => {
+  it('names the Windows folders by full path and says an ordinary chat runs on the computer, even where MXC works', () => {
     const command = description(windowsSandboxed, 'run_command')
 
     expect(command).toContain('cmd.exe, not bash')
-    expect(command).toContain('Windows sandbox')
-    expect(command).toContain('cannot be read')
-  })
-
-  it('says a Windows run is on the computer itself when there is no sandbox', () => {
-    const command = description(
-      {
-        ...windowsSandboxed,
-        sandbox: { kind: 'none', reason: 'Windows too old' },
-      },
-      'run_command'
-    )
-
+    expect(command).toContain('Desktop: C:\\Users\\me\\OneDrive\\Desktop')
     expect(command).toContain("directly on the user's Windows computer")
     expect(command).not.toContain('Windows sandbox')
   })
@@ -149,14 +129,66 @@ describe('chatExecTools', () => {
   })
 })
 
+describe('chatExecTools in a secure environment project', () => {
+  const secure = {
+    folders: [
+      { path: 'D:\\Work\\Reports', canEdit: true },
+      { path: 'D:\\Work\\Reference', canEdit: false },
+    ],
+    network: false,
+    allowedMcpServers: [],
+  }
+
+  it("names the project's folders instead of the user's, each with what it allows", () => {
+    for (const tool of chatExecTools(windowsSandboxed, secure)) {
+      expect(tool.description).toContain(
+        'D:\\Work\\Reports (can be changed); D:\\Work\\Reference (read-only)'
+      )
+      expect(tool.description).toContain('blocked on purpose')
+      expect(tool.description).toContain('There is no internet access.')
+      // The sandbox grants no folder enumeration, so `dir` cannot list them.
+      expect(tool.description).toContain('`dir` and `cd` fail even on these folders')
+      expect(tool.description).toContain('do @echo %~nxf')
+      expect(tool.description).not.toContain('OneDrive')
+      // Not even as "blocked": a project folder may live inside one of them.
+      expect(tool.description).not.toMatch(/Desktop|Documents|Downloads/)
+    }
+  })
+
+  it("starts commands in the project's first editable folder, so relative paths land there", () => {
+    const [command] = chatExecTools(windowsSandboxed, secure)
+    expect(command.description).toContain(
+      "The working directory is the project's folder D:\\Work\\Reports: a relative path such as notes.txt lands there."
+    )
+  })
+
+  it('keeps the scratch folder as working directory when every project folder is read-only', () => {
+    const [command] = chatExecTools(windowsSandboxed, {
+      folders: [{ path: 'D:\\Work\\Reference', canEdit: false }],
+      network: true,
+      allowedMcpServers: [],
+    })
+    expect(command.description).toContain('scratch folder of this chat')
+  })
+
+  it('says only the chat folder is reachable when the project has no folders', () => {
+    const [command] = chatExecTools(windowsSandboxed, {
+      folders: [],
+      network: true,
+      allowedMcpServers: [],
+    })
+    expect(command.description).toContain('it can reach only the chat folder.')
+    expect(command.description).not.toContain('internet')
+  })
+})
+
 describe('isChatExecOffered', () => {
   beforeEach(() => {
     platformFeatures.chatExec = true
-    useGeneralSetting.setState({ chatExecEnabled: true })
     useChatExecStatus.setState({ status: macStatus })
   })
 
-  it('offers the tools when the platform, the toggle and the machine allow it', () => {
+  it('offers the tools when the platform and the machine allow it', () => {
     expect(isChatExecOffered()).toBe(true)
     expect([...offeredChatExecToolNames()]).toEqual([
       'run_command',
@@ -164,8 +196,8 @@ describe('isChatExecOffered', () => {
     ])
   })
 
-  it('offers nothing with the composer toggle off', () => {
-    useGeneralSetting.setState({ chatExecEnabled: false })
+  it('offers nothing on a machine that cannot run commands', () => {
+    useChatExecStatus.setState({ status: { ...macStatus, supported: false } })
     expect(isChatExecOffered()).toBe(false)
     expect(offeredChatExecToolNames().size).toBe(0)
   })

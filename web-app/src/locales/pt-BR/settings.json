@@ -96,7 +96,7 @@
   "appearance": {
     "title": "Aparência",
     "theme": "Tema",
-    "themeDesc": "Corresponder ao tema do Sistema Operacional.",
+    "themeDesc": "Escolha claro, escuro ou igual ao sistema operacional.",
     "fontSize": "Tamanho da Fonte",
     "fontSizeDesc": "Ajustar o tamanho da fonte do app.",
     "windowBackground": "Fundo da Janela",

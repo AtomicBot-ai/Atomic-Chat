@@ -9,6 +9,7 @@ import type {
   CompatibilityVerdict,
   CoreCallError,
   PrismCatalog,
+  PrismCatalogRequest,
   PrismFamily,
   PrismPack,
   PrismSetupArtifact,
@@ -93,7 +94,12 @@ export type PrismPlanInput = {
   /** The core's verdict on the file under `atomic-prism`. */
   verdict: CompatibilityVerdict
   families: readonly PrismFamily[]
-  catalog: PrismCatalog
+  /**
+   * The PrismML catalog asked with {@link prismCatalogRequest} of the verdict;
+   * `null` when the core answered `BACKEND_BUILD_UNAVAILABLE`: no build this
+   * machine runs meets the file.
+   */
+  catalog: PrismCatalog | null
   /** Free bytes on the data drive; `null` when the platform cannot say. */
   freeBytes: number | null
   /**
@@ -113,34 +119,42 @@ export function prismTagBuild(tag: string): number {
 const hubUrl = (repo: string, revision: string, file: string) =>
   `https://huggingface.co/${repo}/resolve/${revision}/${file}`
 
-/**
- * The offered build to install for a file that needs build `minBuild`: the
- * core's own pick when it is new enough, else the newest of the same variant,
- * else the best-ordered one that is. `null` when no offered build is.
- */
-function choosePrismPack(
-  catalog: PrismCatalog,
-  minBuild: number | undefined
-): PrismPack | null {
-  const fits = catalog.available.filter(
-    (pack) => minBuild === undefined || prismTagBuild(pack.version) >= minBuild
+/** Whether a verdict leaves PrismML's build to choose: the file needs one that is missing or too old. */
+function needsPrismBuild(verdict: CompatibilityVerdict) {
+  return (
+    verdict.provider === PRISM_PROVIDER &&
+    (verdict.outcome === 'engine_required' ||
+      verdict.outcome === 'engine_update_required')
   )
-  const [version, backend] = (catalog.recommended ?? '').split('/')
-  const pick =
-    fits.find((pack) => pack.version === version && pack.backend === backend) ??
-    fits
-      .filter((pack) => pack.backend === backend)
-      .sort((a, b) => prismTagBuild(b.version) - prismTagBuild(a.version))[0] ??
-    [...fits].sort((a, b) => (b.order ?? 0) - (a.order ?? 0))[0]
-  return pick ? { version: pick.version, backend: pick.backend } : null
+}
+
+/**
+ * What the PrismML catalog is asked for a file: the capabilities and the
+ * build its verdict requires, when it needs a build; nothing otherwise. The
+ * core picks the build from them; the app never does.
+ */
+export function prismCatalogRequest(
+  verdict: CompatibilityVerdict
+): PrismCatalogRequest {
+  if (!needsPrismBuild(verdict)) return {}
+  return {
+    requires: verdict.requires,
+    ...(verdict.min_prism_build !== undefined
+      ? { min_build: verdict.min_prism_build }
+      : {}),
+  }
 }
 
 function prismEngineOf(
   verdict: CompatibilityVerdict,
-  catalog: PrismCatalog,
+  catalog: PrismCatalog | null,
   blockers: PrismSetupBlocker[]
 ): PrismSetupEngine | null {
   if (verdict.provider !== PRISM_PROVIDER) return null
+  if (!catalog) {
+    if (needsPrismBuild(verdict)) blockers.push({ code: 'no_engine_build' })
+    return null
+  }
   const onDisk = (pack: PrismPack) =>
     catalog.installed.some(
       (p) => p.version === pack.version && p.backend === pack.backend
@@ -155,16 +169,14 @@ function prismEngineOf(
       ? { ...current, installed: true, download_size: 0 }
       : null
   }
-  if (
-    verdict.outcome !== 'engine_required' &&
-    verdict.outcome !== 'engine_update_required'
-  )
-    return null
-  const pack = choosePrismPack(catalog, verdict.min_prism_build)
-  if (!pack) {
+  if (!needsPrismBuild(verdict)) return null
+  // The core's pick for the file's requirements: the catalog was asked with them.
+  const [version, backend] = (catalog.recommended ?? '').split('/')
+  if (!version || !backend) {
     blockers.push({ code: 'no_engine_build' })
     return null
   }
+  const pack = { version, backend }
   const installed = onDisk(pack)
   const size =
     catalog.releases

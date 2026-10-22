@@ -9,6 +9,7 @@ pub mod downloads;
 #[cfg(feature = "e2e")]
 pub mod e2e;
 pub mod extensions;
+pub mod foundry_template;
 pub mod filesystem;
 pub mod http;
 pub mod logs;
@@ -18,6 +19,7 @@ pub mod notifications;
 pub(crate) mod process_env;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod process_reaper;
+pub mod secure_env;
 pub mod server;
 pub mod sessions;
 pub mod setup;

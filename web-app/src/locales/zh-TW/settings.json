@@ -53,7 +53,7 @@
   },
   "others": {
     "spellCheck": "拼字檢查",
-    "spellCheckDesc": "為您的執行緒啟用拼字檢查。",
+    "spellCheckDesc": "為您的聊天啟用拼字檢查。",
     "resetFactory": "恢復原廠設定",
     "resetFactoryDesc": "將應用程式還原至其初始狀態，清除所有模型和聊天記錄。此操作不可逆，僅在應用程式損毀時建議使用。"
   },
@@ -96,7 +96,7 @@
   "interface": {
     "title": "外觀",
     "theme": "主題",
-    "themeDesc": "符合作業系統主題。",
+    "themeDesc": "選擇淺色、深色或跟隨作業系統。",
     "fontSize": "字型大小",
     "fontSizeDesc": "調整應用程式的字型大小。",
     "windowBackground": "視窗背景",

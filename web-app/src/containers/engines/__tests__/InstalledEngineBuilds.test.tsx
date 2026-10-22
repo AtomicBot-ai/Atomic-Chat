@@ -121,7 +121,6 @@ describe('InstalledEngineBuilds', () => {
 
   it.each([
     ['b11500', 'settings:engineBuilds.notRemovable.active'],
-    ['b11443', 'settings:engineBuilds.notRemovable.bundled'],
     ['b11300', 'settings:engineBuilds.notRemovable.in-use'],
   ])('disables Remove for %s and says why', (version, reason) => {
     render(<InstalledEngineBuilds engine="llamacpp-upstream" />)
@@ -132,6 +131,24 @@ describe('InstalledEngineBuilds', () => {
       })
     ).toBeDisabled()
     expect(within(row(version)).getByText(reason)).toBeInTheDocument()
+  })
+
+  // Both say "comes with the app": the chip is the reason, said once.
+  it('lets the bundled chip say why its build cannot be removed', () => {
+    render(<InstalledEngineBuilds engine="llamacpp-upstream" />)
+
+    const bundled = row('b11443')
+    expect(
+      within(bundled).getByRole('button', {
+        name: 'settings:engineBuilds.remove',
+      })
+    ).toBeDisabled()
+    expect(
+      within(bundled).getByText('settings:engineBuilds.origin.bundled')
+    ).toBeInTheDocument()
+    expect(
+      within(bundled).queryByText('settings:engineBuilds.notRemovable.bundled')
+    ).not.toBeInTheDocument()
   })
 
   it('removes a build only after the user confirms, through the core', async () => {

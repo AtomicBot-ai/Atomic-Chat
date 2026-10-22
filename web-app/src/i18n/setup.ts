@@ -85,12 +85,30 @@ const translate = (key: string, options: Record<string, unknown> = {}): string =
     }, obj as unknown) as string | undefined
   }
   
+  // With a numeric `count`, prefer the plural form for that language
+  // (`key_one`, `key_few`, `key_many`, `key_other`, as i18next names them)
+  // and fall back to the bare key when a locale has no such form.
+  const lookup = (lng: string): string | undefined => {
+    const table = res[lng]?.[namespace]
+    if (typeof options.count === 'number') {
+      let category: Intl.LDMLPluralRule = 'other'
+      try {
+        category = new Intl.PluralRules(lng).select(options.count)
+      } catch {
+        // An unknown language tag keeps the `_other` form.
+      }
+      const plural = getNestedValue(table, `${translationKey}_${category}`)
+      if (plural !== undefined) return plural
+    }
+    return getNestedValue(table, translationKey)
+  }
+
   // Try to get translation from current language
-  let translation = getNestedValue(res[language]?.[namespace], translationKey)
-  
+  let translation = lookup(language)
+
   // Fallback to fallback language if not found
   if (translation === undefined && language !== fallbackLng) {
-    translation = getNestedValue(res[fallbackLng]?.[namespace], translationKey)
+    translation = lookup(fallbackLng)
   }
   
   // If still not found, honor a caller-supplied `defaultValue`

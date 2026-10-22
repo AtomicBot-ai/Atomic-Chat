@@ -9,6 +9,9 @@
   "sendMessage": "Kirim Pesan",
   "newConversation": "Percakapan Baru",
   "clearHistory": "Hapus Riwayat",
+  "activity": {
+    "completedActions": "{{count}} tindakan selesai"
+  },
   "agentMode": {
     "menuItem": "Mode agen",
     "agent": "Agen",

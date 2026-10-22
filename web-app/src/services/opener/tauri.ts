@@ -2,7 +2,7 @@
  * Tauri Opener Service - Desktop implementation
  */
 
-import { openUrl, revealItemInDir } from '@tauri-apps/plugin-opener'
+import { openUrl } from '@tauri-apps/plugin-opener'
 import { invoke } from '@tauri-apps/api/core'
 import { DefaultOpenerService } from './default'
 
@@ -25,9 +25,12 @@ export class TauriOpenerService extends DefaultOpenerService {
     }
   }
 
+  // Not the plugin's `revealItemInDir`: on Linux its command blocks on D-Bus
+  // inside the async runtime and aborts the app. See `reveal_in_file_manager`
+  // in src-tauri/src/core/system/commands.rs.
   async revealItemInDir(path: string): Promise<void> {
     try {
-      await revealItemInDir(path)
+      await invoke('reveal_in_file_manager', { path })
     } catch (error) {
       console.error('Error revealing item in directory in Tauri:', error)
       throw error

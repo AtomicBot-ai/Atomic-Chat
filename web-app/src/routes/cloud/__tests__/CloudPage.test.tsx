@@ -1,18 +1,27 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { CloudPage } from '../index'
+import { CloudPage, Route } from '../index'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 
 const {
   navigate,
   searchState,
+  storeProviders,
   saveProviderApiKey,
   refreshProviderModels,
   auth,
 } = vi.hoisted(() => ({
   navigate: vi.fn(),
-  searchState: { current: {} as { provider?: string } },
+  searchState: { current: {} as { provider?: string; add?: 'custom' } },
+  storeProviders: { current: [] as ProviderObject[] },
   saveProviderApiKey: vi.fn(),
   refreshProviderModels: vi.fn().mockResolvedValue(undefined),
   auth: {
@@ -26,6 +35,7 @@ const {
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (config: unknown) => config,
+  redirect: (options: unknown) => ({ redirect: options }),
   useNavigate: () => navigate,
   useSearch: () => searchState.current,
 }))
@@ -124,7 +134,8 @@ vi.mock('@/hooks/useModelProvider', () => {
   // The subscription hook reaches the store directly to write its model list.
   Object.assign(hook, {
     getState: () => ({
-      getProviderByName: () => undefined,
+      getProviderByName: (name: string) =>
+        storeProviders.current.find((p) => p.provider === name),
       updateProvider: vi.fn(),
     }),
   })
@@ -182,7 +193,12 @@ const providers: ProviderObject[] = [
 
 const updateProvider = vi.fn()
 
+/** The right pane: the selected provider's connection and models. */
+const configuration = () =>
+  screen.getByRole('region', { name: 'cloud:configurationLabel' })
+
 const mockStore = (list: ProviderObject[] = providers) => {
+  storeProviders.current = list
   vi.mocked(useModelProvider).mockReturnValue({
     providers: list,
     addProvider: vi.fn(),
@@ -196,6 +212,8 @@ describe('CloudPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     searchState.current = {}
+    // The first-visit guide has its own cases below.
+    useGeneralSetting.setState({ cloudGuideDone: true })
     auth.chatgptStatus.mockResolvedValue({ connected: false })
     auth.chatgptCancelLogin.mockResolvedValue(undefined)
     auth.chatgptModels.mockResolvedValue([])
@@ -206,7 +224,7 @@ describe('CloudPage', () => {
     searchState.current = { provider: 'openai' }
     const { unmount } = render(<CloudPage />)
 
-    expect(screen.getByText('cloud:connection.title')).toBeInTheDocument()
+    expect(within(configuration()).getByText('OpenAI')).toBeInTheDocument()
     expect(
       screen.queryByText('cloud:subscription.title')
     ).not.toBeInTheDocument()
@@ -216,9 +234,11 @@ describe('CloudPage', () => {
     render(<CloudPage />)
 
     expect(screen.getByText('cloud:subscription.title')).toBeInTheDocument()
-    // The connection card keeps its picker but hands the body to the
+    // The connection card keeps its title but hands the body to the
     // subscription card — no second, always-"not connected" status line.
-    expect(screen.getByText('cloud:connection.title')).toBeInTheDocument()
+    expect(
+      within(configuration()).getByText('ChatGPT subscription (Codex)')
+    ).toBeInTheDocument()
     expect(
       screen.queryByText('cloud:connection.routing')
     ).not.toBeInTheDocument()
@@ -275,9 +295,9 @@ describe('CloudPage', () => {
     ).toBeInTheDocument()
   })
 
-  it('opens on an already-connected provider when the URL names none', () => {
-    // `ollama` needs no key, but only a served model list proves the daemon is
-    // actually there — an empty one is not a connection to open on.
+  it('lists hosted providers only: self-hosted servers live on Custom Endpoint', () => {
+    // `ollama` answered with a model, so it is connected — and still not here,
+    // nor is the page opened on it.
     mockStore(
       providers.map((p) =>
         p.provider === 'ollama'
@@ -287,9 +307,26 @@ describe('CloudPage', () => {
     )
     render(<CloudPage />)
 
-    expect(screen.getByText('providers:models')).toBeInTheDocument()
+    const catalog = screen.getByRole('complementary', {
+      name: 'cloud:browser.label',
+    })
     expect(
-      screen.queryByText('cloud:connection.placeholder')
+      within(catalog).getByRole('button', {
+        name: 'cloud:browser.configure:OpenAI',
+      })
+    ).toBeInTheDocument()
+    expect(
+      within(catalog).queryByRole('button', {
+        name: 'cloud:browser.configure:Ollama',
+      })
+    ).not.toBeInTheDocument()
+    expect(
+      within(catalog).queryByRole('button', {
+        name: 'cloud:browser.configure:llama.cpp',
+      })
+    ).not.toBeInTheDocument()
+    expect(
+      within(configuration()).queryByText('Ollama')
     ).not.toBeInTheDocument()
   })
 
@@ -324,6 +361,33 @@ describe('CloudPage', () => {
       screen.getByDisplayValue('https://api.openai.com/v1')
     ).toBeInTheDocument()
     expect(screen.getByText('providers:models')).toBeInTheDocument()
+  })
+
+  // The sidebar's Custom Endpoint row used to link here with `?add=custom`.
+  it('forwards the old custom endpoint link and self-hosted providers to Custom Endpoint', () => {
+    const beforeLoad = (
+      Route as unknown as {
+        beforeLoad: (ctx: { search: Record<string, string> }) => void
+      }
+    ).beforeLoad
+    const thrown = (search: Record<string, string>) => {
+      try {
+        beforeLoad({ search })
+      } catch (error) {
+        return error
+      }
+      return undefined
+    }
+
+    expect(thrown({ add: 'custom' })).toEqual({
+      redirect: { to: '/endpoints/' },
+    })
+    // Where `/settings/providers/ollama` and the model picker's gear send it.
+    expect(thrown({ provider: 'ollama' })).toEqual({
+      redirect: { to: '/endpoints/', search: { provider: 'ollama' } },
+    })
+    expect(thrown({ provider: 'openai' })).toBeUndefined()
+    expect(thrown({})).toBeUndefined()
   })
 
   it('opens on OpenRouter when nothing is connected and the URL names none', () => {
@@ -371,7 +435,9 @@ describe('CloudPage', () => {
     render(<CloudPage />)
 
     expect(screen.getByText('providers:models')).toBeInTheDocument()
-    expect(screen.getByText('cloud:models.count')).toBeInTheDocument()
+    expect(
+      within(configuration()).getByText('cloud:models.count')
+    ).toBeInTheDocument()
   })
 
   it('writes the key to both the settings entry and the mirror', () => {
@@ -463,10 +529,8 @@ describe('CloudPage', () => {
   const renderedGeometry = (providerName: string) => {
     searchState.current = { provider: providerName }
     const { unmount } = render(<CloudPage />)
-    const column = screen
-      .getByText('cloud:connection.title')
-      .closest('.max-w-3xl') as HTMLElement
-    const scroller = column.parentElement as HTMLElement
+    const scroller = configuration()
+    const column = scroller.querySelector('.max-w-3xl') as HTMLElement
     const geometry = {
       scroller: scroller.className,
       column: column.className,
@@ -498,14 +562,7 @@ describe('CloudPage', () => {
         base_url: `https://${provider}.test/v1`,
       })),
     ])
-    const kinds = [
-      'openrouter',
-      'anthropic',
-      'openai',
-      'gemini',
-      'ollama',
-      'chatgpt',
-    ]
+    const kinds = ['openrouter', 'anthropic', 'openai', 'gemini', 'chatgpt']
     const [reference, ...others] = kinds.map(renderedGeometry)
 
     expect(reference.column).toContain('mx-auto')
@@ -519,5 +576,187 @@ describe('CloudPage', () => {
       expect(geometry.column).toBe(reference.column)
       expect(new Set(geometry.cards)).toEqual(new Set(reference.cards))
     }
+  })
+})
+
+describe('CloudPage guide and catalog', () => {
+  const openrouter: ProviderObject = {
+    provider: 'openrouter',
+    active: true,
+    models: [
+      { id: 'openai/GPT-5.4' } as Model,
+      { id: 'anthropic/claude-sonnet-5' } as Model,
+    ],
+    settings: [apiKeySetting, baseUrlSetting],
+    api_key: '',
+    base_url: 'https://openrouter.ai/api/v1',
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    searchState.current = {}
+    useGeneralSetting.setState({ cloudGuideDone: true })
+    auth.chatgptStatus.mockResolvedValue({ connected: false })
+    auth.chatgptCancelLogin.mockResolvedValue(undefined)
+    auth.chatgptModels.mockResolvedValue([])
+    mockStore([...providers, openrouter])
+  })
+
+  const guide = () =>
+    screen.queryByRole('region', { name: 'cloud:guide.label' })
+
+  it('opens the guide on a first visit with no hosted provider connected', () => {
+    useGeneralSetting.setState({ cloudGuideDone: false })
+    // A server of one's own answering does not make the cloud set up.
+    mockStore([
+      ...providers.map((p) =>
+        p.provider === 'ollama'
+          ? { ...p, models: [{ id: 'llama3' } as Model] }
+          : p
+      ),
+      openrouter,
+    ])
+    render(<CloudPage />)
+
+    expect(guide()).toBeInTheDocument()
+    expect(
+      screen.queryByRole('complementary', { name: 'cloud:browser.label' })
+    ).not.toBeInTheDocument()
+    // Flagships first, in the guide's order; never a self-hosted server.
+    const choices = within(guide()!)
+      .getAllByRole('button')
+      .map((button) => button.getAttribute('aria-label'))
+      .filter((label) => label?.startsWith('cloud:guide.choose'))
+    expect(choices).toEqual([
+      'cloud:guide.choose:OpenAI',
+      'cloud:guide.choose:OpenRouter',
+      'cloud:guide.choose:ChatGPT subscription (Codex)',
+    ])
+  })
+
+  it("walks from a choice to that provider's connection form, then finishes", () => {
+    useGeneralSetting.setState({ cloudGuideDone: false })
+    const { rerender } = render(<CloudPage />)
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'cloud:guide.choose:OpenRouter' })
+    )
+    expect(navigate).toHaveBeenCalledWith({
+      to: '/cloud/',
+      search: { provider: 'openrouter' },
+      replace: true,
+    })
+    searchState.current = { provider: 'openrouter' }
+    rerender(<CloudPage />)
+
+    expect(screen.getByText('cloud:guide.stepConnect')).toBeInTheDocument()
+    expect(
+      screen.getByDisplayValue('https://openrouter.ai/api/v1')
+    ).toBeInTheDocument()
+
+    // The key lands and the guide says so, with a way out.
+    mockStore([...providers, { ...openrouter, api_key: 'sk-or' }])
+    rerender(<CloudPage />)
+    expect(within(guide()!).getByRole('status')).toHaveTextContent(
+      'cloud:guide.successTitle:OpenRouter'
+    )
+
+    fireEvent.click(
+      within(within(guide()!).getByRole('status')).getByText('cloud:guide.done')
+    )
+    expect(guide()).not.toBeInTheDocument()
+    expect(useGeneralSetting.getState().cloudGuideDone).toBe(true)
+    expect(
+      screen.getByRole('complementary', { name: 'cloud:browser.label' })
+    ).toBeInTheDocument()
+  })
+
+  it('skips the guide when a provider is already connected, and reopens it on "Guide me"', () => {
+    useGeneralSetting.setState({ cloudGuideDone: false })
+    mockStore([...providers, { ...openrouter, api_key: 'sk-or' }])
+    render(<CloudPage />)
+
+    expect(guide()).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('cloud:guide.open'))
+    expect(guide()).toBeInTheDocument()
+    fireEvent.click(screen.getByText('cloud:guide.done'))
+    expect(guide()).not.toBeInTheDocument()
+  })
+
+  it('shows each provider with its model count and connection', () => {
+    mockStore([
+      ...providers.map((p) =>
+        p.provider === 'openai' ? { ...p, api_key: 'sk-live' } : p
+      ),
+      openrouter,
+    ])
+    render(<CloudPage />)
+
+    const row = (name: string) =>
+      screen.getByRole('button', { name: `cloud:browser.configure:${name}` })
+    // The t() stub drops `count`, so the label key is what is checked.
+    expect(row('OpenAI')).toHaveTextContent(
+      'cloud:models.count · cloud:connection.connected'
+    )
+    expect(row('OpenRouter')).toHaveTextContent('cloud:models.count')
+    expect(row('OpenRouter')).not.toHaveTextContent(
+      'cloud:connection.connected'
+    )
+    expect(row('ChatGPT subscription (Codex)')).toHaveTextContent(
+      'cloud:models.countNone'
+    )
+  })
+
+  it('finds a model across providers and opens one of them for it', () => {
+    searchState.current = { provider: 'openai' }
+    const { rerender } = render(<CloudPage />)
+
+    fireEvent.change(
+      screen.getByRole('textbox', { name: 'cloud:browser.searchLabel' }),
+      { target: { value: 'gpt-5.4' } }
+    )
+
+    // `gpt-5.4` and OpenRouter's `openai/GPT-5.4` are one model; `gpt-5.4-mini`
+    // is another, on OpenAI alone.
+    const catalog = screen.getByRole('complementary', {
+      name: 'cloud:browser.label',
+    })
+    expect(
+      within(catalog).getByText('cloud:browser.models')
+    ).toBeInTheDocument()
+    expect(
+      within(catalog).getByText('cloud:browser.availableThrough')
+    ).toBeInTheDocument()
+    expect(
+      within(catalog).getByText('cloud:browser.availableThroughOne')
+    ).toBeInTheDocument()
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'cloud:browser.configureFor:OpenRouter',
+      })
+    )
+    expect(navigate).toHaveBeenLastCalledWith({
+      to: '/cloud/',
+      search: { provider: 'openrouter' },
+      replace: true,
+    })
+    searchState.current = { provider: 'openrouter' }
+    rerender(<CloudPage />)
+    expect(within(configuration()).getByRole('status')).toHaveTextContent(
+      'gpt-5.4cloud:browser.modelConnect'
+    )
+  })
+
+  it('says so when nothing matches', () => {
+    render(<CloudPage />)
+
+    fireEvent.change(
+      screen.getByRole('textbox', { name: 'cloud:browser.searchLabel' }),
+      { target: { value: 'no-such-model' } }
+    )
+
+    expect(screen.getByText('cloud:browser.noResults')).toBeInTheDocument()
   })
 })

@@ -1,5 +1,4 @@
 import { createFileRoute } from '@tanstack/react-router'
-import SettingsMenu from '@/containers/SettingsMenu'
 import HeaderPage from '@/containers/HeaderPage'
 import { Card, CardItem } from '@/containers/Card'
 import { useAttachments } from '@/hooks/useAttachments'
@@ -190,7 +189,6 @@ function AttachmentsSettings() {
         </div>
       </HeaderPage>
       <div className="flex h-[calc(100%-60px)]">
-        <SettingsMenu />
         <div className="p-4 pt-0 w-full overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             <Card title={t('common:attachments') || 'Attachments'}>

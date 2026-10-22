@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useCallback, useEffect, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { type as osType } from '@tauri-apps/plugin-os'
@@ -21,6 +21,14 @@ import {
 } from '@/constants/integrations'
 import HeaderPage from '@/containers/HeaderPage'
 import { Card } from '@/containers/Card'
+import { AgentIcon } from '@/containers/AgentIcon'
+import { detectIntegrationAgent } from '@/lib/integration-agent-detection'
+import {
+  agentConfiguredDescriptionKey,
+  agentConnectHost,
+  writeAgentConfig,
+} from '@/lib/integration-agent-setup'
+import { useServerSetup } from '@/hooks/useServerSetup'
 import { LocalApiServerStatusRow } from '@/containers/LocalApiServerStatusRow'
 import { startLocalApiServer } from '@/utils/localApiServerControl'
 import { Button } from '@/components/ui/button'
@@ -77,330 +85,6 @@ function buildProxyPayload():
     username: proxyUsername.trim() || undefined,
     password: proxyPassword || undefined,
     no_proxy: noProxy.trim() || undefined,
-  }
-}
-
-function IconBox({ children, bg }: { children: ReactNode; bg?: string }) {
-  return (
-    <div
-      className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-md"
-      style={bg ? { backgroundColor: bg } : undefined}
-    >
-      {children}
-    </div>
-  )
-}
-
-function AgentIcon({ agent }: { agent: IntegrationAgent }) {
-  switch (agent.id) {
-    case 'claude-code':
-      return (
-        <IconBox bg="#1f1e1d">
-          <svg
-            width="24"
-            height="18"
-            viewBox="0 0 99 72"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path d="M9 0H90V54H9V0Z" fill="#D77757" />
-            <path d="M0 18H9V36H0V18Z" fill="#D77757" />
-            <path d="M18 18H27V27H18V18Z" fill="#1f1e1d" />
-            <path d="M72 18H81V27H72V18Z" fill="#1f1e1d" />
-            <path d="M90 18H99V36H90V18Z" fill="#D77757" />
-            <path d="M9 54H18V72H9V54Z" fill="#D77757" />
-            <path d="M63 54H72V72H63V54Z" fill="#D77757" />
-            <path d="M27 54H36V72H27V54Z" fill="#D77757" />
-            <path d="M81 54H90V72H81V54Z" fill="#D77757" />
-          </svg>
-        </IconBox>
-      )
-    case 'codex':
-      return (
-        <IconBox bg="#ffffff">
-          <img
-            src="/images/integrations/codex.png"
-            alt={agent.name}
-            className="size-full object-contain"
-          />
-        </IconBox>
-      )
-    case 'opencode':
-      return (
-        <IconBox bg="#1a1717">
-          <svg
-            width="22"
-            height="22"
-            viewBox="0 0 300 300"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <g transform="translate(30, 0)">
-              <path d="M180 240H60V120H180V240Z" fill="#4B4646" />
-              <path
-                d="M180 60H60V240H180V60ZM240 300H0V0H240V300Z"
-                fill="#F1ECEC"
-              />
-            </g>
-          </svg>
-        </IconBox>
-      )
-    case 'openclaude':
-      return (
-        <IconBox bg="#000000">
-          <img
-            src="/images/integrations/openclaude.png"
-            alt={agent.name}
-            className="size-full object-contain"
-          />
-        </IconBox>
-      )
-    case 'zcode':
-      // ZCode's app icon (packages/desktop/build/icons in zai-org/ZCode). Its
-      // squircle has transparent corners, filled with the icon's own black.
-      return (
-        <IconBox bg="#0b0c0c">
-          <img
-            src="/images/integrations/zcode.png"
-            alt={agent.name}
-            className="size-full object-contain"
-          />
-        </IconBox>
-      )
-    case 'zed':
-      // Official Zed brand mark (assets/images/zed_logo.svg from zed-industries/zed),
-      // rendered light-on-dark to match Zed's app icon.
-      return (
-        <IconBox bg="#0c0d0e">
-          <svg
-            width="22"
-            height="22"
-            viewBox="0 0 96 96"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path
-              fillRule="evenodd"
-              clipRule="evenodd"
-              d="M9 6C7.34315 6 6 7.34315 6 9V75H0V9C0 4.02944 4.02944 0 9 0H89.3787C93.3878 0 95.3955 4.84715 92.5607 7.68198L43.0551 57.1875H57V51H63V58.6875C63 61.1728 60.9853 63.1875 58.5 63.1875H37.0551L26.7426 73.5H73.5V36H79.5V73.5C79.5 76.8137 76.8137 79.5 73.5 79.5H20.7426L10.2426 90H87C88.6569 90 90 88.6569 90 87V21H96V87C96 91.9706 91.9706 96 87 96H6.62132C2.61224 96 0.604504 91.1529 3.43934 88.318L52.7574 39H39V45H33V37.5C33 35.0147 35.0147 33 37.5 33H58.7574L69.2574 22.5H22.5V60H16.5V22.5C16.5 19.1863 19.1863 16.5 22.5 16.5H75.2574L85.7574 6H9Z"
-              fill="#ffffff"
-            />
-          </svg>
-        </IconBox>
-      )
-    case 'muse':
-      // Meta's own mark, the same `/svg/meta-color.svg` the Llama and Muse
-      // model families use elsewhere in the app. Its gradient is tuned for a
-      // light ground, so the box stays white in both themes.
-      return (
-        <IconBox bg="#ffffff">
-          <img
-            src="/svg/meta-color.svg"
-            alt={agent.name}
-            className="size-5 object-contain"
-          />
-        </IconBox>
-      )
-    case 'mimo':
-      return (
-        <IconBox bg="#ff6700">
-          <span className="text-sm font-semibold text-white">
-            {agent.name.charAt(0)}
-          </span>
-        </IconBox>
-      )
-    case 'copilot':
-      return (
-        <IconBox bg="#000000">
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="#ffffff"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path d="M23.922 16.997C23.061 18.492 18.063 22.02 12 22.02 5.937 22.02.939 18.492.078 16.997A.641.641 0 0 1 0 16.741v-2.869a.883.883 0 0 1 .053-.22c.372-.935 1.347-2.292 2.605-2.656.167-.429.414-1.055.644-1.517a10.098 10.098 0 0 1-.052-1.086c0-1.331.282-2.499 1.132-3.368.397-.406.89-.717 1.474-.952C7.255 2.937 9.248 1.98 11.978 1.98c2.731 0 4.767.957 6.166 2.093.584.235 1.077.546 1.474.952.85.869 1.132 2.037 1.132 3.368 0 .368-.014.733-.052 1.086.23.462.477 1.088.644 1.517 1.258.364 2.233 1.721 2.605 2.656a.841.841 0 0 1 .053.22v2.869a.641.641 0 0 1-.078.256Zm-11.75-5.992h-.344a4.359 4.359 0 0 1-.355.508c-.77.947-1.918 1.492-3.508 1.492-1.725 0-2.989-.359-3.782-1.259a2.137 2.137 0 0 1-.085-.104L4 11.746v6.585c1.435.779 4.514 2.179 8 2.179 3.486 0 6.565-1.4 8-2.179v-6.585l-.098-.104s-.033.045-.085.104c-.793.9-2.057 1.259-3.782 1.259-1.59 0-2.738-.545-3.508-1.492a4.359 4.359 0 0 1-.355-.508Zm2.328 3.25c.549 0 1 .451 1 1v2c0 .549-.451 1-1 1-.549 0-1-.451-1-1v-2c0-.549.451-1 1-1Zm-5 0c.549 0 1 .451 1 1v2c0 .549-.451 1-1 1-.549 0-1-.451-1-1v-2c0-.549.451-1 1-1Zm3.313-6.185c.136 1.057.403 1.913.878 2.497.442.544 1.134.938 2.344.938 1.573 0 2.292-.337 2.657-.751.384-.435.558-1.15.558-2.361 0-1.14-.243-1.847-.705-2.319-.477-.488-1.319-.862-2.824-1.025-1.487-.161-2.192.138-2.533.529-.269.307-.437.808-.438 1.578v.021c0 .265.021.562.063.893Zm-1.626 0c.042-.331.063-.628.063-.894v-.02c-.001-.77-.169-1.271-.438-1.578-.341-.391-1.046-.69-2.533-.529-1.505.163-2.347.537-2.824 1.025-.462.472-.705 1.179-.705 2.319 0 1.211.175 1.926.558 2.361.365.414 1.084.751 2.657.751 1.21 0 1.902-.394 2.344-.938.475-.584.742-1.44.878-2.497Z" />
-          </svg>
-        </IconBox>
-      )
-    case 'droid':
-      return (
-        <IconBox bg="#020202">
-          <svg
-            width="22"
-            height="22"
-            viewBox="0 0 508 508"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path
-              d="M321.997 150.712C321.401 150.568 320.844 150.299 320.363 149.925C319.883 149.551 319.491 149.08 319.215 148.544C318.938 148.008 318.783 147.42 318.76 146.821C318.738 146.22 318.848 145.624 319.084 145.07C327.226 125.716 330.819 110.23 325.021 103.747C309.666 86.5471 248.085 120.749 228.451 132.333C227.925 132.642 227.337 132.837 226.728 132.903C226.118 132.969 225.501 132.906 224.918 132.719C224.336 132.531 223.801 132.223 223.351 131.815C222.902 131.407 222.548 130.909 222.313 130.356C214.06 111.043 205.384 97.6094 196.589 97.0268C173.279 95.4688 154.491 162.187 148.991 183.932C148.844 184.515 148.57 185.06 148.188 185.528C147.805 185.998 147.323 186.381 146.775 186.651C146.227 186.921 145.626 187.072 145.012 187.094C144.399 187.116 143.788 187.009 143.221 186.778C123.406 178.825 107.545 175.316 100.914 180.98C83.305 195.978 118.315 256.126 130.175 275.304C130.492 275.816 130.692 276.391 130.76 276.987C130.829 277.582 130.765 278.186 130.573 278.755C130.381 279.325 130.065 279.847 129.647 280.286C129.228 280.725 128.718 281.07 128.15 281.298C108.384 289.359 94.6306 297.834 94.0272 306.424C92.439 329.192 160.74 347.544 183.01 352.916C183.605 353.061 184.16 353.33 184.64 353.704C185.118 354.077 185.509 354.548 185.785 355.083C186.061 355.618 186.215 356.205 186.237 356.803C186.26 357.402 186.151 357.998 185.916 358.551C177.773 377.905 174.181 393.398 179.979 399.874C195.334 417.074 256.921 382.877 276.556 371.293C277.081 370.984 277.67 370.789 278.28 370.722C278.889 370.655 279.507 370.717 280.09 370.905C280.673 371.093 281.207 371.402 281.657 371.81C282.106 372.219 282.46 372.717 282.694 373.271C290.947 392.578 299.616 406.012 308.417 406.601C331.728 408.153 350.516 341.44 356.009 319.688C356.157 319.106 356.432 318.562 356.816 318.094C357.2 317.625 357.682 317.243 358.231 316.974C358.779 316.705 359.381 316.554 359.995 316.533C360.608 316.511 361.219 316.619 361.786 316.85C381.601 324.803 397.455 328.304 404.093 322.648C421.702 307.65 386.684 247.495 374.825 228.317C374.51 227.804 374.312 227.229 374.245 226.634C374.177 226.039 374.242 225.436 374.434 224.868C374.626 224.299 374.941 223.777 375.358 223.338C375.775 222.899 376.284 222.552 376.85 222.323C396.623 214.261 410.376 205.786 410.973 197.196C412.568 174.428 344.26 156.078 321.997 150.712ZM295.254 128.885C299.734 136.73 276.646 189 259.474 225.561C259.186 226.172 258.715 226.682 258.121 227.024C257.528 227.365 256.842 227.521 256.155 227.47C255.468 227.419 254.814 227.164 254.28 226.739C253.746 226.314 253.358 225.739 253.169 225.093C246.234 201.322 238.306 173.392 229.824 149.683C229.491 148.752 229.508 147.736 229.871 146.817C230.235 145.897 230.921 145.133 231.808 144.662C252.989 133.363 289.234 118.358 295.254 128.885ZM193.746 135.355C202.589 137.807 224.103 190.714 238.424 228.426C238.664 229.056 238.699 229.742 238.527 230.393C238.354 231.044 237.983 231.627 237.461 232.065C236.939 232.503 236.292 232.775 235.608 232.844C234.923 232.913 234.234 232.775 233.632 232.45C211.501 220.453 185.694 206.159 162.529 195.253C161.622 194.823 160.901 194.093 160.493 193.192C160.085 192.292 160.018 191.279 160.303 190.335C167.12 167.736 181.865 132.069 193.746 135.355ZM126.652 210.04C134.676 205.664 188.197 228.216 225.621 244.989C226.248 245.269 226.771 245.73 227.12 246.31C227.47 246.889 227.629 247.56 227.577 248.23C227.524 248.901 227.264 249.54 226.828 250.062C226.393 250.582 225.805 250.962 225.143 251.147C200.813 257.921 172.211 265.664 147.937 273.949C146.985 274.272 145.946 274.255 145.007 273.9C144.067 273.545 143.286 272.876 142.805 272.011C131.257 251.322 115.867 215.92 126.652 210.04ZM133.275 309.188C135.779 300.551 189.952 279.537 228.562 265.548C229.207 265.315 229.91 265.28 230.576 265.448C231.243 265.617 231.84 265.98 232.288 266.49C232.736 266.999 233.015 267.631 233.085 268.299C233.155 268.968 233.015 269.641 232.682 270.23C220.392 291.846 205.758 317.053 194.592 339.672C194.156 340.561 193.409 341.269 192.486 341.668C191.563 342.068 190.525 342.134 189.557 341.853C166.42 335.235 129.905 320.792 133.275 309.188ZM209.739 374.722C205.252 366.884 228.347 314.608 245.519 278.054C245.806 277.442 246.279 276.931 246.872 276.59C247.465 276.249 248.151 276.093 248.838 276.144C249.525 276.194 250.179 276.45 250.713 276.875C251.247 277.3 251.634 277.874 251.824 278.521C258.759 302.285 266.686 330.222 275.169 353.932C275.499 354.862 275.481 355.877 275.117 356.795C274.752 357.713 274.064 358.475 273.178 358.945C252.004 370.223 215.752 385.256 209.76 374.722H209.739ZM311.247 368.252C302.397 365.807 280.883 312.894 266.562 275.182C266.322 274.55 266.285 273.862 266.458 273.21C266.63 272.559 267.003 271.974 267.526 271.536C268.049 271.097 268.697 270.826 269.382 270.758C270.068 270.69 270.759 270.83 271.361 271.157C293.485 283.154 319.299 297.455 342.457 308.362C343.366 308.789 344.089 309.519 344.497 310.42C344.905 311.321 344.971 312.335 344.683 313.28C337.872 335.912 323.128 371.544 311.247 368.252ZM378.341 293.566C370.31 297.949 316.795 275.391 279.365 258.618C278.738 258.338 278.215 257.877 277.866 257.297C277.516 256.718 277.357 256.047 277.409 255.377C277.461 254.706 277.722 254.067 278.158 253.546C278.593 253.025 279.181 252.646 279.843 252.461C304.18 245.687 332.775 237.943 357.049 229.658C358.003 229.335 359.043 229.353 359.984 229.709C360.925 230.065 361.706 230.737 362.188 231.603C373.729 252.285 389.119 287.693 378.341 293.566ZM371.718 194.419C369.207 203.063 315.041 224.077 276.431 238.066C275.784 238.3 275.08 238.335 274.413 238.167C273.746 237.999 273.148 237.635 272.698 237.124C272.249 236.613 271.972 235.98 271.903 235.31C271.833 234.641 271.975 233.966 272.311 233.377C284.594 211.768 299.228 186.554 310.394 163.935C310.833 163.048 311.58 162.343 312.502 161.945C313.425 161.546 314.462 161.481 315.429 161.76C338.566 168.413 375.081 182.815 371.718 194.419Z"
-              fill="#FAFAFA"
-            />
-          </svg>
-        </IconBox>
-      )
-    case 'pi':
-      return (
-        <IconBox bg="#09090b">
-          <img
-            src="/images/integrations/pi.svg"
-            alt={agent.name}
-            className="size-full object-contain"
-          />
-        </IconBox>
-      )
-    case 'goose':
-      return (
-        <IconBox bg="#ffffff">
-          <img
-            src="/images/integrations/goose.svg"
-            alt={agent.name}
-            className="size-full object-contain"
-          />
-        </IconBox>
-      )
-    case 'openhands':
-      return (
-        <IconBox bg="#ffffff">
-          <img
-            src="/images/integrations/openhands.svg"
-            alt={agent.name}
-            className="size-full object-contain p-1"
-          />
-        </IconBox>
-      )
-    case 'poolside':
-      return (
-        <IconBox bg="#ffffff">
-          <img
-            src="/images/integrations/poolside.svg"
-            alt={agent.name}
-            className="size-full object-contain p-1"
-          />
-        </IconBox>
-      )
-    case 'kilo':
-      return (
-        <IconBox bg="#ffffff">
-          <img
-            src="/images/integrations/kilo.svg"
-            alt={agent.name}
-            className="size-full object-contain"
-          />
-        </IconBox>
-      )
-    case 'openclaw':
-      return (
-        <IconBox bg="#ffffff">
-          <img
-            src="/images/integrations/openclaw.png"
-            alt={agent.name}
-            className="size-full object-contain"
-          />
-        </IconBox>
-      )
-    case 'atomic-agent':
-      // Atomic Agent's own mark (assets/logo.svg in AtomicBot-ai/atomic-agent),
-      // white on the Atomic brand blue.
-      return (
-        <IconBox bg="#006aff">
-          <svg
-            width="22"
-            height="22"
-            viewBox="0 0 64 64"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path
-              d="M35.2357 49.918C35.923 49.918 36.4741 49.359 36.5369 48.6746C37.1268 42.2442 42.2464 37.1246 48.6768 36.5347C49.3612 36.4719 49.9202 35.9208 49.9202 35.2335L49.9202 28.7624C49.9202 28.0751 49.363 27.518 48.6757 27.518L37.7246 27.518C37.0373 27.518 36.4802 26.9608 36.4802 26.2735L36.4802 15.3224C36.4802 14.6351 35.923 14.078 35.2357 14.078L28.7646 14.078C28.0773 14.078 27.5262 14.6369 27.4634 15.3213C26.8736 21.7517 21.754 26.8714 15.3236 27.4612C14.6391 27.524 14.0802 28.0751 14.0802 28.7624L14.0802 35.2335C14.0802 35.9208 14.6373 36.478 15.3246 36.478L26.2757 36.478C26.963 36.478 27.5202 37.0351 27.5202 37.7224L27.5202 48.6735C27.5202 49.3608 28.0773 49.918 28.7646 49.918L35.2357 49.918Z"
-              fill="#ffffff"
-            />
-          </svg>
-        </IconBox>
-      )
-    case 'hermes':
-      return (
-        <IconBox bg="#ffffff">
-          <img
-            src="/images/integrations/hermes.png"
-            alt={agent.name}
-            className="size-full object-contain"
-          />
-        </IconBox>
-      )
-    case 'cline':
-      return (
-        <IconBox bg="#2b303b">
-          <img
-            src="/images/integrations/cline.png"
-            alt={agent.name}
-            className="size-full object-cover"
-          />
-        </IconBox>
-      )
-    case 'dsh':
-      // Official DeepSeek fish mark, taken from the harness' own
-      // `packages/client/ui-primitives/src/FishLogo.tsx` (MIT), rendered white
-      // on the DeepSeek brand blue.
-      return (
-        <IconBox bg="#4d6bfe">
-          <svg
-            width="20"
-            height="15"
-            viewBox="0 0 23.16 17.04"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path
-              d="M22.9168 1.43018C22.6713 1.31018 22.5658 1.53918 22.4223 1.65519C22.3733 1.69269 22.3318 1.74169 22.2903 1.78669C21.9317 2.1697 21.5127 2.42121 20.9657 2.39121C20.1657 2.34621 19.4827 2.59771 18.8787 3.20973C18.7502 2.45521 18.3236 2.0047 17.6746 1.71569C17.3351 1.56568 16.9916 1.41518 16.7536 1.08867C16.5876 0.856163 16.5421 0.597155 16.4591 0.341647C16.4061 0.187643 16.3536 0.0301382 16.1761 0.00363739C15.9836 -0.0263635 15.9081 0.135141 15.8326 0.270145C15.5306 0.822162 15.4136 1.43018 15.4251 2.0462C15.4516 3.43174 16.0366 4.53527 17.1991 5.3203C17.3311 5.4103 17.3651 5.5003 17.3236 5.63181C17.2441 5.90231 17.1501 6.16482 17.0671 6.43533C17.0141 6.60784 16.9351 6.64584 16.7501 6.57033C16.1121 6.30383 15.5611 5.90931 15.074 5.4328C14.2475 4.63328 13.5 3.75075 12.568 3.05973C12.349 2.89822 12.13 2.74822 11.9034 2.60522C10.9524 1.68169 12.028 0.923165 12.277 0.833162C12.5375 0.739159 12.3675 0.41615 11.5259 0.42015C10.6844 0.42365 9.91439 0.705658 8.93286 1.08117C8.78935 1.13767 8.63835 1.17867 8.48384 1.21267C7.59332 1.04367 6.66829 1.00617 5.70226 1.11517C3.88321 1.31768 2.43016 2.1777 1.36213 3.64575C0.0790928 5.4103 -0.222916 7.41536 0.146595 9.50642C0.535106 11.7105 1.66014 13.535 3.38869 14.9616C5.18125 16.4406 7.24581 17.1657 9.60138 17.0266C11.0319 16.9441 12.6245 16.7526 14.421 15.2321C14.874 15.4576 15.3496 15.5476 16.1381 15.6151C16.7456 15.6716 17.3306 15.5851 17.7836 15.4911C18.4931 15.3411 18.4441 14.6841 18.1876 14.5636C16.1081 13.595 16.5646 13.9891 16.1496 13.67C17.2061 12.42 18.8202 10.1979 19.3182 7.17235C19.3672 6.83834 19.4297 6.36783 19.4222 6.09732C19.4182 5.93231 19.4562 5.86831 19.6447 5.84931C20.1657 5.78931 20.6712 5.64681 21.1357 5.3913C22.4833 4.65528 23.0268 3.44624 23.1548 1.9972C23.1738 1.77569 23.1508 1.54668 22.9168 1.43018ZM11.1749 14.4736C9.15936 12.889 8.18184 12.3675 7.77832 12.39C7.40081 12.4125 7.46881 12.8445 7.55182 13.126C7.63882 13.404 7.75182 13.5955 7.91033 13.8396C8.01983 14.0011 8.09533 14.2411 7.80083 14.4216C7.15181 14.8231 6.02327 14.2866 5.97027 14.2601C4.65673 13.4865 3.5587 12.4655 2.78467 11.069C2.03715 9.72493 1.60314 8.28289 1.53164 6.74384C1.51264 6.37233 1.62214 6.24082 1.99215 6.17332C2.47916 6.08332 2.98118 6.06432 3.46769 6.13582C5.52476 6.43633 7.27581 7.35586 8.74385 8.8129C9.58188 9.64243 10.2159 10.634 10.8689 11.6025C11.5634 12.631 12.3105 13.611 13.262 14.4146C13.598 14.6961 13.866 14.9101 14.1225 15.0681C13.349 15.1546 12.058 15.1731 11.1749 14.4746L11.1749 14.4736ZM12.141 8.25988C12.141 8.09488 12.273 7.96338 12.439 7.96338C12.4765 7.96338 12.5105 7.97088 12.541 7.98188C12.5825 7.99688 12.6205 8.01938 12.6505 8.05338C12.7035 8.10588 12.7335 8.18088 12.7335 8.25988C12.7335 8.42489 12.6015 8.55639 12.4355 8.55639C12.2695 8.55639 12.141 8.42489 12.141 8.25988ZM15.1415 9.79893C14.949 9.87793 14.7565 9.94544 14.5715 9.95294C14.2845 9.96794 13.9715 9.85143 13.8015 9.70893C13.5375 9.48742 13.3485 9.36342 13.2695 8.97691C13.2355 8.8119 13.2545 8.55639 13.2845 8.40989C13.3525 8.09438 13.277 7.89187 13.0545 7.70787C12.8735 7.55786 12.643 7.51636 12.39 7.51636C12.2955 7.51636 12.209 7.47486 12.1445 7.44136C12.039 7.38886 11.9519 7.25735 12.035 7.09585C12.0615 7.04335 12.19 6.91584 12.22 6.89334C12.5635 6.69784 12.9595 6.76184 13.326 6.90834C13.6655 7.04735 13.9225 7.30236 14.292 7.66287C14.6695 8.09838 14.7375 8.21838 14.9525 8.54539C15.1225 8.8009 15.277 9.06341 15.3831 9.36392C15.4471 9.55142 15.3641 9.70493 15.1415 9.79893Z"
-              fill="#ffffff"
-            />
-          </svg>
-        </IconBox>
-      )
-    case 'vscode':
-      return (
-        <IconBox bg="#0065a9">
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="#ffffff"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path d="M17.583 2.21 21.79 4.23a1.2 1.2 0 0 1 .686 1.084v13.372a1.2 1.2 0 0 1-.686 1.084l-4.207 2.022a1.2 1.2 0 0 1-1.357-.232l-7.677-7.01-3.61 2.74a.8.8 0 0 1-1.022-.046l-1.125-1.024a.8.8 0 0 1 0-1.18L5.93 12 2.265 8.96a.8.8 0 0 1 0-1.18l1.125-1.024a.8.8 0 0 1 1.022-.046l3.61 2.74 7.677-7.01a1.2 1.2 0 0 1 1.357-.232ZM16.5 7.18 10.94 12l5.56 4.82V7.18Z" />
-          </svg>
-        </IconBox>
-      )
-    case 'jetbrains':
-      return (
-        <IconBox>
-          <img
-            src="/images/integrations/jetbrains.png"
-            alt={agent.name}
-            className="size-full object-cover"
-          />
-        </IconBox>
-      )
-    case 'xcode':
-      return (
-        <IconBox>
-          <img
-            src="/images/integrations/xcode.png"
-            alt={agent.name}
-            className="size-full object-cover"
-          />
-        </IconBox>
-      )
-    default:
-      return (
-        <IconBox bg="#52525b">
-          <span className="text-sm font-semibold text-white">
-            {agent.name.charAt(0)}
-          </span>
-        </IconBox>
-      )
   }
 }
 
@@ -501,10 +185,7 @@ function LaunchPage() {
   // navigating away from and back to this page mid-install (the Rust installer
   // keeps running; we must keep showing its progress on return).
   const installed = useLaunchStore((s) => s.installed)
-  const setInstalled = useLaunchStore((s) => s.setInstalled)
   const viaWsl = useLaunchStore((s) => s.viaWsl)
-  const setViaWsl = useLaunchStore((s) => s.setViaWsl)
-  const setBinPath = useLaunchStore((s) => s.setBinPath)
   const customPaths = useLaunchSettings((s) => s.customPaths)
   const setCustomPath = useLaunchSettings((s) => s.setCustomPath)
   const busy = useLaunchStore((s) => s.busy)
@@ -523,34 +204,9 @@ function LaunchPage() {
   const [editorBusy, setEditorBusy] = useState<Record<string, boolean>>({})
 
   const detect = useCallback(
-    async (agent: IntegrationAgent): Promise<boolean> => {
-      try {
-        const result = await invoke<{
-          installed: boolean
-          viaWsl: boolean
-          path?: string | null
-        }>('detect_agent_installed', {
-          bin: agent.detectBin,
-          customPath: customPaths[agent.id] || null,
-        })
-        setInstalled((prev) => ({ ...prev, [agent.id]: result.installed }))
-        setViaWsl((prev) => ({ ...prev, [agent.id]: result.viaWsl }))
-        // Only set for launchers found off PATH (a custom path, or a prefix
-        // install like OpenClaw's app-managed `~/.openclaw/bin/openclaw`), where
-        // the bare binary name would not resolve in the terminal we open.
-        setBinPath((prev) => ({
-          ...prev,
-          [agent.id]: result.path ?? undefined,
-        }))
-        return result.installed
-      } catch {
-        setInstalled((prev) => ({ ...prev, [agent.id]: false }))
-        setViaWsl((prev) => ({ ...prev, [agent.id]: false }))
-        setBinPath((prev) => ({ ...prev, [agent.id]: undefined }))
-        return false
-      }
-    },
-    [setInstalled, setViaWsl, setBinPath, customPaths]
+    (agent: IntegrationAgent): Promise<boolean> =>
+      detectIntegrationAgent(agent, customPaths[agent.id]),
+    [customPaths]
   )
 
   const refreshRunningModels = useCallback(async () => {
@@ -658,105 +314,15 @@ function LaunchPage() {
         await ensureServerRunning()
       }
 
-      // `serverHost` may be a bind-all address (0.0.0.0 / ::) which clients
-      // cannot connect to; agents need a real loopback address.
-      const connectHost =
-        serverHost === '0.0.0.0' || (serverHost as string) === '::'
-          ? '127.0.0.1'
-          : serverHost
-      const base = `http://${connectHost}:${serverPort}`
-      const apiUrl = agent.endpointWithPrefix ? `${base}${apiPrefix}` : base
-      const key = apiKey || undefined
+      await writeAgentConfig(agent, model, {
+        serverHost,
+        serverPort,
+        apiPrefix,
+        apiKey,
+      })
+      useServerSetup.getState().markAgentConfigured(agent.id)
 
-      switch (agent.id) {
-        case 'claude-code':
-          await invoke('configure_claude_code', {
-            apiUrl,
-            model: model ?? undefined,
-            apiKey: key,
-          })
-          break
-        case 'codex':
-          await invoke('configure_codex', { apiUrl, model, apiKey: key })
-          break
-        case 'opencode':
-          await invoke('configure_opencode', { apiUrl, model, apiKey: key })
-          break
-        case 'openclaude':
-          await invoke('configure_openclaude', { apiUrl, model, apiKey: key })
-          break
-        case 'cline':
-          await invoke('configure_cline', { apiUrl, model, apiKey: key })
-          break
-        case 'mimo':
-          await invoke('configure_mimo', { apiUrl, model, apiKey: key })
-          break
-        case 'zed':
-          await invoke('configure_zed', { apiUrl, model, apiKey: key })
-          break
-        case 'zcode':
-          await invoke('configure_zcode', { apiUrl, model, apiKey: key })
-          break
-        case 'copilot':
-          await invoke('configure_copilot', { apiUrl, model, apiKey: key })
-          break
-        case 'droid':
-          await invoke('configure_droid', { apiUrl, model, apiKey: key })
-          break
-        case 'atomic-agent':
-          await invoke('configure_atomic_agent', { apiUrl, model, apiKey: key })
-          break
-        case 'hermes':
-          await invoke('configure_hermes_agent', {
-            apiUrl,
-            model,
-            apiKey: key,
-            // Hermes Agent refuses to start below a 64K context window, so we
-            // configure 64K (the minimum it accepts).
-            contextLength: 65536,
-          })
-          break
-        case 'pi':
-          await invoke('configure_pi', { apiUrl, model, apiKey: key })
-          break
-        case 'goose':
-          await invoke('configure_goose', { apiUrl, model, apiKey: key })
-          break
-        case 'openhands':
-          await invoke('configure_openhands', { apiUrl, model, apiKey: key })
-          break
-        case 'kilo':
-          await invoke('configure_kilo', { apiUrl, model, apiKey: key })
-          break
-        case 'poolside':
-          await invoke('configure_poolside', { apiUrl, model, apiKey: key })
-          break
-        case 'muse':
-          await invoke('configure_muse', { apiUrl, model, apiKey: key })
-          break
-        case 'openclaw':
-          await invoke('configure_openclaw', { apiUrl, model, apiKey: key })
-          break
-        case 'dsh':
-          await invoke('configure_dsh', { apiUrl, model, apiKey: key })
-          break
-        default:
-          throw new Error(`Unknown agent: ${agent.id}`)
-      }
-
-      const configuredDescKey =
-        agent.id === 'zed'
-          ? 'launch:toast.configuredDescEditor'
-          : agent.id === 'openclaw'
-            ? // OpenClaw's Gateway watches the config file and hot-reloads, so
-              // there is nothing to restart — but a chat that was already pinned
-              // to another model keeps it, and only `/model default` clears that.
-              'launch:toast.configuredDescOpenclaw'
-            : agent.id === 'zcode'
-              ? // ZCode polls its provider file, so a running app switches
-                // over without a restart.
-                'launch:toast.configuredDescZcode'
-              : 'launch:toast.configuredDesc'
+      const configuredDescKey = agentConfiguredDescriptionKey(agent.id)
       toast.success(t('launch:toast.configured', { name: agent.name }), {
         description: t(configuredDescKey, { name: agent.name }),
         duration: 8000,
@@ -896,11 +462,7 @@ function LaunchPage() {
             // itself goes to whatever --base-url points at. `apiUrl` already
             // carries the /v1 prefix (endpointWithPrefix), which is the root
             // Muse appends `/responses` to.
-            const connectHost =
-              serverHost === '0.0.0.0' || (serverHost as string) === '::'
-                ? '127.0.0.1'
-                : serverHost
-            const apiUrl = `http://${connectHost}:${serverPort}${apiPrefix}`
+            const apiUrl = `http://${agentConnectHost(serverHost)}:${serverPort}${apiPrefix}`
             const key = apiKey || 'atomic'
             if (osType() === 'windows') {
               const modelArg = model ? ` --model ${model}` : ''
@@ -910,11 +472,7 @@ function LaunchPage() {
               command = `META_API_KEY='${key}' ${launcher} --provider meta --base-url '${apiUrl}'${modelArg}`
             }
           } else if (agent.id === 'poolside') {
-            const connectHost =
-              serverHost === '0.0.0.0' || (serverHost as string) === '::'
-                ? '127.0.0.1'
-                : serverHost
-            const apiUrl = `http://${connectHost}:${serverPort}${apiPrefix}`
+            const apiUrl = `http://${agentConnectHost(serverHost)}:${serverPort}${apiPrefix}`
             const standaloneBase = apiUrl.replace(/\/v1\/?$/, '')
             const key = apiKey || 'atomic'
             const modelId = model ?? ''
@@ -974,12 +532,8 @@ function LaunchPage() {
   // carries the `/v1` prefix; the key is whatever the server requires (a
   // non-empty placeholder when auth is off, since most editors demand one).
   const editorConnection = useCallback(() => {
-    const connectHost =
-      serverHost === '0.0.0.0' || (serverHost as string) === '::'
-        ? '127.0.0.1'
-        : serverHost
     return {
-      baseUrl: `http://${connectHost}:${serverPort}${apiPrefix}`,
+      baseUrl: `http://${agentConnectHost(serverHost)}:${serverPort}${apiPrefix}`,
       apiKey: apiKey || 'atomic',
       model: activeModel,
     }
@@ -1058,7 +612,7 @@ function LaunchPage() {
     const steps = agent.editor?.steps ?? []
 
     return (
-      <Card key={agent.id} className="bg-card rounded-lg">
+      <Card key={agent.id} id={agent.id} className="bg-card rounded-lg">
         <div className="flex items-center gap-3">
           <AgentIcon agent={agent} />
           <h2 className="font-studio truncate text-base font-medium text-foreground">
@@ -1157,7 +711,7 @@ function LaunchPage() {
     const agentLogs = logs[agent.id] ?? []
 
     return (
-      <Card key={agent.id} className="bg-card rounded-lg">
+      <Card key={agent.id} id={agent.id} className="bg-card rounded-lg">
         <div className="flex items-center gap-3">
           <AgentIcon agent={agent} />
           <h2 className="font-studio truncate text-base font-medium text-foreground">

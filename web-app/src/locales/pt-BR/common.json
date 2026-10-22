@@ -269,7 +269,7 @@
     "projectNotFoundDesc": "O projeto que você está procurando não existe ou foi removido.",
     "deleteProjectDialog": {
       "title": "Remover Projeto",
-      "permanentDelete": "ThiIsso removerá permanentemente todas as conversas.",
+      "permanentDelete": "Isso removerá permanentemente todas as conversas.",
       "permanentDeleteWarning": "Esta ação removerá permanentemente TODAS as conversas dentro do projeto!",
       "deleteEmptyProject": "Esta ação removerá o projeto \"{{projectName}}\".",
       "saveThreadsAdvice": "Para salvar conversas, mova-as para sua lista de conversas ou outro projeto antes de remover.",
@@ -292,7 +292,7 @@
       "renameSuccess": "Projeto renomeado de \"{{oldName}}\" para \"{{newName}}\""
     },
     "noConversationsIn": "Nenhuma Conversa em {{projectName}}",
-    "startNewConversation": "Inicie uma nova conversa com {{projectName}} abaixo",
+    "startNewConversation": "Digite uma mensagem acima para iniciar uma conversa em {{projectName}}.",
     "conversationsIn": "Conversas em {{projectName}}",
     "conversationsDescription": "Clique em qualquer conversa para continuar o chat, ou inicie uma nova abaixo.",
     "thread": "conversa",

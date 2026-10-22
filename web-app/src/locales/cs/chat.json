@@ -9,6 +9,13 @@
   "sendMessage": "Odeslat zprávu",
   "newConversation": "Nová konverzace",
   "clearHistory": "Vymazat historii",
+  "activity": {
+    "completedActions": "Dokončeno akcí: {{count}}",
+    "completedActions_one": "Dokončena {{count}} akce",
+    "completedActions_few": "Dokončeny {{count}} akce",
+    "completedActions_many": "Dokončeno {{count}} akce",
+    "completedActions_other": "Dokončeno {{count}} akcí"
+  },
   "agentMode": {
     "menuItem": "Režim agenta",
     "agent": "Agent",

@@ -440,10 +440,30 @@ pub async fn call_tool<R: Runtime>(
     server_name: Option<String>,
     arguments: Option<Map<String, Value>>,
     cancellation_token: Option<String>,
+    thread_id: Option<String>,
 ) -> Result<CallToolResult, String> {
+    // A secure environment project's chat reaches only the servers the
+    // project lists: MCP servers run outside its sandbox, with the user's
+    // own access to files and the network.
+    let secure = match thread_id.as_deref() {
+        Some(thread_id) => {
+            crate::core::secure_env::for_thread(&get_jan_data_folder_path(app.clone()), thread_id)?
+        }
+        None => None,
+    };
+    let permitted = |server: &str| {
+        secure
+            .as_ref()
+            .map_or(true, |environment| environment.allows_mcp_server(server))
+    };
+    if let Some(server) = server_name.as_deref().filter(|server| !permitted(server)) {
+        return Err(not_in_secure_project(&format!("Server '{server}'")));
+    }
+
     let timeout_duration = tool_call_timeout(&state).await;
     if super::web_search::is_bundled_tool(&tool_name)
         && server_name.as_deref().is_none_or(|name| name == "exa")
+        && permitted("exa")
         && super::web_search::enabled(&app).await
     {
         let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
@@ -494,7 +514,7 @@ pub async fn call_tool<R: Runtime>(
         if let Some(ref server) = server_name {
             servers.iter().filter(|(name, _)| *name == server).collect()
         } else {
-            servers.iter().collect()
+            servers.iter().filter(|(name, _)| permitted(name)).collect()
         };
 
     if servers_to_check.is_empty() {
@@ -634,8 +654,20 @@ pub async fn call_tool<R: Runtime>(
         };
     }
 
+    if secure.is_some() {
+        log::warn!("MCP: tool {tool_name} is not on a server this secure project allows");
+        return Err(not_in_secure_project(&format!("Tool {tool_name}")));
+    }
     log::warn!("MCP: tool {tool_name} not found on any connected server");
     Err(format!("Tool {tool_name} not found"))
+}
+
+/// What the model reads when a secure project's chat calls a server the
+/// project does not list.
+fn not_in_secure_project(what: &str) -> String {
+    format!(
+        "{what} is not available: this chat belongs to a secure environment project, and only the connectors the project allows can be used. Tell the user instead of retrying."
+    )
 }
 
 /// Cancels a running tool call by its cancellation token

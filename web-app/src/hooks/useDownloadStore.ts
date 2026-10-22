@@ -8,6 +8,15 @@ import {
 } from '@/lib/downloadFormat'
 import type { PullModelOptions } from '@/services/models/types'
 
+/** Ephemeral requests from Downloads; the app-wide manager owns their lifecycle. */
+export type DownloadControlRequest = {
+  requestId: number
+  action: 'pause' | 'resume' | 'cancel'
+  id: string
+  name: string
+}
+let nextControlRequest = 0
+
 /**
  * What the Rust downloader is doing while it has no bytes to report. Mirrors
  * `DownloadStage` in `src-tauri/src/core/downloads/models.rs`, relayed by the
@@ -100,6 +109,9 @@ export type DownloadState = {
   clearDismissedDownload: (id: string) => void
   // ATO-154: resume parameters keyed by model id (see DownloadResumeParams).
   resumeParams: { [modelId: string]: DownloadResumeParams }
+  controlRequests: DownloadControlRequest[]
+  requestControl: (action: DownloadControlRequest['action'], download: { id: string; name: string }) => void
+  takeControlRequest: (requestId: number) => boolean
   removeDownload: (id: string) => void
   updateProgress: (
     id: string,
@@ -133,6 +145,20 @@ export type DownloadState = {
  * This store is used to manage the download progress of files.
  */
 export const useDownloadStore = create<DownloadState>()(persist<DownloadState, [], [], { recovery: DownloadRecovery }>((set) => ({
+  controlRequests: [],
+  requestControl: (action, download) => set((state) => {
+    if (state.controlRequests.some((request) => request.id === download.id && request.action === action)) return state
+    return { controlRequests: [...state.controlRequests, { ...download, action, requestId: ++nextControlRequest }] }
+  }),
+  takeControlRequest: (requestId) => {
+    let taken = false
+    set((state) => {
+      if (state.controlRequests[0]?.requestId !== requestId) return state
+      taken = true
+      return { controlRequests: state.controlRequests.slice(1) }
+    })
+    return taken
+  },
   downloads: {},
   localDownloadingModels: new Set(),
   resumableDownloads: new Set(),
