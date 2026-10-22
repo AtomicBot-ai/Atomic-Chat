@@ -297,8 +297,13 @@ describe('DropdownModelProvider - the composer pill', () => {
     // The quant tells two files of one repo apart where there is room.
     expect(modelRow()).toHaveTextContent('LiquidAI/LFM2.5 2.6B Q4_K_M')
 
+    // The list names it once and puts the quant and author under the name.
     fireEvent.click(modelRow()!)
-    expect(screen.getByText('LiquidAI/LFM2.5 2.6B Q4_K_M')).toBeVisible()
+    const option = screen.getByRole('radio', {
+      name: 'LFM2.5 2.6B, Q4_K_M, LiquidAI (LiquidAI/LFM2.5-2.6B-Q4_K_M)',
+    })
+    expect(option).toHaveTextContent('LFM2.5 2.6B')
+    expect(screen.getByText('Q4_K_M · LiquidAI')).toBeVisible()
   })
 
   it('opens on the model row with the effort slider under it', () => {

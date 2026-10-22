@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-443 records, 2026-05-19 → 2026-10-21.
+444 records, 2026-05-19 → 2026-10-22.
 
 ---
 
@@ -346,7 +346,8 @@ decision is reversed, add a new one that says which record it supersedes.
 ## UI / UX (2)
 - **2026-10-20** — [Show hosted providers on Cloud and the user's own servers on Custom Endpoint](2026-10-20-show-hosted-providers-on-cloud-and-own-servers-on-custom-endpoint.md)
 - **2026-10-20** — [List everything downloaded on a Downloads page](2026-10-20-list-everything-downloaded-on-a-downloads-page.md)
-## UI / UX (102)
+## UI / UX (103)
+- **2026-10-22** — [Give model picker rows a second line for quant, owner and source](2026-10-22-give-model-picker-rows-a-second-line-for-quant-owner-and-source.md)
 - **2026-10-21** — [Check a cloud key before calling it connected](2026-10-21-check-a-cloud-key-before-calling-it-connected.md) — supersedes the "no key error state" clause of the 2026-10-20 Cloud record.
 - **2026-10-21** — [Say on the card why an MCP server did not start](2026-10-21-say-on-the-card-why-an-mcp-server-did-not-start.md)
 - **2026-10-21** — [Keep thread windows in step through the thread files](2026-10-21-keep-thread-windows-in-step-through-the-thread-files.md)
