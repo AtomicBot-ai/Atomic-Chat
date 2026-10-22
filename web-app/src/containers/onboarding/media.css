@@ -1,3 +1,7 @@
+/* Tailwind's layer order, stated first: this file can load before index.css,
+ * and a layer it used first would otherwise come before `base`. */
+@layer theme, base, components, utilities;
+
 /* The media step (`steps/MediaStep.tsx`), ported from the prototype's
  * `.ob-media-*` and `.ob-caution` rules. The cards sit on the shell's surface
  * colours; only the art tiles and the caution have colours of their own,

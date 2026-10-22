@@ -1,3 +1,7 @@
+/* Tailwind's layer order, stated first: this file can load before index.css,
+ * and a layer it used first would otherwise come before `base`. */
+@layer theme, base, components, utilities;
+
 /* The cloud step (`steps/CloudStep`), from the prototype's `.ob-cloud-*` and
  * `.ob-key-*` rules on the shell's theme variables (`onboarding.css`). The
  * two variables below are the connected card's, which the shell has no

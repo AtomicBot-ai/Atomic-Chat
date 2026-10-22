@@ -1,3 +1,7 @@
+/* Tailwind's layer order, stated first: this file can load before index.css,
+ * and a layer it used first would otherwise come before `base`. */
+@layer theme, base, components, utilities;
+
 /* The first-run flow, ported from the approved prototype
  * (`preview/onboarding/onboarding.css`). The prototype is dark only; here the
  * dark values are its palette and the light ones are the app's theme tokens

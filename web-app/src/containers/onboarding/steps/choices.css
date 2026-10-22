@@ -1,3 +1,7 @@
+/* Tailwind's layer order, stated first: this file can load before index.css,
+ * and a layer it used first would otherwise come before `base`. */
+@layer theme, base, components, utilities;
+
 /* The purpose and server steps: two large choices side by side, and the
  * server step's "Choose a server-compatible model" box. Ported from the
  * prototype (`.ob-choice-grid`, `.ob-confirm`); as in `onboarding.css`, the

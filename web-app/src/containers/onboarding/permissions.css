@@ -1,3 +1,7 @@
+/* Tailwind's layer order, stated first: this file can load before index.css,
+ * and a layer it used first would otherwise come before `base`. */
+@layer theme, base, components, utilities;
+
 /* The permissions step (`steps/PermissionsStep`), from the prototype's
  * `.ob-permission*` rules on the shell's theme variables (`onboarding.css`).
  * This file loads ahead of `onboarding.css`, so the rules that refine one of
