@@ -12,6 +12,7 @@ import { IconMoodSmile } from '@tabler/icons-react'
 import EmojiPicker, { EmojiClickData, Theme } from 'emoji-picker-react'
 
 import { Textarea } from '@/components/ui/textarea'
+import { AssistantMessageClockSettings } from '@/containers/AssistantMessageClockSettings'
 
 import { useTheme } from '@/hooks/useTheme'
 import { defaultAssistant } from '@/hooks/useAssistant'
@@ -41,6 +42,12 @@ export default function AddEditAssistant({
   )
   const [instructions, setInstructions] = useState(
     initialData?.instructions || ''
+  )
+  const [includeDate, setIncludeDate] = useState(
+    initialData?.include_date ?? false
+  )
+  const [includeTime, setIncludeTime] = useState(
+    initialData?.include_time ?? false
   )
   const { isDark } = useTheme()
   const [showEmojiPicker, setShowEmojiPicker] = useState(false)
@@ -78,6 +85,8 @@ export default function AddEditAssistant({
       setName(initialData.name)
       setDescription(initialData.description)
       setInstructions(initialData.instructions)
+      setIncludeDate(initialData.include_date ?? false)
+      setIncludeTime(initialData.include_time ?? false)
       setShowEmojiPicker(false)
       // setToolStepsInput(String(initialData.tool_steps ?? 20))
     } else if (open) {
@@ -91,6 +100,8 @@ export default function AddEditAssistant({
     setName('')
     setDescription(undefined)
     setInstructions('')
+    setIncludeDate(false)
+    setIncludeTime(false)
     setNameError(null)
     setShowEmojiPicker(false)
     // setToolStepsInput('20')
@@ -111,6 +122,8 @@ export default function AddEditAssistant({
       created_at: initialData?.created_at || Date.now(),
       description,
       instructions,
+      include_date: includeDate,
+      include_time: includeTime,
       // Sampling is edited in the model-bar Sampling popover, not here:
       // keep this assistant's own values untouched, seed a new one with the
       // built-in defaults so the popover opens on sane values.
@@ -225,9 +238,12 @@ export default function AddEditAssistant({
               className="resize-none"
               rows={4}
             />
-            <div className="text-xs text-muted-foreground">
-              {t('assistants:instructionsDateHint')}
-            </div>
+            <AssistantMessageClockSettings
+              includeDate={includeDate}
+              includeTime={includeTime}
+              onDateChange={setIncludeDate}
+              onTimeChange={setIncludeTime}
+            />
           </div>
         </div>
 

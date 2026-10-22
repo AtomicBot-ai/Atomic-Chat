@@ -126,7 +126,9 @@ describe('MessageItem inline editing', () => {
     fireEvent.keyDown(textarea, { key: 'Enter' })
 
     expect(onEdit).toHaveBeenCalledWith('m1', 'rewritten text')
-    expect(screen.queryByTestId('inline-message-editor')).not.toBeInTheDocument()
+    expect(
+      screen.queryByTestId('inline-message-editor')
+    ).not.toBeInTheDocument()
   })
 
   it('restores the original text on cancel without calling onEdit', () => {
@@ -154,5 +156,37 @@ describe('MessageItem inline editing', () => {
     fireEvent.keyDown(textarea, { key: 'Enter' })
 
     expect(onEdit).toHaveBeenCalledWith('a1', 'corrected reply')
+  })
+})
+
+describe('separate user clock context', () => {
+  it('shows stored time outside the bubble while copy and editing keep only the original text', async () => {
+    renderMessage({
+      ...userMessage,
+      metadata: { message_clock: { date: '2026-10-23', time: '02:04:15' } },
+    })
+    const clock = screen.getByTestId('message-clock')
+    expect(clock.textContent).toBe('2026-10-23 02:04:15')
+    expect(clock.closest('.bg-secondary')).toBeNull()
+    fireEvent.click(screen.getAllByRole('button')[0])
+    await vi.waitFor(() =>
+      expect(mocks.copyToClipboard).toHaveBeenCalledWith('original text')
+    )
+    fireEvent.click(editButton())
+    expect(screen.getByRole('textbox')).toHaveValue('original text')
+    expect(screen.getByTestId('message-clock').textContent).toBe(
+      '2026-10-23 02:04:15'
+    )
+  })
+
+  it('leaves old literal prefixes in the bubble and does not infer metadata', () => {
+    renderMessage({
+      ...userMessage,
+      parts: [{ type: 'text', text: '[Date: 2026-10-23]\nhello' }],
+    })
+    expect(screen.queryByTestId('message-clock')).toBeNull()
+    expect(screen.getByText(/\[Date: 2026-10-23\]/).textContent).toContain(
+      'hello'
+    )
   })
 })

@@ -19,6 +19,7 @@ import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
+import { AssistantMessageClockSettings } from '@/containers/AssistantMessageClockSettings'
 import { ModelSettingsList } from '@/containers/ModelSetting'
 import { ParametersSection } from '@/containers/ParametersSection'
 import AddEditAssistant from '@/containers/dialogs/AddEditAssistant'
@@ -271,9 +272,19 @@ export function RunSettingsPanel({ onClose }: RunSettingsPanelProps) {
               disabled={!activeAssistant}
               className="max-h-48 min-h-20 resize-none border-secondary bg-secondary/30 px-2.5 py-1.5 text-xs md:text-xs"
             />
-            <p className="text-xs leading-normal text-muted-foreground">
-              {t('assistants:instructionsDateHint')}
-            </p>
+            <AssistantMessageClockSettings
+              includeDate={activeAssistant?.include_date ?? false}
+              includeTime={activeAssistant?.include_time ?? false}
+              onDateChange={(include_date) => {
+                if (activeAssistant)
+                  updateAssistant({ ...activeAssistant, include_date })
+              }}
+              onTimeChange={(include_time) => {
+                if (activeAssistant)
+                  updateAssistant({ ...activeAssistant, include_time })
+              }}
+              disabled={!activeAssistant}
+            />
           </div>
 
           {/* Model: only local engines expose a context knob and load options. */}

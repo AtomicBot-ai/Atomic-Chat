@@ -49,6 +49,7 @@ import {
   extractContentPartsFromUIMessage,
 } from '@/lib/messages'
 import { newUserThreadContent } from '@/lib/completion'
+import { prependStoredMessageClock } from '@/lib/messageClock'
 import { rebuildEditedContent, rebuildEditedParts } from '@/lib/message-edit'
 import {
   ttftBegin,
@@ -168,7 +169,10 @@ import {
   runAgentTurn,
 } from '@/services/agent/tauri'
 import { buildAgentSessionSyncMessages } from '@/lib/agent-session-sync'
-import { getSamplingParamsForThread } from '@/lib/samplingParams'
+import {
+  getSamplingParamsForThread,
+  resolveAssistantForThread,
+} from '@/lib/samplingParams'
 import { useMCPServers } from '@/hooks/useMCPServers'
 import { settleMcpActivationsBeforeSend } from '@/lib/mcp-activation'
 import { findWebSearchServer, isWebSearchEnabled } from '@/lib/web-search'
@@ -200,13 +204,15 @@ const agentAttachmentsFromMessage = (
 } => {
   const metadata = (message.metadata ?? {}) as Record<string, unknown>
   const storedText = metadata.agent_input_text
-  const text =
+  const rawText =
     typeof storedText === 'string'
       ? storedText
       : message.content
           .filter((content) => content.type === ContentType.Text)
           .map((content) => content.text?.value ?? '')
           .join('')
+
+  const text = prependStoredMessageClock(rawText, metadata)
 
   const imageNames = Array.isArray(metadata.image_attachment_names)
     ? metadata.image_attachment_names
@@ -337,9 +343,8 @@ function ThreadDetail() {
   )
   const effectiveInstructions =
     liveAssistant?.instructions ?? threadAssistant?.instructions
+  // Keep legacy templates raw until the request; toggle clocks live in saved message metadata.
   const systemMessage = effectiveInstructions
-    ? renderInstructions(effectiveInstructions)
-    : undefined
 
   // Holds the partial assistant message while the model reloads after a
   // context-limit hit, so the user sees it instead of a blank gap.
@@ -1112,6 +1117,7 @@ function ThreadDetail() {
       // The Rust tools only find a running embedding session; make sure one
       // exists before the model's first docs.retrieve. Never throws.
       if (rag) await ensureEmbeddingsReady()
+      let userInputText = text
       if (persistUserMessage) {
         const messageId =
           useOptimisticUserMessage.getState().byThread[threadId]?.id ??
@@ -1120,7 +1126,8 @@ function ThreadDetail() {
           threadId,
           text,
           combinedAttachments,
-          messageId
+          messageId,
+          resolveAssistantForThread(threadId)
         )
         userMessage.metadata = {
           ...(userMessage.metadata ?? {}),
@@ -1130,6 +1137,7 @@ function ThreadDetail() {
             (attachment) => attachment.name
           ),
         }
+        userInputText = prependStoredMessageClock(text, userMessage.metadata)
         addMessage(userMessage)
         const userUiMessage = convertThreadMessagesToUIMessages([
           userMessage,
@@ -1199,7 +1207,7 @@ function ThreadDetail() {
             capabilities: selectedModel.capabilities ?? [],
             context_window: agentContextWindow(selectedModel),
             reasoning,
-            user_message: text,
+            user_message: userInputText,
             selected_skill: agentSkillName,
             attachments: ipcAttachments,
             working_dir: workingDir,
@@ -1209,7 +1217,7 @@ function ThreadDetail() {
             })),
             auto_approve:
               useAgentMode.getState().getApprovalMode(threadId) === 'skip',
-            assistant_instructions: systemMessage,
+            assistant_instructions: renderInstructions(systemMessage),
             sampling: sampling.params,
             sampling_overridden: sampling.overridden,
             web_search: isWebSearchEnabled(
@@ -1419,7 +1427,8 @@ function ThreadDetail() {
         threadId,
         text,
         processedAttachments,
-        messageId
+        messageId,
+        resolveAssistantForThread(threadId)
       )
       // A selected skill rides on message metadata (same key as the agent
       // path) — CustomChatTransport reads it back from the message list, so

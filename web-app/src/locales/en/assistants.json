@@ -51,5 +51,8 @@
     "penalties": "Penalties",
     "general": "General",
     "context": "Context"
-  }
+  },
+  "includeDate": "Include date",
+  "includeTime": "Include time",
+  "messageClockHint": "Show the local send date or time above each new message and include it as context for the model. Previous values stay fixed."
 }

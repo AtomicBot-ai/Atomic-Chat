@@ -1,3 +1,5 @@
+import { renderInstructions } from './instructionTemplate'
+import { withMessageClocksForModel } from './messageClock'
 import { useMCPServers } from '@/hooks/useMCPServers'
 import { isWebSearchServer } from '@/lib/web-search'
 import { type UIMessage } from '@ai-sdk/react'
@@ -1116,7 +1118,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // A failed turn that produced nothing is kept in the thread only to show
     // why it failed; it is no reply for the model to see.
     const sanitizedMessages = stripAgentRunToolParts(
-      withoutEmptyFailedTurns(options.messages)
+      withMessageClocksForModel(withoutEmptyFailedTurns(options.messages))
     )
     const messagesToConvert =
       effectiveProviderName === 'anthropic'
@@ -1206,7 +1208,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         ? ATTACHED_DOCUMENTS_HINT
         : undefined
     const systemWithSkills = composeSystemMessage(
-      composeSystemMessage(this.systemMessage, skillsBlock),
+      composeSystemMessage(renderInstructions(this.systemMessage), skillsBlock),
       documentsHint
     )
 

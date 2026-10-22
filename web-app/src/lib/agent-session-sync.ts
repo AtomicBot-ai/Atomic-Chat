@@ -1,3 +1,4 @@
+import { prependStoredMessageClock } from './messageClock'
 import { ContentType, type ThreadMessage } from '@janhq/core'
 import type { AgentReseedMessage } from '@/types/agent'
 
@@ -15,13 +16,17 @@ export function buildAgentSessionSyncMessages(
     if (message.role !== 'user' && message.role !== 'assistant') continue
     const metadata = (message.metadata ?? {}) as Record<string, unknown>
     const storedText = metadata.agent_input_text
-    const text =
+    const rawText =
       message.role === 'user' && typeof storedText === 'string'
         ? storedText
         : (message.content ?? [])
             .filter((content) => content.type === ContentType.Text)
             .map((content) => content.text?.value ?? '')
             .join('')
+    const text =
+      message.role === 'user'
+        ? prependStoredMessageClock(rawText, metadata)
+        : rawText
     if (!text.trim()) continue
     result.push({ role: message.role, text })
   }

@@ -15,6 +15,7 @@ import {
 } from '@/lib/mcp-approval'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { usePrompt } from '@/hooks/usePrompt'
+import { defaultAssistant, useAssistant } from '@/hooks/useAssistant'
 import { useDeferredFirstSend } from '@/stores/deferred-first-send-store'
 import { seedServiceHub } from '@/test/service-hub'
 
@@ -51,6 +52,7 @@ vi.mock('@/hooks/useThreads', () => ({
   useThreads: {
     getState: () => ({
       currentThreadId: mocks.currentThreadId,
+      threads: {},
       createThread: mocks.createThread,
     }),
     setState: mocks.setThreadsState,
@@ -91,6 +93,13 @@ describe('DeferredFirstSendProvider', () => {
       assistants: [],
     })
     seedServiceHub()
+    useAssistant.setState({
+      assistants: [
+        { ...defaultAssistant, include_date: true, include_time: true },
+      ],
+      defaultAssistantId: 'jan',
+      pendingAssistant: undefined,
+    })
     usePrompt.setState({ prompt: 'Queued prompt', draftKey: null, drafts: {} })
     useDeferredFirstSend.setState({ queued: null })
     useAppState.setState({ activeModels: [] })
@@ -137,6 +146,15 @@ describe('DeferredFirstSendProvider', () => {
 
     await waitFor(() => expect(mocks.createThread).toHaveBeenCalled())
     await waitFor(() => expect(mocks.sendMessage).toHaveBeenCalled())
+    const persisted = mocks.addMessage.mock.calls[0][0]
+    const sent = mocks.sendMessage.mock.calls[0][0]
+    expect(persisted.content[0].text.value).toBe('Queued prompt')
+    expect(persisted.metadata.message_clock).toEqual({
+      date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      time: expect.stringMatching(/^\d{2}:\d{2}:\d{2}$/),
+    })
+    expect(sent.parts[0].text).toBe('Queued prompt')
+    expect(sent.metadata).toEqual(persisted.metadata)
     expect(mocks.navigate).not.toHaveBeenCalled()
     expect(mocks.setThreadsState).toHaveBeenCalledWith({
       currentThreadId: 'existing-thread',

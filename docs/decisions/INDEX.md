@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-459 records, 2026-05-19 → 2026-10-22.
+460 records, 2026-05-19 → 2026-10-23.
 
 ---
 
@@ -350,7 +350,9 @@ decision is reversed, add a new one that says which record it supersedes.
 ## UI / UX (2)
 - **2026-10-20** — [Show hosted providers on Cloud and the user's own servers on Custom Endpoint](2026-10-20-show-hosted-providers-on-cloud-and-own-servers-on-custom-endpoint.md)
 - **2026-10-20** — [List everything downloaded on a Downloads page](2026-10-20-list-everything-downloaded-on-a-downloads-page.md)
-## UI / UX (111)
+## UI / UX (112)
+
+- **2026-10-23** — [Keep message clocks as opt-in metadata outside user text](2026-10-23-store-message-clocks-as-opt-in-metadata.md)
 - **2026-10-22** — [Fold the sidebar over the page when the window is narrow, and bound its width](2026-10-22-fold-the-sidebar-over-the-page-when-the-window-is-narrow.md)
 - **2026-10-22** — [Show full names in the sidebar, and tell colliding rows apart by their last activity](2026-10-22-show-full-names-and-tell-colliding-sidebar-rows-apart.md)
 - **2026-10-22** — [Name the served model readably on the Server card](2026-10-22-name-the-served-model-readably-on-the-server-card.md)

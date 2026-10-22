@@ -466,3 +466,46 @@ describe('Live reasoning geometry (Chromium)', () => {
     expectNoHorizontalOverflow(container)
   })
 })
+
+for (const width of [1024, 1280]) {
+  for (const font of ['16px', '20px']) {
+    for (const theme of ['light', 'dark'] as const) {
+      it(`keeps a user clock outside its bubble at ${width}px / ${font} / ${theme}`, async () => {
+        await page.viewport(width, 800)
+        setFontSize(font)
+        setTheme(theme)
+        render(
+          withTranslations(
+            <div
+              data-testid="clock-frame"
+              style={{ marginLeft: 256, width: width - 304 }}
+            >
+              <MessageItem
+                message={{
+                  id: 'clock',
+                  role: 'user',
+                  metadata: {
+                    message_clock: { date: '2026-10-23', time: '02:04:15' },
+                  },
+                  parts: [{ type: 'text', text: 'A short message' }],
+                }}
+                isFirstMessage
+                isLastMessage
+                status="ready"
+              />
+            </div>
+          )
+        )
+        await settle()
+        const clock = screen.getByTestId('message-clock')
+        const text = screen.getByText('A short message')
+        expectNoHorizontalOverflow(screen.getByTestId('clock-frame'))
+        expectOneLine(clock)
+        expect(clock.closest('.bg-secondary')).toBeNull()
+        expect(clock.getBoundingClientRect().bottom).toBeLessThanOrEqual(
+          text.getBoundingClientRect().top
+        )
+      })
+    }
+  }
+}
