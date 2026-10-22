@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-456 records, 2026-05-19 → 2026-10-22.
+459 records, 2026-05-19 → 2026-10-22.
 
 ---
 
