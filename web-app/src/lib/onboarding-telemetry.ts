@@ -19,6 +19,7 @@
 import { localStorageKey } from '@/constants/localStorage'
 import { getAnalyticsPlatform, normalizeModelId } from '@/lib/telemetry'
 import { queuedCapture } from '@/lib/telemetry-queue'
+import type { OnboardingStepId } from '@/lib/onboarding/steps'
 
 /**
  * Whether this looks like the very first launch on this device.
@@ -61,13 +62,25 @@ export type OnboardingExitPath =
   | 'timeout'
 
 /**
- * Which screen of onboarding the user got to.
+ * Which screen of onboarding the user got to: a step of the first-run flow
+ * (`lib/onboarding/steps`).
  *
- * `backend` is Windows-only and comes first. It was unreachable in telemetry
- * until now: `step_reached` was the literal `'model'` at all four exit sites,
- * and a user who quit on the backend step emitted no exit event at all.
+ * `backend` is Windows/Linux-only and comes before the model. Until the
+ * full-screen flow only `backend` and `model` existed, so a series filtered on
+ * `step_reached = 'model'` now misses the users who got further.
  */
-export type OnboardingStep = 'backend' | 'model'
+export type OnboardingStep = OnboardingStepId
+
+const ONBOARDING_STEP_IDS: readonly OnboardingStep[] = [
+  'welcome',
+  'backend',
+  'model',
+  'permissions',
+  'cloud',
+  'media',
+  'purpose',
+  'server',
+]
 
 /** Shape of `describeProviderState`, kept structural so this module does not
  *  have to import the provider store. */
@@ -120,6 +133,10 @@ export function captureOnboardingCompleted(params: {
   exitProvider?: string | null
   stepReached?: OnboardingStep
   startedAtMs?: number | null
+  /** The first-run variant this install ran (`lib/onboarding/steps`). */
+  variant?: string | null
+  /** Where the run handed off: chat, the endpoint or the agents page. */
+  destination?: string | null
 }): void {
   // The run finished, so the record that would otherwise report it as
   // abandoned on the next launch has to go. Done here rather than at the four
@@ -139,6 +156,44 @@ export function captureOnboardingCompleted(params: {
       params.startedAtMs != null
         ? Math.max(0, Date.now() - params.startedAtMs)
         : null,
+    onboarding_variant: params.variant ?? null,
+    destination: params.destination ?? null,
+  })
+}
+
+/**
+ * A step of the first-run flow came on screen. With `onboarding_step_left`,
+ * this is the per-step funnel `onboarding_completed.step_reached` can only
+ * sample at the exit.
+ */
+export function captureOnboardingStepShown(params: {
+  step: OnboardingStep
+  /** 1-based place among the steps this machine shows. */
+  stepIndex: number
+  stepCount: number
+  variant: string
+}): void {
+  capture('onboarding_step_shown', {
+    step: params.step,
+    step_index: params.stepIndex,
+    step_count: params.stepCount,
+    onboarding_variant: params.variant,
+  })
+}
+
+/** How a step was left, and after how long. */
+export function captureOnboardingStepLeft(params: {
+  step: OnboardingStep
+  /** `next`, `back`, `skip_setup` or a step's own exit such as `use_model`. */
+  action: string
+  durationMs: number
+  variant: string
+}): void {
+  capture('onboarding_step_left', {
+    step: params.step,
+    step_action: params.action,
+    duration_ms: Math.max(0, Math.round(params.durationMs)),
+    onboarding_variant: params.variant,
   })
 }
 
@@ -222,7 +277,9 @@ export function reportAbandonedOnboarding(): void {
   try {
     const record = JSON.parse(raw) as Partial<OnboardingInFlight>
     captureOnboardingAbandoned({
-      stepReached: record.step === 'backend' ? 'backend' : 'model',
+      stepReached: ONBOARDING_STEP_IDS.includes(record.step as OnboardingStep)
+        ? (record.step as OnboardingStep)
+        : 'model',
       abandonedAppVersion: record.app_version ?? null,
       startedAtMs:
         typeof record.started_at === 'number' ? record.started_at : null,

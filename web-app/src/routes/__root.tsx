@@ -1,4 +1,4 @@
-import { createRootRoute, Outlet } from '@tanstack/react-router'
+import { createRootRoute, Outlet, useRouterState } from '@tanstack/react-router'
 // import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
 
 import DialogAppUpdater from '@/containers/dialogs/AppUpdater'
@@ -65,6 +65,12 @@ export const Route = createRootRoute({
 
 const AppLayout = () => {
   const { showOnboardingModelReminder } = useOnboardingModelReminder()
+  // The first-run flow takes the whole window, without the navigation, while
+  // the providers below keep running for it: downloads, analytics and the
+  // image/video stores all work during setup.
+  const onOnboarding = useRouterState({
+    select: (state) => state.location.pathname === route.onboarding,
+  })
   const isLeftPanelOpen = useLeftPanel((state) => state.open)
   const setLeftPanel = useLeftPanel((state) => state.setLeftPanel)
   const sidebarWidth = useLeftPanel((state) => state.width)
@@ -106,7 +112,7 @@ const AppLayout = () => {
         minInsetWidth={MIN_PAGE_WIDTH}
       >
         <AnalyticProvider />
-        <KeyboardShortcutsProvider />
+        {!onOnboarding && <KeyboardShortcutsProvider />}
         <DialogAppUpdater />
         {isSetupCompleted && <BackendUpdater />}
         {/* ATO-528/531: offers a new inference-engine build. Gated on
@@ -119,18 +125,26 @@ const AppLayout = () => {
         {/* Unlike the recommendation dialogs above, this dialog only opens
             after ChatInput dispatches a mismatch prompt. Keep it mounted for
             upgraded/legacy users whose setup-completed flag is absent. */}
-        <SuboptimalBackendDialog />
-        <WhatsNewDialog />
-        <LeftSidebar />
-        <SidebarInset>
-          <div className="bg-neutral-50 dark:bg-background size-full">
-            <Outlet />
-          </div>
-        </SidebarInset>
+        {onOnboarding ? (
+          <Outlet />
+        ) : (
+          <>
+            <SuboptimalBackendDialog />
+            <WhatsNewDialog />
+            <LeftSidebar />
+            <SidebarInset>
+              <div className="bg-neutral-50 dark:bg-background size-full">
+                <Outlet />
+              </div>
+            </SidebarInset>
+          </>
+        )}
 
         {/* Analytics consent popup is disabled; Settings → Privacy is still available */}
         {/* {productAnalyticPrompt && <PromptAnalytic />} */}
-        {showOnboardingModelReminder && <PromptOnboardingModel />}
+        {showOnboardingModelReminder && !onOnboarding && (
+          <PromptOnboardingModel />
+        )}
         {/* ATO-462: mounted once at the root, not inside the sidebar or the
             header. It used to render in one of two places depending on whether
             the left panel was open, so a download's progress moved around the

@@ -1,0 +1,38 @@
+{
+  "stepOf": "Step {{index}} / {{count}}",
+  "back": "Back",
+  "skipSetup": "Skip setup",
+  "continue": "Continue",
+  "welcome": {
+    "logo": "Atomic Chat logo",
+    "title": "Meet Atomic Chat.",
+    "lead": "Your private, local AI.",
+    "leadDetail": "The simplest way to run open models on any hardware.",
+    "start": "Let’s get set up"
+  },
+  "download": {
+    "label": "Model download",
+    "progress": "{{name}} download",
+    "ready": "{{name}} is ready",
+    "onDevice": "Available on this device",
+    "queued": "Queued",
+    "interrupted": "Download interrupted",
+    "withQueued": "{{readout}} · {{count}} queued",
+    "pause": "Pause download",
+    "resume": "Resume download"
+  },
+  "model": {
+    "title": "Choose your first model.",
+    "onDevice": "On this device",
+    "recommended": "Recommended for this device",
+    "downloaded": "Downloaded",
+    "foundIn": "Found in {{source}}",
+    "bestFit": "Best fit",
+    "size": "{{size}} download",
+    "memory": "{{size}} GB memory",
+    "freeStorage": "{{size}} GB free storage",
+    "use": "Use {{name}}",
+    "continueWithout": "Continue without a model",
+    "noRecommendations": "Recommendations need an internet connection. You can add a model later from Models."
+  }
+}

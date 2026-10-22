@@ -151,17 +151,15 @@ export function shouldEnterOnboarding({
   providers,
   hasPriorThread,
   setupCompleted,
-  skippedThisSession,
   force,
 }: {
   providers: ProviderLike[]
   hasPriorThread: boolean
   setupCompleted: boolean
-  skippedThisSession: boolean
   force: boolean
 }): boolean {
   if (isOnboardingInProgress()) return true
-  if (skippedThisSession || setupCompleted) return false
+  if (setupCompleted) return false
   if (force) return true
   return !hasPriorThread && !hasValidProviders(providers)
 }

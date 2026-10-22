@@ -10,6 +10,9 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (options: Record<string, unknown>) => options,
   useSearch: () => mocks.search,
+  Navigate: ({ to }: { to: string }) => (
+    <div data-testid="redirect" data-to={to} />
+  ),
 }))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
@@ -24,9 +27,6 @@ vi.mock('@/containers/AgentWorkspaceLayout', () => ({
   AgentWorkspaceLayout: ({ children }: { children: React.ReactNode }) => (
     <>{children}</>
   ),
-}))
-vi.mock('@/containers/SetupScreen', () => ({
-  default: () => <div data-testid="setup-screen" />,
 }))
 
 vi.mock('@/hooks/useTools', () => ({ useTools: () => undefined }))
@@ -44,6 +44,8 @@ vi.mock('@/hooks/useAgentMode', () => ({
   useAgentMode: () => undefined,
 }))
 
+import { useOnboardingStore } from '@/stores/onboarding-store'
+
 import { Route } from '../index'
 
 const Index = (Route as unknown as { component: React.ComponentType })
@@ -52,20 +54,23 @@ const Index = (Route as unknown as { component: React.ComponentType })
 describe('home route onboarding gate', () => {
   beforeEach(() => {
     localStorage.clear()
+    useOnboardingStore.getState().reset()
     mocks.search = {}
   })
 
-  it('shows Welcome to a first-run user', () => {
+  it('sends a first-run user to the setup screen', () => {
     render(<Index />)
 
-    expect(screen.getByTestId('setup-screen')).toBeInTheDocument()
+    expect(screen.getByTestId('redirect')).toHaveAttribute(
+      'data-to',
+      '/onboarding'
+    )
     expect(screen.queryByTestId('chat-input')).not.toBeInTheDocument()
   })
 
-  // Starting a download completes onboarding without a model in the route:
-  // the navigation lands on `/` with the search it already had, so only the
-  // completion event can take the screen down.
-  it('leaves Welcome for the chat once setup completes on the same route', () => {
+  // Leaving setup lands on `/` with whatever search it already had, so only
+  // the completion event can keep the route from sending the user back.
+  it('shows the chat once setup completes on the same route', () => {
     render(<Index />)
 
     act(() => {
@@ -73,8 +78,21 @@ describe('home route onboarding gate', () => {
       window.dispatchEvent(new Event(SETUP_COMPLETED_EVENT))
     })
 
-    expect(screen.queryByTestId('setup-screen')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('redirect')).not.toBeInTheDocument()
     expect(screen.getByTestId('chat-input')).toBeInTheDocument()
+  })
+
+  // The backend step relaunches the app halfway through setup.
+  it('goes back to a run that was on screen when the app closed', () => {
+    localStorage.setItem(localStorageKey.setupCompleted, 'true')
+    useOnboardingStore.getState().begin('full', 'backend')
+
+    render(<Index />)
+
+    expect(screen.getByTestId('redirect')).toHaveAttribute(
+      'data-to',
+      '/onboarding'
+    )
   })
 
   it('greets an empty chat with the logo above the question', () => {

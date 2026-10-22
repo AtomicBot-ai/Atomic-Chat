@@ -14,7 +14,11 @@ import { extractModelErrorMessage } from '@/lib/modelErrorMessage'
 import { LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
 import type { ServiceHub } from '@/services'
 import type { LocalModelCandidate } from '@/services/models/localScan'
-import type { CatalogModel } from '@/services/models/types'
+import type {
+  CatalogModel,
+  DownloadRefusal,
+  ModelQuant,
+} from '@/services/models/types'
 import { markSilentImport } from '@/utils/backgroundImports'
 
 /**
@@ -25,6 +29,49 @@ export function mlxModelId(catalog: CatalogModel): string {
   return sanitizeMlxId(
     catalog.model_name.split('/').pop() ?? catalog.model_name
   )
+}
+
+/**
+ * Starts a Hub GGUF download — the quant, with its projector when the model
+ * has one — the way the Hub card and the reply gate do. Returns the id the
+ * download store and the panel track it by.
+ */
+export function startGgufCatalogDownload(
+  catalog: CatalogModel,
+  variant: ModelQuant,
+  mmprojPath: string | undefined,
+  {
+    serviceHub,
+    huggingfaceToken,
+    requestOrigin = 'standalone',
+    onRefused,
+  }: {
+    serviceHub: ServiceHub
+    huggingfaceToken?: string
+    requestOrigin?: DownloadRequestOrigin
+    /** The pull refused to start (a full disk); the user was already told. */
+    onRefused?: (refusal: DownloadRefusal) => void
+  }
+): string {
+  const store = useDownloadStore.getState()
+  const resume = store.resumableDownloads.has(variant.model_id)
+  store.clearResumableDownload(variant.model_id)
+  store.addLocalDownloadingModel(variant.model_id)
+  store.setDownloadOrigin(variant.model_id, catalog.model_name, requestOrigin)
+  void serviceHub
+    .models()
+    .pullModelWithMetadata(
+      variant.model_id,
+      variant.path,
+      mmprojPath,
+      huggingfaceToken,
+      true,
+      resume
+    )
+    .then((refusal) => {
+      if (refusal) onRefused?.(refusal)
+    })
+  return variant.model_id
 }
 
 /**

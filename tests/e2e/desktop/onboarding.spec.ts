@@ -11,8 +11,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { appEnv, invoke, spawnApp } from '../harness/app.js'
 import { homeRedirect } from '../harness/platform.js'
 import { endSession, restartApp, startSession, withArtifacts, type Session } from '../harness/session.js'
+import { skipOnboarding } from '../harness/chat.js'
 
-const ONBOARDING_HEADING = 'h1=Welcome to Atomic Chat!'
+const ONBOARDING_HEADING = 'h1=Meet Atomic Chat.'
 const CHAT_INPUT = '[data-testid="chat-input"]'
 
 describe('first launch on a clean profile', () => {
@@ -49,7 +50,7 @@ describe('first launch on a clean profile', () => {
       )
       expect(apiServer).toMatchObject({ enableOnStartup: false, serverPort: session.apiPort })
 
-      await browser.$('button=Skip').click()
+      await skipOnboarding(session)
       await browser.$(CHAT_INPUT).waitForDisplayed({ timeout: 30_000 })
       expect(await browser.$(ONBOARDING_HEADING).isExisting()).toBe(false)
 

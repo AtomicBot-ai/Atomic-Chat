@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SystemMonitorRouteImport } from './routes/system-monitor'
+import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as LogsRouteImport } from './routes/logs'
 import { Route as DownloadsRouteImport } from './routes/downloads'
 import { Route as IndexRouteImport } from './routes/index'
@@ -52,6 +53,11 @@ import { Route as SettingsProvidersProviderNameRouteImport } from './routes/sett
 const SystemMonitorRoute = SystemMonitorRouteImport.update({
   id: '/system-monitor',
   path: '/system-monitor',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OnboardingRoute = OnboardingRouteImport.update({
+  id: '/onboarding',
+  path: '/onboarding',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LogsRoute = LogsRouteImport.update({
@@ -250,6 +256,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/downloads': typeof DownloadsRoute
   '/logs': typeof LogsRoute
+  '/onboarding': typeof OnboardingRoute
   '/system-monitor': typeof SystemMonitorRoute
   '/api/activity': typeof ApiActivityRoute
   '/api/connections': typeof ApiConnectionsRoute
@@ -291,6 +298,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/downloads': typeof DownloadsRoute
   '/logs': typeof LogsRoute
+  '/onboarding': typeof OnboardingRoute
   '/system-monitor': typeof SystemMonitorRoute
   '/api/activity': typeof ApiActivityRoute
   '/api/connections': typeof ApiConnectionsRoute
@@ -333,6 +341,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/downloads': typeof DownloadsRoute
   '/logs': typeof LogsRoute
+  '/onboarding': typeof OnboardingRoute
   '/system-monitor': typeof SystemMonitorRoute
   '/api/activity': typeof ApiActivityRoute
   '/api/connections': typeof ApiConnectionsRoute
@@ -376,6 +385,7 @@ export interface FileRouteTypes {
     | '/'
     | '/downloads'
     | '/logs'
+    | '/onboarding'
     | '/system-monitor'
     | '/api/activity'
     | '/api/connections'
@@ -417,6 +427,7 @@ export interface FileRouteTypes {
     | '/'
     | '/downloads'
     | '/logs'
+    | '/onboarding'
     | '/system-monitor'
     | '/api/activity'
     | '/api/connections'
@@ -458,6 +469,7 @@ export interface FileRouteTypes {
     | '/'
     | '/downloads'
     | '/logs'
+    | '/onboarding'
     | '/system-monitor'
     | '/api/activity'
     | '/api/connections'
@@ -500,6 +512,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DownloadsRoute: typeof DownloadsRoute
   LogsRoute: typeof LogsRoute
+  OnboardingRoute: typeof OnboardingRoute
   SystemMonitorRoute: typeof SystemMonitorRoute
   ApiActivityRoute: typeof ApiActivityRoute
   ApiConnectionsRoute: typeof ApiConnectionsRoute
@@ -545,6 +558,13 @@ declare module '@tanstack/react-router' {
       path: '/system-monitor'
       fullPath: '/system-monitor'
       preLoaderRoute: typeof SystemMonitorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/onboarding': {
+      id: '/onboarding'
+      path: '/onboarding'
+      fullPath: '/onboarding'
+      preLoaderRoute: typeof OnboardingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/logs': {
@@ -820,6 +840,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DownloadsRoute: DownloadsRoute,
   LogsRoute: LogsRoute,
+  OnboardingRoute: OnboardingRoute,
   SystemMonitorRoute: SystemMonitorRoute,
   ApiActivityRoute: ApiActivityRoute,
   ApiConnectionsRoute: ApiConnectionsRoute,

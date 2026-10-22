@@ -46,6 +46,16 @@ export async function pageShows(
   })
 }
 
+/** The first-run flow's own way out, offered on every one of its screens. */
+export const SKIP_ONBOARDING = '[data-testid="onboarding-skip"]'
+
+/** Leaves the first-run flow for the chat, as a user pressing Skip setup. */
+export async function skipOnboarding(session: Session): Promise<void> {
+  const skip = session.app.browser.$(SKIP_ONBOARDING)
+  await skip.waitForDisplayed({ timeout: 60_000 })
+  await skip.click()
+}
+
 export async function waitForChat(session: Session): Promise<void> {
   // A profile that already holds a usable local model skips onboarding.
   await session.app.browser.$(CHAT_INPUT).waitForDisplayed({ timeout: 60_000 })

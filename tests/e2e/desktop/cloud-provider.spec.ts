@@ -10,7 +10,7 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { pageShows, pageText, pickModel, send, waitForChat } from '../harness/chat.js'
+import { pageShows, pageText, pickModel, send, waitForChat, skipOnboarding } from '../harness/chat.js'
 import { coreRequest } from '../harness/core.js'
 import { startFakeCloud, type FakeCloud } from '../harness/fixtures.js'
 import { CAN_RUN_FAKE_BACKEND } from '../harness/platform.js'
@@ -56,7 +56,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a cloud provider added in the UI', () =>
       const dataFolder = session.profile.dataFolder
 
       // No local model anywhere: the app opens on onboarding, which is left as it is.
-      await browser.$('button=Skip').click()
+      await skipOnboarding(session)
       await waitForChat(session)
 
       // A server of one's own is added on Custom Endpoint: a name, its

@@ -18,6 +18,8 @@ import {
   captureSetupScreenShown,
   captureRecommendedModelsShown,
   isFirstLaunch,
+  captureOnboardingStepLeft,
+  captureOnboardingStepShown,
   markOnboardingInFlight,
   reportAbandonedOnboarding,
 } from '@/lib/onboarding-telemetry'
@@ -258,6 +260,25 @@ describe('abandoned onboarding', () => {
     expect(posthog.capture).not.toHaveBeenCalled()
   })
 
+  it('names a later step of the first-run flow', () => {
+    markOnboardingInFlight('cloud', Date.now())
+
+    reportAbandonedOnboarding()
+
+    expect(lastCall()[1]).toMatchObject({ step_reached: 'cloud' })
+  })
+
+  it('reports an unknown step as the model, as before', () => {
+    localStorage.setItem(
+      localStorageKey.onboardingInFlight,
+      JSON.stringify({ started_at: Date.now(), step: 'tour', app_version: '1' })
+    )
+
+    reportAbandonedOnboarding()
+
+    expect(lastCall()[1]).toMatchObject({ step_reached: 'model' })
+  })
+
   it('stays quiet when onboarding finished', () => {
     markOnboardingInFlight('model', Date.now())
     expect(
@@ -479,5 +500,57 @@ describe('restart intent', () => {
     reportBackendRestartIntent()
 
     expect(posthog.capture).not.toHaveBeenCalled()
+  })
+})
+
+describe('first-run step funnel', () => {
+  it('reports a step as it comes on screen', () => {
+    captureOnboardingStepShown({
+      step: 'permissions',
+      stepIndex: 3,
+      stepCount: 6,
+      variant: 'full',
+    })
+
+    expect(lastCall()).toEqual([
+      'onboarding_step_shown',
+      expect.objectContaining({
+        step: 'permissions',
+        step_index: 3,
+        step_count: 6,
+        onboarding_variant: 'full',
+      }),
+    ])
+  })
+
+  it('reports how a step was left, in whole milliseconds', () => {
+    captureOnboardingStepLeft({
+      step: 'model',
+      action: 'download',
+      durationMs: 1234.6,
+      variant: 'full',
+    })
+
+    expect(lastCall()).toEqual([
+      'onboarding_step_left',
+      expect.objectContaining({
+        step: 'model',
+        step_action: 'download',
+        duration_ms: 1235,
+      }),
+    ])
+  })
+
+  it('carries the variant and the destination on completion', () => {
+    captureOnboardingCompleted({
+      exitPath: 'download_started',
+      variant: 'full',
+      destination: 'endpoint',
+    })
+
+    expect(lastCall()[1]).toMatchObject({
+      onboarding_variant: 'full',
+      destination: 'endpoint',
+    })
   })
 })

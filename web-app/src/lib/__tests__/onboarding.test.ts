@@ -151,18 +151,14 @@ describe('forced onboarding runs', () => {
     })
   })
 
-  it('enters even with chats and models, but not once skipped or finished', () => {
+  it('enters even with chats and models, but not once finished', () => {
     const forced = {
       providers: [upstreamProvider],
       hasPriorThread: true,
       setupCompleted: false,
-      skippedThisSession: false,
       force: true,
     }
     expect(shouldEnterOnboarding(forced)).toBe(true)
-    expect(shouldEnterOnboarding({ ...forced, skippedThisSession: true })).toBe(
-      false
-    )
     expect(shouldEnterOnboarding({ ...forced, setupCompleted: true })).toBe(
       false
     )
@@ -183,7 +179,6 @@ describe('entering the setup screen', () => {
     providers: [],
     hasPriorThread: false,
     setupCompleted: false,
-    skippedThisSession: false,
     force: false,
   }
 
@@ -205,9 +200,6 @@ describe('entering the setup screen', () => {
     ).toBe(false)
     expect(
       shouldEnterOnboarding({ ...freshInstall, setupCompleted: true })
-    ).toBe(false)
-    expect(
-      shouldEnterOnboarding({ ...freshInstall, skippedThisSession: true })
     ).toBe(false)
   })
 

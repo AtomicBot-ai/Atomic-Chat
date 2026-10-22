@@ -109,17 +109,28 @@ export function queueSettled(jobs: readonly OnboardingJob[]): boolean {
  * The provider model ids a Hub GGUF can end up registered under: its own id,
  * or the developer-qualified sanitized one the importer writes.
  */
-export function ggufMatchIds(developer: string, modelId: string): string[] {
-  return [...new Set([modelId, `${developer}/${sanitizeModelId(modelId)}`])]
+export function ggufMatchIds(
+  developer: string | undefined,
+  modelId: string
+): string[] {
+  return [
+    ...new Set([
+      modelId,
+      ...(developer ? [`${developer}/${sanitizeModelId(modelId)}`] : []),
+    ]),
+  ]
 }
 
 /**
  * The same for an MLX catalog model. The MLX engine keeps dots and turns
  * spaces into `-`, unlike `sanitizeModelId`.
  */
-export function mlxMatchIds(developer: string, modelName: string): string[] {
+export function mlxMatchIds(
+  developer: string | undefined,
+  modelName: string
+): string[] {
   const id = sanitizeMlxId(modelName.split('/').pop() ?? modelName)
-  return [...new Set([id, `${developer}/${id}`])]
+  return [...new Set([id, ...(developer ? [`${developer}/${id}`] : [])])]
 }
 
 type ProviderLike = {
