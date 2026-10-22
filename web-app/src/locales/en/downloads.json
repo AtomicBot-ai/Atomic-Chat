@@ -35,6 +35,8 @@
   "unknownSize": "The size of this item is not known",
   "remove": "Remove {{name}}",
   "removeTitle": "Remove download",
+  "copyId": "Copy {{name}}",
+  "idCopied": "Model ID copied",
   "confirm": {
     "title": "Remove {{name}}?",
     "description": "It will be deleted from this computer. You can download it again later.",

@@ -92,6 +92,17 @@ describe('ImportLocalFile', () => {
     expect(container).toBeEmptyDOMElement()
   })
 
+  it('keeps its name and tooltip when the narrow toolbar shows its icon alone', () => {
+    render(<ImportLocalFile />)
+
+    // The compact toolbar hides the words in `.hub-toolbar-label`.
+    const button = screen.getByRole('button', { name: 'hub:import.button' })
+    expect(button).toHaveAttribute('title', 'hub:import.button')
+    expect(button.querySelector('.hub-toolbar-label')).toHaveTextContent(
+      'hub:import.button'
+    )
+  })
+
   it('hands a GGUF file to the llama.cpp import, already chosen', async () => {
     const user = userEvent.setup()
     mocks.open.mockResolvedValue('/models/Qwen3-8B-Q4_K_M.GGUF')

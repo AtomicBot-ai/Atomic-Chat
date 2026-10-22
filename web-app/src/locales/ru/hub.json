@@ -18,7 +18,7 @@
   "modelInfo": "Информация о модели",
   "downloadFailed": "Не удалось начать загрузку",
   "tools": "Инструменты",
-  "searchPlaceholder": "Поиск моделей на Hugging Face…",
+  "searchPlaceholder": "Поиск моделей…",
   "recTitle": "Рекомендуем",
   "allModelsTitle": "Все модели",
   "recEverydayUse": "Повседневное использование",

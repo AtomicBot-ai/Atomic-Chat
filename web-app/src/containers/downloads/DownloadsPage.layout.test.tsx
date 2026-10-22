@@ -1,5 +1,5 @@
 import { render, screen, within } from '@testing-library/react'
-import { page } from '@vitest/browser/context'
+import { page, userEvent } from '@vitest/browser/context'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useDownloadStore } from '@/hooks/useDownloadStore'
@@ -57,8 +57,13 @@ vi.mock('@/stores/provider-registry-store', () => ({
   ensureRegistryLoaded: async () => [],
 }))
 
-// What the disk holds without an owner: a download that never finished, under
-// a long id, and a draft MLX speculative decoding may load.
+// The audit's case: a catalog model's file, stopped part way.
+const NEMOTRON_ID = vi.hoisted(
+  () => 'AtomicChat/NVIDIA-Nemotron-3_5-Lightning-30B-A3B-Q4_K_M'
+)
+
+// What the disk holds without an owner: downloads that never finished, under
+// long ids, and a draft MLX speculative decoding may load.
 vi.mock('@/lib/downloads-disk', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/downloads-disk')>()),
   scanDownloadsDisk: async () => ({
@@ -69,6 +74,12 @@ vi.mock('@/lib/downloads-disk', async (importOriginal) => ({
         id: 'mradermacher/gemma-4-31B-it-qat-q4_0-unquantized-heretic_i1-Q3_K_S',
         paths: ['/data/llamacpp/models/x'],
         bytes: 13.2 * 1024 ** 3,
+      },
+      {
+        root: 'llamacpp/models',
+        id: NEMOTRON_ID,
+        paths: ['/data/llamacpp/models/AtomicChat/nemotron'],
+        bytes: 18.4 * 1024 ** 3,
       },
     ],
     drafts: [
@@ -84,6 +95,34 @@ vi.mock('@/lib/downloads-disk', async (importOriginal) => ({
 // A worst-case id: a long-tail Hugging Face GGUF the catalog never named.
 const LONG_ID =
   'unsloth/' + 'VeryLongFineTunedModelName'.repeat(5) + '-UD-Q4_K_XL'
+
+/**
+ * `text`, somewhere in `root`, is laid out inside the box that clips it: not
+ * cut off under an ellipsis. Its own `Range` rect is where the browser put
+ * it, past the box's edge when the line was cut short before it.
+ */
+function expectTextShown(root: HTMLElement, text: string): void {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const at = (node as Text).data.indexOf(text)
+    if (at < 0) continue
+    const range = document.createRange()
+    range.setStart(node, at)
+    range.setEnd(node, at + text.length)
+    const box = range.getBoundingClientRect()
+    let clip = node.parentElement
+    while (clip && getComputedStyle(clip).overflowX === 'visible') {
+      clip = clip.parentElement
+    }
+    const bounds = (clip ?? root).getBoundingClientRect()
+    expect(
+      box.right,
+      `"${text}" ends past the right edge of the box that clips it`
+    ).toBeLessThanOrEqual(bounds.right + 0.5)
+    return
+  }
+  expect.fail(`"${text}" is not in ${root.textContent}`)
+}
 
 const provider = (name: string, models: Partial<Model>[]): ModelProvider =>
   ({
@@ -102,6 +141,8 @@ function seed() {
         // A two-digit GB size.
         { id: LONG_ID, sizeBytes: 48.7 * GB },
         { id: 'unsloth/Qwen3.5-4B-Q4_K_M', sizeBytes: 2.5 * GB },
+        // The same model and quant from another owner.
+        { id: 'bartowski/Qwen3.5-4B-Q4_K_M', sizeBytes: 2.5 * GB },
       ]),
       {
         ...provider('mlx', [{ id: 'Qwen3.5-4B-4bit', sizeBytes: 2.4 * GB }]),
@@ -248,10 +289,12 @@ describe.each(['light', 'dark'] as const)('Downloads, %s theme', (theme) => {
       const table = container.querySelector('table') as HTMLElement
       const rows = screen.getAllByTestId('downloads-row')
 
-      // The long id truncates; its size and Remove keep their place.
+      // The long id truncates; its size and Remove keep their place. The
+      // quant is its own fact under the name, so the cut never reaches it.
       const longName = screen.getByTitle(LONG_ID)
       expectOneLine(longName)
       const longRow = rows.find((row) => row.contains(longName)) as HTMLElement
+      expectTextShown(longRow, 'Q4_K_XL')
       expectOneLine(within(longRow).getByText('48.7 GB'))
       expectFits(
         within(longRow).getByRole('button', { name: /^Remove / }),
@@ -269,13 +312,42 @@ describe.each(['light', 'dark'] as const)('Downloads, %s theme', (theme) => {
       ) as HTMLElement
       expectOneLine(within(kept).getByText(/a model runs from it/))
 
-      // An unfinished download and a draft in use say what they are on one line.
-      const partial = await screen.findByText(/incomplete download/)
-      expectOneLine(partial)
+      // Unfinished downloads and a draft in use say what they are on one line.
+      const partials = await screen.findAllByText(/incomplete download/)
+      expect(partials).toHaveLength(2)
+      for (const line of partials) expectOneLine(line)
       expectOneLine(screen.getByText(/speculative decoding is on/))
-      const partialRow = rows.find((row) => row.contains(partial))
+      const partialRow = rows.find((row) =>
+        within(row).queryByTitle(/heretic_i1-Q3_K_S$/)
+      )
       expect(partialRow).toBeDefined()
       expectOneLine(within(partialRow as HTMLElement).getByText('13.2 GB'))
+      expectTextShown(partialRow as HTMLElement, 'Q3_K_S')
+
+      // An unfinished catalog file reads as its model and its quant, both in
+      // full; the id they come from is on the name and behind the copy button.
+      const nemotronName = screen.getByTitle(NEMOTRON_ID)
+      const nemotron = rows.find((row) =>
+        row.contains(nemotronName)
+      ) as HTMLElement
+      expectTextShown(nemotron, 'NVIDIA Nemotron 3.5 Lightning 30B A3B')
+      expectTextShown(nemotron, 'Q4_K_M')
+      expectOneLine(within(nemotron).getByText(/Q4_K_M · incomplete download/))
+      const copy = within(nemotron).getByRole('button', {
+        name: `Copy ${NEMOTRON_ID}`,
+      })
+      expectFits(copy, table)
+      expectVerticallyCentered(copy, nemotronName)
+
+      // One model and quant from two owners: each line names its owner.
+      for (const owner of ['unsloth', 'bartowski']) {
+        const row = within(table)
+          .getByTitle(`${owner}/Qwen3.5-4B-Q4_K_M`)
+          .closest('tr') as HTMLElement
+        const line = within(row).getByText(`llama.cpp · Q4_K_M · ${owner}`)
+        expectOneLine(line)
+        expectTextShown(row, owner)
+      }
 
       // Remove and Cancel form one column of equal controls.
       const actions = rows.map(
@@ -289,6 +361,16 @@ describe.each(['light', 'dark'] as const)('Downloads, %s theme', (theme) => {
       for (const [index, button] of actions.entries()) {
         expectFits(button, rows[index])
       }
+
+      // The confirmation spells out the exact file; the longest id wraps
+      // inside the dialog instead of widening it.
+      await userEvent.click(
+        within(longRow).getByRole('button', { name: /^Remove / })
+      )
+      const dialog = await screen.findByRole('dialog')
+      await settle(dialog)
+      expectFits(within(dialog).getByText(LONG_ID), dialog)
+      expectNoHorizontalOverflow(dialog)
     }
   )
 })

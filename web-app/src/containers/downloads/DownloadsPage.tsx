@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Box,
   Clapperboard,
+  Copy,
   Cpu,
   FileClock,
   HardDrive,
@@ -26,10 +27,16 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import HeaderPage from '@/containers/HeaderPage'
 import { useInstalledInventory } from '@/hooks/useInstalledInventory'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { copyToClipboard } from '@/lib/clipboard'
 import { downloadStatusLabel, formatProgressPair } from '@/lib/downloadFormat'
 import {
   INVENTORY_CATEGORIES,
@@ -58,9 +65,48 @@ const KIND_ICONS: Record<InventoryKind, typeof Box> = {
 const sizeLabel = (bytes: number | null): string =>
   bytes && bytes > 0 ? formatBytes(bytes) : '—'
 
-/** The name a confirmation and its toast use: a build is named with its version. */
+/**
+ * The name a confirmation and its toasts use: a build is named with its
+ * version, a model with its quant and, in brackets, its owner, so one model
+ * and quant from two owners are two names.
+ */
 const removalName = (item: InventoryItem): string =>
-  item.kind === 'engine' ? [item.name, ...item.details].join(' ') : item.name
+  item.kind === 'engine'
+    ? [item.name, ...item.details].join(' ')
+    : [item.name, item.quant, item.owner && `(${item.owner})`]
+        .filter(Boolean)
+        .join(' ')
+
+/**
+ * The full id behind a model row's readable name, for whoever needs the
+ * exact file: shown on hover and on keyboard focus, copied on click. It stays
+ * out of sight until the row is hovered or something in it has focus; its
+ * slot is kept either way, so the row never moves.
+ */
+function ModelIdCopy({ id }: { id: string }) {
+  const { t } = useTranslation()
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label={t('downloads:copyId', { name: id })}
+          onClick={async () => {
+            if (await copyToClipboard(id))
+              toast.success(t('downloads:idCopied'))
+          }}
+          className="size-5 text-muted-foreground opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
+        >
+          <Copy className="size-3.5" />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-[min(32rem,calc(100vw-2rem))] break-all">
+        {id}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
 
 type Refusal = { code?: unknown; message?: unknown }
 
@@ -107,9 +153,18 @@ export function DownloadsPage() {
     [t]
   )
 
+  // Most telling first, since the line's ellipsis cuts from the end: the
+  // engine and the quant, what the item is and why it stays, then the owner,
+  // which the full id on hover and in the confirmation also gives.
   const detailLine = useCallback(
     (item: InventoryItem) =>
-      [...item.details, kindLabel(item.kind), blockedReason(item)]
+      [
+        ...item.details,
+        item.quant,
+        kindLabel(item.kind),
+        blockedReason(item),
+        item.owner,
+      ]
         .filter(Boolean)
         .join(' · '),
     [kindLabel, blockedReason]
@@ -127,7 +182,9 @@ export function DownloadsPage() {
       (item) =>
         (category === 'all' || item.category === category) &&
         (needle.length === 0 ||
-          `${item.name} ${detailLine(item)}`.toLowerCase().includes(needle))
+          `${item.name} ${detailLine(item)} ${item.modelId ?? ''}`
+            .toLowerCase()
+            .includes(needle))
     )
   }, [items, query, category, detailLine])
 
@@ -283,7 +340,7 @@ export function DownloadsPage() {
                   <tr
                     key={item.key}
                     data-testid="downloads-row"
-                    className="border-t border-border hover:bg-secondary/20"
+                    className="group border-t border-border hover:bg-secondary/20"
                   >
                     <td className="p-3">
                       <div className="flex min-w-0 items-center gap-3">
@@ -291,11 +348,14 @@ export function DownloadsPage() {
                           <Icon size={17} />
                         </div>
                         <div className="min-w-0">
-                          <div
-                            className="truncate font-medium"
-                            title={item.name}
-                          >
-                            {item.name}
+                          <div className="flex min-w-0 items-center gap-1">
+                            <div
+                              className="truncate font-medium"
+                              title={item.modelId ?? item.name}
+                            >
+                              {item.name}
+                            </div>
+                            {item.modelId && <ModelIdCopy id={item.modelId} />}
                           </div>
                           {detail && (
                             <div
@@ -406,7 +466,7 @@ export function DownloadsPage() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="break-words">
+            <DialogTitle className="wrap-anywhere">
               {confirming &&
                 t('downloads:confirm.title', {
                   name: removalName(confirming),
@@ -414,6 +474,13 @@ export function DownloadsPage() {
             </DialogTitle>
             <DialogDescription>
               {t('downloads:confirm.description')}
+              {/* The exact file, for a model whose name and quant another
+                  owner's copy may share. */}
+              {confirming?.modelId && (
+                <span className="mt-1 block font-mono text-xs wrap-anywhere">
+                  {confirming.modelId}
+                </span>
+              )}
             </DialogDescription>
           </DialogHeader>
           {managedNote && (

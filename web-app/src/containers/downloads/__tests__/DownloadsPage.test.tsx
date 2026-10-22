@@ -1,4 +1,5 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -62,6 +63,9 @@ vi.mock('@/services/engines/core', () => ({
   engineVersions: vi.fn(),
 }))
 
+const copyToClipboard = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/clipboard', () => ({ copyToClipboard }))
+
 const cancelDownload = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/downloadCancellation', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/downloadCancellation')>()),
@@ -110,6 +114,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   disk.scanDownloadsDisk.mockResolvedValue(EMPTY_DISK_SCAN)
   disk.removeDiskPaths.mockResolvedValue(undefined)
+  copyToClipboard.mockResolvedValue(true)
   diskAvailable.mockResolvedValue(512 * GB)
   deleteLocalModel.mockResolvedValue(undefined)
   deleteEngineBuild.mockResolvedValue({})
@@ -223,9 +228,15 @@ describe('DownloadsPage', () => {
       target: { value: 'qwen' },
     })
     expect(rows()).toHaveLength(1)
-    expect(
-      within(rows()[0]).getByText('unsloth/Qwen3.5-4B-Q4_K_M')
-    ).toBeInTheDocument()
+    expect(within(rows()[0]).getByText('Qwen3.5 4B')).toBeInTheDocument()
+
+    // The id behind the name and the quant under it find the row too.
+    for (const query of ['unsloth/qwen', 'q4_k_m']) {
+      fireEvent.change(screen.getByLabelText('downloads:searchLabel'), {
+        target: { value: query },
+      })
+      expect(rows()).toHaveLength(1)
+    }
 
     // The engine and the kind are searchable too.
     fireEvent.change(screen.getByLabelText('downloads:searchLabel'), {
@@ -244,13 +255,13 @@ describe('DownloadsPage', () => {
     render(<DownloadsPage />)
 
     fireEvent.click(
-      within(rowNamed('Llama-3.1-8B-4bit')).getByRole('button', {
+      within(rowNamed('Llama 3.1 8B')).getByRole('button', {
         name: /^downloads:remove/,
       })
     )
     const dialog = await screen.findByRole('dialog')
     expect(
-      within(dialog).getByText('downloads:confirm.title(Llama-3.1-8B-4bit)')
+      within(dialog).getByText('downloads:confirm.title(Llama 3.1 8B 4bit)')
     ).toBeInTheDocument()
     expect(deleteLocalModel).not.toHaveBeenCalled()
 
@@ -267,7 +278,7 @@ describe('DownloadsPage', () => {
     )
     await waitFor(() =>
       expect(toast.success).toHaveBeenCalledWith(
-        'downloads:removed(Llama-3.1-8B-4bit)'
+        'downloads:removed(Llama 3.1 8B 4bit)'
       )
     )
     // Free space is read again once the files are gone.
@@ -278,7 +289,7 @@ describe('DownloadsPage', () => {
     render(<DownloadsPage />)
 
     fireEvent.click(
-      within(rowNamed('unsloth/Qwen3.5-4B-Q4_K_M')).getByRole('button', {
+      within(rowNamed('Qwen3.5 4B')).getByRole('button', {
         name: /^downloads:remove/,
       })
     )
@@ -387,7 +398,8 @@ describe('DownloadsPage', () => {
     render(<DownloadsPage />)
 
     const first = rows()[0]
-    expect(within(first).getByText('unsloth/Big-Model-Q4_K_M')).toBeVisible()
+    expect(within(first).getByText('Big Model')).toBeVisible()
+    expect(within(first).getByText('Q4_K_M · unsloth')).toBeInTheDocument()
     expect(within(first).getByText('25%')).toBeInTheDocument()
     expect(within(first).getByText('5.00 / 20.00 GB')).toBeInTheDocument()
     // Not on disk yet: neither counted nor offered for removal.
@@ -431,11 +443,11 @@ describe('DownloadsPage', () => {
     render(<DownloadsPage />)
 
     expect(
-      within(rowNamed(running)).queryByRole('button', {
+      within(rowNamed('Running Model')).queryByRole('button', {
         name: 'common:resumeDownload',
       })
     ).not.toBeInTheDocument()
-    const row = rowNamed(paused)
+    const row = rowNamed('Paused Model')
     expect(row).toHaveTextContent('common:downloadPanel.paused')
     fireEvent.click(
       within(row).getByRole('button', { name: 'common:resumeDownload' })
@@ -455,6 +467,80 @@ describe('DownloadsPage', () => {
     expect(
       within(row).getByRole('button', { name: 'common:cancelDownload' })
     ).toBeInTheDocument()
+  })
+
+  it('names a model once, puts its quant under it, and shows and copies the full id', async () => {
+    render(<DownloadsPage />)
+    const id = 'unsloth/Qwen3.5-4B-Q4_K_M'
+    const row = rowNamed('Qwen3.5 4B')
+
+    expect(
+      within(row).getByText('llama.cpp · Q4_K_M · unsloth')
+    ).toBeInTheDocument()
+    expect(within(row).getByText('Qwen3.5 4B')).toHaveAttribute('title', id)
+    expect(row).not.toHaveTextContent(id)
+
+    // Keyboard focus shows the id as hover does, and the button copies it.
+    const copy = within(row).getByRole('button', {
+      name: `downloads:copyId(${id})`,
+    })
+    act(() => copy.focus())
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(id)
+    fireEvent.click(copy)
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith('downloads:idCopied')
+    )
+    expect(copyToClipboard).toHaveBeenCalledWith(id)
+  })
+
+  it('tells one model and quant from two owners apart, up to the removal', async () => {
+    useModelProvider.setState({
+      providers: [
+        provider('llamacpp-upstream', [
+          { id: 'unsloth/Qwen3.5-4B-Q4_K_M', sizeBytes: 2.5 * GB },
+          { id: 'bartowski/Qwen3.5-4B-Q4_K_M', sizeBytes: 2.5 * GB },
+        ]),
+      ],
+    })
+    useEngineVersionsStore.setState({ engines: {} })
+    render(<DownloadsPage />)
+
+    const [bartowski, unsloth] = rows()
+    expect(bartowski).toHaveTextContent('llama.cpp · Q4_K_M · bartowski')
+    expect(unsloth).toHaveTextContent('llama.cpp · Q4_K_M · unsloth')
+    const removeOf = (row: HTMLElement) =>
+      within(row).getByRole('button', { name: /^downloads:remove/ })
+    expect(removeOf(bartowski)).toHaveAccessibleName(
+      /^downloads:remove\(.*bartowski/
+    )
+    expect(removeOf(unsloth)).toHaveAccessibleName(
+      /^downloads:remove\(.*unsloth/
+    )
+
+    fireEvent.click(removeOf(bartowski))
+    const dialog = await screen.findByRole('dialog')
+    expect(
+      within(dialog).getByText(
+        'downloads:confirm.title(Qwen3.5 4B Q4_K_M (bartowski))'
+      )
+    ).toBeInTheDocument()
+    // The exact file, in full, where the user confirms.
+    expect(
+      within(dialog).getByText('bartowski/Qwen3.5-4B-Q4_K_M')
+    ).toBeVisible()
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: 'downloads:confirm.remove' })
+    )
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        'downloads:removed(Qwen3.5 4B Q4_K_M (bartowski))'
+      )
+    )
+    expect(deleteLocalModel).toHaveBeenCalledWith(
+      serviceHub,
+      'bartowski/Qwen3.5-4B-Q4_K_M',
+      'llamacpp-upstream'
+    )
   })
 
   it('never takes the global download panel’s landmark', () => {
@@ -522,12 +608,12 @@ describe('DownloadsPage', () => {
       useModelProvider.setState({ providers: [mlx(false)] })
       render(<DownloadsPage />)
 
-      const partial = await findRow('Meta-Llama-3_1-8B-Instruct-IQ4_XS')
+      const partial = await findRow('Meta Llama 3.1 8B')
       expect(
-        within(rowNamed('gemma-4-e4b-it-4bit')).getByText('4.9 GB')
+        within(rowNamed('Gemma 4 E4B')).getByText('4.9 GB')
       ).toBeInTheDocument()
       expect(
-        within(partial).getByText('llama.cpp · downloads:kind.partial')
+        within(partial).getByText('llama.cpp · IQ4_XS · downloads:kind.partial')
       ).toBeInTheDocument()
       expect(within(partial).getByText('3.0 GB')).toBeInTheDocument()
       const draft = rowNamed('z-lab_Qwen3.5-9B-DFlash')
@@ -562,7 +648,7 @@ describe('DownloadsPage', () => {
     it('deletes an unfinished download once confirmed, and its row goes', async () => {
       useModelProvider.setState({ providers: [mlx(false)] })
       render(<DownloadsPage />)
-      const partial = await findRow('Meta-Llama-3_1-8B-Instruct-IQ4_XS')
+      const partial = await findRow('Meta Llama 3.1 8B')
       disk.scanDownloadsDisk.mockResolvedValue({ ...LEFTOVERS, partials: [] })
 
       fireEvent.click(removeButton(partial))
@@ -574,19 +660,19 @@ describe('DownloadsPage', () => {
 
       await waitFor(() =>
         expect(toast.success).toHaveBeenCalledWith(
-          'downloads:removed(Meta-Llama-3_1-8B-Instruct-IQ4_XS)'
+          'downloads:removed(Meta Llama 3.1 8B IQ4_XS)'
         )
       )
       expect(disk.removeDiskPaths).toHaveBeenCalledWith([
         '/data/llamacpp/models/Meta-Llama-3_1-8B-Instruct-IQ4_XS',
       ])
-      expect(rowNamed('Meta-Llama-3_1-8B-Instruct-IQ4_XS')).toBeUndefined()
+      expect(rowNamed('Meta Llama 3.1 8B')).toBeUndefined()
     })
 
     it('refuses, and says so, when the download started again before the confirmation', async () => {
       useModelProvider.setState({ providers: [mlx(false)] })
       render(<DownloadsPage />)
-      const partial = await findRow('Meta-Llama-3_1-8B-Instruct-IQ4_XS')
+      const partial = await findRow('Meta Llama 3.1 8B')
 
       fireEvent.click(removeButton(partial))
       const dialog = await screen.findByRole('dialog')
@@ -599,14 +685,14 @@ describe('DownloadsPage', () => {
 
       await waitFor(() =>
         expect(toast.error).toHaveBeenCalledWith(
-          'downloads:removeFailed(Meta-Llama-3_1-8B-Instruct-IQ4_XS)',
+          'downloads:removeFailed(Meta Llama 3.1 8B IQ4_XS)',
           { description: 'downloads:error.downloadActive' }
         )
       )
       expect(disk.removeDiskPaths).not.toHaveBeenCalled()
       expect(toast.success).not.toHaveBeenCalled()
       // Nothing was deleted, so the row is still offered for removal.
-      expect(rowNamed('Meta-Llama-3_1-8B-Instruct-IQ4_XS')).toBeDefined()
+      expect(rowNamed('Meta Llama 3.1 8B')).toBeDefined()
     })
   })
 })

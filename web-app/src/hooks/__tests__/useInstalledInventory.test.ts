@@ -432,15 +432,18 @@ describe('useInstalledInventory', () => {
     ).toEqual({
       [decision.name]: 'local',
       [embedding.name]: 'local',
-      'unsloth/Big-Model-Q4_K_M': 'local',
+      // A running model download reads as its model, the quant apart.
+      'Big Model': 'local',
       [LTX_2.name]: 'video',
       [VOICE_MODEL_NAME]: 'voice',
     })
     expect(downloads).toHaveLength(5)
     expect(
-      downloads.find((item) => item.name === 'unsloth/Big-Model-Q4_K_M')
-        ?.download
-    ).toMatchObject({ current: 2 * GB, total: 20 * GB, paused: true })
+      downloads.find((item) => item.modelId === 'unsloth/Big-Model-Q4_K_M')
+    ).toMatchObject({
+      quant: 'Q4_K_M',
+      download: { current: 2 * GB, total: 20 * GB, paused: true },
+    })
     expect(downloads.every((item) => item.removal === null)).toBe(true)
     // What is still downloading is not on disk yet.
     expect(totalBytes).toBe(GB)
