@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { FileText, Trash2, UploadIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -13,6 +13,7 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { createDocumentAttachment, type Attachment } from '@/types/attachment'
 import { useAttachments } from '@/hooks/useAttachments'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { useProjectUploads } from '@/stores/project-upload-store'
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import { ExtensionTypeEnum, FileStat, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
@@ -203,15 +204,19 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
   const [files, setFiles] = useState<ProjectFile[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [uploading, setUploading] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   // ATO — #289: ingesting a file downloads the embedding model on first use,
   // which takes a while. Two ingests of the same file derive the same download
   // task id, so the second one *supersedes* (cancels) the first — and with an
   // unreachable host in the way the pair never converged, which is what the
   // report describes as an endless spinner. `files` only lists what is already
-  // indexed, so it cannot deduplicate an upload still in flight; this can.
-  const inFlightPaths = useRef<Set<string>>(new Set())
+  // indexed, so it cannot deduplicate an upload still in flight; the in-flight
+  // paths can. They live in a store, not here, so the indicator and the list
+  // refresh survive leaving the page mid-ingest (AC-09).
+  const uploading = useProjectUploads(
+    (s) => (s.inFlight[projectId]?.length ?? 0) > 0
+  )
+  const uploadRevision = useProjectUploads((s) => s.revision[projectId] ?? 0)
   // The first upload in an install downloads the embedding model before any
   // file is indexed. That download reports through the global download store
   // under the model id, so the Files section can say what it is waiting on
@@ -271,9 +276,11 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
     }
   }, [attachmentsEnabled, projectId])
 
+  // Also re-read when an ingest for this project settles — including one that
+  // was started before the page was left and came back to.
   useEffect(() => {
     loadProjectFiles()
-  }, [loadProjectFiles])
+  }, [loadProjectFiles, uploadRevision])
 
   const processFilePaths = useCallback(
     async (paths: string[]) => {
@@ -336,11 +343,14 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
       const existingPaths = new Set(
         files.filter((f) => f.path).map((f) => f.path)
       )
+      const inFlightPaths = new Set(
+        useProjectUploads.getState().inFlight[projectId] ?? []
+      )
       const duplicates: string[] = []
       const newAttachments = preparedAttachments.filter((att) => {
         if (
           existingPaths.has(att.path) ||
-          (att.path && inFlightPaths.current.has(att.path))
+          (att.path && inFlightPaths.has(att.path))
         ) {
           duplicates.push(att.name)
           return false
@@ -359,10 +369,12 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
 
       if (newAttachments.length === 0) return
 
-      for (const att of newAttachments) {
-        if (att.path) inFlightPaths.current.add(att.path)
-      }
-      setUploading(true)
+      const ingestPaths = newAttachments.flatMap((att) =>
+        att.path ? [att.path] : []
+      )
+      const { begin, finish } = useProjectUploads.getState()
+      begin(projectId, ingestPaths)
+      let indexed = false
       try {
         for (const att of newAttachments) {
           const result = await serviceHub
@@ -371,11 +383,11 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
           if (!result.id) {
             throw new Error('Failed to ingest file')
           }
+          indexed = true
         }
         toast.success(
           t('common:toast.fileUploaded.title') ?? 'File uploaded successfully'
         )
-        await loadProjectFiles()
       } catch (error) {
         console.error('Failed to upload file:', error)
         toast.error(
@@ -386,13 +398,12 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
           }
         )
       } finally {
-        for (const att of newAttachments) {
-          if (att.path) inFlightPaths.current.delete(att.path)
-        }
-        setUploading(false)
+        // Settling bumps the project's revision when a file was indexed, and
+        // whichever Files section is mounted for it then re-reads the list.
+        finish(projectId, ingestPaths, indexed)
       }
     },
-    [files, loadProjectFiles, maxFileSizeMB, projectId, serviceHub, t]
+    [files, maxFileSizeMB, projectId, serviceHub, t]
   )
 
   const handleUpload = async () => {

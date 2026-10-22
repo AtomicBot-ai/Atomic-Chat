@@ -54,7 +54,7 @@ import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { formatDownloadReadout } from '@/lib/downloadFormat'
 import { cancelDownload } from '@/lib/downloadCancellation'
 import { downloadKind } from '@/lib/telemetry'
-import { isAnswerableModel } from '@/lib/answerable-model'
+import { isAnswerableModel, isEmbeddingOnlyModel } from '@/lib/answerable-model'
 import {
   HuggingFaceAction,
   ModelPickerEmptyState,
@@ -331,10 +331,16 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
         // session); otherwise leave the selector blank.
         try {
           const activeModelIds = await serviceHub.models().getActiveModels()
-          const activeModelId = activeModelIds?.[0]
-          if (activeModelId) {
+          // Project indexing loads the embedding model in the same engine, so
+          // it is "running" too — and it used to land in the composer as the
+          // chat model (AC-01). Only a running model that can chat counts.
+          for (const activeModelId of activeModelIds ?? []) {
             const activeProvider = providers.find(
-              (p) => p.active && p.models.some((m) => m.id === activeModelId)
+              (p) =>
+                p.active &&
+                p.models.some(
+                  (m) => m.id === activeModelId && !isEmbeddingOnlyModel(m)
+                )
             )
             if (activeProvider) {
               selectModelProvider(activeProvider.provider, activeModelId)
@@ -350,7 +356,11 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
       }
 
       const lastUsed = getLastUsedModel()
-      if (lastUsed && checkModelExists(lastUsed.provider, lastUsed.model)) {
+      const lastUsedModel = lastUsed
+        ? checkModelExists(lastUsed.provider, lastUsed.model)
+        : undefined
+      // A last-used embedding model is what the AC-01 bug left behind.
+      if (lastUsed && lastUsedModel && !isEmbeddingOnlyModel(lastUsedModel)) {
         selectModelProvider(lastUsed.provider, lastUsed.model)
         if (lastUsed.provider === 'llamacpp') {
           await serviceHub
@@ -371,11 +381,11 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
               p.provider === 'mlx' ||
               p.provider === 'foundry-local') &&
             isPickerSection(p) &&
-            p.models.length > 0
+            p.models.some((m) => !isEmbeddingOnlyModel(m))
         )
         if (localProvider && localProvider.models.length > 0) {
           const firstModel = localProvider.models.find(
-            (m) => m.id !== EMBEDDING_MODEL_ID
+            (m) => !isEmbeddingOnlyModel(m)
           )
           if (!firstModel) {
             selectModelProvider('', '')

@@ -583,6 +583,91 @@ describe('useModelProvider - withdrawn providers', () => {
   })
 })
 
+// AC-01: project indexing downloads and loads `sentence-transformer-mini`, and
+// the composer ended up sending to it ("the current context does not support
+// logits computation").
+describe('useModelProvider - embedding models never become the selection', () => {
+  const chat = { id: 'lfm2.5.gguf', capabilities: ['completion'] }
+  const bundledEmbedder = { id: 'sentence-transformer-mini', capabilities: [] }
+  const importedEmbedder = {
+    id: 'nomic-embed-text.gguf',
+    embedding: true,
+    capabilities: ['embeddings'],
+  }
+  const upstream = {
+    provider: 'llamacpp-upstream',
+    active: true,
+    persist: true,
+    models: [chat, bundledEmbedder, importedEmbedder],
+    settings: [],
+  } as unknown as ModelProvider
+
+  beforeEach(() => {
+    seedServiceHub({ path: { sep: () => '/' } as PathService })
+    localStorageMock.getItem.mockReturnValue(null)
+    act(() => {
+      useModelProvider.setState({
+        providers: [upstream],
+        selectedProvider: '',
+        selectedModel: null,
+        deletedModels: [],
+      })
+    })
+  })
+
+  it.each([bundledEmbedder.id, importedEmbedder.id])(
+    'keeps the chat model selected when %s is asked for',
+    (embedderId) => {
+      const { result } = renderHook(() => useModelProvider())
+      act(() => {
+        result.current.selectModelProvider('llamacpp-upstream', chat.id)
+      })
+
+      let returned: Model | undefined
+      act(() => {
+        returned = result.current.selectModelProvider(
+          'llamacpp-upstream',
+          embedderId
+        )
+      })
+
+      expect(returned).toBeUndefined()
+      expect(result.current.selectedProvider).toBe('llamacpp-upstream')
+      expect(result.current.selectedModel?.id).toBe(chat.id)
+    }
+  )
+
+  it('leaves an empty composer empty when the embedder is asked for', () => {
+    const { result } = renderHook(() => useModelProvider())
+    act(() => {
+      result.current.selectModelProvider(
+        'llamacpp-upstream',
+        bundledEmbedder.id
+      )
+    })
+
+    expect(result.current.selectedModel).toBeNull()
+    expect(result.current.selectedProvider).toBe('')
+  })
+
+  it('drops an embedder selection that an earlier build persisted', () => {
+    act(() => {
+      useModelProvider.setState({
+        selectedProvider: 'llamacpp-upstream',
+        selectedModel: bundledEmbedder as Model,
+      })
+    })
+    const { result } = renderHook(() => useModelProvider())
+
+    act(() => {
+      result.current.setProviders([upstream])
+    })
+
+    expect(result.current.selectedModel).toBeNull()
+    expect(result.current.selectedProvider).toBe('')
+  })
+})
+
 describe('useModelProvider migrations', () => {
   it('migrates flash_attn setting to dropdown with default value', () => {
     const persistApi = (useModelProvider as any).persist
