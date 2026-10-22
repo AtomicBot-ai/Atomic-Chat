@@ -125,4 +125,18 @@ describe('TensorRT-LLM defaults', () => {
       withDefaultEngineSettings('sglang', settings).map((s) => s.controller_props.value)
     ).toEqual([1, 'auto'])
   })
+
+  it('resets LiteRT-LM to its core schema defaults (change add-litert-lm-runtime)', () => {
+    const settings = [
+      setting('ctx_len', 8192),
+      setting('speculative_decoding', true),
+      setting('timeout', 600),
+    ]
+
+    expect(hasEngineSettingDefaults('litert-lm')).toBe(true)
+    expect(customEngineSettingKeys('litert-lm', settings)).toEqual(['ctx_len'])
+    expect(
+      withDefaultEngineSettings('litert-lm', settings).map((s) => s.controller_props.value)
+    ).toEqual([0, true, 600])
+  })
 })

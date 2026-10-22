@@ -108,6 +108,7 @@ const SESSION_CACHED_PROVIDERS = [
   'atomic-prism',
   'mlx',
   'foundry-local',
+  'litert-lm',
 ] as const
 
 /** Those, and every managed engine (`isManagedProvider`). */
