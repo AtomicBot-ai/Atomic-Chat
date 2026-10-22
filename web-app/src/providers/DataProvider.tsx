@@ -54,6 +54,7 @@ import {
 } from '@/utils/registerRemoteProvider'
 import { hydrateActiveModelsForRunningServer } from '@/utils/activeModelsSync'
 import { ensureRemoteProviderReady } from '@/utils/ensureRemoteProviderReady'
+import { syncServedModelSelection } from '@/utils/serverModelSelection'
 import { reconcileLaunchAtStartup } from '@/lib/launchAtStartup'
 import { ModelFactory } from '@/lib/model-factory'
 import { isProviderConnected } from '@/lib/cloud-providers'
@@ -456,6 +457,9 @@ export function DataProvider() {
   useEffect(() => {
     syncRemoteProviders()
   }, [providers])
+
+  // The server sends each model id to the provider its page shows (AC-03).
+  useEffect(() => syncServedModelSelection(), [])
 
   // The core's media catalog, asked again while the core is still starting.
   const mediaCatalog = useMediaCatalog((state) => state.catalog)

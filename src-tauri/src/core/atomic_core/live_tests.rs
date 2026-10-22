@@ -729,6 +729,7 @@ async fn the_public_api_starts_on_a_real_core_with_its_providers_and_stops() {
             "cloudprov".to_string(),
             json!({"api_key": "sk-live", "base_url": "http://127.0.0.1:9/v1", "custom_headers": [], "models": ["cloud-model"]}),
         )],
+        selection: None,
     };
 
     let started = core
@@ -781,6 +782,7 @@ async fn a_core_that_cannot_serve_reports_the_refusal_and_stays_stopped() {
     let core = CoreOwner {
         caller: SupervisorCaller(live.supervisor()),
         providers: vec![],
+        selection: None,
     };
     // An address this machine does not have: even the free-port fallback cannot bind it.
     let unbindable = server_config(free_port(), "203.0.113.7");

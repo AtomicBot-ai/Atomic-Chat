@@ -202,6 +202,7 @@ pub fn run() {
         // Remote provider commands
         core::server::remote_provider_commands::register_provider_config,
         core::server::remote_provider_commands::unregister_provider_config,
+        core::server::remote_provider_commands::set_server_model_selection,
         // ChatGPT subscription sign-in
         core::auth::commands::chatgpt_status,
         core::auth::commands::chatgpt_login,
@@ -393,6 +394,7 @@ pub fn run() {
         // Remote provider commands
         core::server::remote_provider_commands::register_provider_config,
         core::server::remote_provider_commands::unregister_provider_config,
+        core::server::remote_provider_commands::set_server_model_selection,
         // MCP commands
         core::mcp::commands::get_tools,
         core::mcp::commands::get_mcp_server_statuses,
@@ -502,6 +504,7 @@ pub fn run() {
             background_cleanup_handle: Arc::new(Mutex::new(None)),
             mcp_server_pids: Arc::new(Mutex::new(HashMap::new())),
             provider_configs: Arc::new(Mutex::new(HashMap::new())),
+            server_model_selection: Arc::new(Mutex::new(None)),
             chatgpt_auth: Arc::new(Default::default()),
             mcp_oauth: Arc::new(Default::default()),
             auto_increase_ctx: Arc::new(core::state::AutoIncreaseState::default()),

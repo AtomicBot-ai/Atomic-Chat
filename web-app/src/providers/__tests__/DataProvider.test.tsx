@@ -120,6 +120,11 @@ vi.mock('@/hooks/useLocalApiServer', () => ({
   },
 }))
 
+// The served-model selection has its own tests; here it only must not need a real store.
+vi.mock('@/utils/serverModelSelection', () => ({
+  syncServedModelSelection: () => () => {},
+}))
+
 vi.mock('@/hooks/useModelLoad', () => ({
   useModelLoad: {
     getState: () => ({ onboardingActive: false }),

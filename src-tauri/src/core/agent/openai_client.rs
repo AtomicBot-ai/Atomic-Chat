@@ -1765,6 +1765,12 @@ mod tests {
             classify_error(503, "No models are available", None),
             LlmClientError::SessionNotFound(_)
         ));
+        // AC-13: the server now wraps the same wording in OpenAI's envelope.
+        let enveloped = r#"{"error":{"message":"No running session found for model 'x'","type":"invalid_request_error","param":"model","code":"model_not_found"}}"#;
+        assert!(matches!(
+            classify_error(404, enveloped, None),
+            LlmClientError::SessionNotFound(detail) if detail == "No running session found for model 'x'"
+        ));
     }
 
     #[test]

@@ -183,7 +183,17 @@ pub async fn core_owner<R: Runtime, C: ControlCaller>(
             )
         })
         .collect();
-    CoreOwner { caller, providers }
+    let selection = state
+        .server_model_selection
+        .lock()
+        .await
+        .as_deref()
+        .map(crate::core::server::remote_provider_commands::selection_body);
+    CoreOwner {
+        caller,
+        providers,
+        selection,
+    }
 }
 
 /// UI state follows confirmed listener state, never the requested port.
@@ -264,9 +274,15 @@ pub async fn stop_server<R: Runtime>(app_handle: AppHandle<R>) -> Result<(), Str
         .ok_or("The Atomic Chat core is not running yet.")?;
     let _gate = client.inner().owner_gate().await;
     client.set_server_running_intent(false);
-    CoreOwner { caller: AttachedCaller { app: app_handle.clone() }, providers: Vec::new() }
-        .stop()
-        .await?;
+    CoreOwner {
+        caller: AttachedCaller {
+            app: app_handle.clone(),
+        },
+        providers: Vec::new(),
+        selection: None,
+    }
+    .stop()
+    .await?;
     app_handle.state::<AppState>().local_server_endpoint.lock().await.take();
     emit_server_state(&app_handle, "core", None, None);
     Ok(())
@@ -285,10 +301,16 @@ pub async fn get_server_status<R: Runtime>(app_handle: AppHandle<R>) -> Result<b
         .try_state::<AtomicCoreClient>()
         .ok_or("The Atomic Chat core is not running yet.")?;
     let _gate = client.inner().owner_gate().await;
-    Ok(CoreOwner { caller: AttachedCaller { app: app_handle.clone() }, providers: Vec::new() }
-        .running_port()
-        .await?
-        .is_some())
+    Ok(CoreOwner {
+        caller: AttachedCaller {
+            app: app_handle.clone(),
+        },
+        providers: Vec::new(),
+        selection: None,
+    }
+    .running_port()
+    .await?
+    .is_some())
 }
 
 #[cfg(mobile)]

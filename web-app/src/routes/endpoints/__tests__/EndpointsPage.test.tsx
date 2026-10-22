@@ -243,13 +243,11 @@ const setProviders = vi.fn()
 
 const mockStore = (list: ProviderObject[] = providers) => {
   storeProviders.current = list
-  vi.mocked(useModelProvider).mockReturnValue({
-    providers: list,
-    addProvider,
-    updateProvider,
-    setProviders,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } as any)
+  const state = { providers: list, addProvider, updateProvider, setProviders }
+  // The page reads the whole store; the collision notice passes a selector.
+  vi.mocked(useModelProvider).mockImplementation(((
+    selector?: (s: typeof state) => unknown
+  ) => (selector ? selector(state) : state)) as never)
 }
 
 const card = (title: string) => screen.getByRole('article', { name: title })

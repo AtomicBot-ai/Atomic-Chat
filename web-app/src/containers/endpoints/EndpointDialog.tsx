@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { LocalModelCollisionNotice } from '@/containers/endpoints/LocalModelCollisionNotice'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { takesApiKey } from '@/lib/cloud-providers'
 import { ownLocalApiServerUrl } from '@/lib/local-api-self-reference'
@@ -211,6 +212,12 @@ export function EndpointDialog({
                 className="mt-1.5"
               />
             </label>
+          )}
+          {provider && (
+            <LocalModelCollisionNotice
+              endpoint={provider.provider}
+              modelIds={(provider.models ?? []).map((m) => m.id)}
+            />
           )}
           {error && (
             <p role="alert" className="text-sm break-words text-destructive">

@@ -12,6 +12,7 @@ import {
 
 import { Button } from '@/components/ui/button'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
+import { LocalModelCollisionNotice } from '@/containers/endpoints/LocalModelCollisionNotice'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { listedModels } from '@/lib/cloud-model-catalog'
 import { isProviderConnected } from '@/lib/cloud-providers'
@@ -259,6 +260,14 @@ export function EndpointCard({
       </div>
       {expanded && children && (
         <div id={bodyId} className="flex flex-col border-t border-border">
+          {!mediaServer && (
+            <div className="px-4 pt-3 empty:hidden">
+              <LocalModelCollisionNotice
+                endpoint={name}
+                modelIds={listedModels(provider).map((m) => m.id)}
+              />
+            </div>
+          )}
           {children}
         </div>
       )}
