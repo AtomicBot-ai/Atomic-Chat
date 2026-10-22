@@ -83,12 +83,15 @@ export function useAgentSkills(enabled = true) {
     [load, select, selected?.name]
   )
 
+  // Both resolve to the new skill, so the page can open it: the name the core
+  // stored may differ from the request's, and an upload names it from inside.
   const addCreated = useCallback(
     async (request: CreateAgentSkillRequest) => {
       const detail = await createAgentSkill(request)
       selectedNameRef.current = detail.name
       setSelected(detail)
       await load()
+      return detail
     },
     [load]
   )
@@ -99,6 +102,7 @@ export function useAgentSkills(enabled = true) {
       selectedNameRef.current = detail.name
       setSelected(detail)
       await load()
+      return detail
     },
     [load]
   )

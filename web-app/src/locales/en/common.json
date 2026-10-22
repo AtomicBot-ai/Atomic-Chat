@@ -44,6 +44,7 @@
   "launch": "Integrations",
   "api": "API",
   "skills": "Skills",
+  "backToSkills": "Back to skills",
   "cloud": "Cloud",
   "agentSkill": {
     "selected": "Skill: {{name}}",

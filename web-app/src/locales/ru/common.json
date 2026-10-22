@@ -35,6 +35,7 @@
   "video": "Videos",
   "media": "Media",
   "skills": "Навыки",
+  "backToSkills": "Назад к навыкам",
   "cloud": "Cloud",
   "agentSkill": {
     "selected": "Навык: {{name}}",
