@@ -184,4 +184,54 @@ describe('LiteRtLmDownloadOptions', () => {
 
     expect(screen.getByText('hub:liteRtLm.noVariantHere')).toBeInTheDocument()
   })
+
+  it('offers New chat on litert-lm and delete for a variant on disk, with no download', async () => {
+    verdicts({})
+    useModelProvider.setState({
+      providers: [
+        { provider: 'litert-lm', active: true, settings: [], models: [{ id: 'gemma-4-e2b-gpu' }] },
+      ] as never,
+    })
+    const user = userEvent.setup()
+
+    render(<LiteRtLmDownloadOptions model={model()} platform="macos-arm64" />)
+
+    await waitFor(() => expect(option('gemma-4-e2b-gpu')).toHaveAttribute('aria-checked', 'true'))
+    expect(screen.queryByRole('button', { name: 'hub:download' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'hub:newChat' }))
+    expect(navigate).toHaveBeenCalledWith(
+      expect.objectContaining({ search: { threadModel: { id: 'gemma-4-e2b-gpu', provider: 'litert-lm' } } })
+    )
+    expect(useModelProvider.getState().selectedProvider).toBe('litert-lm')
+  })
+
+  it('shows a variant listed in Downloaded by its name, with New chat and delete only', () => {
+    render(
+      <LiteRtLmDownloadOptions
+        model={{
+          model_name: 'litert-lm/gemma-4-e4b-gpu',
+          description: '',
+          downloads: 0,
+          is_litert_lm: true,
+          litert_lm: {
+            origin: 'installed',
+            model_id: 'gemma-4-e4b-gpu',
+            name: 'Gemma 4 E4B (GPU)',
+            summary: '',
+            license: null,
+            repo: '',
+            revision: '',
+            gated: false,
+            variants: [],
+          },
+        }}
+        platform="macos-arm64"
+      />
+    )
+
+    expect(screen.getByText('Gemma 4 E4B (GPU)')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'hub:newChat' })).toBeInTheDocument()
+    expect(screen.queryAllByRole('radio')).toEqual([])
+    expect(core.checkLiteRtLmModel).not.toHaveBeenCalled()
+  })
 })

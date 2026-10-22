@@ -123,6 +123,21 @@ export function LiteRtLmDownloadOptions({
     pickDefaultLiteRtLmVariant(variants, (variant) => verdictOf(verdicts, variant)) ??
     variants[0]
 
+  // A variant found on disk in "Downloaded": nothing to choose or check, only chat and delete.
+  if (fields.origin === 'installed') {
+    return (
+      <section ref={sectionRef} className="scroll-mt-4 rounded-lg border border-border bg-card p-4">
+        <h2 className="mb-3 text-sm font-medium">{t('hub:downloadOptions')}</h2>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-sm">{fields.name}</span>
+          <ActionColumn trash={<DeleteModelAction modelId={fields.model_id} provider={PROVIDER} />}>
+            <NewChatButton modelId={fields.model_id} />
+          </ActionColumn>
+        </div>
+      </section>
+    )
+  }
+
   return (
     <section ref={sectionRef} className="scroll-mt-4 rounded-lg border border-border bg-card p-4">
       <h2 className="mb-3 text-sm font-medium">{t('hub:downloadOptions')}</h2>

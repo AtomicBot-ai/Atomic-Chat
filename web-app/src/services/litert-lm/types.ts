@@ -108,8 +108,11 @@ export interface LiteRtLmCheckResult {
   metadata?: LiteRtLmFileMetadata
 }
 
-/** Where a Model Hub entry of LiteRT-LM comes from. */
-export type LiteRtLmOrigin = 'curated' | 'huggingface'
+/**
+ * Where a Model Hub entry of LiteRT-LM comes from; `installed` is a variant found on disk in
+ * "Downloaded", whose card offers only New chat and delete.
+ */
+export type LiteRtLmOrigin = 'curated' | 'huggingface' | 'installed'
 
 /** A variant as the Hub card and the installer use it, whichever list it came from. */
 export interface LiteRtLmHubVariant {
