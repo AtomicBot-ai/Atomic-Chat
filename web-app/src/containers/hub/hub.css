@@ -134,12 +134,12 @@
   align-items: center;
   gap: 2px;
 }
-/* A Hugging Face row is warmer than a curated one, as in the prototype. */
+/* A Hugging Face row sits on a neutral gray tint, as in the prototype. */
 .local-model-summary[data-source='huggingface'] {
-  background: color-mix(in srgb, #e8be61 4%, transparent);
+  background: color-mix(in srgb, #a0a0a0 6%, transparent);
 }
 .local-model-summary[data-source='huggingface']:hover {
-  background: color-mix(in srgb, #e8be61 8%, transparent);
+  background: color-mix(in srgb, #a0a0a0 10%, transparent);
 }
 .model-like {
   flex-shrink: 0;

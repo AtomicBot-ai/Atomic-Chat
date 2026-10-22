@@ -1993,7 +1993,11 @@ export function EngineDetail({
               <Card
                 // Unfolded in the engine's card, the settings sit on its
                 // surface rather than in a card of their own.
-                className={embedded ? 'p-0' : undefined}
+                className={
+                  embedded
+                    ? 'rounded-none border-0 bg-transparent p-0'
+                    : undefined
+                }
                 header={
                   provider && hasEngineSettingDefaults(provider.provider) ? (
                     <div className="flex items-center justify-between mb-4">
