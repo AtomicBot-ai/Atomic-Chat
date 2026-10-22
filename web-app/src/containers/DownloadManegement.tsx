@@ -34,13 +34,9 @@ import {
 } from '@/lib/telemetry'
 import { queuedCapture } from '@/lib/telemetry-queue'
 import { captureHandledError } from '@/lib/sentry'
-import { isDiffusionModelDownloadTaskId } from '@/lib/diffusion/models'
 import { resumeDownload } from '@/lib/downloadResume'
+import { isPausableDownload, pauseDownload } from '@/lib/downloadControls'
 import { bindInterruptedDownloads } from '@/lib/interrupted-downloads'
-import { isDiffusionEngineTaskId } from '@/services/diffusion/engine'
-import { isEngineBuildTaskId } from '@/services/engine-builds/install'
-import { isEngineUpdateTaskId } from '@/services/engines/update'
-import { cancelTransfer } from '@/services/diffusion/transfer'
 import {
   decisionDownloadTaskId,
   isDecisionDownloadTaskId,
@@ -165,7 +161,6 @@ export function DownloadManagement() {
     markResumableDownload,
     clearResumableDownload,
     pausedDownloads,
-    markPausedDownload,
     clearPausedDownload,
     clearResumeParams,
     clearDownloadOrigin,
@@ -779,41 +774,10 @@ export function DownloadManagement() {
     onFileDownloadAndVerificationSuccess,
   ])
 
-  // ATO-154: pause/resume is only offered for resumable model (GGUF) downloads.
-  // Backend-binary downloads (`llamacpp*`) and MLX repos (`mlx-community/*`,
-  // which start with `mlx`) get cancel-only, matching Jan's gating.
-  // Decision and embedding models resume from their Hub or settings card,
-  // not from here.
-  // Engine updates (`engine-update-*`) are the core's to stop, cancel-only.
-  // Managed models are cancel-only too: Download again in the Hub resumes
-  // from the files on disk (change add-tensorrt-llm-model-hub, design D6);
-  // so are Foundry Local variants (change add-foundry-local).
-  const isPausableDownload = (id: string): boolean =>
-    !id.startsWith('llamacpp') &&
-    !isDiffusionEngineTaskId(id) &&
-    !isEngineBuildTaskId(id) &&
-    !isEngineUpdateTaskId(id) &&
-    !id.startsWith('mlx') &&
-    !isDecisionDownloadTaskId(id) &&
-    !isEmbeddingDownloadTaskId(id) &&
-    !isManagedDownloadId(id) &&
-    !isFoundryLocalDownloadId(id)
-
   const handlePauseDownload = useCallback(
-    (download: { id: string; name: string }) => {
-      markPausedDownload(download.id)
-      markResumableDownload(download.id)
-      if (download.id !== download.name) {
-        markPausedDownload(download.name)
-        markResumableDownload(download.name)
-      }
-      if (isDiffusionModelDownloadTaskId(download.id)) {
-        void cancelTransfer(download.id)
-      } else {
-        void serviceHub.models().abortDownload(download.name)
-      }
-    },
-    [markPausedDownload, markResumableDownload, serviceHub]
+    (download: { id: string; name: string }) =>
+      pauseDownload(download, serviceHub),
+    [serviceHub]
   )
 
   const handleResumeDownload = useCallback(

@@ -30,6 +30,26 @@ async function ensurePermission(): Promise<boolean> {
   return granted
 }
 
+/** Whether the OS already lets the app notify. Never shows a prompt. */
+export async function notificationPermissionGranted(): Promise<boolean> {
+  if (!IS_TAURI) return false
+  try {
+    return await isPermissionGranted()
+  } catch (error) {
+    console.error(`${LOG_PREFIX} isPermissionGranted failed`, error)
+    return false
+  }
+}
+
+/**
+ * Asks the OS for notification access ahead of the first notification, as
+ * the first-run flow does. Resolves `true` once granted.
+ */
+export async function requestNotificationPermission(): Promise<boolean> {
+  if (!IS_TAURI) return false
+  return ensurePermission()
+}
+
 /** Sends an OS notification; callers decide whether one is wanted. */
 export async function showDesktopNotification(
   title: string,

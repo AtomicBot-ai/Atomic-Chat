@@ -66,7 +66,11 @@ export interface DownloadResumeParams extends PullModelOptions {
  * the Hugging Face card/repository for collision handling, while this map
  * carries the user intent that is allowed to select/start the model later.
  */
-export type DownloadRequestOrigin = 'standalone' | 'reply-gate'
+export type DownloadRequestOrigin =
+  | 'standalone'
+  | 'reply-gate'
+  /** The first-run flow's chat model; its own runtime selects it when ready. */
+  | 'onboarding'
 
 // Zustand store for thinking block state
 export type DownloadState = {

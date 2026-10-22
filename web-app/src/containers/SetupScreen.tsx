@@ -36,7 +36,6 @@ import { useRecommendedModelsRegistryStore } from '@/stores/recommended-models-r
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { switchToModel } from '@/utils/switchModel'
-import { markSilentImport } from '@/utils/backgroundImports'
 import HeaderPage from './HeaderPage'
 import SetupBackendStep from './SetupBackendStep'
 import { SetupModelRow } from './SetupModelRow'
@@ -99,11 +98,12 @@ import {
   type OnboardingStep,
 } from '@/lib/onboarding-telemetry'
 import { describeProviderState } from '@/lib/onboarding'
-import { extractModelErrorMessage } from '@/lib/modelErrorMessage'
 import {
-  isDownloadCancellationError,
-  wasDownloadCancellationRequested,
-} from '@/lib/downloadCancellation'
+  importCandidatesInBackground as importDetectedInBackground,
+  providerForCandidate as providerForDetected,
+  startMlxCatalogDownload,
+} from '@/lib/onboarding/downloads'
+import { extractModelErrorMessage } from '@/lib/modelErrorMessage'
 //* Progress format is shared with the downloads panel (ATO-462) so the two don't drift apart
 import { formatProgressPair } from '@/lib/downloadFormat'
 
@@ -207,11 +207,8 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     localDownloadingModels,
     resumableDownloads,
     addLocalDownloadingModel,
-    removeLocalDownloadingModel,
-    markResumableDownload,
     clearResumableDownload,
     setDownloadOrigin,
-    clearDownloadOrigin,
   } = useDownloadStore()
   const serviceHub = useServiceHub()
   // Use the platform-active llama.cpp provider id. Windows only exposes
@@ -740,82 +737,21 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
     ]
   )
 
-  //* MLX download (full replication of the MlxModelDownloadAction logic)
+  //* MLX download (the MlxModelDownloadAction steps, in lib/onboarding)
   const startMlxDownload = useCallback(
     async (catalog: CatalogModel) => {
       const mlxId = getMlxModelId(catalog)
-      const modelPath = `${catalog.developer}/${catalog.model_name.split('/').pop()}`
-
       trackedImportIdsRef.current.set(mlxId, {
         provider: 'mlx',
         selectOnImport: false,
       })
-      clearResumableDownload(mlxId)
-      addLocalDownloadingModel(mlxId)
-      setDownloadOrigin(mlxId, catalog.model_name, 'standalone')
-
-      try {
-        const repoInfo = await serviceHub
-          .models()
-          .fetchHuggingFaceRepo(modelPath, huggingfaceToken)
-
-        if (!repoInfo?.siblings?.length) {
-          throw new Error('Failed to fetch repository files')
-        }
-
-        const modelFiles = repoInfo.siblings
-        const mainSafetensorsFile = modelFiles.find((f) =>
-          f.rfilename.toLowerCase().endsWith('.safetensors')
-        )
-        if (!mainSafetensorsFile) {
-          throw new Error('No safetensors file found in repository')
-        }
-
-        const engine = EngineManager.instance().get('mlx')
-        if (!engine) throw new Error('MLX engine not found')
-
-        const modelUrl = `https://huggingface.co/${modelPath}/resolve/main/${mainSafetensorsFile.rfilename}`
-        const extraFiles = modelFiles
-          .filter((f) => f.rfilename !== mainSafetensorsFile.rfilename)
-          .map((file) => ({
-            url: `https://huggingface.co/${modelPath}/resolve/main/${file.rfilename}`,
-            filename: file.rfilename,
-          }))
-
-        return engine.import(mlxId, {
-          modelPath: modelUrl,
-          files: extraFiles,
-          resume: resumableDownloads.has(mlxId),
-        })
-      } catch (error) {
-        console.error('Error downloading MLX model:', error)
-        trackedImportIdsRef.current.delete(mlxId)
-        markResumableDownload(mlxId)
-        removeLocalDownloadingModel(mlxId)
-        clearDownloadOrigin(mlxId)
-        if (
-          wasDownloadCancellationRequested(mlxId) ||
-          isDownloadCancellationError(error)
-        ) {
-          return
-        }
-        toast.error('Failed to download MLX model', {
-          description: extractModelErrorMessage(error),
-        })
-      }
+      const imported = await startMlxCatalogDownload(catalog, {
+        serviceHub,
+        huggingfaceToken,
+      })
+      if (!imported) trackedImportIdsRef.current.delete(mlxId)
     },
-    [
-      addLocalDownloadingModel,
-      removeLocalDownloadingModel,
-      markResumableDownload,
-      clearResumableDownload,
-      setDownloadOrigin,
-      clearDownloadOrigin,
-      serviceHub,
-      huggingfaceToken,
-      resumableDownloads,
-      getMlxModelId,
-    ]
+    [serviceHub, huggingfaceToken, getMlxModelId]
   )
 
   useEffect(() => {
@@ -989,41 +925,19 @@ function SetupScreen({ onSkipped }: SetupScreenProps) {
   // Provider that runs a given candidate (MLX vs the upstream llama.cpp engine).
   const providerForCandidate = useCallback(
     (cand: LocalModelCandidate): LocalLlamacppProvider | 'mlx' =>
-      cand.format === 'mlx'
-        ? 'mlx'
-        : (LOCAL_LLAMACPP_PROVIDER as LocalLlamacppProvider),
+      providerForDetected(cand) as LocalLlamacppProvider | 'mlx',
     []
   )
 
   // Fire-and-forget library imports (no launch/navigation). Once all settle,
   // refresh the library so they appear even if this screen has moved on.
   const importCandidatesInBackground = useCallback(
-    (cands: LocalModelCandidate[]) => {
-      const runnable = cands.filter((c) => c.runnable)
-      if (runnable.length === 0) return
-      const imports = runnable.map((c) => {
-        const eng = EngineManager.instance().get(providerForCandidate(c))
-        if (!eng) return Promise.resolve()
-        // Mark silent so DataProvider's import handler never auto-launches it.
-        markSilentImport(c.id)
-        return eng
-          .import(c.id, {
-            modelPath: c.path,
-            mmprojPath: c.mmprojPath,
-            source: c.source,
-          })
-          .catch(() => {})
-      })
-      void Promise.allSettled(imports).then(async () => {
-        try {
-          const refreshed = await serviceHub.providers().getProviders()
-          setProviders(refreshed)
-        } catch {
-          // best-effort: a later provider refresh will surface them
-        }
-      })
-    },
-    [providerForCandidate, serviceHub, setProviders]
+    (cands: LocalModelCandidate[]) =>
+      importDetectedInBackground(cands, {
+        serviceHub,
+        onProviders: setProviders,
+      }),
+    [serviceHub, setProviders]
   )
 
   // Keeps the ref current for the earlier onModelImported effect.
