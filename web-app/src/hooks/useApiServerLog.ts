@@ -70,6 +70,9 @@ export const useApiServerLog = create<ApiServerLogState>()((set) => ({
 
       for (const op of ops) {
         if (op.t === 'start') {
+          // A start replayed over a snapshot that already lists the request
+          // (`useApiServerLogFeed`) must not list it twice.
+          if (next.some((entry) => entry.id === op.entry.id)) continue
           ensureCopy()
           next.unshift(op.entry)
           continue

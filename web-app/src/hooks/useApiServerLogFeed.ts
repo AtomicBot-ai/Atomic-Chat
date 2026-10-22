@@ -25,15 +25,24 @@ import { useApiServerLog, type BatchOp } from './useApiServerLog'
  * ring buffer is what fills the log back in when the user returns — it is kept
  * across unsubscribes for exactly that reason.
  *
- * Consequence worth knowing: recording is gated on someone watching, so
- * traffic that arrives while the screen is closed is not in the log. The
- * timestamps make the gap visible rather than silent.
+ * Consequence worth knowing: prompt and reply previews are collected only
+ * while someone watches. With the core serving the Local API, a request that
+ * came while the screen was closed is still in the log, without previews; the
+ * app's own proxy (mobile) records nothing then.
+ *
+ * The listeners are attached before the snapshot is read, and what they hear
+ * while a snapshot is in flight is held and replayed on top of it: attached
+ * after, a request that started between the read and the attach was in
+ * neither, and stayed off the screen until it was opened again.
  */
 
 // Module-level, deliberately outside React: a burst of events must not cause a
 // render per event.
 let queue: BatchOp[] = []
 let frameScheduled = false
+/** Snapshots being read; while any is, events wait in `held`. */
+let snapshotsInFlight = 0
+let held: BatchOp[] = []
 
 function flushQueue() {
   frameScheduled = false
@@ -50,12 +59,29 @@ function schedule() {
 }
 
 function push(op: BatchOp) {
+  if (snapshotsInFlight > 0) {
+    held.push(op)
+    return
+  }
   queue.push(op)
+  schedule()
+}
+
+/**
+ * Replays what arrived during the snapshot, in arrival order. The snapshot may
+ * already hold some of it: a repeated start is skipped (`applyBatch`), and a
+ * patch sets the values the snapshot has, or newer ones.
+ */
+function releaseHeld() {
+  if (snapshotsInFlight > 0 || held.length === 0) return
+  queue.push(...held)
+  held = []
   schedule()
 }
 
 export function resetFeedBuffers() {
   queue = []
+  held = []
 }
 
 export function useApiServerLogFeed() {
@@ -63,6 +89,7 @@ export function useApiServerLogFeed() {
 
   const hydrate = useCallback(async () => {
     const store = useApiServerLog.getState()
+    snapshotsInFlight += 1
     try {
       const snapshot = await serviceHub
         .core()
@@ -74,6 +101,9 @@ export function useApiServerLogFeed() {
       // no live telemetry to show.
       console.warn('API request log unavailable:', error)
       store.setFeedUnavailable(true)
+    } finally {
+      snapshotsInFlight -= 1
+      releaseHeld()
     }
   }, [serviceHub])
 
@@ -89,22 +119,12 @@ export function useApiServerLogFeed() {
 
   useEffect(() => {
     let cancelled = false
+    // Only a view that subscribed unsubscribes: the count is shared, and a
+    // stray "off" would end another view's subscription.
+    let subscribed = false
     const detachers: Array<() => void> = []
 
     const attach = async () => {
-      try {
-        // Refcounted on the Rust side: recording only happens while at least
-        // one view is subscribed. The ring itself outlives the subscription.
-        await serviceHub
-          .core()
-          .invoke(API_SERVER_LOG_SUBSCRIBE_COMMAND, { enabled: true })
-      } catch {
-        // Fall through: hydrate() reports the unavailable feed.
-      }
-
-      await hydrate()
-      if (cancelled) return
-
       const listeners = await Promise.all([
         serviceHub
           .events()
@@ -131,6 +151,21 @@ export function useApiServerLogFeed() {
         return
       }
       detachers.push(...listeners)
+
+      subscribed = true
+      try {
+        // Refcounted on the Rust side: previews are collected only while at
+        // least one view is subscribed. The ring itself outlives the
+        // subscription.
+        await serviceHub
+          .core()
+          .invoke(API_SERVER_LOG_SUBSCRIBE_COMMAND, { enabled: true })
+      } catch {
+        // Fall through: hydrate() reports the unavailable feed.
+      }
+      if (cancelled) return
+
+      await hydrate()
     }
 
     void attach()
@@ -139,6 +174,7 @@ export function useApiServerLogFeed() {
       cancelled = true
       detachers.splice(0).forEach((detach) => detach())
       resetFeedBuffers()
+      if (!subscribed) return
       serviceHub
         .core()
         .invoke(API_SERVER_LOG_SUBSCRIBE_COMMAND, { enabled: false })
