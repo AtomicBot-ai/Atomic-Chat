@@ -94,3 +94,8 @@ export function hostLiteRtLmPlatform(): LiteRtLmPlatform {
   if (IS_WINDOWS) return 'win-x64'
   return IS_ARM64 ? 'linux-arm64' : 'linux-x64'
 }
+
+/** How a variant is named: its backend, and the NPU generation for an NPU file (as `atc` names it). */
+export function liteRtLmVariantLabel(variant: { backend: string; npu?: string }): string {
+  return variant.npu ? `${variant.backend.toUpperCase()} ${variant.npu}` : variant.backend.toUpperCase()
+}
