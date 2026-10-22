@@ -27,6 +27,9 @@ describe('getProviderLogo', () => {
     expect(getProviderLogo('edenai')).toBe(
       '/images/model-provider/edenai.svg'
     )
+    expect(getProviderLogo('cheaperinference')).toBe(
+      '/images/model-provider/cheaperinference.svg'
+    )
     expect(getProviderLogo('nvidia')).toBe('/images/model-provider/nvidia.svg')
     expect(getProviderLogo('aimlapi')).toBe(
       '/images/model-provider/aimlapi.svg'
@@ -89,6 +92,7 @@ describe('getProviderTitle', () => {
     expect(getProviderTitle('sglang')).toBe('SGLang')
     expect(getProviderTitle('foundry-local')).toBe('Foundry Local')
     expect(getProviderTitle('edenai')).toBe('Eden AI')
+    expect(getProviderTitle('cheaperinference')).toBe('Cheaper Inference')
     expect(getProviderTitle('automatic1111')).toBe('Automatic1111 / Forge')
     expect(getProviderTitle('sdcpp-server')).toBe('stable-diffusion.cpp server')
   })
