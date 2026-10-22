@@ -13,6 +13,7 @@
  * the de-duplication and the "already on disk" logic can be tested directly.
  */
 
+import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import {
   DIFFUSION_SHARED_DIR,
@@ -580,7 +581,11 @@ export async function downloadArtifact(
         (entry) => entry.required && !entry.present
       )
       if (missing.length === 0) {
-        if (started) emitTransferSuccess(taskId, 'Model', fetchedBytes)
+        // A paused row brought back after a relaunch may wait on files that
+        // are all on disk by now: nothing transfers, so close it the way a
+        // finished transfer does instead of leaving it waiting.
+        if (started || taskId in useDownloadStore.getState().downloads)
+          emitTransferSuccess(taskId, 'Model', fetchedBytes)
         return plan
       }
       if (pass >= MAX_DOWNLOAD_PASSES) {

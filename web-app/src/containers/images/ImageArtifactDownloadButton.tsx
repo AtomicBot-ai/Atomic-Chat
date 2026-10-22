@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { IconX } from '@tabler/icons-react'
+import { IconPlayerPlay, IconX } from '@tabler/icons-react'
 
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -16,7 +16,7 @@ type ImageArtifactDownloadButtonProps = {
 }
 
 /**
- * Download / progress-with-cancel for one checkpoint; nothing once complete. Reads its
+ * Download / progress-with-cancel / Resume for one checkpoint; nothing once complete. Reads its
  * progress from `useDownloadStore` through `useImageArtifact`, the same way
  * the voice model card does, so the download panel and this button agree.
  */
@@ -29,6 +29,35 @@ export const ImageArtifactDownloadButton = memo(
   }: ImageArtifactDownloadButtonProps) {
     const { t } = useTranslation()
     const percent = Math.round(artifact.progress * 100)
+
+    // A paused download — also one a quit cut off, brought back after the
+    // relaunch — offers Resume rather than Cancel or a fresh Download: the
+    // transfer picks up from the bytes on disk (QA 2.2.23, AC-10). Same box as
+    // the running pill, with the panel's play mark in front of the percent.
+    if (artifact.paused) {
+      const label = t('common:resumeDownload')
+      return (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => void artifact.resume()}
+          aria-label={label}
+          title={label}
+          className={cn(
+            'relative w-24 justify-center gap-1 overflow-hidden font-semibold',
+            className
+          )}
+        >
+          <span
+            aria-hidden
+            className="absolute inset-y-0 left-0 z-0 bg-primary/20"
+            style={{ width: `${percent}%` }}
+          />
+          <IconPlayerPlay size={14} className="relative z-10" aria-hidden />
+          <span className="relative z-10 tabular-nums">{percent}%</span>
+        </Button>
+      )
+    }
 
     // One button-sized box in every state: the byte count lives in the row's
     // size line, so starting a download does not make the row taller.

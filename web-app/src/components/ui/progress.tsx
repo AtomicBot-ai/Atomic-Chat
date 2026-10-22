@@ -8,6 +8,20 @@ type ProgressProps = React.ComponentProps<typeof ProgressPrimitive.Root> & {
   indicatorClassName?: string
 }
 
+/**
+ * The value Radix reports as `aria-valuenow`: a number in `0..max`, or `null`
+ * (indeterminate) when there is none. Radix rejects anything out of range
+ * with a console error, so clamp rather than drop a slight overshoot.
+ */
+function accessibleValue(
+  value: number | null | undefined,
+  max: number | undefined
+): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null
+  const upper = typeof max === 'number' && max > 0 ? max : 100
+  return Math.min(Math.max(value, 0), upper)
+}
+
 function Progress({
   className,
   value,
@@ -22,6 +36,9 @@ function Progress({
         className
       )}
       {...props}
+      // Without a value Radix renders an indeterminate progressbar, which
+      // macOS accessibility reads as a constant 50 whatever the bar shows.
+      value={accessibleValue(value, props.max)}
     >
       <ProgressPrimitive.Indicator
         data-slot="progress-indicator"

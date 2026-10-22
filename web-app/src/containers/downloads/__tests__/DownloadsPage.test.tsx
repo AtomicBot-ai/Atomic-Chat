@@ -404,6 +404,59 @@ describe('DownloadsPage', () => {
     )
   })
 
+  it('offers Resume on a paused download, also one a relaunch brought back', () => {
+    const pullModelWithMetadata = vi.fn(async () => undefined)
+    serviceHub = seedServiceHub({
+      decision: { isSupported: () => false } as never,
+      modelSetup: { diskAvailable } as unknown as ModelSetupService,
+      models: { pullModelWithMetadata } as never,
+    })
+    const paused = 'unsloth/Paused-Model-Q4_K_M'
+    const running = 'unsloth/Running-Model-Q4_K_M'
+    const entry = (id: string) => ({
+      id,
+      name: id,
+      progress: 0.4,
+      current: 4 * GB,
+      total: 10 * GB,
+      speed: { bytesPerSecond: 0, atBytes: 0, atTime: 0 },
+    })
+    useDownloadStore.setState({
+      downloads: { [paused]: entry(paused), [running]: entry(running) },
+      pausedDownloads: new Set([paused]),
+      resumeParams: {
+        [paused]: { modelPath: 'https://huggingface.co/x/resolve/main/m.gguf' },
+      },
+    })
+    render(<DownloadsPage />)
+
+    expect(
+      within(rowNamed(running)).queryByRole('button', {
+        name: 'common:resumeDownload',
+      })
+    ).not.toBeInTheDocument()
+    const row = rowNamed(paused)
+    expect(row).toHaveTextContent('common:downloadPanel.paused')
+    fireEvent.click(
+      within(row).getByRole('button', { name: 'common:resumeDownload' })
+    )
+
+    expect(pullModelWithMetadata).toHaveBeenCalledWith(
+      paused,
+      'https://huggingface.co/x/resolve/main/m.gguf',
+      undefined,
+      undefined,
+      true,
+      true,
+      {}
+    )
+    expect(useDownloadStore.getState().pausedDownloads.has(paused)).toBe(false)
+    // Cancel stays beside it.
+    expect(
+      within(row).getByRole('button', { name: 'common:cancelDownload' })
+    ).toBeInTheDocument()
+  })
+
   it('never takes the global download panel’s landmark', () => {
     render(<DownloadsPage />)
     // Desktop E2E finds the panel as the region labelled "Downloads".

@@ -3,18 +3,11 @@ import {
   type DownloadProgressProps,
   type DownloadStage,
 } from '@/hooks/useDownloadStore'
-import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useProxyConfig } from '@/hooks/useProxyConfig'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { PRISM_PROVIDER } from '@/lib/model-setup'
-import {
-  prismSetupDeps,
-  verifyPrismDownload,
-} from '@/services/model-setup/prism-setup'
 import { DownloadEvent, DownloadState, events } from '@janhq/core'
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
-import { IconCheck } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
@@ -41,11 +34,9 @@ import {
 } from '@/lib/telemetry'
 import { queuedCapture } from '@/lib/telemetry-queue'
 import { captureHandledError } from '@/lib/sentry'
-import {
-  downloadArtifact,
-  isDiffusionModelDownloadTaskId,
-  resolveDiffusionDownloadTaskId,
-} from '@/lib/diffusion/models'
+import { isDiffusionModelDownloadTaskId } from '@/lib/diffusion/models'
+import { resumeDownload } from '@/lib/downloadResume'
+import { bindInterruptedDownloads } from '@/lib/interrupted-downloads'
 import { isDiffusionEngineTaskId } from '@/services/diffusion/engine'
 import { isEngineBuildTaskId } from '@/services/engine-builds/install'
 import { isEngineUpdateTaskId } from '@/services/engines/update'
@@ -63,7 +54,6 @@ import { isFoundryLocalDownloadId } from '@/lib/foundry-local/download-id'
 import { useDecisionStore } from '@/stores/decision-store'
 import { useEmbeddingStore } from '@/stores/embedding-store'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
-import { useImageForm } from '@/hooks/useImageForm'
 import { notifyWhenAway } from '@/lib/notifications'
 import {
   describeDiffusionDownloadToast,
@@ -165,7 +155,6 @@ export function DownloadManagement() {
   })
   const serviceHub = useServiceHub()
   const imageCatalog = useImageGenerationStore((state) => state.catalog)
-  const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
   const {
     downloads,
     updateProgress,
@@ -178,13 +167,16 @@ export function DownloadManagement() {
     pausedDownloads,
     markPausedDownload,
     clearPausedDownload,
-    resumeParams,
     clearResumeParams,
     clearDownloadOrigin,
     downloadOriginByModelId,
   } = useDownloadStore()
   const decisionCatalog = useDecisionStore((s) => s.catalog)
   const embeddingCatalog = useEmbeddingStore((s) => s.catalog)
+
+  // A model download that Pause, a quit or a crash stopped comes back after a
+  // relaunch, paused and with its Resume (`lib/interrupted-downloads`).
+  useEffect(() => bindInterruptedDownloads(), [])
 
   const downloadProcesses = useMemo(() => {
     // A managed model's id spells its repository with `_`; the Hub's Download
@@ -825,108 +817,9 @@ export function DownloadManagement() {
   )
 
   const handleResumeDownload = useCallback(
-    (download: { id: string; name: string }) => {
-      const diffusionTarget = imageCatalog
-        ? resolveDiffusionDownloadTaskId(imageCatalog, download.id)
-        : null
-      if (diffusionTarget) {
-        clearPausedDownload(download.id)
-        if (download.id !== download.name) clearPausedDownload(download.name)
-        markResumableDownload(download.id)
-        toast.success(t('common:toast.downloadResumed.title'), {
-          icon: (
-            <IconCheck
-              size={16}
-              className="text-blue-500 dark:text-blue-400"
-              aria-hidden
-            />
-          ),
-          duration: 2500,
-        })
-        void downloadArtifact(
-          diffusionTarget.family,
-          diffusionTarget.quant.id,
-          {
-            resume: true,
-            hfToken: huggingfaceToken,
-            workflow: useImageForm.getState().workflow,
-          }
-        )
-          // Nothing else re-lists the models folder for a resume started
-          // here, so the finished model kept reading as "not downloaded".
-          .then(() => useImageGenerationStore.getState().refreshModelFiles())
-          .catch((error) => {
-            // downloadArtifact emits the ordinary transfer-error event first;
-            // that listener owns the existing user-facing failure path.
-            console.error(
-              '[DownloadManagement] diffusion resume failed:',
-              error
-            )
-          })
-        return
-      }
-
-      const params = resumeParams[download.id] ?? resumeParams[download.name]
-      if (!params) {
-        // No stored params (e.g. resumed after an app restart). Fall back to
-        // cancel-style cleanup so the row doesn't get stuck in a paused state.
-        clearPausedDownload(download.id)
-        toast.error(t('common:toast.downloadFailed.title'), {
-          description: t('common:toast.downloadFailed.description', {
-            item: download.name,
-          }),
-        })
-        return
-      }
-      clearPausedDownload(download.id)
-      if (download.id !== download.name) clearPausedDownload(download.name)
-      markResumableDownload(download.id)
-      const {
-        modelPath,
-        mmprojPath,
-        hfToken,
-        skipVerification,
-        ...pullOptions
-      } = params
-      void serviceHub
-        .models()
-        .pullModelWithMetadata(
-          download.id,
-          modelPath,
-          mmprojPath,
-          hfToken,
-          skipVerification ?? true,
-          true,
-          pullOptions
-        )
-        .then(async (refusal) => {
-          // A Bonsai file ends as the Hub's download does: kept only if the
-          // core says PrismML runs the file now on disk.
-          if (pullOptions.provider !== PRISM_PROVIDER || refusal) return
-          if (useDownloadStore.getState().pausedDownloads.has(download.id))
-            return
-          const result = await verifyPrismDownload(
-            download.id,
-            prismSetupDeps(serviceHub)
-          )
-          if (result.outcome === 'rejected')
-            toast.error(t('hub:prismModelRejected'), {
-              description: result.reason,
-            })
-        })
-        .catch((error) => {
-          console.error('[DownloadManagement] resume failed:', error)
-        })
-    },
-    [
-      imageCatalog,
-      huggingfaceToken,
-      resumeParams,
-      clearPausedDownload,
-      markResumableDownload,
-      serviceHub,
-      t,
-    ]
+    (download: { id: string; name: string }) =>
+      resumeDownload(download, { serviceHub, t }),
+    [serviceHub, t]
   )
 
   // Shared with the composer's reply widget, which offers the same Cancel on

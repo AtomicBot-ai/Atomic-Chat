@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-442 records, 2026-05-19 → 2026-10-21.
+443 records, 2026-05-19 → 2026-10-21.
 
 ---
 
@@ -231,8 +231,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Ship `janhq/llama.cpp` cudart DLLs with every Windows CUDA backend](2026-05-22-ship-janhq-llama-cpp-cudart-dlls-with-every-windows-cuda-backend.md)
 - **2026-05-19** — [Windows uses upstream `ggml-org/llama.cpp`, not the TurboQuant fork](2026-05-19-windows-uses-upstream-ggml-org-llama-cpp-not-the-turboquant-fork.md)
 
-## Models, Hub & downloads (44)
+## Models, Hub & downloads (45)
 
+- **2026-10-21** — [Bring interrupted model downloads back after a relaunch, paused](2026-10-21-bring-interrupted-model-downloads-back-after-a-relaunch.md)
 - **2026-10-21** — [List and remove download leftovers on the Downloads page](2026-10-21-list-and-remove-download-leftovers-on-the-downloads-page.md)
 - **2026-10-16** — [Run Foundry Local through the core; download its models in the app](2026-10-16-run-foundry-local-through-the-core-and-download-its-models-in-the-app.md)
 - **2026-10-15** — [Download Bonsai with the app's own downloader, not the core's model setup](2026-10-15-download-bonsai-with-the-apps-own-downloader.md)

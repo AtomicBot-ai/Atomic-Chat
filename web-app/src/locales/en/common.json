@@ -585,6 +585,10 @@
       "title": "Download Failed",
       "description": "{{item}} download failed"
     },
+    "downloadNotResumable": {
+      "title": "Can't resume this download",
+      "description": "{{item}} can't be resumed from here. Download it again: the bytes already on disk are kept."
+    },
     "modelValidationStarted": {
       "title": "Validating Model",
       "description": "Downloaded model \"{{modelId}}\" successfully. Verifying integrity..."

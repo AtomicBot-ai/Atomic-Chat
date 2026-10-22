@@ -14,6 +14,7 @@ import {
   markDownloadCancellationRequested,
   wasDownloadCancellationRequested,
 } from '@/lib/downloadCancellation'
+import { resumeDownload } from '@/lib/downloadResume'
 import {
   findInstalledLocalModel,
   LLAMACPP_PROVIDERS,
@@ -37,7 +38,12 @@ import type { PrismSetupPlan } from '@/services/model-setup/types'
 import { CatalogModel } from '@/services/models/types'
 import { useModelCompatibilityStore } from '@/stores/model-compatibility-store'
 import { switchToModel } from '@/utils/switchModel'
-import { IconDownload, IconLoader2, IconX } from '@tabler/icons-react'
+import {
+  IconDownload,
+  IconLoader2,
+  IconPlayerPlay,
+  IconX,
+} from '@tabler/icons-react'
 import { useNavigate } from '@tanstack/react-router'
 import { useCallback, useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -73,6 +79,7 @@ export const ModelDownloadAction = ({
     downloads,
     localDownloadingModels,
     resumableDownloads,
+    pausedDownloads,
     downloadOriginByModelId,
     addLocalDownloadingModel,
     removeLocalDownloadingModel,
@@ -462,6 +469,38 @@ export const ModelDownloadAction = ({
         data-testid="model-setup-starting"
       >
         <IconLoader2 size={14} className="animate-spin" />
+      </Button>
+    )
+  }
+
+  // A paused download — also one a quit cut off, brought back after the
+  // relaunch — offers Resume, as the download panel does: the transfer picks
+  // up from the bytes on disk instead of the card's Cancel or a fresh Download.
+  if (isDownloading && pausedDownloads.has(rowModelId)) {
+    const label = t('common:resumeDownload')
+    const percent = Math.round(downloadProgress * 100)
+    return (
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() =>
+          resumeDownload(
+            { id: rowModelId, name: rowModelId },
+            { serviceHub, t }
+          )
+        }
+        title={label}
+        aria-label={label}
+        className="relative w-24 justify-center gap-1 overflow-hidden font-semibold"
+      >
+        <span
+          aria-hidden
+          className="absolute inset-y-0 left-0 z-0 bg-primary/20"
+          style={{ width: `${percent}%` }}
+        />
+        <IconPlayerPlay size={14} className="relative z-1" aria-hidden />
+        <span className="relative z-1 tabular-nums">{percent}%</span>
       </Button>
     )
   }

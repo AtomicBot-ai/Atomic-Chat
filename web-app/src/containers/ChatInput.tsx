@@ -3356,7 +3356,11 @@ const ChatInput = memo(function ChatInput({
                   {selectedModel?.capabilities?.includes('embeddings') && (
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button variant="ghost" size="icon-xs">
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          aria-label={t('embeddings')}
+                        >
                           <IconCodeCircle2
                             size={18}
                             className="text-muted-foreground"
@@ -3585,6 +3589,7 @@ const ChatInput = memo(function ChatInput({
                           variant="destructive"
                           size="icon-sm"
                           className="rounded-full mr-1 mb-1"
+                          aria-label={t('common:stop')}
                           onClick={() => {
                             if (currentThreadId) stopStreaming(currentThreadId)
                           }}
@@ -3627,6 +3632,7 @@ const ChatInput = memo(function ChatInput({
                             blockSendUntilModelReady
                           }
                           data-test-id="send-message-button"
+                          aria-label={t('chat:sendMessage')}
                           onClick={() => handleSendMessage(prompt)}
                           className="rounded-full mr-1 mb-1"
                         >

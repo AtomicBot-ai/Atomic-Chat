@@ -62,6 +62,34 @@ describe('Progress', () => {
     expect(indicator).toHaveClass('transition-all')
   })
 
+  it('exposes its value as aria-valuenow, not an indeterminate bar', () => {
+    render(<Progress value={37} />)
+
+    const bar = screen.getByRole('progressbar')
+    expect(bar).toHaveAttribute('aria-valuenow', '37')
+    expect(bar).toHaveAttribute('aria-valuemin', '0')
+    expect(bar).toHaveAttribute('aria-valuemax', '100')
+    expect(bar).toHaveAttribute('aria-valuetext', '37%')
+    expect(bar).toHaveAttribute('data-state', 'loading')
+  })
+
+  it('clamps an overshoot for assistive tech instead of dropping the value', () => {
+    render(<Progress value={100.4} />)
+
+    expect(screen.getByRole('progressbar')).toHaveAttribute(
+      'aria-valuenow',
+      '100'
+    )
+  })
+
+  it('stays indeterminate without a value', () => {
+    render(<Progress />)
+
+    const bar = screen.getByRole('progressbar')
+    expect(bar).not.toHaveAttribute('aria-valuenow')
+    expect(bar).toHaveAttribute('data-state', 'indeterminate')
+  })
+
   it('handles undefined value', () => {
     render(<Progress />)
     

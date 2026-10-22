@@ -8,6 +8,7 @@ import {
   Image,
   Mic,
   PieChart,
+  Play,
   Search,
   Trash2,
   X,
@@ -72,7 +73,7 @@ type Refusal = { code?: unknown; message?: unknown }
 export function DownloadsPage() {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
-  const { items, totalBytes, remove, cancel } = useInstalledInventory()
+  const { items, totalBytes, remove, cancel, resume } = useInstalledInventory()
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<CategoryFilter>('all')
   const [confirming, setConfirming] = useState<InventoryItem | null>(null)
@@ -334,7 +335,21 @@ export function DownloadsPage() {
                         </span>
                       )}
                     </td>
-                    <td className="p-3 text-right">
+                    <td className="p-3 text-right whitespace-nowrap">
+                      {/* A paused download, also one a quit cut off and the
+                          relaunch brought back, picks up from its bytes. */}
+                      {item.download?.paused && (
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={t('common:resumeDownload')}
+                          title={t('common:resumeDownload')}
+                          onClick={() => resume(item)}
+                          className="text-muted-foreground"
+                        >
+                          <Play size={15} />
+                        </Button>
+                      )}
                       {item.download ? (
                         <Button
                           variant="ghost"

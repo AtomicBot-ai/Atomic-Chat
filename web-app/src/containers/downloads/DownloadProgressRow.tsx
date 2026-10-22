@@ -126,6 +126,7 @@ export function DownloadProgressRow({
 
       <Progress
         value={progress * 100}
+        aria-label={shortModelName(label)}
         indicatorClassName={DOWNLOAD_PROGRESS_INDICATOR}
         className="my-2 h-1.5 rounded-full bg-muted-foreground/15 dark:bg-muted-foreground/20"
       />

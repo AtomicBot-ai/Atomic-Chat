@@ -4,11 +4,13 @@ import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useVoiceModel } from '@/hooks/useVoiceModel'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   decisionDownloadTaskId,
   deleteDecisionModel,
 } from '@/lib/decision/models'
 import { cancelDownload } from '@/lib/downloadCancellation'
+import { resumeDownload } from '@/lib/downloadResume'
 import {
   EMPTY_DISK_SCAN,
   removeDiskPaths,
@@ -172,6 +174,8 @@ export type InstalledInventory = {
   remove: (item: InventoryItem) => Promise<void>
   /** Cancel a running download, as the download panel does. */
   cancel: (item: InventoryItem) => void
+  /** Resume a paused download, as the download panel does. */
+  resume: (item: InventoryItem) => void
 }
 
 /**
@@ -181,6 +185,7 @@ export type InstalledInventory = {
  * them for as long as it is mounted; the others are bound app-wide.
  */
 export function useInstalledInventory(): InstalledInventory {
+  const { t } = useTranslation()
   const serviceHub = useServiceHub()
   const providers = useModelProvider((state) => state.providers)
   const voice = useVoiceModel()
@@ -340,5 +345,16 @@ export function useInstalledInventory(): InstalledInventory {
     [serviceHub]
   )
 
-  return { items, totalBytes, remove, cancel }
+  const resume = useCallback(
+    (item: InventoryItem) => {
+      if (!item.download?.paused) return
+      resumeDownload(
+        { id: item.download.id, name: item.download.name },
+        { serviceHub, t }
+      )
+    },
+    [serviceHub, t]
+  )
+
+  return { items, totalBytes, remove, cancel, resume }
 }

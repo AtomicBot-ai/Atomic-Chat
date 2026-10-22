@@ -384,6 +384,27 @@ describe('ChatInput', () => {
     unmount()
   })
 
+  it('names the icon-only Send and Stop buttons for assistive tech', () => {
+    const { rerender, unmount } = render(<ChatInput />)
+
+    fireEvent.change(screen.getByTestId('chat-input'), {
+      target: { value: 'Hello' },
+    })
+    expect(
+      within(screen.getByTestId('send-control')).getByRole('button', {
+        name: 'chat:sendMessage',
+      })
+    ).toBeEnabled()
+
+    rerender(<ChatInput chatStatus="streaming" />)
+    expect(
+      within(screen.getByTestId('send-control')).getByRole('button', {
+        name: 'common:stop',
+      })
+    ).toBeInTheDocument()
+    unmount()
+  })
+
   it('puts the model and the microphone beside Send', () => {
     const { unmount } = render(<ChatInput />)
     fireEvent.change(screen.getByTestId('chat-input'), {

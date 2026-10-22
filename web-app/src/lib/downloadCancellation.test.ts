@@ -91,6 +91,53 @@ describe('cancelDownload', () => {
     expect(wasDownloadCancellationRequested(id)).toBe(true)
   })
 
+  it('clears a paused checkpoint’s row itself: no transfer is left to report a stop', () => {
+    const id = 'diffusion-model-z-image_q4_k_m'
+    useDownloadStore.setState({
+      downloads: {
+        [id]: {
+          id,
+          name: id,
+          progress: 0.4,
+          current: 4,
+          total: 10,
+          speed: { bytesPerSecond: 0, atBytes: 4, atTime: 0 },
+        },
+      },
+      pausedDownloads: new Set([id]),
+    })
+
+    cancelDownload({ id, name: id }, serviceHub)
+
+    const state = useDownloadStore.getState()
+    expect(state.downloads).not.toHaveProperty(id)
+    expect(state.pausedDownloads.has(id)).toBe(false)
+    // Pause already stopped the transfer; asking again only fails.
+    expect(extensionCancel).not.toHaveBeenCalled()
+    expect(state.resumableDownloads.has(id)).toBe(true)
+  })
+
+  it('clears a paused chat-model row and still lets the model service report the cancel', () => {
+    const id = 'LiquidAI/LFM2.5-1.2B-Q4_K_M'
+    useDownloadStore.setState({
+      downloads: {
+        [id]: {
+          id,
+          name: id,
+          progress: 0.4,
+          current: 4,
+          total: 10,
+          speed: { bytesPerSecond: 0, atBytes: 4, atTime: 0 },
+        },
+      },
+    })
+
+    cancelDownload({ id, name: id }, serviceHub)
+
+    expect(useDownloadStore.getState().downloads).not.toHaveProperty(id)
+    expect(abortDownload).toHaveBeenCalledWith(id)
+  })
+
   it('stops a Foundry Local variant’s transfer by its task id (change add-foundry-local)', () => {
     const id = 'foundry-local-qwen3-0_6b-generic-gpu'
 
