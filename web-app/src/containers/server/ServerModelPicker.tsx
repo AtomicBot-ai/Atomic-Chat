@@ -11,12 +11,20 @@ import { restartLocalApiServer } from '@/hooks/useRemoteAccess'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { isLocalEngineProvider } from '@/lib/cloud-providers'
+import { modelVariantDetails } from '@/lib/model-display-name'
+import { modelFamilyLogoSrc } from '@/lib/model-logo'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import { sortProvidersForSettings } from '@/lib/providerOrder'
-import { getProviderTitle } from '@/lib/utils'
+import { formatBytes, getProviderLogo, getProviderTitle } from '@/lib/utils'
 
-import { ServerButton, ServerField, ServerSelect } from './ServerPageParts'
+import {
+  ServerButton,
+  type ServerDetailChoice,
+  ServerDetailPicker,
+  ServerField,
+  ServerSelect,
+} from './ServerPageParts'
 import {
   NO_HELPER_MODEL,
   type ServedHelperModels,
@@ -94,8 +102,56 @@ export function initialChoice(
 }
 
 /**
+ * What each engine is, in a line, and the files it runs, for the engine
+ * picker's rows. An engine left out shows its name and model count only.
+ */
+const ENGINE_FACTS: Record<string, { detail: string; format?: string }> = {
+  'llamacpp-upstream': {
+    detail: 'api:model.engineDetail.llamacpp',
+    format: 'GGUF',
+  },
+  'llamacpp': { detail: 'api:model.engineDetail.turboquant', format: 'GGUF' },
+  'mlx': { detail: 'api:model.engineDetail.mlx', format: 'MLX' },
+  'atomic-prism': { detail: 'api:model.engineDetail.prism', format: 'GGUF' },
+  'vllm': { detail: 'api:model.engineDetail.vllm' },
+  'sglang': { detail: 'api:model.engineDetail.sglang' },
+  'tensorrt-llm': { detail: 'api:model.engineDetail.tensorrt' },
+  'foundry-local': { detail: 'api:model.engineDetail.foundry', format: 'ONNX' },
+}
+
+const joinFacts = (facts: (string | undefined | false)[]) =>
+  facts.filter(Boolean).join(' · ') || undefined
+
+/**
+ * A model's row: its family's mark (the engine's when no family matches),
+ * its description when it carries one, and what is known of the file — the
+ * quantization its name leaves out and its size on disk.
+ */
+function modelChoice(
+  model: Model,
+  engineLogo: string | undefined,
+  t: (key: string, options?: Record<string, unknown>) => string
+): ServerDetailChoice {
+  const name = modelLabel(model)
+  const { quant } = modelVariantDetails(model)
+  const size = formatBytes(model.sizeBytes)
+  return {
+    value: model.id,
+    name,
+    logo:
+      modelFamilyLogoSrc(name) ?? modelFamilyLogoSrc(model.id) ?? engineLogo,
+    detail: model.description?.trim() || undefined,
+    metadata: joinFacts([
+      quant && !name.toLowerCase().includes(quant.toLowerCase()) && quant,
+      size && t('api:model.onDisk', { size }),
+    ]),
+  }
+}
+
+/**
  * Engine first, then a model that engine can run; changing the engine keeps
- * the model when the new engine has it, else takes its first.
+ * the model when the new engine has it, else takes its first. Both pickers
+ * show what each choice is, as their rows do.
  */
 export function EngineModelFields({
   engines,
@@ -112,32 +168,39 @@ export function EngineModelFields({
 
   return (
     <div className="sp-engine-model">
-      <ServerField label={t('api:model.engine')}>
-        <ServerSelect
-          label={t('api:model.engine')}
-          value={engine.provider}
-          options={engines.map((e) => ({ value: e.provider, label: e.title }))}
-          onChange={(provider) => {
-            const next = engines.find((e) => e.provider === provider)
-            if (next)
-              onChange({
-                provider: next.provider,
-                model: fitModel(next, choice.model),
-              })
-          }}
-        />
-      </ServerField>
-      <ServerField label={t('api:model.model')} hint={t('api:model.modelHint')}>
-        <ServerSelect
-          label={t('api:model.model')}
-          value={choice.model}
-          options={engine.models.map((model) => ({
-            value: model.id,
-            label: modelLabel(model),
-          }))}
-          onChange={(model) => onChange({ provider: engine.provider, model })}
-        />
-      </ServerField>
+      <ServerDetailPicker
+        label={t('api:model.engine')}
+        value={engine.provider}
+        choices={engines.map((e) => {
+          const facts = ENGINE_FACTS[e.provider]
+          return {
+            value: e.provider,
+            name: e.title,
+            logo: getProviderLogo(e.provider),
+            detail: facts && t(facts.detail),
+            metadata: joinFacts([
+              facts?.format,
+              t('api:model.engineModels', { count: e.models.length }),
+            ]),
+          }
+        })}
+        onChange={(provider) => {
+          const next = engines.find((e) => e.provider === provider)
+          if (next)
+            onChange({
+              provider: next.provider,
+              model: fitModel(next, choice.model),
+            })
+        }}
+      />
+      <ServerDetailPicker
+        label={t('api:model.model')}
+        value={choice.model}
+        choices={engine.models.map((model) =>
+          modelChoice(model, getProviderLogo(engine.provider), t)
+        )}
+        onChange={(model) => onChange({ provider: engine.provider, model })}
+      />
     </div>
   )
 }

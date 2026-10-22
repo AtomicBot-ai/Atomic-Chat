@@ -70,10 +70,10 @@ export function useAgentStatus(): (agent: IntegrationAgent) => {
 }
 
 /**
- * Overview's "Agents & tools": every integration as a card with what Atomic
- * Chat knows about it and the one next step — the setup guide for the agents
- * it configures, All integrations for the editors set up by hand, connection
- * details once set up — then the way in for the user's own application.
+ * Overview's "Agents & tools": every integration as a card with its one next
+ * step — the setup guide for the agents it configures, All integrations for
+ * the editors set up by hand — or, once set up, its state on the way to its
+ * connection details; then the way in for the user's own application.
  */
 export function ServerAgents() {
   const { t } = useTranslation()
@@ -126,25 +126,29 @@ export function ServerAgents() {
         {visible.map((agent) => {
           const status = statusOf(agent)
           return (
-            <article className="sp-tool" key={agent.id}>
-              <div className="sp-row">
+            <article
+              className={status.configured ? 'sp-tool is-connected' : 'sp-tool'}
+              key={agent.id}
+            >
+              <div className="sp-tool-heading">
                 <span className="sp-agent-icon" aria-hidden="true">
                   <AgentIcon agent={agent} />
                 </span>
-                <span className="sp-status">
-                  <StatusDot tone={status.tone} />
-                  {status.label}
-                </span>
+                <h3>{agent.name}</h3>
               </div>
-              <h3>{agent.name}</h3>
               <p>{agent.description}</p>
               {status.configured ? (
+                // Set up: the state sits on the way to its connection details.
                 <Link
                   to={route.api.connections}
                   className="sp-button"
+                  title={t('api:agents.connectionDetails')}
                   onClick={() => pickAgentHint(true)}
                 >
-                  {t('api:agents.connectionDetails')}
+                  <span className="sp-status">
+                    <StatusDot tone={status.tone} />
+                    {status.label}
+                  </span>
                   <ArrowRight size={14} />
                 </Link>
               ) : isGuidedAgent(agent) ? (

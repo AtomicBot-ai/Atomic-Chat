@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
@@ -57,7 +57,7 @@ describe('Overview, agents and tools', () => {
     useOnboardingStore.getState().reset()
   })
 
-  it('leads with the featured agents and says what Atomic Chat knows about each', () => {
+  it('leads with the featured agents, marking the ones set up', () => {
     render(<ServerAgents />)
 
     const names = screen
@@ -68,25 +68,40 @@ describe('Overview, agents and tools', () => {
       'Codex CLI',
       'Atomic Agent',
     ])
+    expect(card('Claude Code')).toHaveClass('is-connected')
+    expect(card('Codex CLI')).not.toHaveClass('is-connected')
+    // Only a set-up agent has a state on its card, and only on its action.
+    expect(screen.queryByText('api:agents.installed')).not.toBeInTheDocument()
     expect(
-      within(card('Claude Code')).getByText('api:agents.configured')
-    ).toBeInTheDocument()
-    expect(
-      within(card('Codex CLI')).getByText('api:agents.installed')
-    ).toBeInTheDocument()
-    expect(
-      within(card('Atomic Agent')).getByText('api:agents.notInstalled')
-    ).toBeInTheDocument()
+      screen.queryByText('api:agents.notInstalled')
+    ).not.toBeInTheDocument()
   })
 
-  it('opens the guide at the agent it can configure, and connection details once set up', () => {
+  it('shows a set-up agent’s state once, on the way to its connection details, idle once the server stops', () => {
     render(<ServerAgents />)
+    const claude = card('Claude Code')
+    const dot = () =>
+      within(claude).getByText('api:agents.configured').firstElementChild
 
+    expect(within(claude).getAllByText('api:agents.configured')).toHaveLength(1)
+    const action = within(claude).getByRole('link', {
+      name: 'api:agents.configured',
+    })
+    expect(action).toHaveAttribute('href', '/api/connections')
+    expect(action).toHaveAttribute('title', 'api:agents.connectionDetails')
+    expect(dot()).toHaveClass('bg-emerald-500')
+
+    act(() => useAppState.setState({ serverStatus: 'stopped' }))
+
+    // Still set up — Atomic Chat never says "connected" — just not served.
     expect(
-      within(card('Claude Code'))
-        .getByText('api:agents.connectionDetails')
-        .closest('a')
-    ).toHaveAttribute('href', '/api/connections')
+      within(claude).getByRole('link', { name: 'api:agents.configured' })
+    ).toBeInTheDocument()
+    expect(dot()).toHaveClass('bg-muted-foreground/50')
+  })
+
+  it('opens the guide at the agent it can configure', () => {
+    render(<ServerAgents />)
 
     fireEvent.click(
       screen.getByRole('button', {
@@ -178,9 +193,9 @@ describe('Overview, agents and tools', () => {
 
     it('ends the hints when the tool picked is already set up', () => {
       render(<ServerAgents />)
-      const details = within(card('Claude Code')).getByText(
-        'api:agents.connectionDetails'
-      )
+      const details = within(card('Claude Code')).getByRole('link', {
+        name: 'api:agents.configured',
+      })
       // The router would navigate; jsdom cannot.
       details.addEventListener('click', (event) => event.preventDefault())
 

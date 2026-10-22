@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -28,7 +28,10 @@ const { control, restart, helpers, toastError, navigate } = vi.hoisted(() => {
 })
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, params?: Record<string, unknown>) =>
+      params ? `${key}:${JSON.stringify(params)}` : key,
+  }),
 }))
 
 vi.mock('@tanstack/react-router', () => ({
@@ -84,18 +87,30 @@ const saveButton = () =>
 describe('Server → Engine & model', () => {
   const user = userEvent.setup()
 
-  /** The dropdown's options, as it lists them under the field. */
+  /**
+   * The dropdown's options, as it lists them under the field: by name, which
+   * the engine and model rows set in bold above what they are.
+   */
   const optionsOf = async (name: string) => {
     await user.click(dropdown(name))
     const options = screen
       .getAllByRole('menuitemradio')
-      .map((option) => option.textContent)
+      .map(
+        (option) => (option.querySelector('strong') ?? option).textContent ?? ''
+      )
     await user.keyboard('{Escape}')
     return options
   }
+  /** The open menu's row whose name is `option`. */
+  const row = (option: string) =>
+    screen
+      .getAllByRole('menuitemradio')
+      .find(
+        (item) => (item.querySelector('strong') ?? item).textContent === option
+      ) as HTMLElement
   const choose = async (name: string, option: string) => {
     await user.click(dropdown(name))
-    await user.click(screen.getByRole('menuitemradio', { name: option }))
+    await user.click(row(option))
   }
 
   beforeEach(() => {
@@ -138,6 +153,90 @@ describe('Server → Engine & model', () => {
     expect(await optionsOf('api:model.model')).toEqual(['Qwen3.5 4B'])
     // Nothing to save yet, so no save bar.
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+
+  it('shows each engine with its mark, what it is and its facts, and ticks the one chosen', async () => {
+    render(<ServerModelPicker />)
+    // The field reads as its chosen row does.
+    expect(dropdown('api:model.engine')).toHaveTextContent(
+      'api:model.engineDetail.llamacpp'
+    )
+
+    await user.click(dropdown('api:model.engine'))
+
+    const llama = row(getProviderTitle('llamacpp-upstream'))
+    expect(llama).toHaveAttribute('aria-checked', 'true')
+    expect(llama.querySelector('img')).toHaveAttribute(
+      'src',
+      '/images/model-provider/llamacpp.svg'
+    )
+    expect(llama).toHaveTextContent('api:model.engineDetail.llamacpp')
+    // One chat model: the embedding model and the missing file do not count.
+    expect(llama).toHaveTextContent('GGUF · api:model.engineModels:{"count":1}')
+    expect(row(getProviderTitle('atomic-prism'))).toHaveAttribute(
+      'aria-checked',
+      'false'
+    )
+  })
+
+  it('shows each model with its family’s mark, the quantization its name leaves out and its size on disk', async () => {
+    useModelProvider.setState({
+      providers: [
+        engine('llamacpp-upstream', [
+          {
+            id: 'unsloth/Llama-3.2-3B-Instruct-GGUF/Llama-3.2-3B-Instruct-Q4_K_M.gguf',
+            name: 'Llama 3.2 3B',
+            sizeBytes: 2.5 * 1024 ** 3,
+          },
+          { id: 'my-finetune', description: 'Tuned on our support tickets' },
+        ]),
+      ],
+    })
+    render(<ServerModelPicker />)
+
+    await user.click(dropdown('api:model.model'))
+
+    const llama = row('Llama 3.2 3B')
+    expect(llama.querySelector('img')).toHaveAttribute(
+      'src',
+      '/svg/meta-color.svg'
+    )
+    expect(within(llama).getByText(/Q4_K_M/)).toHaveTextContent(
+      'Q4_K_M · api:model.onDisk:{"size":"2.5 GB"}'
+    )
+    // No family to go by: the engine's mark, and its own description.
+    const finetune = row('my-finetune')
+    expect(finetune.querySelector('img')).toHaveAttribute(
+      'src',
+      '/images/model-provider/llamacpp.svg'
+    )
+    expect(finetune).toHaveTextContent('Tuned on our support tickets')
+    expect(finetune.querySelector('small')).toBeNull()
+  })
+
+  it('keeps the model on an engine that also runs it', async () => {
+    useModelProvider.setState({
+      providers: [
+        engine('llamacpp-upstream', [
+          { id: 'qwen3.5-4b' },
+          { id: 'gemma-4-e4b' },
+        ]),
+        engine('atomic-prism', [{ id: 'bonsai-9b' }, { id: 'gemma-4-e4b' }]),
+      ],
+    })
+    render(<ServerModelPicker />)
+
+    await choose('api:model.model', 'gemma-4-e4b')
+    await choose('api:model.engine', getProviderTitle('atomic-prism'))
+
+    expect(dropdown('api:model.model')).toHaveTextContent('gemma-4-e4b')
+    await user.click(saveButton())
+    await waitFor(() =>
+      expect(useLocalApiServer.getState().defaultModelLocalApiServer).toEqual({
+        provider: 'atomic-prism',
+        model: 'gemma-4-e4b',
+      })
+    )
   })
 
   it('opens on the saved choice', () => {

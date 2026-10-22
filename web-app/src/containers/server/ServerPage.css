@@ -212,7 +212,7 @@
     margin-bottom: 16px;
     padding: 20px;
     border: 1px solid var(--border);
-    border-radius: 11px;
+    border-radius: 12px;
     background: var(--card);
   }
   .sp-panel > h2,
@@ -301,6 +301,76 @@
   .sp-engine-model {
     display: grid;
     gap: 18px;
+  }
+
+  /* Engine & model: the field and its menu rows read the same — a mark, the
+   * name, what it is, its facts. The menu is portalled out of the page, so
+   * none of this is scoped to `.server-page`. */
+  .sp-detail-picker {
+    display: flex;
+    width: 100%;
+    min-width: 0;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--secondary);
+    color: var(--foreground);
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .sp-detail-picker:hover:not(:disabled) {
+    border-color: var(--muted-foreground);
+  }
+  .sp-detail-picker > svg {
+    flex-shrink: 0;
+    color: var(--muted-foreground);
+    transition: transform 150ms ease;
+  }
+  .sp-detail-picker[data-state='open'] > svg {
+    transform: rotate(180deg);
+  }
+  .sp-picker-logo {
+    display: block;
+    width: 32px;
+    height: 32px;
+    flex-shrink: 0;
+  }
+  .sp-picker-initial {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    background: var(--muted);
+    color: var(--muted-foreground);
+    font-size: calc(var(--font-size-base) * 0.875);
+    font-weight: 600;
+  }
+  .sp-picker-copy {
+    display: grid;
+    min-width: 0;
+    flex: 1;
+    gap: 4px;
+    text-align: left;
+  }
+  .sp-picker-copy > strong {
+    color: var(--foreground);
+    font-size: calc(var(--font-size-base) * 0.875);
+    font-weight: 600;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+  }
+  .sp-picker-copy > span {
+    color: var(--muted-foreground);
+    font-size: calc(var(--font-size-base) * 0.75);
+    line-height: 1.4;
+  }
+  .sp-picker-copy > small {
+    color: var(--muted-foreground);
+    font-size: calc(var(--font-size-base) * 0.6875);
+    line-height: 1.4;
   }
   .sp-empty {
     padding: 35px 20px;
@@ -414,35 +484,53 @@
     background: none;
     font-size: calc(var(--font-size-base) * 0.6875);
   }
+  /* One card rhythm; a set-up agent shows its state on its action. */
   .sp-tools-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-    gap: 12px;
+    gap: 16px;
   }
   .sp-tool {
+    display: flex;
     min-width: 0;
-    padding: 18px;
+    flex-direction: column;
+    gap: 12px;
+    padding: 20px;
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: 12px;
     background: var(--card);
   }
-  .sp-tool h3 {
-    margin: 17px 0 6px;
+  .sp-tool.is-connected {
+    border-color: color-mix(in srgb, #64bda5 40%, var(--border));
+    background: color-mix(in srgb, #64bda5 12%, var(--card));
+  }
+  .sp-tool-heading {
+    display: flex;
+    min-width: 0;
+    min-height: 32px;
+    align-items: center;
+    gap: 12px;
+  }
+  .sp-tool-heading h3 {
+    min-width: 0;
+    margin: 0;
+    font-size: var(--font-size-base);
+    line-height: 1.3;
   }
   .server-page .sp-tool p {
-    min-height: 35px;
-    font-size: calc(var(--font-size-base) * 0.6875);
+    flex: 1;
+    margin: 0 0 4px;
+    font-size: calc(var(--font-size-base) * 0.75);
     line-height: 1.5;
   }
   .sp-tool .sp-button {
     width: 100%;
     justify-content: space-between;
-    margin-top: 16px;
     padding-inline: 14px;
-    font-size: calc(var(--font-size-base) * 0.6875);
+    font-size: calc(var(--font-size-base) * 0.75);
   }
-  .sp-tool .sp-status {
-    font-size: calc(var(--font-size-base) * 0.625);
+  .sp-tool .sp-button .sp-status {
+    font-size: inherit;
   }
   .sp-agent-icon {
     display: inline-flex;
