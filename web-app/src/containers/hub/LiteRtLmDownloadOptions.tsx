@@ -346,7 +346,7 @@ function DownloadButton({
       useDownloadStore.getState().removeLocalDownloadingModel(downloadId)
       setInstalling(false)
     }
-  }, [downloadId, fields, variant, serviceHub, token])
+  }, [downloadId, fields, variant, serviceHub, token, t])
 
   return (
     <div className="flex w-full flex-col items-end gap-2">

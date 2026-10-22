@@ -230,9 +230,11 @@ describe('fetchHfLiteRtModels', () => {
   it('asks the Hub once per Hub session for the same repositories', async () => {
     const { fetchJson } = hub()
 
-    await fetchHfLiteRtModels({ ...base, query: 'qwen3', fetchJson })
-    await fetchHfLiteRtModels({ ...base, query: 'qwen3', fetchJson })
+    const first = await fetchHfLiteRtModels({ ...base, query: 'qwen3', fetchJson })
+    const second = await fetchHfLiteRtModels({ ...base, query: 'qwen3', fetchJson })
 
+    expect(second).toEqual(first)
+    expect(second.models.map((model) => model.repo)).toEqual(['litert-community/Qwen3-4B'])
     expect(fetchJson).toHaveBeenCalledTimes(2)
   })
 
