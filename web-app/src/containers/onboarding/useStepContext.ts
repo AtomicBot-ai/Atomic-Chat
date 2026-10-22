@@ -1,13 +1,15 @@
 import { localStorageKey } from '@/constants/localStorage'
 import type { StepContext } from '@/lib/onboarding/steps'
 
+import { useCloudProviderCount } from './steps/cloudAvailability'
+import { useMediaCardCount } from './steps/mediaAvailability'
+import { usePermissionRowCount } from './steps/permissionsAvailability'
+import { useLocalApiServerOffered } from './steps/serverAvailability'
+
 /**
- * What decides which steps this machine shows. Read on every render: the
- * backend step's flag flips while the screen is up, and nothing else here is
- * worth subscribing to.
- *
- * Permissions, cloud, media and the server steps report nothing yet, so the
- * flow runs Welcome → (backend) → model until their screens land.
+ * What decides which steps this machine shows. Each optional step reports
+ * what it has to offer from its own availability hook; the backend step's
+ * flag is read on every render, since it flips while the screen is up.
  */
 export function useStepContext(): StepContext {
   return {
@@ -15,9 +17,9 @@ export function useStepContext(): StepContext {
     backendStepDone: Boolean(
       localStorage.getItem(localStorageKey.llamacppOnboardingDone)
     ),
-    permissionRows: 0,
-    cloudProviders: 0,
-    mediaCards: 0,
-    localApiServer: false,
+    permissionRows: usePermissionRowCount(),
+    cloudProviders: useCloudProviderCount(),
+    mediaCards: useMediaCardCount(),
+    localApiServer: useLocalApiServerOffered(),
   }
 }

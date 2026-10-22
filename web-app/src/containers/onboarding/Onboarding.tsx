@@ -28,19 +28,30 @@ import {
 
 import { DownloadStrip } from './DownloadStrip'
 import { BackendStep } from './steps/BackendStep'
+import { CloudStep } from './steps/CloudStep'
+import { MediaStep } from './steps/MediaStep'
 import { ModelStep } from './steps/ModelStep'
+import { PermissionsStep } from './steps/PermissionsStep'
+import { PurposeStep } from './steps/PurposeStep'
+import { ServerStep } from './steps/ServerStep'
 import { WelcomeStep } from './steps/WelcomeStep'
 import type { StepProps } from './steps/types'
 import { useStepContext } from './useStepContext'
 import './onboarding.css'
 
-/** The screen each step draws. Steps not built yet fall back to none. */
-const STEP_COMPONENTS: Partial<
-  Record<OnboardingStepId, (props: StepProps) => React.ReactNode>
+/** The screen each step draws. */
+const STEP_COMPONENTS: Record<
+  OnboardingStepId,
+  (props: StepProps) => React.ReactNode
 > = {
   welcome: WelcomeStep,
   backend: BackendStep,
   model: ModelStep,
+  permissions: PermissionsStep,
+  cloud: CloudStep,
+  media: MediaStep,
+  purpose: PurposeStep,
+  server: ServerStep,
 }
 
 const twoDigits = (value: number) => String(value).padStart(2, '0')
@@ -157,6 +168,15 @@ export function Onboarding() {
     [handOff, leaveStep, step, steps]
   )
 
+  const goTo = useCallback(
+    (target: OnboardingStepId, action = 'go_to') => {
+      if (!step) return
+      leaveStep(action)
+      useOnboardingStore.getState().goTo(target)
+    },
+    [leaveStep, step]
+  )
+
   if (!step) return null
   const StepScreen = STEP_COMPONENTS[step]
   const back = prevStep(steps, step)
@@ -185,7 +205,7 @@ export function Onboarding() {
               })}
             </div>
           )}
-          {StepScreen && <StepScreen next={next} handOff={handOff} />}
+          <StepScreen next={next} goTo={goTo} handOff={handOff} />
         </div>
         <footer className="ob-footer">
           <div className="ob-footer-row">
@@ -193,10 +213,7 @@ export function Onboarding() {
               <button
                 type="button"
                 className="ob-text"
-                onClick={() => {
-                  leaveStep('back')
-                  useOnboardingStore.getState().goTo(back)
-                }}
+                onClick={() => goTo(back, 'back')}
               >
                 <ArrowLeft size={15} aria-hidden="true" />
                 {t('onboarding:back')}

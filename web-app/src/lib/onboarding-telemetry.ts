@@ -162,6 +162,18 @@ export function captureOnboardingCompleted(params: {
 }
 
 /**
+ * An event of one first-run step (a permission answered, a purpose chosen),
+ * sent with the platform and app version like every onboarding event. Each
+ * step names its own events next to the code that sends them.
+ */
+export function captureOnboardingEvent(
+  event: string,
+  props: Record<string, unknown>
+): void {
+  capture(event, props)
+}
+
+/**
  * A step of the first-run flow came on screen. With `onboarding_step_left`,
  * this is the per-step funnel `onboarding_completed.step_reached` can only
  * sample at the exit.

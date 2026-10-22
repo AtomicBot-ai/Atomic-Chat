@@ -26,6 +26,8 @@ export type OnboardingJob = {
   taskId: string
   /** Bytes to fetch, when known before the first progress event. */
   totalBytes?: number
+  /** An image/video job's model file, as `family:quantId` (`lib/diffusion`). */
+  artifactId?: string
   phase: OnboardingJobPhase
 }
 
