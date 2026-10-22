@@ -3,6 +3,7 @@ import {
   isAnswerableModel,
   type AnswerableModelLike,
 } from '@/lib/answerable-model'
+import { useOnboardingStore } from '@/stores/onboarding-store'
 import { isKnownProvider } from '@/stores/provider-registry-store'
 import { isSubscriptionProvider } from '@/utils/registerRemoteProvider'
 
@@ -125,9 +126,44 @@ function isSetupCompleted(): boolean {
  * the completion flag once per launch so the forced run still repeats.
  */
 export function isOnboardingPending(providers: ProviderLike[]): boolean {
+  if (isOnboardingInProgress()) return true
   if (isSetupCompleted()) return false
   if (typeof FORCE_ONBOARDING !== 'undefined' && FORCE_ONBOARDING) return true
   return !hasValidProviders(providers)
+}
+
+/**
+ * A first run is on screen, or was when the app last closed: the next launch
+ * goes back to it. Set from the setup screen's first step until the handoff,
+ * and again after "Back to setup".
+ */
+export function isOnboardingInProgress(): boolean {
+  return useOnboardingStore.getState().phase === 'active'
+}
+
+/**
+ * Whether the home route sends this launch to the setup screen. A run in
+ * progress always resumes; otherwise only an install that has neither a
+ * finished setup, a chat, nor a model or key to answer with goes there.
+ * `force` (`FORCE_ONBOARDING`) enters it despite chats and models.
+ */
+export function shouldEnterOnboarding({
+  providers,
+  hasPriorThread,
+  setupCompleted,
+  skippedThisSession,
+  force,
+}: {
+  providers: ProviderLike[]
+  hasPriorThread: boolean
+  setupCompleted: boolean
+  skippedThisSession: boolean
+  force: boolean
+}): boolean {
+  if (isOnboardingInProgress()) return true
+  if (skippedThisSession || setupCompleted) return false
+  if (force) return true
+  return !hasPriorThread && !hasValidProviders(providers)
 }
 
 /**
@@ -139,4 +175,5 @@ export function resetForcedOnboardingRun(): void {
   if (typeof FORCE_ONBOARDING === 'undefined' || !FORCE_ONBOARDING) return
   if (typeof window === 'undefined') return
   localStorage.removeItem(localStorageKey.setupCompleted)
+  useOnboardingStore.getState().reset()
 }

@@ -78,6 +78,11 @@ export const localStorageKey = {
   // means the app was closed mid-flow — the only way to see that at all, since
   // a window close gives the renderer no reliable chance to report it.
   onboardingInFlight: 'onboarding-in-flight',
+  // The first-run flow (`stores/onboarding-store`): its step, the chat model
+  // chosen, the download queue it started and where it handed off. Kept until
+  // the run settles, so a relaunch — the Windows/Linux backend step forces
+  // one — comes back to the same screen with the same queue.
+  onboarding: 'atomic-onboarding',
   // A `backend_step_resolved` that a relaunch is about to interrupt. Written
   // just before "Restart now" kills the process and sent on the next launch —
   // otherwise a successful restart reports nothing at all and the data shows

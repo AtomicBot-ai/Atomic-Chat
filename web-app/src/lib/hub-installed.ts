@@ -52,7 +52,7 @@ export function managedProviderIds(): string[] {
  * `-`), unlike `sanitizeModelId` which would collapse `.` into `_`. Mirrors
  * `MlxModelDownloadAction`.
  */
-const sanitizeMlxId = (id: string): string =>
+export const sanitizeMlxId = (id: string): string =>
   id.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-_./]/g, '')
 
 type InstalledKind = 'gguf' | 'mlx' | 'managed' | 'foundry-local'
