@@ -19,7 +19,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
 import { CancelDownloadDialog } from '@/containers/downloads/CancelDownloadDialog'
-import { withStoppedModelDownload } from '@/services/models/default'
+import { deferActiveModelDownloadCompletion, withStoppedModelDownload } from '@/services/models/default'
 import { DownloadPanel } from '@/containers/downloads/DownloadPanel'
 import type { DownloadRowProps } from '@/containers/downloads/DownloadProgressRow'
 import {
@@ -669,6 +669,7 @@ export function DownloadManagement() {
     async (state: DownloadState) => {
       console.debug('onFileDownloadSuccess', state)
       if (useDownloadStore.getState().dismissedDownloads.has(state.modelId)) return
+      if (deferActiveModelDownloadCompletion(state.modelId, () => { void onFileDownloadSuccess(state) })) return
 
       notifyDownloadFinished(state, imageCatalog, t)
       captureDownloadTerminal('completed', state.modelId, {
@@ -720,6 +721,7 @@ export function DownloadManagement() {
     async (state: DownloadState) => {
       console.debug('onFileDownloadAndVerificationSuccess', state)
       if (useDownloadStore.getState().dismissedDownloads.has(state.modelId)) return
+      if (deferActiveModelDownloadCompletion(state.modelId, () => { void onFileDownloadAndVerificationSuccess(state) })) return
 
       notifyDownloadFinished(state, imageCatalog, t)
       captureDownloadTerminal('completed', state.modelId, {

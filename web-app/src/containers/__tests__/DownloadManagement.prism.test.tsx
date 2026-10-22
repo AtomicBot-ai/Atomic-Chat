@@ -23,6 +23,7 @@ const toast = vi.hoisted(() => ({
 }))
 vi.mock('sonner', () => ({ toast }))
 vi.mock('@/services/models/default', () => ({
+  deferActiveModelDownloadCompletion: () => false,
   withStoppedModelDownload: async (_id: string, stop: () => Promise<void>, operation: () => Promise<void>) => { await stop(); return operation() },
 }))
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }))

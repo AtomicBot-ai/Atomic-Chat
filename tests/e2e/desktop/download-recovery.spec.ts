@@ -98,12 +98,25 @@ describe('real app download recovery and guarded deletion', () => {
     await browser.$(`//*[normalize-space(text())="${TITLE}"]`).waitForDisplayed({ timeout: 60_000 })
     if (await row.isExisting()) await row.click()
   }
-  async function startPartial() {
+  async function startPartial(probeVisibility = false) {
     await openHub()
     const button = session.app.browser.$('//button[normalize-space(.)="Download"]')
     await button.waitForClickable({ timeout: 30_000 })
     await button.click()
     await expect.poll(status, { timeout: 60_000 }).toMatch(/\b[1-9]\d?% · /)
+    if (probeVisibility) {
+      // Reproduce an early/late terminal notification while native I/O still
+      // runs. Wait for React to paint, not for another progress update to hide
+      // a lost-row bug. The actual importer must remain the owner of the row.
+      const count = await session.app.browser.executeAsync((id: string, done: (count: number) => void) => {
+        const core = (window as unknown as { core: { events: { emit: (name: string, data: unknown) => void } } }).core
+        core.events.emit('onFileDownloadAndVerificationSuccess', { modelId: id, downloadType: 'Model' })
+        requestAnimationFrame(() => requestAnimationFrame(() => done(document.querySelectorAll('[role="region"][aria-label="Downloads"] li').length)))
+      }, ID)
+      expect(count).toBe(1)
+      expect(await session.app.browser.$('body').getText()).not.toContain('Download Complete')
+      await screenshot('00-active-after-early-terminal-event')
+    }
     await session.app.browser.$(`${PANEL} button[aria-label="Pause download"]`).click()
     await session.app.browser.$(`${PANEL} button[aria-label="Resume download"]`).waitForDisplayed({ timeout: 30_000 })
     // Abort completion can trail the UI's paused state by one final disk write.
@@ -128,7 +141,7 @@ describe('real app download recovery and guarded deletion', () => {
 
   it('restores one paused row after a full restart and reopens the same Hub request without another transfer', async () => {
     await withArtifacts(session, async () => {
-      await startPartial()
+      await startPartial(true)
       const before = await payload()
       // Segmented transfers preallocate the final size. The manifest, not stat(),
       // tells how many bytes actually arrived; hash the whole sparse payload too.

@@ -76,7 +76,46 @@ export async function withStoppedModelDownload<T>(id: string, stop: () => Promis
 }
 
 const pendingModelStops = new Map<string, Promise<void>>()
-const activeModelDownloads = new Map<string, { id: string; promise: Promise<DownloadRefusal | undefined> }>()
+const activeModelDownloads = new Map<string, { id: string; promise: Promise<DownloadRefusal | undefined>; complete?: () => void }>()
+
+/** A transport event is not importer completion (metadata/companions may remain). */
+export function deferActiveModelDownloadCompletion(id: string, complete: () => void): boolean {
+  const job = [...activeModelDownloads.values()].find((entry) => entry.id === id)
+  if (!job) return false
+  job.complete = complete
+  return true
+}
+
+/** Keep the visible row attached to the importer, not to transient UI events.
+ * A late/early terminal event can clear the store before the import settles.
+ * Retain its latest counters and source in memory and repair missing state
+ * without starting another transfer. Explicit cancellation/deletion wins.
+ */
+function retainActiveDownloadVisibility(id: string): () => boolean {
+  let progress = useDownloadStore.getState().downloads[id]
+  let params = useDownloadStore.getState().resumeParams[id]
+  let repairing = false
+  let repaired = false
+  const unsubscribe = useDownloadStore.subscribe((state) => {
+    if (repairing || state.dismissedDownloads.has(id) || modelFileOperations.has(id)) return
+    progress = state.downloads[id] ?? progress
+    params = state.resumeParams[id] ?? params
+    const missingProgress = !state.downloads[id] && !!progress
+    const missingParams = !state.resumeParams[id] && !!params
+    const missingActive = !state.localDownloadingModels.has(id) && !state.pausedDownloads.has(id)
+    if (!missingProgress && !missingParams && !missingActive) return
+    repaired = true
+    repairing = true
+    try {
+      useDownloadStore.setState((current) => ({
+        ...(missingProgress ? { downloads: { ...current.downloads, [id]: progress } } : {}),
+        ...(missingParams ? { resumeParams: { ...current.resumeParams, [id]: params } } : {}),
+        ...(missingActive ? { localDownloadingModels: new Set(current.localDownloadingModels).add(id) } : {}),
+      }))
+    } finally { repairing = false }
+  })
+  return () => { unsubscribe(); return repaired }
+}
 
 // Platform-active llama.cpp provider id. Windows registers only the
 // upstream extension ('llamacpp-upstream') after the 2026-05-22 ADR;
@@ -754,10 +793,28 @@ export class DefaultModelsService implements ModelsService {
     store.clearPausedDownload(ownerId)
     store.addLocalDownloadingModel(ownerId)
     window.dispatchEvent(new Event('atomic-open-download-panel'))
+    const releaseVisibility = retainActiveDownloadVisibility(ownerId)
+    let imported = false
     const promise = Promise.resolve().then(() => this.startModelDownload(
       ownerId, modelPath, mmprojPath, hfToken, skipVerification, resume || !!known, options
-    )).finally(() => {
+    )).then((result) => {
+      imported = result === undefined
+      return result
+    }).finally(() => {
+      // Stop repairing before normal completion clears the row. Errors/pauses
+      // retain their recovery state; cancellation has already dismissed it.
+      const repaired = releaseVisibility()
+      const job = activeModelDownloads.get(key)
       if (activeModelDownloads.get(key)?.promise === promise) activeModelDownloads.delete(key)
+      const state = useDownloadStore.getState()
+      if (imported && !state.pausedDownloads.has(ownerId) && !state.dismissedDownloads.has(ownerId)) job?.complete?.()
+      if (repaired && !state.pausedDownloads.has(ownerId) && !state.dismissedDownloads.has(ownerId)) {
+        state.removeDownload(ownerId)
+        state.removeLocalDownloadingModel(ownerId)
+        state.clearResumeParams(ownerId)
+        state.clearResumableDownload(ownerId)
+        state.clearDownloadOrigin(ownerId)
+      }
     })
     activeModelDownloads.set(key, { id: ownerId, promise })
     return promise
