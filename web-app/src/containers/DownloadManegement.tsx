@@ -56,6 +56,8 @@ import {
   describeFinishedDownload,
 } from '@/lib/downloadNotification'
 import type { DiffusionCatalog } from '@/services/diffusion-catalog-registry'
+import { handoffPanelTracksJobs } from '@/lib/onboarding/jobs'
+import { useOnboardingStore } from '@/stores/onboarding-store'
 
 /**
  * ATO-109: emit the terminal `model_download` event. Deduplicated so the two
@@ -135,7 +137,15 @@ function notifyDownloadFinished(
   if (notification) notifyWhenAway(notification.title, notification.body)
 }
 
-export function DownloadManagement() {
+export function DownloadManagement({
+  hidePanel = false,
+}: {
+  /**
+   * Keep the listeners, draw no panel: the first-run screen shows the run's
+   * downloads in its own strip.
+   */
+  hidePanel?: boolean
+} = {}) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const prevDownloadCount = useRef(0)
@@ -817,9 +827,24 @@ export function DownloadManagement() {
     handleCancelDownload,
   ])
 
+  // After a handoff to the chat the first run's downloads are in its own
+  // panel, stacked above this one; listing them here too would show each
+  // twice.
+  const handoffTaskIds = useOnboardingStore((state) =>
+    handoffPanelTracksJobs(state)
+      ? state.jobs.map((job) => job.taskId).join('\n')
+      : ''
+  )
+  const visibleItems = useMemo(() => {
+    if (hidePanel) return []
+    if (!handoffTaskIds) return panelItems
+    const handedOff = new Set(handoffTaskIds.split('\n'))
+    return panelItems.filter((item) => !handedOff.has(item.id))
+  }, [hidePanel, handoffTaskIds, panelItems])
+
   return (
     <DownloadPanel
-      items={panelItems}
+      items={visibleItems}
       onCollapsedChange={onPanelCollapsedChange}
     />
   )

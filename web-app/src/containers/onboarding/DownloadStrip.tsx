@@ -4,17 +4,22 @@ import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { isPausableDownload, pauseDownload } from '@/lib/downloadControls'
+import { isPausableDownload } from '@/lib/downloadControls'
 import { formatDownloadReadout } from '@/lib/downloadFormat'
-import { resumeDownload } from '@/lib/downloadResume'
 import { cn } from '@/lib/utils'
+import {
+  pauseOnboardingJob,
+  resumeOnboardingJob,
+  retryOnboardingJob,
+} from '@/lib/onboarding/job-controls'
 import { findChatModel, jobView } from '@/lib/onboarding/jobs'
 import { useOnboardingStore } from '@/stores/onboarding-store'
 
 /**
  * The run's downloads, one line: the job in flight with its progress and
- * Pause/Resume, how many wait behind it, or the chat model ready once it is.
- * Shown above every step after Welcome, and in the panel after the handoff.
+ * Pause/Resume (Retry once interrupted), how many wait behind it, or the chat
+ * model ready once it is. Shown above every step after Welcome, and in the
+ * panel after the handoff.
  */
 export function DownloadStrip() {
   const { t } = useTranslation()
@@ -52,7 +57,10 @@ export function DownloadStrip() {
 
   const view = jobView(active, { downloads, pausedDownloads })
   const download = downloads[active.taskId]
-  const queued = jobs.filter((job) => job.phase === 'queued').length
+  // The jobs waiting behind this one; a job queued for a retry is this one.
+  const queued = jobs.filter(
+    (job) => job.phase === 'queued' && job !== active
+  ).length
   const readout =
     view.state === 'queued'
       ? t('onboarding:download.queued')
@@ -66,7 +74,10 @@ export function DownloadStrip() {
             stage: download?.stage,
             paused: view.state === 'paused',
           })
-  const target = { id: active.taskId, name: download?.name ?? active.taskId }
+  const line =
+    queued > 0
+      ? t('onboarding:download.withQueued', { readout, count: queued })
+      : readout
   const canPause =
     isPausableDownload(active.taskId) &&
     (view.state === 'downloading' || view.state === 'preparing')
@@ -82,11 +93,7 @@ export function DownloadStrip() {
         </span>
         <div>
           <strong>{active.title}</strong>
-          <span>
-            {queued > 0
-              ? t('onboarding:download.withQueued', { readout, count: queued })
-              : readout}
-          </span>
+          <span title={line}>{line}</span>
         </div>
         <b>{view.percent}%</b>
         {canPause && (
@@ -94,7 +101,7 @@ export function DownloadStrip() {
             type="button"
             className="ob-icon"
             aria-label={t('onboarding:download.pause')}
-            onClick={() => pauseDownload(target, serviceHub)}
+            onClick={() => pauseOnboardingJob(active, serviceHub)}
           >
             <Pause size={16} aria-hidden="true" />
           </button>
@@ -104,9 +111,19 @@ export function DownloadStrip() {
             type="button"
             className="ob-icon"
             aria-label={t('onboarding:download.resume')}
-            onClick={() => resumeDownload(target, { serviceHub, t })}
+            onClick={() => resumeOnboardingJob(active, { serviceHub, t })}
           >
             <Play size={16} aria-hidden="true" />
+          </button>
+        )}
+        {view.state === 'interrupted' && (
+          <button
+            type="button"
+            className="ob-text"
+            aria-label={t('onboarding-handoff:retryLabel')}
+            onClick={() => retryOnboardingJob(active, { serviceHub, t })}
+          >
+            {t('onboarding-handoff:retry')}
           </button>
         )}
       </div>

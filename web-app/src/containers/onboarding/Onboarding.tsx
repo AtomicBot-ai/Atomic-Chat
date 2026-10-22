@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { ArrowLeft, ArrowRight } from 'lucide-react'
 
-import { useModelProvider } from '@/hooks/useModelProvider'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   captureOnboardingStepLeft,
@@ -10,7 +9,6 @@ import {
   markOnboardingInFlight,
 } from '@/lib/onboarding-telemetry'
 import { handOffOnboarding } from '@/lib/onboarding/handoff'
-import { findChatModel } from '@/lib/onboarding/jobs'
 import {
   getOnboardingVariant,
   nextStep,
@@ -107,18 +105,6 @@ export function Onboarding() {
       useOnboardingStore.getState().goTo(step)
     }
   }, [phase, step, savedStep])
-
-  // The chat model finished downloading or importing while setup was up.
-  const providers = useModelProvider((state) => state.providers)
-  const choice = useOnboardingStore((state) => state.choice)
-  useEffect(() => {
-    const chat = useOnboardingStore
-      .getState()
-      .jobs.find((job) => job.kind === 'chat')
-    if (chat && chat.phase !== 'done' && findChatModel(choice, providers)) {
-      useOnboardingStore.getState().setJobPhase(chat.key, 'done')
-    }
-  }, [choice, providers])
 
   // Per-step funnel: shown on arrival, left with the action that left it.
   const shownAtRef = useRef(Date.now())

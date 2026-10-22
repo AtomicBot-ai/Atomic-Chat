@@ -202,7 +202,9 @@ describe('first-run flow', () => {
     expect(screen.getByRole('heading', { name: 'model step' })).toBeVisible()
   })
 
-  it('marks the chat model done once it lands in the library', () => {
+  // Marking the job done is `OnboardingRuntime`'s, on every route; the
+  // screen only shows where the run stands.
+  it('says the chat model is ready once the run has it', () => {
     const store = useOnboardingStore.getState()
     store.begin('full', 'model')
     store.choose({
@@ -221,6 +223,12 @@ describe('first-run flow', () => {
     })
     render(<Onboarding />)
 
+    expect(
+      screen.getByRole('progressbar', {
+        name: 'onboarding:download.progress Qwen3.5 4B',
+      })
+    ).toBeInTheDocument()
+
     act(() => {
       useModelProvider.setState({
         providers: [
@@ -231,11 +239,12 @@ describe('first-run flow', () => {
           },
         ],
       } as never)
+      useOnboardingStore.getState().setJobPhase('chat', 'done')
     })
 
-    expect(useOnboardingStore.getState().jobs[0].phase).toBe('done')
     expect(
       screen.getByText('onboarding:download.ready Qwen3.5 4B')
     ).toBeInTheDocument()
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
   })
 })

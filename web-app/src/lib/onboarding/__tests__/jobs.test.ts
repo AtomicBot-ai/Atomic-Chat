@@ -5,6 +5,7 @@ import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import {
   findChatModel,
   ggufMatchIds,
+  handoffPanelTracksJobs,
   jobView,
   mlxMatchIds,
   nextRunnable,
@@ -171,5 +172,33 @@ describe('finding the chosen chat model', () => {
         ]
       )
     ).toBeNull()
+  })
+})
+
+describe('the handoff panel', () => {
+  const run = {
+    phase: 'handedOff',
+    destination: 'chat',
+    panelDismissed: false,
+    jobs: [chat, image],
+  }
+
+  it('follows the downloads after a handoff to the chat until they settle', () => {
+    expect(handoffPanelTracksJobs(run)).toBe(true)
+    expect(
+      handoffPanelTracksJobs({ ...run, jobs: [{ ...chat, phase: 'failed' }] })
+    ).toBe(true)
+    expect(
+      handoffPanelTracksJobs({ ...run, jobs: [{ ...chat, phase: 'done' }] })
+    ).toBe(false)
+    expect(handoffPanelTracksJobs({ ...run, jobs: [] })).toBe(false)
+  })
+
+  it('leaves them to the setup screen, the server pages or a dismissal', () => {
+    expect(handoffPanelTracksJobs({ ...run, phase: 'active' })).toBe(false)
+    expect(handoffPanelTracksJobs({ ...run, destination: 'endpoint' })).toBe(
+      false
+    )
+    expect(handoffPanelTracksJobs({ ...run, panelDismissed: true })).toBe(false)
   })
 })

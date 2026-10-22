@@ -1,0 +1,20 @@
+{
+  "retry": "Retry",
+  "retryLabel": "Retry download",
+  "panel": {
+    "label": "Setup downloads",
+    "backToSetup": "Back to setup",
+    "dismiss": "Dismiss"
+  },
+  "picker": {
+    "downloading": "Downloading {{percent}}%",
+    "paused": "Paused {{percent}}%",
+    "interrupted": "Download interrupted",
+    "trigger": "{{name}} · {{status}}",
+    "section": "Model download",
+    "progress": "{{name}} download",
+    "pause": "Pause",
+    "resume": "Resume",
+    "retry": "Retry"
+  }
+}

@@ -163,3 +163,26 @@ export function findChatModel(
   )
   return model ? { provider: choice.provider, modelId: model.id } : null
 }
+
+/** The slice of the onboarding store the handoff panel decides on. */
+export type HandoffRun = {
+  phase: string
+  destination: string | null
+  panelDismissed: boolean
+  jobs: readonly OnboardingJob[]
+}
+
+/**
+ * The panel the app shows after a handoff to the chat is following the run's
+ * downloads: something is still queued, running or waiting for a retry, and
+ * the user has not dismissed it. Meanwhile the global download panel leaves
+ * those downloads to it, so no row is shown twice.
+ */
+export function handoffPanelTracksJobs(run: HandoffRun): boolean {
+  return (
+    run.phase === 'handedOff' &&
+    run.destination === 'chat' &&
+    !run.panelDismissed &&
+    !queueSettled(run.jobs)
+  )
+}

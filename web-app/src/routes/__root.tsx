@@ -20,6 +20,7 @@ import { ToasterProvider } from '@/providers/ToasterProvider'
 import { useOnboardingModelReminder } from '@/hooks/useOnboardingModelReminder'
 import { PromptOnboardingModel } from '@/containers/PromptOnboardingModel'
 import { DownloadManagement } from '@/containers/DownloadManegement'
+import { OnboardingRuntime } from '@/containers/onboarding/OnboardingRuntime'
 import { AnalyticProvider } from '@/providers/AnalyticProvider'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useTrayStatusSync } from '@/hooks/useTrayStatusSync'
@@ -150,8 +151,15 @@ const AppLayout = () => {
             the left panel was open, so a download's progress moved around the
             screen — or vanished — as the user toggled the sidebar. This is also
             the component that registers the download event listeners, so a
-            single mount keeps them registered exactly once. */}
-        <DownloadManagement />
+            single mount keeps them registered exactly once. On the setup
+            screen it keeps listening but leaves the run's downloads to the
+            screen's own strip. */}
+        <DownloadManagement hidePanel={onOnboarding} />
+        {/* The first run's queue and handoff panel, on every route: its
+            downloads carry on whichever page is open. After the routes, so
+            the model it selects once a download lands wins over a startup
+            default the picker fills in at the same moment. */}
+        <OnboardingRuntime />
         {/* Binds the image-generation store to the native plugin for the life
             of the app: a job lives in the plugin, so the run loop and the
             event subscription must outlive the Images page. */}
