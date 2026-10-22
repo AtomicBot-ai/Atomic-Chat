@@ -234,6 +234,7 @@ const LOCAL_PROVIDERS = [
   'mlx',
   'foundation-models',
   'foundry-local',
+  'litert-lm',
 ] as const
 
 /** Every local engine provider, the managed engines last. */

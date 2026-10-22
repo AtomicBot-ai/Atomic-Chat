@@ -6,14 +6,16 @@ import type { ModelInfo } from '@janhq/core'
 // (`gemma4uv`/`gemma4ua`) that the turboquant fork doesn't yet carry, so the
 // default vision model starts cleanly. TurboQuant (`llamacpp`) stays a
 // manual macOS choice. See ADR 2026-06-09 (ATO-116). PrismML lists only the
-// Bonsai files the core set up for it. Foundry Local (change add-foundry-local) is last: its
-// variants are a separate download, never a copy of a model another engine lists.
+// Bonsai files the core set up for it. Foundry Local (change add-foundry-local) and LiteRT-LM
+// (change add-litert-lm-runtime) are last: their variants are a separate download, never a copy
+// of a model another engine lists.
 const localProviderNames = [
   'llamacpp-upstream',
   'llamacpp',
   'atomic-prism',
   'mlx',
   'foundry-local',
+  'litert-lm',
 ] as const
 
 export const getLastUsedModel = (): {

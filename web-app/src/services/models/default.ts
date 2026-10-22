@@ -107,14 +107,15 @@ const isTauriRuntime = (): boolean => {
 // `getActiveModels()` reports and what `stopAllModels()` / `stopAllModelsExcept()`
 // unload. An engine missing here is invisible to the provider page's Stop, which
 // then shows its model stopped while it keeps running (task 3.14, F-9).
-// The managed engines (`lib/managed-engines.ts`: vLLM, SGLang, TensorRT-LLM) and Foundry Local
-// (change add-foundry-local) are local too.
+// The managed engines (`lib/managed-engines.ts`: vLLM, SGLang, TensorRT-LLM), Foundry Local
+// (change add-foundry-local) and LiteRT-LM (change add-litert-lm-runtime) are local too.
 const localProviders = (): string[] => [
   'llamacpp',
   'llamacpp-upstream',
   'atomic-prism',
   'mlx',
   'foundry-local',
+  'litert-lm',
   ...managedEngines().map((engine) => engine.id),
 ]
 type LocalProviderName = string
