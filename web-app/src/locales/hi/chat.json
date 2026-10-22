@@ -1,0 +1,106 @@
+{
+  "welcome": "नमस्ते, आप कैसे हैं?",
+  "description": "आज मैं आपकी क्या मदद कर सकता हूँ?",
+  "temporaryChat": "टेम्पररी चैट",
+  "temporaryChatDescription": "एक अस्थायी चैट शुरू करें जो हिस्ट्री में सेव नहीं होगी।",
+  "status": {
+    "empty": "कोई चैट नहीं मिली"
+  },
+  "sendMessage": "मैसेज भेजें",
+  "selectModelToChat": "चैट शुरू करने के लिए कोई मॉडल चुनें।",
+  "newConversation": "नई चैट",
+  "clearHistory": "हिस्ट्री साफ़ करें",
+  "activity": {
+    "working": "काम चल रहा है...",
+    "reading": "रीड कर रहा है: {{count}}%",
+    "workedFor": "{{count}}s तक काम किया",
+    "calledTool": "{{count}} टूल इस्तेमाल किया",
+    "calledTools": "{{count}} टूल्स इस्तेमाल किए",
+    "reasoned": "रीज़निंग पूरी हुई",
+    "thinking": "सोच रहा है...",
+    "thoughtFor": "{{count}}s सोचा"
+  },
+  "workspacePreview": {
+    "generating": "जेनरेशन पूरा होने के बाद प्रीव्यू दिखेगा।"
+  },
+  "agentMode": {
+    "chat": "चैट",
+    "agent": "एजेंट",
+    "placeholder": "एजेंट के लिए कोई टास्क लिखें...",
+    "providerUnavailable": "एजेंट मोड केवल लोकल llama.cpp मॉडल के साथ उपलब्ध है।"
+  },
+  "agentApprovals": {
+    "manualSelected": "मैन्युअल",
+    "manual": "मैन्युअल मंज़ूरी दें",
+    "manualDescription": "संवेदनशील टास्क से पहले अनुमति माँगें।",
+    "skipSelected": "स्किप",
+    "skip": "सभी मंज़ूरी स्किप करें",
+    "skipDescription": "बिना पूछे रन करें।"
+  },
+  "agentApproval": {
+    "title": "एजेंट मंज़ूरी ज़रूरी है",
+    "description": "{{tool}} आपकी मंज़ूरी का इंतज़ार कर रहा है।",
+    "reason": "कारण",
+    "preview": "एक्शन प्रीव्यू",
+    "resources": "प्रभावित रिसोर्सेस",
+    "timeoutNotice": "अगर आप जवाब नहीं देते हैं, तो बैकएंड टाइमआउट के बाद यह रिक्वेस्ट अपने आप रिजेक्ट हो जाएगी।",
+    "deny": "मना करें",
+    "alwaysAllow": "इसे हमेशा अनुमति दें",
+    "approveOnce": "एक बार मंज़ूरी दें",
+    "resolveFailed": "मंज़ूरी का फैसला भेजने में दिक्कत आई।"
+  },
+  "agentFolderAccess": {
+    "title": "फ़ोल्डर एक्सेस की अनुमति दें",
+    "description": "{{tool}} को इस फ़ोल्डर का एक्सेस चाहिए।",
+    "canEditNotice": "अनुमति देने पर यह फ़ोल्डर 'CAN EDIT' एक्सेस के साथ External सेक्शन में जुड़ जाएगा।",
+    "deny": "मना करें",
+    "allow": "फ़ोल्डर एक्सेस दें",
+    "resolveFailed": "फ़ोल्डर एक्सेस का फैसला भेजने में दिक्कत आई।"
+  },
+  "agentWorkspace": {
+    "choose": "वर्कस्पेस चुनें",
+    "change": "एजेंट वर्कस्पेस बदलें",
+    "default": "डिफ़ॉल्ट",
+    "defaultDescription": "Atomic Chat डेटा फ़ोल्डर के अंदर agent-workspace फ़ोल्डर का इस्तेमाल करता है।",
+    "projectFiles": "प्रोजेक्ट फ़ाइलें",
+    "external": "एक्सटर्नल",
+    "canEdit": "एडिट कर सकते हैं",
+    "viewOnly": "सिर्फ़ देख सकते हैं",
+    "addFolder": "एक्सटर्नल फ़ोल्डर जोड़ें",
+    "folderOptions": "फ़ोल्डर विकल्प",
+    "allowEditing": "एडिट करने की अनुमति दें",
+    "makeViewOnly": "सिर्फ़ देखने योग्य बनाएं",
+    "removeFolder": "एजेंट से हटाएं"
+  },
+  "agentErrors": {
+    "audioUnsupported": "एजेंट मोड ऑडियो अटैचमेंट सपोर्ट नहीं करता।",
+    "invalidAttachment": "एक या अधिक फ़ाइलें अटैच नहीं हो सकीं। लोकल फ़ाइलें चुनें और फिर कोशिश करें।",
+    "visionModelRequired": "इमेज भेजने से पहले विज़न मॉडल चुनें।",
+    "localLlamacppRequired": "एजेंट मोड के लिए एक्टिव लोकल llama.cpp मॉडल ज़रूरी है।",
+    "providerUnavailableTitle": "इस प्रोवाइडर के लिए एजेंट मोड उपलब्ध नहीं है",
+    "providerUnavailableDescription": "लोकल llama.cpp मॉडल पर स्विच करें और फिर कोशिश करें।",
+    "unsupportedTools": "एजेंट मोड अभी MCP, RAG या ब्राउज़र टूल्स को सपोर्ट नहीं करता।",
+    "runFailed": "एजेंट रन शुरू नहीं हो सका।",
+    "cancelFailed": "एजेंट रन कैंसल नहीं किया जा सका।",
+    "saveFailed": "एजेंट का जवाब सेव नहीं हो सका।"
+  },
+  "agentTasks": {
+    "title": "आपके लिए सुझाव",
+    "findLatestNews": {
+      "title": "लेटेस्ट न्यूज़ खोजें",
+      "prompt": "लेटेस्ट न्यूज़ खोजें और सोर्स लिंक के साथ हाल की ज़रूरी खबरों की समरी दें।"
+    },
+    "inspectFolder": {
+      "title": "मेरा डेस्कटॉप व्यवस्थित करें",
+      "prompt": "मेरी डेस्कटॉप फ़ाइलों और फ़ोल्डर्स को व्यवस्थित करें। किसी भी फ़ाइल या फ़ोल्डर को डिलीट, ओवरराइट, रिप्लेस, रीनेम या मॉडिफाई न करें।"
+    },
+    "findLargeFiles": {
+      "title": "बड़ी फ़ाइलें खोजें",
+      "prompt": "मेरे डाउनलोड फ़ोल्डर में सबसे बड़ी फ़ाइलें खोजें और सुरक्षित क्लीनअप के लिए सुझाव दें। कुछ भी डिलीट न करें।"
+    }
+  },
+  "threadType": {
+    "chat": "चैट थ्रेड",
+    "agent": "एजेंट थ्रेड"
+  }
+}
