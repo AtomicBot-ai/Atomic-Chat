@@ -99,3 +99,21 @@ export function hostLiteRtLmPlatform(): LiteRtLmPlatform {
 export function liteRtLmVariantLabel(variant: { backend: string; npu?: string }): string {
   return variant.npu ? `${variant.backend.toUpperCase()} ${variant.npu}` : variant.backend.toUpperCase()
 }
+
+const BACKEND_PREFERENCE: Record<string, number> = { npu: 0, gpu: 1, cpu: 2 }
+
+/**
+ * The variant a card opens on (spec "Вариант по умолчанию выбирается под железо"): NPU, then GPU,
+ * then CPU, among those the core says run here (`ok`) or will once OpenVINO is prepared; in list
+ * order within a backend. `undefined` when none qualifies, or before any verdict is in.
+ */
+export function pickDefaultLiteRtLmVariant<V extends { id: string; backend: string }>(
+  variants: readonly V[],
+  verdictOf: (variant: V) => string | undefined
+): V | undefined {
+  const usable = variants.filter((variant) => {
+    const verdict = verdictOf(variant)
+    return verdict === 'ok' || verdict === 'accelerator-not-prepared'
+  })
+  return [...usable].sort((a, b) => BACKEND_PREFERENCE[a.backend] - BACKEND_PREFERENCE[b.backend])[0]
+}

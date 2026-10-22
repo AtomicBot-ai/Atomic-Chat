@@ -292,6 +292,15 @@
     "curated": "Curated by Atomic Chat",
     "huggingFace": "Hugging Face, not verified by Atomic Chat",
     "huggingFaceUnavailable": "Hugging Face is unavailable right now. Only the models Atomic Chat curated are shown.",
-    "notVerified": "Hugging Face, not verified by Atomic Chat"
+    "notVerified": "Hugging Face, not verified by Atomic Chat",
+    "noVariantHere": "This model has no variant for this computer.",
+    "downloaded": "Downloaded",
+    "checking": "Checking…",
+    "runsHere": "Runs on this computer",
+    "installEngine": "Install LiteRT-LM",
+    "prepareAccelerator": "Prepare OpenVINO",
+    "gatedNoToken": "This model is gated. Accept its terms on Hugging Face, then set your Hugging Face token in Settings.",
+    "setToken": "Set the token",
+    "gated": "Hugging Face refused access. Open the model page, accept its terms (and set your Hugging Face token in Settings if needed), then try again: {{url}}"
   }
 }
