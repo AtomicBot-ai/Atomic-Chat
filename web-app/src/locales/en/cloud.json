@@ -66,7 +66,17 @@
     "placeholder": "Pick a connection above to set it up.",
     "mediaConnected": "{{provider}} connected. Models found: {{count}}.",
     "mediaFailed": "Could not reach {{provider}}",
-    "mediaNoModels": "{{provider}} answered but lists no models. Start it with a model and try again."
+    "mediaNoModels": "{{provider}} answered but lists no models. Start it with a model and try again.",
+    "checking": "Checking…",
+    "checkAgain": "Check again",
+    "saveAnyway": "Save anyway",
+    "keyRejected": "{{provider}} did not accept this API key.",
+    "ownServer": "This address is Atomic Chat's own Local API Server ({{url}}). Enter the address of the provider you want to reach.",
+    "savedUnverified": "{{provider}} key saved, but not verified.",
+    "unverified": "Configured, not verified",
+    "unverifiedHint": "The key is saved, but {{provider}} could not be asked whether it works.",
+    "rejected": "Key rejected",
+    "rejectedHint": "{{provider}} refused this key. Enter a valid key, or check again."
   },
   "subscription": {
     "title": "ChatGPT subscription (Codex)",

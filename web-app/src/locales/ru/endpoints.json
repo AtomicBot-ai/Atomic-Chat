@@ -12,7 +12,9 @@
     "checking": "Проверка…",
     "connected": "Подключён · {{models}}",
     "reachable": "Отвечает · {{latency}} мс · {{models}}",
-    "failed": "Нет ответа"
+    "failed": "Нет ответа",
+    "unverified": "Ключ не проверен",
+    "keyRejected": "Ключ отклонён"
   },
   "actions": {
     "ping": "Проверить",
@@ -32,6 +34,10 @@
     "baseUrlPlaceholder": "http://localhost:8080/v1",
     "apiKey": "API-ключ (необязательно)",
     "invalidUrl": "Введите корректный HTTP- или HTTPS-адрес.",
+    "ownServer": "Это собственный Local API Server в Atomic Chat ({{url}}). Свой эндпоинт должен быть другим сервером: запросы на этот адрес вернутся в само приложение.",
+    "keyRejected": "{{name}} отклонил запрос. Проверьте API-ключ.",
+    "saveAnyway": "Всё равно сохранить",
+    "checking": "Проверка…",
     "cancel": "Отмена",
     "save": "Сохранить"
   },

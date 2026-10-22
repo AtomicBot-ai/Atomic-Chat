@@ -99,7 +99,13 @@ vi.mock('@/utils/localApiServerControl', () => ({
 // One stable object: a fresh literal per render would re-run every effect that
 // depends on the hub, which is not how the real store behaves.
 const serviceHubStub = {
-  providers: () => ({ updateSettings: vi.fn().mockResolvedValue(undefined) }),
+  providers: () => ({
+    updateSettings: vi.fn().mockResolvedValue(undefined),
+    // Connect asks the provider for its models with the key first.
+    checkProviderEndpoint: vi
+      .fn()
+      .mockResolvedValue({ ok: true, latencyMs: 1, modelCount: 2 }),
+  }),
   auth: () => auth,
 }
 
@@ -440,7 +446,7 @@ describe('CloudPage', () => {
     ).toBeInTheDocument()
   })
 
-  it('writes the key to both the settings entry and the mirror', () => {
+  it('writes the key to both the settings entry and the mirror', async () => {
     searchState.current = { provider: 'openai' }
     render(<CloudPage />)
 
@@ -449,6 +455,7 @@ describe('CloudPage', () => {
     })
     fireEvent.click(screen.getByText('cloud:connection.connect'))
 
+    await waitFor(() => expect(saveProviderApiKey).toHaveBeenCalled())
     const call = vi.mocked(saveProviderApiKey).mock.calls[0][0]
     expect(call.apiKey).toBe('sk-live')
     expect(call.provider.provider).toBe('openai')

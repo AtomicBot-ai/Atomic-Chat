@@ -36,6 +36,10 @@ import { useToolApproval } from '@/hooks/useToolApproval'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { MCPLogViewer } from '@/components/MCPLogViewer'
 import { cn } from '@/lib/utils'
+import {
+  mcpActivationErrorText,
+  useMcpActivationStore,
+} from '@/stores/mcp-activation-store'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.connectors.index as any)({
@@ -61,8 +65,20 @@ function ConnectorsPage() {
   const { allowAllMCPPermissions, setAllowAllMCPPermissions } =
     useToolApproval()
   const { statusByName, refresh } = useMCPServerStatuses()
-  const setErrorMessage = useAppState((state) => state.setErrorMessage)
   const availableTools = useAppState((state) => state.tools)
+  // Servers being switched on, and why the last attempt failed. The card
+  // shows both: the failure used to go to an app error state nothing renders.
+  const activationConnecting = useMcpActivationStore((s) => s.connecting)
+  const activationErrors = useMcpActivationStore((s) => s.errors)
+
+  /** An activation failed: say so on the card and in a toast. */
+  const reportActivationFailure = (key: string, error: unknown) => {
+    const message = mcpActivationErrorText(error)
+    useMcpActivationStore.getState().fail(key, message)
+    toast.error(t('mcp-connectors:activation.failed', { name: key }), {
+      description: message,
+    })
+  }
 
   // Logs are secondary: collapsed by default, expanded by the button at the
   // bottom of the page. Mount-on-open also skips the log tail subscription.
@@ -179,10 +195,12 @@ function ConnectorsPage() {
     setBusy(serverKey, true)
     const config = getServerConfig(serverKey)
     if (active && config) {
+      useMcpActivationStore.getState().start(serverKey)
       serviceHub
         .mcp()
         .activateMCPServer(serverKey, { ...config, active })
         .then(() => {
+          useMcpActivationStore.getState().succeed(serverKey)
           editServer(serverKey, { ...config, active })
           syncServers()
           toast.success(t('mcp-servers:serverStatusActive', { serverKey }))
@@ -190,15 +208,13 @@ function ConnectorsPage() {
         })
         .catch((error) => {
           editServer(serverKey, { ...config, active: false })
-          setErrorMessage({
-            message: error,
-            subtitle: t('mcp-servers:checkParams'),
-          })
+          reportActivationFailure(serverKey, error)
         })
         .finally(() => {
           setBusy(serverKey, false)
         })
     } else {
+      useMcpActivationStore.getState().clear(serverKey)
       editServer(serverKey, {
         ...(config ?? (mcpServers[serverKey] as MCPServerConfig)),
         active,
@@ -226,7 +242,9 @@ function ConnectorsPage() {
     try {
       config = await buildConnectorConfig(connector, secretValue)
       addServer(key, { ...config, active: false })
+      useMcpActivationStore.getState().start(key)
       await serviceHub.mcp().activateMCPServer(key, { ...config, active: true })
+      useMcpActivationStore.getState().succeed(key)
       editServer(key, { ...config, active: true })
       await syncServers()
       toast.success(
@@ -239,10 +257,7 @@ function ConnectorsPage() {
         editServer(key, { ...config, active: false })
         await syncServers()
       }
-      setErrorMessage({
-        message: error instanceof Error ? error.message : String(error),
-        subtitle: t('mcp-servers:checkParams'),
-      })
+      reportActivationFailure(key, error)
       return false
     } finally {
       setBusy(key, false)
@@ -356,6 +371,7 @@ function ConnectorsPage() {
       }
 
       deleteServer(serverToDelete)
+      useMcpActivationStore.getState().clear(serverToDelete)
       toast.success(
         t('mcp-servers:deleteServer.success', { serverName: serverToDelete })
       )
@@ -497,6 +513,11 @@ function ConnectorsPage() {
                         : undefined
                     }
                     busy={!!busyServers[key]}
+                    connecting={!!activationConnecting[key]}
+                    activationError={
+                      installed ? activationErrors[key] : undefined
+                    }
+                    onRetry={() => toggleServer(key, true)}
                     onSetUp={() => connector && handleSetUp(connector)}
                     onCancelSignIn={handleCancelSignIn}
                     onToggle={(checked) => toggleServer(key, checked)}

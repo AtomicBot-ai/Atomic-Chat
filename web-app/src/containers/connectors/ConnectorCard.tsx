@@ -34,6 +34,9 @@ export function ConnectorCard({
   installed,
   status,
   busy,
+  connecting = false,
+  activationError,
+  onRetry,
   onSetUp,
   onCancelSignIn,
   onToggle,
@@ -48,6 +51,12 @@ export function ConnectorCard({
   installed?: { key: string; config: MCPServerConfig }
   status?: MCPServerStatus
   busy: boolean
+  /** Being switched on right now. */
+  connecting?: boolean
+  /** Why the last attempt to switch it on failed; it stays off. */
+  activationError?: string
+  /** Try switching it on again. */
+  onRetry?: () => void
   onSetUp?: () => void
   /** Abandons a browser sign-in that is still pending. */
   onCancelSignIn?: () => void
@@ -62,8 +71,14 @@ export function ConnectorCard({
 
   const config = installed?.config
   const isActive = Boolean(config?.active)
-  const isError = isActive && status?.status === 'error'
-  const isConnected = isActive && status?.status === 'connected'
+  const isConnecting = Boolean(installed) && connecting
+  const isError = !isConnecting && isActive && status?.status === 'error'
+  const isConnected =
+    !isConnecting && isActive && status?.status === 'connected'
+  // Switching it on failed: it stays off, and the card says why, with Retry
+  // and Edit beside the reason.
+  const isFailed = !isConnecting && !isActive && Boolean(activationError)
+  const failure = isFailed ? activationError : undefined
 
   const isRemote = config?.type === 'http' || config?.type === 'sse'
   const summary = config
@@ -125,11 +140,15 @@ export function ConnectorCard({
       </Button>
     ))
 
-  const statusLabel = isConnected
-    ? t('mcp-connectors:connected')
-    : isError
-      ? t('mcp-connectors:statusError')
-      : t('mcp-connectors:statusInactive')
+  const statusLabel = isConnecting
+    ? t('mcp-connectors:statusConnecting')
+    : isConnected
+      ? t('mcp-connectors:connected')
+      : isFailed
+        ? t('mcp-connectors:statusFailed')
+        : isError
+          ? t('mcp-connectors:statusError')
+          : t('mcp-connectors:statusInactive')
 
   return (
     // The page grid uses auto-rows-fr; fill it even in the desktop webview.
@@ -169,19 +188,22 @@ export function ConnectorCard({
             {installed ? (
               <span
                 className={cn(
-                  'inline-flex max-w-full shrink-0 items-center truncate rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none',
+                  'inline-flex max-w-full shrink-0 items-center gap-1 truncate rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none',
                   isConnected
                     ? 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300'
-                    : isError
+                    : isError || isFailed
                       ? 'bg-red-500/12 text-red-700 dark:text-red-300'
                       : 'bg-muted text-muted-foreground'
                 )}
-                title={isError ? status?.error : undefined}
+                title={isError ? status?.error : failure}
                 aria-label={
                   isError ? `MCP server error: ${status?.error}` : statusLabel
                 }
                 data-testid="connector-status"
               >
+                {isConnecting && (
+                  <IconLoader2 size={10} className="animate-spin" />
+                )}
                 {statusLabel}
               </span>
             ) : connector ? (
@@ -251,12 +273,44 @@ export function ConnectorCard({
           )}
         </div>
       </div>
-      <p
-        className="line-clamp-3 text-sm leading-normal text-muted-foreground"
-        title={connector ? t(connector.descriptionKey) : undefined}
-      >
-        {connector ? t(connector.descriptionKey) : ''}
-      </p>
+      {installed && failure ? (
+        // The description's place: what went wrong, and the two ways on.
+        <div className="flex min-w-0 flex-col gap-2">
+          <p
+            role="alert"
+            data-testid="connector-failure"
+            className="line-clamp-2 text-sm leading-normal break-words text-destructive"
+            title={failure}
+          >
+            {failure}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {onRetry && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                onClick={onRetry}
+              >
+                {t('mcp-connectors:activation.retry')}
+              </Button>
+            )}
+            {onEdit && (
+              <Button size="sm" variant="ghost" onClick={onEdit}>
+                <IconPencil size={14} />
+                {t('mcp-connectors:activation.edit')}
+              </Button>
+            )}
+          </div>
+        </div>
+      ) : (
+        <p
+          className="line-clamp-3 text-sm leading-normal text-muted-foreground"
+          title={connector ? t(connector.descriptionKey) : undefined}
+        >
+          {connector ? t(connector.descriptionKey) : ''}
+        </p>
+      )}
     </Card>
   )
 }

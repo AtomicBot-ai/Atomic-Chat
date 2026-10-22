@@ -109,6 +109,14 @@ export const localStorageKey = {
   // Durable Video form choices: resolution, frame count, steps, cfg, guidance
   // and the seed as typed. Unsent prompt text is deliberately excluded.
   videoForm: 'video-form',
+  // What is known about each provider's API key beyond "one is saved": it
+  // could not be checked when it was saved, or the provider rejected it. Keyed
+  // by provider name; an entry applies only to the key it was recorded for.
+  providerKeyStatus: 'provider-key-status',
+  // Model downloads a quit, crash or Pause stopped before they finished, so the
+  // next launch lists them as paused with a Resume (`lib/interrupted-downloads`).
+  // Never holds the Hugging Face token.
+  interruptedDownloads: 'atomic-interrupted-downloads',
 }
 
 /**

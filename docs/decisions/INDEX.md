@@ -278,8 +278,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-04** — [Recover from unsupported multimodal projector (`gemma4a`) by falling back to text-only instead of crashing the load (issue #44)](2026-06-04-recover-from-unsupported-multimodal-projector-gemma4a-by.md)
 - **2026-05-27** — [Replace `janhq/model-catalog` + Fuse.js with curated `AtomicBot-ai/atomic-chat-model-catalog` and a pre-built MiniSearch index](2026-05-27-replace-janhq-model-catalog-fuse-js-with-curated-atomicbot-ai.md)
 
-## Local API server & OpenAI compatibility (10)
+## Local API server & OpenAI compatibility (11)
 
+- **2026-10-21** — [Refuse the Local API Server as a custom endpoint](2026-10-21-refuse-the-local-api-server-as-a-custom-endpoint.md)
 - **2026-10-20** — [Turn the served models off with the server](2026-10-20-turn-the-served-models-off-with-the-server.md)
 - **2026-10-08** — [Stop closes the local stream's connection in Rust](2026-10-08-stop-closes-the-local-stream-connection-in-rust.md)
 - **2026-09-25** — [Raise the Local API Server for a resident image or video model](2026-09-25-raise-the-local-api-server-for-a-resident-image-or-video-model.md)
@@ -341,7 +342,9 @@ decision is reversed, add a new one that says which record it supersedes.
 ## UI / UX (2)
 - **2026-10-20** — [Show hosted providers on Cloud and the user's own servers on Custom Endpoint](2026-10-20-show-hosted-providers-on-cloud-and-own-servers-on-custom-endpoint.md)
 - **2026-10-20** — [List everything downloaded on a Downloads page](2026-10-20-list-everything-downloaded-on-a-downloads-page.md)
-## UI / UX (100)
+## UI / UX (102)
+- **2026-10-21** — [Check a cloud key before calling it connected](2026-10-21-check-a-cloud-key-before-calling-it-connected.md) — supersedes the "no key error state" clause of the 2026-10-20 Cloud record.
+- **2026-10-21** — [Say on the card why an MCP server did not start](2026-10-21-say-on-the-card-why-an-mcp-server-did-not-start.md)
 - **2026-10-21** — [Keep thread windows in step through the thread files](2026-10-21-keep-thread-windows-in-step-through-the-thread-files.md)
 - **2026-10-21** — [Store why a chat turn failed on its message](2026-10-21-store-why-a-chat-turn-failed-on-its-message.md)
 - **2026-10-21** — [Keep each composer's unsent draft with its own chat](2026-10-21-keep-each-composers-draft-with-its-own-chat.md)

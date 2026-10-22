@@ -7,6 +7,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { listedModels } from '@/lib/cloud-model-catalog'
 import { isProviderConnected } from '@/lib/cloud-providers'
 import { getProviderTitle } from '@/lib/utils'
+import { useProviderKeyStatus } from '@/stores/provider-key-status-store'
 
 /** The providers the guide offers first, in this order. */
 const GUIDE_PROVIDERS = [
@@ -67,6 +68,9 @@ export function CloudSetupWizard({
   }
 
   const selectedTitle = selected ? getProviderTitle(selected.provider) : ''
+  // A key saved unverified is not a success to celebrate; the connection card
+  // above says what is known about it.
+  const selectedKeyStatus = useProviderKeyStatus(selected)
 
   return (
     <section
@@ -175,30 +179,32 @@ export function CloudSetupWizard({
               {t('cloud:guide.back')}
             </Button>
             <div className="flex flex-col gap-4">{children}</div>
-            {selected && isProviderConnected(selected) && (
-              <div
-                role="status"
-                className="mt-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4"
-              >
-                <p className="flex items-center gap-2 text-sm font-medium">
-                  <Check
-                    size={16}
-                    className="shrink-0 text-emerald-500"
-                    aria-hidden
-                  />
-                  {t('cloud:guide.successTitle', { provider: selectedTitle })}
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {t('cloud:guide.successHint')}
-                </p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <Button variant="outline" onClick={() => setStep('choose')}>
-                    {t('cloud:guide.connectAnother')}
-                  </Button>
-                  <Button onClick={onFinish}>{t('cloud:guide.done')}</Button>
+            {selected &&
+              isProviderConnected(selected) &&
+              !selectedKeyStatus && (
+                <div
+                  role="status"
+                  className="mt-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4"
+                >
+                  <p className="flex items-center gap-2 text-sm font-medium">
+                    <Check
+                      size={16}
+                      className="shrink-0 text-emerald-500"
+                      aria-hidden
+                    />
+                    {t('cloud:guide.successTitle', { provider: selectedTitle })}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {t('cloud:guide.successHint')}
+                  </p>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Button variant="outline" onClick={() => setStep('choose')}>
+                      {t('cloud:guide.connectAnother')}
+                    </Button>
+                    <Button onClick={onFinish}>{t('cloud:guide.done')}</Button>
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
           </>
         )}
       </div>

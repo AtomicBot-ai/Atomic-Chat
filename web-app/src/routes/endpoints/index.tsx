@@ -21,6 +21,7 @@ import { EndpointCard } from '@/containers/endpoints/EndpointCard'
 import {
   EndpointDialog,
   type EndpointDraft,
+  type EndpointSaveRefusal,
 } from '@/containers/endpoints/EndpointDialog'
 import { useConnectMediaServer } from '@/hooks/useConnectMediaServer'
 import { canDeleteProvider, useDeleteProvider } from '@/hooks/useDeleteProvider'
@@ -32,9 +33,19 @@ import { isOnboardingPending } from '@/lib/onboarding'
 import { buildApiKeyUpdate, saveProviderApiKey } from '@/lib/provider-api-key'
 import { buildBaseUrlUpdate } from '@/lib/provider-base-url'
 import { refreshProviderModels } from '@/lib/refresh-provider-models'
+import { useLocalApiServer } from '@/hooks/useLocalApiServer'
+import { ownLocalApiServerUrl } from '@/lib/local-api-self-reference'
+import {
+  checkProviderKey,
+  classifyKeyCheck,
+  recordKeyCheck,
+  savedAnyway,
+  type KeyCheckOutcome,
+} from '@/lib/provider-key-check'
 import { cn, getProviderTitle } from '@/lib/utils'
 import type { EndpointCheckResult } from '@/services/providers/types'
 import { useEndpointCheckStore } from '@/stores/endpoint-check-store'
+import { useProviderKeyStatusStore } from '@/stores/provider-key-status-store'
 import { useMediaCatalog } from '@/stores/media-catalog-store'
 import {
   isKnownProvider,
@@ -150,18 +161,89 @@ export function EndpointsPage() {
         }
       }
       useEndpointCheckStore.getState().setResult(provider.provider, result)
+      // A ping asks with the saved key, so it settles what is known about it:
+      // listed models clear a stale verdict, a refusal records one.
+      const apiKey = provider.api_key?.trim() ?? ''
+      const outcome = classifyKeyCheck(result)
+      if (outcome.kind === 'verified') {
+        useProviderKeyStatusStore.getState().clear(provider.provider)
+      } else if (outcome.kind === 'refused' && apiKey) {
+        useProviderKeyStatusStore
+          .getState()
+          .setStatus(provider.provider, apiKey, 'rejected', outcome.message)
+      }
     },
     [serviceHub]
   )
 
   /**
-   * Write what the dialog holds, then make the endpoint usable right away:
-   * tell the proxy about it and ask it for its models. A media server lists
-   * its models from its own Connect button instead.
+   * The Local API Server's URL when `baseUrl` is one of this machine's LAN
+   * addresses on its port while it listens on every interface. Loopback
+   * addresses are refused by the dialog itself, without asking anything.
    */
-  const save = (draft: EndpointDraft) => {
+  const ownServerOnLan = async (baseUrl: string) => {
+    if (useLocalApiServer.getState().serverHost !== '0.0.0.0') return undefined
+    try {
+      const addresses = await serviceHub.app().getLanAddresses()
+      return ownLocalApiServerUrl(baseUrl, addresses)
+    } catch {
+      return undefined
+    }
+  }
+
+  /**
+   * Check what the dialog holds, write it, then make the endpoint usable
+   * right away: tell the proxy about it and ask it for its models. A media
+   * server lists its models from its own Connect button instead.
+   *
+   * Resolves to why it was not saved: the address is the app's own server, or
+   * the server refused the key. A server that could not be asked is saved, and
+   * a key saved that way reads as "not verified".
+   */
+  const save = async (
+    draft: EndpointDraft
+  ): Promise<EndpointSaveRefusal | undefined> => {
     const existing = editing
     const name = existing?.provider ?? draft.name
+
+    const ownServer = await ownServerOnLan(draft.baseUrl)
+    if (ownServer) {
+      return { message: t('endpoints:dialog.ownServer', { url: ownServer }) }
+    }
+
+    let outcome: KeyCheckOutcome | undefined
+    if (!existing?.media_only) {
+      const candidate = {
+        ...(existing ?? {
+          provider: name,
+          active: true,
+          models: [],
+          settings: [],
+        }),
+        base_url: draft.baseUrl,
+      } as ModelProvider
+      outcome = await checkProviderKey(candidate, draft.apiKey, serviceHub)
+      if (outcome.kind === 'refused' && outcome.reason === 'ownServer') {
+        return {
+          message: t('endpoints:dialog.ownServer', {
+            url: outcome.serverUrl ?? '',
+          }),
+        }
+      }
+      if (outcome.kind === 'refused') {
+        const reason = [
+          t('endpoints:dialog.keyRejected', { name: getProviderTitle(name) }),
+          outcome.message,
+        ]
+          .filter(Boolean)
+          .join(' ')
+        // The user says the server is wrong about the key: keep it, as
+        // "configured, not verified", with what the server said.
+        if (!draft.saveAnyway) return { message: reason, canSaveAnyway: true }
+        outcome = savedAnyway(reason)
+      }
+    }
+
     if (!existing) {
       // OpenAI's form, the user's address: never seed api.openai.com into a
       // provider that is someone's own server.
@@ -211,6 +293,7 @@ export function EndpointsPage() {
         updateProvider(name, buildApiKeyUpdate(current, ''))
       }
     }
+    if (outcome) recordKeyCheck(name, draft.apiKey, outcome)
 
     // A ping of the old address says nothing about the new one.
     useEndpointCheckStore.getState().clear(name)
@@ -227,12 +310,14 @@ export function EndpointsPage() {
       }
       if (!saved.media_only) await refreshModels(name)
     })()
+    return undefined
   }
 
   const confirmRemove = () => {
     if (!removing) return
     deleteProvider(removing)
     useEndpointCheckStore.getState().clear(removing.provider)
+    useProviderKeyStatusStore.getState().clear(removing.provider)
     if (search.provider === removing.provider) setExpanded(undefined)
     setRemoving(null)
   }

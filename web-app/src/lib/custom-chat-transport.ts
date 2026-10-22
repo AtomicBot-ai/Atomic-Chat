@@ -83,6 +83,10 @@ import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { ttftMark } from '@/lib/ttft-timing'
 import { settleMcpActivationsBeforeSend } from '@/lib/mcp-activation'
 import {
+  noteProviderRequestError,
+  noteProviderRequestSucceeded,
+} from '@/lib/provider-key-check'
+import {
   chatExecOutputsForModel,
   chatExecTools,
   isChatExecOffered,
@@ -1276,6 +1280,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     let tokensPerSecond = 0
     let draftTokensTotal: number | null = null
     let draftTokensAccepted: number | null = null
+    // Whether this request failed, so its finish does not count as an answer.
+    let requestFailed = false
 
     const uiStream = result.toUIMessageStream({
       messageMetadata: ({ part }) => {
@@ -1367,6 +1373,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         return undefined
       },
       onError: (error) => {
+        // A provider that says its key is invalid stops reading as "Connected".
+        requestFailed = true
+        noteProviderRequestError(provider, error)
         const errorMessage =
           error == null
             ? 'Unknown error'
@@ -1378,7 +1387,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
         return errorMessage
       },
-      onFinish: ({ responseMessage }) => {
+      onFinish: ({ responseMessage, isAborted, finishReason }) => {
+        // The provider answered in full, so its key works: drop a stale
+        // "Key rejected" or "not verified".
+        if (!requestFailed && !isAborted && finishReason !== 'error') {
+          noteProviderRequestSucceeded(provider)
+        }
         // Call the token usage callback with usage data when stream completes
         if (responseMessage) {
           const metadata = responseMessage.metadata as

@@ -310,6 +310,13 @@ describe('SetupScreen', () => {
         abortDownload: mocks.abortDownload,
         startModel: mocks.startModel,
       } as unknown as Parameters<typeof seedServiceHub>[0]['models'],
+      // A cloud key is checked with its provider before it is saved; the
+      // keys typed here are accepted.
+      providers: {
+        checkProviderEndpoint: vi
+          .fn()
+          .mockResolvedValue({ ok: true, latencyMs: 1, modelCount: 1 }),
+      } as unknown as Parameters<typeof seedServiceHub>[0]['providers'],
     })
     // The real store, reset: the rows read their Downloading state from it.
     useDownloadStore.setState({
@@ -609,6 +616,9 @@ describe('SetupScreen', () => {
       )
 
       // Key is persisted, trimmed, on both the mirror and the settings entry.
+      await waitFor(() =>
+        expect(mocks.modelProviderState.updateProvider).toHaveBeenCalled()
+      )
       const [name, patch] =
         mocks.modelProviderState.updateProvider.mock.calls[0]
       expect(name).toBe('openai')
@@ -650,7 +660,11 @@ describe('SetupScreen', () => {
         screen.getByRole('button', { name: 'setup:cloudStep.saveKey' })
       )
 
-      expect(localStorage.getItem(localStorageKey.setupCompleted)).toBe('true')
+      await waitFor(() =>
+        expect(localStorage.getItem(localStorageKey.setupCompleted)).toBe(
+          'true'
+        )
+      )
       expect(localStorage.getItem(localStorageKey.lastUsedModel)).toBeNull()
       await waitFor(() => {
         expect(mocks.navigate).toHaveBeenCalledWith({

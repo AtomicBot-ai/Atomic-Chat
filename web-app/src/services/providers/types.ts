@@ -11,12 +11,27 @@ export type EndpointCheckResult = {
   modelCount: number
   /** Why the check failed, readable as is. */
   message?: string
+  /** The HTTP status the endpoint failed with, when it answered with one. */
+  httpStatus?: number
+  /**
+   * What the endpoint answered with that status, as sent (cut short): tells
+   * an invalid key from a valid one without permission to list models.
+   */
+  responseBody?: string
 }
 
 export interface ProvidersService {
   getProviders(): Promise<ModelProvider[]>
   fetchModelsFromProvider(provider: ModelProvider): Promise<string[]>
   checkProviderEndpoint(provider: ModelProvider): Promise<EndpointCheckResult>
+  /**
+   * One GET of `url` with the provider's key and headers: its registry
+   * `key_check`. Any 2xx is `ok`; `modelCount` is always 0.
+   */
+  checkProviderKeyUrl(
+    provider: ModelProvider,
+    url: string
+  ): Promise<EndpointCheckResult>
   updateSettings(providerName: string, settings: ProviderSetting[]): Promise<void>
   fetch(): typeof fetch
 }
