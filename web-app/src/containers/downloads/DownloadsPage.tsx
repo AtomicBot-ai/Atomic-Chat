@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 
+import { OverflowText } from '@/components/OverflowText'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -294,20 +295,10 @@ export function DownloadsPage() {
                         <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-secondary">
                           <Icon size={17} />
                         </div>
-                        <div className="min-w-0">
-                          <div
-                            className="truncate font-medium"
-                            title={item.name}
-                          >
-                            {item.name}
-                          </div>
+                        <div className="min-w-0 flex-1">
+                          <OverflowText className="font-medium" text={item.name} />
                           {detail && (
-                            <div
-                              className="mt-0.5 truncate text-xs text-muted-foreground"
-                              title={detail}
-                            >
-                              {detail}
-                            </div>
+                            <OverflowText className="mt-0.5 text-xs text-muted-foreground" text={detail} />
                           )}
                         </div>
                       </div>
@@ -315,16 +306,11 @@ export function DownloadsPage() {
                     <td className="p-3 whitespace-nowrap tabular-nums">
                       {item.download ? (
                         <div className="min-w-0">
-                          <div className="truncate">
-                            {downloadStatusLabel(t, item.download)}
-                          </div>
+                          <OverflowText text={downloadStatusLabel(t, item.download)} />
                           {item.download.total > 0 && (
-                            <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                              {formatProgressPair(
-                                item.download.current,
-                                item.download.total
-                              )}
-                            </div>
+                            <OverflowText className="mt-0.5 text-xs text-muted-foreground" text={formatProgressPair(
+                              item.download.current, item.download.total
+                            )} />
                           )}
                         </div>
                       ) : (

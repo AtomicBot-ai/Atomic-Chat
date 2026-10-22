@@ -114,6 +114,11 @@ export function downloadStageLabel(
   stage?: { kind: string; attempt: number; maxAttempts: number }
 ): string | null {
   if (stage?.kind === 'stalled') return t('common:downloadPanel.stalled')
+  if (stage?.kind === 'retrying' && stage.maxAttempts === 0)
+    return t('common:downloadPanel.retryingConnection', {
+      attempt: stage.attempt,
+      seconds: 2 ** Math.min(6, Math.max(0, stage.attempt - 1)),
+    })
   if (stage?.kind === 'retrying')
     return t('common:downloadPanel.retrying', {
       attempt: stage.attempt,

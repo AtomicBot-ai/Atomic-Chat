@@ -18,6 +18,8 @@ export interface LegacyDownloadCandidate {
   total: number
   origin?: string
   blocked?: Blocked
+  /** Verified weight identity when only a completed projector lacks its sidecar. */
+  completedProjectorWeightsKey?: string
 }
 export interface LegacyScanResult { candidates: LegacyDownloadCandidate[]; truncated: boolean }
 
@@ -86,6 +88,13 @@ export async function scanLegacyModelDownloads(io: RecoveryIo, roots: RecoveryRo
           if (!source && !files.has(target + '.url')) { source = map.url; blocked = undefined }
         } catch { blocked = 'invalid_manifest'; current = 0 }
       }
+      // A completed payload wins over obsolete partial/map counters. Do not
+      // count a preallocated .tmp as completed data.
+      const completed = files.get(target)
+      if (completed && !completed.isDirectory) {
+        current = completed.size
+        total = completed.size
+      }
       let relative = target.slice(base.length + 1)
       let id = relative.slice(0, relative.lastIndexOf('/'))
       if (root.provider === 'mlx' && source) {
@@ -103,12 +112,21 @@ export async function scanLegacyModelDownloads(io: RecoveryIo, roots: RecoveryRo
       groups.set(id, artifacts)
     }
     for (const [id, artifacts] of groups) {
+      // Completed shards/projectors lose their sidecars. Include their actual
+      // lengths at startup, exactly once, so Resume does not appear to add GB.
+      const directory = base + '/' + id
+      const knownTargets = new Set(artifacts.map((file) => file.target))
+      for (const [target, stat] of files) {
+        if (target.slice(0, target.lastIndexOf('/')) !== directory || knownTargets.has(target)) continue
+        const name = target.slice(directory.length + 1)
+        if (root.provider === 'mlx' || !/^(model\.gguf|mmproj\.gguf|.+-\d{5}-of-\d{5}\.gguf)$/.test(name)) continue
+        artifacts.push({ target, current: stat.size, total: stat.size })
+      }
       const candidate: LegacyDownloadCandidate = {
         id, current: artifacts.reduce((n, file) => n + file.current, 0),
         total: artifacts.every((file) => file.total > 0) ? artifacts.reduce((n, file) => n + file.total, 0) : 0,
         blocked: artifacts.find((file) => file.blocked)?.blocked,
       }
-      const directory = base + '/' + id
       if (files.has(directory + '/model.yml')) candidate.blocked = 'installed_model'
       const sources = artifacts.filter((file) => file.source)
       if (root.provider === 'mlx') {
@@ -129,7 +147,10 @@ export async function scanLegacyModelDownloads(io: RecoveryIo, roots: RecoveryRo
           }
           if (weights.some((file) => modelDownloadKey({ modelPath: file.source!, provider: root.provider }) !== modelDownloadKey(candidate.params!))) candidate.blocked = 'source_conflict'
           // A finished projector has no sidecar URL. Do not overwrite or silently omit it.
-          if (files.has(directory + '/mmproj.gguf') && !candidate.params.mmprojPath) candidate.blocked = 'missing_source'
+          if (!candidate.blocked && files.has(directory + '/mmproj.gguf') && !candidate.params.mmprojPath) {
+            candidate.completedProjectorWeightsKey = modelDownloadKey(candidate.params)
+            candidate.blocked = 'missing_source'
+          }
         }
       }
       if (!candidate.params) candidate.blocked ??= 'missing_source'
@@ -163,9 +184,17 @@ export function mergeLegacyModelDownloads(result: LegacyScanResult): void {
       } }))
       continue
     }
-    if (existing && !candidate.blocked) {
+    // Completed projectors deliberately lose their transfer sidecars. A safe
+    // persisted request still knows their URL; discovery must not erase it.
+    // Require matching validated weight identity and the specific projector-only
+    // gap: malformed maps, unknown partials and source conflicts stay blocked.
+    const journalCoversProjector = existing && publicSource(existing.mmprojPath) &&
+      candidate.blocked === 'missing_source' &&
+      candidate.completedProjectorWeightsKey === modelDownloadKey(existing)
+    if (existing && (!candidate.blocked || journalCoversProjector)) {
       // On-disk counters supersede a stale crash-time snapshot, but not live progress.
-      state.updateProgress(candidate.id, candidate.total > 0 ? candidate.current / candidate.total : 0, candidate.id, candidate.current, candidate.total)
+      const total = Math.max(candidate.total, state.downloads[candidate.id]?.total ?? 0)
+      state.updateProgress(candidate.id, total > 0 ? Math.min(candidate.current / total, 1) : 0, candidate.id, candidate.current, total)
       useDownloadStore.setState((current) => ({ downloads: {
         ...current.downloads, [candidate.id]: { ...current.downloads[candidate.id], speed: newSpeedSample(candidate.current) },
       } }))

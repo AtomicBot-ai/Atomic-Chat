@@ -138,7 +138,7 @@ describe('DownloadProgressRow readout line', () => {
   it('states percent, size and time left on one line, in that order', () => {
     render(<DownloadProgressRow {...transfer} />)
 
-    expect(screen.getByText(line)).toBeInTheDocument()
+    expect(screen.getByText('42%').parentElement).toHaveTextContent(line.replace('42% · ', '42%·'))
   })
 
   it('never lets the line wrap: one element, nowrap, tabular digits', () => {
@@ -146,7 +146,7 @@ describe('DownloadProgressRow readout line', () => {
 
     // `truncate` is nowrap plus an ellipsis: a line that cannot fit is cut at
     // its end — the estimate — instead of pushing the card up by a row.
-    expect(screen.getByText(line)).toHaveClass('truncate', 'tabular-nums')
+    expect(screen.getByText('42%').parentElement).toHaveClass('whitespace-nowrap', 'tabular-nums')
   })
 
   it('leaves the transfer speed out of the row', () => {
@@ -166,7 +166,7 @@ describe('DownloadProgressRow readout line', () => {
   it('omits the estimate until there is a rate to base it on', () => {
     render(<DownloadProgressRow {...transfer} bytesPerSecond={0} />)
 
-    expect(screen.getByText('42% · 4.20 / 12.40 GB')).toBeInTheDocument()
+    expect(screen.getByText('4.20 / 12.40 GB')).toBeInTheDocument()
   })
 
   it('truncates a long model name and keeps the full id as its tooltip', () => {
@@ -174,7 +174,7 @@ describe('DownloadProgressRow readout line', () => {
 
     const name = screen.getByTitle(transfer.id)
     expect(name).toHaveTextContent('Qwen3-Coder-30B-A3B-Instruct-GGUF')
-    expect(name).toHaveClass('truncate')
+    expect(name).toHaveClass('overflow-hidden')
   })
 
   it('keeps pause and cancel in a slot that never shrinks', () => {

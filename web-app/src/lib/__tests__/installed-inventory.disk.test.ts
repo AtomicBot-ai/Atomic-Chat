@@ -124,6 +124,15 @@ describe('partial downloads', () => {
     expect(items[1].details).toEqual(['MLX'])
   })
 
+  it.each(['running', 'paused'])('does not duplicate the reported long model id while %s', (phase) => {
+    const id = 'AtomicChat/Qwen3_8-Flash-Next-AD-4_27bpw-Q4_K_M-M64/Qwen3_8-Flash-Next-AD-4_27bpw-Q4_K_M-M64'
+    const active = store(phase === 'running'
+      ? { localDownloadingModels: new Set([id]) }
+      : phase === 'paused' ? { pausedDownloads: new Set([id]) } : {})
+    const scanned = [partial(id)]
+    expect(partialDownloadItems(scanned, active)).toEqual([])
+  })
+
   it("reads a provider-prefixed task id or a draft's download as its folder's", () => {
     expect(
       isDownloadActive('gemma-4-e2b-it-4bit', ['mlx/gemma-4-e2b-it-4bit'])

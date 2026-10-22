@@ -21,13 +21,14 @@
 use super::disk::disk_err_to_string;
 use super::helpers::{
     build_client_for_item, next_chunk_with_watchdog, request_download_response,
-    request_download_response_with_retry, retry_delay, sidecar_path, wait_for_retry,
-    DownloadRequestError, NextChunk, StageReporter, TransferTuning, MAX_STREAM_RETRIES,
-    RETRY_RESET_PROGRESS_BYTES,
+    request_download_response_with_retry, retry_delay, should_retry_download, sidecar_path,
+    wait_for_retry, DownloadRequestError, NextChunk, StageReporter, TransferTuning,
+    MAX_STREAM_RETRIES, RETRY_RESET_PROGRESS_BYTES,
 };
 use super::models::{DownloadEvent, DownloadItem, DownloadStage, ProgressTracker};
 use reqwest::header::HeaderMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Runtime};
 use tokio_util::sync::CancellationToken;
@@ -94,7 +95,11 @@ pub(crate) fn downloaded_bytes_on_disk(save_path: &Path) -> u64 {
 /// The normal Range and content checks still decide whether those bytes resume.
 pub(super) fn resume_identity_from_parts(save_path: &Path) -> Option<String> {
     let map = read_map(save_path)?;
-    if std::fs::metadata(sidecar_path(save_path, "tmp")).ok()?.len() != map.size {
+    if std::fs::metadata(sidecar_path(save_path, "tmp"))
+        .ok()?
+        .len()
+        != map.size
+    {
         return None;
     }
     Plan::from_map(&map, map.size, 1)?;
@@ -314,6 +319,8 @@ struct Shared {
     size: u64,
     tuning: TransferTuning,
     cancel: CancellationToken,
+    stage: StageReporter,
+    retry_waiters: AtomicUsize,
 }
 
 impl Shared {
@@ -430,7 +437,7 @@ async fn fetch_range(
             shared.plan().release(index);
             return Ok(());
         };
-        if retry_count >= MAX_STREAM_RETRIES {
+        if !should_retry_download(&error, retry_count) {
             return Err(WorkerError::Failed(format!(
                 "Download failed after {MAX_STREAM_RETRIES} retries at byte {from}: {error}"
             )));
@@ -443,10 +450,14 @@ async fn fetch_range(
             MAX_STREAM_RETRIES,
             delay.as_millis()
         );
-        wait_for_retry(delay, &shared.cancel)
-            .await
-            .map_err(|_| WorkerError::Cancelled)?;
-        retry_count += 1;
+        shared
+            .stage
+            .report_retry(retry_count.saturating_add(1), &error);
+        shared.retry_waiters.fetch_add(1, Ordering::Relaxed);
+        let waited = wait_for_retry(delay, &shared.cancel).await;
+        shared.retry_waiters.fetch_sub(1, Ordering::Relaxed);
+        waited.map_err(|_| WorkerError::Cancelled)?;
+        retry_count = retry_count.saturating_add(1);
     }
 }
 
@@ -491,7 +502,7 @@ async fn stream_range(
                 }
             }
             NextChunk::End => {
-                break Some("stream ended before the end of its range".to_string());
+                break Some("[network] stream ended before the end of its range".to_string());
             }
             NextChunk::Failed(error) => break Some(error),
             NextChunk::Cancelled => {
@@ -694,6 +705,8 @@ pub(super) async fn download<R: Runtime>(job: FileJob<'_, R>) -> Result<Segmente
         size: job.size,
         tuning: tuning.clone(),
         cancel: worker_cancel.clone(),
+        stage: job.stage.clone(),
+        retry_waiters: AtomicUsize::new(0),
     });
     let mut workers = tokio::task::JoinSet::new();
     if let Some(index) = first {
@@ -740,7 +753,10 @@ pub(super) async fn download<R: Runtime>(job: FileJob<'_, R>) -> Result<Segmente
                     last_change = now;
                     stall_reported = false;
                     emit_progress(&job, transferred, false).await;
-                } else if !stall_reported && now - last_change >= tuning.stall_notice {
+                } else if !stall_reported && now - last_change >= tuning.stall_notice
+                    && shared.retry_waiters.load(Ordering::Relaxed) == 0 {
+                    // Keep the automatic-retry label while a reconnect waits;
+                    // a generic stall must not hide it during the 64s backoff.
                     stall_reported = true;
                     job.stage.report(DownloadStage::STALLED, 0);
                 }

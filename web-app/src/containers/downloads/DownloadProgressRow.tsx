@@ -1,3 +1,4 @@
+import { OverflowText } from '@/components/OverflowText'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { formatDownloadReadout, shortModelName } from '@/lib/downloadFormat'
@@ -78,15 +79,28 @@ export function DownloadProgressRow({
     paused,
   })
 
+  const percent =
+    !statusText && !paused && total > 0
+      ? `${Math.round(progress * 100)}%`
+      : null
+  const suffix = percent
+    ? readout.slice(percent.length).replace(/^ · /, '')
+    : (statusText ?? readout)
+
   return (
     <li className="rounded-lg bg-secondary p-2">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="truncate font-medium" title={id}>
-            {shortModelName(label)}
-          </p>
+          <OverflowText
+            className="font-medium"
+            title={id}
+            text={shortModelName(label)}
+          />
           {quant && (
-            <p className="truncate text-xs text-muted-foreground">{quant}</p>
+            <OverflowText
+              className="text-xs text-muted-foreground"
+              text={quant}
+            />
           )}
         </div>
         <div className="flex shrink-0 items-center space-x-0.5">
@@ -136,12 +150,22 @@ export function DownloadProgressRow({
       {/* One line that never wraps: it used to be two flex spans, and past the
           row's width the first one broke at its spaces, so the size pair
           dropped to a second line and the bottom-anchored card grew upwards.
-          `truncate` cuts an overlong line at its end — the estimate, the part
-          that matters least — instead. `aria-live` is deliberately absent: this
+          Overflowing copy now scrolls inside that same reserved line. `aria-live` is deliberately absent: this
           text changes every few seconds and would talk over everything else. */}
-      <p className="truncate text-xs tabular-nums text-muted-foreground">
-        {statusText ?? readout}
-      </p>
+      {/* Keep the percentage anchored while the suffix reveals all its copy. */}
+      <div className="flex min-w-0 items-center gap-1 whitespace-nowrap text-xs tabular-nums text-muted-foreground">
+        {percent && (
+          <span data-testid="download-percent" className="shrink-0">
+            {percent}
+          </span>
+        )}
+        {percent && suffix && (
+          <span aria-hidden="true" className="shrink-0">
+            ·
+          </span>
+        )}
+        <OverflowText text={suffix} className="flex-1" />
+      </div>
     </li>
   )
 }

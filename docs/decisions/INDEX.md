@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-439 records, 2026-05-19 → 2026-10-22.
+443 records, 2026-05-19 → 2026-10-22.
 
 ---
 
@@ -231,8 +231,15 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Ship `janhq/llama.cpp` cudart DLLs with every Windows CUDA backend](2026-05-22-ship-janhq-llama-cpp-cudart-dlls-with-every-windows-cuda-backend.md)
 - **2026-05-19** — [Windows uses upstream `ggml-org/llama.cpp`, not the TurboQuant fork](2026-05-19-windows-uses-upstream-ggml-org-llama-cpp-not-the-turboquant-fork.md)
 
-## Models, Hub & downloads (50)
+## Models, Hub & downloads (54)
 
+- **2026-10-22** — [Clean verified download sidecars before reporting success](2026-10-22-clean-validated-download-sidecars-before-success.md)
+
+- **2026-10-22** — [Loop download marquees continuously with edge pauses](2026-10-22-loop-download-marquees-with-edge-pauses.md)
+
+- **2026-10-22** — [Count completed download shards during startup recovery](2026-10-22-show-complete-download-progress-on-restart.md)
+
+- **2026-10-22** — [Retry interrupted download connections until stopped](2026-10-22-retry-interrupted-download-connections.md)
 - **2026-10-22** — [Retain download visibility until its importer settles](2026-10-22-retain-active-download-visibility.md)
 
 - **2026-10-22** — [Integrate unfinished-download recovery with the v2.2.23 Downloads page](2026-10-22-integrate-download-recovery-with-downloads-page.md)
