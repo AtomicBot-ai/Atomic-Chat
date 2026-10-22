@@ -7,6 +7,7 @@ import { ManagedEngineSetupPanel } from '@/containers/managed-engine/ManagedEngi
 import { FoundryLocalAccelerators } from '@/containers/foundry-local/FoundryLocalAccelerators'
 import { FoundryLocalEnginePanel } from '@/containers/foundry-local/FoundryLocalEnginePanel'
 import { LiteRtLmAccelerators } from '@/containers/litert-lm/LiteRtLmAccelerators'
+import { hubEngine } from '@/lib/hub-model-engines'
 import { LiteRtLmEnginePanel } from '@/containers/litert-lm/LiteRtLmEnginePanel'
 import { useEngineVersionsStore } from '@/stores/engine-versions-store'
 import { ManagedEngineHubLink } from '@/containers/managed-engine/ManagedEngineHubLink'
@@ -2804,17 +2805,8 @@ export function EngineDetail({
                                     to: route.hub.index,
                                     search: {
                                       engine:
-                                        provider.provider === 'mlx'
-                                          ? 'mlx'
-                                          : provider.provider === 'atomic-prism'
-                                            ? 'atomic-prism'
-                                            : provider.provider ===
-                                                'foundry-local'
-                                              ? 'foundry-local'
-                                              : provider.provider ===
-                                                  'litert-lm'
-                                                ? 'litert-lm'
-                                                : 'gguf',
+                                        hubEngine(provider.provider)?.format ??
+                                        'gguf',
                                     },
                                   })
                                 }

@@ -27,6 +27,15 @@ function SourceLink({ model }: { model: CatalogModel }) {
   const { t } = useTranslation()
   const foundry = foundryLocalOf(model)
   const liteRt = liteRtLmOf(model)
+  // A variant found on disk: its model.yml names no list to link, only that it is here.
+  if (liteRt?.origin === 'installed') {
+    return (
+      <span className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-border px-3 text-xs text-muted-foreground">
+        <img src="/images/model-provider/litert-lm.svg" alt="" className="size-4" />
+        {t('hub:liteRtLm.downloaded')}
+      </span>
+    )
+  }
   if (foundry) {
     return (
       <span className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-border px-3 text-xs text-muted-foreground">
@@ -171,7 +180,7 @@ export function ModelDetailPanel({
             </span>
             <span className="flex min-w-0 flex-wrap items-center gap-x-3 text-xs font-normal text-muted-foreground">
               <span className="min-w-0 truncate">
-                {foundry ? foundry.model_id : liteRt ? liteRt.repo : hubRepoId(model)}
+                {foundry ? foundry.model_id : liteRt ? liteRt.repo || liteRt.model_id : hubRepoId(model)}
               </span>
               {!!model.downloads && model.downloads > 0 && (
                 <span className="inline-flex items-center gap-1 tabular-nums">

@@ -45,38 +45,51 @@ const EMPTY: LiteRtLmHubState = {
  */
 export function useLiteRtLmHub(enabled: boolean, query: string): LiteRtLmHubState {
   const [state, setState] = useState<LiteRtLmHubState>(EMPTY)
+  const list = enabled ? state.list : null
 
+  // conf's list, once each time the format is shown: a search does not read it again.
   useEffect(() => {
     if (!enabled) return
     let cancelled = false
     setState((current) => ({ ...current, loading: true }))
-    void (async () => {
-      const { list } = await fetchLiteRtLmList()
-      const curated = (list?.models ?? []).map(curatedLiteRtLmCard)
+    void fetchLiteRtLmList().then(({ list: fetched }) => {
       if (cancelled) return
-      setState((current) => ({ ...current, curated, list, loading: !!list }))
-      if (!list) return
-      const platform = hostLiteRtLmPlatform()
-      const huggingFace = await fetchHfLiteRtModels({
-        orgs: list.huggingface.orgs,
-        allowed: list.huggingface.backends[platform] ?? [],
-        platform,
-        curated: list.models,
-        query,
-      })
-      if (cancelled) return
-      setState({
-        curated,
-        huggingFace: huggingFace.models.map(hfLiteRtLmCard),
-        huggingFaceUnavailable: huggingFace.unavailable,
-        list,
-        loading: false,
-      })
-    })()
+      setState((current) => ({
+        ...current,
+        curated: (fetched?.models ?? []).map(curatedLiteRtLmCard),
+        list: fetched,
+        loading: !!fetched,
+      }))
+    })
     return () => {
       cancelled = true
     }
-  }, [enabled, query])
+  }, [enabled])
+
+  // Hugging Face, for the list's organisations and this view's query.
+  useEffect(() => {
+    if (!list) return
+    let cancelled = false
+    const platform = hostLiteRtLmPlatform()
+    void fetchHfLiteRtModels({
+      orgs: list.huggingface.orgs,
+      allowed: list.huggingface.backends[platform] ?? [],
+      platform,
+      curated: list.models,
+      query,
+    }).then((huggingFace) => {
+      if (cancelled) return
+      setState((current) => ({
+        ...current,
+        huggingFace: huggingFace.models.map(hfLiteRtLmCard),
+        huggingFaceUnavailable: huggingFace.unavailable,
+        loading: false,
+      }))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [list, query])
 
   return enabled ? state : EMPTY
 }

@@ -99,6 +99,7 @@ function fakeDeps(overrides: Partial<LiteRtLmInstallDeps> = {}, fileCheck: LiteR
       yaml.push({ path, data: data as Record<string, unknown> })
     }),
     emit: vi.fn(),
+    proxy: () => undefined,
     ...overrides,
   }
   return { deps, steps, transfers, yaml, checks }
@@ -162,6 +163,15 @@ describe('installLiteRtLmVariant', () => {
     await installLiteRtLmVariant({ model: curated, variant: gpu, hfToken: 'hf_x' }, deps)
 
     expect(transfers[0].options.hfToken).toBe('hf_x')
+  })
+
+  it('downloads through the proxy set in Settings', async () => {
+    const proxy = { url: 'http://proxy.corp:3128', no_proxy: ['localhost'] }
+    const { deps, transfers } = fakeDeps({ proxy: () => proxy })
+
+    await installLiteRtLmVariant({ model: curated, variant: gpu }, deps)
+
+    expect(transfers[0].items[0].proxy).toEqual(proxy)
   })
 
   it('writes a Hugging Face model’s abilities from the core’s check of the file', async () => {

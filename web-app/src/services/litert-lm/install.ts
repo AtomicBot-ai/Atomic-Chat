@@ -26,6 +26,7 @@ import { isDownloadCancellationError } from '@/lib/downloadCancellation'
 import { liteRtLmDownloadId } from '@/lib/litert-lm/download-id'
 import { liteRtLmVariantLabel } from '@/lib/litert-lm/hub'
 import {
+  downloadProxyConfig,
   isTransferValidationError,
   transferFiles,
   type TransferItem,
@@ -79,6 +80,8 @@ export interface LiteRtLmInstallDeps {
   removeFolder: (path: string) => Promise<void>
   writeYaml: (savePath: string, data: unknown) => Promise<void>
   emit: (event: string, payload: unknown) => void
+  /** Settings → Proxy, in the shape `download_files` takes; `undefined` when off. */
+  proxy: () => Record<string, string | string[] | boolean> | undefined
 }
 
 export interface LiteRtLmInstallRequest {
@@ -167,6 +170,7 @@ export async function installLiteRtLmVariant(
 
   try {
     if (pending) {
+      const proxy = deps.proxy()
       const item: TransferItem = {
         url: `https://huggingface.co/${model.repo}/resolve/${model.revision}/${variant.file.path}`,
         save_path: savePath,
@@ -174,6 +178,7 @@ export async function installLiteRtLmVariant(
         sha256: variant.file.sha256,
         model_id: downloadId,
         resume_key: `litert-lm/${variant.id}/${variant.file.path}`,
+        ...(proxy ? { proxy } : {}),
       }
       try {
         await deps.transfer([item], downloadId, {
@@ -267,5 +272,6 @@ export function defaultLiteRtLmInstallDeps(): LiteRtLmInstallDeps {
     },
     writeYaml: (savePath, data) => invoke<void>('write_yaml', { data, savePath }),
     emit: (event, payload) => events.emit(event, payload),
+    proxy: downloadProxyConfig,
   }
 }
