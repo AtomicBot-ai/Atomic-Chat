@@ -107,3 +107,45 @@ export interface LiteRtLmCheckResult {
   /** The file's facts, for a file on disk: what the installer writes into `model.yml`. */
   metadata?: LiteRtLmFileMetadata
 }
+
+/** Where a Model Hub entry of LiteRT-LM comes from. */
+export type LiteRtLmOrigin = 'curated' | 'huggingface'
+
+/** A variant as the Hub card and the installer use it, whichever list it came from. */
+export interface LiteRtLmHubVariant {
+  /** Names the download task and the folder `<data>/litert-lm/models/<id>`. */
+  id: string
+  backend: LiteRtLmBackend
+  npu?: LiteRtLmNpu
+  /** `macos-arm64`, `linux-x64`, `linux-arm64`, `win-x64`. */
+  platforms: string[]
+  /** Known before download only for a curated variant that names it. */
+  min_runtime_version?: string
+  /** Its path in the repository, size and sha256 (conf's, or the repository's LFS metadata). */
+  file: { path: string; size: number; sha256: string }
+}
+
+/** The `litert_lm` part of a Hub entry (`CatalogModel.litert_lm`). */
+export interface LiteRtLmHubModel {
+  origin: LiteRtLmOrigin
+  /** conf's model id, or the repository for a Hugging Face model. */
+  model_id: string
+  /** The name shown on the row and the card. */
+  name: string
+  summary: string
+  license: string | null
+  repo: string
+  /** The commit every file is downloaded from. */
+  revision: string
+  /** The repository asks for its terms to be accepted: a download needs the person's HF token. */
+  gated: boolean
+  /**
+   * Known for a curated model; a Hugging Face model learns them from the core's check of the
+   * downloaded file.
+   */
+  context_length?: number
+  tools?: boolean
+  reasoning?: boolean
+  vision?: boolean
+  variants: LiteRtLmHubVariant[]
+}

@@ -2792,7 +2792,8 @@ export function EngineDetail({
                               provider.provider === 'llamacpp-upstream' ||
                               provider.provider === 'atomic-prism' ||
                               provider.provider === 'mlx' ||
-                              provider.provider === 'foundry-local') &&
+                              provider.provider === 'foundry-local' ||
+                              provider.provider === 'litert-lm') &&
                             !hasDownloadedModels && (
                               <Button
                                 variant="default"
@@ -2810,7 +2811,10 @@ export function EngineDetail({
                                             : provider.provider ===
                                                 'foundry-local'
                                               ? 'foundry-local'
-                                              : 'gguf',
+                                              : provider.provider ===
+                                                  'litert-lm'
+                                                ? 'litert-lm'
+                                                : 'gguf',
                                     },
                                   })
                                 }

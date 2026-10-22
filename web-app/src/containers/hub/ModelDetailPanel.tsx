@@ -12,6 +12,7 @@ import { HUB_FORMAT_LABELS } from '@/lib/hub-filters'
 import { hubEngineLabel, type HubEngineId } from '@/lib/hub-model-engines'
 import { hubRepoId, type HubModelFacts } from '@/lib/hub-model-facts'
 import { foundryLocalOf } from '@/lib/foundry-local/hub'
+import { liteRtLmOf } from '@/lib/litert-lm/hub'
 import { formatDownloads, formatTimeAgo } from '@/lib/model-card'
 import { cn } from '@/lib/utils'
 import type { CatalogModel } from '@/services/models/types'
@@ -19,11 +20,13 @@ import type { CatalogModel } from '@/services/models/types'
 /**
  * Where a model comes from, as the expanded row links it: its Hugging Face
  * page, or for a Foundry Local model the catalog it was listed from, which has
- * no page of its own to open.
+ * no page of its own to open. A LiteRT-LM model's repository is on Hugging
+ * Face, named with the list it came from.
  */
 function SourceLink({ model }: { model: CatalogModel }) {
   const { t } = useTranslation()
   const foundry = foundryLocalOf(model)
+  const liteRt = liteRtLmOf(model)
   if (foundry) {
     return (
       <span className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-border px-3 text-xs text-muted-foreground">
@@ -40,7 +43,7 @@ function SourceLink({ model }: { model: CatalogModel }) {
   }
   return (
     <a
-      href={`https://huggingface.co/${hubRepoId(model)}`}
+      href={`https://huggingface.co/${liteRt ? liteRt.repo : hubRepoId(model)}`}
       target="_blank"
       rel="noopener noreferrer"
       className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-border px-3 text-xs hover:bg-secondary"
@@ -50,7 +53,9 @@ function SourceLink({ model }: { model: CatalogModel }) {
         alt=""
         className="size-4"
       />
-      {t('hub:source.huggingFace')}
+      {liteRt
+        ? t(liteRt.origin === 'curated' ? 'hub:liteRtLm.curated' : 'hub:liteRtLm.huggingFace')
+        : t('hub:source.huggingFace')}
       <ExternalLink size={12} />
     </a>
   )
@@ -102,6 +107,7 @@ export function ModelDetailPanel({
 }: ModelDetailPanelProps) {
   const { t, i18n } = useTranslation()
   const foundry = foundryLocalOf(model)
+  const liteRt = liteRtLmOf(model)
   const unknown = t('hub:table.unknown')
   const pending = (width: string) => (
     <PendingValue className={cn('h-4', width)} />
@@ -132,7 +138,7 @@ export function ModelDetailPanel({
       t('hub:table.column.thisDevice'),
       facts.fit ? (
         <FitBadge fit={facts.fit} className="px-1.5 py-0.5 text-[10px]" />
-      ) : model.is_managed || foundry ? (
+      ) : model.is_managed || foundry || liteRt ? (
         t('hub:table.deviceInCard')
       ) : cardLoading ? (
         pending('w-16')
@@ -165,7 +171,7 @@ export function ModelDetailPanel({
             </span>
             <span className="flex min-w-0 flex-wrap items-center gap-x-3 text-xs font-normal text-muted-foreground">
               <span className="min-w-0 truncate">
-                {foundry ? foundry.model_id : hubRepoId(model)}
+                {foundry ? foundry.model_id : liteRt ? liteRt.repo : hubRepoId(model)}
               </span>
               {!!model.downloads && model.downloads > 0 && (
                 <span className="inline-flex items-center gap-1 tabular-nums">

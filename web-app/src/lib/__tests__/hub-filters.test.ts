@@ -288,6 +288,26 @@ describe('hubFormats', () => {
     expect(normalizeHubFilters({ formats: ['foundry-local'] }, ['gguf']).formats).toEqual(['gguf'])
   })
 
+  it('offers LiteRT-LM exactly where its provider is shown, after Foundry Local (change add-litert-lm-runtime)', () => {
+    expect(hubFormats({ mlx: true, managed: [], foundryLocal: true, liteRtLm: true })).toEqual([
+      'gguf',
+      'mlx',
+      'foundry-local',
+      'litert-lm',
+    ])
+    expect(hubFormats({ mlx: false, managed: [], liteRtLm: true })).toEqual(['gguf', 'litert-lm'])
+    expect(hubFormats({ mlx: true, managed: [], liteRtLm: false })).not.toContain('litert-lm')
+    expect(HUB_FORMAT_LABELS['litert-lm']).toBe('LiteRT-LM')
+  })
+
+  it('keeps GGUF the format the Hub opens on where LiteRT-LM is offered', () => {
+    // spec litert-lm-desktop: "формат по умолчанию MUST оставаться прежним".
+    const offered = hubFormats({ mlx: true, managed: [], liteRtLm: true })
+    expect(normalizeHubFilters({}, offered).formats).toEqual(['gguf'])
+    expect(normalizeHubFilters({ formats: ['litert-lm'] }, offered).formats).toEqual(['litert-lm'])
+    expect(normalizeHubFilters({ formats: ['litert-lm'] }, ['gguf', 'mlx']).formats).toEqual(['gguf'])
+  })
+
   it('lists PrismML after the managed engines', () => {
     expect(
       hubFormats({ mlx: false, managed: ['tensorrt-llm', 'vllm'], prism: true })
@@ -304,6 +324,7 @@ describe('engine in the Hub URL', () => {
     expect(parseHubEngine('sglang')).toBe('sglang')
     expect(parseHubEngine('atomic-prism')).toBe('atomic-prism')
     expect(parseHubEngine('foundry-local')).toBe('foundry-local')
+    expect(parseHubEngine('litert-lm')).toBe('litert-lm')
     expect(parseHubEngine('onnx')).toBeUndefined()
     expect(parseHubEngine(undefined)).toBeUndefined()
     expect(parseHubEngine(['gguf'])).toBeUndefined()

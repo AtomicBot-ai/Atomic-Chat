@@ -287,5 +287,11 @@
     "installEngine": "Install Foundry",
     "prepareAccelerator": "Prepare the accelerator",
     "sourceUnavailable": "The Foundry Local model source is unavailable."
+  },
+  "liteRtLm": {
+    "curated": "Curated by Atomic Chat",
+    "huggingFace": "Hugging Face, not verified by Atomic Chat",
+    "huggingFaceUnavailable": "Hugging Face is unavailable right now. Only the models Atomic Chat curated are shown.",
+    "notVerified": "Hugging Face, not verified by Atomic Chat"
   }
 }

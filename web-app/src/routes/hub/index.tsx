@@ -40,6 +40,7 @@ import { useManagedCurated } from '@/hooks/useManagedCurated'
 import { useManagedHubStates } from '@/hooks/useManagedHubState'
 import { usePrismFamilies, usePrismHubVisible } from '@/hooks/useModelSetup'
 import { useFoundryLocalHub, useFoundryLocalHubVisible } from '@/hooks/useFoundryLocalHub'
+import { useLiteRtLmHub, useLiteRtLmHubVisible } from '@/hooks/useLiteRtLmHub'
 import { UNKNOWN_HUB_STATE } from '@/lib/managed-engine/hub-state'
 import { hubKey, managedEngine } from '@/lib/managed-engines'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -74,6 +75,7 @@ import {
 import { getMemoryBudgetBytes, type ModelFormat } from '@/lib/model-card'
 import {
   foundryLocalRows,
+  liteRtLmRows,
   hubListSources,
   managedBrowseRows,
   managedSearchRows,
@@ -544,6 +546,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   })
   const prismHubVisible = usePrismHubVisible()
   const foundryLocalHubVisible = useFoundryLocalHubVisible()
+  const liteRtLmHubVisible = useLiteRtLmHubVisible()
   const availableFormats = useMemo(
     () =>
       hubFormats({
@@ -551,8 +554,9 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
         managed: visibleManaged === '' ? [] : visibleManaged.split(','),
         prism: prismHubVisible,
         foundryLocal: foundryLocalHubVisible,
+        liteRtLm: liteRtLmHubVisible,
       }),
-    [visibleManaged, prismHubVisible, foundryLocalHubVisible]
+    [visibleManaged, prismHubVisible, foundryLocalHubVisible, liteRtLmHubVisible]
   )
   const filters = useMemo(
     () => normalizeHubFilters(storedFilters, availableFormats),
@@ -670,8 +674,12 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   // Hugging Face feed or search (change add-foundry-local).
   const foundryFormat = filters.formats[0] === 'foundry-local'
   const foundryLocal = useFoundryLocalHub(foundryFormat && !showOnlyDownloaded)
+  // LiteRT-LM lists conf's curated models, then its Hugging Face organisations' repositories, which
+  // its own client reads: the GGUF feed and search are not asked (change add-litert-lm-runtime).
+  const liteRtFormat = filters.formats[0] === 'litert-lm'
+  const liteRtLm = useLiteRtLmHub(liteRtFormat && !showOnlyDownloaded, debouncedSearchValue.trim())
   // Formats whose list is their own: nothing is asked of Hugging Face under them.
-  const ownListFormat = prismFormat || foundryFormat
+  const ownListFormat = prismFormat || foundryFormat || liteRtFormat
 
   // Under a managed engine's format the engine's state comes first: what blocks
   // it, or nothing at all until the core has answered. "Downloaded" lists what
@@ -963,6 +971,20 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
       }))
     }
 
+    if (liteRtFormat) {
+      // Curated first, then Hugging Face, each narrowed by name. Sizes are a variant's file, so the
+      // fit filter does not apply; the card shows each variant's verdict.
+      const rows = liteRtLmRows({
+        curated: liteRtLm.curated,
+        huggingFace: liteRtLm.huggingFace,
+        query: debouncedSearchValue,
+      })
+      return rows.map((row) => ({
+        model: row.model,
+        section: t(row.section === 'curated' ? 'hub:liteRtLm.curated' : 'hub:liteRtLm.huggingFace'),
+      }))
+    }
+
     if (prismFormat) {
       // A search narrows the families by name; fit and Uncensored apply as
       // they do to any GGUF.
@@ -1132,6 +1154,9 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     foundryFormat,
     foundryLocal.curated,
     foundryLocal.catalog,
+    liteRtFormat,
+    liteRtLm.curated,
+    liteRtLm.huggingFace,
     debouncedSearchValue,
     managedCurated.models,
     managedCurated.loading,
@@ -1488,7 +1513,9 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
       ? prismFamilies.loading
       : foundryFormat
         ? foundryLocal.loading
-        : (loading && !isSearchMode) ||
+        : liteRtFormat
+          ? liteRtLm.loading
+          : (loading && !isSearchMode) ||
         hfSearching ||
         uncensoredLoading ||
         managedLoading)
@@ -1526,6 +1553,11 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
               {t('hub:foundryLocal.catalogUnavailable')}
             </p>
           )}
+          {liteRtFormat && !showOnlyDownloaded && liteRtLm.huggingFaceUnavailable && (
+            <p className="px-2 pb-2 text-xs text-muted-foreground" role="status">
+              {t('hub:liteRtLm.huggingFaceUnavailable')}
+            </p>
+          )}
           {managedPanel === 'blocked' ? (
             managedSelected && (
               <ManagedHubBlocked engine={managedSelected} blockers={managedHub.blockers} />
@@ -1541,7 +1573,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
           ) : isEmpty ? (
             <HubNoResults
               message={
-                !isSearchMode && filters.onlyFitting && !managedFormat && !foundryFormat
+                !isSearchMode && filters.onlyFitting && !managedFormat && !foundryFormat && !liteRtFormat
                   ? t('hub:noFittingPicks')
                   : t('hub:noModels')
               }

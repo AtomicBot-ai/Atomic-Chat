@@ -277,5 +277,11 @@
     "installEngine": "Установить Foundry",
     "prepareAccelerator": "Подготовить ускоритель",
     "sourceUnavailable": "Источник моделей Foundry Local недоступен."
+  },
+  "liteRtLm": {
+    "curated": "Отобрано Atomic Chat",
+    "huggingFace": "Hugging Face, не проверено Atomic Chat",
+    "huggingFaceUnavailable": "Hugging Face сейчас недоступен. Показаны только модели, отобранные Atomic Chat.",
+    "notVerified": "Hugging Face, не проверено Atomic Chat"
   }
 }
