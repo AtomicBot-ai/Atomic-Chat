@@ -51,7 +51,8 @@
     "modelUnloaded": "Model unloaded"
   },
   "log": {
-    "searchPlaceholder": "Search model, endpoint, preview or error",
+    "searchPlaceholder": "Search requests",
+    "searchHint": "Finds a request by its model, endpoint, preview or error",
     "empty": "No API traffic yet. Point a client at the base URL to see requests here.",
     "noMatches": "No requests match this filter.",
     "clearFilters": "Clear filters",

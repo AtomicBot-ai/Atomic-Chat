@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 
 import { useApiServerLog } from '@/hooks/useApiServerLog'
 import type { ApiRequestEntry } from '@/types/apiServerLog'
@@ -22,6 +22,9 @@ const { control, clearFeed, hydrateFeed, appState } = vi.hoisted(() => ({
     activeModels: ['gemma-4'] as string[],
   },
 }))
+
+// Whether the page is too narrow for the list and the details side by side.
+const layout = vi.hoisted(() => ({ stacked: false }))
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => () => ({}),
@@ -52,6 +55,13 @@ vi.mock('@/hooks/useAppState', () => ({
       selector ? selector(appState) : appState,
     { getState: () => appState }
   ),
+}))
+
+vi.mock('@/hooks/useStackedListDetail', () => ({
+  useStackedListDetail: () => ({
+    ref: { current: null },
+    stacked: layout.stacked,
+  }),
 }))
 
 vi.mock('@/utils/apiServerCapacity', () => ({
@@ -108,6 +118,7 @@ describe('Server → Activity', () => {
     store().reset()
     store().hydrate([])
     appState.activeModels = ['gemma-4']
+    layout.stacked = false
   })
 
   it('renders the title, the actions and the six stat tiles', () => {
@@ -188,5 +199,46 @@ describe('Server → Activity', () => {
     render(<ApiActivityPage />)
     expect(screen.getByText('api:log.feedUnavailable')).toBeInTheDocument()
     expect(screen.getByText('api:actions.refresh')).toBeInTheDocument()
+  })
+
+  it('holds the details column beside the list when the page is wide', () => {
+    render(<ApiActivityPage />)
+    expect(screen.getByText('api:detail.selectPrompt')).toBeInTheDocument()
+  })
+
+  it('keeps no empty details pane under the list on a narrow page', () => {
+    layout.stacked = true
+    render(<ApiActivityPage />)
+    expect(screen.getByText('api:log.empty')).toBeInTheDocument()
+    expect(
+      screen.queryByText('api:detail.selectPrompt')
+    ).not.toBeInTheDocument()
+  })
+
+  it('opens a request picked on a narrow page under the list, in view', async () => {
+    layout.stacked = true
+    // jsdom lays nothing out, so it has no scrollIntoView of its own.
+    const scrollIntoView = vi.fn()
+    Element.prototype.scrollIntoView = scrollIntoView
+    onTestFinished(() => {
+      delete (Element.prototype as Partial<Element>).scrollIntoView
+    })
+    render(<ApiActivityPage />)
+    act(() => {
+      store().applyBatch([
+        { t: 'start', entry: request('a', { endpoint: 'models' }) },
+        { t: 'start', entry: request('b') },
+      ])
+    })
+
+    fireEvent.click(screen.getByText('/models'))
+
+    expect(store().selectedId).toBe('a')
+    await waitFor(() =>
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' })
+    )
+    // The details of the picked request sit after the list, full width.
+    const details = scrollIntoView.mock.contexts[0] as HTMLElement
+    expect(details).toHaveTextContent('/models')
   })
 })
