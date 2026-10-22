@@ -1,0 +1,101 @@
+/* The hints a server handoff shows on the real Server pages, ported from the
+ * prototype (`preview/onboarding/onboarding.css`, `.ob-context-guide`). They
+ * sit inside the app's Server pages and the sidebar's server panel, not inside
+ * `.ob-shell`, so they carry their own colours: the dark ones are the
+ * prototype's, the light ones the app's theme tokens with the same green, as
+ * `onboarding.css` and `ServerPage.css` map them. */
+.ob-context-guide,
+.ob-agent-pick {
+  --ob-guide: color-mix(in oklab, #28786c 9%, var(--card));
+  --ob-guide-line: #28786c80;
+  --ob-guide-text: var(--foreground);
+  --ob-guide-body: var(--muted-foreground);
+  --ob-guide-note: color-mix(in oklab, #28786c 45%, var(--muted-foreground));
+  --ob-guide-action: #1d5e54;
+  --ob-guide-focus: #28786c;
+}
+.dark .ob-context-guide,
+.dark .ob-agent-pick {
+  --ob-guide: #24362f;
+  --ob-guide-line: #84b9a6;
+  --ob-guide-text: #edf5f0;
+  --ob-guide-body: #c5d6cd;
+  --ob-guide-note: #b2c9bd;
+  --ob-guide-action: #ceeae0;
+  --ob-guide-focus: #bee8df;
+}
+
+/* Everything here is in the components layer, element rules included: the
+ * Server pages style their `h3` and `p` in the base layer, and the hint's own
+ * type has to win over them. */
+@layer components {
+  .ob-context-guide {
+    margin-bottom: 20px;
+    padding: 16px 18px;
+    border: 1px solid var(--ob-guide-line);
+    border-radius: 12px;
+    background: var(--ob-guide);
+    color: var(--ob-guide-text);
+    font-family: var(--font-sans);
+    text-align: left;
+  }
+  .ob-context-guide h3 {
+    margin: 0 0 6px;
+    color: var(--ob-guide-text);
+    font-family: var(--font-sans);
+    font-size: calc(var(--font-size-base) * 0.9375);
+    font-weight: 550;
+    line-height: 1.35;
+  }
+  .ob-context-guide p {
+    margin: 0;
+    color: var(--ob-guide-body);
+    font-size: calc(var(--font-size-base) * 0.8125);
+    line-height: 1.5;
+  }
+  .ob-context-guide small {
+    display: block;
+    margin-top: 8px;
+    color: var(--ob-guide-note);
+    font-size: calc(var(--font-size-base) * 0.6875);
+    line-height: 1.5;
+  }
+  .ob-context-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 4px 16px;
+    margin-top: 12px;
+  }
+  .ob-context-actions button {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 0;
+    border: 0;
+    background: transparent;
+    color: var(--ob-guide-action);
+    font-size: calc(var(--font-size-base) * 0.75);
+    cursor: pointer;
+  }
+  .ob-context-actions button:hover {
+    text-decoration: underline;
+  }
+  .ob-context-actions button:focus-visible {
+    outline: 2px solid var(--ob-guide-focus);
+    outline-offset: 3px;
+  }
+
+  /* "Pick your tool": the agent cards it points at. */
+  .ob-agent-pick .sp-tool {
+    border-color: var(--ob-guide-line);
+    box-shadow: 0 0 0 1px
+      color-mix(in oklab, var(--ob-guide-line) 15%, transparent);
+  }
+
+  /* In the sidebar's server panel the column is narrow. */
+  .desktop-server-control > .ob-context-guide {
+    margin-bottom: 12px;
+    padding: 12px;
+  }
+}

@@ -1,0 +1,120 @@
+/* The purpose and server steps: two large choices side by side, and the
+ * server step's "Choose a server-compatible model" box. Ported from the
+ * prototype (`.ob-choice-grid`, `.ob-confirm`); as in `onboarding.css`, the
+ * dark values are its palette and the light ones the app's theme tokens with
+ * the same green. */
+.ob-shell {
+  --ob-choice: color-mix(in oklab, #28786c 6%, var(--card));
+  --ob-choice-line: color-mix(in oklab, #28786c 28%, var(--border));
+  --ob-choice-hover: color-mix(in oklab, #28786c 11%, var(--card));
+  --ob-choice-hover-line: #28786c;
+  --ob-choice-text: var(--foreground);
+  --ob-choice-body: var(--muted-foreground);
+  --ob-choice-icon: #2f6f61;
+  --ob-choice-action: #1d5e54;
+  --ob-confirm: color-mix(in oklab, #28786c 4%, var(--card));
+  --ob-confirm-line: color-mix(in oklab, #28786c 22%, var(--border));
+}
+.dark .ob-shell {
+  --ob-choice: #1d2a22;
+  --ob-choice-line: #435749;
+  --ob-choice-hover: #263b2e;
+  --ob-choice-hover-line: #afd8bb;
+  --ob-choice-text: #dceadf;
+  --ob-choice-body: #9caf9f;
+  --ob-choice-icon: #bbd4c2;
+  --ob-choice-action: #c1dfc8;
+  --ob-confirm: #1a211c;
+  --ob-confirm-line: #3b4c40;
+}
+
+@layer components {
+  .ob-choice-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .ob-choice-grid > button {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    min-width: 0;
+    padding: 26px;
+    border: 1px solid var(--ob-choice-line);
+    border-radius: 14px;
+    background: var(--ob-choice);
+    color: var(--ob-choice-text);
+    text-align: left;
+    transition:
+      background 0.15s,
+      border-color 0.15s;
+  }
+  .ob-choice-grid > button:hover {
+    border-color: var(--ob-choice-hover-line);
+    background: var(--ob-choice-hover);
+  }
+  .ob-choice-grid > button > svg {
+    flex-shrink: 0;
+    width: 30px;
+    height: 30px;
+    color: var(--ob-choice-icon);
+  }
+  .ob-choice-title {
+    margin-top: 28px;
+    font-size: calc(var(--font-size-base) * 1.1875);
+    font-weight: 550;
+    letter-spacing: -0.3px;
+  }
+  .ob-choice-body {
+    margin: 13px 0 30px;
+    color: var(--ob-choice-body);
+    font-size: calc(var(--font-size-base) * 0.8125);
+    line-height: 1.7;
+  }
+  .ob-choice-action {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: auto;
+    color: var(--ob-choice-action);
+    font-size: calc(var(--font-size-base) * 0.75);
+  }
+
+  .ob-confirm {
+    margin-top: 26px;
+    padding: 26px;
+    border: 1px solid var(--ob-confirm-line);
+    border-radius: 14px;
+    background: var(--ob-confirm);
+  }
+  .ob-confirm > h2 {
+    margin: 0 0 10px;
+  }
+  .ob-confirm > p {
+    color: var(--ob-muted);
+    font-size: calc(var(--font-size-base) * 0.8125);
+  }
+  .ob-confirm > .ob-primary {
+    margin-top: 20px;
+  }
+}
+
+@media (max-width: 720px) {
+  .ob-choice-grid {
+    grid-template-columns: 1fr;
+  }
+  .ob-choice-grid > button {
+    padding: 22px;
+  }
+  .ob-choice-title {
+    margin-top: 17px;
+  }
+  .ob-choice-body {
+    margin-bottom: 16px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ob-choice-grid > button {
+    transition: none;
+  }
+}

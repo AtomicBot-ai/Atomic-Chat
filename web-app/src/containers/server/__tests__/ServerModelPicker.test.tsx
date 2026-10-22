@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { control, restart, helpers, toastError } = vi.hoisted(() => {
+const { control, restart, helpers, toastError, navigate } = vi.hoisted(() => {
   const helper = () => ({
     supported: true,
     options: [] as { value: string; label: string }[],
@@ -23,6 +23,7 @@ const { control, restart, helpers, toastError } = vi.hoisted(() => {
     restart: vi.fn(),
     helpers: { embedding: helper(), decision: helper() },
     toastError: vi.fn(),
+    navigate: vi.fn(),
   }
 })
 
@@ -36,6 +37,7 @@ vi.mock('@tanstack/react-router', () => ({
       {children}
     </a>
   ),
+  useNavigate: () => navigate,
 }))
 
 vi.mock('@/hooks/useLocalApiServerControl', () => ({
@@ -57,8 +59,9 @@ vi.mock('../useServedHelperModels', () => ({
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { getProviderTitle } from '@/lib/utils'
+import { useOnboardingStore } from '@/stores/onboarding-store'
 
-import { ServerModelPicker } from '../ServerModelPicker'
+import { isServableEngine, ServerModelPicker } from '../ServerModelPicker'
 
 /** A provider as the store holds it; cloud ones carry no `persist` flag. */
 const engine = (
@@ -307,5 +310,52 @@ describe('Server → Engine & model', () => {
       '/hub/'
     )
     expect(dropdown('api:model.embeddingModel')).toBeEnabled()
+  })
+
+  it('tells an engine the server runs from one it does not, models or not', () => {
+    expect(isServableEngine(engine('llamacpp-upstream', []))).toBe(true)
+    expect(isServableEngine(engine('vllm', [{ id: 'm' }], false))).toBe(false)
+    expect(isServableEngine(engine('openai', [{ id: 'gpt-4.1' }]))).toBe(false)
+  })
+
+  describe('on first-run setup’s endpoint hints', () => {
+    const guideHint = () =>
+      screen.queryByRole('region', { name: 'onboarding-server:guide.label' })
+
+    beforeEach(() => {
+      const store = useOnboardingStore.getState()
+      store.reset()
+      store.begin('full', 'server')
+      store.handOff('endpoint')
+      store.setGuide({ path: 'endpoint', hint: 1 })
+    })
+
+    it('shows "Choose the model", and Next hint goes on to Start', async () => {
+      render(<ServerModelPicker />)
+
+      expect(guideHint()).toHaveTextContent(
+        'onboarding-server:guide.model.title'
+      )
+      await user.click(
+        screen.getByRole('button', { name: 'onboarding-server:guide.next' })
+      )
+
+      expect(navigate).toHaveBeenCalledWith({ to: '/api/' })
+      expect(useOnboardingStore.getState().guide).toEqual({
+        path: 'endpoint',
+        hint: 2,
+      })
+      expect(guideHint()).toBeNull()
+    })
+
+    it('shows it over the empty state while the model is still downloading', () => {
+      useModelProvider.setState({ providers: [] })
+      render(<ServerModelPicker />)
+
+      expect(guideHint()).toHaveTextContent(
+        'onboarding-server:guide.model.title'
+      )
+      expect(screen.getByText('api:model.emptyTitle')).toBeInTheDocument()
+    })
   })
 })

@@ -1,8 +1,17 @@
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import posthog from 'posthog-js'
 import { useServerSetup } from '@/hooks/useServerSetup'
+import {
+  useOnboardingStore,
+  type OnboardingGuide,
+} from '@/stores/onboarding-store'
 import { ServerControlPanel } from '../ServerControlPanel'
+
+vi.mock('posthog-js', () => ({
+  default: { capture: vi.fn(), has_opted_in_capturing: () => true },
+}))
 
 const navigate = vi.hoisted(() => vi.fn())
 vi.mock('@tanstack/react-router', () => ({
@@ -246,5 +255,111 @@ describe('ServerControlPanel', () => {
     expect(
       screen.getByText('common:navigation.connectionsCount')
     ).toBeInTheDocument()
+  })
+
+  describe('during first-run setup', () => {
+    /** A run handed off to the server, on `guide`, its model downloading or not. */
+    const handedOff = (guide: OnboardingGuide, downloading: boolean) => {
+      const store = useOnboardingStore.getState()
+      store.reset()
+      store.begin('full', 'server')
+      store.enqueue({
+        key: 'chat',
+        kind: 'chat',
+        title: 'Qwen3.5 4B',
+        taskId: 'Qwen3.5-4B-Q4_K_M',
+        phase: downloading ? 'running' : 'done',
+      })
+      store.handOff(guide.path)
+      store.setGuide(guide)
+    }
+    const guideHint = () =>
+      screen.queryByRole('region', { name: 'onboarding-server:guide.label' })
+
+    beforeEach(() => {
+      vi.mocked(posthog.capture).mockClear()
+      useServerSetup.setState({ setupDone: false, setupDismissed: true })
+    })
+
+    it('shows the Start hint, and holds Start until the model has downloaded', () => {
+      handedOff({ path: 'endpoint', hint: 2 }, true)
+      render(<ServerControlPanel />)
+
+      expect(guideHint()).toHaveTextContent(
+        'onboarding-server:guide.start.title'
+      )
+      const power = screen.getByTestId('server-panel-power')
+      expect(power).toBeDisabled()
+      expect(power).toHaveAttribute(
+        'title',
+        'onboarding-server:guide.stillDownloading'
+      )
+
+      act(() => useOnboardingStore.getState().setJobPhase('chat', 'done'))
+
+      expect(power).toBeEnabled()
+      expect(power).not.toHaveAttribute('title')
+    })
+
+    it('holds Start on the earlier endpoint hints too, where the hint itself is not shown', () => {
+      handedOff({ path: 'endpoint', hint: 0 }, true)
+      render(<ServerControlPanel />)
+
+      expect(guideHint()).toBeNull()
+      expect(screen.getByTestId('server-panel-power')).toBeDisabled()
+    })
+
+    it('starts the server directly instead of opening the setup guide, and ends the hints', async () => {
+      handedOff({ path: 'endpoint', hint: 1 }, false)
+      render(<ServerControlPanel />)
+
+      await userEvent.click(screen.getByTestId('server-panel-power'))
+
+      expect(control.toggle).toHaveBeenCalledTimes(1)
+      expect(navigate).not.toHaveBeenCalled()
+      expect(useServerSetup.getState()).toMatchObject({
+        guideActive: false,
+        setupDone: true,
+        endpointConfigured: true,
+      })
+      expect(useOnboardingStore.getState().guide).toBeNull()
+      expect(
+        vi
+          .mocked(posthog.capture)
+          .mock.calls.filter(([name]) => name === 'onboarding_guide')
+          .map(([, props]) => props)
+      ).toEqual([
+        expect.objectContaining({
+          guide_path: 'endpoint',
+          hint: 1,
+          guide_action: 'done',
+        }),
+      ])
+    })
+
+    it('leaves Start as it is on the agents hints', async () => {
+      handedOff({ path: 'agents', hint: 0 }, true)
+      render(<ServerControlPanel />)
+
+      const power = screen.getByTestId('server-panel-power')
+      expect(power).toBeEnabled()
+      await userEvent.click(power)
+
+      // A server never set up still opens the setup guide.
+      expect(control.toggle).not.toHaveBeenCalled()
+      expect(useServerSetup.getState().guideActive).toBe(true)
+      expect(useOnboardingStore.getState().guide).toEqual({
+        path: 'agents',
+        hint: 0,
+      })
+    })
+
+    it('lets a running server stop while the model downloads', () => {
+      setStatus('running')
+      handedOff({ path: 'endpoint', hint: 2 }, true)
+      render(<ServerControlPanel />)
+
+      expect(screen.getByTestId('server-panel-power')).toBeEnabled()
+    })
   })
 })

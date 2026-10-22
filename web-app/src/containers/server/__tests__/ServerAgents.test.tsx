@@ -25,6 +25,7 @@ vi.mock('@tanstack/react-router', () => ({
       {children}
     </a>
   ),
+  useNavigate: () => vi.fn(),
 }))
 
 // Detection asks the shell; here the launch store says what it found.
@@ -35,6 +36,7 @@ vi.mock('@/lib/integration-agent-detection', () => ({
 import { useAppState } from '@/hooks/useAppState'
 import { useServerSetup } from '@/hooks/useServerSetup'
 import { useLaunchStore } from '@/stores/launch-store'
+import { useOnboardingStore } from '@/stores/onboarding-store'
 
 import { ServerAgents } from '../ServerAgents'
 
@@ -52,6 +54,7 @@ describe('Overview, agents and tools', () => {
       guideActive: false,
       guideRevision: 0,
     })
+    useOnboardingStore.getState().reset()
   })
 
   it('leads with the featured agents and says what Atomic Chat knows about each', () => {
@@ -133,5 +136,70 @@ describe('Overview, agents and tools', () => {
       screen.getByRole('button', { name: /api:agents\.endpointTitle/ })
     )
     expect(useServerSetup.getState().guide).toEqual({ path: 'endpoint' })
+  })
+
+  describe('on first-run setup’s "Pick your tool"', () => {
+    const guideHint = () =>
+      screen.queryByRole('region', { name: 'onboarding-server:guide.label' })
+    const section = () =>
+      screen.getByRole('region', { name: 'api:agents.title' })
+
+    beforeEach(() => {
+      const store = useOnboardingStore.getState()
+      store.begin('full', 'server')
+      store.handOff('agents')
+    })
+
+    it('points at the agent cards, and follows Configure into the setup guide', () => {
+      render(<ServerAgents />)
+
+      expect(guideHint()).toHaveTextContent(
+        'onboarding-server:guide.pick.title'
+      )
+      expect(section()).toHaveClass('ob-agent-pick')
+
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: 'api:agents.configureAgent:{"name":"Codex CLI"}',
+        })
+      )
+
+      expect(useOnboardingStore.getState().guide).toEqual({
+        path: 'agents',
+        hint: 1,
+      })
+      expect(guideHint()).toBeNull()
+      expect(section()).not.toHaveClass('ob-agent-pick')
+      expect(useServerSetup.getState().guide).toEqual({
+        path: 'agent',
+        agentId: 'codex',
+      })
+    })
+
+    it('ends the hints when the tool picked is already set up', () => {
+      render(<ServerAgents />)
+      const details = within(card('Claude Code')).getByText(
+        'api:agents.connectionDetails'
+      )
+      // The router would navigate; jsdom cannot.
+      details.addEventListener('click', (event) => event.preventDefault())
+
+      fireEvent.click(details)
+
+      expect(useOnboardingStore.getState().guide).toBeNull()
+      expect(guideHint()).toBeNull()
+    })
+
+    it('goes away with Skip guide, leaving the cards as they were', () => {
+      render(<ServerAgents />)
+
+      fireEvent.click(
+        screen.getByRole('button', { name: 'onboarding-server:guide.skip' })
+      )
+
+      expect(guideHint()).toBeNull()
+      expect(section()).not.toHaveClass('ob-agent-pick')
+      expect(useOnboardingStore.getState().panelDismissed).toBe(true)
+    })
   })
 })

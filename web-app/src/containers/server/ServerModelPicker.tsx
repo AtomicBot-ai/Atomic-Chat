@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
 import { route } from '@/constants/routes'
+import { SetupGuideHint } from '@/containers/onboarding/SetupGuideHint'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useLocalApiServerControl } from '@/hooks/useLocalApiServerControl'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -32,18 +33,29 @@ export type ServableEngine = {
 }
 
 /**
- * Engines that can serve a chat model now: enabled local engines on this
- * platform (the same rules as the sidebar's engine list) with at least one
- * downloaded chat model.
+ * An engine the server can run on this platform: an enabled local engine, by
+ * the same rules as the sidebar's engine list. Whether it has a model yet is
+ * not asked, so first-run setup can tell a model still downloading for it
+ * from one the server could never serve.
+ */
+export function isServableEngine(provider: ModelProvider): boolean {
+  if (!isLocalEngineProvider(provider) || !provider.active) return false
+  if (!IS_MACOS && provider.provider === 'mlx') return false
+  return (
+    provider.provider !== 'llamacpp' ||
+    PlatformFeatures[PlatformFeature.TURBOQUANT_ENGINE]
+  )
+}
+
+/**
+ * Engines that can serve a chat model now: servable engines
+ * (`isServableEngine`) with at least one downloaded chat model.
  */
 export function useServableEngines(): ServableEngine[] {
   const providers = useModelProvider((state) => state.providers)
   return useMemo(() => {
-    const turboquant = PlatformFeatures[PlatformFeature.TURBOQUANT_ENGINE]
     const engines = providers.flatMap((provider) => {
-      if (!isLocalEngineProvider(provider) || !provider.active) return []
-      if (!IS_MACOS && provider.provider === 'mlx') return []
-      if (!turboquant && provider.provider === 'llamacpp') return []
+      if (!isServableEngine(provider)) return []
       const models = provider.models.filter(
         (model) => !model.embedding && !model.missing
       )
@@ -281,6 +293,7 @@ export function ServerModelPicker() {
     <>
       {choice && engine ? (
         <section className="sp-panel">
+          <SetupGuideHint path="endpoint" hint={1} />
           <EngineModelFields
             engines={engines}
             choice={choice}
@@ -292,6 +305,7 @@ export function ServerModelPicker() {
         </section>
       ) : (
         <section className="sp-panel sp-empty">
+          <SetupGuideHint path="endpoint" hint={1} />
           <h2>{t('api:model.emptyTitle')}</h2>
           <p>{t('api:model.emptyBody')}</p>
           <Link to={route.hub.index} className="sp-button sp-primary">

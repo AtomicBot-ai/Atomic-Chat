@@ -9,6 +9,11 @@ import {
 } from '@/constants/integrations'
 import { AgentIcon } from '@/containers/AgentIcon'
 import {
+  pickAgentHint,
+  SetupGuideHint,
+  useGuideHint,
+} from '@/containers/onboarding/SetupGuideHint'
+import {
   StatusDot,
   type StatusTone,
 } from '@/containers/api/ApiStatusIndicators'
@@ -75,6 +80,8 @@ export function ServerAgents() {
   const openGuide = useServerSetup((state) => state.openGuide)
   const statusOf = useAgentStatus()
   const [query, setQuery] = useState('')
+  // First-run setup's "Pick your tool" points at the cards.
+  const picking = useGuideHint('agents', 0)
 
   useEffect(() => {
     detectIntegrationAgentsOnce()
@@ -86,7 +93,11 @@ export function ServerAgents() {
   )
 
   return (
-    <section className="sp-agents" aria-label={t('api:agents.title')}>
+    <section
+      className={picking ? 'sp-agents ob-agent-pick' : 'sp-agents'}
+      aria-label={t('api:agents.title')}
+    >
+      <SetupGuideHint path="agents" hint={0} />
       <div className="sp-section-heading">
         <div className="min-w-0">
           <h2>{t('api:agents.title')}</h2>
@@ -128,7 +139,11 @@ export function ServerAgents() {
               <h3>{agent.name}</h3>
               <p>{agent.description}</p>
               {status.configured ? (
-                <Link to={route.api.connections} className="sp-button">
+                <Link
+                  to={route.api.connections}
+                  className="sp-button"
+                  onClick={() => pickAgentHint(true)}
+                >
                   {t('api:agents.connectionDetails')}
                   <ArrowRight size={14} />
                 </Link>
@@ -139,9 +154,10 @@ export function ServerAgents() {
                   aria-label={t('api:agents.configureAgent', {
                     name: agent.name,
                   })}
-                  onClick={() =>
+                  onClick={() => {
+                    pickAgentHint(false)
                     openGuide({ path: 'agent', agentId: agent.id })
-                  }
+                  }}
                 >
                   {t('api:agents.configure')}
                   <ArrowRight size={14} />

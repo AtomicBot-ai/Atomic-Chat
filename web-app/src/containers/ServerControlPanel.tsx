@@ -5,6 +5,12 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useLocalApiServerControl } from '@/hooks/useLocalApiServerControl'
 import { useServerSetup, useSetupDone } from '@/hooks/useServerSetup'
 import { useServedModel } from '@/containers/server/useServedModel'
+import {
+  finishGuide,
+  SetupGuideHint,
+  useChatModelPending,
+  useEndpointGuide,
+} from '@/containers/onboarding/SetupGuideHint'
 import './ServerControlPanel.css'
 
 /**
@@ -31,9 +37,25 @@ export function ServerControlPanel() {
   const busy = control.isBusy
   const starting = control.status === 'pending'
 
+  // First-run setup's endpoint hints walk the user through Configuration and
+  // Engine & model to this button. Start waits for the model the run is
+  // downloading, which becomes the server's once it lands.
+  const endpointGuide = useEndpointGuide()
+  const modelPending = useChatModelPending()
+  const waitingForModel = endpointGuide && modelPending && !control.isRunning
+
   // Until the server is set up once, Start opens the setup guide: it picks
-  // the model and what to connect, then starts the server itself.
+  // the model and what to connect, then starts the server itself. During the
+  // endpoint hints the pages were that setup, so Start starts it.
   const power = () => {
+    if (!control.isRunning && endpointGuide) {
+      const setup = useServerSetup.getState()
+      setup.markEndpointConfigured()
+      setup.finishSetup()
+      finishGuide()
+      void control.toggle()
+      return
+    }
     if (!control.isRunning && !setupDone) {
       useServerSetup.getState().openGuide()
       void navigate({ to: route.api.index })
@@ -53,11 +75,17 @@ export function ServerControlPanel() {
       className="desktop-server-control"
       aria-label={t('common:navigation.server')}
     >
+      <SetupGuideHint path="endpoint" hint={2} />
       <div className="dsc-actions">
         <button
           type="button"
           className={`dsc-power ${control.isRunning || starting ? 'dsc-stop' : 'dsc-start'} ${busy ? 'dsc-restarting' : ''}`}
-          disabled={busy}
+          disabled={busy || waitingForModel}
+          title={
+            waitingForModel
+              ? t('onboarding-server:guide.stillDownloading')
+              : undefined
+          }
           aria-busy={busy}
           data-testid="server-panel-power"
           onClick={power}
