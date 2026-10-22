@@ -1,9 +1,9 @@
 [package]
 name = "Atomic-Chat"
 version = "0.6.599"
-description = "Use offline LLMs with your own data. Run open source models like Llama2 or Falcon on your internal computers/servers."
-authors = ["Jan <service@jan.ai>"]
-license = "MIT"
+description = "Local AI app and inference engine for agents. Run open-weight LLMs locally, private, on your machine."
+authors = ["Atomic Chat <service@atomic.chat>"]
+license = "Apache-2.0"
 repository = "https://github.com/janhq/jan"
 edition = "2021"
 rust-version = "1.77.2"

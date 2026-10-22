@@ -1,5 +1,6 @@
 {
   "app": {
+    "enableGTKAppId": true,
     "windows": [
       {
         "label": "main",
@@ -40,6 +41,9 @@
     ],
     "externalBin": ["resources/bin/uv", "resources/bin/cloudflared"],
     "linux": {
+      "deb": {
+        "desktopTemplate": "build-utils/atomic-chat.desktop"
+      },
       "appimage": {
         "bundleMediaFramework": true,
         "files": {}

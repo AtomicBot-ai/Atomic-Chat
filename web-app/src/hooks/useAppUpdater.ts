@@ -6,6 +6,7 @@ import { SystemEvent } from '@/types/events'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { toast } from 'sonner'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { isPackageManaged } from '@/lib/package-managed'
 
 export interface UpdateState {
   isUpdateAvailable: boolean
@@ -107,6 +108,18 @@ export const useAppUpdater = () => {
     remindMeLater: false,
     currentVersion: '',
   })
+  /// A distro package manager owns updates: no check, no banner, no button.
+  const [packageManaged, setPackageManaged] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    void isPackageManaged().then((managed) => {
+      if (!cancelled) setPackageManaged(managed)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // Read once per hook instance. Cheap, and the value never changes for the
   // life of the process.
@@ -185,15 +198,17 @@ export const useAppUpdater = () => {
         }
 
         if (!isDev()) {
+          // Updates are off for this build or owned by a package manager:
+          // do not even ask the update server.
+          if (AUTO_UPDATER_DISABLED || (await isPackageManaged())) {
+            console.log('Auto updater is disabled')
+            return null
+          }
+
           // Production mode - use actual Tauri updater
           const update = await getServiceHub().updater().check()
 
           if (update) {
-            if (AUTO_UPDATER_DISABLED) {
-              console.log('Auto updater is disabled')
-              return null
-            }
-
             const newState = {
               isUpdateAvailable: true,
               remindMeLater: false,
@@ -270,7 +285,7 @@ export const useAppUpdater = () => {
   )
 
   const downloadAndInstallUpdate = useCallback(async () => {
-    if (AUTO_UPDATER_DISABLED) {
+    if (AUTO_UPDATER_DISABLED || (await isPackageManaged())) {
       console.log('Auto updater is disabled')
       return
     }
@@ -413,6 +428,7 @@ export const useAppUpdater = () => {
 
   return {
     updateState,
+    packageManaged,
     checkForUpdate,
     downloadAndInstallUpdate,
     setRemindMeLater,

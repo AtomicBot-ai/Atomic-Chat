@@ -76,9 +76,12 @@ const mockExportLogs = vi.fn()
 const mockOpenPath = vi.fn()
 const mockGetCoreVersion = vi.fn()
 
+const updater = vi.hoisted(() => ({ packageManaged: false }))
+
 vi.mock('@/hooks/useAppUpdater', () => ({
   useAppUpdater: () => ({
     checkForUpdate: mockCheckForUpdate,
+    packageManaged: updater.packageManaged,
   }),
 }))
 
@@ -282,6 +285,7 @@ Object.assign(navigator, {
 describe('General Settings Route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    updater.packageManaged = false
     seedServiceHub({
       app: {
         factoryReset: vi.fn(),
@@ -469,6 +473,47 @@ describe('General Settings Route', () => {
       })
       // Test that button is interactive
       expect(checkUpdateButton).toBeInTheDocument()
+    }
+  })
+
+  it('points a package-managed install at its package manager instead of offering updates', async () => {
+    updater.packageManaged = true
+    const Component = GeneralRoute.component as React.ComponentType
+    await act(async () => {
+      render(<Component />)
+    })
+
+    expect(
+      screen.getByText('settings:general.updatesByPackageManager')
+    ).toBeInTheDocument()
+    expect(
+      screen
+        .getAllByTestId('button')
+        .some((button) => button.textContent?.includes('checkForUpdates'))
+    ).toBe(false)
+  })
+
+  it('still explains a package-managed install when the build has no updater', async () => {
+    // A source-built distro package can set both switches; the explanation
+    // must not disappear with the update button.
+    updater.packageManaged = true
+    global.AUTO_UPDATER_DISABLED = true
+    try {
+      const Component = GeneralRoute.component as React.ComponentType
+      await act(async () => {
+        render(<Component />)
+      })
+
+      expect(
+        screen.getByText('settings:general.updatesByPackageManager')
+      ).toBeInTheDocument()
+      expect(
+        screen
+          .getAllByTestId('button')
+          .some((button) => button.textContent?.includes('checkForUpdates'))
+      ).toBe(false)
+    } finally {
+      global.AUTO_UPDATER_DISABLED = false
     }
   })
 

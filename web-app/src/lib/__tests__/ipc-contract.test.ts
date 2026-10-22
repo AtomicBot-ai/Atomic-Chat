@@ -42,6 +42,9 @@ const EXPECTED_DESKTOP_ONLY = new Set([
   'list_local_sessions',
   'resolve_local_session',
   'is_update_available',
+  // `lib/package-managed.ts` reads a rejection as "not package-managed" for
+  // that call, and the mobile targets have no updater to turn off.
+  'is_package_managed_install',
   // Best-effort crash-reporting scope sync. Every call site in
   // `lib/sentry.ts` swallows a rejection, and `PlatformFeature.ANALYTICS` is
   // false on mobile, so their absence there changes nothing.
