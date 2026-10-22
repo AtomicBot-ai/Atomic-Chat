@@ -1,0 +1,34 @@
+{
+  "title": "A little access. More possibilities.",
+  "lead": "Choose what you want to enable. Everything here is optional.",
+  "allow": "Allow",
+  "allowed": "Allowed",
+  "notAllowed": "Not allowed",
+  "asking": "Asking…",
+  "skip": "Skip",
+  "notNow": "Not now",
+  "allowAccess": "Allow access",
+  "notifications": {
+    "title": "Notifications",
+    "reason": "Know when a model is ready or a long task finishes.",
+    "ask": "Allow notifications?",
+    "detail": "Atomic Chat can show a notification when a download completes. You can change this later in system settings."
+  },
+  "microphone": {
+    "title": "Microphone",
+    "reason": "Speak your prompts and use voice conversations.",
+    "ask": "Allow microphone access?",
+    "detail": "Microphone access is used only when you start recording. Text chat works without it."
+  },
+  "files": {
+    "title": "Files & folders",
+    "reason": "Attach the documents you choose, one at a time. Atomic Chat never gets your whole disk.",
+    "note": "You pick each file"
+  },
+  "warning": {
+    "title": "Continue without permissions?",
+    "body": "Voice input and download notifications stay off until you allow them. You can enable access later in Settings.",
+    "review": "Review permissions",
+    "proceed": "Continue without permissions"
+  }
+}

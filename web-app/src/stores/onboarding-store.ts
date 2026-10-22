@@ -46,6 +46,11 @@ type OnboardingData = {
   choice: OnboardingChoice | null
   jobs: OnboardingJob[]
   permissions: Partial<Record<string, OnboardingPermissionResult>>
+  /**
+   * Cloud providers connected on the cloud step, in the order they were. The
+   * first one is where a run that leaves without a local model lands.
+   */
+  clouds: string[]
   destination: OnboardingDestination | null
   guide: OnboardingGuide | null
   /** The download panel shown after the handoff was closed. */
@@ -62,6 +67,8 @@ type OnboardingState = OnboardingData & {
   dequeue: (key: string) => void
   setJobPhase: (key: string, phase: OnboardingJobPhase) => void
   setPermission: (id: string, result: OnboardingPermissionResult) => void
+  /** Notes a provider connected during the run; once, however often. */
+  connectCloud: (provider: string) => void
   handOff: (destination: OnboardingDestination) => void
   /** "Back to setup" after a handoff. */
   reopen: () => void
@@ -79,6 +86,7 @@ const initialData: OnboardingData = {
   choice: null,
   jobs: [],
   permissions: {},
+  clouds: [],
   destination: null,
   guide: null,
   panelDismissed: false,
@@ -118,6 +126,12 @@ export const useOnboardingStore = create<OnboardingState>()(
         set((state) => ({
           permissions: { ...state.permissions, [id]: result },
         })),
+      connectCloud: (provider) =>
+        set((state) =>
+          state.clouds.includes(provider)
+            ? state
+            : { clouds: [...state.clouds, provider] }
+        ),
       handOff: (destination) =>
         set({
           phase: 'handedOff',
@@ -146,6 +160,7 @@ export const useOnboardingStore = create<OnboardingState>()(
         choice: state.choice,
         jobs: state.jobs,
         permissions: state.permissions,
+        clouds: state.clouds,
         destination: state.destination,
         guide: state.guide,
         panelDismissed: state.panelDismissed,

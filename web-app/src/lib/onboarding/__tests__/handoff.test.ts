@@ -8,7 +8,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { isOnboardingPending, resetForcedOnboardingRun } from '@/lib/onboarding'
 import { useOnboardingStore } from '@/stores/onboarding-store'
 
-import { exitPathOf, handOffOnboarding } from '../handoff'
+import { cloudExitOf, exitPathOf, handOffOnboarding } from '../handoff'
 
 vi.mock('posthog-js', () => ({
   default: { capture: vi.fn(), has_opted_in_capturing: () => true },
@@ -208,6 +208,59 @@ describe('leaving the setup screen', () => {
     })
   })
 
+  it('opens the chat on the cloud provider connected instead of a local model', () => {
+    useModelProvider.setState({
+      providers: [
+        { provider: 'llamacpp-upstream', active: true, models: [] },
+        {
+          provider: 'openrouter',
+          active: true,
+          api_key: 'sk-or',
+          models: [{ id: 'openrouter/auto' }, { id: 'openai/gpt-5.5' }],
+        },
+      ],
+    } as never)
+    useOnboardingStore.getState().connectCloud('openrouter')
+
+    handOffOnboarding({ destination: 'chat', stepReached: 'cloud', navigate })
+
+    expect(useModelProvider.getState().selectedProvider).toBe('openrouter')
+    expect(
+      JSON.parse(localStorage.getItem(localStorageKey.lastUsedModel)!)
+    ).toEqual({ provider: 'openrouter', model: 'openrouter/auto' })
+    expect(useModelLoad.getState().modelSelectionDeferred).toBe(false)
+    expect(navigate).toHaveBeenCalledWith({
+      to: '/',
+      replace: true,
+      search: {
+        threadModel: { id: 'openrouter/auto', provider: 'openrouter' },
+      },
+    })
+    // A connected provider is a finished setup, not an empty-handed one.
+    expect(events().map(([name]) => name)).toEqual(['onboarding_completed'])
+    expect(completed()[0][1]).toMatchObject({
+      exit_path: 'cloud_provider',
+      exit_provider: 'openrouter',
+      step_reached: 'cloud',
+    })
+  })
+
+  it('keeps a started download ahead of a cloud provider connected on the way', () => {
+    useOnboardingStore.getState().choose(qwen)
+    useOnboardingStore.getState().enqueue(chatJob)
+    useOnboardingStore.getState().connectCloud('openrouter')
+
+    handOffOnboarding({ destination: 'chat', stepReached: 'purpose', navigate })
+
+    expect(useModelProvider.getState().selectedProvider).toBe(
+      'llamacpp-upstream'
+    )
+    expect(completed()[0][1]).toMatchObject({
+      exit_path: 'download_started',
+      exit_provider: null,
+    })
+  })
+
   it('names how the run ended', () => {
     expect(exitPathOf({ choice: null, jobs: [] })).toBe('dismissed')
     expect(exitPathOf({ choice: qwen, jobs: [chatJob] })).toBe(
@@ -216,5 +269,32 @@ describe('leaving the setup screen', () => {
     expect(
       exitPathOf({ choice: { ...qwen, source: 'library' }, jobs: [] })
     ).toBe('imported')
+    expect(exitPathOf({ choice: null, jobs: [], clouds: ['chatgpt'] })).toBe(
+      'cloud_provider'
+    )
+    expect(
+      exitPathOf({
+        choice: { ...qwen, source: 'scan' },
+        jobs: [],
+        clouds: ['chatgpt'],
+      })
+    ).toBe('imported')
+  })
+
+  it('lands on the first connected provider that has a model', () => {
+    const providers = [
+      { provider: 'chatgpt', models: [] },
+      { provider: 'gemini', models: [{ id: 'gemini-2.5-flash' }] },
+    ] as unknown as ModelProvider[]
+
+    expect(cloudExitOf(['chatgpt', 'gemini'], providers)).toEqual({
+      provider: 'gemini',
+      modelId: 'gemini-2.5-flash',
+    })
+    expect(cloudExitOf(['chatgpt'], providers)).toEqual({
+      provider: 'chatgpt',
+      modelId: null,
+    })
+    expect(cloudExitOf([], providers)).toBeNull()
   })
 })

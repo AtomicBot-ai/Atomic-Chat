@@ -132,6 +132,23 @@ describe('onboarding store', () => {
     })
   })
 
+  it('keeps each cloud provider connected in the run once, in order', () => {
+    const store = useOnboardingStore.getState()
+    store.begin('full', 'cloud')
+    store.connectCloud('openrouter')
+    store.connectCloud('chatgpt')
+    store.connectCloud('openrouter')
+
+    expect(useOnboardingStore.getState().clouds).toEqual([
+      'openrouter',
+      'chatgpt',
+    ])
+    expect(saved().clouds).toEqual(['openrouter', 'chatgpt'])
+
+    store.reset()
+    expect(useOnboardingStore.getState().clouds).toEqual([])
+  })
+
   it('records each permission answer', () => {
     const store = useOnboardingStore.getState()
     store.setPermission('notifications', 'granted')

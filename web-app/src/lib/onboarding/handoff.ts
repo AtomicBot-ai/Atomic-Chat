@@ -30,19 +30,44 @@ export const HANDOFF_ROUTES: Record<OnboardingDestination, string> = {
   agents: route.api.index,
 }
 
-/** How a run ended, in `onboarding_completed.exit_path`'s vocabulary. */
+/**
+ * How a run ended, in `onboarding_completed.exit_path`'s vocabulary. A local
+ * model outranks a cloud provider connected on the way: the run was set up
+ * for it, and the provider stays connected either way.
+ */
 export function exitPathOf({
   choice,
   jobs,
+  clouds = [],
 }: {
   choice: OnboardingChoice | null
   jobs: readonly OnboardingJob[]
+  /** Providers connected on the cloud step (`OnboardingState.clouds`). */
+  clouds?: readonly string[]
 }): OnboardingExitPath {
-  if (!choice) return 'dismissed'
-  if (choice.source !== 'download') return 'imported'
-  return jobs.some((job) => job.kind === 'chat')
-    ? 'download_started'
-    : 'dismissed'
+  if (choice && choice.source !== 'download') return 'imported'
+  if (choice && jobs.some((job) => job.kind === 'chat')) {
+    return 'download_started'
+  }
+  return clouds.length > 0 ? 'cloud_provider' : 'dismissed'
+}
+
+/**
+ * The connected cloud provider a run without a local model opens the chat
+ * on: the first one connected that has a model to answer with. Its first
+ * model is selected, as the old setup screen did when a key was saved.
+ */
+export function cloudExitOf(
+  clouds: readonly string[],
+  providers: readonly ModelProvider[]
+): { provider: string; modelId: string | null } | null {
+  if (clouds.length === 0) return null
+  for (const name of clouds) {
+    const modelId = providers.find((provider) => provider.provider === name)
+      ?.models?.[0]?.id
+    if (modelId) return { provider: name, modelId }
+  }
+  return { provider: clouds[0], modelId: null }
 }
 
 /**
@@ -69,7 +94,23 @@ export function handOffOnboarding({
 }): void {
   const store = useOnboardingStore.getState()
   const models = useModelProvider.getState()
-  const ready = findChatModel(store.choice, models.providers)
+  const exitPath = exitPathOf({
+    choice: store.choice,
+    jobs: store.jobs,
+    clouds: store.clouds,
+  })
+  const cloud =
+    exitPath === 'cloud_provider'
+      ? cloudExitOf(store.clouds, models.providers)
+      : null
+  const local = findChatModel(store.choice, models.providers)
+  // Select up front, so the picker's "first local model" fallback cannot
+  // override the provider the user just connected.
+  const ready =
+    local ??
+    (cloud?.modelId
+      ? { provider: cloud.provider, modelId: cloud.modelId }
+      : null)
 
   if (ready) {
     models.selectModelProvider(ready.provider, ready.modelId)
@@ -89,7 +130,6 @@ export function handOffOnboarding({
     localStorage.getItem(localStorageKey.setupCompleted) !== 'true'
   if (firstExit) {
     const providers = models.providers
-    const exitPath = exitPathOf({ choice: store.choice, jobs: store.jobs })
     // Legacy predicate, kept verbatim so `had_any_model` stays comparable
     // with its own history: "the picker had something to show".
     const hadAnyModel = providers.some(
@@ -102,6 +142,9 @@ export function handOffOnboarding({
       exitPath,
       hadAnyModel,
       providerState: describeProviderState(providers),
+      // Without it a ChatGPT subscription and a pasted API key are the same
+      // exit.
+      exitProvider: cloud?.provider ?? null,
       stepReached,
       startedAtMs: store.startedAt,
       variant: store.variant,

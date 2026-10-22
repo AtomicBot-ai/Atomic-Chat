@@ -1,0 +1,79 @@
+/* The permissions step (`steps/PermissionsStep`), from the prototype's
+ * `.ob-permission*` rules on the shell's theme variables (`onboarding.css`).
+ * This file loads ahead of `onboarding.css`, so the rules that refine one of
+ * its classes are scoped to the row to win on specificity. The explanation
+ * and confirmation dialogs are the app's own and follow its theme. */
+@layer components {
+  .ob-permissions {
+    overflow: hidden;
+    border: 1px solid var(--ob-surface-line);
+    border-radius: 14px;
+  }
+  .ob-permission {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 23px 20px;
+    background: var(--ob-surface);
+  }
+  .ob-permission + .ob-permission {
+    border-top: 1px solid var(--ob-surface-line);
+  }
+  /* The app sizes every lucide icon at 14px in the base layer. */
+  .ob-permission > svg {
+    flex-shrink: 0;
+    width: 23px;
+    height: 23px;
+    color: var(--ob-icon-text);
+  }
+  .ob-permission-text {
+    flex: 1;
+    min-width: 0;
+  }
+  .ob-permission-text p {
+    max-width: 340px;
+    margin-top: 5px;
+    color: var(--ob-subtle);
+    font-size: calc(var(--font-size-base) * 0.75);
+  }
+  .ob-permission-action {
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    align-items: flex-end;
+    gap: 2px;
+    min-width: 82px;
+  }
+  .ob-permission-action .ob-granted {
+    min-height: 0;
+    padding: 8px 10px;
+    background: transparent;
+    color: var(--ob-tag-text);
+  }
+  .ob-permission-action .ob-text {
+    padding: 4px 0;
+  }
+  .ob-permission-denied {
+    padding: 8px 0;
+    color: var(--ob-warn);
+    font-size: calc(var(--font-size-base) * 0.8125);
+    font-weight: 500;
+  }
+  .ob-permission-note {
+    max-width: 120px;
+    color: var(--ob-subtle);
+    font-size: calc(var(--font-size-base) * 0.6875);
+    text-align: right;
+  }
+}
+
+@media (max-width: 720px) {
+  .ob-permission {
+    flex-wrap: wrap;
+    gap: 13px;
+    padding: 19px 16px;
+  }
+  .ob-permission-text {
+    min-width: 165px;
+  }
+}

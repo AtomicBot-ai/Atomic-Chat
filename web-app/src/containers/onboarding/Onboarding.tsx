@@ -39,10 +39,20 @@ import type { StepProps } from './steps/types'
 import { useStepContext } from './useStepContext'
 import './onboarding.css'
 
+/**
+ * What the shell hands a step screen beyond `StepProps`: a step can hold
+ * "Skip setup" for a word of its own first, as the permissions step does
+ * before leaving with nothing allowed. The guard returns true when it takes
+ * over; the step then hands off itself if the user goes on.
+ */
+type StepScreenProps = StepProps & {
+  guardSkipSetup: (guard: (() => boolean) | null) => void
+}
+
 /** The screen each step draws. */
 const STEP_COMPONENTS: Record<
   OnboardingStepId,
-  (props: StepProps) => React.ReactNode
+  (props: StepScreenProps) => React.ReactNode
 > = {
   welcome: WelcomeStep,
   backend: BackendStep,
@@ -177,6 +187,11 @@ export function Onboarding() {
     [leaveStep, step]
   )
 
+  const skipGuardRef = useRef<(() => boolean) | null>(null)
+  const guardSkipSetup = useCallback((guard: (() => boolean) | null) => {
+    skipGuardRef.current = guard
+  }, [])
+
   if (!step) return null
   const StepScreen = STEP_COMPONENTS[step]
   const back = prevStep(steps, step)
@@ -205,7 +220,12 @@ export function Onboarding() {
               })}
             </div>
           )}
-          <StepScreen next={next} goTo={goTo} handOff={handOff} />
+          <StepScreen
+            next={next}
+            goTo={goTo}
+            handOff={handOff}
+            guardSkipSetup={guardSkipSetup}
+          />
         </div>
         <footer className="ob-footer">
           <div className="ob-footer-row">
@@ -226,7 +246,10 @@ export function Onboarding() {
                 type="button"
                 className="ob-text"
                 data-testid="onboarding-skip"
-                onClick={() => handOff('chat', 'skip_setup')}
+                onClick={() => {
+                  if (skipGuardRef.current?.()) return
+                  handOff('chat', 'skip_setup')
+                }}
               >
                 {t('onboarding:skipSetup')}
                 <ArrowRight size={15} aria-hidden="true" />

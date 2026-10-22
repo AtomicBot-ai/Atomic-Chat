@@ -1,0 +1,174 @@
+/* The cloud step (`steps/CloudStep`), from the prototype's `.ob-cloud-*` and
+ * `.ob-key-*` rules on the shell's theme variables (`onboarding.css`). The
+ * two variables below are the connected card's, which the shell has no
+ * counterpart for. */
+.ob-shell {
+  --ob-cloud-connected: var(--secondary);
+  --ob-cloud-connected-line: var(--border);
+}
+.dark .ob-shell {
+  --ob-cloud-connected: #232626;
+  --ob-cloud-connected-line: #3d4342;
+}
+
+@layer components {
+  .ob-cloud .ob-lead {
+    margin-bottom: 20px;
+  }
+
+  /* The grid scrolls on its own and fades out under the key form, which
+     overlaps its last row. */
+  .ob-cloud-options {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-auto-rows: minmax(78px, auto);
+    gap: 8px;
+    max-height: calc(min(24dvh, 210px) + 32px);
+    padding: 4px 4px 24px;
+    overflow-y: auto;
+    mask-image: linear-gradient(
+      to bottom,
+      #000 calc(100% - 80px),
+      rgb(0 0 0 / 25%) calc(100% - 20px),
+      rgb(0 0 0 / 25%)
+    );
+  }
+  .ob-cloud-options button {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid var(--ob-surface-line);
+    border-radius: 10px;
+    background: var(--ob-surface);
+    color: var(--ob-text);
+    font-size: calc(var(--font-size-base) * 0.75);
+  }
+  .ob-cloud-options button:hover:not(:disabled) {
+    border-color: var(--ob-surface-hover-line);
+  }
+  .ob-cloud-options button.selected {
+    border-color: var(--ob-selected-line);
+    background: var(--ob-selected);
+  }
+  .ob-cloud-options button.connected {
+    border-color: var(--ob-cloud-connected-line);
+    background: var(--ob-cloud-connected);
+    color: var(--ob-subtle);
+    cursor: default;
+    opacity: 1;
+  }
+  .ob-cloud-options button.connected > :first-child {
+    filter: grayscale(1);
+    opacity: 0.45;
+  }
+  .ob-cloud-options button > svg {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    color: var(--ob-tag-text);
+  }
+  .ob-provider-name {
+    display: block;
+    width: 100%;
+    overflow: hidden;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ob-provider-status {
+    color: var(--ob-warn);
+    font-size: calc(var(--font-size-base) * 0.625);
+  }
+
+  .ob-cloud-connect {
+    position: relative;
+    z-index: 1;
+    margin-top: -20px;
+    padding: 16px 18px 20px;
+    border: 1px solid var(--ob-surface-line);
+    border-radius: 13px;
+    background: var(--ob-surface);
+  }
+  .ob-cloud-heading {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .ob-cloud-detail {
+    margin-top: 10px;
+    color: var(--ob-muted);
+    font-size: calc(var(--font-size-base) * 0.8125);
+  }
+  .ob-cloud-done {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--ob-tag-text);
+  }
+
+  .ob-key-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+    margin-top: 14px;
+  }
+  .ob-key-field {
+    display: grid;
+    flex: 1;
+    gap: 7px;
+    min-width: 0;
+    color: var(--ob-muted);
+    font-size: calc(var(--font-size-base) * 0.75);
+  }
+  .ob-key-field input {
+    width: 100%;
+    height: 42px;
+    padding: 0 12px;
+    border: 1px solid var(--ob-surface-line);
+    border-radius: 8px;
+    background: var(--ob-bg);
+    color: var(--ob-text);
+    font-size: calc(var(--font-size-base) * 0.8125);
+  }
+  .ob-key-field input[aria-invalid='true'] {
+    border-color: var(--destructive);
+  }
+  .ob-key-field input:disabled {
+    opacity: 0.6;
+  }
+  .ob-key-row > button {
+    min-width: 108px;
+    height: 42px;
+  }
+  .ob-key-error {
+    margin-top: 10px;
+    color: var(--destructive);
+    font-size: calc(var(--font-size-base) * 0.75);
+    overflow-wrap: anywhere;
+  }
+  .ob-key-note {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 12px;
+    color: var(--ob-subtle);
+    font-size: calc(var(--font-size-base) * 0.6875);
+  }
+  .ob-key-note > svg {
+    flex-shrink: 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .ob-cloud-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ob-key-row {
+    flex-wrap: wrap;
+  }
+}
