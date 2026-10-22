@@ -26,6 +26,7 @@ import { useArtifactStore } from '@/stores/artifact-store'
 import { useWorkspacePreviewStore } from '@/stores/workspace-preview-store'
 import { useHeaderOverlay } from '@/stores/header-overlay-store'
 import { useRunSettingsPanel } from '@/stores/run-settings-panel-store'
+import { isPlatformAndroid, isPlatformIOS } from '@/lib/platform/utils'
 import type { AgentWorkspace } from '@/hooks/useAgentMode'
 
 type AgentWorkspaceLayoutProps = {
@@ -49,6 +50,13 @@ type AgentWorkspaceLayoutProps = {
 // agent engine; only small screens fall back to a plain main.
 function shouldUseAgentWorkspaceLayout(isDesktop: boolean): boolean {
   return isDesktop
+}
+
+// A desktop window narrower than the workspace layout — a chat opened in a
+// new window starts at 1000px — still offers run settings, over the chat
+// (F-03). Phones keep the plain layout they had.
+function offersRunSettingsWhenNarrow(): boolean {
+  return !isPlatformIOS() && !isPlatformAndroid()
 }
 
 function ResizeHandle({
@@ -206,11 +214,17 @@ export function AgentWorkspaceLayout({
     shouldUseAgentWorkspaceLayout(isDesktop) &&
     rightPanel === null &&
     !hasPreview
+  const narrowSettingsButtonOverHeader =
+    !shouldUseAgentWorkspaceLayout(isDesktop) &&
+    offersRunSettingsWhenNarrow() &&
+    !settingsOpen
   const cornerButtonCount = cornerButtonsOverHeader
     ? filesAvailable
       ? 2
       : 1
-    : 0
+    : narrowSettingsButtonOverHeader
+      ? 1
+      : 0
   const setRightOverlayButtons = useHeaderOverlay(
     (state) => state.setRightOverlayButtons
   )
@@ -252,10 +266,31 @@ export function AgentWorkspaceLayout({
   }, [rightPanel, hasPreview, isDesktop])
 
   if (!shouldUseAgentWorkspaceLayout(isDesktop)) {
+    const narrowSettings = offersRunSettingsWhenNarrow()
     return (
-      <main className="flex h-full w-full min-w-0 overflow-hidden">
+      <main className="relative flex h-full w-full min-w-0 overflow-hidden">
         {children}
         <ArtifactPanel />
+        {narrowSettings && !settingsOpen && (
+          <div className="absolute top-3.5 right-3 z-30 flex items-center gap-2">
+            <button
+              type="button"
+              className={CORNER_BUTTON_CLASS}
+              aria-label={t('chat:runSettings.open')}
+              title={t('chat:runSettings.open')}
+              onClick={openSettings}
+            >
+              <SlidersHorizontal className="size-4" />
+            </button>
+          </div>
+        )}
+        {narrowSettings && settingsOpen && (
+          // No room for a third column here: the panel lies over the chat, on
+          // the page background a column would give it.
+          <div className="absolute inset-y-0 right-0 z-40 w-full max-w-sm bg-neutral-50 pl-2 dark:bg-background">
+            <RunSettingsPanel onClose={closeSettings} />
+          </div>
+        )}
       </main>
     )
   }

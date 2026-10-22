@@ -248,6 +248,41 @@ describe('AgentWorkspaceLayout', () => {
     expect(screen.getByText('Artifact panel')).toBeInTheDocument()
   })
 
+  // F-03: a chat opened in a new window starts at 1000px, below the workspace
+  // layout, and its run settings could not be reached at all.
+  it('offers run settings in a window narrower than the workspace layout', async () => {
+    media.desktop = false
+    render(
+      <AgentWorkspaceLayout
+        threadId="detached"
+        workspace={agentWorkspace}
+        onAddExternal={onAddExternal}
+        refreshKey={0}
+      >
+        <div>Detached chat</div>
+      </AgentWorkspaceLayout>
+    )
+    await waitFor(() => {
+      expect(useHeaderOverlay.getState().rightOverlayButtons).toBe(1)
+    })
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'chat:runSettings.open' })
+    )
+
+    expect(await screen.findByText('Run settings')).toBeInTheDocument()
+    expect(useRunSettingsPanel.getState().isOpen).toBe(true)
+    expect(screen.getByText('Detached chat')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close run settings' }))
+    await waitFor(() => {
+      expect(screen.queryByText('Run settings')).not.toBeInTheDocument()
+    })
+    expect(
+      screen.getByRole('button', { name: 'chat:runSettings.open' })
+    ).toBeInTheDocument()
+  })
+
   it('projects an opened HTML artifact into the shared preview tabs', async () => {
     render(
       <AgentWorkspaceLayout

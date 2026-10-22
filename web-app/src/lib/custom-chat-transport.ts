@@ -104,6 +104,7 @@ import {
   toOpenAiTools,
 } from '@/lib/prompt-size'
 import { OUT_OF_CONTEXT_SIZE } from '@/utils/error'
+import { withoutEmptyFailedTurns } from '@/lib/turn-error'
 import { canGrowContext } from '@/lib/managed-engine/chat'
 import { isManagedProvider } from '@/lib/managed-engines'
 import { summarizeToolCost } from '@/lib/tool-cost'
@@ -1108,7 +1109,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // tool_use / tool_result pairing that the Claude API requires.
     // See: https://platform.claude.com/docs/en/agents-and-tools/tool-use/implement-tool-use#parallel-tool-use
     // Mixed-engine hygiene: agent-run tool parts never reach a chat request.
-    const sanitizedMessages = stripAgentRunToolParts(options.messages)
+    // A failed turn that produced nothing is kept in the thread only to show
+    // why it failed; it is no reply for the model to see.
+    const sanitizedMessages = stripAgentRunToolParts(
+      withoutEmptyFailedTurns(options.messages)
+    )
     const messagesToConvert =
       effectiveProviderName === 'anthropic'
         ? splitAnthropicSerialToolUse(sanitizedMessages)
