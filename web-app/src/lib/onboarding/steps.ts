@@ -5,6 +5,8 @@
  * entry in `ONBOARDING_STEPS`, not a rewrite of the screens.
  */
 
+import { readOnboardingCohort } from './experiment'
+
 export type OnboardingStepId =
   | 'welcome'
   | 'backend'
@@ -122,7 +124,7 @@ let warnedForcedVariant = false
  * is not a variant is ignored, with a warning so a typo is not mistaken for
  * the full flow.
  */
-function forcedVariant(): OnboardingVariant | null {
+export function forcedOnboardingVariant(): OnboardingVariant | null {
   if (typeof FORCE_ONBOARDING_VARIANT === 'undefined') return null
   const raw = FORCE_ONBOARDING_VARIANT
   if (isOnboardingVariant(raw)) return raw
@@ -136,12 +138,13 @@ function forcedVariant(): OnboardingVariant | null {
 }
 
 /**
- * The variant a new run starts with. A run already under way keeps the one
- * it began with (`stores/onboarding-store`). The onboarding experiment
- * replaces the `full` default with the install's cohort.
+ * The variant a new run starts with: the one a dev build pins, else the
+ * install's cohort in the onboarding experiment (`./experiment`), else the
+ * full flow. A run already under way keeps the one it began with
+ * (`stores/onboarding-store`).
  */
 export function getOnboardingVariant(): OnboardingVariant {
-  return forcedVariant() ?? 'full'
+  return forcedOnboardingVariant() ?? readOnboardingCohort()?.variant ?? 'full'
 }
 
 /** The steps this machine shows, in order. Empty means no onboarding at all. */

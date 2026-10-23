@@ -18,7 +18,8 @@ import { runMacosLlamacppDefaultMigration } from './lib/macosLlamacppDefaultMigr
 import { runTurboquantDefaultMigration } from './lib/turboquantDefaultMigration'
 import { initSentryFrontend } from './lib/sentry'
 import { resetForcedOnboardingRun } from './lib/onboarding'
-import { rememberFirstLaunch } from './lib/onboarding-telemetry'
+import { isFirstLaunch, rememberFirstLaunch } from './lib/onboarding-telemetry'
+import { assignOnboardingCohort } from './lib/onboarding/experiment'
 import { useGeneralSetting } from './hooks/useGeneralSetting'
 import { useModelProvider } from './hooks/useModelProvider'
 import { isLocalProvider } from '@/utils/registerRemoteProvider'
@@ -172,6 +173,10 @@ runTurboquantDefaultMigration()
 // render can already mark setup done (a variant without a setup screen) and
 // What's New can mark the version seen before that event is sent.
 rememberFirstLaunch()
+
+// A new install joins the onboarding experiment here, before the home route
+// decides whether (and which) setup screen to show.
+assignOnboardingCohort({ firstLaunch: isFirstLaunch() })
 
 // Dev-only (`make dev-onboarding`): drop the persisted onboarding completion
 // flag so the forced run replays the whole flow — picker, 15s auto-exit, chat

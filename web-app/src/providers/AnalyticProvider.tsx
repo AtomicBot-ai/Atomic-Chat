@@ -23,6 +23,7 @@ import {
 } from '@/lib/onboarding-telemetry'
 import { flushTelemetryQueue } from '@/lib/telemetry-queue'
 import { restoreInstallDistinctId } from '@/lib/telemetry-identity'
+import { registerOnboardingCohort } from '@/lib/onboarding/experiment'
 import {
   setSentryConsent,
   setSentryTags,
@@ -319,6 +320,9 @@ export function AnalyticProvider() {
         platform: osPlatform,
         telemetry_schema: TELEMETRY_SCHEMA,
       })
+          // The onboarding experiment's cohort, on the person and on every
+          // event from here on, the replayed startup events included.
+          registerOnboardingCohort(posthog)
 
           // ATO-111: register hardware/OS/backend super-properties BEFORE
           // app_opened so they attach to it and every subsequent event. Bounded

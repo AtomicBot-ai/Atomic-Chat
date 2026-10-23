@@ -7,7 +7,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { refreshAppManagedProviders } from '@/lib/provider-visibility'
 import {
-  BACKEND_PRESERVE_KEYS,
+  FACTORY_RESET_PRESERVE_KEYS,
   localStorageKey,
 } from '@/constants/localStorage'
 
@@ -274,7 +274,7 @@ export function DataProvider() {
 
   useEffect(() => {
     if (localStorage.getItem(localStorageKey.factoryResetPending) === 'true') {
-      const preserved = BACKEND_PRESERVE_KEYS.map(
+      const preserved = FACTORY_RESET_PRESERVE_KEYS.map(
         (key) => [key, localStorage.getItem(key)] as const
       )
 
