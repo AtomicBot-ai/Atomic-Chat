@@ -64,7 +64,7 @@
     "autoApproveTools": "Auto-approve tool calls",
     "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation.",
     "desktopNotifications": "Notifikasi desktop",
-    "desktopNotificationsDesc": "Kirim notifikasi sistem saat balasan, gambar, video, atau unduhan sudah siap dan jendela tidak aktif.",
+    "desktopNotificationsDesc": "Kirim notifikasi sistem saat balasan, gambar, video, atau unduhan sudah siap.",
     "legacyChatEngine": "Gunakan mesin chat lama",
     "legacyChatEngineDesc": "Paksa semua pesan melalui pipeline chat sebelumnya dan nonaktifkan mode agen sepenuhnya. Jalan keluar sementara."
   },

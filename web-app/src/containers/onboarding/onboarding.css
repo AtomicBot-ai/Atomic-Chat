@@ -1,0 +1,673 @@
+/* Tailwind's layer order, stated first: this file can load before index.css,
+ * and a layer it used first would otherwise come before `base`. */
+@layer theme, base, components, utilities;
+
+/* The first-run flow, ported from the approved prototype
+ * (`preview/onboarding/onboarding.css`). The prototype is dark only; here the
+ * dark values are its palette and the light ones are the app's theme tokens
+ * with the same green, as `containers/server/ServerPage.css` does. Type sizes
+ * scale with the interface font size (`--font-size-base`). Element rules sit in
+ * the base layer and the `ob-*` classes in the components layer, so a Tailwind
+ * utility on an element still wins. */
+.ob-shell,
+.ob-handoff {
+  --ob-bg: var(--background);
+  --ob-text: var(--foreground);
+  --ob-muted: var(--muted-foreground);
+  --ob-subtle: color-mix(
+    in oklab,
+    var(--muted-foreground) 80%,
+    var(--background)
+  );
+  --ob-eyebrow: #28786c;
+  --ob-focus: #28786c;
+  --ob-line: var(--border);
+  --ob-primary: #cdeee6;
+  --ob-primary-hover: #b7e4d9;
+  --ob-primary-line: #9fd3c6;
+  --ob-primary-text: #16362c;
+  --ob-secondary: var(--secondary);
+  --ob-secondary-line: var(--border);
+  --ob-secondary-text: var(--foreground);
+  --ob-secondary-hover: color-mix(in oklab, #28786c 10%, var(--secondary));
+  --ob-secondary-hover-line: #28786c80;
+  --ob-surface: color-mix(in oklab, #28786c 3%, var(--card));
+  --ob-surface-line: color-mix(in oklab, #28786c 18%, var(--border));
+  --ob-surface-hover-line: #28786c80;
+  --ob-selected: color-mix(in oklab, #28786c 9%, var(--card));
+  --ob-selected-line: #28786c;
+  --ob-radio-on: #28786c;
+  --ob-icon-line: var(--border);
+  --ob-icon-bg: color-mix(in oklab, #28786c 4%, var(--card));
+  --ob-icon-text: #2f6f61;
+  --ob-tag: #28786c17;
+  --ob-tag-text: #1d5e54;
+  --ob-download: color-mix(in oklab, #28786c 7%, var(--card));
+  --ob-download-line: #28786c40;
+  --ob-download-text: var(--muted-foreground);
+  --ob-download-strong: #1d5e54;
+  --ob-progress-track: #28786c24;
+  --ob-progress: #28786c;
+  --ob-warn-line: #c29764;
+  --ob-warn: #c98f3d;
+  --ob-logo-filter: none;
+  --ob-logo-glow: drop-shadow(0 0 28px #28786c40);
+  /* The model step's choice bar stands out by inverting the page. */
+  --ob-bar: #17211c;
+  --ob-bar-line: #17211c;
+  --ob-bar-text: #f1f4f2;
+  --ob-bar-muted: #aeb9b2;
+  --ob-bar-action: #cdeee6;
+  --ob-bar-action-hover: #b7e4d9;
+  --ob-bar-action-text: #16362c;
+  --ob-bar-shadow:
+    0 -10px 28px color-mix(in oklab, var(--background) 85%, transparent),
+    0 6px 20px #0002;
+}
+.dark .ob-shell,
+.dark .ob-handoff {
+  --ob-bg: #101211;
+  --ob-text: #f1f4f2;
+  --ob-muted: #aeb9b2;
+  --ob-subtle: #8f9f95;
+  --ob-eyebrow: #a5cabb;
+  --ob-focus: #bee8df;
+  --ob-line: #ffffff10;
+  --ob-primary: #bee8df;
+  --ob-primary-hover: #d5f3eb;
+  --ob-primary-line: #bee8df;
+  --ob-primary-text: #16362c;
+  --ob-secondary: #232a26;
+  --ob-secondary-line: #404a43;
+  --ob-secondary-text: #e0e9e3;
+  --ob-secondary-hover: #35463e;
+  --ob-secondary-hover-line: #7aa08d;
+  --ob-surface: #191e1a;
+  --ob-surface-line: #354138;
+  --ob-surface-hover-line: #7a9986;
+  --ob-selected: #22362a;
+  --ob-selected-line: #9ac5ab;
+  --ob-radio-on: #bee8df;
+  --ob-icon-line: #ffffff17;
+  --ob-icon-bg: #ffffff06;
+  --ob-icon-text: #a5c5b0;
+  --ob-tag: #263d30;
+  --ob-tag-text: #bbdec6;
+  --ob-download: #1d2c25;
+  --ob-download-line: #3f574b;
+  --ob-download-text: #a8bdb0;
+  --ob-download-strong: #bbdfcc;
+  --ob-progress-track: #395244;
+  --ob-progress: #b6e7d0;
+  --ob-warn-line: #c29764;
+  --ob-warn: #e4b777;
+  --ob-logo-filter: brightness(0) invert(1);
+  --ob-logo-glow: drop-shadow(0 0 40px #b4f3d680);
+  --ob-bar: #f1f4f2;
+  --ob-bar-line: #ffffff;
+  --ob-bar-text: #17211c;
+  --ob-bar-muted: #526159;
+  --ob-bar-action: #203e34;
+  --ob-bar-action-hover: #2e5145;
+  --ob-bar-action-text: #ffffff;
+  --ob-bar-shadow: 0 -10px 28px #101211aa, 0 6px 20px #0003;
+}
+
+/* Over the whole window: the app shell keeps its title-bar offset, and the
+ * title bar is not drawn on this route. */
+.ob-shell {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  justify-content: center;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--ob-bg);
+  color: var(--ob-text);
+  font-family: var(--font-sans);
+  font-size: calc(var(--font-size-base) * 0.875);
+}
+
+.ob-shell-titlebar {
+  padding-top: var(--window-titlebar-height, 42px);
+}
+.ob-titlebar {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 40;
+  height: var(--window-titlebar-height, 42px);
+}
+
+@layer base {
+  .ob-shell *,
+  .ob-handoff * {
+    box-sizing: border-box;
+  }
+  .ob-shell button,
+  .ob-handoff button {
+    cursor: pointer;
+  }
+  .ob-shell button:disabled {
+    cursor: default;
+    opacity: 0.5;
+  }
+  .ob-shell :is(button, a, input, select, summary):focus-visible,
+  .ob-handoff button:focus-visible {
+    outline: 2px solid var(--ob-focus);
+    outline-offset: 4px;
+  }
+  .ob-shell h1:focus {
+    outline: none;
+  }
+  .ob-shell h1 {
+    margin: 0 0 18px;
+    font-size: clamp(
+      calc(var(--font-size-base) * 1.75),
+      3.25vw,
+      calc(var(--font-size-base) * 2.625)
+    );
+    font-weight: 550;
+    line-height: 1.14;
+    letter-spacing: -1.3px;
+    text-wrap: balance;
+  }
+  .ob-shell h2 {
+    font-size: calc(var(--font-size-base) * 1.1875);
+    font-weight: 550;
+    letter-spacing: -0.3px;
+  }
+  .ob-shell h3 {
+    font-size: calc(var(--font-size-base) * 0.9375);
+    font-weight: 550;
+  }
+  .ob-shell p {
+    line-height: 1.6;
+  }
+}
+
+@layer components {
+  .ob-main {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 900px;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    padding: 24px 32px 16px;
+  }
+  .ob-content {
+    flex: 1;
+    min-height: 0;
+    padding: 24px 8px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    animation: ob-enter 0.25s ease-out;
+  }
+  .ob-eyebrow {
+    margin: 0 0 14px;
+    color: var(--ob-eyebrow);
+    font-size: calc(var(--font-size-base) * 0.625);
+    letter-spacing: 2.3px;
+    text-transform: uppercase;
+  }
+  .ob-lead {
+    max-width: 540px;
+    margin-bottom: 30px;
+    color: var(--ob-muted);
+    font-size: calc(var(--font-size-base) * 0.9375);
+    line-height: 1.7;
+  }
+  .ob-note {
+    margin: 18px 0;
+    color: var(--ob-subtle);
+    font-size: calc(var(--font-size-base) * 0.75);
+    line-height: 1.6;
+  }
+
+  .ob-primary,
+  .ob-secondary,
+  .ob-granted {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    min-height: 42px;
+    padding: 10px 18px;
+    border-radius: 25px;
+    font-size: calc(var(--font-size-base) * 0.8125);
+    font-weight: 500;
+    transition:
+      background 0.15s,
+      transform 0.15s;
+  }
+  .ob-primary {
+    border: 1px solid var(--ob-primary-line);
+    background: var(--ob-primary);
+    color: var(--ob-primary-text);
+  }
+  .ob-primary:hover:not(:disabled) {
+    background: var(--ob-primary-hover);
+    transform: translateY(-1px);
+  }
+  .ob-secondary {
+    border: 1px solid var(--ob-secondary-line);
+    background: var(--ob-secondary);
+    color: var(--ob-secondary-text);
+  }
+  .ob-secondary:hover:not(:disabled),
+  .ob-secondary[aria-pressed='true'] {
+    border-color: var(--ob-secondary-hover-line);
+    background: var(--ob-secondary-hover);
+  }
+  .ob-text {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 0;
+    border: 0;
+    background: transparent;
+    color: var(--ob-subtle);
+    font-size: calc(var(--font-size-base) * 0.75);
+  }
+  .ob-text:hover {
+    color: var(--ob-text);
+  }
+  .ob-icon {
+    display: grid;
+    place-items: center;
+    min-width: 32px;
+    min-height: 32px;
+    border: 1px solid var(--ob-icon-line);
+    border-radius: 50%;
+    background: transparent;
+    color: inherit;
+    font-size: calc(var(--font-size-base) * 0.6875);
+  }
+  .ob-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 16px;
+    margin-top: 28px;
+  }
+
+  .ob-footer {
+    flex: 0 0 auto;
+    width: 100%;
+    padding-top: 14px;
+    border-top: 1px solid var(--ob-line);
+  }
+  .ob-footer-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    width: 100%;
+  }
+  .ob-footer-row > :first-child,
+  .ob-footer-row > :last-child {
+    min-width: 90px;
+  }
+  .ob-footer-row > :last-child {
+    justify-content: flex-end;
+  }
+
+  .ob-welcome {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 34px 8px 58px;
+  }
+  .ob-welcome > * {
+    flex-shrink: 0;
+  }
+  .ob-welcome h1 {
+    font-size: clamp(
+      calc(var(--font-size-base) * 2.25),
+      4.8vw,
+      calc(var(--font-size-base) * 3.625)
+    );
+    letter-spacing: -2px;
+  }
+  .ob-welcome .ob-lead {
+    font-size: calc(var(--font-size-base) * 1.0625);
+  }
+  .ob-welcome > .ob-primary {
+    margin-top: 32px;
+  }
+  .ob-mark {
+    display: grid;
+    place-items: center;
+    width: 100px;
+    height: 100px;
+    margin-bottom: 34px;
+  }
+  .ob-mark > img {
+    width: 74px;
+    height: 74px;
+    filter: var(--ob-logo-filter) var(--ob-logo-glow);
+  }
+
+  .ob-download {
+    flex-shrink: 0;
+    width: 100%;
+    margin-bottom: 8px;
+    overflow: hidden;
+    border: 1px solid var(--ob-download-line);
+    border-radius: 12px;
+    background: var(--ob-download);
+  }
+  .ob-download-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+  }
+  .ob-download-row > div {
+    flex: 1;
+    min-width: 0;
+  }
+  .ob-download strong {
+    display: block;
+    overflow: hidden;
+    font-size: calc(var(--font-size-base) * 0.75);
+    font-weight: 550;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ob-download-row > div > span {
+    display: block;
+    margin-top: 2px;
+    color: var(--ob-download-text);
+    font-size: calc(var(--font-size-base) * 0.6875);
+  }
+  .ob-download b {
+    color: var(--ob-download-strong);
+    font-size: calc(var(--font-size-base) * 0.75);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+  .ob-download-icon {
+    display: inline-flex;
+    color: var(--ob-download-strong);
+  }
+  .ob-progress {
+    height: 3px;
+    background: var(--ob-progress-track);
+  }
+  .ob-progress i {
+    display: block;
+    height: 100%;
+    background: var(--ob-progress);
+    transition: width 0.6s linear;
+  }
+  .ob-download.has-error {
+    border-color: var(--ob-warn-line);
+  }
+  .ob-download.has-error .ob-progress i {
+    background: var(--ob-warn);
+  }
+
+  .ob-device {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 25px 0;
+    padding: 15px;
+    border: 1px solid var(--ob-surface-line);
+    border-radius: 10px;
+    background: var(--ob-surface);
+    color: var(--ob-icon-text);
+  }
+  .ob-device > div {
+    flex: 1;
+    min-width: 0;
+  }
+  .ob-device strong {
+    display: block;
+    color: var(--ob-text);
+    font-size: calc(var(--font-size-base) * 0.75);
+    font-weight: 500;
+  }
+  .ob-device > div span {
+    color: var(--ob-subtle);
+    font-size: calc(var(--font-size-base) * 0.6875);
+  }
+
+  .ob-model-list {
+    display: grid;
+    gap: 10px;
+  }
+  .ob-model {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    padding: 17px;
+    border: 1px solid var(--ob-surface-line);
+    border-radius: 12px;
+    background: var(--ob-surface);
+    color: var(--ob-text);
+    text-align: left;
+  }
+  .ob-model:hover {
+    border-color: var(--ob-surface-hover-line);
+  }
+  .ob-model[aria-checked='true'] {
+    border-color: var(--ob-selected-line);
+    background: var(--ob-selected);
+  }
+  .ob-model-icon {
+    display: grid;
+    flex-shrink: 0;
+    place-items: center;
+    width: 39px;
+    height: 39px;
+    border: 1px solid var(--ob-icon-line);
+    border-radius: 10px;
+    background: var(--ob-icon-bg);
+    color: var(--ob-icon-text);
+  }
+  .ob-model-icon .ob-model-logo {
+    width: 27px;
+    height: 27px;
+  }
+  .ob-model-text {
+    flex: 1;
+    min-width: 0;
+  }
+  .ob-model strong {
+    display: block;
+    font-size: calc(var(--font-size-base) * 0.875);
+    font-weight: 550;
+    overflow-wrap: anywhere;
+  }
+  .ob-model small {
+    display: block;
+    margin-top: 5px;
+    color: var(--ob-subtle);
+    font-size: calc(var(--font-size-base) * 0.6875);
+  }
+  .ob-model small.ob-model-tagline {
+    color: var(--ob-muted);
+    line-height: 1.4;
+  }
+  .ob-model small.ob-model-meta {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    line-height: 1.4;
+  }
+  .ob-model small.ob-warn-text {
+    color: var(--ob-warn);
+  }
+  .ob-hf-mark {
+    display: inline-block;
+    width: 15px;
+    height: 15px;
+    margin-left: 7px;
+    vertical-align: middle;
+  }
+
+  /* The model step: the list scrolls behind a raised bar naming the choice. */
+  .ob-model-step {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    scrollbar-gutter: auto;
+    padding-bottom: 16px;
+  }
+  .ob-model-step > * {
+    flex-shrink: 0;
+  }
+  .ob-model-step .ob-device {
+    margin: 16px 0;
+  }
+  .ob-model-step > .ob-model-catalog {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    padding: 4px 6px 26px 4px;
+  }
+  .ob-model-catalog:focus-visible {
+    outline: 2px solid var(--ob-focus);
+    outline-offset: -2px;
+  }
+  .ob-shell .ob-model-section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 24px 0 12px;
+    color: var(--ob-muted);
+    font-size: calc(var(--font-size-base) * 0.8125);
+    font-weight: 500;
+    letter-spacing: 0;
+  }
+  .ob-model-catalog section:first-child .ob-model-section-title {
+    margin-top: 0;
+  }
+  .ob-model-section-title img {
+    width: 19px;
+    height: 19px;
+  }
+  .ob-model-step .ob-model {
+    min-height: 96px;
+  }
+  .ob-model-actionbar {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px 20px;
+    border: 1px solid var(--ob-bar-line);
+    border-radius: 14px;
+    background: var(--ob-bar);
+    box-shadow: var(--ob-bar-shadow);
+    color: var(--ob-bar-text);
+  }
+  .ob-model-actionbar > div {
+    min-width: 0;
+  }
+  .ob-model-actionbar strong {
+    display: block;
+    font-size: calc(var(--font-size-base) * 0.875);
+    font-weight: 550;
+    overflow-wrap: anywhere;
+  }
+  .ob-model-actionbar small {
+    display: block;
+    margin-top: 4px;
+    color: var(--ob-bar-muted);
+    font-size: calc(var(--font-size-base) * 0.6875);
+  }
+  .ob-model-actionbar .ob-primary {
+    flex-shrink: 0;
+    border-color: var(--ob-bar-action);
+    background: var(--ob-bar-action);
+    color: var(--ob-bar-action-text);
+  }
+  .ob-model-actionbar .ob-primary:hover:not(:disabled) {
+    background: var(--ob-bar-action-hover);
+  }
+  .ob-model-actionbar .ob-primary:focus-visible {
+    outline-color: var(--ob-bar-action);
+  }
+  .ob-radio {
+    flex-shrink: 0;
+    width: 17px;
+    height: 17px;
+    border: 1px solid var(--ob-surface-hover-line);
+    border-radius: 50%;
+  }
+  .ob-model[aria-checked='true'] .ob-radio {
+    border-color: var(--ob-radio-on);
+    background: var(--ob-radio-on);
+    box-shadow: inset 0 0 0 4px var(--ob-selected);
+  }
+  .ob-status {
+    display: grid;
+    place-items: center;
+    min-height: 160px;
+    color: var(--ob-subtle);
+  }
+}
+
+@keyframes ob-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (min-width: 1400px) {
+  .ob-main {
+    padding-right: 72px;
+    padding-left: 72px;
+  }
+}
+@media (max-width: 600px) {
+  .ob-main {
+    padding: 16px 12px 12px;
+  }
+  .ob-content {
+    padding-right: 4px;
+    padding-left: 4px;
+  }
+  .ob-footer-row > :first-child,
+  .ob-footer-row > :last-child {
+    min-width: 70px;
+  }
+  .ob-model-actionbar {
+    gap: 10px;
+    padding: 12px;
+  }
+  .ob-model-actionbar strong {
+    font-size: calc(var(--font-size-base) * 0.75);
+  }
+  .ob-model-actionbar .ob-primary {
+    max-width: 60%;
+    padding-inline: 14px;
+    white-space: normal;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ob-content {
+    animation: none;
+  }
+  .ob-progress i,
+  .ob-primary {
+    transition: none;
+  }
+}

@@ -89,6 +89,14 @@ dev-fast: install-and-build
 # `make dev` / `make dev-fast`; everything done during fresh runs is
 # discarded. Models on disk are not deleted (shared data directory), so
 # they show up in the list again after onboarding.
+#
+# FORCE_ONBOARDING_VARIANT previews one first-run variant (`OnboardingVariant`
+# in web-app/src/lib/onboarding/steps.ts); unset runs the build's default.
+# Read by `tauri dev` only, never by a shipped build. Each one from scratch:
+#   FORCE_ONBOARDING_VARIANT=none make dev-fresh        # straight into the app
+#   FORCE_ONBOARDING_VARIANT=model_only make dev-fresh  # Welcome → model
+#   FORCE_ONBOARDING_VARIANT=full make dev-fresh        # the whole flow
+# It works the same with dev-onboarding and dev-onboarding-low-spec.
 dev-fresh: install-and-build
 	yarn download:bin
 	make download-llamacpp-backend-if-exists
@@ -366,6 +374,7 @@ test-extensions:
 		--include '@janhq/vllm-extension' \
 		--include '@janhq/sglang-extension' \
 		--include '@janhq/foundry-local-extension' \
+		--include '@janhq/litert-lm-extension' \
 		run test:run
 
 # Tauri validates bundle.resources and externalBin paths while compiling the

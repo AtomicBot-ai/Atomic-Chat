@@ -150,6 +150,7 @@ const LOCAL_INFERENCE_PROVIDERS = new Set<string>([
   'atomic-prism',
   'foundation-models',
   'foundry-local',
+  'litert-lm',
 ])
 
 const isLocalInferenceProvider = (provider: string): boolean =>

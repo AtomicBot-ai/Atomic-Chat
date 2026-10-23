@@ -217,6 +217,64 @@ describe('ModelDetailPanel', () => {
     expect(mocks.fetch).not.toHaveBeenCalled()
   })
 
+  it('links a curated LiteRT-LM model to its repository, named as curated (change add-litert-lm-runtime)', () => {
+    renderPanel(
+      {
+        model_name: 'litert-lm/gemma-4-e4b',
+        description: '',
+        downloads: 0,
+        is_litert_lm: true,
+        litert_lm: {
+          origin: 'curated',
+          model_id: 'gemma-4-e4b',
+          name: 'Gemma 4 E4B',
+          summary: '',
+          license: 'apache-2.0',
+          repo: 'litert-community/gemma-4-E4B-it-litert-lm',
+          revision: 'a'.repeat(40),
+          gated: false,
+          variants: [],
+        },
+      } as CatalogModel,
+      { name: 'Gemma 4 E4B' }
+    )
+
+    expect(screen.getByRole('link', { name: /hub:liteRtLm.curated/ })).toHaveAttribute(
+      'href',
+      'https://huggingface.co/litert-community/gemma-4-E4B-it-litert-lm'
+    )
+    expect(screen.getByText('litert-community/gemma-4-E4B-it-litert-lm')).toBeInTheDocument()
+    expect(mocks.fetch).not.toHaveBeenCalled()
+  })
+
+  it('shows a downloaded LiteRT-LM variant by its id, with no link and no claim of where it came from', () => {
+    renderPanel(
+      {
+        model_name: 'litert-lm/gemma-4-e4b-gpu',
+        description: '',
+        downloads: 0,
+        is_litert_lm: true,
+        litert_lm: {
+          origin: 'installed',
+          model_id: 'gemma-4-e4b-gpu',
+          name: 'Gemma 4 E4B (GPU)',
+          summary: '',
+          license: null,
+          repo: '',
+          revision: '',
+          gated: false,
+          variants: [],
+        },
+      } as CatalogModel,
+      { name: 'Gemma 4 E4B (GPU)' }
+    )
+
+    expect(screen.queryByRole('link')).not.toBeInTheDocument()
+    expect(screen.queryByText('hub:liteRtLm.huggingFace')).not.toBeInTheDocument()
+    expect(screen.getByText('hub:liteRtLm.downloaded')).toBeInTheDocument()
+    expect(screen.getByText('gemma-4-e4b-gpu')).toBeInTheDocument()
+  })
+
   it('collapses from its header and keeps the heart beside it', async () => {
     const user = userEvent.setup()
     const { onCollapse, onToggleLike } = renderPanel(model(), { liked: true })

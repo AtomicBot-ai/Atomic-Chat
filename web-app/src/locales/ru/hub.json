@@ -277,5 +277,20 @@
     "installEngine": "Установить Foundry",
     "prepareAccelerator": "Подготовить ускоритель",
     "sourceUnavailable": "Источник моделей Foundry Local недоступен."
+  },
+  "liteRtLm": {
+    "curated": "Отобрано Atomic Chat",
+    "huggingFace": "Hugging Face, не проверено Atomic Chat",
+    "huggingFaceUnavailable": "Hugging Face сейчас недоступен. Показаны только модели, отобранные Atomic Chat.",
+    "notVerified": "Hugging Face, не проверено Atomic Chat",
+    "noVariantHere": "У этой модели нет варианта для этого компьютера.",
+    "downloaded": "Скачано",
+    "checking": "Проверка…",
+    "runsHere": "Работает на этом компьютере",
+    "installEngine": "Установить LiteRT-LM",
+    "prepareAccelerator": "Подготовить OpenVINO",
+    "gatedNoToken": "Это закрытая модель. Примите её условия на Hugging Face, затем задайте токен Hugging Face в настройках.",
+    "setToken": "Задать токен",
+    "gated": "Hugging Face отказал в доступе. Откройте страницу модели, примите её условия (и при необходимости задайте токен Hugging Face в настройках), затем попробуйте снова: {{url}}"
   }
 }

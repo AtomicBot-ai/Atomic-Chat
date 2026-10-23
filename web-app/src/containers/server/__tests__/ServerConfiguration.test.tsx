@@ -12,9 +12,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAppState } from '@/hooks/useAppState'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useRemoteAccessStore } from '@/hooks/useRemoteAccess'
+import { useOnboardingStore } from '@/stores/onboarding-store'
 import { seedServiceHub } from '@/test/service-hub'
 
-const { control, capture } = vi.hoisted(() => ({
+const { control, capture, navigate } = vi.hoisted(() => ({
   control: {
     start: vi.fn(),
     stop: vi.fn(),
@@ -22,6 +23,7 @@ const { control, capture } = vi.hoisted(() => ({
     refreshStatus: vi.fn(),
   },
   capture: vi.fn(),
+  navigate: vi.fn(),
 }))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
@@ -30,6 +32,7 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (options: Record<string, unknown>) => options,
+  useNavigate: () => navigate,
 }))
 
 // The real hook loads models and talks to the proxy. This stand-in keeps its
@@ -95,6 +98,7 @@ describe('Server → Configuration', () => {
       useAppState.getState().setServerStatus('stopped')
     })
     seedServiceHub()
+    useOnboardingStore.getState().reset()
   })
 
   afterEach(() => {
@@ -270,5 +274,52 @@ describe('Server → Configuration', () => {
     expect(
       screen.getByRole('button', { name: 'settings:serverKey.show' })
     ).toBeInTheDocument()
+  })
+
+  describe('after first-run setup hands off to an endpoint', () => {
+    const guideHint = () =>
+      screen.queryByRole('region', { name: 'onboarding-server:guide.label' })
+
+    beforeEach(() => {
+      const store = useOnboardingStore.getState()
+      store.begin('full', 'server')
+      store.handOff('endpoint')
+    })
+
+    it('starts the hints on the connection details, and Next hint goes on to Engine & model', () => {
+      render(<ServerConfigurationPage />)
+
+      expect(guideHint()).toHaveTextContent(
+        'onboarding-server:guide.settings.title'
+      )
+
+      fireEvent.click(
+        screen.getByRole('button', { name: 'onboarding-server:guide.next' })
+      )
+
+      expect(navigate).toHaveBeenCalledWith({ to: '/api/model' })
+      expect(useOnboardingStore.getState().guide).toEqual({
+        path: 'endpoint',
+        hint: 1,
+      })
+      expect(guideHint()).toBeNull()
+      expect(capture).toHaveBeenCalledWith(
+        'onboarding_guide',
+        expect.objectContaining({
+          guide_path: 'endpoint',
+          hint: 0,
+          guide_action: 'next',
+        })
+      )
+      // The hints never start the server.
+      expect(useAppState.getState().serverStatus).toBe('stopped')
+    })
+
+    it('shows no hint for the agents path', () => {
+      useOnboardingStore.getState().setGuide({ path: 'agents', hint: 0 })
+      render(<ServerConfigurationPage />)
+
+      expect(guideHint()).toBeNull()
+    })
   })
 })

@@ -30,6 +30,7 @@ describe('isAgentLocalProvider', () => {
     expect(isAgentLocalProvider('vllm')).toBe(true)
     expect(isAgentLocalProvider('sglang')).toBe(true)
     expect(isAgentLocalProvider('foundry-local')).toBe(true)
+    expect(isAgentLocalProvider('litert-lm')).toBe(true)
   })
 
   it('excludes foundation-models and unknown values', () => {

@@ -9,6 +9,11 @@ import {
 } from '@/constants/integrations'
 import { AgentIcon } from '@/containers/AgentIcon'
 import {
+  pickAgentHint,
+  SetupGuideHint,
+  useGuideHint,
+} from '@/containers/onboarding/SetupGuideHint'
+import {
   StatusDot,
   type StatusTone,
 } from '@/containers/api/ApiStatusIndicators'
@@ -65,16 +70,18 @@ export function useAgentStatus(): (agent: IntegrationAgent) => {
 }
 
 /**
- * Overview's "Agents & tools": every integration as a card with what Atomic
- * Chat knows about it and the one next step — the setup guide for the agents
- * it configures, All integrations for the editors set up by hand, connection
- * details once set up — then the way in for the user's own application.
+ * Overview's "Agents & tools": every integration as a card with its one next
+ * step — the setup guide for the agents it configures, All integrations for
+ * the editors set up by hand — or, once set up, its state on the way to its
+ * connection details; then the way in for the user's own application.
  */
 export function ServerAgents() {
   const { t } = useTranslation()
   const openGuide = useServerSetup((state) => state.openGuide)
   const statusOf = useAgentStatus()
   const [query, setQuery] = useState('')
+  // First-run setup's "Pick your tool" points at the cards.
+  const picking = useGuideHint('agents', 0)
 
   useEffect(() => {
     detectIntegrationAgentsOnce()
@@ -86,7 +93,11 @@ export function ServerAgents() {
   )
 
   return (
-    <section className="sp-agents" aria-label={t('api:agents.title')}>
+    <section
+      className={picking ? 'sp-agents ob-agent-pick' : 'sp-agents'}
+      aria-label={t('api:agents.title')}
+    >
+      <SetupGuideHint path="agents" hint={0} />
       <div className="sp-section-heading">
         <div className="min-w-0">
           <h2>{t('api:agents.title')}</h2>
@@ -115,21 +126,29 @@ export function ServerAgents() {
         {visible.map((agent) => {
           const status = statusOf(agent)
           return (
-            <article className="sp-tool" key={agent.id}>
-              <div className="sp-row">
+            <article
+              className={status.configured ? 'sp-tool is-connected' : 'sp-tool'}
+              key={agent.id}
+            >
+              <div className="sp-tool-heading">
                 <span className="sp-agent-icon" aria-hidden="true">
                   <AgentIcon agent={agent} />
                 </span>
-                <span className="sp-status">
-                  <StatusDot tone={status.tone} />
-                  {status.label}
-                </span>
+                <h3>{agent.name}</h3>
               </div>
-              <h3>{agent.name}</h3>
               <p>{agent.description}</p>
               {status.configured ? (
-                <Link to={route.api.connections} className="sp-button">
-                  {t('api:agents.connectionDetails')}
+                // Set up: the state sits on the way to its connection details.
+                <Link
+                  to={route.api.connections}
+                  className="sp-button"
+                  title={t('api:agents.connectionDetails')}
+                  onClick={() => pickAgentHint('end')}
+                >
+                  <span className="sp-status">
+                    <StatusDot tone={status.tone} />
+                    {status.label}
+                  </span>
                   <ArrowRight size={14} />
                 </Link>
               ) : isGuidedAgent(agent) ? (
@@ -139,18 +158,21 @@ export function ServerAgents() {
                   aria-label={t('api:agents.configureAgent', {
                     name: agent.name,
                   })}
-                  onClick={() =>
+                  onClick={() => {
+                    pickAgentHint('connect')
                     openGuide({ path: 'agent', agentId: agent.id })
-                  }
+                  }}
                 >
                   {t('api:agents.configure')}
                   <ArrowRight size={14} />
                 </button>
               ) : (
+                // Set up by hand on All integrations, where no hint follows.
                 <Link
                   to={route.launch.index}
                   hash={agent.id}
                   className="sp-button"
+                  onClick={() => pickAgentHint('end')}
                 >
                   {t('api:agents.setUp')}
                   <ArrowRight size={14} />

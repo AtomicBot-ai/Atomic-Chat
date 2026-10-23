@@ -33,6 +33,7 @@ export const ENGINE_UPDATE_ORDER: readonly EngineId[] = [
   'mlx',
   'sd-cpp',
   'foundry-local',
+  'litert-lm',
   'tensorrt-llm',
   'vllm',
   'sglang',

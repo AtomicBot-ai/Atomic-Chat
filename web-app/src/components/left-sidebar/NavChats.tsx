@@ -50,21 +50,26 @@ export function NavChats() {
 
   return (
     <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+      {/* Nothing to fold until there is a chat in it. */}
       <SidebarGroupLabel asChild>
-        <button
-          type="button"
-          aria-expanded={!collapsed}
-          onClick={() => toggleGroup('recents')}
-        >
-          <ChevronRight
-            size={12}
-            className={cn(
-              'mr-1 transition-transform',
-              !collapsed && 'rotate-90'
-            )}
-          />
-          {t('common:recents')}
-        </button>
+        {recentThreads.length > 0 ? (
+          <button
+            type="button"
+            aria-expanded={!collapsed}
+            onClick={() => toggleGroup('recents')}
+          >
+            <ChevronRight
+              size={12}
+              className={cn(
+                'mr-1 transition-transform',
+                !collapsed && 'rotate-90'
+              )}
+            />
+            {t('common:recents')}
+          </button>
+        ) : (
+          <span>{t('common:recents')}</span>
+        )}
       </SidebarGroupLabel>
       <SidebarGroupAction
         className={cn(

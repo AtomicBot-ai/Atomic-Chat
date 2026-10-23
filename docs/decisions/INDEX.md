@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-459 records, 2026-05-19 → 2026-10-22.
+470 records, 2026-05-19 → 2026-10-23.
 
 ---
 
@@ -233,8 +233,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Ship `janhq/llama.cpp` cudart DLLs with every Windows CUDA backend](2026-05-22-ship-janhq-llama-cpp-cudart-dlls-with-every-windows-cuda-backend.md)
 - **2026-05-19** — [Windows uses upstream `ggml-org/llama.cpp`, not the TurboQuant fork](2026-05-19-windows-uses-upstream-ggml-org-llama-cpp-not-the-turboquant-fork.md)
 
-## Models, Hub & downloads (47)
+## Models, Hub & downloads (48)
 
+- **2026-10-22** — [Run LiteRT-LM through the core; download its models from Hugging Face in the app](2026-10-22-run-litert-lm-through-the-core-and-download-its-models-in-the-app.md)
 - **2026-10-22** — [Step the Hub toolbar down by its own width, search first](2026-10-22-step-the-hub-toolbar-down-by-its-own-width.md)
 - **2026-10-22** — [Name Downloads rows by their model, with the quant apart](2026-10-22-name-downloads-rows-by-model-with-the-quant-apart.md)
 - **2026-10-21** — [Bring interrupted model downloads back after a relaunch, paused](2026-10-21-bring-interrupted-model-downloads-back-after-a-relaunch.md)
@@ -283,8 +284,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-04** — [Recover from unsupported multimodal projector (`gemma4a`) by falling back to text-only instead of crashing the load (issue #44)](2026-06-04-recover-from-unsupported-multimodal-projector-gemma4a-by.md)
 - **2026-05-27** — [Replace `janhq/model-catalog` + Fuse.js with curated `AtomicBot-ai/atomic-chat-model-catalog` and a pre-built MiniSearch index](2026-05-27-replace-janhq-model-catalog-fuse-js-with-curated-atomicbot-ai.md)
 
-## Local API server & OpenAI compatibility (14)
+## Local API server & OpenAI compatibility (15)
 
+- **2026-10-23** — [Stop an idle server at the first-run endpoint handoff](2026-10-23-stop-an-idle-server-at-the-first-run-endpoint-handoff.md) — supersedes in part 2026-10-21.
 - **2026-10-21** — [The Local API Server routes a model id to the provider selected for it](2026-10-21-the-server-routes-a-model-id-to-the-provider-selected-for-it.md) — supersedes "remote wins over local" for ids the server page shows.
 - **2026-10-21** — [Refuse the Local API Server as a custom endpoint](2026-10-21-refuse-the-local-api-server-as-a-custom-endpoint.md)
 - **2026-10-21** — [Start the Local API Server at launch without a model](2026-10-21-start-the-local-api-server-at-launch-without-a-model.md) — supersedes the startup clauses of the 2026-08-19 and 2026-09-25 records.
@@ -300,8 +302,11 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-07-15** — [Aggregate Local API Server request telemetry into three-minute summaries (ATO-297)](2026-07-15-aggregate-local-api-server-request-telemetry-into-three-minute.md)
 - **2026-06-09** — [Make the Local API Server "Invalid host header" rejection actionable + fix Trusted Hosts field copy (ATO-118, scope I+II)](2026-06-09-make-the-local-api-server-invalid-host-header-rejection.md)
 
-## Telemetry, crash reporting & error handling (11)
+## Telemetry, crash reporting & error handling (14)
 
+- **2026-10-23** — [Count Local API traffic as a first request in the onboarding experiment](2026-10-23-count-local-api-traffic-as-a-first-request-in-the-onboarding-experiment.md)
+- **2026-10-23** — [Split new installs into three onboarding cohorts, drawn on the device and recorded in PostHog](2026-10-23-split-new-installs-into-three-onboarding-cohorts.md)
+- **2026-10-22** — [Keep the analytics distinct id in settings.json, across a factory reset](2026-10-22-keep-the-analytics-distinct-id-in-settings-json.md)
 - **2026-09-30** — [Run hardware probes off the UI thread](2026-09-30-run-hardware-probes-off-the-ui-thread.md)
 - **2026-09-22** — [Tell the core "off" in a build that does not report](2026-09-22-tell-the-core-off-in-a-build-that-does-not-report.md)
 - **2026-09-21** — [Tell the core the error-reporting consent, and leave local engine errors to it](2026-09-21-tell-the-core-the-error-reporting-consent-and-leave-local-engine-errors-to-it.md)
@@ -314,8 +319,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-10** — [Throttle crashloop `model_load` failure spam client-side; confirm `model_load.status` / api 404-noise are already-fixed-pending-rollout, not code bugs (ATO-130: ATO-133 + ATO-131 + ATO-132)](2026-06-10-throttle-crashloop-model-load-failure-spam-client-side-confirm.md)
 - **2026-06-09** — [Add zero-PII Sentry crash/error tracking to both the React frontend and the Rust/Tauri desktop, gated behind `productAnalytic` (ATO-113)](2026-06-09-add-zero-pii-sentry-crash-error-tracking-to-both-the-react.md)
 
-## Packaging, installers, autostart & platform policy (26)
+## Packaging, installers, autostart & platform policy (27)
 
+- **2026-10-22** — [Sign every Windows PE file through Tauri's signCommand and ship a Microsoft Store installer](2026-10-22-sign-every-windows-pe-via-tauri-signcommand-and-ship-an-msstore-installer.md) — x64 installers fully signed; `*_x64_msstore.exe` embeds the offline WebView2 installer; ARM64 and the publisher name stay as they were.
 - **2026-10-21** — [Give the Linux window a stable app id](2026-10-21-give-the-linux-window-a-stable-app-id.md) — Wayland `app_id` / Hyprland class is `chat.atomic.app`, matched by the desktop entry's `StartupWMClass`.
 - **2026-10-21** — [Close the Linux window to the tray](2026-10-21-close-the-linux-window-to-the-tray.md) — under a bar with a tray, closing hides the window instead of stopping `:1337`; tray "Quit" exits; without a StatusNotifier host closing still quits.
 - **2026-10-21** — [Let a package manager own updates](2026-10-21-let-a-package-manager-own-updates.md) — a marker file beside the AppImage or binary, or `ATOMIC_CHAT_PACKAGE_MANAGED=1`, turns the updater off, including its startup check and the updater service's plugin fallback.
@@ -350,7 +356,12 @@ decision is reversed, add a new one that says which record it supersedes.
 ## UI / UX (2)
 - **2026-10-20** — [Show hosted providers on Cloud and the user's own servers on Custom Endpoint](2026-10-20-show-hosted-providers-on-cloud-and-own-servers-on-custom-endpoint.md)
 - **2026-10-20** — [List everything downloaded on a Downloads page](2026-10-20-list-everything-downloaded-on-a-downloads-page.md)
-## UI / UX (111)
+## UI / UX (116)
+- **2026-10-23** — [Draw the download panel as the first-run strip](2026-10-23-draw-the-download-panel-as-the-first-run-strip.md)
+- **2026-10-23** — [Notify every completion unless it is on screen](2026-10-23-notify-every-completion-unless-it-is-on-screen.md) — supersedes in part 2026-09-29.
+- **2026-10-23** — [Offer three models, then Hugging Face, on the first-run model step](2026-10-23-offer-three-models-then-hugging-face-on-the-first-run-model-step.md) — supersedes in part 2026-09-11.
+- **2026-10-23** — [Run the first-run flow in three variants: full, model only, none](2026-10-23-run-the-first-run-flow-in-three-variants.md)
+- **2026-10-22** — [Replace the Welcome screen with a full-screen first-run flow](2026-10-22-replace-the-welcome-screen-with-a-full-screen-first-run-flow.md) — supersedes in part 2026-08-12, 2026-09-16, 2026-08-19 and 2026-09-11.
 - **2026-10-22** — [Fold the sidebar over the page when the window is narrow, and bound its width](2026-10-22-fold-the-sidebar-over-the-page-when-the-window-is-narrow.md)
 - **2026-10-22** — [Show full names in the sidebar, and tell colliding rows apart by their last activity](2026-10-22-show-full-names-and-tell-colliding-sidebar-rows-apart.md)
 - **2026-10-22** — [Name the served model readably on the Server card](2026-10-22-name-the-served-model-readably-on-the-server-card.md)

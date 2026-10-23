@@ -18,6 +18,12 @@ import {
   type IntegrationAgent,
 } from '@/constants/integrations'
 import { AgentIcon } from '@/containers/AgentIcon'
+import {
+  connectAgentHint,
+  finishGuide,
+  SetupGuideHint,
+  useServerModelPending,
+} from '@/containers/onboarding/SetupGuideHint'
 import { useAppState } from '@/hooks/useAppState'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useLocalApiServerControl } from '@/hooks/useLocalApiServerControl'
@@ -104,6 +110,9 @@ export function ServerSetupGuide({ entry }: { entry: SetupGuideEntry }) {
   const installed = useLaunchStore((state) => state.installed)
   const setupDone = useSetupDone()
   const closeGuide = useServerSetup((state) => state.closeGuide)
+  // First-run setup's model becomes the server's once it lands; configuring
+  // before then would serve another one.
+  const waitingForModel = useServerModelPending()
 
   const start = firstStep(entry)
   const [step, setStep] = useState<Step>(start.step)
@@ -203,10 +212,15 @@ export function ServerSetupGuide({ entry }: { entry: SetupGuideEntry }) {
     }
     setFinished(TASKS.length)
     useServerSetup.getState().finishSetup()
+    // The endpoint hints too, when this set up the server they lead to.
+    finishGuide()
     setStep('done')
   }
 
   const configure = () => {
+    // First-run setup's "Connect your tool" is done with once the work
+    // starts; a failure is the guide's to show, not a hint's.
+    connectAgentHint()
     portChanged.current =
       path === 'endpoint' &&
       Number(port) !== useLocalApiServer.getState().serverPort
@@ -231,6 +245,10 @@ export function ServerSetupGuide({ entry }: { entry: SetupGuideEntry }) {
 
   return (
     <section ref={top} className="sp-guide" aria-label={t('api:guide.label')}>
+      {/* First-run setup's "Connect your tool", until the work starts. */}
+      {(step === 'agent' || step === 'review') && (
+        <SetupGuideHint path="agents" hint={1} />
+      )}
       <div className="sp-guide-top">
         <span>
           <CircleHelp size={16} />
@@ -551,10 +569,13 @@ export function ServerSetupGuide({ entry }: { entry: SetupGuideEntry }) {
           {step === 'review' && (
             <ServerButton
               primary
-              disabled={!choice || control.isBusy}
+              disabled={!choice || control.isBusy || waitingForModel}
               onClick={configure}
             >
-              {t('api:guide.configure')} <ArrowRight size={14} />
+              {waitingForModel
+                ? t('onboarding-server:guide.waitingForModel')
+                : t('api:guide.configure')}{' '}
+              <ArrowRight size={14} />
             </ServerButton>
           )}
         </div>

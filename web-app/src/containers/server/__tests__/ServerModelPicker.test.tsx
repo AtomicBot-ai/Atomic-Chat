@@ -1,8 +1,8 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { control, restart, helpers, toastError } = vi.hoisted(() => {
+const { control, restart, helpers, toastError, navigate } = vi.hoisted(() => {
   const helper = () => ({
     supported: true,
     options: [] as { value: string; label: string }[],
@@ -23,11 +23,15 @@ const { control, restart, helpers, toastError } = vi.hoisted(() => {
     restart: vi.fn(),
     helpers: { embedding: helper(), decision: helper() },
     toastError: vi.fn(),
+    navigate: vi.fn(),
   }
 })
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, params?: Record<string, unknown>) =>
+      params ? `${key}:${JSON.stringify(params)}` : key,
+  }),
 }))
 
 vi.mock('@tanstack/react-router', () => ({
@@ -36,6 +40,7 @@ vi.mock('@tanstack/react-router', () => ({
       {children}
     </a>
   ),
+  useNavigate: () => navigate,
 }))
 
 vi.mock('@/hooks/useLocalApiServerControl', () => ({
@@ -57,8 +62,9 @@ vi.mock('../useServedHelperModels', () => ({
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { getProviderTitle } from '@/lib/utils'
+import { useOnboardingStore } from '@/stores/onboarding-store'
 
-import { ServerModelPicker } from '../ServerModelPicker'
+import { isServableEngine, ServerModelPicker } from '../ServerModelPicker'
 
 /** A provider as the store holds it; cloud ones carry no `persist` flag. */
 const engine = (
@@ -81,18 +87,30 @@ const saveButton = () =>
 describe('Server → Engine & model', () => {
   const user = userEvent.setup()
 
-  /** The dropdown's options, as it lists them under the field. */
+  /**
+   * The dropdown's options, as it lists them under the field: by name, which
+   * the engine and model rows set in bold above what they are.
+   */
   const optionsOf = async (name: string) => {
     await user.click(dropdown(name))
     const options = screen
       .getAllByRole('menuitemradio')
-      .map((option) => option.textContent)
+      .map(
+        (option) => (option.querySelector('strong') ?? option).textContent ?? ''
+      )
     await user.keyboard('{Escape}')
     return options
   }
+  /** The open menu's row whose name is `option`. */
+  const row = (option: string) =>
+    screen
+      .getAllByRole('menuitemradio')
+      .find(
+        (item) => (item.querySelector('strong') ?? item).textContent === option
+      ) as HTMLElement
   const choose = async (name: string, option: string) => {
     await user.click(dropdown(name))
-    await user.click(screen.getByRole('menuitemradio', { name: option }))
+    await user.click(row(option))
   }
 
   beforeEach(() => {
@@ -135,6 +153,111 @@ describe('Server → Engine & model', () => {
     expect(await optionsOf('api:model.model')).toEqual(['Qwen3.5 4B'])
     // Nothing to save yet, so no save bar.
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+
+  it('shows each engine with its mark, what it is and its facts, and ticks the one chosen', async () => {
+    render(<ServerModelPicker />)
+    // The field reads as its chosen row does.
+    expect(dropdown('api:model.engine')).toHaveTextContent(
+      'api:model.engineDetail.llamacpp'
+    )
+
+    await user.click(dropdown('api:model.engine'))
+
+    const llama = row(getProviderTitle('llamacpp-upstream'))
+    expect(llama).toHaveAttribute('aria-checked', 'true')
+    expect(llama.querySelector('img')).toHaveAttribute(
+      'src',
+      '/images/model-provider/llamacpp.svg'
+    )
+    expect(llama).toHaveTextContent('api:model.engineDetail.llamacpp')
+    // One chat model: the embedding model and the missing file do not count.
+    expect(llama).toHaveTextContent('GGUF · api:model.engineModels:{"count":1}')
+    expect(row(getProviderTitle('atomic-prism'))).toHaveAttribute(
+      'aria-checked',
+      'false'
+    )
+  })
+
+  it('describes the LiteRT-LM engine as it does the others', async () => {
+    useModelProvider.setState({
+      providers: [
+        engine('litert-lm', [{ id: 'gemma-4-e2b-it', name: 'Gemma 4 E2B' }]),
+      ],
+    })
+    render(<ServerModelPicker />)
+
+    await user.click(dropdown('api:model.engine'))
+
+    const litert = row(getProviderTitle('litert-lm'))
+    expect(litert.querySelector('img')).toHaveAttribute(
+      'src',
+      '/images/model-provider/litert-lm.svg'
+    )
+    expect(litert).toHaveTextContent('api:model.engineDetail.litert')
+    expect(litert).toHaveTextContent(
+      'LiteRT-LM · api:model.engineModels:{"count":1}'
+    )
+  })
+
+  it('shows each model with its family’s mark, the quantization its name leaves out and its size on disk', async () => {
+    useModelProvider.setState({
+      providers: [
+        engine('llamacpp-upstream', [
+          {
+            id: 'unsloth/Llama-3.2-3B-Instruct-GGUF/Llama-3.2-3B-Instruct-Q4_K_M.gguf',
+            name: 'Llama 3.2 3B',
+            sizeBytes: 2.5 * 1024 ** 3,
+          },
+          { id: 'my-finetune', description: 'Tuned on our support tickets' },
+        ]),
+      ],
+    })
+    render(<ServerModelPicker />)
+
+    await user.click(dropdown('api:model.model'))
+
+    const llama = row('Llama 3.2 3B')
+    expect(llama.querySelector('img')).toHaveAttribute(
+      'src',
+      '/svg/meta-color.svg'
+    )
+    expect(within(llama).getByText(/Q4_K_M/)).toHaveTextContent(
+      'Q4_K_M · api:model.onDisk:{"size":"2.5 GB"}'
+    )
+    // No family to go by: the engine's mark, and its own description.
+    const finetune = row('my-finetune')
+    expect(finetune.querySelector('img')).toHaveAttribute(
+      'src',
+      '/images/model-provider/llamacpp.svg'
+    )
+    expect(finetune).toHaveTextContent('Tuned on our support tickets')
+    expect(finetune.querySelector('small')).toBeNull()
+  })
+
+  it('keeps the model on an engine that also runs it', async () => {
+    useModelProvider.setState({
+      providers: [
+        engine('llamacpp-upstream', [
+          { id: 'qwen3.5-4b' },
+          { id: 'gemma-4-e4b' },
+        ]),
+        engine('atomic-prism', [{ id: 'bonsai-9b' }, { id: 'gemma-4-e4b' }]),
+      ],
+    })
+    render(<ServerModelPicker />)
+
+    await choose('api:model.model', 'gemma-4-e4b')
+    await choose('api:model.engine', getProviderTitle('atomic-prism'))
+
+    expect(dropdown('api:model.model')).toHaveTextContent('gemma-4-e4b')
+    await user.click(saveButton())
+    await waitFor(() =>
+      expect(useLocalApiServer.getState().defaultModelLocalApiServer).toEqual({
+        provider: 'atomic-prism',
+        model: 'gemma-4-e4b',
+      })
+    )
   })
 
   it('opens on the saved choice', () => {
@@ -307,5 +430,52 @@ describe('Server → Engine & model', () => {
       '/hub/'
     )
     expect(dropdown('api:model.embeddingModel')).toBeEnabled()
+  })
+
+  it('tells an engine the server runs from one it does not, models or not', () => {
+    expect(isServableEngine(engine('llamacpp-upstream', []))).toBe(true)
+    expect(isServableEngine(engine('vllm', [{ id: 'm' }], false))).toBe(false)
+    expect(isServableEngine(engine('openai', [{ id: 'gpt-4.1' }]))).toBe(false)
+  })
+
+  describe('on first-run setup’s endpoint hints', () => {
+    const guideHint = () =>
+      screen.queryByRole('region', { name: 'onboarding-server:guide.label' })
+
+    beforeEach(() => {
+      const store = useOnboardingStore.getState()
+      store.reset()
+      store.begin('full', 'server')
+      store.handOff('endpoint')
+      store.setGuide({ path: 'endpoint', hint: 1 })
+    })
+
+    it('shows "Choose the model", and Next hint goes on to Start', async () => {
+      render(<ServerModelPicker />)
+
+      expect(guideHint()).toHaveTextContent(
+        'onboarding-server:guide.model.title'
+      )
+      await user.click(
+        screen.getByRole('button', { name: 'onboarding-server:guide.next' })
+      )
+
+      expect(navigate).toHaveBeenCalledWith({ to: '/api/' })
+      expect(useOnboardingStore.getState().guide).toEqual({
+        path: 'endpoint',
+        hint: 2,
+      })
+      expect(guideHint()).toBeNull()
+    })
+
+    it('shows it over the empty state while the model is still downloading', () => {
+      useModelProvider.setState({ providers: [] })
+      render(<ServerModelPicker />)
+
+      expect(guideHint()).toHaveTextContent(
+        'onboarding-server:guide.model.title'
+      )
+      expect(screen.getByText('api:model.emptyTitle')).toBeInTheDocument()
+    })
   })
 })

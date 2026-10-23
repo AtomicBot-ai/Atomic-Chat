@@ -70,6 +70,12 @@ describe('sortProvidersForSettings', () => {
     ).toEqual(['llamacpp-upstream', 'llamacpp', 'foundry-local', 'vllm'])
   })
 
+  it('puts LiteRT-LM right after Foundry Local, before the managed ones (change add-litert-lm-runtime)', () => {
+    expect(
+      order(['vllm', 'litert-lm', 'openai', 'foundry-local', 'llamacpp-upstream'])
+    ).toEqual(['llamacpp-upstream', 'foundry-local', 'litert-lm', 'vllm', 'openai'])
+  })
+
   it('puts TensorRT-LLM after both llama.cpp engines on Linux', () => {
     // Linux ships no MLX and no Foundation Models, so the local engines are
     // upstream, turboquant and TensorRT-LLM, in that order, ahead of the cloud.

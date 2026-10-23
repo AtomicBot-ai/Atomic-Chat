@@ -1,0 +1,28 @@
+{
+  "title": "Go beyond text.",
+  "lead": "Add image or video creation. These downloads run after your chat model.",
+  "art": {
+    "image": "Images",
+    "video": "Video"
+  },
+  "purpose": {
+    "image": "Create images from a prompt",
+    "video": "Create short videos · high memory use"
+  },
+  "size": {
+    "download": "{{size}} GB download",
+    "onDisk": "{{size}} GB on disk"
+  },
+  "memory": "~{{size}} GB memory",
+  "caution": "Uses most of this device’s memory. Close other apps.",
+  "queue": {
+    "add": "Add to queue",
+    "queued": "Queued · click to remove",
+    "downloading": "Downloading · click to remove",
+    "interrupted": "Interrupted · click to remove",
+    "downloaded": "Downloaded"
+  },
+  "order": "Download order: {{order}}",
+  "skip": "Skip",
+  "engineTitle": "Image engine for {{name}}"
+}

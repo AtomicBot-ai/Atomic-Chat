@@ -1,0 +1,62 @@
+{
+  "id": "litert-community/Qwen3-4B",
+  "modelId": "litert-community/Qwen3-4B",
+  "author": "litert-community",
+  "sha": "8b4c3d3f6e727cdb445f42feff14b808db8da4fa",
+  "lastModified": "2026-10-12T23:33:17.000Z",
+  "gated": false,
+  "disabled": false,
+  "pipeline_tag": "text-generation",
+  "library_name": "litert-lm",
+  "tags": [
+    "litert-lm",
+    "litertlm",
+    "qwen",
+    "Qwen3",
+    "text-generation",
+    "en",
+    "arxiv:2505.09388",
+    "base_model:Qwen/Qwen3-4B",
+    "base_model:quantized:Qwen/Qwen3-4B",
+    "license:apache-2.0",
+    "region:us"
+  ],
+  "cardData": {
+    "license": "apache-2.0",
+    "pipeline_tag": "text-generation",
+    "base_model": "Qwen/Qwen3-4B",
+    "library_name": "litert-lm"
+  },
+  "siblings": [
+    {
+      "rfilename": ".gitattributes",
+      "blobId": "de1bf1f1525c83de725ba571857940844f648871",
+      "size": 1768
+    },
+    {
+      "rfilename": "README.md",
+      "blobId": "3015a0b49c243caa1db22c5114050d3a1b218933",
+      "size": 3746
+    },
+    {
+      "rfilename": "qwen3_4b_channelwise_int8_float32kv.litertlm",
+      "blobId": "e3e9e4ccd3944407e4452c13c3191fc21f8b76eb",
+      "size": 5672367472,
+      "lfs": {
+        "sha256": "fe7483c11797806140cec66adf4162c369ac503e66a8029bf713af19297df4bf",
+        "size": 5672367472,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "qwen3_4b_mixed_int4.litertlm",
+      "blobId": "4f3f31da00d3397845b3e60f7a008fc8d617799a",
+      "size": 2659053760,
+      "lfs": {
+        "sha256": "569fe029f51e55b6377f98ebd7f6d26431bc73e1d632034f5389f2fd720da701",
+        "size": 2659053760,
+        "pointerSize": 135
+      }
+    }
+  ]
+}

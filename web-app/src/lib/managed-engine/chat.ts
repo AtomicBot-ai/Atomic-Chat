@@ -22,9 +22,18 @@ export type AgentModelBlockReason = 'model-without-tools'
  * Foundry Local (change `add-foundry-local`) follows the same rules: its session is the core's
  * gateway in front of a host process, the core refuses `tools` to a variant the list does not
  * declare tool calling for, the variant's context is fixed, and it takes no images.
+ *
+ * LiteRT-LM (change `add-litert-lm-runtime`) too, except images: its host reads them for a file
+ * that declares vision, and the variant's `vision` capability comes from its `model.yml`.
  */
 const isGatewayChatProvider = (providerName: string | undefined): boolean =>
-  isManagedProvider(providerName) || providerName === 'foundry-local'
+  isManagedProvider(providerName) ||
+  providerName === 'foundry-local' ||
+  providerName === 'litert-lm'
+
+/** Gateway providers whose sessions never take images, whatever a model's capabilities say. */
+const isImagelessProvider = (providerName: string | undefined): boolean =>
+  isGatewayChatProvider(providerName) && providerName !== 'litert-lm'
 
 /** Why this model cannot serve an Agent turn, or `null` when its provider's rules apply. */
 export function agentModelBlockReason(
@@ -41,7 +50,7 @@ export function agentModelBlockReason(
  * edited to say.
  */
 export function imageAttachmentsAllowed(providerName: string | undefined, model: Model | undefined): boolean {
-  if (isGatewayChatProvider(providerName)) return false
+  if (isImagelessProvider(providerName)) return false
   return model?.capabilities?.includes('vision') ?? false
 }
 

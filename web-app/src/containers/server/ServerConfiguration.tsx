@@ -2,6 +2,7 @@ import { ChevronDown } from 'lucide-react'
 import { useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 
+import { SetupGuideHint } from '@/containers/onboarding/SetupGuideHint'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useLocalApiServerControl } from '@/hooks/useLocalApiServerControl'
 import { restartLocalApiServer } from '@/hooks/useRemoteAccess'
@@ -174,6 +175,7 @@ export function ServerConfiguration() {
   return (
     <>
       <section className="sp-panel">
+        <SetupGuideHint path="endpoint" hint={0} />
         <ServerField label={t('settings:serverConfig.host')}>
           <ServerSelect
             label={t('settings:serverConfig.host')}

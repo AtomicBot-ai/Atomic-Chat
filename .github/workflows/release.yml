@@ -22,6 +22,10 @@ on:
         description: "Build Windows ARM64 (NSIS)"
         type: boolean
         default: false
+      build_windows_msstore:
+        description: "Also bundle the Microsoft Store installer (x64, offline WebView2); tag pushes always do"
+        type: boolean
+        default: false
       build_linux:
         description: "Build Linux x86_64 (AppImage)"
         type: boolean
@@ -1055,8 +1059,21 @@ jobs:
           cp src-tauri/resources/bin/atomic-chat-core.exe src-tauri/resources/bin/jan-cli.exe
 
       # The Agent and TensorRT-LLM gates run beside this job: gate-windows.
-      - name: Build app (unsigned)
+      #
+      # The Microsoft Store wants every PE file inside the installer signed
+      # (policy 10.2.9), not only the installer. Given a signCommand, the
+      # bundler signs the app binary, the bun/uv sidecars, every unsigned
+      # .exe/.dll under resources, the NSIS plugins, the uninstaller, the
+      # installer and the MSI. Files that already carry a valid signature (the
+      # core pair, cloudflared, wxc-exec, the mirrored llama.cpp trees) are left
+      # alone. The command is the signtool call the installers were signed with
+      # before, and it is passed here only, so local builds stay unsigned.
+      - name: Build and sign app
+        shell: pwsh
         env:
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
+          SM_HOST: https://clientauth.one.digicert.com
           # ATO-113: source-map generation + @sentry/vite-plugin push peak heap
           # past Node's ~2GB default.
           NODE_OPTIONS: "--max-old-space-size=8192"
@@ -1076,7 +1093,28 @@ jobs:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
           SENTRY_PROJECT_FRONTEND: ${{ secrets.SENTRY_PROJECT_FRONTEND }}
-        run: yarn tauri build
+        run: |
+          if (-not $env:SM_CODE_SIGNING_CERT_SHA1_HASH) {
+            throw "SM_CODE_SIGNING_CERT_SHA1_HASH is not set (certsync did not capture a fingerprint)"
+          }
+          $signConfig = @{
+            bundle = @{
+              windows = @{
+                signCommand = @{
+                  cmd  = 'signtool'
+                  args = @('sign', '/sha1', $env:SM_CODE_SIGNING_CERT_SHA1_HASH,
+                    '/fd', 'SHA256', '/tr', 'http://timestamp.digicert.com', '/td', 'SHA256', '%1')
+                }
+              }
+            }
+          }
+          # The Microsoft Store bundle below signs with the same config.
+          $signConfigPath = Join-Path $env:RUNNER_TEMP 'tauri-sign.conf.json'
+          $signConfig | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $signConfigPath -Encoding utf8
+          "TAURI_SIGN_CONFIG=$signConfigPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          yarn tauri build --config $signConfigPath
+          if ($LASTEXITCODE -ne 0) { throw "tauri build failed (exit code: $LASTEXITCODE)" }
 
       - name: Upload Rust debug files to Sentry (Windows)
         continue-on-error: true
@@ -1094,51 +1132,6 @@ jobs:
           npx @sentry/cli@^2 debug-files upload \
             --org "$SENTRY_ORG" --project "$SENTRY_PROJECT_DESKTOP" \
             src-tauri/target/release
-
-      # ── Post-build code signing (DigiCert KeyLocker via signtool KSP) ──
-      # certsync installs the DigiCert KeyLocker KSP and the code-signing cert
-      # into the Windows store; we sign with signtool directly, selecting the
-      # cert by the SHA1 fingerprint captured from certsync
-      # (SM_CODE_SIGNING_CERT_SHA1_HASH). The KSP authenticates to DigiCert at
-      # sign time via SM_API_KEY / SM_CLIENT_CERT_FILE / SM_CLIENT_CERT_PASSWORD.
-      - name: Sign Windows binaries with DigiCert
-        shell: pwsh
-        env:
-          SM_API_KEY: ${{ secrets.SM_API_KEY }}
-          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
-          SM_HOST: https://clientauth.one.digicert.com
-        run: |
-          $bundleBase = "src-tauri\target\release\bundle"
-
-          if (-not $env:SM_CODE_SIGNING_CERT_SHA1_HASH) {
-            throw "SM_CODE_SIGNING_CERT_SHA1_HASH is not set (certsync did not capture a fingerprint)"
-          }
-
-          function Sign-File($path) {
-            Write-Host "Signing: $path"
-            signtool sign /sha1 "$env:SM_CODE_SIGNING_CERT_SHA1_HASH" `
-              /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 "$path"
-            if ($LASTEXITCODE -ne 0) { throw "signtool sign failed for $path" }
-            signtool verify /pa "$path"
-            if ($LASTEXITCODE -ne 0) { throw "Signature verification failed for $path" }
-            Write-Host "Signed and verified: $path"
-          }
-
-          # Sign NSIS installer(s)
-          $nsisPath = Join-Path $bundleBase "nsis"
-          if (Test-Path $nsisPath) {
-            foreach ($exe in (Get-ChildItem -Path $nsisPath -Filter "*.exe")) {
-              Sign-File $exe.FullName
-            }
-          }
-
-          # Sign MSI installer(s)
-          $msiPath = Join-Path $bundleBase "msi"
-          if (Test-Path $msiPath) {
-            foreach ($msi in (Get-ChildItem -Path $msiPath -Filter "*.msi")) {
-              Sign-File $msi.FullName
-            }
-          }
 
       - name: Recreate updater signature after code signing
         shell: bash
@@ -1188,6 +1181,77 @@ jobs:
           cp "$bundle/nsis/$EXE_NAME" "$bundle/msi/$MSI_NAME" release-files/
           if [ -f "$bundle/nsis/$EXE_NAME.sig" ]; then cp "$bundle/nsis/$EXE_NAME.sig" release-files/; fi
           ls -la release-files
+
+      # The Microsoft Store takes an EXE only as an offline installer (policy
+      # 10.2.9), so it gets its own NSIS build with the WebView2 runtime
+      # installer embedded (tauri.windows.msstore.conf.json). `tauri bundle`
+      # re-packs the binary built above; the regular installer is already
+      # staged, so overwriting bundle/nsis is fine. The file drops "-setup"
+      # from its name so upload-windows and latest.json never take it for the
+      # updater's installer.
+      - name: Bundle the Microsoft Store installer
+        if: github.event_name == 'push' || inputs.build_windows_msstore
+        shell: pwsh
+        env:
+          SM_API_KEY: ${{ secrets.SM_API_KEY }}
+          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
+          SM_HOST: https://clientauth.one.digicert.com
+        run: |
+          yarn tauri bundle --bundles nsis --config src-tauri/tauri.windows.msstore.conf.json --config $env:TAURI_SIGN_CONFIG
+          if ($LASTEXITCODE -ne 0) { throw "tauri bundle failed (exit code: $LASTEXITCODE)" }
+
+          $setup = @(Get-ChildItem -Path src-tauri/target/release/bundle/nsis -Filter '*-setup.exe')
+          if ($setup.Count -ne 1) { throw "Expected one NSIS installer from tauri bundle, found $($setup.Count)" }
+          $name = $setup[0].Name -replace '-setup\.exe$', '_msstore.exe'
+          Copy-Item -LiteralPath $setup[0].FullName -Destination (Join-Path release-files $name)
+          Get-ChildItem release-files | Format-Table Name, Length
+
+      # Every PE file the NSIS installers install must carry a valid signature,
+      # and the installers themselves ours. 7-Zip unpacks an NSIS installer
+      # without running it; the uninstaller is written at install time, so
+      # scripts/verify-windows-installer.ps1 checks it on a real install.
+      # $PLUGINSDIR holds the installer's own helper DLLs, which live in %TEMP%
+      # for the length of the install and are never installed. Tauri signs five
+      # of them but not nsExec.dll, which windows/hooks.nsh needs, so those are
+      # reported as warnings rather than failures.
+      - name: Verify every PE inside the Windows installers is signed
+        shell: pwsh
+        run: |
+          $failures = @()
+          foreach ($installer in (Get-ChildItem -Path release-files -Filter '*.exe')) {
+            $sig = Get-AuthenticodeSignature -LiteralPath $installer.FullName
+            Write-Host "$($installer.Name): $($sig.Status); signer: $($sig.SignerCertificate.Subject)"
+            if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'CN=AtomicMail Systems OU') {
+              $failures += "$($installer.Name) is $($sig.Status), signed by '$($sig.SignerCertificate.Subject)'"
+            }
+
+            $dir = Join-Path $env:RUNNER_TEMP "unpacked-$($installer.BaseName)"
+            7z x $installer.FullName "-o$dir" -y -bso0 -bsp0
+            if ($LASTEXITCODE -ne 0) { throw "7z could not unpack $($installer.Name)" }
+
+            $pe = @(Get-ChildItem -LiteralPath $dir -Recurse -File | Where-Object { $_.Extension -in '.exe', '.dll' })
+            if (-not ($pe | Where-Object Name -eq 'Atomic-Chat.exe')) {
+              $failures += "$($installer.Name) holds no Atomic-Chat.exe"
+            }
+            if ($installer.Name -like '*_msstore.exe' -and -not ($pe | Where-Object Name -like 'MicrosoftEdgeWebView2RuntimeInstaller*.exe')) {
+              $failures += "$($installer.Name) does not embed the WebView2 runtime installer"
+            }
+            foreach ($file in $pe) {
+              $fileSig = Get-AuthenticodeSignature -LiteralPath $file.FullName
+              $relative = $file.FullName.Substring($dir.Length + 1)
+              Write-Host ("  {0,-12} {1}" -f $fileSig.Status, $relative)
+              if ($fileSig.Status -eq 'Valid') { continue }
+              if ($relative -like '$PLUGINSDIR\*') {
+                Write-Host "::warning::$($installer.Name): installer plugin $relative is $($fileSig.Status)"
+              } else {
+                $failures += "$($installer.Name): $relative is $($fileSig.Status)"
+              }
+            }
+          }
+          if ($failures.Count -gt 0) {
+            $failures | ForEach-Object { Write-Host "::error::$_" }
+            throw "$($failures.Count) signature problem(s) in the Windows installers"
+          }
 
       - name: Hand the release files to upload-windows
         uses: actions/upload-artifact@v4
@@ -2242,9 +2306,12 @@ jobs:
             exit 1
           fi
           WIN_SIG="$(cat "${EXE_NAME}.sig" 2>/dev/null || echo "")"
+          # Present on tag pushes and when build_windows_msstore was ticked.
+          MSSTORE_NAME="$(ls *_msstore.exe 2>/dev/null | head -1)"
           echo "exe_name=${EXE_NAME}" >> "$GITHUB_OUTPUT"
           echo "msi_name=${MSI_NAME}" >> "$GITHUB_OUTPUT"
           echo "win_sig=${WIN_SIG}" >> "$GITHUB_OUTPUT"
+          echo "msstore_name=${MSSTORE_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Upload to the draft
         uses: ./.github/actions/upload-draft-assets
@@ -2255,6 +2322,7 @@ jobs:
             release-files/${{ steps.metadata.outputs.exe_name }}
             release-files/${{ steps.metadata.outputs.msi_name }}
             ${{ steps.metadata.outputs.win_sig != '' && format('release-files/{0}.sig', steps.metadata.outputs.exe_name) || '' }}
+            ${{ steps.metadata.outputs.msstore_name != '' && format('release-files/{0}', steps.metadata.outputs.msstore_name) || '' }}
 
   upload-linux-x64:
     runs-on: ubuntu-latest

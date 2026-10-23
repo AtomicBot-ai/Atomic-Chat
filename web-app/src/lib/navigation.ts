@@ -61,3 +61,12 @@ export function isPathActive(pathname: string, to: string, nested = false) {
   const target = normalizePath(to)
   return current === target || (nested && current.startsWith(target + '/'))
 }
+
+/**
+ * The page the window shows now is `to` or one below it — for code outside
+ * the router's React tree (the stores), which reads the location itself.
+ */
+export function isPageOnScreen(to: string): boolean {
+  if (typeof window === 'undefined') return false
+  return isPathActive(window.location.pathname, to, true)
+}

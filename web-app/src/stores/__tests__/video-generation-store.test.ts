@@ -25,7 +25,7 @@ vi.mock('@/lib/video/poster', async (importOriginal) => ({
 }))
 const notifications = vi.hoisted(() => ({ notify: vi.fn() }))
 vi.mock('@/lib/notifications', () => ({
-  notifyWhenAway: notifications.notify,
+  notifyUnlessWatching: notifications.notify,
 }))
 const captured = vi.hoisted(() => ({
   events: [] as Array<[string, Record<string, unknown>]>,
@@ -173,7 +173,40 @@ describe('video-generation-store', () => {
       expect(JSON.stringify(captured.events)).not.toContain('lighthouse')
       expect(JSON.stringify(captured.events)).not.toContain('42')
       // The real locale is loaded: the notification carries the English words.
+      // The Videos page is not on screen, so the clip is not being watched.
       expect(notifications.notify).toHaveBeenCalledWith(
+        false,
+        'Video ready',
+        'Your clip is in the gallery.'
+      )
+    })
+
+    it('counts the clip as watched while the Videos page is on screen', async () => {
+      fake.generateVideo.mockImplementation(async (request) => {
+        emitLater(fake, () => ({
+          type: 'video-job',
+          job: makeVideoJob({
+            id: 'vjob-1',
+            state: 'completed',
+            request,
+            outputs: [makeVideoItem({ id: 'vjob-1' })],
+          }),
+        }))
+        return { jobId: 'vjob-1' }
+      })
+      window.history.replaceState(null, '', '/videos')
+      try {
+        await useVideoGenerationStore.getState().startGeneration({
+          request: makeVideoRequest(),
+          seed: null,
+        })
+      } finally {
+        window.history.replaceState(null, '', '/')
+      }
+
+      expect(useVideoGalleryStore.getState().items[0].id).toBe('vjob-1')
+      expect(notifications.notify).toHaveBeenCalledWith(
+        true,
         'Video ready',
         'Your clip is in the gallery.'
       )
@@ -451,6 +484,12 @@ describe('video-generation-store', () => {
       })
       await waitFor(() => expect(useVideoGenerationStore.getState().generating).toBe(false))
       expect(useVideoGalleryStore.getState().items[0].id).toBe('active')
+      // The user waited for this clip too.
+      expect(notifications.notify).toHaveBeenCalledWith(
+        false,
+        'Video ready',
+        'Your clip is in the gallery.'
+      )
 
       // A status the core cannot answer is logged, not fatal.
       resetVideoGenerationForTests()

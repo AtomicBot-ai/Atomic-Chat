@@ -34,6 +34,8 @@ describe('loadBackendFromProvider', () => {
     expect(loadBackendFromProvider('vllm')).toBe('vllm')
     expect(loadBackendFromProvider('sglang')).toBe('sglang')
     expect(loadBackendFromProvider('mlx')).toBe('mlx')
+    expect(loadBackendFromProvider('foundry-local')).toBe('foundry-local')
+    expect(loadBackendFromProvider('litert-lm')).toBe('litert-lm')
     expect(loadBackendFromProvider('openai')).toBe('unknown')
     expect(loadBackendFromProvider(undefined)).toBe('unknown')
   })
