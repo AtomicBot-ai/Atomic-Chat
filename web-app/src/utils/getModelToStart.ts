@@ -1,5 +1,5 @@
 import { localStorageKey } from '@/constants/localStorage'
-import { EMBEDDING_MODEL_ID } from '@/constants/models'
+import { isAnswerableModel, isEmbeddingOnlyModel } from '@/lib/answerable-model'
 import type { ModelInfo } from '@janhq/core'
 
 // Upstream llama.cpp first: it understands the full Gemma 4 projector set
@@ -35,10 +35,9 @@ function findFirstLocalModel(
   for (const name of localProviderNames) {
     const provider = getProviderByName(name)
 
-    // Skip broken-link models (weights file gone) — loading them only crashes.
-    const firstUsable = provider?.models?.find(
-      (m) => m.id !== EMBEDDING_MODEL_ID && !(m as { missing?: boolean }).missing
-    )
+    // Skip broken-link models (weights file gone) — loading them only crashes
+    // — and embedding models, which cannot chat.
+    const firstUsable = provider?.models?.find(isAnswerableModel)
     // A deactivated provider (Settings → Model Providers toggle) must never
     // be auto-started — e.g. TurboQuant ships disabled on fresh installs.
     if (provider && provider.active !== false && firstUsable) {
@@ -69,7 +68,9 @@ export const getModelToStart = (params: {
       provider &&
       provider.active !== false &&
       lastModel &&
-      !(lastModel as { missing?: boolean }).missing
+      !(lastModel as { missing?: boolean }).missing &&
+      // A last-used embedding model is what the AC-01 bug left behind.
+      !isEmbeddingOnlyModel(lastModel)
     ) {
       return { model: lastUsedModel.model, provider }
     } else {

@@ -45,6 +45,11 @@ import { StartupBackendCoordinator } from '@/providers/StartupBackendCoordinator
 import { ServiceHubProvider } from '@/providers/ServiceHubProvider'
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar'
 import { LeftSidebar } from '@/components/left-sidebar'
+import {
+  MIN_PAGE_WIDTH,
+  NAVIGATION_RAIL_WIDTH,
+  WINDOW_TITLEBAR_HEIGHT,
+} from '@/lib/navigation'
 import { ManagedEngineOperationBar } from '@/containers/managed-engine/ManagedEngineOperationBar'
 
 export const Route = createRootRoute({
@@ -87,14 +92,18 @@ const AppLayout = () => {
         className="app-shell"
         style={
           {
-            '--navigation-rail-width': '60px',
-            '--window-titlebar-height': '42px',
+            '--navigation-rail-width': `${NAVIGATION_RAIL_WIDTH}px`,
+            '--window-titlebar-height': `${WINDOW_TITLEBAR_HEIGHT}px`,
           } as CSSProperties
         }
         open={isLeftPanelOpen}
         onOpenChange={setLeftPanel}
         defaultWidth={sidebarWidth}
         onWidthChange={setLeftPanelWidth}
+        // Below the page's minimum width the sidebar opens over the page
+        // instead of docking; the saved open state and width are kept.
+        insetOffset={NAVIGATION_RAIL_WIDTH}
+        minInsetWidth={MIN_PAGE_WIDTH}
       >
         <AnalyticProvider />
         <KeyboardShortcutsProvider />

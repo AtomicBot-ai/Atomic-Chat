@@ -9,7 +9,9 @@ scrollbar in the desktop webview.
 - Check **Medium** and **Extra Large** interface font sizes. Extra Large is a
   supported setting, not an edge case.
 - Check a 1024 px desktop window with the sidebar open and the default 1280 px
-  layout. Nothing may create horizontal scrolling.
+  layout. Nothing may create horizontal scrolling. Below a 1052 px window the
+  sidebar opens over the page rather than beside it, so beside the docked
+  sidebar a page is never narrower than 768 px.
 - Check light and dark themes when a change touches fills, borders, icons or
   status colours.
 - Use realistic worst-case copy: a long model id, a two-digit GB size, a

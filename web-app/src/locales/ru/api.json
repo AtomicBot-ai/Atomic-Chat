@@ -51,7 +51,8 @@
     "modelUnloaded": "Model unloaded"
   },
   "log": {
-    "searchPlaceholder": "Search model, endpoint, preview or error",
+    "searchPlaceholder": "Поиск запросов",
+    "searchHint": "Ищет запрос по модели, эндпоинту, тексту или ошибке",
     "empty": "No API traffic yet. Point a client at the base URL to see requests here.",
     "noMatches": "No requests match this filter.",
     "clearFilters": "Clear filters",
@@ -111,7 +112,10 @@
     "copyExample": "Скопировать пример",
     "sendTest": "Отправить тестовый запрос",
     "startToTest": "Запустите сервер в боковой панели, чтобы проверить.",
-    "testOk": "Ответ получен · 200 OK · {{ms}} мс · моделей: {{count}}",
+    "testOk": "Ответ получен · 200 OK · {{ms}} мс · ответила модель {{model}}",
+    "testNeedsModel": "Модель ещё не загружена. Загрузите её, чтобы отправить этот запрос.",
+    "testNoModel": "На сервере не загружено ни одной модели, отвечать нечем. Загрузите модель и отправьте запрос ещё раз.",
+    "testModelNotServed": "Модель {{model}} на сервере не запущена. Загрузите её и отправьте запрос ещё раз.",
     "testUnauthorized": "Сервер не принял ключ (HTTP {{status}}). Если вы меняли ключ, примените его перезапуском.",
     "testFailed": "Сервер не ответил: {{message}}"
   },

@@ -28,6 +28,7 @@ const hookState = vi.hoisted(() => ({
     exportSkill: ReturnType<typeof vi.fn>
   },
 }))
+const layoutState = vi.hoisted(() => ({ stacked: false }))
 const dialogOpen = vi.hoisted(() => vi.fn())
 const navigate = vi.hoisted(() => vi.fn())
 
@@ -38,6 +39,15 @@ vi.mock('@tanstack/react-router', () => ({
 
 vi.mock('@/containers/HeaderPage', () => ({
   default: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+}))
+
+// jsdom has no layout; the measurement itself is covered by the hook's test
+// and the page's geometry by SkillsPage.layout.test.tsx.
+vi.mock('@/hooks/useStackedListDetail', () => ({
+  useStackedListDetail: () => ({
+    ref: { current: null },
+    stacked: layoutState.stacked,
+  }),
 }))
 
 vi.mock('@/hooks/useAgentSkills', () => ({
@@ -112,6 +122,7 @@ const customSkill: AgentSkillDetail = {
 
 describe('SkillsPage', () => {
   beforeEach(() => {
+    layoutState.stacked = false
     dialogOpen.mockReset()
     navigate.mockReset()
     seedServiceHub({
@@ -127,8 +138,8 @@ describe('SkillsPage', () => {
       load: vi.fn(),
       select: vi.fn(),
       setEnabled: vi.fn(),
-      addCreated: vi.fn().mockResolvedValue(undefined),
-      addImported: vi.fn().mockResolvedValue(undefined),
+      addCreated: vi.fn().mockResolvedValue(customSkill),
+      addImported: vi.fn().mockResolvedValue(customSkill),
       remove: vi.fn().mockResolvedValue(undefined),
       update: vi.fn().mockResolvedValue(undefined),
       exportSkill: vi.fn().mockResolvedValue(true),
@@ -244,5 +255,109 @@ describe('SkillsPage', () => {
     fireEvent.click(editButtons[editButtons.length - 1])
 
     expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
+  describe('when the page is too narrow for the instructions beside the list', () => {
+    beforeEach(() => {
+      layoutState.stacked = true
+    })
+
+    it('lists the skills, then opens one full-width with its controls', () => {
+      render(<SkillsPage />)
+      expect(
+        screen.queryByRole('heading', { name: 'common:skillInstructions' })
+      ).not.toBeInTheDocument()
+
+      const row = screen.getByText('custom-skill').closest('button')!
+      fireEvent.click(row)
+
+      expect(hookState.value.select).toHaveBeenCalledWith('custom-skill')
+      expect(
+        screen.getByRole('heading', { name: 'common:skillInstructions' })
+      ).toBeInTheDocument()
+      expect(
+        screen.queryByText('common:createNewSkill')
+      ).not.toBeInTheDocument()
+      const back = screen.getByRole('button', { name: 'common:backToSkills' })
+      expect(back).toHaveFocus()
+      // The opened skill's switch and actions sit in the detail header.
+      expect(screen.getAllByRole('switch')).toHaveLength(1)
+      expect(screen.getAllByText('common:downloadSkill')).toHaveLength(1)
+      fireEvent.click(
+        screen.getByRole('switch', { name: 'common:enableSkill' })
+      )
+      expect(hookState.value.setEnabled).toHaveBeenCalledWith(
+        'custom-skill',
+        false
+      )
+
+      fireEvent.click(back)
+      expect(
+        screen.queryByRole('heading', { name: 'common:skillInstructions' })
+      ).not.toBeInTheDocument()
+      expect(screen.getByText('custom-skill').closest('button')).toHaveFocus()
+    })
+
+    it('keeps the list until the opened skill has loaded', () => {
+      const other: AgentSkillDetail = { ...customSkill, name: 'other-skill' }
+      hookState.value = {
+        ...hookState.value,
+        skills: [customSkill, other],
+      }
+      render(<SkillsPage />)
+
+      fireEvent.click(screen.getByText('other-skill').closest('button')!)
+
+      // `selected` is still custom-skill: its instructions must not stand in.
+      expect(hookState.value.select).toHaveBeenCalledWith('other-skill')
+      expect(
+        screen.queryByRole('heading', { name: 'common:skillInstructions' })
+      ).not.toBeInTheDocument()
+      expect(screen.getByText('other-skill')).toBeInTheDocument()
+    })
+
+    it('shows the list and focuses the next row after deleting the opened skill', () => {
+      const other: AgentSkillDetail = { ...customSkill, name: 'other-skill' }
+      hookState.value = {
+        ...hookState.value,
+        skills: [customSkill, other],
+      }
+      render(<SkillsPage />)
+      fireEvent.click(screen.getByText('custom-skill').closest('button')!)
+
+      // Only the detail header's menu is on screen.
+      fireEvent.click(screen.getByText('common:delete'))
+      const dialog = screen.getByRole('dialog')
+      fireEvent.click(within(dialog).getByText('common:delete'))
+
+      expect(hookState.value.remove).toHaveBeenCalledWith('custom-skill')
+      // The detail and its menu are gone before `remove` swaps the selection.
+      expect(
+        screen.queryByRole('heading', { name: 'common:skillInstructions' })
+      ).not.toBeInTheDocument()
+      expect(screen.getByText('other-skill').closest('button')).toHaveFocus()
+    })
+
+    it('opens a skill just uploaded in its detail', async () => {
+      dialogOpen.mockResolvedValue('/tmp/imported.skill')
+      render(<SkillsPage />)
+
+      fireEvent.click(screen.getByText('common:uploadASkill'))
+      fireEvent.click(
+        screen.getByRole('button', { name: 'common:dropSkillToUpload' })
+      )
+
+      await waitFor(() =>
+        expect(
+          screen.getByRole('heading', { name: 'common:skillInstructions' })
+        ).toBeInTheDocument()
+      )
+      expect(hookState.value.addImported).toHaveBeenCalledWith(
+        '/tmp/imported.skill'
+      )
+      expect(
+        screen.getByRole('button', { name: 'common:backToSkills' })
+      ).toHaveFocus()
+    })
   })
 })

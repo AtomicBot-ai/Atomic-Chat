@@ -560,7 +560,10 @@ export const MessageItem = memo(
         {/* Message actions for user messages */}
         {message.role === 'user' && !hideActions && !isEditing && (
           <div className="flex items-center justify-end gap-1 text-muted-foreground text-xs mt-4">
-            <CopyButton text={getFullTextContent()} />
+            <CopyButton
+              text={getFullTextContent()}
+              ariaLabel={t('common:copy')}
+            />
 
             {onEdit && status !== CHAT_STATUS.STREAMING && (
               <Button
@@ -601,7 +604,10 @@ export const MessageItem = memo(
                 (isRequestActive || hideActions || isEditing) && 'hidden'
               )}
             >
-              <CopyButton text={getFullTextContent()} />
+              <CopyButton
+                text={getFullTextContent()}
+                ariaLabel={t('common:copy')}
+              />
 
               {onEdit && !isStreaming && (
                 <Button
@@ -635,7 +641,8 @@ export const MessageItem = memo(
                     variant="ghost"
                     size="icon-xs"
                     onClick={handleRegenerate}
-                    title="Regenerate response"
+                    title={t('common:regenerate')}
+                    aria-label={t('common:regenerate')}
                   >
                     <IconRefresh size={16} />
                   </Button>

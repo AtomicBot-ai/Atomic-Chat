@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useServerSetup } from '@/hooks/useServerSetup'
@@ -6,8 +6,8 @@ import { ServerControlPanel } from '../ServerControlPanel'
 
 const navigate = vi.hoisted(() => vi.fn())
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children, to, className }: any) => (
-    <a href={to} className={className}>
+  Link: ({ children, to, ...props }: any) => (
+    <a href={to} {...props}>
       {children}
     </a>
   ),
@@ -20,6 +20,18 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 
 vi.mock('@/lib/utils', () => ({
   getProviderTitle: (provider: string) => `title:${provider}`,
+}))
+
+// The downloaded models, where a model's nickname lives.
+const installed = vi.hoisted(() => ({
+  providers: [] as { provider: string; models: Partial<Model>[] }[],
+}))
+vi.mock('@/hooks/useModelProvider', () => ({
+  useModelProvider: (selector: (state: unknown) => unknown) =>
+    selector({
+      getProviderByName: (name: string) =>
+        installed.providers.find((p) => p.provider === name),
+    }),
 }))
 
 const control = vi.hoisted(() => ({
@@ -58,6 +70,7 @@ describe('ServerControlPanel', () => {
     setStatus('stopped')
     server.defaultModelLocalApiServer = null
     server.lastServerModels = []
+    installed.providers = []
     control.start.mockResolvedValue(undefined)
     control.stop.mockResolvedValue(undefined)
     control.toggle.mockResolvedValue(undefined)
@@ -126,7 +139,7 @@ describe('ServerControlPanel', () => {
     render(<ServerControlPanel />)
 
     expect(screen.getByText('title:llamacpp-upstream')).toBeInTheDocument()
-    expect(screen.getByText('qwen3.5-4b')).toBeInTheDocument()
+    expect(screen.getByText('Qwen3.5 4B')).toBeInTheDocument()
   })
 
   it('shows what a running server actually loaded', () => {
@@ -139,7 +152,68 @@ describe('ServerControlPanel', () => {
     render(<ServerControlPanel />)
 
     expect(screen.getByText('title:mlx')).toBeInTheDocument()
-    expect(screen.getByText('gemma-4-e2b')).toBeInTheDocument()
+    expect(screen.getByText('Gemma 4 E2B')).toBeInTheDocument()
+  })
+
+  it('names the model once, with its quant apart and its full id on the row', () => {
+    server.defaultModelLocalApiServer = {
+      model: 'AtomicChat/Muse-Glimmer-30B-AD-IQ4_XS',
+      provider: 'llamacpp-upstream',
+    }
+    render(<ServerControlPanel />)
+
+    const row = screen.getByTestId('server-panel-model')
+    expect(row).toHaveAttribute(
+      'title',
+      'AtomicChat/Muse-Glimmer-30B-AD-IQ4_XS'
+    )
+    expect(row).toHaveAttribute('href', '/api/model')
+    expect(within(row).getByText('Muse Glimmer 30B AD').tagName).toBe('STRONG')
+    expect(within(row).getByText('IQ4_XS').tagName).toBe('SMALL')
+    expect(row).not.toHaveTextContent('AtomicChat')
+  })
+
+  it("shows the model's nickname, and its quant only when the name lacks it", () => {
+    server.defaultModelLocalApiServer = {
+      model: 'AtomicChat/Muse-Glimmer-30B-AD-IQ4_XS',
+      provider: 'llamacpp-upstream',
+    }
+    installed.providers = [
+      {
+        provider: 'llamacpp-upstream',
+        models: [
+          {
+            id: 'AtomicChat/Muse-Glimmer-30B-AD-IQ4_XS',
+            displayName: 'Muse for code',
+          },
+        ],
+      },
+    ]
+    const { unmount } = render(<ServerControlPanel />)
+
+    let row = screen.getByTestId('server-panel-model')
+    expect(within(row).getByText('Muse for code')).toBeInTheDocument()
+    expect(within(row).getByText('IQ4_XS')).toBeInTheDocument()
+    unmount()
+
+    // A nickname that spells the quant already reads it.
+    installed.providers[0].models[0].displayName = 'Muse IQ4_XS'
+    render(<ServerControlPanel />)
+    row = screen.getByTestId('server-panel-model')
+    expect(within(row).getByText('Muse IQ4_XS')).toBeInTheDocument()
+    expect(row.querySelector('small')).toBeNull()
+  })
+
+  it('shows no quant for an id that names none', () => {
+    server.defaultModelLocalApiServer = {
+      model: 'qwen3.5-4b',
+      provider: 'llamacpp-upstream',
+    }
+    render(<ServerControlPanel />)
+
+    expect(
+      screen.getByTestId('server-panel-model').querySelector('small')
+    ).toBeNull()
   })
 
   it('says when no model is chosen', () => {

@@ -440,6 +440,12 @@ impl RequestInspector {
             }
             Some("finished") => {
                 let Some(seq) = self.core_requests.lock().ok().and_then(|mut ids| ids.remove(id)) else {
+                    // The core announces a request only while the API screen watches, and decides
+                    // that when the request arrives: one that came while no screen was open (the
+                    // user in a chat, the screen still mounting) finishes unannounced. Its analytics
+                    // observation still says what it was and how it ended, so the log lists it
+                    // without previews instead of dropping it.
+                    self.record_unannounced_core_request(id, event);
                     return;
                 };
                 let _ = self
@@ -480,6 +486,69 @@ impl RequestInspector {
             }
             _ => {}
         }
+    }
+
+    /// A row for a core request that finished without a `started` event, built from the analytics
+    /// observation its `finished` event carries. That observation is content-free by contract, so
+    /// the row has no prompt or reply preview (ATO-113 holds: none was collected). The core does
+    /// not send the start time with it, so the row is stamped with the finish time.
+    fn record_unannounced_core_request(&self, id: &str, event: &serde_json::Value) {
+        use crate::core::server::api_request_analytics::observation_from_core;
+
+        let Some(observation) = event.get("observation").and_then(observation_from_core) else {
+            return;
+        };
+        let finished_at_ms = event
+            .get("finished_at_ms")
+            .and_then(|v| v.as_u64())
+            .unwrap_or_else(now_ms);
+        let seq = self.seq.fetch_add(1, Ordering::Relaxed);
+        let started = StartedFields {
+            endpoint: observation.endpoint,
+            method: observation.method,
+            model_id: observation.model_id,
+            stream: observation.stream,
+            message_count: None,
+            prompt_preview: None,
+            prompt_chars: None,
+            has_non_text_parts: false,
+            client_max_tokens: None,
+        };
+        // Status 0 is the core's "no response headers were sent": the client hung up first.
+        let answered = observation.status != 0;
+        let finish = FinishFields {
+            status: answered.then_some(observation.status),
+            error_kind: observation.error_kind,
+            aborted: !answered,
+            headers_ms: answered.then_some(observation.latency_ms),
+            ..FinishFields::default()
+        };
+        let started_payload = serde_json::to_value(StartedEvent {
+            id,
+            seq,
+            started_at_ms: finished_at_ms,
+            fields: &started,
+        })
+        .unwrap_or(serde_json::Value::Null);
+        let finished_payload = serde_json::to_value(FinishedEvent {
+            id,
+            seq,
+            done: true,
+            finished_at_ms,
+            fields: &finish,
+        })
+        .unwrap_or(serde_json::Value::Null);
+        self.push_record(ApiRequestRecord {
+            id: id.to_string(),
+            seq,
+            started_at_ms: finished_at_ms,
+            started,
+            done: true,
+            finished_at_ms: Some(finished_at_ms),
+            finish,
+        });
+        self.emit(API_INSPECTOR_STARTED, started_payload);
+        self.emit(API_INSPECTOR_FINISHED, finished_payload);
     }
 
     fn emit(&self, channel: &'static str, payload: serde_json::Value) {
@@ -1814,6 +1883,66 @@ mod core_ingest_tests {
         inspector.ingest_core_event(&json!({"id": "x", "phase": "unknown"}));
         assert!(seen.lock().unwrap().is_empty());
         assert!(inspector.snapshot().records.is_empty());
+    }
+
+    /// The core's `finished` event for a request that arrived while no screen watched: no
+    /// `started` before it, `seq` -1, no inspector `finish`, only the analytics observation.
+    fn unannounced_finish(id: &str, status: u16, error_kind: Option<&str>) -> serde_json::Value {
+        json!({
+            "phase": "finished", "id": id, "seq": -1, "finished_at_ms": 5000,
+            "observation": {
+                "endpoint": "chat/completions", "method": "POST", "model_id": "demo",
+                "backend": "llamacpp-upstream", "provider": null, "stream": true,
+                "status": status, "latency_ms": 12, "is_anthropic_fallback": false,
+                "error_kind": error_kind, "upstream_status": null, "oom_detected": false,
+                "ctx_overflow_detected": false
+            },
+            "finish": null
+        })
+    }
+
+    #[test]
+    fn a_request_that_finished_unannounced_is_listed_without_previews() {
+        let (inspector, seen) = inspector();
+        inspector.ingest_core_event(&unannounced_finish("apireq_quiet", 503, Some("not_found")));
+
+        let snapshot = inspector.snapshot();
+        assert_eq!(snapshot.in_flight, 0);
+        let record = &snapshot.records[0];
+        assert_eq!(
+            (record.id.as_str(), record.done, record.started_at_ms, record.finished_at_ms),
+            ("apireq_quiet", true, 5000, Some(5000))
+        );
+        assert_eq!(
+            (record.started.endpoint, record.started.model_id.as_deref(), record.started.stream),
+            ("chat/completions", Some("demo"), true)
+        );
+        assert_eq!(
+            (record.finish.status, record.finish.error_kind, record.finish.headers_ms, record.finish.aborted),
+            (Some(503), Some("not_found"), Some(12), false)
+        );
+        assert!(record.started.prompt_preview.is_none());
+        assert!(record.finish.reply_preview.is_none());
+
+        let seen = seen.lock().unwrap();
+        let channels: Vec<_> = seen.iter().map(|(c, _)| *c).collect();
+        assert_eq!(channels, vec![API_INSPECTOR_STARTED, API_INSPECTOR_FINISHED]);
+        assert_eq!(seen[0].1["id"], json!("apireq_quiet"));
+        assert_eq!(seen[0].1["model_id"], json!("demo"));
+        assert_eq!(seen[1].1["status"], json!(503));
+        assert_eq!(seen[1].1["done"], json!(true));
+    }
+
+    #[test]
+    fn an_unannounced_request_without_response_headers_reads_as_aborted() {
+        let (inspector, _) = inspector();
+        inspector.ingest_core_event(&unannounced_finish("apireq_gone", 0, None));
+
+        let record = &inspector.snapshot().records[0];
+        assert_eq!(
+            (record.finish.status, record.finish.aborted, record.finish.headers_ms),
+            (None, true, None)
+        );
     }
 
     #[test]

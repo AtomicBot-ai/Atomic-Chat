@@ -303,6 +303,26 @@ describe('HubFilters', () => {
     ).toBeChecked()
   })
 
+  it('still says what Filters and Sort are when the narrow toolbar shows their icons alone', () => {
+    renderFilters()
+
+    // The compact toolbar hides the words in `.hub-toolbar-label`; the count,
+    // the accessible names and the tooltips stay.
+    const filters = screen.getByRole('button', { name: 'hub:filters.label' })
+    const sort = screen.getByRole('button', { name: 'hub:sortBy' })
+    expect(filters).toHaveAttribute('title', 'hub:filters.button')
+    expect(sort).toHaveAttribute('title', 'hub:sortRecommended')
+    for (const [button, label] of [
+      [filters, 'hub:filters.button'],
+      [sort, 'hub:sort'],
+    ] as const) {
+      expect(button.querySelector('.hub-toolbar-label')).toHaveTextContent(
+        label
+      )
+    }
+    expect(filters).toHaveTextContent('1')
+  })
+
   it('turns the device filter off and keeps the menu open', async () => {
     const user = userEvent.setup()
     const { onChange } = renderFilters()

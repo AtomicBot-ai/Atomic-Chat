@@ -7,7 +7,9 @@ import {
   within,
 } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { useLayoutEffect } from 'react'
 import ChatInput from '../ChatInput'
+import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 import { useChatAttachments } from '@/hooks/useChatAttachments'
 import { useAttachments } from '@/hooks/useAttachments'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -16,6 +18,8 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { modelStopKey, useAppState } from '@/hooks/useAppState'
 import { usePrompt } from '@/hooks/usePrompt'
+import { useToolApproval } from '@/hooks/useToolApproval'
+import { useAgentMode } from '@/hooks/useAgentMode'
 import { useAgentRun } from '@/hooks/useAgentRun'
 import { useThreads } from '@/hooks/useThreads'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
@@ -122,7 +126,8 @@ vi.mock('@/hooks/useAgentSkills', () => ({
 
 vi.mock('@/hooks/useAgentMode', () => {
   const state = {
-    approvalModes: {},
+    approvalModes: {} as Record<string, string>,
+    workspaces: {} as Record<string, unknown>,
     setApprovalMode: vi.fn(),
   }
   const useAgentMode = (selector: (value: typeof state) => unknown) =>
@@ -226,6 +231,7 @@ vi.mock('@/containers/AgentApprovalModeSelect', () => ({
   // covers how the menu draws them.
   AgentApprovalModeSelect: ({
     toggles = [],
+    manualOverride,
   }: {
     toggles?: Array<{
       id: string
@@ -233,18 +239,31 @@ vi.mock('@/containers/AgentApprovalModeSelect', () => ({
       checked: boolean
       onCheckedChange: (checked: boolean) => void
     }>
+    manualOverride?: {
+      notice: string
+      actionLabel: string
+      onAction: () => void
+    }
   }) => (
-    <span data-test-id="approval-mode-select">
-      {toggles.map((toggle) => (
-        <button
-          key={toggle.id}
-          aria-pressed={toggle.checked}
-          onClick={() => toggle.onCheckedChange(!toggle.checked)}
-        >
-          {toggle.label}
-        </button>
-      ))}
-    </span>
+    <>
+      <span data-test-id="approval-mode-select">
+        {toggles.map((toggle) => (
+          <button
+            key={toggle.id}
+            aria-pressed={toggle.checked}
+            onClick={() => toggle.onCheckedChange(!toggle.checked)}
+          >
+            {toggle.label}
+          </button>
+        ))}
+      </span>
+      {manualOverride && (
+        <span data-test-id="approval-manual-override">
+          {manualOverride.notice}
+          <a onClick={manualOverride.onAction}>{manualOverride.actionLabel}</a>
+        </span>
+      )}
+    </>
   ),
 }))
 
@@ -365,6 +384,27 @@ describe('ChatInput', () => {
     unmount()
   })
 
+  it('names the icon-only Send and Stop buttons for assistive tech', () => {
+    const { rerender, unmount } = render(<ChatInput />)
+
+    fireEvent.change(screen.getByTestId('chat-input'), {
+      target: { value: 'Hello' },
+    })
+    expect(
+      within(screen.getByTestId('send-control')).getByRole('button', {
+        name: 'chat:sendMessage',
+      })
+    ).toBeEnabled()
+
+    rerender(<ChatInput chatStatus="streaming" />)
+    expect(
+      within(screen.getByTestId('send-control')).getByRole('button', {
+        name: 'common:stop',
+      })
+    ).toBeInTheDocument()
+    unmount()
+  })
+
   it('puts the model and the microphone beside Send', () => {
     const { unmount } = render(<ChatInput />)
     fireEvent.change(screen.getByTestId('chat-input'), {
@@ -428,6 +468,120 @@ describe('ChatInput', () => {
       expect(screen.queryByTestId('send-control')).not.toBeInTheDocument()
     )
     unmount()
+  })
+
+  it('keeps an unsent draft with its own composer instead of every chat', () => {
+    const previousThreadId = useThreads.getState().currentThreadId
+    try {
+      // A draft typed in a project composer and left unsent...
+      act(() => useThreads.setState({ currentThreadId: undefined }))
+      const project = render(<ChatInput initialMessage projectId="project-1" />)
+      fireEvent.change(screen.getByTestId('chat-input'), {
+        target: { value: 'Unsent project question' },
+      })
+      project.unmount()
+
+      // ...stays out of two unrelated chats, which keep their own drafts,
+      // also when one composer stays mounted while the chat changes.
+      act(() => useThreads.setState({ currentThreadId: 'thread-a' }))
+      const chat = render(<ChatInput />)
+      const input = screen.getByTestId('chat-input')
+      expect(input).toHaveValue('')
+      fireEvent.change(input, { target: { value: 'Reply for A' } })
+      act(() => useThreads.setState({ currentThreadId: 'thread-b' }))
+      expect(input).toHaveValue('')
+      act(() => useThreads.setState({ currentThreadId: 'thread-a' }))
+      expect(input).toHaveValue('Reply for A')
+      chat.unmount()
+
+      // ...and is there again when the project is opened again.
+      act(() => useThreads.setState({ currentThreadId: undefined }))
+      const back = render(<ChatInput initialMessage projectId="project-1" />)
+      expect(screen.getByTestId('chat-input')).toHaveValue(
+        'Unsent project question'
+      )
+      back.unmount()
+    } finally {
+      useThreads.setState({ currentThreadId: previousThreadId })
+      usePrompt.setState({ prompt: '', draftKey: null, drafts: {} })
+    }
+  })
+
+  // The thread page sets `currentThreadId` in its own effect, after the
+  // composer has committed. These read the textarea in a layout effect of a
+  // later sibling: the composer's first commit, before any re-render.
+  const firstCommits: string[] = []
+  function FirstCommit({ threadId }: { threadId: string }) {
+    useLayoutEffect(() => {
+      const input = screen.getByTestId('chat-input') as HTMLTextAreaElement
+      firstCommits.push(`${threadId}: ${input.value}`)
+    }, [threadId])
+    return null
+  }
+  const threadPage = (threadId: string) => (
+    <>
+      <ChatInput threadId={threadId} />
+      <FirstCommit threadId={threadId} />
+    </>
+  )
+
+  it("commits the next chat's own draft on T1 → T2, not T1's", () => {
+    const previousThreadId = useThreads.getState().currentThreadId
+    firstCommits.length = 0
+    try {
+      act(() => useThreads.setState({ currentThreadId: 'thread-1' }))
+      const view = render(threadPage('thread-1'))
+      fireEvent.change(screen.getByTestId('chat-input'), {
+        target: { value: 'Reply for T1' },
+      })
+
+      // T2's route renders while the global current thread is still T1.
+      view.rerender(threadPage('thread-2'))
+      expect(firstCommits.at(-1)).toBe('thread-2: ')
+      fireEvent.change(screen.getByTestId('chat-input'), {
+        target: { value: 'Reply for T2' },
+      })
+      act(() => useThreads.setState({ currentThreadId: 'thread-2' }))
+
+      // And back: T1's draft is there on the first commit, T2's is kept.
+      view.rerender(threadPage('thread-1'))
+      expect(firstCommits.at(-1)).toBe('thread-1: Reply for T1')
+      expect(usePrompt.getState().getDraft('thread-2')).toBe('Reply for T2')
+      view.unmount()
+    } finally {
+      useThreads.setState({ currentThreadId: previousThreadId })
+      usePrompt.setState({ prompt: '', draftKey: null, drafts: {} })
+    }
+  })
+
+  it("opens a chat from Home with that chat's draft, and typing there leaves Home's alone", () => {
+    const previousThreadId = useThreads.getState().currentThreadId
+    firstCommits.length = 0
+    try {
+      act(() => useThreads.setState({ currentThreadId: undefined }))
+      const home = render(<ChatInput initialMessage />)
+      fireEvent.change(screen.getByTestId('chat-input'), {
+        target: { value: 'Home draft' },
+      })
+      home.unmount()
+
+      // Home cleared the current thread; the page sets it only later.
+      const chat = render(threadPage('thread-1'))
+      expect(firstCommits.at(-1)).toBe('thread-1: ')
+      fireEvent.change(screen.getByTestId('chat-input'), {
+        target: { value: 'Typed before the page caught up' },
+      })
+      expect(usePrompt.getState().getDraft('thread-1')).toBe(
+        'Typed before the page caught up'
+      )
+      expect(usePrompt.getState().getDraft(TEMPORARY_CHAT_ID)).toBe(
+        'Home draft'
+      )
+      chat.unmount()
+    } finally {
+      useThreads.setState({ currentThreadId: previousThreadId })
+      usePrompt.setState({ prompt: '', draftKey: null, drafts: {} })
+    }
   })
 
   it('keeps a slash-selected skill inline at the caret and sends that text with metadata', async () => {
@@ -661,6 +815,49 @@ describe('ChatInput', () => {
       'Keep working even if I leave this screen'
     )
     unmount()
+  })
+
+  it('queues the approval mode and workspace New Chat showed at Send with the message', async () => {
+    const agent = useAgentMode.getState() as unknown as {
+      approvalModes: Record<string, string>
+      workspaces: Record<string, unknown>
+    }
+    const workspace = { externalRoots: [{ rootId: 'r1', path: '/w' }] }
+    agent.approvalModes[TEMPORARY_CHAT_ID] = 'skip'
+    agent.workspaces[TEMPORARY_CHAT_ID] = workspace
+    try {
+      useModelProvider.setState({
+        providers: [],
+        selectedProvider: '',
+        selectedModel: null,
+      })
+      const { unmount } = render(<ChatInput initialMessage />)
+      fireEvent.change(screen.getByTestId('chat-input'), {
+        target: { value: 'Run it with full access' },
+      })
+      fireEvent.click(
+        document.querySelector('[data-test-id="send-message-button"]')!
+      )
+      await screen.findByTestId('reply-model-gate')
+      act(() => {
+        mocks.replyGateProps!.onResolved({
+          outcome: 'download_in_flight',
+          branch: 'none',
+          decidedInMs: 1,
+          openedAtMs: Date.now() - 1,
+          downloadModelIds: ['owner/model'],
+        })
+      })
+
+      expect(useDeferredFirstSend.getState().queued?.agentState).toEqual({
+        approvalMode: 'skip',
+        workspace,
+      })
+      unmount()
+    } finally {
+      delete agent.approvalModes[TEMPORARY_CHAT_ID]
+      delete agent.workspaces[TEMPORARY_CHAT_ID]
+    }
   })
 
   it('drops the held message when the widget is dismissed', async () => {
@@ -1447,6 +1644,34 @@ describe('ChatInput', () => {
         .map((toggle) => toggle.textContent)
     ).toEqual(['chat:agentMode.menuItem'])
     unmount()
+  })
+
+  it('says in the access menu when global auto-approve overrides Restricted, linking to that setting', () => {
+    const allowAll = useToolApproval.getState().allowAllMCPPermissions
+    try {
+      // No mode picked on this composer, so it shows Restricted, while the
+      // global switch runs connector tools such as web search unasked.
+      useToolApproval.setState({ allowAllMCPPermissions: true })
+      const { unmount } = render(<ChatInput />)
+
+      const note = document.querySelector<HTMLElement>(
+        '[data-test-id="approval-manual-override"]'
+      )!
+      expect(note).toHaveTextContent('chat:agentApprovals.autoApproveOverride')
+      fireEvent.click(
+        within(note).getByText('chat:agentApprovals.openAutoApproveSetting')
+      )
+      expect(mocks.navigate).toHaveBeenCalledWith({ to: '/settings/general' })
+
+      // With the switch off, Restricted asks as it says: nothing to add.
+      act(() => useToolApproval.setState({ allowAllMCPPermissions: false }))
+      expect(
+        document.querySelector('[data-test-id="approval-manual-override"]')
+      ).not.toBeInTheDocument()
+      unmount()
+    } finally {
+      useToolApproval.setState({ allowAllMCPPermissions: allowAll })
+    }
   })
 
   it('renders the agent chip whose X turns the mode off everywhere', () => {

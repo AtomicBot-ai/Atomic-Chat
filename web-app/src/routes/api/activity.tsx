@@ -1,6 +1,6 @@
 import { IconRefresh, IconTrash } from '@tabler/icons-react'
 import { createFileRoute } from '@tanstack/react-router'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { Skeleton } from '@/components/ui/skeleton'
 import { route } from '@/constants/routes'
@@ -12,6 +12,10 @@ import { useApiServerLog, filterEntries } from '@/hooks/useApiServerLog'
 import { useApiServerLogFeed } from '@/hooks/useApiServerLogFeed'
 import { useApiServerModelNotices } from '@/hooks/useApiServerModelNotices'
 import { useLocalApiServerControl } from '@/hooks/useLocalApiServerControl'
+import {
+  type ListDetailGeometry,
+  useStackedListDetail,
+} from '@/hooks/useStackedListDetail'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn } from '@/lib/utils'
 import { computeApiServerStats } from '@/utils/apiServerStats'
@@ -28,6 +32,20 @@ export const Route = createFileRoute(route.api.activity as any)({
 
 /** How often the sliding stats window is recomputed. */
 const STATS_TICK_MS = 2000
+
+/**
+ * The request list's 380 px column and its 12 px gap, the details' padding
+ * and border, and room for their three columns of figures. Narrower, the
+ * list takes the page's width and the details open under it.
+ */
+const LIST_DETAIL: ListDetailGeometry = {
+  listWidth: 392,
+  detailInset: 34,
+  detailMeasureEm: 30,
+}
+
+/** Both panes keep one height, side by side or stacked. */
+const PANE_HEIGHT = 'grid h-[clamp(320px,46vh,620px)] min-h-0 min-w-0'
 
 function useNowTick(intervalMs: number) {
   const [now, setNow] = useState(() => Date.now())
@@ -56,6 +74,9 @@ export function ApiActivityPage() {
   const hydrated = useApiServerLog((state) => state.hydrated)
   const feedUnavailable = useApiServerLog((state) => state.feedUnavailable)
   const { select, setFilter, setQuery } = useApiServerLog.getState()
+  const { ref: splitRef, stacked } =
+    useStackedListDetail<HTMLDivElement>(LIST_DETAIL)
+  const inspectorRef = useRef<HTMLDivElement>(null)
 
   const now = useNowTick(STATS_TICK_MS)
   const stats = useMemo(
@@ -79,6 +100,18 @@ export function ApiActivityPage() {
       setRefreshing(false)
     }
   }, [control, hydrate])
+
+  const selectRequest = useCallback(
+    (id: string) => {
+      select(id)
+      if (!stacked) return
+      // Under the list, the details may start below the fold.
+      requestAnimationFrame(() =>
+        inspectorRef.current?.scrollIntoView?.({ block: 'nearest' })
+      )
+    },
+    [select, stacked]
+  )
 
   const clearFilters = useCallback(() => {
     setFilter('all')
@@ -123,22 +156,40 @@ export function ApiActivityPage() {
           </p>
         )}
 
-        <div className="grid h-[clamp(320px,46vh,620px)] grid-cols-1 gap-3 lg:grid-cols-[minmax(300px,380px)_1fr]">
-          <ApiRequestList
-            entries={visible}
-            filter={filter}
-            query={query}
-            selectedId={selectedId}
-            onSelect={select}
-            onFilterChange={setFilter}
-            onQueryChange={setQuery}
-            onClearFilters={clearFilters}
-            emptyLog={entries.length === 0}
-          />
-          <ApiRequestInspector
-            entry={selected}
-            hasSelection={selectedId !== null}
-          />
+        {/* Side by side when the page has room for both; otherwise the list
+            takes the width and a selected request's details open under it,
+            with no empty column held for them. */}
+        <div
+          ref={splitRef}
+          data-layout={stacked ? 'stacked' : 'split'}
+          className={cn(
+            'grid gap-3',
+            stacked
+              ? 'grid-cols-1'
+              : 'grid-cols-[minmax(300px,380px)_minmax(0,1fr)]'
+          )}
+        >
+          <div className={PANE_HEIGHT}>
+            <ApiRequestList
+              entries={visible}
+              filter={filter}
+              query={query}
+              selectedId={selectedId}
+              onSelect={selectRequest}
+              onFilterChange={setFilter}
+              onQueryChange={setQuery}
+              onClearFilters={clearFilters}
+              emptyLog={entries.length === 0}
+            />
+          </div>
+          {(!stacked || selectedId !== null) && (
+            <div ref={inspectorRef} className={PANE_HEIGHT}>
+              <ApiRequestInspector
+                entry={selected}
+                hasSelection={selectedId !== null}
+              />
+            </div>
+          )}
         </div>
       </div>
     </ServerPage>

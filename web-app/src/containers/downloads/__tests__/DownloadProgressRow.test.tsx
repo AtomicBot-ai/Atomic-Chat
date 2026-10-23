@@ -177,6 +177,24 @@ describe('DownloadProgressRow readout line', () => {
     expect(name).toHaveClass('overflow-hidden')
   })
 
+  it('reports the transfer’s own percentage to assistive tech, not a constant', () => {
+    const { rerender } = render(<DownloadProgressRow {...transfer} />)
+
+    const bar = screen.getByRole('progressbar', {
+      name: 'Qwen3-Coder-30B-A3B-Instruct-GGUF',
+    })
+    expect(bar).toHaveAttribute('aria-valuenow', '42')
+    expect(bar).toHaveAttribute('aria-valuemin', '0')
+    expect(bar).toHaveAttribute('aria-valuemax', '100')
+    expect(bar).toHaveAttribute('aria-valuetext', '42%')
+
+    rerender(<DownloadProgressRow {...transfer} progress={0.87} />)
+    expect(screen.getByRole('progressbar')).toHaveAttribute(
+      'aria-valuenow',
+      '87'
+    )
+  })
+
   it('keeps pause and cancel in a slot that never shrinks', () => {
     render(<DownloadProgressRow {...transfer} pausable />)
 

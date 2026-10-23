@@ -7,6 +7,7 @@ import { DEFAULT_CTX_LEN } from '@janhq/core'
 import { LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
 import { turboquantDefaultActive } from '@/lib/turboquantDefaultMigration'
 import { isCloudProvider, isProviderConnected } from '@/lib/cloud-providers'
+import { isEmbeddingOnlyModel } from '@/lib/answerable-model'
 
 /**
  * Historical provider id retained for one-time migration logic. The
@@ -50,7 +51,11 @@ const resolveSelectedModel = (
 ): Model | null => {
   if (!provider || provider.active === false) return null
   if (isCloudProvider(provider) && !isProviderConnected(provider)) return null
-  return provider.models.find((model) => model.id === selectedModel.id) ?? null
+  const model = provider.models.find((model) => model.id === selectedModel.id)
+  // A selection persisted while project indexing could still pick the
+  // embedding model (AC-01) is dropped on the next provider refresh.
+  if (!model || isEmbeddingOnlyModel(model)) return null
+  return model
 }
 
 type ModelProviderState = {
@@ -298,6 +303,13 @@ export const useModelProvider = create<ModelProviderState>()(
 
         if (provider && provider.models) {
           modelObject = provider.models.find((model) => model.id === modelName)
+        }
+
+        // An embedding model cannot chat (AC-01: project indexing loads one,
+        // and the composer then sent to it). Whatever path asks for it, the
+        // composer keeps the model it has, or stays empty.
+        if (isEmbeddingOnlyModel(modelObject ?? { id: modelName })) {
+          return undefined
         }
 
         // Persist the *resolved* provider id so subsequent reads (e.g.

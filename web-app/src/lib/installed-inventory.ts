@@ -50,6 +50,10 @@ import {
   type PartialDownload,
 } from '@/lib/downloads-disk'
 import { isManagedDownloadId } from '@/lib/managed-engine/download-id'
+import {
+  compactModelDisplayName,
+  modelVariantDetails,
+} from '@/lib/model-display-name'
 import { getProviderTitle } from '@/lib/utils'
 import {
   decisionCheckpointBytes,
@@ -141,6 +145,18 @@ export type InventoryItem = {
   kind: InventoryKind
   /** The human name, shown once. */
   name: string
+  /**
+   * The id a model's readable `name` was made from (`org/repo-Q4_K_M`): the
+   * row shows it in full on hover and focus, and copies it.
+   */
+  modelId?: string
+  /** The quantization the model's `name` leaves out (`Q4_K_M`), for the line under it. */
+  quant?: string
+  /**
+   * The repository owner the model's `name` leaves out (`unsloth`), for the
+   * line under it: one model and quant from two owners read the same without it.
+   */
+  owner?: string
   /** Facts for the line under the name: quant, engine, build variant. */
   details: string[]
   /** Bytes on disk, or `null` when the source does not say. */
@@ -165,8 +181,39 @@ const validBytes = (bytes: number | undefined | null): number | null =>
     ? bytes
     : null
 
-const modelName = (model: Model): string =>
-  model.displayName || model.name || model.id
+/** A task id's provider prefix or drafter tag (`mlx/dflash:`): no owner. */
+const TASK_PREFIX =
+  /^(?:llamacpp|llamacpp-upstream|atomic-prism|mlx)\/(?:[\w-]+:)?/
+
+/**
+ * A model row's name, quant and owner, apart. The name is read once: a
+ * nickname or a name the engine gave it as it is, otherwise the id without its
+ * owner, format or quant ("NVIDIA Nemotron 3.5 Lightning 30B A3B"). The quant
+ * ("Q4_K_M") and the owner ("AtomicChat") go on the line under it, unless the
+ * name already spells them, as in the model picker. A long id cut short at the
+ * end used to lose its quant first, and two quants of one model read the same.
+ */
+function readableModel(
+  id: string,
+  given?: string
+): Pick<InventoryItem, 'name' | 'modelId' | 'quant' | 'owner'> {
+  const name = given?.trim() || compactModelDisplayName({ id })
+  const { quant, owner } = modelVariantDetails({
+    id: id.replace(TASK_PREFIX, ''),
+    displayName: name,
+  })
+  return {
+    name,
+    modelId: id,
+    ...(quant ? { quant } : {}),
+    ...(owner ? { owner } : {}),
+  }
+}
+
+/** What the user or the engine named a model, if anything other than its id. */
+const givenName = (model: Model): string | undefined =>
+  model.displayName?.trim() ||
+  (model.name && model.name !== model.id ? model.name : undefined)
 
 /**
  * Model files the local engines registered. The fork and the upstream build
@@ -200,7 +247,7 @@ export function providerModelItems(
           key: `model:${group}:${model.id}`,
           category: 'local',
           kind: model.embedding ? 'embedding' : 'model',
-          name: modelName(model),
+          ...readableModel(model.id, givenName(model)),
           details: [getProviderTitle(provider)],
           bytes: validBytes(model.sizeBytes),
           removal: { type: 'model', modelId: model.id, provider },
@@ -312,7 +359,7 @@ export function partialDownloadItems(
       key: `partial:${partial.root}:${partial.id}`,
       category: 'local' as const,
       kind: 'partial' as const,
-      name: partial.id,
+      ...readableModel(partial.id),
       details: [rootEngine(partial.root)],
       bytes: validBytes(partial.bytes),
       removal: {
@@ -539,13 +586,13 @@ function describeDownload(
       details: [],
     }
   }
-  const origin =
-    (isManagedDownloadId(id) || isFoundryLocalDownloadId(id)) &&
-    sources.downloadOriginByModelId[id]
+  const ownList = isManagedDownloadId(id) || isFoundryLocalDownloadId(id)
+  const origin = ownList && sources.downloadOriginByModelId[id]
   return {
     category: 'local',
     kind: 'model',
-    name: origin || id,
+    // A managed or Foundry Local id is not a Hugging Face file name.
+    ...(origin ? { name: origin } : ownList ? { name: id } : readableModel(id)),
     details: [],
   }
 }
@@ -621,13 +668,17 @@ const CATEGORY_ORDER = new Map(
   INVENTORY_CATEGORIES.map((category, index) => [category, index])
 )
 
-/** Running downloads first, then by category, then by name. */
+/**
+ * Running downloads first, then by category, then by name; quants of one
+ * model, which share a name, by their id.
+ */
 export function sortInventory(items: InventoryItem[]): InventoryItem[] {
   return [...items].sort(
     (a, b) =>
       Number(Boolean(b.download)) - Number(Boolean(a.download)) ||
       (CATEGORY_ORDER.get(a.category) ?? 0) -
         (CATEGORY_ORDER.get(b.category) ?? 0) ||
-      a.name.localeCompare(b.name)
+      a.name.localeCompare(b.name) ||
+      (a.modelId ?? '').localeCompare(b.modelId ?? '')
   )
 }

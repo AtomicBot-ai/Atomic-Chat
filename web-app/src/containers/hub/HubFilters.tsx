@@ -118,9 +118,10 @@ export function HubFilters({
             variant="outline"
             size="sm"
             aria-label={t('hub:filters.label')}
+            title={t('hub:filters.button')}
           >
             <SlidersHorizontal size={15} />
-            {t('hub:filters.button')}
+            <span className="hub-toolbar-label">{t('hub:filters.button')}</span>
             {activeCount > 0 && (
               <span className="rounded-full bg-primary/15 px-1.5 text-xs tabular-nums">
                 {activeCount}
@@ -260,7 +261,7 @@ export function HubFilters({
             title={t(SORT_LABEL_KEYS[state.sort])}
           >
             <ArrowUpDown size={15} />
-            <span>{t('hub:sort')}</span>
+            <span className="hub-toolbar-label">{t('hub:sort')}</span>
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="max-w-72">

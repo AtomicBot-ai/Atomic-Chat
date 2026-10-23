@@ -20,6 +20,7 @@ import type { EndpointCheckResult } from './types'
 import { getModelCapabilities } from '@/lib/models'
 import { isEngineHidden } from '@/lib/provider-visibility'
 import { getProviderTitle } from '@/lib/utils'
+import { ownLocalApiServerUrl } from '@/lib/local-api-self-reference'
 
 /**
  * Turn a raw `get_local_http` failure (e.g. `HTTP 404: 404 page not found`,
@@ -169,6 +170,30 @@ function modelsRequest(provider: ModelProvider): {
 const ENDPOINT_CHECK_TIMEOUT_SECS = 8
 
 /**
+ * Why a provider whose address is the app's own Local API Server is refused:
+ * every request to it would come straight back through the same proxy.
+ */
+function ownServerMessage(label: string, serverUrl: string): string {
+  return (
+    `${label} points at Atomic Chat's own Local API Server (${serverUrl}). ` +
+    `Use the address of the server you want to reach.`
+  )
+}
+
+/**
+ * The status and body of a `get_local_http` failure (`HTTP 401: <body>`),
+ * if it was an HTTP answer at all.
+ */
+function httpFailureOf(
+  rawMsg: string
+): { httpStatus: number; responseBody: string } | undefined {
+  const match = /^HTTP (\d{3})\b:?\s*([\s\S]*)$/.exec(rawMsg)
+  return match
+    ? { httpStatus: Number(match[1]), responseBody: match[2].slice(0, 2000) }
+    : undefined
+}
+
+/**
  * Custom Endpoint's "Ping": does the server answer its model listing, how
  * fast, and with how many models.
  *
@@ -188,6 +213,15 @@ export async function checkProviderEndpoint(
       latencyMs: 0,
       modelCount: 0,
       message: 'Provider must have base_url configured',
+    }
+  }
+  const ownServer = ownLocalApiServerUrl(baseUrl)
+  if (ownServer) {
+    return {
+      ok: false,
+      latencyMs: 0,
+      modelCount: 0,
+      message: ownServerMessage(label, ownServer),
     }
   }
 
@@ -230,6 +264,46 @@ export async function checkProviderEndpoint(
     latencyMs: elapsed(),
     modelCount: 0,
     message: classifyLocalFetchError(label, baseUrl, urls, lastMessage),
+    ...httpFailureOf(lastMessage),
+  }
+}
+
+/**
+ * A provider's registry `key_check`: one GET of `url` with the key and
+ * headers its model listing would carry. Any 2xx means the key works; the
+ * body is not read. One attempt, the ping's timeout.
+ */
+export async function checkProviderKeyUrl(
+  provider: ModelProvider,
+  url: string
+): Promise<EndpointCheckResult> {
+  const { headers } = modelsRequest(provider)
+  const label = getProviderTitle(provider.provider)
+  const started = performance.now()
+  const elapsed = () => Math.round(performance.now() - started)
+  try {
+    await invoke<string>('get_local_http', {
+      url,
+      headers,
+      timeoutSecs: ENDPOINT_CHECK_TIMEOUT_SECS,
+    })
+    return { ok: true, latencyMs: elapsed(), modelCount: 0 }
+  } catch (err) {
+    const rawMsg = err instanceof Error ? err.message : String(err)
+    // A wrong path is no news about the key; the shared wording for the
+    // rest (401, 403, unreachable) names the provider and the address.
+    const message = /^HTTP (401|403)\b|^Request failed|^Body read failed/.test(
+      rawMsg
+    )
+      ? classifyLocalFetchError(label, url, [url], rawMsg)
+      : `Cannot check the API key with ${label} at ${url}: ${rawMsg}`
+    return {
+      ok: false,
+      latencyMs: elapsed(),
+      modelCount: 0,
+      message,
+      ...httpFailureOf(rawMsg),
+    }
   }
 }
 
@@ -444,6 +518,9 @@ export class TauriProvidersService extends DefaultProvidersService {
 
     const { baseUrl, urls, headers } = modelsRequest(provider)
     const label = getProviderTitle(provider.provider)
+    // The app's own `/v1/models` would come back as this endpoint's models.
+    const ownServer = ownLocalApiServerUrl(baseUrl)
+    if (ownServer) throw new Error(ownServerMessage(label, ownServer))
     const hasApiKey = Boolean(provider.api_key)
     const [primaryUrl, fallbackUrl] = urls
 
@@ -513,6 +590,13 @@ export class TauriProvidersService extends DefaultProvidersService {
     provider: ModelProvider
   ): Promise<EndpointCheckResult> {
     return checkProviderEndpoint(provider)
+  }
+
+  async checkProviderKeyUrl(
+    provider: ModelProvider,
+    url: string
+  ): Promise<EndpointCheckResult> {
+    return checkProviderKeyUrl(provider, url)
   }
 
   async updateSettings(

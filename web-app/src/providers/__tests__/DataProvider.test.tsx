@@ -25,7 +25,34 @@ const mocks = vi.hoisted(() => ({
   setServers: vi.fn(),
   setSettings: vi.fn(),
   setThreads: vi.fn(),
+  resumeServedHelperModels: vi.fn(),
+  enableOnStartup: true,
+  localApiServerFeature: true,
+  windowLabel: 'main',
 }))
+
+vi.mock('@tauri-apps/api/webviewWindow', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@tauri-apps/api/webviewWindow')>()),
+  getCurrentWebviewWindow: () => ({ label: mocks.windowLabel }),
+}))
+
+vi.mock('@/utils/turnOffLocalApiServer', () => ({
+  resumeServedHelperModels: mocks.resumeServedHelperModels,
+}))
+
+vi.mock('@/lib/platform/const', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/platform/const')>()
+  const { PlatformFeature } = await import('@/lib/platform/types')
+  return {
+    ...actual,
+    PlatformFeatures: new Proxy(actual.PlatformFeatures, {
+      get: (target, key) =>
+        key === PlatformFeature.LOCAL_API_SERVER
+          ? mocks.localApiServerFeature
+          : target[key as keyof typeof target],
+    }),
+  }
+})
 
 vi.mock('sonner', () => ({
   toast: { error: mocks.toastError },
@@ -106,7 +133,7 @@ vi.mock('@/hooks/useAppState', () => {
 vi.mock('@/hooks/useLocalApiServer', () => ({
   useLocalApiServer: {
     getState: () => ({
-      enableOnStartup: true,
+      enableOnStartup: mocks.enableOnStartup,
       serverHost: '127.0.0.1',
       serverPort: 1337,
       apiPrefix: '/v1',
@@ -118,6 +145,11 @@ vi.mock('@/hooks/useLocalApiServer', () => ({
       setServerPort: mocks.setServerPort,
     }),
   },
+}))
+
+// The served-model selection has its own tests; here it only must not need a real store.
+vi.mock('@/utils/serverModelSelection', () => ({
+  syncServedModelSelection: () => () => {},
 }))
 
 vi.mock('@/hooks/useModelLoad', () => ({
@@ -189,7 +221,11 @@ describe('DataProvider', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.enableOnStartup = true
+    mocks.localApiServerFeature = true
+    mocks.windowLabel = 'main'
     localStorage.clear()
+    sessionStorage.clear()
     getProviders.mockResolvedValue(providers)
     getMCPConfig.mockResolvedValue(mcpConfig)
     getAssistants.mockResolvedValue(assistants)
@@ -265,6 +301,107 @@ describe('DataProvider', () => {
     await waitFor(() => expect(mocks.setServerPort).toHaveBeenCalledWith(6768))
     if (window.core?.api) window.core.api.startServer = previous
     unmount()
+  })
+
+  describe('"Start automatically" at launch', () => {
+    const withStartServer = (startServer: ReturnType<typeof vi.fn>) => {
+      const previous = window.core?.api?.startServer
+      if (window.core?.api) window.core.api.startServer = startServer
+      return () => {
+        if (window.core?.api) window.core.api.startServer = previous
+      }
+    }
+
+    it('starts the server with no model running, and loads none for it', async () => {
+      const startServer = vi.fn().mockResolvedValue(1337)
+      const restore = withStartServer(startServer)
+      const { unmount } = render(<DataProvider />)
+
+      await waitFor(() =>
+        expect(mocks.setServerStatus).toHaveBeenLastCalledWith('running')
+      )
+      expect(startServer.mock.calls).toEqual([
+        [
+          expect.objectContaining({
+            host: '127.0.0.1',
+            port: 1337,
+            prefix: '/v1',
+          }),
+        ],
+      ])
+      expect(mocks.setServerStatus.mock.calls).toEqual([
+        ['pending'],
+        ['running'],
+      ])
+      // The helper models the last turn-off paused come back, as Start does.
+      expect(mocks.resumeServedHelperModels).toHaveBeenCalledOnce()
+      expect(mocks.switchToModel).not.toHaveBeenCalled()
+      restore()
+      unmount()
+    })
+
+    it('starts it once per app run: a reload of the main window leaves a stopped server stopped', async () => {
+      const startServer = vi.fn().mockResolvedValue(1337)
+      const restore = withStartServer(startServer)
+      const first = render(<DataProvider />)
+      await waitFor(() => expect(startServer).toHaveBeenCalledOnce())
+      first.unmount()
+
+      // The user stopped the server, then the main window reloaded.
+      mocks.setServerStatus.mockClear()
+      getServerStatus.mockClear()
+      const reloaded = render(<DataProvider />)
+      await waitFor(() => expect(getServerStatus).toHaveBeenCalledOnce())
+      await new Promise((resolve) => setTimeout(resolve, 0))
+
+      expect(startServer).toHaveBeenCalledOnce()
+      expect(mocks.setServerStatus).not.toHaveBeenCalledWith('running')
+      restore()
+      reloaded.unmount()
+    })
+
+    it('never starts it from a chat opened in its own window', async () => {
+      mocks.windowLabel = 'thread-1'
+      const startServer = vi.fn().mockResolvedValue(1337)
+      const restore = withStartServer(startServer)
+      const { unmount } = render(<DataProvider />)
+
+      await waitFor(() => expect(getServerStatus).toHaveBeenCalledOnce())
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(startServer).not.toHaveBeenCalled()
+      expect(mocks.resumeServedHelperModels).not.toHaveBeenCalled()
+      expect(mocks.setServerStatus).not.toHaveBeenCalledWith('running')
+      restore()
+      unmount()
+    })
+
+    it('leaves the server stopped when auto-start is off', async () => {
+      mocks.enableOnStartup = false
+      const startServer = vi.fn().mockResolvedValue(1337)
+      const restore = withStartServer(startServer)
+      const { unmount } = render(<DataProvider />)
+
+      await waitFor(() => expect(getServerStatus).toHaveBeenCalledOnce())
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(startServer).not.toHaveBeenCalled()
+      expect(mocks.setServerStatus).not.toHaveBeenCalledWith('running')
+      restore()
+      unmount()
+    })
+
+    it('raises no server without a running model where there is no Local API Server', async () => {
+      mocks.localApiServerFeature = false
+      const startServer = vi.fn().mockResolvedValue(1337)
+      const restore = withStartServer(startServer)
+      const { unmount } = render(<DataProvider />)
+
+      await waitFor(() => expect(getActiveModels).toHaveBeenCalledOnce())
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(startServer).not.toHaveBeenCalled()
+      expect(mocks.setServerStatus).not.toHaveBeenCalledWith('running')
+      restore()
+      unmount()
+    })
   })
 
   describe('atomic-core session:died', () => {

@@ -12,12 +12,14 @@ import {
 
 import { Button } from '@/components/ui/button'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
+import { LocalModelCollisionNotice } from '@/containers/endpoints/LocalModelCollisionNotice'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { listedModels } from '@/lib/cloud-model-catalog'
 import { isProviderConnected } from '@/lib/cloud-providers'
 import { isMediaConnected } from '@/lib/media-models'
 import { cn, getProviderLogo, getProviderTitle } from '@/lib/utils'
 import { useEndpointCheckStore } from '@/stores/endpoint-check-store'
+import { useProviderKeyStatus } from '@/stores/provider-key-status-store'
 
 type EndpointCardProps = {
   provider: ProviderObject
@@ -67,6 +69,9 @@ export function EndpointCard({
         ? t('cloud:models.countOne')
         : t('cloud:models.count', { count })
   const connected = isProviderConnected(provider) || isMediaConnected(provider)
+  // A saved key the server refused, or one it could not be asked about.
+  const keyStatus = useProviderKeyStatus(provider)
+  const keyState = connected ? keyStatus?.state : undefined
   const hasAddress = Boolean(provider.base_url?.trim())
   const bodyId = `endpoint-models-${name}`
 
@@ -105,6 +110,25 @@ export function EndpointCard({
         <span className="line-clamp-2 break-words" title={check.message}>
           {t('endpoints:status.failed')}
           {check.message ? ` · ${check.message}` : ''}
+        </span>
+      </>
+    )
+  } else if (keyState && keyStatus) {
+    status = (
+      <>
+        <TriangleAlert
+          size={12}
+          className={cn(
+            'shrink-0',
+            keyState === 'rejected' ? 'text-destructive' : 'text-amber-500'
+          )}
+          aria-hidden
+        />
+        <span className="line-clamp-2 break-words" title={keyStatus.message}>
+          {keyState === 'rejected'
+            ? t('endpoints:status.keyRejected')
+            : t('endpoints:status.unverified')}
+          {keyStatus.message ? ` · ${keyStatus.message}` : ''}
         </span>
       </>
     )
@@ -151,7 +175,9 @@ export function EndpointCard({
             role="status"
             className={cn(
               'mt-2 flex min-w-0 items-center gap-1 text-xs text-muted-foreground',
-              check && !check.ok && !checking && 'text-destructive'
+              ((check && !check.ok) || (!check && keyState === 'rejected')) &&
+                !checking &&
+                'text-destructive'
             )}
           >
             {status}
@@ -234,6 +260,14 @@ export function EndpointCard({
       </div>
       {expanded && children && (
         <div id={bodyId} className="flex flex-col border-t border-border">
+          {!mediaServer && (
+            <div className="px-4 pt-3 empty:hidden">
+              <LocalModelCollisionNotice
+                endpoint={name}
+                modelIds={listedModels(provider).map((m) => m.id)}
+              />
+            </div>
+          )}
           {children}
         </div>
       )}

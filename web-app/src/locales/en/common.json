@@ -57,6 +57,7 @@
   "launch": "Integrations",
   "api": "API",
   "skills": "Skills",
+  "backToSkills": "Back to skills",
   "cloud": "Cloud",
   "agentSkill": {
     "selected": "Skill: {{name}}",
@@ -599,6 +600,10 @@
       "title": "Download Failed",
       "description": "{{item}} download failed"
     },
+    "downloadNotResumable": {
+      "title": "Can't resume this download",
+      "description": "{{item}} can't be resumed from here. Download it again: the bytes already on disk are kept."
+    },
     "modelValidationStarted": {
       "title": "Validating Model",
       "description": "Downloaded model \"{{modelId}}\" successfully. Verifying integrity..."
@@ -830,6 +835,9 @@
     "discord": "Discord",
     "newGithubIssue": "New GitHub issue",
     "toggleSidebar": "Toggle sidebar",
+    "resizeSidebar": "Resize sidebar",
+    "resizeSidebarHint": "Drag to resize, double-click to reset",
+    "lastActivity": "Last activity: {{date}}",
     "searchChats": "Search chats",
     "pinned": "Pinned",
     "pinChat": "Pin chat",

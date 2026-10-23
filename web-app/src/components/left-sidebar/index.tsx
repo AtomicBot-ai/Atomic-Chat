@@ -23,6 +23,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
+  useSidebar,
 } from '@/components/ui/sidebar'
 import { route } from '@/constants/routes'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -43,6 +44,7 @@ import { NavGroupLabel, NavRow } from './NavRow'
 import { NavigationRail } from './NavigationRail'
 import { isPathActive, navigationSection } from '@/lib/navigation'
 import { WindowTitlebar } from './WindowTitlebar'
+import { cn } from '@/lib/utils'
 
 function WorkspaceNavigation({
   onCreateProject,
@@ -219,6 +221,9 @@ export function LeftSidebar() {
   const projectDialogOpen = useProjectDialog((state) => state.open)
   const setProjectDialogOpen = useProjectDialog((state) => state.setOpen)
   const { open: searchOpen, setOpen: setSearchOpen } = useSearchDialog()
+  // In a window too narrow to dock it, the open sidebar lies over the page,
+  // so it has to stack above the page's own raised layers.
+  const { compact, open: sidebarOpen } = useSidebar()
 
   const handleCreateProject = async (name: string, assistantId?: string) => {
     const project = await addFolder(name, assistantId)
@@ -234,7 +239,9 @@ export function LeftSidebar() {
     <>
       <NavigationRail section={section} />
       <WindowTitlebar section={section} />
-      <div className="relative z-30">
+      <div
+        className={cn('relative', compact && sidebarOpen ? 'z-[45]' : 'z-30')}
+      >
         <Sidebar variant="floating" collapsible="offcanvas">
           <SidebarHeader className="gap-0 px-3 pb-2 pt-3">
             <div className="flex items-center justify-between px-1 pb-1">
@@ -267,7 +274,10 @@ export function LeftSidebar() {
             {section === 'models' && <ModelsNavigation />}
             {section === 'settings' && <SettingsNavigation />}
           </SidebarContent>
-          <SidebarRail />
+          <SidebarRail
+            aria-label={t('common:navigation.resizeSidebar')}
+            title={t('common:navigation.resizeSidebarHint')}
+          />
         </Sidebar>
       </div>
       <AddProjectDialog

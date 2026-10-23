@@ -14,14 +14,28 @@
   font-size: 0.875rem;
 }
 
-/* Search takes the spare width; the other controls keep their own. */
+/*
+ * Search is the row's main control and takes the spare width; the others keep
+ * their own. The toolbar steps down by its own width, not the window's (the
+ * sidebar can be open or resized):
+ *   - wide: every action names itself;
+ *   - below 63em, in the toolbar's font so a larger font size steps sooner:
+ *     Filters, Sort and Import show their icons only. Their accessible names
+ *     and tooltips still say what they are; Filters keeps its count;
+ *   - below 40rem: type and search fill the first row, the actions the next.
+ * While search shares a row with the actions it keeps 16rem. Wrapping stays
+ * on as the last resort: a control drops to a new row before anything
+ * overflows. See
+ * docs/decisions/2026-10-22-step-the-hub-toolbar-down-by-its-own-width.md.
+ */
 .hub-search-toolbar {
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
+  row-gap: 8px;
   padding-block: 8px;
 }
 .hub-search-toolbar .hub-search-field {
-  flex: 1 1 140px;
-  min-width: 120px;
+  flex: 1 1 16rem;
+  min-width: 16rem;
 }
 .hub-model-type {
   flex: 0 0 148px;
@@ -34,13 +48,25 @@
   min-height: 60px;
   container: hub-toolbar / inline-size;
 }
-@container hub-toolbar (max-width: 620px) {
-  .hub-search-toolbar {
-    flex-wrap: wrap;
-    row-gap: 8px;
+@container hub-toolbar (max-width: 63em) {
+  .hub-search-toolbar .hub-toolbar-label {
+    display: none;
   }
+}
+@container hub-toolbar (max-width: 40rem) {
   .hub-model-type {
     flex-basis: 116px;
+  }
+  .hub-search-toolbar .hub-search-field {
+    flex-basis: calc(100% - 116px - 8px);
+    min-width: 0;
+  }
+  .hub-search-toolbar:not(:has(> .hub-model-type)) .hub-search-field {
+    flex-basis: 100%;
+  }
+  /* The actions' row sits at the end, where the actions were. */
+  .hub-search-toolbar .hub-search-field + * {
+    margin-left: auto;
   }
 }
 

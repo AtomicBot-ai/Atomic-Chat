@@ -12,6 +12,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { load } from '@tauri-apps/plugin-store'
 import type { UpdateInfo, UpdateProgressEvent } from './types'
 import { DefaultUpdaterService } from './default'
+import { isPackageManaged } from '@/lib/package-managed'
 
 // Store key for nonce seed
 const STORE_NAME = 'updater.json'
@@ -79,6 +80,11 @@ export class TauriUpdaterService extends DefaultUpdaterService {
    * Falls back to standard Tauri updater if custom check fails
    */
   async check(): Promise<UpdateInfo | null> {
+    // A package manager owns updates: no request, not even the plugin
+    // fallback below. `useAppUpdater` checks this too; this is the floor for
+    // any other caller.
+    if (await isPackageManaged()) return null
+
     try {
       const nonceSeed = await getNonceSeed()
       const currentVersion = await getCurrentVersion()
@@ -126,6 +132,8 @@ export class TauriUpdaterService extends DefaultUpdaterService {
   }
 
   async installAndRestart(): Promise<void> {
+    if (await isPackageManaged()) return
+
     try {
       const update = await check()
       if (update) {
@@ -141,6 +149,10 @@ export class TauriUpdaterService extends DefaultUpdaterService {
   async downloadAndInstallWithProgress(
     progressCallback: (event: UpdateProgressEvent) => void
   ): Promise<void> {
+    if (await isPackageManaged()) {
+      throw new Error('Updates are owned by the package manager')
+    }
+
     try {
       const update = await check()
       if (!update) {

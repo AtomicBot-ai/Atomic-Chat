@@ -14,6 +14,11 @@ pub async fn check_for_app_updates(
     nonce_seed: String,
     current_version: String,
 ) -> Result<Option<UpdateInfo>, String> {
+    // The package manager owns updates; never reach the update server.
+    if super::package_managed::is_package_managed() {
+        return Ok(None);
+    }
+
     // Get endpoints from tauri config
     let endpoints = get_updater_endpoints(&app);
 

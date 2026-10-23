@@ -19,7 +19,7 @@
   "modelInfo": "モデル情報",
   "downloadFailed": "ダウンロードの開始に失敗しました",
   "tools": "ツール",
-  "searchPlaceholder": "Hugging Faceでモデルを検索...",
+  "searchPlaceholder": "モデルを検索…",
   "recTitle": "おすすめ",
   "allModelsTitle": "すべてのモデル",
   "recEverydayUse": "日常利用",

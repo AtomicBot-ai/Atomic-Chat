@@ -84,7 +84,7 @@ function General() {
       return t('settings:general.openContainingFolder')
     }
   }
-  const { checkForUpdate } = useAppUpdater()
+  const { checkForUpdate, packageManaged } = useAppUpdater()
   const { pausePolling } = useHardware()
   const [janDataFolder, setJanDataFolder] = useState<string | undefined>()
   const [isCopied, setIsCopied] = useState(false)
@@ -283,7 +283,13 @@ function General() {
                   }
                 />
               )}
-              {!AUTO_UPDATER_DISABLED && (
+              {packageManaged && (
+                <CardItem
+                  title={t('settings:general.updates')}
+                  description={t('settings:general.updatesByPackageManager')}
+                />
+              )}
+              {!AUTO_UPDATER_DISABLED && !packageManaged && (
                 <CardItem
                   title={t('settings:general.checkForUpdates')}
                   description={t('settings:general.checkForUpdatesDesc')}

@@ -118,4 +118,30 @@ describe('getModelToStart', () => {
 
     expect(getModelToStart({ getProviderByName: lookup(providers) })).toBeNull()
   })
+
+  // AC-01: project indexing loads the embedding model, and a build that let
+  // the composer select it left it behind as the last-used model.
+  it('never starts an embedding model as the last used or first local model', () => {
+    localStorage.setItem(
+      localStorageKey.lastUsedModel,
+      JSON.stringify({
+        provider: 'llamacpp-upstream',
+        model: 'sentence-transformer-mini',
+      })
+    )
+    const providers = [
+      {
+        ...makeProvider('llamacpp-upstream', ['sentence-transformer-mini']),
+        models: [
+          { id: 'sentence-transformer-mini' },
+          { id: 'nomic-embed.gguf', embedding: true },
+        ],
+      } as unknown as ModelProvider,
+      makeProvider('mlx', ['model-b'], true),
+    ]
+
+    const result = getModelToStart({ getProviderByName: lookup(providers) })
+    expect(result?.provider.provider).toBe('mlx')
+    expect(result?.model).toBe('model-b')
+  })
 })

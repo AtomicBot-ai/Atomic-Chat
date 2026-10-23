@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Route as ConnectorsRoute } from '../index'
 import { useMCPServers, type MCPServerConfig } from '@/hooks/useMCPServers'
 import { MCP_CONNECTORS } from '@/constants/mcp-connectors'
+import { useMcpActivationStore } from '@/stores/mcp-activation-store'
 
 const activateMCPServer = vi.fn()
 const deactivateMCPServer = vi.fn()
@@ -103,6 +104,86 @@ describe('ConnectorsPage', () => {
     mcpOauthCancel.mockResolvedValue(undefined)
     mcpOauthLogout.mockResolvedValue(undefined)
     seedServers({})
+    useMcpActivationStore.setState({ connecting: {}, errors: {} })
+  })
+
+  const unreachable: MCPServerConfig = {
+    command: '',
+    args: [],
+    env: {},
+    type: 'http',
+    url: 'https://mcp.does-not-resolve.invalid/mcp',
+    active: false,
+  }
+  const cardOf = (name: string) =>
+    screen.getByText(name).closest('div.bg-card') as HTMLElement
+
+  it('shows the server connecting while it is being switched on', async () => {
+    const user = userEvent.setup()
+    activateMCPServer.mockReturnValue(new Promise(() => {}))
+    seedServers({ 'qa-unreachable': unreachable })
+    render(<ConnectorsPage />)
+
+    await user.click(within(cardOf('qa-unreachable')).getByRole('switch'))
+
+    expect(
+      within(cardOf('qa-unreachable')).getByTestId('connector-status')
+    ).toHaveTextContent('mcp-connectors:statusConnecting')
+  })
+
+  it('says why switching a server on failed, and offers Retry and Edit', async () => {
+    const user = userEvent.setup()
+    activateMCPServer.mockRejectedValueOnce(
+      'Streamable HTTP handshake failed: error sending request: dns error: failed to lookup address information'
+    )
+    seedServers({ 'qa-unreachable': unreachable })
+    render(<ConnectorsPage />)
+
+    await user.click(within(cardOf('qa-unreachable')).getByRole('switch'))
+
+    const failure = await within(cardOf('qa-unreachable')).findByTestId(
+      'connector-failure'
+    )
+    expect(failure).toHaveTextContent(
+      'Streamable HTTP handshake failed: error sending request: dns error'
+    )
+    expect(
+      within(cardOf('qa-unreachable')).getByTestId('connector-status')
+    ).toHaveTextContent('mcp-connectors:statusFailed')
+    expect(toastError).toHaveBeenCalledWith(
+      'mcp-connectors:activation.failed:qa-unreachable',
+      expect.objectContaining({
+        description: expect.stringContaining('dns error'),
+      })
+    )
+    expect(useMCPServers.getState().mcpServers['qa-unreachable'].active).toBe(
+      false
+    )
+
+    // Edit opens the server's own dialog.
+    await user.click(
+      within(cardOf('qa-unreachable')).getByRole('button', {
+        name: /mcp-connectors:activation.edit/,
+      })
+    )
+    expect(screen.getByTestId('add-edit-dialog')).toBeInTheDocument()
+
+    // Retry asks again; once it comes up, the failure goes away.
+    activateMCPServer.mockResolvedValueOnce(undefined)
+    await user.click(
+      within(cardOf('qa-unreachable')).getByRole('button', {
+        name: 'mcp-connectors:activation.retry',
+      })
+    )
+    await waitFor(() =>
+      expect(useMCPServers.getState().mcpServers['qa-unreachable'].active).toBe(
+        true
+      )
+    )
+    expect(activateMCPServer).toHaveBeenCalledTimes(2)
+    expect(
+      within(cardOf('qa-unreachable')).queryByTestId('connector-failure')
+    ).toBeNull()
   })
 
   it('merges installed servers into the grid and hides the system defaults', () => {

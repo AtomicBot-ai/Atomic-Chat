@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-443 records, 2026-05-19 → 2026-10-22.
+470 records, 2026-05-19 → 2026-10-23.
 
 ---
 
@@ -33,8 +33,10 @@ decision is reversed, add a new one that says which record it supersedes.
 
 ---
 
-## Local image & video generation (26)
+## Local image & video generation (28)
 
+- **2026-10-22** — [Size the media viewer to its preview and give the gallery the rest](2026-10-22-size-the-media-viewer-to-its-preview-and-give-the-gallery-the-rest.md)
+- **2026-10-22** — [Show only the generation settings a recipe can vouch for](2026-10-22-show-only-the-generation-settings-a-recipe-can-vouch-for.md)
 - **2026-10-13** — [Offer providers' media models beside the local ones, through the core](2026-10-13-offer-providers-media-models-beside-the-local-ones.md)
 - **2026-10-09** — [Run Qwen-Image-2.1-Turbo as a Qwen-Image-2.1 sibling](2026-10-09-run-qwen-image-2-1-turbo-as-a-qwen-image-2-1-sibling.md)
 - **2026-10-07** — [Install the media engine and MLX through the core, and ship mlx-server by conf's manifest](2026-10-07-install-media-and-mlx-engines-through-the-core.md) — supersedes the desktop-installer parts of the 2026-10-06 probe-fallback record.
@@ -231,7 +233,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Ship `janhq/llama.cpp` cudart DLLs with every Windows CUDA backend](2026-05-22-ship-janhq-llama-cpp-cudart-dlls-with-every-windows-cuda-backend.md)
 - **2026-05-19** — [Windows uses upstream `ggml-org/llama.cpp`, not the TurboQuant fork](2026-05-19-windows-uses-upstream-ggml-org-llama-cpp-not-the-turboquant-fork.md)
 
-## Models, Hub & downloads (54)
+## Models, Hub & downloads (58)
+
+- **2026-10-23** — [Reconcile model recovery with upstream checkpoint recovery and Resume](2026-10-23-reconcile-download-recovery-with-upstream-resume.md)
 
 - **2026-10-22** — [Clean verified download sidecars before reporting success](2026-10-22-clean-validated-download-sidecars-before-success.md)
 
@@ -250,6 +254,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-10-20** — [Keep download cancellation distinct from pause and recovery](2026-10-20-distinguish-download-cancel-from-pause.md)
 - **2026-10-20** — [Recover and reuse unfinished model download requests](2026-10-20-recover-and-reuse-model-download-requests.md)
 
+- **2026-10-22** — [Step the Hub toolbar down by its own width, search first](2026-10-22-step-the-hub-toolbar-down-by-its-own-width.md)
+- **2026-10-22** — [Name Downloads rows by their model, with the quant apart](2026-10-22-name-downloads-rows-by-model-with-the-quant-apart.md)
+- **2026-10-21** — [Bring interrupted model downloads back after a relaunch, paused](2026-10-21-bring-interrupted-model-downloads-back-after-a-relaunch.md)
 - **2026-10-21** — [List and remove download leftovers on the Downloads page](2026-10-21-list-and-remove-download-leftovers-on-the-downloads-page.md)
 - **2026-10-16** — [Run Foundry Local through the core; download its models in the app](2026-10-16-run-foundry-local-through-the-core-and-download-its-models-in-the-app.md)
 - **2026-10-15** — [Download Bonsai with the app's own downloader, not the core's model setup](2026-10-15-download-bonsai-with-the-apps-own-downloader.md)
@@ -295,8 +302,12 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-04** — [Recover from unsupported multimodal projector (`gemma4a`) by falling back to text-only instead of crashing the load (issue #44)](2026-06-04-recover-from-unsupported-multimodal-projector-gemma4a-by.md)
 - **2026-05-27** — [Replace `janhq/model-catalog` + Fuse.js with curated `AtomicBot-ai/atomic-chat-model-catalog` and a pre-built MiniSearch index](2026-05-27-replace-janhq-model-catalog-fuse-js-with-curated-atomicbot-ai.md)
 
-## Local API server & OpenAI compatibility (10)
+## Local API server & OpenAI compatibility (14)
 
+- **2026-10-21** — [The Local API Server routes a model id to the provider selected for it](2026-10-21-the-server-routes-a-model-id-to-the-provider-selected-for-it.md) — supersedes "remote wins over local" for ids the server page shows.
+- **2026-10-21** — [Refuse the Local API Server as a custom endpoint](2026-10-21-refuse-the-local-api-server-as-a-custom-endpoint.md)
+- **2026-10-21** — [Start the Local API Server at launch without a model](2026-10-21-start-the-local-api-server-at-launch-without-a-model.md) — supersedes the startup clauses of the 2026-08-19 and 2026-09-25 records.
+- **2026-10-21** — [List unwatched Local API requests in Activity, without previews](2026-10-21-list-unwatched-api-requests-in-activity-without-previews.md)
 - **2026-10-20** — [Turn the served models off with the server](2026-10-20-turn-the-served-models-off-with-the-server.md)
 - **2026-10-08** — [Stop closes the local stream's connection in Rust](2026-10-08-stop-closes-the-local-stream-connection-in-rust.md)
 - **2026-09-25** — [Raise the Local API Server for a resident image or video model](2026-09-25-raise-the-local-api-server-for-a-resident-image-or-video-model.md)
@@ -322,8 +333,11 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-10** — [Throttle crashloop `model_load` failure spam client-side; confirm `model_load.status` / api 404-noise are already-fixed-pending-rollout, not code bugs (ATO-130: ATO-133 + ATO-131 + ATO-132)](2026-06-10-throttle-crashloop-model-load-failure-spam-client-side-confirm.md)
 - **2026-06-09** — [Add zero-PII Sentry crash/error tracking to both the React frontend and the Rust/Tauri desktop, gated behind `productAnalytic` (ATO-113)](2026-06-09-add-zero-pii-sentry-crash-error-tracking-to-both-the-react.md)
 
-## Packaging, installers, autostart & platform policy (23)
+## Packaging, installers, autostart & platform policy (26)
 
+- **2026-10-21** — [Give the Linux window a stable app id](2026-10-21-give-the-linux-window-a-stable-app-id.md) — Wayland `app_id` / Hyprland class is `chat.atomic.app`, matched by the desktop entry's `StartupWMClass`.
+- **2026-10-21** — [Close the Linux window to the tray](2026-10-21-close-the-linux-window-to-the-tray.md) — under a bar with a tray, closing hides the window instead of stopping `:1337`; tray "Quit" exits; without a StatusNotifier host closing still quits.
+- **2026-10-21** — [Let a package manager own updates](2026-10-21-let-a-package-manager-own-updates.md) — a marker file beside the AppImage or binary, or `ATOMIC_CHAT_PACKAGE_MANAGED=1`, turns the updater off, including its startup check and the updater service's plugin fallback.
 - **2026-10-19** — [Reveal files in the file manager from the blocking pool](2026-10-19-reveal-files-from-the-blocking-pool-on-linux.md) — the opener plugin's async reveal blocks on D-Bus inside tokio and aborts the Linux app.
 - **2026-10-09** — [Hide the CLI in the app, and stop installing it on launch](2026-10-09-hide-the-cli-in-the-app.md)
 - **2026-10-09** — [Gate releases beside the builds and warm their caches on main](2026-10-09-gate-releases-beside-the-builds-and-warm-caches-on-main.md) — installers reach the draft only after build and gate; caches are written on `main`, read by releases.
@@ -355,7 +369,22 @@ decision is reversed, add a new one that says which record it supersedes.
 ## UI / UX (2)
 - **2026-10-20** — [Show hosted providers on Cloud and the user's own servers on Custom Endpoint](2026-10-20-show-hosted-providers-on-cloud-and-own-servers-on-custom-endpoint.md)
 - **2026-10-20** — [List everything downloaded on a Downloads page](2026-10-20-list-everything-downloaded-on-a-downloads-page.md)
-## UI / UX (96)
+## UI / UX (111)
+- **2026-10-22** — [Fold the sidebar over the page when the window is narrow, and bound its width](2026-10-22-fold-the-sidebar-over-the-page-when-the-window-is-narrow.md)
+- **2026-10-22** — [Show full names in the sidebar, and tell colliding rows apart by their last activity](2026-10-22-show-full-names-and-tell-colliding-sidebar-rows-apart.md)
+- **2026-10-22** — [Name the served model readably on the Server card](2026-10-22-name-the-served-model-readably-on-the-server-card.md)
+- **2026-10-22** — [Stack Activity's request details under the list when the page is narrow](2026-10-22-stack-activity-request-details-under-the-list-when-narrow.md)
+- **2026-10-22** — [Give a connector's name the title row and its badges the line below](2026-10-22-give-a-connector-name-the-title-row-and-badges-the-line-below.md)
+- **2026-10-22** — [Show an assistant's initial when it has no avatar](2026-10-22-show-an-assistants-initial-when-it-has-no-avatar.md)
+- **2026-10-22** — [Stack the Skills list and instructions when the page is narrow](2026-10-22-stack-the-skills-list-and-instructions-when-the-page-is-narrow.md)
+- **2026-10-22** — [Show the Cloud catalog and a provider's configuration in turn on a narrow page](2026-10-22-show-the-cloud-catalog-and-configuration-in-turn-on-a-narrow-page.md)
+- **2026-10-22** — [Give model picker rows a second line for quant, owner and source](2026-10-22-give-model-picker-rows-a-second-line-for-quant-owner-and-source.md)
+- **2026-10-21** — [Check a cloud key before calling it connected](2026-10-21-check-a-cloud-key-before-calling-it-connected.md) — supersedes the "no key error state" clause of the 2026-10-20 Cloud record.
+- **2026-10-21** — [Say on the card why an MCP server did not start](2026-10-21-say-on-the-card-why-an-mcp-server-did-not-start.md)
+- **2026-10-21** — [Keep thread windows in step through the thread files](2026-10-21-keep-thread-windows-in-step-through-the-thread-files.md)
+- **2026-10-21** — [Store why a chat turn failed on its message](2026-10-21-store-why-a-chat-turn-failed-on-its-message.md)
+- **2026-10-21** — [Keep each composer's unsent draft with its own chat](2026-10-21-keep-each-composers-draft-with-its-own-chat.md)
+- **2026-10-21** — [Say in the access menu when auto-approve overrides Restricted](2026-10-21-say-in-the-access-menu-when-auto-approve-overrides-restricted.md)
 - **2026-10-20** — [Name every Hub row's parameters and hold the place of what loads](2026-10-20-name-every-hub-rows-parameters-and-hold-the-place-of-what-loads.md)
 - **2026-10-20** — [Unfold engine settings and offer engine updates on the overview](2026-10-20-unfold-engine-settings-and-offer-engine-updates-on-the-overview.md) — supersedes the status, card link and switch of the grouped overview.
 - **2026-10-20** — [List the inference engines on one grouped overview](2026-10-20-list-inference-engines-on-one-grouped-overview.md)

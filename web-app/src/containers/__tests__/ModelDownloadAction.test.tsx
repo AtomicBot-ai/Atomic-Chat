@@ -51,9 +51,12 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 
 vi.mock('@/hooks/useGeneralSetting', () => ({
-  useGeneralSetting: (
-    selector: (state: { huggingfaceToken: string }) => unknown
-  ) => selector({ huggingfaceToken: '' }),
+  // `getState` too: a resume reads the token at the click.
+  useGeneralSetting: Object.assign(
+    (selector: (state: { huggingfaceToken: string }) => unknown) =>
+      selector({ huggingfaceToken: '' }),
+    { getState: () => ({ huggingfaceToken: '' }) }
+  ),
 }))
 
 import { ModelDownloadAction } from '../ModelDownloadAction'
@@ -78,6 +81,8 @@ describe('ModelDownloadAction', () => {
     mocks.pullModelWithMetadata.mockResolvedValue(undefined)
     useDownloadStore.setState({
       controlRequests: [],
+      resumeParams: {},
+      dismissedDownloads: new Set(),
       downloads: {},
       pausedDownloads: new Set(),
       localDownloadingModels: new Set(),
@@ -98,11 +103,15 @@ describe('ModelDownloadAction', () => {
     useDownloadStore.setState({
       pausedDownloads: new Set([variant.model_id]),
     })
-    useDownloadStore.getState().updateProgress(variant.model_id, 0.4, variant.model_id, 40, 100)
+    useDownloadStore
+      .getState()
+      .updateProgress(variant.model_id, 0.4, variant.model_id, 40, 100)
     const open = vi.fn()
     window.addEventListener('atomic-open-download-panel', open)
     render(<ModelDownloadAction variant={variant} model={model} asButton />)
-    fireEvent.click(screen.getByRole('button', { name: 'common:showDownloadProgress' }))
+    fireEvent.click(
+      screen.getByRole('button', { name: 'common:showDownloadProgress' })
+    )
     expect(open).toHaveBeenCalledTimes(1)
     const state = useDownloadStore.getState()
     expect(Object.keys(state.downloads)).toEqual([variant.model_id])
@@ -216,6 +225,50 @@ describe('ModelDownloadAction', () => {
     expect(downloads.resumableDownloads.has(variant.model_id)).toBe(true)
   })
 
+  it('offers Resume for a paused download instead of Cancel, and resumes it', () => {
+    const id = variant.model_id
+    useDownloadStore.setState({
+      downloads: {
+        [id]: {
+          id,
+          name: id,
+          progress: 0.3,
+          current: 3,
+          total: 10,
+          speed: { bytesPerSecond: 0, atBytes: 3, atTime: 0 },
+        },
+      },
+      // Also how a download a quit cut off comes back after the relaunch.
+      pausedDownloads: new Set([id]),
+      resumeParams: { [id]: { modelPath: variant.path } },
+    })
+    try {
+      render(<ModelDownloadAction variant={variant} model={model} asButton />)
+
+      expect(
+        screen.queryByRole('button', { name: 'common:cancelDownload' })
+      ).toBeNull()
+      const resume = screen.getByRole('button', {
+        name: 'common:resumeDownload',
+      })
+      expect(resume).toHaveTextContent('30%')
+
+      fireEvent.click(resume)
+
+      expect(mocks.pullModelWithMetadata).not.toHaveBeenCalled()
+      expect(useDownloadStore.getState().controlRequests).toEqual([
+        expect.objectContaining({ action: 'resume', id }),
+      ])
+      expect(useDownloadStore.getState().pausedDownloads.has(id)).toBe(true)
+    } finally {
+      useDownloadStore.setState({
+        pausedDownloads: new Set(),
+        resumeParams: {},
+        controlRequests: [],
+      })
+    }
+  })
+
   describe('a file only PrismML runs', () => {
     const bonsai = {
       model_id: 'Bonsai-8B-PQ2_0',
@@ -269,13 +322,19 @@ describe('ModelDownloadAction', () => {
         },
       ],
     }
-    const prismBuild = { version: 'prism-b9000-abcdef0', backend: 'macos-arm64' }
+    const prismBuild = {
+      version: 'prism-b9000-abcdef0',
+      backend: 'macos-arm64',
+    }
     const catalog = (installed: boolean): PrismCatalog => ({
       installed: installed ? [prismBuild] : [],
       available: [prismBuild],
       recommended: 'prism-b9000-abcdef0/macos-arm64',
       releases: [
-        { tag: prismBuild.version, variants: [{ id: prismBuild.backend, size: 20 }] },
+        {
+          tag: prismBuild.version,
+          variants: [{ id: prismBuild.backend, size: 20 }],
+        },
       ],
     })
 
@@ -429,7 +488,7 @@ describe('ModelDownloadAction', () => {
       expect(screen.queryByTestId('model-setup-sheet')).toBeNull()
     })
 
-    it('downloads under PrismML with the app\'s own downloader when the build is installed, and keeps a file PrismML runs', async () => {
+    it("downloads under PrismML with the app's own downloader when the build is installed, and keeps a file PrismML runs", async () => {
       known('compatible')
       planVerdict = verdict('compatible')
       mocks.prismCatalog.mockResolvedValue(catalog(true))
@@ -479,7 +538,11 @@ describe('ModelDownloadAction', () => {
       mocks.pullModelWithMetadata.mockImplementationOnce(async () => {
         useModelProvider.setState({
           providers: [
-            { provider: 'atomic-prism', settings: [], models: [{ id: prismId }] } as never,
+            {
+              provider: 'atomic-prism',
+              settings: [],
+              models: [{ id: prismId }],
+            } as never,
           ],
         })
       })
@@ -554,7 +617,9 @@ describe('ModelDownloadAction', () => {
       )
       expect(mocks.activatePrismBuild).not.toHaveBeenCalled()
       expect(mocks.pullModelWithMetadata).not.toHaveBeenCalled()
-      expect(await screen.findByRole('button', { name: 'hub:download' })).toBeEnabled()
+      expect(
+        await screen.findByRole('button', { name: 'hub:download' })
+      ).toBeEnabled()
     })
 
     it('keeps following a running Bonsai download when the verdict is forgotten', async () => {
@@ -595,7 +660,9 @@ describe('ModelDownloadAction', () => {
         expect.objectContaining({ action: 'cancel', id: prismId }),
       ])
       // Cancel does not alter the download until the shared confirmation is answered.
-      expect(useDownloadStore.getState().localDownloadingModels.has(prismId)).toBe(true)
+      expect(
+        useDownloadStore.getState().localDownloadingModels.has(prismId)
+      ).toBe(true)
     })
   })
 })

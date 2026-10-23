@@ -143,6 +143,8 @@ export function ApiRequestList({
             value={query}
             onChange={(event) => onQueryChange(event.target.value)}
             placeholder={t('api:log.searchPlaceholder')}
+            aria-label={t('api:log.searchPlaceholder')}
+            title={t('api:log.searchHint')}
             className="h-8 pl-8 text-xs"
           />
         </div>

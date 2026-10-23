@@ -91,6 +91,29 @@ describe('collectReplyModels', () => {
     expect(options.map((o) => o.modelId)).toEqual(['fine'])
   })
 
+  // AC-01: a send with nothing selected auto-starts the first option here.
+  it('never offers an embedding GGUF, even as the last used model', () => {
+    const lastUsed = {
+      provider: 'llamacpp-upstream',
+      model: 'nomic-embed.gguf',
+    }
+    const options = collectReplyModels(
+      [
+        local([
+          model('nomic-embed.gguf', { embedding: true }),
+          model('bge-small.gguf', { capabilities: ['embeddings'] }),
+          model('lfm2.5.gguf'),
+        ]),
+      ],
+      lastUsed
+    )
+
+    expect(options.map((o) => o.modelId)).toEqual(['lfm2.5.gguf'])
+    expect(resolveReplyModel(options, lastUsed)?.option.modelId).toBe(
+      'lfm2.5.gguf'
+    )
+  })
+
   it('qualifies the key by provider, so the same GGUF in two engines is two rows', () => {
     const options = collectReplyModels([
       provider('llamacpp-upstream', [model('shared.gguf')]),

@@ -32,6 +32,16 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_single_instance::init(|_app, argv, _cwd| {
           println!("a new app instance was opened with {argv:?} and the deep link event was already triggered");
           // when defining deep link schemes at runtime, you must also check `argv` here
+
+          // Linux closes the window to the tray, so launching the app again
+          // from a launcher is how many users will look for it: show it.
+          #[cfg(target_os = "linux")]
+          if let Some(window) = _app.get_webview_window("main") {
+              core::setup::cancel_pending_close();
+              let _ = window.unminimize();
+              let _ = window.show();
+              let _ = window.set_focus();
+          }
         }));
         // Launch-at-startup (ATO-96). Registered after single-instance, as the
         // autostart plugin requires. AppleScript mode on macOS registers a real
@@ -192,6 +202,7 @@ pub fn run() {
         // Remote provider commands
         core::server::remote_provider_commands::register_provider_config,
         core::server::remote_provider_commands::unregister_provider_config,
+        core::server::remote_provider_commands::set_server_model_selection,
         // ChatGPT subscription sign-in
         core::auth::commands::chatgpt_status,
         core::auth::commands::chatgpt_login,
@@ -260,6 +271,7 @@ pub fn run() {
         // Custom updater commands (desktop only)
         core::updater::commands::check_for_app_updates,
         core::updater::commands::is_update_available,
+        core::updater::package_managed::is_package_managed_install,
         // HTTP (bypasses tauri_plugin_http fetch interception)
         core::http::post_local_http,
         core::http::get_local_http,
@@ -383,6 +395,7 @@ pub fn run() {
         // Remote provider commands
         core::server::remote_provider_commands::register_provider_config,
         core::server::remote_provider_commands::unregister_provider_config,
+        core::server::remote_provider_commands::set_server_model_selection,
         // MCP commands
         core::mcp::commands::get_tools,
         core::mcp::commands::get_mcp_server_statuses,
@@ -493,6 +506,7 @@ pub fn run() {
             background_cleanup_handle: Arc::new(Mutex::new(None)),
             mcp_server_pids: Arc::new(Mutex::new(HashMap::new())),
             provider_configs: Arc::new(Mutex::new(HashMap::new())),
+            server_model_selection: Arc::new(Mutex::new(None)),
             chatgpt_auth: Arc::new(Default::default()),
             mcp_oauth: Arc::new(Default::default()),
             auto_increase_ctx: Arc::new(core::state::AutoIncreaseState::default()),

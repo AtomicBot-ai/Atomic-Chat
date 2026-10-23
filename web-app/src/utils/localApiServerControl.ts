@@ -8,6 +8,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core'
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 
 import { useAppState } from '@/hooks/useAppState'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
@@ -150,6 +151,39 @@ export async function raiseLocalApiServerForMediaModel(): Promise<void> {
   }
 }
 
+/**
+ * Set in the main window's sessionStorage, which a reload keeps and an app
+ * restart does not: "this run of the app has had its launch".
+ */
+const LAUNCH_AUTOSTART_MARKER = 'atomic_local_api_launch_autostart'
+
+/** Where sessionStorage cannot be used: once per page load. */
+let launchAutoStartClaimed = false
+
+/**
+ * Whether this window may start the server for "Start automatically": the
+ * main window, once per run of the app. Every window mounts the startup code,
+ * and neither a chat opened in its own window nor a reload of the main one is
+ * a launch: after the user's Stop, the server stays stopped until they start
+ * it or the app is opened again.
+ */
+export function claimLaunchAutoStart(): boolean {
+  try {
+    if (getCurrentWebviewWindow().label !== 'main') return false
+  } catch {
+    // No Tauri window (the web build): there is only the one.
+  }
+  try {
+    if (sessionStorage.getItem(LAUNCH_AUTOSTART_MARKER) !== null) return false
+    sessionStorage.setItem(LAUNCH_AUTOSTART_MARKER, '1')
+    return true
+  } catch {
+    if (launchAutoStartClaimed) return false
+    launchAutoStartClaimed = true
+    return true
+  }
+}
+
 /** The address a client should dial, from the persisted configuration. */
 export function getLocalApiServerUrl(): string {
   const { serverHost, serverPort, apiPrefix } = useLocalApiServer.getState()
@@ -159,49 +193,65 @@ export function getLocalApiServerUrl(): string {
   return `http://${host}:${serverPort}${prefix}`
 }
 
-export type LocalApiServerProbe =
-  | { ok: true; latencyMs: number; modelCount: number }
+/** The user message of the Connections page's example request. */
+export const TEST_REQUEST_MESSAGE = 'Hello'
+
+/** The test asks for a short answer: it proves the model replies, not how well. */
+export const TEST_REQUEST_MAX_TOKENS = 16
+
+/** A local model on a busy or small machine can take a while to answer even this. */
+const TEST_REQUEST_TIMEOUT_SECS = 60
+
+export type LocalApiServerTestResult =
+  | { ok: true; latencyMs: number; model: string }
   | {
       ok: false
       latencyMs: number
+      model: string
       httpStatus: number | null
       message: string
     }
 
 /**
- * One `GET {base}/models`, an OpenAI client's usual first call, through the
- * Rust HTTP client (no webview CORS): proves the address, the prefix and the
- * key without running a model. It is a real request, so Activity lists it.
+ * The chat completion the Connections page shows — its model and message,
+ * with `max_tokens` kept small — sent through the Rust HTTP client (no webview
+ * CORS). It proves the address, the prefix and the key, and that the model
+ * answers. It is a real request, so Activity lists it.
  */
-export async function probeLocalApiServer(
+export async function sendTestChatCompletion(
   baseUrl: string,
-  apiKey: string
-): Promise<LocalApiServerProbe> {
-  const headers: Record<string, string> = {}
+  apiKey: string,
+  model: string
+): Promise<LocalApiServerTestResult> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  }
   if (apiKey.trim()) headers.Authorization = `Bearer ${apiKey}`
   const started = performance.now()
   const elapsed = () => Math.round(performance.now() - started)
   try {
-    const body = await invoke<string>('get_local_http', {
-      url: `${baseUrl.replace(/\/+$/, '')}/models`,
+    // `post_local_http` rejects any status from 400 up, with the status first.
+    await invoke<string>('post_local_http', {
+      url: `${baseUrl.replace(/\/+$/, '')}/chat/completions`,
       headers,
-      timeoutSecs: 10,
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: TEST_REQUEST_MESSAGE }],
+        max_tokens: TEST_REQUEST_MAX_TOKENS,
+        stream: false,
+      }),
+      timeoutSecs: TEST_REQUEST_TIMEOUT_SECS,
     })
-    const latencyMs = elapsed()
-    let modelCount = 0
-    try {
-      const data = (JSON.parse(body) as { data?: unknown }).data
-      modelCount = Array.isArray(data) ? data.length : 0
-    } catch {
-      // An answer that is not JSON still proves the server is there.
-    }
-    return { ok: true, latencyMs, modelCount }
+    // The model is named as asked: engines report their own id (a file path,
+    // an alias) in the answer, which says less to the reader.
+    return { ok: true, latencyMs: elapsed(), model }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     const status = /^HTTP (\d{3})/.exec(message)?.[1]
     return {
       ok: false,
       latencyMs: elapsed(),
+      model,
       httpStatus: status ? Number(status) : null,
       message,
     }

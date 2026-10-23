@@ -172,6 +172,7 @@ export type InstalledInventory = {
   /** Cancel a running download, as the download panel does. */
   cancel: (item: InventoryItem) => void
   pause: (item: InventoryItem) => void
+  /** Resume a paused download, as the download panel does. */
   resume: (item: InventoryItem) => void
 }
 
@@ -199,7 +200,9 @@ export function useInstalledInventory(): InstalledInventory {
 
   const engines = useEngineVersionsStore((state) => state.engines)
 
-  const dismissedDownloads = useDownloadStore((state) => state.dismissedDownloads)
+  const dismissedDownloads = useDownloadStore(
+    (state) => state.dismissedDownloads
+  )
   const downloads = useDownloadStore((state) => state.downloads)
   const localDownloadingModels = useDownloadStore(
     (state) => state.localDownloadingModels
@@ -225,7 +228,13 @@ export function useInstalledInventory(): InstalledInventory {
         resumableDownloads,
         dismissedDownloads,
       }),
-    [downloads, localDownloadingModels, pausedDownloads, resumableDownloads, dismissedDownloads]
+    [
+      downloads,
+      localDownloadingModels,
+      pausedDownloads,
+      resumableDownloads,
+      dismissedDownloads,
+    ]
   )
 
   // What the disk holds that no owner records: MLX folder sizes, MLX drafts and
@@ -332,13 +341,25 @@ export function useInstalledInventory(): InstalledInventory {
     [serviceHub, removeVoice, rescan]
   )
 
-  const request = useCallback((action: 'pause' | 'resume' | 'cancel', item: InventoryItem) => {
-    if (!item.download) return
-    useDownloadStore.getState().requestControl(action, item.download)
-  }, [])
-  const cancel = useCallback((item: InventoryItem) => request('cancel', item), [request])
-  const pause = useCallback((item: InventoryItem) => request('pause', item), [request])
-  const resume = useCallback((item: InventoryItem) => request('resume', item), [request])
+  const request = useCallback(
+    (action: 'pause' | 'resume' | 'cancel', item: InventoryItem) => {
+      if (!item.download) return
+      useDownloadStore.getState().requestControl(action, item.download)
+    },
+    []
+  )
+  const cancel = useCallback(
+    (item: InventoryItem) => request('cancel', item),
+    [request]
+  )
+  const pause = useCallback(
+    (item: InventoryItem) => request('pause', item),
+    [request]
+  )
+  const resume = useCallback(
+    (item: InventoryItem) => request('resume', item),
+    [request]
+  )
 
   return { items, totalBytes, remove, cancel, pause, resume }
 }

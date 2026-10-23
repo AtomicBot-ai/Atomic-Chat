@@ -940,6 +940,43 @@ fn structured_error_json(message: &str, error_type: &str, code: &str) -> String 
     .to_string()
 }
 
+/// AC-13: a model nothing serves, as OpenAI's `model_not_found` envelope. The
+/// message keeps the proxy's wording, which the agent client's
+/// `classify_error` matches to tell a missing session from other failures.
+/// Mirrors the core's `modelNotFoundJson`, which serves desktop.
+fn model_not_found_json(model_id: &str) -> String {
+    serde_json::json!({
+        "error": {
+            "message": format!("No running session found for model '{model_id}'"),
+            "type": "invalid_request_error",
+            "param": "model",
+            "code": "model_not_found",
+        }
+    })
+    .to_string()
+}
+
+/// AC-12: the 400 for a chat request whose `messages` is an empty array, in
+/// OpenAI's wording; `None` for any other body. A local engine would answer an
+/// empty conversation with a completion of its own. Mirrors the core's
+/// `emptyMessagesRefusal`.
+fn empty_messages_refusal(body: &serde_json::Value) -> Option<String> {
+    match body.get("messages") {
+        Some(serde_json::Value::Array(messages)) if messages.is_empty() => Some(
+            serde_json::json!({
+                "error": {
+                    "message": "Invalid 'messages': empty array. Expected an array with minimum length 1, but got an empty array instead.",
+                    "type": "invalid_request_error",
+                    "param": "messages",
+                    "code": "empty_array",
+                }
+            })
+            .to_string(),
+        ),
+        _ => None,
+    }
+}
+
 /// ATO-182: True when `body` is already a structured `{"error": {...}}`
 /// envelope (llama.cpp and remote providers emit this shape), so we never
 /// double-wrap it.
@@ -1376,10 +1413,12 @@ async fn handle_responses_request(
             }
         } else {
             state.error_kind = Some("not_found");
-            return Ok(make_err(
-                StatusCode::NOT_FOUND,
-                &format!("No running session found for model '{model_id}'"),
-            ));
+            let mut response = make_err(StatusCode::NOT_FOUND, &model_not_found_json(&model_id));
+            response.headers_mut().insert(
+                hyper::header::CONTENT_TYPE,
+                hyper::header::HeaderValue::from_static("application/json"),
+            );
+            return Ok(response);
         }
     };
 
@@ -2328,8 +2367,9 @@ async fn inner_proxy_request<R: Runtime>(
                             } else {
                                 state.error_kind = Some("not_found");
                                 log::warn!("No running session found for model_id: {model_id}");
-                                let mut error_response =
-                                    Response::builder().status(StatusCode::NOT_FOUND);
+                                let mut error_response = Response::builder()
+                                    .status(StatusCode::NOT_FOUND)
+                                    .header(hyper::header::CONTENT_TYPE, "application/json");
                                 error_response = add_cors_headers_with_host_and_origin(
                                     error_response,
                                     &host_header,
@@ -2337,10 +2377,21 @@ async fn inner_proxy_request<R: Runtime>(
                                     &config.trusted_hosts,
                                 );
                                 return Ok(error_response
-                                    .body(Body::from(format!(
-                                        "No running session found for model '{model_id}'"
-                                    )))
+                                    .body(Body::from(model_not_found_json(model_id)))
                                     .unwrap());
+                            }
+                            if let Some(refusal) = empty_messages_refusal(&json_body) {
+                                state.error_kind = Some("bad_request");
+                                let mut error_response = Response::builder()
+                                    .status(StatusCode::BAD_REQUEST)
+                                    .header(hyper::header::CONTENT_TYPE, "application/json");
+                                error_response = add_cors_headers_with_host_and_origin(
+                                    error_response,
+                                    &host_header,
+                                    &origin_header,
+                                    &config.trusted_hosts,
+                                );
+                                return Ok(error_response.body(Body::from(refusal)).unwrap());
                             }
                         }
                     } else {
@@ -2565,8 +2616,9 @@ async fn inner_proxy_request<R: Runtime>(
                             } else {
                                 state.error_kind = Some("not_found");
                                 log::warn!("No running session found for model_id: {model_id}");
-                                let mut error_response =
-                                    Response::builder().status(StatusCode::NOT_FOUND);
+                                let mut error_response = Response::builder()
+                                    .status(StatusCode::NOT_FOUND)
+                                    .header(hyper::header::CONTENT_TYPE, "application/json");
                                 error_response = add_cors_headers_with_host_and_origin(
                                     error_response,
                                     &host_header,
@@ -2574,10 +2626,26 @@ async fn inner_proxy_request<R: Runtime>(
                                     &config.trusted_hosts,
                                 );
                                 return Ok(error_response
-                                    .body(Body::from(format!(
-                                        "No running session found for model '{model_id}'"
-                                    )))
+                                    .body(Body::from(model_not_found_json(model_id)))
                                     .unwrap());
+                            }
+                            let empty_chat = if destination_path == "/chat/completions" {
+                                empty_messages_refusal(&json_body)
+                            } else {
+                                None
+                            };
+                            if let Some(refusal) = empty_chat {
+                                state.error_kind = Some("bad_request");
+                                let mut error_response = Response::builder()
+                                    .status(StatusCode::BAD_REQUEST)
+                                    .header(hyper::header::CONTENT_TYPE, "application/json");
+                                error_response = add_cors_headers_with_host_and_origin(
+                                    error_response,
+                                    &host_header,
+                                    &origin_header,
+                                    &config.trusted_hosts,
+                                );
+                                return Ok(error_response.body(Body::from(refusal)).unwrap());
                             }
                         }
                     } else {

@@ -35,6 +35,7 @@
   "video": "Videos",
   "media": "Media",
   "skills": "Навыки",
+  "backToSkills": "Назад к навыкам",
   "cloud": "Cloud",
   "agentSkill": {
     "selected": "Навык: {{name}}",
@@ -541,6 +542,10 @@
       "title": "Ошибка загрузки",
       "description": "Не удалось загрузить {{item}}"
     },
+    "downloadNotResumable": {
+      "title": "Не удаётся продолжить загрузку",
+      "description": "{{item}} нельзя продолжить отсюда. Скачайте снова: уже загруженные данные сохранятся."
+    },
     "modelValidationStarted": {
       "title": "Проверка модели",
       "description": "Модель \"{{modelId}}\" успешно загружена. Проверка целостности…"
@@ -720,6 +725,9 @@
     "discord": "Discord",
     "newGithubIssue": "Новый issue на GitHub",
     "toggleSidebar": "Показать или скрыть боковую панель",
+    "resizeSidebar": "Изменить ширину боковой панели",
+    "resizeSidebarHint": "Перетащите, чтобы изменить ширину; двойной щелчок — сбросить",
+    "lastActivity": "Последняя активность: {{date}}",
     "searchChats": "Поиск по чатам",
     "pinned": "Закреплённые",
     "pinChat": "Закрепить чат",

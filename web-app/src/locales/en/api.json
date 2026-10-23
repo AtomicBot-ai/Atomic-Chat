@@ -51,7 +51,8 @@
     "modelUnloaded": "Model unloaded"
   },
   "log": {
-    "searchPlaceholder": "Search model, endpoint, preview or error",
+    "searchPlaceholder": "Search requests",
+    "searchHint": "Finds a request by its model, endpoint, preview or error",
     "empty": "No API traffic yet. Point a client at the base URL to see requests here.",
     "noMatches": "No requests match this filter.",
     "clearFilters": "Clear filters",
@@ -111,7 +112,10 @@
     "copyExample": "Copy example",
     "sendTest": "Send test request",
     "startToTest": "Start the server in the sidebar to test this flow.",
-    "testOk": "Response received · 200 OK · {{ms}} ms · {{count}} models",
+    "testOk": "Response received · 200 OK · {{ms}} ms · {{model}} answered",
+    "testNeedsModel": "No model is loaded yet. Load one to send this request.",
+    "testNoModel": "The server has no model loaded to answer with. Load a model, then send the test again.",
+    "testModelNotServed": "The server is not running {{model}}. Load it, then send the test again.",
     "testUnauthorized": "The server turned the key down (HTTP {{status}}). If you changed the key, apply it with a restart.",
     "testFailed": "No answer from the server: {{message}}"
   },

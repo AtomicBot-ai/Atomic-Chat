@@ -82,6 +82,12 @@ type ProviderObject = {
    */
   supports_model_listing?: boolean
   /**
+   * Registry-driven: the request that checks a key on Connect instead of
+   * `GET {base_url}/models`, for a provider whose model list answers without
+   * a valid key (`lib/provider-key-check.ts`).
+   */
+  key_check?: ProviderKeyCheck
+  /**
    * The image and video models enabled for this provider, kept apart from
    * `models` so chat never sees them. `undefined` until the provider is first
    * set up (the catalog's defaults are seeded then); `[]` models is a user who
@@ -91,6 +97,16 @@ type ProviderObject = {
   media?: ProviderMedia
   /** A server that only generates media (Automatic1111 / Forge): no chat models card. */
   media_only?: boolean
+}
+
+/**
+ * A key-check request from the atomic-chat-conf registry: `path` joins onto
+ * the provider's base URL, `url` is an absolute HTTPS URL. Exactly one is set.
+ */
+type ProviderKeyCheck = {
+  path?: string
+  url?: string
+  method?: 'GET'
 }
 
 type ProviderMediaModel = {

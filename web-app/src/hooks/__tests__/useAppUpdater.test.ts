@@ -25,6 +25,11 @@ vi.mock('@janhq/core', () => ({
   },
 }))
 
+const mockIsPackageManaged = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/package-managed', () => ({
+  isPackageManaged: mockIsPackageManaged,
+}))
+
 const mockToastError = vi.hoisted(() => vi.fn())
 vi.mock('sonner', () => ({
   toast: { error: mockToastError, info: vi.fn() },
@@ -84,6 +89,7 @@ describe('useAppUpdater', () => {
       } as EventsService,
     })
     mockIsDev.mockReturnValue(false)
+    mockIsPackageManaged.mockResolvedValue(false)
   })
 
   afterEach(() => {
@@ -148,6 +154,59 @@ describe('useAppUpdater', () => {
 
     expect(result.current.updateState.isUpdateAvailable).toBe(true)
     expect(result.current.updateState.remindMeLater).toBe(true)
+  })
+
+  describe('package-managed install', () => {
+    beforeEach(() => {
+      mockIsPackageManaged.mockResolvedValue(true)
+    })
+
+    it('never asks the update server', async () => {
+      mockUpdaterCheck.mockResolvedValue({ version: '9.9.9' })
+      const { result } = renderHook(() => useAppUpdater())
+
+      let updateResult: unknown
+      await act(async () => {
+        updateResult = await result.current.checkForUpdate(true)
+      })
+
+      expect(mockUpdaterCheck).not.toHaveBeenCalled()
+      expect(updateResult).toBe(null)
+      expect(result.current.updateState.isUpdateAvailable).toBe(false)
+    })
+
+    it('reports itself so the settings page can hide the update button', async () => {
+      const { result } = renderHook(() => useAppUpdater())
+
+      await waitFor(() => expect(result.current.packageManaged).toBe(true))
+    })
+
+    it('refuses to download and install', async () => {
+      const { result } = renderHook(() => useAppUpdater())
+      act(() => {
+        const syncHandler = mockEvents.on.mock.calls[0][1]
+        syncHandler({ isUpdateAvailable: true, updateInfo: { version: '9.9.9' } })
+      })
+
+      await act(async () => {
+        await result.current.downloadAndInstallUpdate()
+      })
+
+      expect(mockUpdaterDownloadAndInstallWithProgress).not.toHaveBeenCalled()
+    })
+  })
+
+  it('does not ask the update server when the build disables the updater', async () => {
+    Object.assign(global, { AUTO_UPDATER_DISABLED: true })
+    try {
+      const { result } = renderHook(() => useAppUpdater())
+      await act(async () => {
+        await result.current.checkForUpdate()
+      })
+      expect(mockUpdaterCheck).not.toHaveBeenCalled()
+    } finally {
+      Object.assign(global, { AUTO_UPDATER_DISABLED: false })
+    }
   })
 
   describe('checkForUpdate', () => {

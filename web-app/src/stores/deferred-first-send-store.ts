@@ -1,10 +1,16 @@
 import { create } from 'zustand'
+import type { AgentThreadState } from '@/hooks/useAgentMode'
 
 export type DeferredFirstSend = {
   id: string
   prompt: string
   downloadModelIds: string[]
   createdAt: number
+  /**
+   * New Chat's approval mode and workspace when Send was pressed. The thread
+   * created later starts with exactly these, as a direct send would.
+   */
+  agentState?: AgentThreadState
 }
 
 type DeferredFirstSendState = {

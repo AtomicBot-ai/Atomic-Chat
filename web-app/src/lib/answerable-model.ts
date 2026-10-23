@@ -11,22 +11,38 @@
 
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
 
-/** The two fields the decision needs; `Model` from the provider store fits. */
+/** The fields the decision needs; `Model` from the provider store fits. */
 export type AnswerableModelLike = {
   id?: string
   /** Runtime-computed: the weights file is gone — a "broken link". */
   missing?: boolean
+  /** Set by the llama.cpp extensions on an embedding GGUF. */
+  embedding?: boolean
+  capabilities?: string[]
+}
+
+/**
+ * A model that turns text into vectors and cannot chat: the bundled
+ * `sentence-transformer-mini` that project indexing downloads and loads, or
+ * any GGUF the engine flagged as an embedding model. Sending to one fails with
+ * "the current context does not support logits computation" (AC-01), so it
+ * must never become the composer's selection.
+ */
+export function isEmbeddingOnlyModel(model: AnswerableModelLike): boolean {
+  if (model.id === EMBEDDING_MODEL_ID) return true
+  if (model.embedding === true) return true
+  return model.capabilities?.includes('embeddings') ?? false
 }
 
 /**
  * A local model that could be loaded and chatted with right now.
  *
- * Excluded: a broken link (loading it only crashes the engine) and the
- * bundled embedding model (not something to chat with).
+ * Excluded: a broken link (loading it only crashes the engine) and an
+ * embedding model (not something to chat with).
  */
 export function isAnswerableModel(model: AnswerableModelLike): boolean {
   if (!model.id) return false
-  if (model.id === EMBEDDING_MODEL_ID) return false
+  if (isEmbeddingOnlyModel(model)) return false
   if (model.missing) return false
   return true
 }

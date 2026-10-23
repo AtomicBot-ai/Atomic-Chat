@@ -17,7 +17,7 @@ import {
 } from '@/lib/managed-engine/chat'
 import AgentApprovalInline from '@/containers/AgentApprovalInline'
 import { addExternalAgentFolder } from '@/lib/agent-workspace-actions'
-import { usePrompt } from '@/hooks/usePrompt'
+import { selectDraft, usePrompt } from '@/hooks/usePrompt'
 import { useThreads } from '@/hooks/useThreads'
 import {
   useCallback,
@@ -63,6 +63,7 @@ import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
 import { generateId, type ChatStatus } from 'ai'
 import { useRouter } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
+import { useGlobalAutoApproveOverridesSelect } from '@/lib/mcp-approval'
 import { TEMPORARY_CHAT_ID, TEMPORARY_CHAT_QUERY_ID } from '@/constants/chat'
 import { composerThreadKey as buildComposerThreadKey } from '@/lib/composer-thread-key'
 import {
@@ -193,6 +194,12 @@ type ChatInputProps = {
   initialMessage?: boolean
   preselectedAgentSkillName?: string
   projectId?: string
+  /**
+   * The thread page's route thread. Keys this composer's state (draft,
+   * approval mode, voice) from its first render; the global
+   * `currentThreadId` is only set later, in the page's effect.
+   */
+  threadId?: string
   onSubmit?: (
     text: string,
     files?: InitialMessageFile[],
@@ -209,6 +216,7 @@ const ChatInput = memo(function ChatInput({
   initialMessage,
   preselectedAgentSkillName,
   projectId,
+  threadId,
   onSubmit,
   onStop,
   chatStatus,
@@ -230,8 +238,6 @@ const ChatInput = memo(function ChatInput({
   const tools = useAppState((state) => state.tools)
   const cancelToolCall = useAppState((state) => state.cancelToolCall)
   const reducedMotion = useReducedMotion()
-  const prompt = usePrompt((state) => state.prompt)
-  const setPrompt = usePrompt((state) => state.setPrompt)
   // Narrow selectors on purpose. Subscribing to the whole voice store
   // would pull in `level`, which updates ~20 times a second.
   const voicePhase = useVoiceInput((state) => state.phase)
@@ -277,14 +283,29 @@ const ChatInput = memo(function ChatInput({
       .join('|')
   )
 
-  // Keys per-composer state (voice, workspace, approval mode). Composers use
-  // a placeholder key until the real thread exists — the project composer its
-  // own `project:<id>` slot, so it never fights the home composer over one.
+  // Keys per-composer state (voice, workspace, approval mode, draft text).
+  // Composers use a placeholder key until the real thread exists — the
+  // project composer its own `project:<id>` slot, so it never fights the
+  // home composer over one.
+  // Built from props where the page has them (the route's thread, the
+  // project), so the first render already belongs to the right composer.
   const composerThreadKey = buildComposerThreadKey({
     isComposer: Boolean(initialMessage),
-    currentThreadId,
+    currentThreadId: threadId ?? currentThreadId,
     projectId,
   })
+  // The unsent draft belongs to this composer: it is read and written by
+  // this key, so another chat's text is never rendered or overwritten here.
+  // Binding makes it the store's `prompt` for the other readers.
+  const prompt = usePrompt(selectDraft(composerThreadKey))
+  const setPrompt = useCallback(
+    (value: string) => usePrompt.getState().setDraft(composerThreadKey, value),
+    [composerThreadKey]
+  )
+  const bindDraft = usePrompt((state) => state.bindDraft)
+  useLayoutEffect(() => {
+    bindDraft(composerThreadKey)
+  }, [bindDraft, composerThreadKey])
   // Which engine would serve a send right now. Gates agent-only affordances;
   // per-turn factors (audio) are re-resolved at send time.
   //
@@ -344,6 +365,10 @@ const ChatInput = memo(function ChatInput({
     (state) => state.approvalModes[composerThreadKey] ?? 'manual'
   )
   const setApprovalMode = useAgentMode((state) => state.setApprovalMode)
+  // Restricted is shown, yet global auto-approve runs connector tools (web
+  // search) unasked: the menu says so and links to the setting.
+  const autoApproveOverridesRestricted =
+    useGlobalAutoApproveOverridesSelect(composerThreadKey)
 
   useLayoutEffect(() => {
     const caret = pendingAgentSkillCaretRef.current
@@ -435,12 +460,13 @@ const ChatInput = memo(function ChatInput({
     if (!skill) return
 
     setSelectedAgentSkill(skill)
-    const currentPrompt = usePrompt.getState().prompt
+    const currentPrompt = usePrompt.getState().getDraft(composerThreadKey)
     const next = prependAgentSkillInvocation(currentPrompt, skill.name)
     if (next.value !== currentPrompt) setPrompt(next.value)
   }, [
     agentSkills,
     agentSkillsLoading,
+    composerThreadKey,
     preselectedAgentSkillName,
     setPrompt,
   ])
@@ -913,10 +939,10 @@ const ChatInput = memo(function ChatInput({
   const captureVoiceAnchor = useCallback(
     () =>
       captureDictationAnchor(
-        usePrompt.getState().prompt,
+        usePrompt.getState().getDraft(composerThreadKey),
         textareaRef.current?.selectionStart ?? null
       ),
-    []
+    [composerThreadKey]
   )
 
   // Recompute the whole value from the anchor on every new phrase rather than
@@ -948,7 +974,7 @@ const ChatInput = memo(function ChatInput({
 
     if (state.canRevert) {
       const reverted = revertDictation(
-        usePrompt.getState().prompt,
+        usePrompt.getState().getDraft(composerThreadKey),
         voiceAnchor,
         state.insertedLength
       )
@@ -1313,6 +1339,10 @@ const ChatInput = memo(function ChatInput({
   // depending on it would re-fire the queued send on any unrelated keystroke.
   const sendMessageRef = useRef(handleSendMessage)
   sendMessageRef.current = handleSendMessage
+  // Same reason: the queued send reads this composer's draft without
+  // re-firing when the key changes.
+  const composerThreadKeyRef = useRef(composerThreadKey)
+  composerThreadKeyRef.current = composerThreadKey
 
   const handleReplyGateResolved = useCallback(
     (resolution: ReplyModelGateResolution) => {
@@ -1326,11 +1356,18 @@ const ChatInput = memo(function ChatInput({
         (resolution.downloadModelIds?.length ?? 0) > 0
 
       if (canRunFromRoot) {
+        // What the composer showed at Send travels with the message, for a
+        // thread created after the user may have left (and changed it).
+        const agent = useAgentMode.getState()
         useDeferredFirstSend.getState().enqueue({
           id: generateId(),
-          prompt: usePrompt.getState().prompt,
+          prompt: usePrompt.getState().getDraft(composerThreadKey),
           downloadModelIds: resolution.downloadModelIds!,
           createdAt: Date.now(),
+          agentState: {
+            approvalMode: agent.approvalModes[composerThreadKey],
+            workspace: agent.workspaces[composerThreadKey],
+          },
         })
         // Keep the fast path local while New Chat is still mounted. The root
         // queue is its navigation-safe backup and takes over only if the user
@@ -1343,7 +1380,7 @@ const ChatInput = memo(function ChatInput({
       useDeferredFirstSend.getState().clear()
       setQueuedSend(resolution)
     },
-    [attachments.length, initialMessage, onSubmit, projectId]
+    [attachments.length, composerThreadKey, initialMessage, onSubmit, projectId]
   )
 
   const handleReplyGateDismissed = useCallback(() => {
@@ -1404,7 +1441,7 @@ const ChatInput = memo(function ChatInput({
     // The user may have cleared or rewritten the field while the model came up.
     // Whatever is in it now is what they meant; an empty field means they
     // changed their mind, and re-sending the old text would put words in.
-    const pending = usePrompt.getState().prompt
+    const pending = usePrompt.getState().getDraft(composerThreadKeyRef.current)
     if (!queuedSend.resumesStoppedModel) {
       captureReplyGateReady({
         branch: queuedSend.branch,
@@ -3257,6 +3294,20 @@ const ChatInput = memo(function ChatInput({
                       'chat:agentApprovals.skipConfirmAccept'
                     )}
                     toggles={accessToggles}
+                    manualOverride={
+                      autoApproveOverridesRestricted
+                        ? {
+                            notice: t(
+                              'chat:agentApprovals.autoApproveOverride'
+                            ),
+                            actionLabel: t(
+                              'chat:agentApprovals.openAutoApproveSetting'
+                            ),
+                            onAction: () =>
+                              router.navigate({ to: route.settings.general }),
+                          }
+                        : undefined
+                    }
                   />
                   {/* //! Browse (Chrome) button — temporarily hidden
                 {!agentRouteActive && hasJanBrowserMCPConfig && modelSupportsBrowser && (
@@ -3305,7 +3356,11 @@ const ChatInput = memo(function ChatInput({
                   {selectedModel?.capabilities?.includes('embeddings') && (
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button variant="ghost" size="icon-xs">
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          aria-label={t('embeddings')}
+                        >
                           <IconCodeCircle2
                             size={18}
                             className="text-muted-foreground"
@@ -3534,6 +3589,7 @@ const ChatInput = memo(function ChatInput({
                           variant="destructive"
                           size="icon-sm"
                           className="rounded-full mr-1 mb-1"
+                          aria-label={t('common:stop')}
                           onClick={() => {
                             if (currentThreadId) stopStreaming(currentThreadId)
                           }}
@@ -3576,6 +3632,7 @@ const ChatInput = memo(function ChatInput({
                             blockSendUntilModelReady
                           }
                           data-test-id="send-message-button"
+                          aria-label={t('chat:sendMessage')}
                           onClick={() => handleSendMessage(prompt)}
                           className="rounded-full mr-1 mb-1"
                         >

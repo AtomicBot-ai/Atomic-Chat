@@ -502,6 +502,9 @@ pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
                 // un-hide it first before showing/focusing the window.
                 #[cfg(target_os = "macos")]
                 let _ = app.show();
+                // A close may still be deciding between hide and exit.
+                #[cfg(target_os = "linux")]
+                cancel_pending_close();
                 if let Some(window) = app.get_webview_window("main") {
                     let _ = window.unminimize();
                     let _ = window.show();
@@ -640,6 +643,41 @@ async fn setup_xdg_portal_theme_listener<R: Runtime>(
     Ok(())
 }
 
+/// Whether a StatusNotifier host (a bar with a tray module) is on the session
+/// bus. The tray icon object exists either way — `libappindicator` does not
+/// check — so this is what decides whether a hidden window has a visible way
+/// back and a "Quit" entry. Asked at close time, not at startup: the bar may
+/// start after the app does (autostart).
+#[cfg(target_os = "linux")]
+async fn status_notifier_host_registered() -> Result<bool, Box<dyn std::error::Error>> {
+    use zbus::Connection;
+
+    let connection = Connection::session().await?;
+    let proxy: zbus::Proxy<'_> = zbus::proxy::Builder::new(&connection)
+        .destination("org.kde.StatusNotifierWatcher")?
+        .path("/StatusNotifierWatcher")?
+        .interface("org.kde.StatusNotifierWatcher")?
+        .cache_properties(zbus::proxy::CacheProperties::No)
+        .build()
+        .await?;
+    let registered: bool = proxy.get_property("IsStatusNotifierHostRegistered").await?;
+    Ok(registered)
+}
+
+/// Generation of the latest close decision. A close bumps it and acts on the
+/// host lookup only while its generation is still current; the tray's "Open"
+/// and a relaunch bump it too, so a decision still in flight cannot hide or
+/// exit a window the user has just brought back, and two overlapping closes
+/// cannot end in opposite outcomes.
+#[cfg(target_os = "linux")]
+static CLOSE_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Supersede any close decision still waiting on the StatusNotifier lookup.
+#[cfg(target_os = "linux")]
+pub fn cancel_pending_close() {
+    CLOSE_GENERATION.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+}
+
 fn setup_window_theme_listener<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     window: tauri::WebviewWindow<R>,
@@ -649,7 +687,7 @@ fn setup_window_theme_listener<R: Runtime>(
 
     // The close handler hides the window instead of destroying it, so keep a
     // clone to call `hide()` from inside the event closure.
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     let window_for_close = window.clone();
 
     window.on_window_event(move |event| match event {
@@ -691,6 +729,57 @@ fn setup_window_theme_listener<R: Runtime>(
             } else {
                 let _ = window_for_close.hide();
                 let _ = app_handle_clone.hide();
+            }
+        }
+        // On Linux closing the only window used to exit the app, which stops
+        // the local API server on :1337 that agents and editors are talking
+        // to. While a tray icon is up *and something shows it*, closing hides
+        // the window instead and the tray's "Open Atomic Chat" (or launching
+        // the app again) brings it back; "Quit" still exits through
+        // RunEvent::Exit. Without a tray, or without a StatusNotifier host to
+        // display it (GNOME without an indicator extension, a bar with no tray
+        // module), there would be no visible way back and no "Quit", so the
+        // close exits as before. The host check is a D-Bus round trip, so the
+        // close is vetoed first and the decision is made asynchronously.
+        #[cfg(target_os = "linux")]
+        WindowEvent::CloseRequested { api, .. } => {
+            if app_handle_clone.tray_by_id("tray").is_some() {
+                use std::sync::atomic::Ordering;
+
+                api.prevent_close();
+                let generation = CLOSE_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+                let win = window_for_close.clone();
+                let app = app_handle_clone.clone();
+                tauri::async_runtime::spawn(async move {
+                    let host = tokio::time::timeout(
+                        std::time::Duration::from_secs(2),
+                        status_notifier_host_registered(),
+                    )
+                    .await;
+                    if CLOSE_GENERATION.load(Ordering::SeqCst) != generation {
+                        log::debug!(
+                            "Close decision superseded while the StatusNotifier lookup ran"
+                        );
+                        return;
+                    }
+                    match host {
+                        Ok(Ok(true)) => {
+                            let _ = win.hide();
+                        }
+                        Ok(Ok(false)) => {
+                            log::info!("No StatusNotifier host on the session bus: close exits");
+                            app.exit(0);
+                        }
+                        Ok(Err(e)) => {
+                            log::info!("StatusNotifier host lookup failed ({e}): close exits");
+                            app.exit(0);
+                        }
+                        Err(_) => {
+                            log::info!("StatusNotifier host lookup timed out: close exits");
+                            app.exit(0);
+                        }
+                    }
+                });
             }
         }
         _ => {}

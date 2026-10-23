@@ -37,6 +37,9 @@ const OS_DISPLAY_NAMES: Record<string, string> = {
 const osDisplayName = (osType: string): string =>
   OS_DISPLAY_NAMES[osType?.toLowerCase()] ?? osType
 
+/** A usage readout, as the row shows it and as its meter announces it. */
+const formatPercent = (value: number) => `${value.toFixed(2)}%`
+
 function HardwareContent() {
   const { t } = useTranslation()
   const [isLoading, setIsLoading] = useState(false)
@@ -154,6 +157,12 @@ function HardwareContent() {
     }
   }
 
+  // One number per meter feeds the bar, its accessible value and the
+  // readout, so assistive tech reads the percentage the row shows.
+  const cpuPercent = systemUsage.cpu
+  const memoryPercent =
+    toNumber(systemUsage.used_memory / hardwareData.total_memory) * 100
+
   return (
     <div className="flex flex-col h-svh w-full">
       <HeaderPage>
@@ -241,14 +250,16 @@ function HardwareContent() {
                   title={t('settings:hardware.usage')}
                   actions={
                     <div className="flex items-center gap-2">
-                      {systemUsage.cpu > 0 && (
+                      {cpuPercent > 0 && (
                         <>
                           <Progress
-                            value={systemUsage.cpu}
+                            value={cpuPercent}
+                            aria-label={t('system-monitor:cpuUsage')}
+                            getValueLabel={() => formatPercent(cpuPercent)}
                             className="h-2 w-10 border"
                           />
                           <span className="text-foreground">
-                            {systemUsage.cpu?.toFixed(2)}%
+                            {formatPercent(cpuPercent)}
                           </span>
                         </>
                       )}
@@ -284,22 +295,13 @@ function HardwareContent() {
                       {hardwareData.total_memory > 0 && (
                         <>
                           <Progress
-                            value={
-                              toNumber(
-                                systemUsage.used_memory /
-                                  hardwareData.total_memory
-                              ) * 100
-                            }
+                            value={memoryPercent}
+                            aria-label={t('system-monitor:memoryUsage')}
+                            getValueLabel={() => formatPercent(memoryPercent)}
                             className="h-2 w-10 border"
                           />
                           <span className="text-foreground">
-                            {(
-                              toNumber(
-                                systemUsage.used_memory /
-                                  hardwareData.total_memory
-                              ) * 100
-                            ).toFixed(2)}
-                            %
+                            {formatPercent(memoryPercent)}
                           </span>
                         </>
                       )}

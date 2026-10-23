@@ -26,7 +26,7 @@ export function ServerControlPanel() {
 
   // While running, show what the server actually loaded; otherwise what it
   // will load on the next start.
-  const { engine, model } = useServedModel(control.isRunning)
+  const { engine, model, name, quant } = useServedModel(control.isRunning)
 
   const busy = control.isBusy
   const starting = control.status === 'pending'
@@ -82,12 +82,23 @@ export function ServerControlPanel() {
             {engine ?? t('common:navigation.notSelected')}
           </strong>
         </Link>
-        <Link to={route.api.model} className="dsc-detail">
+        {/* The readable name gets a line of its own, the quant sits beside
+            the label, and the id clients pass (owner and quant included) is
+            the row's tooltip. */}
+        <Link
+          to={route.api.model}
+          className="dsc-detail dsc-model"
+          title={model}
+          data-testid="server-panel-model"
+        >
           <Box size={15} />
-          <span>{t('common:navigation.model')}</span>
-          <strong title={model}>
-            {model ?? t('common:navigation.notSelected')}
-          </strong>
+          <span className="dsc-model-text">
+            <span className="dsc-model-label">
+              <span>{t('common:navigation.model')}</span>
+              {quant && <small>{quant}</small>}
+            </span>
+            <strong>{name ?? t('common:navigation.notSelected')}</strong>
+          </span>
         </Link>
         <Link
           to={route.api.connections}

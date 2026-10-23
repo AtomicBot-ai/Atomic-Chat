@@ -3,6 +3,7 @@ import {
   IconCheck,
   IconChevronDown,
   IconCircleCheckFilled,
+  IconPlayerPlay,
   IconTrash,
 } from '@tabler/icons-react'
 import { toast } from 'sonner'
@@ -787,14 +788,20 @@ function QuantDownloadRow({
 }) {
   const { t } = useTranslation()
   const percent = Math.round(artifact.progress * 100)
-  const actionLabel = artifact.downloading
-    ? t('common:cancelDownload')
-    : artifact.installed
-      ? t('images:model.finishDownload')
-      : t('images:model.download')
+  // A paused download (also one brought back after a relaunch) resumes from
+  // here; a running one cancels.
+  const actionLabel = artifact.paused
+    ? t('common:resumeDownload')
+    : artifact.downloading
+      ? t('common:cancelDownload')
+      : artifact.installed
+        ? t('images:model.finishDownload')
+        : t('images:model.download')
 
   const runAction = () => {
-    if (artifact.downloading) {
+    if (artifact.paused) {
+      void artifact.resume()
+    } else if (artifact.downloading) {
       void artifact.cancelDownload()
     } else {
       void artifact.download()
@@ -825,6 +832,13 @@ function QuantDownloadRow({
           <span
             className="absolute inset-y-0 left-0 bg-primary/20 transition-[width] duration-200"
             style={{ width: `${percent}%` }}
+            aria-hidden
+          />
+        )}
+        {artifact.paused && (
+          <IconPlayerPlay
+            size={12}
+            className="relative z-10 mr-1 shrink-0"
             aria-hidden
           />
         )}

@@ -50,12 +50,6 @@ vi.mock('@/components/ui/switch', () => ({
   ),
 }))
 
-vi.mock('@/components/ui/progress', () => ({
-  Progress: ({ value }: { value: number }) => (
-    <div data-testid="progress">Progress: {value}%</div>
-  ),
-}))
-
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }))
@@ -361,6 +355,65 @@ describe('Hardware Settings', () => {
       expect(
         screen.queryByText('settings:hardware.detectionGap')
       ).not.toBeInTheDocument()
+    })
+  })
+
+  // QA 2.2.23 #14: macOS read 50 for both usage bars while the rows showed
+  // other percentages, and neither bar had a name.
+  describe('usage meters', () => {
+    it('names the CPU and memory meters and announces the percentages the rows show', async () => {
+      hardwareStore.state.systemUsage.cpu = 19.123
+      hardwareStore.state.systemUsage.used_memory = 10745
+      const Component = Route.component as React.ComponentType
+      render(<Component />)
+
+      const cpu = await screen.findByRole('progressbar', {
+        name: 'system-monitor:cpuUsage',
+      })
+      expect(cpu).toHaveAttribute('aria-valuenow', '19.123')
+      expect(cpu).toHaveAttribute('aria-valuemin', '0')
+      expect(cpu).toHaveAttribute('aria-valuemax', '100')
+      expect(cpu).toHaveAttribute('aria-valuetext', '19.12%')
+      expect(screen.getByText('19.12%')).toBeInTheDocument()
+
+      const memory = screen.getByRole('progressbar', {
+        name: 'system-monitor:memoryUsage',
+      })
+      // 10745 of 16384 MB.
+      expect(Number(memory.getAttribute('aria-valuenow'))).toBeCloseTo(65.58, 2)
+      expect(memory).toHaveAttribute('aria-valuetext', '65.58%')
+      expect(screen.getByText('65.58%')).toBeInTheDocument()
+    })
+
+    it('follows the next usage poll', async () => {
+      const Component = Route.component as React.ComponentType
+      const { rerender } = render(<Component />)
+      const cpu = await screen.findByRole('progressbar', {
+        name: 'system-monitor:cpuUsage',
+      })
+      expect(cpu).toHaveAttribute('aria-valuetext', '50.00%')
+
+      hardwareStore.state.systemUsage = {
+        ...hardwareStore.state.systemUsage,
+        cpu: 73.5,
+        used_memory: 4096,
+      }
+      rerender(<Component />)
+
+      // The mocked store hands out new setters on every render, which reruns
+      // the page's initial load; wait it out before reading the meters.
+      await waitFor(() => {
+        expect(
+          screen.getByRole('progressbar', { name: 'system-monitor:cpuUsage' })
+        ).toHaveAttribute('aria-valuetext', '73.50%')
+      })
+      expect(
+        screen.getByRole('progressbar', { name: 'system-monitor:cpuUsage' })
+      ).toHaveAttribute('aria-valuenow', '73.5')
+      expect(screen.getByText('73.50%')).toBeInTheDocument()
+      expect(
+        screen.getByRole('progressbar', { name: 'system-monitor:memoryUsage' })
+      ).toHaveAttribute('aria-valuetext', '25.00%')
     })
   })
 })

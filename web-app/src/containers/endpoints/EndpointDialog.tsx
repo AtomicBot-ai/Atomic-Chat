@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { Loader2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -10,14 +11,25 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { LocalModelCollisionNotice } from '@/containers/endpoints/LocalModelCollisionNotice'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { takesApiKey } from '@/lib/cloud-providers'
+import { ownLocalApiServerUrl } from '@/lib/local-api-self-reference'
 import { getProviderTitle } from '@/lib/utils'
 
 export type EndpointDraft = {
   name: string
   baseUrl: string
   apiKey: string
+  /** Save even though the server called the key invalid. */
+  saveAnyway?: boolean
+}
+
+/** Why a draft was not saved, and whether the user may save it anyway. */
+export type EndpointSaveRefusal = {
+  message: string
+  /** The server called the key invalid, which a gateway can do wrongly. */
+  canSaveAnyway?: boolean
 }
 
 type EndpointDialogProps = {
@@ -27,8 +39,18 @@ type EndpointDialogProps = {
   provider?: ProviderObject
   /** Every provider name in use, to refuse a second one with the same name. */
   takenNames: string[]
-  onSave: (draft: EndpointDraft) => void
+  /**
+   * Save the draft. Resolves to why it was refused — the dialog then stays
+   * open and says so — or to nothing once it is saved.
+   */
+  onSave: (
+    draft: EndpointDraft
+  ) => Promise<EndpointSaveRefusal | undefined> | void
 }
+
+/** The draft as it would be saved, to tell whether it changed since a refusal. */
+const draftKey = (draft: EndpointDraft) =>
+  JSON.stringify([draft.name.trim(), draft.baseUrl.trim(), draft.apiKey.trim()])
 
 const isHttpUrl = (value: string) => {
   try {
@@ -57,6 +79,11 @@ export function EndpointDialog({
     apiKey: '',
   })
   const [error, setError] = useState('')
+  // The address and key are checked before the endpoint is saved.
+  const [saving, setSaving] = useState(false)
+  // The draft whose key the server called invalid: it may be saved anyway
+  // for as long as it is left as it was.
+  const [refusedDraft, setRefusedDraft] = useState<string | null>(null)
 
   // Every opening starts from the endpoint as it is stored now. Only opening
   // resets it: a store write while the dialog is open (a model reload
@@ -64,6 +91,8 @@ export function EndpointDialog({
   useEffect(() => {
     if (!open) return
     setError('')
+    setSaving(false)
+    setRefusedDraft(null)
     setDraft({
       name: provider ? getProviderTitle(provider.provider) : '',
       baseUrl: provider?.base_url ?? '',
@@ -76,8 +105,9 @@ export function EndpointDialog({
   // setting (none ships one today) is never asked for it.
   const showApiKey = !provider || takesApiKey(provider)
 
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
+  const submit = async (event: FormEvent | undefined, saveAnyway = false) => {
+    event?.preventDefault()
+    if (saving) return
     const name = draft.name.trim()
     const baseUrl = draft.baseUrl.trim()
     if (!provider) {
@@ -93,7 +123,30 @@ export function EndpointDialog({
       setError(t('endpoints:dialog.invalidUrl'))
       return
     }
-    onSave({ name, baseUrl, apiKey: draft.apiKey.trim() })
+    // Every remote request goes through the app's own Local API Server, so an
+    // endpoint pointing at it would only ever reach itself.
+    const ownServer = ownLocalApiServerUrl(baseUrl)
+    if (ownServer) {
+      setError(t('endpoints:dialog.ownServer', { url: ownServer }))
+      return
+    }
+    setError('')
+    setRefusedDraft(null)
+    setSaving(true)
+    try {
+      const refused = await onSave({
+        name,
+        baseUrl,
+        apiKey: draft.apiKey.trim(),
+        saveAnyway: saveAnyway && refusedDraft === draftKey(draft),
+      })
+      if (refused) {
+        setError(refused.message)
+        if (refused.canSaveAnyway) setRefusedDraft(draftKey(draft))
+      }
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -109,7 +162,11 @@ export function EndpointDialog({
             {t('endpoints:dialog.description')}
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={submit} className="min-w-0 space-y-4" noValidate>
+        <form
+          onSubmit={(event) => void submit(event)}
+          className="min-w-0 space-y-4"
+          noValidate
+        >
           <label className="block text-sm">
             {t('endpoints:dialog.name')}
             <Input
@@ -156,10 +213,27 @@ export function EndpointDialog({
               />
             </label>
           )}
+          {provider && (
+            <LocalModelCollisionNotice
+              endpoint={provider.provider}
+              modelIds={(provider.models ?? []).map((m) => m.id)}
+            />
+          )}
           {error && (
             <p role="alert" className="text-sm break-words text-destructive">
               {error}
             </p>
+          )}
+          {error && refusedDraft === draftKey(draft) && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={saving}
+              onClick={() => void submit(undefined, true)}
+            >
+              {t('endpoints:dialog.saveAnyway')}
+            </Button>
           )}
           <DialogFooter>
             <Button
@@ -171,9 +245,14 @@ export function EndpointDialog({
             </Button>
             <Button
               type="submit"
-              disabled={!draft.name.trim() || !draft.baseUrl.trim()}
+              disabled={saving || !draft.name.trim() || !draft.baseUrl.trim()}
             >
-              {t('endpoints:dialog.save')}
+              {saving && (
+                <Loader2 size={14} className="animate-spin" aria-hidden />
+              )}
+              {saving
+                ? t('endpoints:dialog.checking')
+                : t('endpoints:dialog.save')}
             </Button>
           </DialogFooter>
         </form>

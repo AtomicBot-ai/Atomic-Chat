@@ -12,7 +12,9 @@
     "checking": "Checking…",
     "connected": "Connected · {{models}}",
     "reachable": "Ping successful · {{latency}} ms · {{models}}",
-    "failed": "No answer"
+    "failed": "No answer",
+    "unverified": "Key not verified",
+    "keyRejected": "Key rejected"
   },
   "actions": {
     "ping": "Ping",
@@ -32,6 +34,13 @@
     "baseUrlPlaceholder": "http://localhost:8080/v1",
     "apiKey": "API key (optional)",
     "invalidUrl": "Enter a valid HTTP or HTTPS URL.",
+    "ownServer": "This is Atomic Chat's own Local API Server ({{url}}). A custom endpoint must be another server: requests to this address would only come back to the app.",
+    "localModelCollision": "“{{model}}” is also a local model. The Local API Server sends requests for it to {{provider}}, the provider selected for it on the server page.",
+    "localModelCollisionEndpoint": "“{{model}}” is also a local model. The Local API Server sends requests for it to this endpoint, the provider selected for it on the server page.",
+    "localModelCollisionUnselected": "“{{model}}” is also a local model. Until a provider is selected for it on the server page, the Local API Server sends requests for it to this endpoint.",
+    "keyRejected": "{{name}} refused the request. Check the API key.",
+    "saveAnyway": "Save anyway",
+    "checking": "Checking…",
     "cancel": "Cancel",
     "save": "Save endpoint"
   },

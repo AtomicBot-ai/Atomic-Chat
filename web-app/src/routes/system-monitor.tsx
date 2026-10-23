@@ -17,6 +17,9 @@ export const Route = createFileRoute(route.systemMonitor as any)({
   component: SystemMonitorContent,
 })
 
+/** A usage readout, as the card shows it and as its meter announces it. */
+const formatPercent = (value: number) => `${value.toFixed(2)}%`
+
 function SystemMonitorContent() {
   const { t } = useTranslation()
   const { hardwareData, systemUsage, updateSystemUsage } = useHardware()
@@ -92,10 +95,15 @@ function SystemMonitorContent() {
                   {t('system-monitor:currentUsage')}
                 </span>
                 <span className="text-foreground font-bold">
-                  {systemUsage.cpu.toFixed(2)}%
+                  {formatPercent(systemUsage.cpu)}
                 </span>
               </div>
-              <Progress value={systemUsage.cpu} className="h-3 w-full" />
+              <Progress
+                value={systemUsage.cpu}
+                aria-label={t('system-monitor:cpuUsage')}
+                getValueLabel={() => formatPercent(systemUsage.cpu)}
+                className="h-3 w-full"
+              />
             </div>
           </div>
         </div>
@@ -138,10 +146,15 @@ function SystemMonitorContent() {
                   {t('system-monitor:currentUsage')}
                 </span>
                 <span className="text-foreground font-bold">
-                  {ramUsagePercentage.toFixed(2)}%
+                  {formatPercent(ramUsagePercentage)}
                 </span>
               </div>
-              <Progress value={ramUsagePercentage} className="h-3 w-full" />
+              <Progress
+                value={ramUsagePercentage}
+                aria-label={t('system-monitor:memoryUsage')}
+                getValueLabel={() => formatPercent(ramUsagePercentage)}
+                className="h-3 w-full"
+              />
             </div>
           </div>
         </div>

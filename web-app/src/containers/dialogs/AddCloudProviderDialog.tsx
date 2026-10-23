@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronRight, Eye, EyeOff, ShieldCheck } from 'lucide-react'
+import { ChevronRight, Eye, EyeOff, Loader2, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
@@ -20,6 +20,12 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import { saveProviderApiKey } from '@/lib/provider-api-key'
+import {
+  checkProviderKey,
+  recordKeyCheck,
+  savedAnyway,
+  type KeyCheckOutcome,
+} from '@/lib/provider-key-check'
 import { cn, getProviderTitle } from '@/lib/utils'
 import {
   isLocalProvider,
@@ -331,6 +337,11 @@ export function AddCloudProviderDialog({
   const [step, setStep] = useState<Step>({ name: 'gallery' })
   const [apiKey, setApiKey] = useState('')
   const [revealed, setRevealed] = useState(false)
+  // The key is checked with the provider before it is saved.
+  const [checking, setChecking] = useState(false)
+  const [keyError, setKeyError] = useState<string | null>(null)
+  // The key the provider called invalid, which the user may save anyway.
+  const [refusedKey, setRefusedKey] = useState<string | null>(null)
 
   const cloudProviders = useMemo(
     () => selectCloudGalleryProviders(providers),
@@ -373,6 +384,8 @@ export function AddCloudProviderDialog({
     setStep(openingStep())
     setApiKey('')
     setRevealed(false)
+    setKeyError(null)
+    setRefusedKey(null)
   }
 
   const handleOpenChange = (next: boolean) => {
@@ -385,7 +398,11 @@ export function AddCloudProviderDialog({
    * close. Fired last and guarded — the confirmation is cosmetic and must never
    * strand a connection that was actually made.
    */
-  const finishWith = (result: CloudProviderSaveResult) => {
+  const finishWith = (
+    result: CloudProviderSaveResult,
+    /** The key was saved without the provider confirming it, and why. */
+    unverifiedReason?: string
+  ) => {
     onKeySaved(result)
     reset()
     onOpenChange(false)
@@ -393,24 +410,62 @@ export function AddCloudProviderDialog({
     // Connecting is over in a moment and the dialog closes at once, so without
     // this the only feedback is the screen changing underneath you.
     try {
-      toast.success(
-        t('setup:cloudStep.saved', {
-          provider: galleryLabel(result.providerName),
+      const provider = galleryLabel(result.providerName)
+      if (unverifiedReason !== undefined) {
+        toast.warning(t('setup:cloudStep.savedUnverified', { provider }), {
+          description: unverifiedReason,
         })
-      )
+      } else {
+        toast.success(t('setup:cloudStep.saved', { provider }))
+      }
     } catch (error) {
       console.debug('[AddCloudProviderDialog] success toast failed', error)
     }
   }
 
-  const handleSave = () => {
-    if (step.name !== 'key') return
+  /** Check the typed key, then save it; `saveAnyway` saves one it refused. */
+  const handleSave = async (saveAnyway = false) => {
+    if (step.name !== 'key' || checking) return
+    const provider = step.provider
     const key = apiKey.trim()
     if (!key) return
 
+    // Ask the provider before calling it connected: a key it calls invalid
+    // keeps the dialog open with the reason (and "Save anyway"); one it could
+    // not be asked about is saved and said to be unverified.
+    let outcome: KeyCheckOutcome
+    if (saveAnyway && keyError && refusedKey === key) {
+      outcome = savedAnyway(keyError)
+    } else {
+      setKeyError(null)
+      setRefusedKey(null)
+      setChecking(true)
+      try {
+        outcome = await checkProviderKey(provider, key, serviceHub)
+      } finally {
+        setChecking(false)
+      }
+      if (outcome.kind === 'refused') {
+        setKeyError(
+          outcome.reason === 'ownServer'
+            ? outcome.message
+            : [
+                t('setup:cloudStep.keyRejected', {
+                  provider: galleryLabel(provider.provider),
+                }),
+                outcome.message,
+              ]
+                .filter(Boolean)
+                .join(' ')
+        )
+        if (outcome.reason === 'key') setRefusedKey(key)
+        return
+      }
+    }
+
     try {
       saveProviderApiKey({
-        provider: step.provider,
+        provider,
         apiKey: key,
         duringOnboarding,
         updateProvider,
@@ -423,11 +478,15 @@ export function AddCloudProviderDialog({
       toast.error(t('setup:cloudStep.saveFailed'))
       return
     }
+    recordKeyCheck(provider.provider, key, outcome)
 
-    finishWith({
-      providerName: step.provider.provider,
-      modelId: step.provider.models?.[0]?.id ?? null,
-    })
+    finishWith(
+      {
+        providerName: provider.provider,
+        modelId: provider.models?.[0]?.id ?? null,
+      },
+      outcome.kind === 'unverified' ? outcome.message : undefined
+    )
   }
 
   return (
@@ -535,11 +594,19 @@ export function AddCloudProviderDialog({
                   autoFocus
                   type={revealed ? 'text' : 'password'}
                   value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
+                  aria-invalid={keyError ? true : undefined}
+                  aria-describedby={
+                    keyError ? 'cloud-provider-api-key-error' : undefined
+                  }
+                  onChange={(e) => {
+                    setApiKey(e.target.value)
+                    setKeyError(null)
+                    setRefusedKey(null)
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && apiKey.trim()) {
                       e.preventDefault()
-                      handleSave()
+                      void handleSave()
                     }
                     // Onboarding listens for keys further up the tree.
                     e.stopPropagation()
@@ -564,6 +631,26 @@ export function AddCloudProviderDialog({
                   {revealed ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
+              {keyError && (
+                <p
+                  id="cloud-provider-api-key-error"
+                  role="alert"
+                  className="text-destructive text-xs break-words"
+                >
+                  {keyError}
+                </p>
+              )}
+              {keyError && refusedKey === apiKey.trim() && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="self-start"
+                  disabled={checking}
+                  onClick={() => void handleSave(true)}
+                >
+                  {t('setup:cloudStep.saveAnyway')}
+                </Button>
+              )}
               <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
                 <ShieldCheck className="size-3.5 shrink-0" />
                 {t('setup:cloudStep.keyProtected')}
@@ -582,10 +669,13 @@ export function AddCloudProviderDialog({
               <Button
                 size="sm"
                 className="w-full sm:w-auto"
-                disabled={!apiKey.trim()}
-                onClick={handleSave}
+                disabled={checking || !apiKey.trim()}
+                onClick={() => void handleSave()}
               >
-                {t('setup:cloudStep.saveKey')}
+                {checking && <Loader2 className="size-4 animate-spin" />}
+                {checking
+                  ? t('setup:cloudStep.checkingKey')
+                  : t('setup:cloudStep.saveKey')}
               </Button>
             </DialogFooter>
           </>

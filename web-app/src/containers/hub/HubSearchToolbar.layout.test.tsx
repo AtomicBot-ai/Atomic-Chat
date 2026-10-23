@@ -15,6 +15,7 @@ import { seedServiceHub } from '@/test/service-hub'
 import { HubCategorySelect } from '@/containers/hub/HubCategorySelect'
 import { HubFilters } from '@/containers/hub/HubFilters'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import i18n from '@/i18n/setup'
 import { DEFAULT_HUB_FILTERS } from '@/lib/hub-filters'
 import { HUB_CATEGORIES } from '@/lib/hub-media'
 import { HubSearchToolbar } from './HubSearchToolbar'
@@ -26,10 +27,15 @@ vi.mock('@/hooks/useHardware', () => ({
 
 const RAIL = 60
 const SIDEBAR = 240
+/** The sidebar dragged to its widest, `MAX_SIDEBAR_WIDTH` (40rem). */
+const WIDEST_SIDEBAR = 640
 /** The page header's row: the window less the rail, the open sidebar and its `px-4`. */
-const toolbarWidth = (window: number) => window - RAIL - SIDEBAR
+const toolbarWidth = (window: number, sidebar = SIDEBAR) =>
+  window - RAIL - sidebar
+/** Search keeps this much while it shares a row with Filters, Sort and Import. */
+const USEFUL_SEARCH = 256
 
-function renderToolbar(width: number) {
+function renderToolbar(width: number, value = 'qwen3 coder') {
   return render(
     withTranslations(
       <div
@@ -38,9 +44,9 @@ function renderToolbar(width: number) {
       >
         <div data-testid="page" style={{ width }}>
           <HubSearchToolbar
-            value="qwen3 coder"
+            value={value}
             onChange={() => {}}
-            placeholder="Search for models on Hugging Face..."
+            placeholder={i18n.t('hub:searchPlaceholder')}
             modelType={
               <HubCategorySelect
                 categories={HUB_CATEGORIES}
@@ -62,16 +68,39 @@ function renderToolbar(width: number) {
   )
 }
 
+/** Filters, Sort and Import, by their names in the current language. */
+const actions = () =>
+  ['hub:filters.label', 'hub:sortBy', 'hub:import.button'].map((key) =>
+    screen.getByRole('button', { name: i18n.t(key) })
+  )
+
 const controls = () => [
   screen.getByTestId('hub-category-workflow-select'),
   screen.getByRole('textbox'),
-  screen.getByRole('button', { name: 'Filter models' }),
-  screen.getByRole('button', { name: 'Sort by' }),
-  screen.getByRole('button', { name: /Import file/ }),
+  ...actions(),
 ]
 
+/** Width of `text` set in `el`'s own font, in px. */
+function textWidth(el: HTMLElement, text: string): number {
+  const style = getComputedStyle(el)
+  const context = document.createElement('canvas').getContext('2d')
+  if (!context) expect.fail('canvas 2d context unavailable')
+  context.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`
+  return context.measureText(text).width
+}
+
+/** Run `check`, naming the case in the failure: a sweep reports where it broke. */
+function at(where: string, check: () => void): void {
+  try {
+    check()
+  } catch (error) {
+    throw new Error(`${where}: ${(error as Error).message}`)
+  }
+}
+
 describe('HubSearchToolbar layout', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await i18n.changeLanguage('en')
     seedServiceHub({})
     useModelProvider.setState({
       providers: [
@@ -79,8 +108,9 @@ describe('HubSearchToolbar layout', () => {
       ],
     })
   })
-  afterEach(() => {
+  afterEach(async () => {
     setFontSize(DEFAULT_FONT_SIZE)
+    await i18n.changeLanguage('en')
   })
 
   for (const [label, size] of [
@@ -102,8 +132,11 @@ describe('HubSearchToolbar layout', () => {
           expectVerticallyCentered(control, field)
           expectFits(control, page)
         }
-        // The search takes the spare width, never less than its floor.
-        expect(field.getBoundingClientRect().width).toBeGreaterThanOrEqual(120)
+        // The search is the row's main control, not the leftover between
+        // wide action labels.
+        expect(field.getBoundingClientRect().width).toBeGreaterThanOrEqual(
+          USEFUL_SEARCH
+        )
       })
     }
 
@@ -116,5 +149,55 @@ describe('HubSearchToolbar layout', () => {
       expectNoHorizontalOverflow(page)
       for (const control of controls()) expectFits(control, page)
     })
+
+    for (const language of ['en', 'ru']) {
+      it(`shows the whole placeholder and every action across the window's widths (${language}, ${label})`, async () => {
+        await i18n.changeLanguage(language)
+        setFontSize(size)
+        renderToolbar(toolbarWidth(1280), '')
+        const page = screen.getByTestId('page')
+        const input = screen.getByRole('textbox') as HTMLInputElement
+        const field = input.closest('.hub-search-field') as HTMLElement
+        const placeholder = textWidth(input, input.placeholder)
+
+        // From a 1024 px window with the sidebar dragged to its widest to a
+        // 1280 px one with the default sidebar.
+        const narrowest = toolbarWidth(1024, WIDEST_SIDEBAR)
+        const widest = toolbarWidth(1280)
+        for (let width = narrowest; width <= widest; width += 16) {
+          page.style.width = `${width}px`
+          await settle()
+          at(`${width}px toolbar`, () => {
+            expectNoHorizontalOverflow(page)
+            expect(
+              placeholder,
+              'the placeholder is cut off inside the search field'
+            ).toBeLessThanOrEqual(input.clientWidth + 0.5)
+            const filters = actions()[0]
+            for (const control of [field, ...actions()]) {
+              expectFits(control, page)
+            }
+            for (const button of actions()) {
+              // No label wraps inside its button or spills out of it.
+              expect(button.getBoundingClientRect().height).toBeCloseTo(36, 0)
+              expect(button.scrollWidth).toBeLessThanOrEqual(
+                button.clientWidth + 1
+              )
+            }
+            const sharesRow =
+              Math.abs(
+                field.getBoundingClientRect().top -
+                  filters.getBoundingClientRect().top
+              ) < 1
+            if (sharesRow) {
+              expect(
+                field.getBoundingClientRect().width,
+                'search squeezed by the actions beside it'
+              ).toBeGreaterThanOrEqual(USEFUL_SEARCH)
+            }
+          })
+        }
+      })
+    }
   }
 })

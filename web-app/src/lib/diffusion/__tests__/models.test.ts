@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { DownloadEvent } from '@janhq/core'
 
+import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { seedServiceHub } from '@/test/service-hub'
 import {
   findFamily,
@@ -701,6 +702,51 @@ describe('downloadArtifact', () => {
     const plan = await downloadArtifact(zImage, 'q4_k_m')
     expect(transfers).toEqual([])
     expect(plan.missingBytes).toBe(0)
+  })
+
+  it('closes a waiting row whose files are already complete as a finished download', async () => {
+    // A paused row brought back after a relaunch, for files that finished
+    // meanwhile: nothing transfers, so only this event can clear the row.
+    onDiskNow = [
+      onDisk('z-image/z-image-turbo-Q4_K_M.gguf', 5_017_613_376),
+      onDisk(SHARED_AE, AE.bytes),
+      onDisk(SHARED_TE, QWEN3.bytes),
+    ]
+    const emitted: Array<{ name: string; modelId?: string }> = []
+    const core = (globalThis as unknown as { core: Record<string, unknown> })
+      .core
+    core.events = {
+      on: () => {},
+      off: () => {},
+      emit: (name: string, payload: { modelId?: string }) =>
+        emitted.push({ name, modelId: payload?.modelId }),
+    }
+    useDownloadStore.setState({
+      downloads: {
+        'diffusion-model-z-image_q4_k_m': {
+          id: 'diffusion-model-z-image_q4_k_m',
+          name: 'diffusion-model-z-image_q4_k_m',
+          progress: 0.4,
+          current: 4,
+          total: 10,
+          speed: { bytesPerSecond: 0, atBytes: 4, atTime: 0 },
+        },
+      },
+    })
+
+    try {
+      await downloadArtifact(zImage, 'q4_k_m', { resume: true })
+      expect(transfers).toEqual([])
+      expect(emitted).toEqual([
+        {
+          name: DownloadEvent.onFileDownloadSuccess,
+          modelId: 'diffusion-model-z-image_q4_k_m',
+        },
+      ])
+    } finally {
+      delete core.events
+      useDownloadStore.setState({ downloads: {} })
+    }
   })
 
   it('leaves a shared file to the download already fetching it', async () => {

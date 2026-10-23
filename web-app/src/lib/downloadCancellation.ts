@@ -68,16 +68,35 @@ export function cancelDownload(
   download: { id: string; name: string },
   serviceHub: ServiceHub
 ): void {
-  const { markResumableDownload, clearPausedDownload, clearResumeParams, dismissDownload, clearDownloadOrigin, resumeParams } =
-    useDownloadStore.getState()
-  const modelRequest = !!(resumeParams[download.id] || resumeParams[download.name]) || !(
-    isDiffusionEngineTaskId(download.id) || isEngineBuildTaskId(download.id) ||
-    isEngineUpdateTaskId(download.id) || isDiffusionModelDownloadTaskId(download.id) ||
-    isDecisionDownloadTaskId(download.id) || isEmbeddingDownloadTaskId(download.id) ||
-    isManagedDownloadId(download.id) || isFoundryLocalDownloadId(download.id) ||
-    download.id.startsWith('llamacpp') || download.id.startsWith('mlx')
-  )
-  for (const key of new Set([download.name, download.id])) {
+  const {
+    markResumableDownload,
+    clearPausedDownload,
+    clearResumeParams,
+    dismissDownload,
+    clearDownloadOrigin,
+    resumeParams,
+  } = useDownloadStore.getState()
+  const modelRequest =
+    !!(resumeParams[download.id] || resumeParams[download.name]) ||
+    !(
+      isDiffusionEngineTaskId(download.id) ||
+      isEngineBuildTaskId(download.id) ||
+      isEngineUpdateTaskId(download.id) ||
+      isDiffusionModelDownloadTaskId(download.id) ||
+      isDecisionDownloadTaskId(download.id) ||
+      isEmbeddingDownloadTaskId(download.id) ||
+      isManagedDownloadId(download.id) ||
+      isFoundryLocalDownloadId(download.id) ||
+      download.id.startsWith('llamacpp') ||
+      download.id.startsWith('mlx')
+    )
+  const store = useDownloadStore.getState()
+  const keys = new Set([download.name, download.id])
+  // Pause already stopped the transfer, so no stop event will come to clear a
+  // paused row: a paused checkpoint's row stayed in the panel for good, and a
+  // download brought back after a relaunch would come back again.
+  const paused = [...keys].some((key) => store.pausedDownloads.has(key))
+  for (const key of keys) {
     markDownloadCancellationRequested(key)
     markResumableDownload(key)
     if (modelRequest) {
@@ -88,8 +107,16 @@ export function cancelDownload(
     } else {
       clearPausedDownload(key)
       clearResumeParams(key)
+      if (paused) {
+        store.removeDownload(key)
+        store.removeLocalDownloadingModel(key)
+        clearDownloadOrigin(key)
+      }
     }
   }
+  // A checkpoint's transfer has nothing left to stop. The model service's
+  // abort still runs for a chat-model file: its stop event reports the cancel.
+  if (paused && isDiffusionModelDownloadTaskId(download.id)) return
   if (
     isDiffusionEngineTaskId(download.id) ||
     isEngineBuildTaskId(download.id) ||

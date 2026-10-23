@@ -5,6 +5,17 @@
 
 export type NavigationSection = 'chat' | 'server' | 'models' | 'settings'
 
+/** The icon rail's width, in CSS px. */
+export const NAVIGATION_RAIL_WIDTH = 60
+/** The title bar row above the rail and the sidebar, in CSS px. */
+export const WINDOW_TITLEBAR_HEIGHT = 42
+/**
+ * The narrowest the page may get beside the docked sidebar, in CSS px
+ * (Tailwind's `md`). The sidebar narrows to keep it; once even its minimum
+ * width would not, it stops docking and opens over the page instead.
+ */
+export const MIN_PAGE_WIDTH = 768
+
 const SERVER_PATHS = [
   '/api',
   '/launch',

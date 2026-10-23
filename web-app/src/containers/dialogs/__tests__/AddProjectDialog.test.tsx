@@ -54,6 +54,15 @@ describe('AddProjectDialog assistant', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('shows the initial of an assistant without an avatar in the picker', () => {
+    renderDialog({})
+
+    const trigger = screen.getByText('Researcher').closest('button')!
+    expect(
+      trigger.querySelector('[data-slot="avatar-fallback"]')
+    ).toHaveTextContent(/^R$/)
+  })
+
   it('leaves the choice empty when the default assistant no longer exists', () => {
     useAssistant.setState({ defaultAssistantId: 'deleted' })
 

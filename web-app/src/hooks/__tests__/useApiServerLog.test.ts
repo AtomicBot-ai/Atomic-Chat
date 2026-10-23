@@ -56,6 +56,16 @@ describe('useApiServerLog', () => {
     expect(entryById('a')?.promptPreview).toBe('keep me')
   })
 
+  it('keeps one row when a start arrives for a request already listed', () => {
+    store().hydrate([request('a', { status: 'completed', durationMs: 42 })])
+    store().applyBatch([{ t: 'start', entry: request('a') }])
+    expect(store().entries).toHaveLength(1)
+    expect(entryById('a')).toMatchObject({
+      status: 'completed',
+      durationMs: 42,
+    })
+  })
+
   it('ignores a patch for an unknown id', () => {
     store().applyBatch([{ t: 'start', entry: request('a') }])
     store().applyBatch([{ t: 'patch', id: 'ghost', patch: { durationMs: 1 } }])

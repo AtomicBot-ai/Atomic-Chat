@@ -14,7 +14,10 @@ import {
 } from '@/lib/cloud-providers'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
-import { ModelSourceBadge } from '@/components/ModelSourceBadge'
+import {
+  ModelSourceBadge,
+  modelSourceLabel,
+} from '@/components/ModelSourceBadge'
 import {
   IconChevronDown,
   IconChevronLeft,
@@ -45,16 +48,17 @@ import { isLocalProvider } from '@/utils/registerRemoteProvider'
 import { switchToModel } from '@/utils/switchModel'
 import {
   compactModelDisplayName,
+  modelVariantDetails,
   qualifiedModelDisplayName,
 } from '@/lib/model-display-name'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
-import { useLeftPanel } from '@/hooks/useLeftPanel'
+import { useSidebarDocked } from '@/components/ui/sidebar'
 import { useRunSettingsPanel } from '@/stores/run-settings-panel-store'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { formatDownloadReadout } from '@/lib/downloadFormat'
 import { cancelDownload } from '@/lib/downloadCancellation'
 import { downloadKind } from '@/lib/telemetry'
-import { isAnswerableModel } from '@/lib/answerable-model'
+import { isAnswerableModel, isEmbeddingOnlyModel } from '@/lib/answerable-model'
 import {
   HuggingFaceAction,
   ModelPickerEmptyState,
@@ -120,6 +124,92 @@ interface SearchableModel {
   model: Model
   searchStr: string
   value: string
+}
+
+type PickerModelOptionProps = {
+  item: SearchableModel
+  selected: boolean
+  selectedClassName: string
+  /** Favorites mix engines, so each of their rows names its own. */
+  showProvider?: boolean
+  onSelect: (item: SearchableModel) => void
+}
+
+/**
+ * One installed model in the list. The name has the first line to itself (two
+ * at most); what tells it apart from its siblings — quantization, owner, the
+ * app it was found in — sits under it, so a badge never takes the name's width
+ * and an ellipsis never eats the quant. The full id is the tooltip and ends
+ * the accessible name.
+ */
+function PickerModelOption({
+  item,
+  selected,
+  selectedClassName,
+  showProvider = false,
+  onSelect,
+}: PickerModelOptionProps) {
+  const { model } = item
+  const name = compactModelDisplayName(model)
+  const { quant, owner } = modelVariantDetails(model)
+  const source = modelSourceLabel(model.source)
+  // "ollama/…" found by the Ollama scan: the badge already says where.
+  const details = [
+    quant,
+    owner?.toLowerCase() === source?.toLowerCase() ? undefined : owner,
+  ].filter((part): part is string => !!part)
+  const spoken = [name, ...details, source].filter(Boolean).join(', ')
+
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      aria-label={model.id === name ? spoken : `${spoken} (${model.id})`}
+      title={model.id}
+      onClick={() => onSelect(item)}
+      className={cn(
+        'mx-1 mb-1 flex w-[calc(100%-0.5rem)] min-w-0 items-center gap-2 rounded-sm px-2 py-1.5 text-left transition-all duration-200',
+        'hover:bg-secondary/40',
+        selected && selectedClassName
+      )}
+    >
+      <span
+        aria-hidden="true"
+        className={cn(
+          'flex size-4.5 shrink-0 items-center justify-center rounded-full border',
+          selected ? 'border-blue-500' : 'border-muted-foreground/40'
+        )}
+        data-testid={`model-selection-${item.value}`}
+      >
+        {selected && <span className="size-2 rounded-full bg-blue-500" />}
+      </span>
+      {showProvider && (
+        <div className="shrink-0">
+          <ProvidersAvatar provider={item.provider} />
+        </div>
+      )}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <span
+          data-testid="model-option-name"
+          className="line-clamp-2 text-sm wrap-anywhere"
+        >
+          {name}
+        </span>
+        {(details.length > 0 || source) && (
+          <span
+            data-testid="model-option-details"
+            className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground"
+          >
+            {details.length > 0 && (
+              <span className="min-w-0 truncate">{details.join(' · ')}</span>
+            )}
+            <ModelSourceBadge source={model.source} className="shrink-0" />
+          </span>
+        )}
+      </div>
+    </button>
+  )
 }
 
 // Helper functions for localStorage
@@ -197,7 +287,9 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   // narrowest, so the pill folds down to the model's mark; the name stays on
   // hover and in the panel. With nothing selected there is no mark to fold
   // down to, so "Select a model" stays.
-  const leftBarOpen = useLeftPanel((state) => state.open)
+  // The sidebar as it is, not the saved preference: in a window too narrow
+  // to dock it, an open sidebar lies over the page and takes no room.
+  const leftBarOpen = useSidebarDocked()
   const rightBarOpen = useRunSettingsPanel((state) => state.isOpen)
   const compact =
     (compactOverride ?? (leftBarOpen && rightBarOpen)) && !!selectedModel?.id
@@ -331,10 +423,16 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
         // session); otherwise leave the selector blank.
         try {
           const activeModelIds = await serviceHub.models().getActiveModels()
-          const activeModelId = activeModelIds?.[0]
-          if (activeModelId) {
+          // Project indexing loads the embedding model in the same engine, so
+          // it is "running" too — and it used to land in the composer as the
+          // chat model (AC-01). Only a running model that can chat counts.
+          for (const activeModelId of activeModelIds ?? []) {
             const activeProvider = providers.find(
-              (p) => p.active && p.models.some((m) => m.id === activeModelId)
+              (p) =>
+                p.active &&
+                p.models.some(
+                  (m) => m.id === activeModelId && !isEmbeddingOnlyModel(m)
+                )
             )
             if (activeProvider) {
               selectModelProvider(activeProvider.provider, activeModelId)
@@ -350,7 +448,11 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
       }
 
       const lastUsed = getLastUsedModel()
-      if (lastUsed && checkModelExists(lastUsed.provider, lastUsed.model)) {
+      const lastUsedModel = lastUsed
+        ? checkModelExists(lastUsed.provider, lastUsed.model)
+        : undefined
+      // A last-used embedding model is what the AC-01 bug left behind.
+      if (lastUsed && lastUsedModel && !isEmbeddingOnlyModel(lastUsedModel)) {
         selectModelProvider(lastUsed.provider, lastUsed.model)
         if (lastUsed.provider === 'llamacpp') {
           await serviceHub
@@ -371,11 +473,11 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
               p.provider === 'mlx' ||
               p.provider === 'foundry-local') &&
             isPickerSection(p) &&
-            p.models.length > 0
+            p.models.some((m) => !isEmbeddingOnlyModel(m))
         )
         if (localProvider && localProvider.models.length > 0) {
           const firstModel = localProvider.models.find(
-            (m) => m.id !== EMBEDDING_MODEL_ID
+            (m) => !isEmbeddingOnlyModel(m)
           )
           if (!firstModel) {
             selectModelProvider('', '')
@@ -953,58 +1055,19 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                     </div>
 
                     {/* Favorite models */}
-                    {favoriteItems.map((searchableModel) => {
-                      const isSelected =
-                        selectedModel?.id === searchableModel.model.id &&
-                        selectedProvider === searchableModel.provider.provider
-
-                      return (
-                        <button
-                          type="button"
-                          role="radio"
-                          aria-checked={isSelected}
-                          key={`fav-${searchableModel.value}`}
-                          title={searchableModel.model.id}
-                          onClick={() => handleSelect(searchableModel)}
-                          className={cn(
-                            'mx-1 mb-1 flex w-[calc(100%-0.5rem)] min-w-0 items-center gap-2 rounded-sm px-2 py-1.5 text-left transition-all duration-200',
-                            'hover:bg-secondary/40',
-                            isSelected && 'bg-secondary/50'
-                          )}
-                        >
-                          <span
-                            aria-hidden="true"
-                            className={cn(
-                              'flex size-4.5 shrink-0 items-center justify-center rounded-full border',
-                              isSelected
-                                ? 'border-blue-500'
-                                : 'border-muted-foreground/40'
-                            )}
-                            data-testid={`model-selection-${searchableModel.value}`}
-                          >
-                            {isSelected && (
-                              <span className="size-2 rounded-full bg-blue-500" />
-                            )}
-                          </span>
-                          <div className="flex min-w-0 flex-1 items-center gap-1">
-                            <div className="shrink-0">
-                              <ProvidersAvatar
-                                provider={searchableModel.provider}
-                              />
-                            </div>
-                            <span className="text-sm truncate">
-                              {qualifiedModelDisplayName(searchableModel.model)}
-                            </span>
-                            {searchableModel.model.source && (
-                              <ModelSourceBadge
-                                source={searchableModel.model.source}
-                                className="shrink-0"
-                              />
-                            )}
-                          </div>
-                        </button>
-                      )
-                    })}
+                    {favoriteItems.map((searchableModel) => (
+                      <PickerModelOption
+                        key={`fav-${searchableModel.value}`}
+                        item={searchableModel}
+                        selected={
+                          selectedModel?.id === searchableModel.model.id &&
+                          selectedProvider === searchableModel.provider.provider
+                        }
+                        selectedClassName="bg-secondary/50"
+                        showProvider
+                        onSelect={handleSelect}
+                      />
+                    ))}
                   </div>
                 )}
 
@@ -1077,60 +1140,19 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                         </div>
 
                         {/* Models for this provider */}
-                        {models.map((searchableModel) => {
-                          const isSelected =
-                            selectedModel?.id === searchableModel.model.id &&
-                            selectedProvider ===
-                              searchableModel.provider.provider
-
-                          return (
-                            <button
-                              type="button"
-                              role="radio"
-                              aria-checked={isSelected}
-                              key={searchableModel.value}
-                              title={searchableModel.model.id}
-                              onClick={() => handleSelect(searchableModel)}
-                              className={cn(
-                                'mx-1 mb-1 flex w-[calc(100%-0.5rem)] min-w-0 items-center gap-2 rounded-sm px-2 py-1.5 text-left transition-all duration-200',
-                                'hover:bg-secondary/40',
-                                isSelected &&
-                                  'bg-secondary/60 hover:bg-secondary/60'
-                              )}
-                            >
-                              <span
-                                aria-hidden="true"
-                                className={cn(
-                                  'flex size-4.5 shrink-0 items-center justify-center rounded-full border',
-                                  isSelected
-                                    ? 'border-blue-500'
-                                    : 'border-muted-foreground/40'
-                                )}
-                                data-testid={`model-selection-${searchableModel.value}`}
-                              >
-                                {isSelected && (
-                                  <span className="size-2 rounded-full bg-blue-500" />
-                                )}
-                              </span>
-                              <div className="flex min-w-0 flex-1 items-center gap-2">
-                                <span
-                                  className="text-sm truncate"
-                                  title={searchableModel.model.id}
-                                >
-                                  {qualifiedModelDisplayName(
-                                    searchableModel.model
-                                  )}
-                                </span>
-                                {searchableModel.model.source && (
-                                  <ModelSourceBadge
-                                    source={searchableModel.model.source}
-                                    className="shrink-0"
-                                  />
-                                )}
-                              </div>
-                            </button>
-                          )
-                        })}
+                        {models.map((searchableModel) => (
+                          <PickerModelOption
+                            key={searchableModel.value}
+                            item={searchableModel}
+                            selected={
+                              selectedModel?.id === searchableModel.model.id &&
+                              selectedProvider ===
+                                searchableModel.provider.provider
+                            }
+                            selectedClassName="bg-secondary/60 hover:bg-secondary/60"
+                            onSelect={handleSelect}
+                          />
+                        ))}
                       </div>
                     )
                 })}

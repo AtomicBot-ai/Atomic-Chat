@@ -102,3 +102,74 @@ pub async fn unregister_provider_config<R: Runtime>(
         Ok(())
     }
 }
+
+/// One model id the Local API Server serves and the provider selected for it: a local engine id
+/// (`llamacpp-upstream`) or a registered remote provider id. AC-03.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServedModelSelection {
+    pub model: String,
+    pub provider: String,
+}
+
+/// The control API body for a selection (`PUT /atomic/v1/server/selection`).
+pub fn selection_body(models: &[ServedModelSelection]) -> serde_json::Value {
+    serde_json::json!({ "models": models })
+}
+
+/// Tell the server which provider serves each model id the webview's server page shows, so a
+/// request for that id follows the selection instead of whichever provider lists the id first.
+///
+/// The app keeps the last selection to hand the core again before a recovered server starts. On
+/// desktop it is also sent to the core now when the core is up; an error from it (a core older than
+/// the route) is returned, and the copy is kept. Mobile's proxy does not route by it.
+#[tauri::command]
+pub async fn set_server_model_selection<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+    models: Vec<ServedModelSelection>,
+) -> Result<(), String> {
+    #[cfg(desktop)]
+    let owner = app
+        .try_state::<crate::core::atomic_core::commands::AtomicCoreClient>()
+        .filter(|client| client.is_enabled());
+    // Recovery reads the copy under this gate, like `provider_configs`.
+    #[cfg(desktop)]
+    let _gate = match owner.as_ref() {
+        Some(owner) => Some(owner.owner_gate().await),
+        None => None,
+    };
+    *state.server_model_selection.lock().await = Some(models.clone());
+    #[cfg(desktop)]
+    if let Some(owner) = owner.as_ref() {
+        owner
+            .call("PUT", "/server/selection", Some(selection_body(&models)))
+            .await
+            .map_err(|error| error.message)?;
+    }
+    #[cfg(mobile)]
+    let _ = &app;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_selection_is_sent_as_the_core_reads_it() {
+        let models = vec![ServedModelSelection {
+            model: "qwen".into(),
+            provider: "llamacpp-upstream".into(),
+        }];
+        assert_eq!(
+            selection_body(&models),
+            serde_json::json!({"models": [{"model": "qwen", "provider": "llamacpp-upstream"}]})
+        );
+        // What the webview invokes the command with.
+        let sent: Vec<ServedModelSelection> = serde_json::from_value(
+            serde_json::json!([{"model": "qwen", "provider": "llamacpp-upstream"}]),
+        )
+        .unwrap();
+        assert_eq!(sent, models);
+    }
+}

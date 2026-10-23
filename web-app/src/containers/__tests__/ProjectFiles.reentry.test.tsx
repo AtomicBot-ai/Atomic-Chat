@@ -3,6 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 import ProjectFiles from '../ProjectFiles'
+import { useProjectUploads } from '@/stores/project-upload-store'
 
 const openDialog = vi.fn()
 const ingest = vi.fn()
@@ -64,6 +65,9 @@ vi.mock('@/components/ui/tooltip', () => ({
 describe('ProjectFiles re-entry while an upload is in flight', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // In-flight uploads outlive the component; a never-settling ingest from
+    // the previous test would otherwise still be running.
+    useProjectUploads.setState({ inFlight: {}, revision: {} })
     openDialog.mockResolvedValue(['/tmp/notes.md'])
     // Never settles: models the embedding-model download grinding through its
     // retry ladders.

@@ -6,8 +6,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_IMAGE_FORM, useImageForm } from '@/hooks/useImageForm'
 import { useImageSetting } from '@/hooks/useImageSetting'
 import type { ImageWorkflowId } from '@/services/diffusion/types'
+import { useImageGalleryStore } from '@/stores/image-gallery-store'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
-import { expectNoHorizontalOverflow, settle, setFontSize, setTheme, withTranslations } from '@/test/layout'
+import {
+  DEFAULT_FONT_SIZE,
+  expectNoHorizontalOverflow,
+  settle,
+  setFontSize,
+  setTheme,
+  withTranslations,
+  XL_FONT_SIZE,
+} from '@/test/layout'
 import { ImageGenerationPage } from './ImageGenerationPage'
 import { ImageViewer } from './ImageViewer'
 
@@ -67,6 +76,15 @@ const squareItem = {
   },
 }
 
+/** The picture the mocked gallery has open; a test may swap in another shape. */
+let openItem = squareItem
+
+const svgOf = (width: number, height: number) =>
+  'data:image/svg+xml,' +
+  encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="#67809f"/></svg>`
+  )
+
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => route.navigate,
 }))
@@ -83,14 +101,14 @@ vi.mock('@/hooks/useImageEngine', () => ({
 }))
 vi.mock('@/hooks/useImageGallery', () => ({
   useImageGallery: () => ({
-    items: [squareItem],
+    items: [openItem],
     hasMore: false,
     total: 1,
     loading: false,
     initialized: true,
-    selected: squareItem,
-    selectedId: squareItem.id,
-    selectedIds: [squareItem.id],
+    selected: openItem,
+    selectedId: openItem.id,
+    selectedIds: [openItem.id],
     loadMore: vi.fn(),
     reload: vi.fn(),
     select: vi.fn(),
@@ -171,6 +189,146 @@ describe('image viewer page geometry', () => {
     useImageGenerationStore.setState({
       installedArtifacts: [completeArtifact],
     })
+    useImageGalleryStore.getState().reset()
+    openItem = squareItem
+  })
+
+  // The window the audit measured (1024 × 740 with the sidebar open) and the
+  // default 1280 layout, each shape at Medium and Extra Large.
+  const pageCases = [
+    { shape: 'landscape', width: 1536, height: 864 },
+    { shape: 'square', width: 1024, height: 1024 },
+    { shape: 'portrait', width: 768, height: 1344 },
+  ].flatMap((shape) => [
+    {
+      ...shape,
+      viewport: 1024,
+      viewportHeight: 740,
+      font: XL_FONT_SIZE,
+      theme: 'dark' as const,
+    },
+    {
+      ...shape,
+      viewport: 1280,
+      viewportHeight: 800,
+      font: DEFAULT_FONT_SIZE,
+      theme: 'light' as const,
+    },
+  ])
+
+  it.each(pageCases)(
+    'keeps the actions under the $shape picture and gives the gallery the rest at $viewport px, $font',
+    async ({ width, height, viewport, viewportHeight, font, theme }) => {
+      await page.viewport(viewport, viewportHeight)
+      setFontSize(font)
+      setTheme(theme)
+      const path = svgOf(width, height)
+      openItem = {
+        ...squareItem,
+        id: `shape-${width}x${height}`,
+        width,
+        height,
+        path,
+        thumbnailPath: path,
+      }
+      const view = render(
+        withTranslations(
+          <div style={{ marginLeft: 256, width: viewport - 256 }}>
+            <ImageGenerationPage workflow="create" search={{}} />
+          </div>
+        )
+      )
+      await screen
+        .getByAltText<HTMLImageElement>('square regression image')
+        .decode()
+      await settle(view.container)
+
+      const root = screen.getByTestId('image-generation-page')
+      const viewerSection = screen.getByTestId('image-viewer-section')
+      const section = viewerSection.getBoundingClientRect()
+      const pane = viewerSection.parentElement!.getBoundingClientRect()
+      const gallery = viewerSection.nextElementSibling!.getBoundingClientRect()
+      const region = screen
+        .getByTestId('image-viewer-region')
+        .getBoundingClientRect()
+      const frame = screen
+        .getByTestId('image-viewer-frame')
+        .getBoundingClientRect()
+      const toolbar = screen
+        .getByTestId('image-recipe-trigger')
+        .parentElement!.getBoundingClientRect()
+
+      // The picture keeps its shape and its width.
+      expect(frame.width / frame.height).toBeCloseTo(width / height, 1)
+      expect(frame.left).toBeGreaterThanOrEqual(region.left - 1)
+      expect(frame.right).toBeLessThanOrEqual(region.right + 1)
+      // The actions hug its bottom edge (the viewer's 8 px gap), not the pane's.
+      expect(toolbar.top - frame.bottom).toBeGreaterThanOrEqual(-0.5)
+      expect(toolbar.top - frame.bottom).toBeLessThanOrEqual(8.5)
+      // The block is the picture and its actions; the gallery starts right under it.
+      expect(section.bottom - toolbar.bottom).toBeLessThanOrEqual(8.5)
+      expect(gallery.top).toBeCloseTo(section.bottom, 0)
+      expect(gallery.bottom).toBeCloseTo(pane.bottom, 0)
+      // A tall picture is capped at three fifths of the pane, so the gallery
+      // always keeps two; below the cap the picture is as wide as the viewer.
+      expect(section.bottom - pane.top).toBeLessThanOrEqual(
+        pane.height * 0.6 + 1
+      )
+      const capped = section.bottom - pane.top >= pane.height * 0.6 - 1
+      expect(capped || frame.width >= region.width - 1).toBe(true)
+      expect(root.scrollHeight).toBeLessThanOrEqual(root.clientHeight + 1)
+      expectNoHorizontalOverflow(root)
+    }
+  )
+
+  it('holds the live preview in the block of the picture it becomes', async () => {
+    await page.viewport(1024, 740)
+    const path = svgOf(1536, 864)
+    openItem = {
+      ...squareItem,
+      id: 'wide-00',
+      width: 1536,
+      height: 864,
+      path,
+      thumbnailPath: path,
+    }
+    useImageForm.setState({ width: 1536, height: 864 })
+    const view = render(
+      withTranslations(
+        <div style={{ marginLeft: 256, width: 1024 - 256 }}>
+          <ImageGenerationPage workflow="create" search={{}} />
+        </div>
+      )
+    )
+    await screen
+      .getByAltText<HTMLImageElement>('square regression image')
+      .decode()
+    await settle(view.container)
+    const viewerSection = screen.getByTestId('image-viewer-section')
+    const shown = viewerSection.getBoundingClientRect()
+    const shownFrame = screen
+      .getByTestId('image-viewer-frame')
+      .getBoundingClientRect()
+
+    act(() => {
+      useImageGalleryStore.getState().selectLive()
+      useImageGenerationStore.setState({ generating: true })
+    })
+    const preview = await screen.findByTestId('image-generation-preview')
+    await document.fonts.ready
+    await new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+    )
+    const live = viewerSection.getBoundingClientRect()
+    const liveFrame = (
+      preview.firstElementChild as HTMLElement
+    ).getBoundingClientRect()
+    // Same block, same frame: the gallery does not move when the result lands.
+    expect(live.height).toBeCloseTo(shown.height, 0)
+    expect(liveFrame.width).toBeCloseTo(shownFrame.width, 0)
+    expect(liveFrame.height).toBeCloseTo(shownFrame.height, 0)
+    expect(liveFrame.top - live.top).toBeCloseTo(shownFrame.top - shown.top, 0)
+    expectNoHorizontalOverflow(screen.getByTestId('image-generation-page'))
   })
 
   it.each([

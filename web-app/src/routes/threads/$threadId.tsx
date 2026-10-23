@@ -93,7 +93,6 @@ import { processAttachmentsForSend } from '@/lib/attachmentProcessing'
 import { downscaleToolResultContent } from '@/lib/toolResultImages'
 import {
   executeChatToolCalls,
-  hasUnresolvedToolCallParts,
   shouldSendToolFollowUp,
 } from '@/lib/execute-chat-tool-calls'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -124,6 +123,14 @@ import {
 import {
   DEFAULT_CTX_LEN, growModelContext } from '@/lib/context-size'
 import { captureHandledError } from '@/lib/sentry'
+import {
+  finishedAssistantMessage,
+  isEmptyFailedTurn,
+  resolveTurnError,
+  retryTarget,
+  stepEndsTurn,
+} from '@/lib/turn-error'
+import { useThreadMessagesSync } from '@/hooks/useThreadMessagesSync'
 import { Button } from '@/components/ui/button'
 import { LinkifiedText } from '@/components/LinkifiedText'
 import { IconAlertCircle, IconRefresh } from '@tabler/icons-react'
@@ -494,7 +501,7 @@ function ThreadDetail() {
         err
       )
     },
-    onFinish: ({ message, isAbort }) => {
+    onFinish: ({ message, isAbort, isError }) => {
       const msgMeta = message.metadata as Record<string, unknown> | undefined
       const finishReason = msgMeta?.finishReason as string | undefined
 
@@ -571,13 +578,14 @@ function ThreadDetail() {
 
       if (!isAbort && message.parts.length) setPendingContinueMessage(null)
 
-      if (!isAbort && !hasUnresolvedToolCallParts(message)) {
+      if (stepEndsTurn({ message, isAbort, isError })) {
         setIsChatRequestActive(false)
         // Terminal when nothing in this message waits on a tool result, so no
         // automatic follow-up will run: with tools, onFinish fires once per
         // step and the turn continues after they resolve. The queue is not the
         // judge: an entry left from an earlier step or turn kept a plain final
-        // answer from ever releasing the composer (PR #335).
+        // answer from ever releasing the composer (PR #335). A failed step is
+        // terminal too, and the calls it queued are dropped, not run (AC-07).
         sessionData.tools = []
         captureTurnOutcome('success', message)
       }
@@ -590,33 +598,28 @@ function ThreadDetail() {
       // does not hold loses it on the next reload. Only what was actually
       // received is kept — a tool call cut off before its result would leave
       // the history with a call no provider accepts unanswered.
+      // A failed turn is kept the same way, as `Error`, together with why it
+      // failed: the AI SDK holds the error only on the in-memory Chat, so a
+      // relaunch otherwise reloads it as an empty reply with no reason (AC-07).
       if (message.role === 'assistant') {
-        const contentParts = isAbort
-          ? extractContentPartsFromUIMessage(message).filter((part) =>
-              part.type === ContentType.ToolCall
-                ? (part as { output?: unknown }).output !== undefined
-                : part.type === ContentType.Image ||
-                  (part.text?.value ?? '').trim() !== ''
-            )
-          : extractContentPartsFromUIMessage(message)
+        const assistantMessage = finishedAssistantMessage({
+          message,
+          threadId,
+          isAbort,
+          isError,
+          error: useChatSessions.getState().sessions[threadId]?.chat.error,
+        })
 
-        if (contentParts.length > 0) {
-          const messageMetadata = (message.metadata || {}) as Record<
-            string,
-            unknown
-          >
-
-          const assistantMessage: ThreadMessage = {
-            type: 'text',
-            role: ChatCompletionRole.Assistant,
-            content: contentParts,
-            id: message.id,
-            object: 'thread.message',
-            thread_id: threadId,
-            status: isAbort ? MessageStatus.Stopped : MessageStatus.Ready,
-            created_at: Date.now(),
-            completed_at: Date.now(),
-            metadata: messageMetadata,
+        if (assistantMessage) {
+          // Hold the failed turn in the Chat as a reload will show it, so the
+          // page looks the same either way and a retry can replace it.
+          if (isError) {
+            useChatSessions
+              .getState()
+              .upsertMessage(
+                threadId,
+                convertThreadMessagesToUIMessages([assistantMessage])[0]
+              )
           }
 
           // Check if message with this ID already exists (onFinish can be called multiple times)
@@ -763,6 +766,11 @@ function ThreadDetail() {
     if (assistant) setCurrentAssistant(assistant)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadId, assistants])
+
+  // Another window can write this thread (AC-02): re-read it from disk when
+  // it is reopened with its Chat still in memory — the load below skips that
+  // case — and whenever another window announces a write to it.
+  useThreadMessagesSync(threadId)
 
   // Load messages on first mount
   useEffect(() => {
@@ -1578,7 +1586,7 @@ function ThreadDetail() {
   // - For user messages: keeps the user message, deletes all after, regenerates assistant response
   // - For assistant messages: finds the closest preceding user message, deletes from there
   const handleRegenerate = useCallback(
-    async (messageId?: string) => {
+    async (requestedMessageId?: string) => {
       // Mutating history under an active agent run would wipe the streaming
       // UI and then bail on the run guard, losing messages for nothing.
       const activeRun = useAgentRun.getState().getRun(threadId)
@@ -1589,6 +1597,14 @@ function ThreadDetail() {
       ) {
         return
       }
+      // A retry with no target replaces a failed turn left as the last
+      // message, so retries do not pile failed turns up in the file (AC-07).
+      const { messageId, discardId } = retryTarget({
+        requestedId: requestedMessageId,
+        stored: useMessages.getState().getMessages(threadId),
+        shown: chatMessagesRef.current,
+      })
+      if (discardId) deleteMessage(threadId, discardId)
       selectThreadModelIfNone(
         searchThreadModel ?? useThreads.getState().threads[threadId]?.model
       )
@@ -1976,6 +1992,14 @@ function ThreadDetail() {
   ])
   const requestActive = isAgentRunning || isChatRequestActive
   const inputStatus = requestActive ? CHAT_STATUS.SUBMITTED : status
+  // A failed turn stored as the last message is what is left of a live error
+  // after a relaunch: it shows as the same error card, retried in place (AC-07).
+  const { error: shownError, failedMessageId: failedTurnMessageId } =
+    resolveTurnError({
+      liveError: error ?? contextLimitError,
+      messages: chatMessages,
+      requestActive,
+    })
   const lastChatMessage = chatMessages[chatMessages.length - 1]
   const hasActiveAssistantMessage = lastChatMessage?.role === 'assistant'
   const latestUserMessageId = useMemo(() => {
@@ -2029,6 +2053,9 @@ function ThreadDetail() {
                   className={cn('mx-auto w-full max-w-3xl md:w-4/5 xl:w-4/6')}
                 >
                   {chatMessages.map((message, index) => {
+                    // The error card below stands in for a failed turn that
+                    // produced nothing; it is no empty reply to act on.
+                    if (isEmptyFailedTurn(message)) return null
                     const isLastMessage = index === chatMessages.length - 1
                     const isFirstMessage = index === 0
                     return (
@@ -2107,10 +2134,10 @@ function ThreadDetail() {
                       )}
                     </div>
                   )}
-                  {(error || contextLimitError) &&
+                  {shownError &&
                     !isAutoIncreasingContext &&
                     (() => {
-                      const activeError = error ?? contextLimitError
+                      const activeError = shownError
                       const rawMessage = activeError?.message
                       const isContextError = isContextLimitError(activeError)
                       // A managed engine: the limit, and the setting that raises it; no reload here.
@@ -2205,7 +2232,9 @@ function ThreadDetail() {
                                   variant="outline"
                                   size="sm"
                                   className="mt-3"
-                                  onClick={() => handleRegenerate()}
+                                  onClick={() =>
+                                    handleRegenerate(failedTurnMessageId)
+                                  }
                                 >
                                   <IconRefresh className="size-4 mr-2" />
                                   Retry
@@ -2227,6 +2256,7 @@ function ThreadDetail() {
             {/* Chat Input - Fixed at bottom */}
             <div className="py-4 mx-auto w-full md:w-4/5 xl:w-4/6">
               <ChatInput
+                threadId={threadId}
                 model={threadModel}
                 onSubmit={handleSubmit}
                 onStop={handleStop}

@@ -10,6 +10,13 @@
   "connected": "Connected",
   "statusError": "Error",
   "statusInactive": "Inactive",
+  "statusConnecting": "Connecting…",
+  "statusFailed": "Couldn't connect",
+  "activation": {
+    "failed": "Couldn't start {{name}}",
+    "retry": "Retry",
+    "edit": "Edit"
+  },
   "by": "By {{name}}",
   "featuredBadge": "Featured",
   "serverActions": "Server actions",

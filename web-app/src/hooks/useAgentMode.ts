@@ -14,6 +14,11 @@ export type AgentWorkspace = {
   primaryRoot?: AgentWorkspaceRoot
   externalRoots: AgentWorkspaceRoot[]
 }
+/** One composer's per-thread state as it stood; `undefined` = never set. */
+export type AgentThreadState = {
+  approvalMode?: AgentApprovalMode
+  workspace?: AgentWorkspace
+}
 
 /**
  * Per-thread agent state: approval mode and workspace roots.
@@ -46,6 +51,16 @@ type AgentModeState = {
    * Unconditional: every thread is an agent thread now.
    */
   transferThreadState: (fromThreadId: string, toThreadId: string) => void
+  /**
+   * The same handoff for a send that happens later: the new thread gets the
+   * `snapshot` taken when Send was pressed, and the composer key drops the
+   * parts the user has not changed since.
+   */
+  handOffThreadState: (
+    fromThreadId: string,
+    toThreadId: string,
+    snapshot: AgentThreadState
+  ) => void
   removeThread: (threadId: string) => void
   /** Clear per-thread agent state for all threads. */
   clearAll: () => void
@@ -184,6 +199,30 @@ export const useAgentMode = create<AgentModeState>()(
           }
           if (workspace !== undefined) {
             workspaces[toThreadId] = workspace
+          } else {
+            delete workspaces[toThreadId]
+          }
+          return { approvalModes, workspaces }
+        })
+      },
+
+      handOffThreadState: (fromThreadId, toThreadId, snapshot) => {
+        set((state) => {
+          const approvalModes = { ...state.approvalModes }
+          const workspaces = { ...state.workspaces }
+          if (state.approvalModes[fromThreadId] === snapshot.approvalMode) {
+            delete approvalModes[fromThreadId]
+          }
+          if (state.workspaces[fromThreadId] === snapshot.workspace) {
+            delete workspaces[fromThreadId]
+          }
+          if (snapshot.approvalMode !== undefined) {
+            approvalModes[toThreadId] = snapshot.approvalMode
+          } else {
+            delete approvalModes[toThreadId]
+          }
+          if (snapshot.workspace !== undefined) {
+            workspaces[toThreadId] = snapshot.workspace
           } else {
             delete workspaces[toThreadId]
           }

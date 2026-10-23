@@ -12,6 +12,7 @@
     "availableThroughOne": "Доступна у одного провайдера",
     "configure": "Настроить {{provider}}",
     "configureFor": "Настроить {{provider}} для {{model}}",
+    "back": "Все провайдеры",
     "noResults": "Модели и провайдеры не найдены.",
     "moreModels": "Показано {{shown}} из {{count}}. Уточните поиск, чтобы увидеть остальные.",
     "modelConnect": "Подключите выбранного провайдера ниже, чтобы пользоваться этой моделью.",
@@ -66,7 +67,17 @@
     "placeholder": "Pick a connection above to set it up.",
     "mediaConnected": "{{provider}} подключён. Найдено моделей: {{count}}.",
     "mediaFailed": "Не удалось подключиться к {{provider}}",
-    "mediaNoModels": "{{provider}} ответил, но не отдал ни одной модели. Запустите его с моделью и попробуйте снова."
+    "mediaNoModels": "{{provider}} ответил, но не отдал ни одной модели. Запустите его с моделью и попробуйте снова.",
+    "checking": "Проверка…",
+    "checkAgain": "Проверить снова",
+    "saveAnyway": "Всё равно сохранить",
+    "keyRejected": "{{provider}} не принял этот API-ключ.",
+    "ownServer": "Это адрес собственного Local API Server в Atomic Chat ({{url}}). Укажите адрес провайдера, к которому нужно подключиться.",
+    "savedUnverified": "Ключ {{provider}} сохранён, но не проверен.",
+    "unverified": "Настроен, не проверен",
+    "unverifiedHint": "Ключ сохранён, но не удалось спросить у {{provider}}, работает ли он.",
+    "rejected": "Ключ отклонён",
+    "rejectedHint": "{{provider}} отклонил этот ключ. Введите действующий ключ или проверьте снова."
   },
   "subscription": {
     "title": "ChatGPT subscription (Codex)",

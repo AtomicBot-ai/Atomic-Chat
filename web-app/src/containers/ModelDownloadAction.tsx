@@ -36,7 +36,12 @@ import type { PrismSetupPlan } from '@/services/model-setup/types'
 import { CatalogModel } from '@/services/models/types'
 import { useModelCompatibilityStore } from '@/stores/model-compatibility-store'
 import { switchToModel } from '@/utils/switchModel'
-import { IconDownload, IconLoader2, IconX } from '@tabler/icons-react'
+import {
+  IconDownload,
+  IconLoader2,
+  IconPlayerPlay,
+  IconX,
+} from '@tabler/icons-react'
 import { useNavigate } from '@tanstack/react-router'
 import { useCallback, useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -378,7 +383,9 @@ export const ModelDownloadAction = ({
   ])
 
   const handleCancelDownload = useCallback(() => {
-    useDownloadStore.getState().requestControl('cancel', { id: rowModelId, name: rowModelId })
+    useDownloadStore
+      .getState()
+      .requestControl('cancel', { id: rowModelId, name: rowModelId })
   }, [rowModelId])
 
   // See ``DownloadButton.tsx`` for the rationale -- defensive UI guard
@@ -422,9 +429,14 @@ export const ModelDownloadAction = ({
 
   // The PrismML build installs (its row is in the download panel, which
   // cancels it) and becomes active before the model download has a row.
-  if (prismStage === 'installing_engine' || prismStage === 'activating_engine') {
+  if (
+    prismStage === 'installing_engine' ||
+    prismStage === 'activating_engine'
+  ) {
     const percent =
-      prismStage === 'installing_engine' ? Math.round(engineProgress * 100) : 100
+      prismStage === 'installing_engine'
+        ? Math.round(engineProgress * 100)
+        : 100
     return (
       <Button
         type="button"
@@ -464,18 +476,53 @@ export const ModelDownloadAction = ({
     )
   }
 
+  // A paused download — also one a quit cut off, brought back after the
+  // relaunch — offers Resume, as the download panel does: the transfer picks
+  // up from the bytes on disk instead of the card's Cancel or a fresh Download.
   if (isDownloading && pausedDownloads.has(rowModelId)) {
+    if (
+      !useDownloadStore.getState().resumeParams[rowModelId] ||
+      useDownloadStore.getState().downloads[rowModelId]?.recoveryBlocked
+    ) {
+      return (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() =>
+            window.dispatchEvent(new Event('atomic-open-download-panel'))
+          }
+          title={t('common:showDownloadProgress')}
+          aria-label={t('common:showDownloadProgress')}
+          className="w-24 justify-center"
+        >
+          <IconDownload size={14} />
+        </Button>
+      )
+    }
+    const label = t('common:resumeDownload')
+    const percent = Math.round(downloadProgress * 100)
     return (
       <Button
         type="button"
         variant="outline"
         size="sm"
-        onClick={() => window.dispatchEvent(new Event('atomic-open-download-panel'))}
-        title={t('common:showDownloadProgress')}
-        aria-label={t('common:showDownloadProgress')}
-        className="w-24 justify-center"
+        onClick={() =>
+          useDownloadStore
+            .getState()
+            .requestControl('resume', { id: rowModelId, name: rowModelId })
+        }
+        title={label}
+        aria-label={label}
+        className="relative w-24 justify-center gap-1 overflow-hidden font-semibold"
       >
-        <IconDownload size={14} />
+        <span
+          aria-hidden
+          className="absolute inset-y-0 left-0 z-0 bg-primary/20"
+          style={{ width: `${percent}%` }}
+        />
+        <IconPlayerPlay size={14} className="relative z-1" aria-hidden />
+        <span className="relative z-1 tabular-nums">{percent}%</span>
       </Button>
     )
   }
