@@ -273,7 +273,8 @@ function Action({
         variant="outline"
         onClick={toProviderPage}
         // The column is fixed; a long label wraps inside it rather than spilling over the list.
-        className="h-auto max-w-full whitespace-normal py-1.5 text-center"
+        // `h-auto!`: the shell's control-height rule in index.css pins `sm` buttons to one line.
+        className="h-auto! max-w-full whitespace-normal py-1.5 text-center"
       >
         {t('hub:liteRtLm.installEngine')}
       </Button>
@@ -286,7 +287,8 @@ function Action({
         variant="outline"
         onClick={toProviderPage}
         // The column is fixed; a long label wraps inside it rather than spilling over the list.
-        className="h-auto max-w-full whitespace-normal py-1.5 text-center"
+        // `h-auto!`: the shell's control-height rule in index.css pins `sm` buttons to one line.
+        className="h-auto! max-w-full whitespace-normal py-1.5 text-center"
       >
         {t('hub:liteRtLm.prepareAccelerator')}
       </Button>
