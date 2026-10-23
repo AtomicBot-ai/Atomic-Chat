@@ -11,11 +11,16 @@ import { sanitizeModelId } from '@/lib/utils'
  *
  * A job stores only what it is and where it stands in the queue. Bytes, speed
  * and Pause live in `useDownloadStore` under `taskId`, so the setup screen, the
- * panel and the model picker can never disagree about a figure.
+ * panel and the model picker can never disagree about a figure. The one
+ * exception is where an interrupted transfer stopped, which the failure takes
+ * out of the store (`OnboardingJob.stoppedAt`).
  */
 export type OnboardingJobKind = 'chat' | 'image' | 'video'
 
 export type OnboardingJobPhase = 'queued' | 'running' | 'done' | 'failed'
+
+/** How far a transfer got, as the download store reports it. */
+export type JobTransfer = { progress: number; current: number; total: number }
 
 export type OnboardingJob = {
   /** Stable within a run: the chat model, or the media family. */
@@ -29,6 +34,12 @@ export type OnboardingJob = {
   /** An image/video job's model file, as `family:quantId` (`lib/diffusion`). */
   artifactId?: string
   phase: OnboardingJobPhase
+  /**
+   * Where the transfer of `taskId` stood when it was interrupted. A failure
+   * takes the row out of the download store, and the progress with it; the
+   * job keeps it until the transfer reports again (`OnboardingRuntime`).
+   */
+  stoppedAt?: JobTransfer & { taskId: string }
 }
 
 /** What a job looks like on screen. */
@@ -44,37 +55,51 @@ export type OnboardingJobView = {
   state: OnboardingJobState
   /** 0–100, floored, so 99.6% never reads as done. */
   percent: number
+  /** 0–1, as the download store reports it, for the readout. */
+  progress: number
   currentBytes: number
   totalBytes: number
 }
 
 /** The slice of `useDownloadStore` a job's view depends on. */
 export type DownloadSnapshot = {
-  downloads: Record<
-    string,
-    { progress: number; current: number; total: number } | undefined
-  >
+  downloads: Record<string, JobTransfer | undefined>
   pausedDownloads: ReadonlySet<string>
+}
+
+/**
+ * The job's transfer: its row in the download store, or, once a failure took
+ * the row away, where it stopped — through a Retry too, until the resumed
+ * transfer reports.
+ */
+function transferOf(
+  job: OnboardingJob,
+  snapshot: DownloadSnapshot
+): JobTransfer | undefined {
+  return (
+    snapshot.downloads[job.taskId] ??
+    (job.stoppedAt?.taskId === job.taskId ? job.stoppedAt : undefined)
+  )
 }
 
 export function jobView(
   job: OnboardingJob,
   snapshot: DownloadSnapshot
 ): OnboardingJobView {
-  const download = snapshot.downloads[job.taskId]
+  const download = transferOf(job, snapshot)
   const totalBytes = download?.total || job.totalBytes || 0
   if (job.phase === 'done') {
     return {
       state: 'done',
       percent: 100,
+      progress: 1,
       currentBytes: totalBytes,
       totalBytes,
     }
   }
   const currentBytes = download?.current ?? 0
-  const percent = download
-    ? Math.min(99, Math.floor(download.progress * 100))
-    : 0
+  const progress = download?.progress ?? 0
+  const percent = download ? Math.min(99, Math.floor(progress * 100)) : 0
   const state: OnboardingJobState =
     job.phase === 'queued'
       ? 'queued'
@@ -85,7 +110,7 @@ export function jobView(
           : download && download.current > 0
             ? 'downloading'
             : 'preparing'
-  return { state, percent, currentBytes, totalBytes }
+  return { state, percent, progress, currentBytes, totalBytes }
 }
 
 /**
@@ -185,4 +210,29 @@ export function handoffPanelTracksJobs(run: HandoffRun): boolean {
     !run.panelDismissed &&
     !queueSettled(run.jobs)
   )
+}
+
+/** What the handoff panel has to say: the downloads, or the model ready. */
+export type HandoffPanelContent = 'downloads' | 'ready'
+
+/**
+ * Whether the handoff panel shows, and what for. It follows the run's
+ * downloads after a handoff to the chat; once they are over — or were over
+ * before the handoff — it says the chosen model is ready, until dismissed.
+ * The ready note belongs to the app session that handed off or followed a
+ * download (`seenInApp`): a later launch with nothing left to follow brings
+ * no news, and the run ends without it.
+ */
+export function handoffPanelContent(
+  run: HandoffRun,
+  { ready, seenInApp }: { ready: boolean; seenInApp: boolean }
+): HandoffPanelContent | null {
+  if (handoffPanelTracksJobs(run)) return 'downloads'
+  return seenInApp &&
+    ready &&
+    run.phase === 'handedOff' &&
+    run.destination === 'chat' &&
+    !run.panelDismissed
+    ? 'ready'
+    : null
 }

@@ -17,9 +17,10 @@ import {
 } from '@/lib/onboarding/job-controls'
 import {
   findChatModel,
-  handoffPanelTracksJobs,
+  handoffPanelContent,
   nextRunnable,
   queueSettled,
+  type JobTransfer,
   type OnboardingJob,
 } from '@/lib/onboarding/jobs'
 import { startMediaJob } from '@/lib/onboarding/media-jobs'
@@ -52,8 +53,8 @@ const dropCancelledChatJob = (job: OnboardingJob) =>
  * the chat model's download to the library, runs the image and video jobs
  * after it one at a time, and after the handoff puts the model where the user
  * will look for it — the composer, or the Local API Server — and shows the
- * handoff panel while the downloads finish. Once nothing is left on screen,
- * the run is finished.
+ * handoff panel while the downloads finish and to say the model is ready.
+ * Once nothing is left on screen, the run is finished.
  *
  * Mounted once in `AppLayout`, so the queue keeps going whichever page is
  * open, the setup screen included.
@@ -232,26 +233,61 @@ export function OnboardingRuntime() {
     })
   }, [phase, destination, ready])
 
-  // The panel follows the downloads after a handoff to the chat; once they
-  // are over, it stays to say the model is ready until it is dismissed. A
-  // run whose downloads were over before the handoff has nothing to say.
-  const tracking = handoffPanelTracksJobs({
-    phase,
-    destination,
-    panelDismissed,
-    jobs,
-  })
-  const [followedInApp, setFollowedInApp] = useState(false)
+  // A failure takes the transfer's row out of the download store, and
+  // `DownloadManagement` hears of it first: note where each running job
+  // stands as it goes, and hand it to the job once it is interrupted, so the
+  // strip and the picker still say how far it got. Once the transfer reports
+  // again, its row is the job's figure once more.
+  const lastTransferRef = useRef(new Map<string, JobTransfer>())
   useEffect(() => {
-    if (tracking) setFollowedInApp(true)
-  }, [tracking])
-  const showPanel =
-    tracking ||
-    (followedInApp &&
-      !!ready &&
-      phase === 'handedOff' &&
-      destination === 'chat' &&
-      !panelDismissed)
+    const lastTransfer = lastTransferRef.current
+    const note = () => {
+      const { downloads } = useDownloadStore.getState()
+      for (const job of useOnboardingStore.getState().jobs) {
+        if (job.phase !== 'running') continue
+        const row = downloads[job.taskId]
+        if (!row || !(row.current > 0)) continue
+        lastTransfer.set(job.taskId, {
+          progress: row.progress,
+          current: row.current,
+          total: row.total,
+        })
+        if (job.stoppedAt) {
+          useOnboardingStore
+            .getState()
+            .enqueue({ ...job, stoppedAt: undefined })
+        }
+      }
+    }
+    note()
+    return useDownloadStore.subscribe(note)
+  }, [])
+  useEffect(() => {
+    const lastTransfer = lastTransferRef.current
+    const run = useOnboardingStore.getState()
+    for (const job of run.jobs) {
+      if (job.phase !== 'failed') continue
+      const stopped = lastTransfer.get(job.taskId)
+      if (!stopped) continue
+      lastTransfer.delete(job.taskId)
+      run.enqueue({ ...job, stoppedAt: { ...stopped, taskId: job.taskId } })
+    }
+  }, [jobs])
+
+  // The panel follows the downloads after a handoff to the chat, and says the
+  // model is ready once it is — also when it was before the handoff, as the
+  // prototype does — until it is dismissed. The ready note is this session's
+  // only if it saw the setup screen or a download: a relaunch with nothing
+  // left to follow ends the run instead.
+  const [seenInApp, setSeenInApp] = useState(phase === 'active')
+  const panel = handoffPanelContent(
+    { phase, destination, panelDismissed, jobs },
+    { ready: !!ready, seenInApp }
+  )
+  const showPanel = panel !== null
+  useEffect(() => {
+    if (phase === 'active' || panel === 'downloads') setSeenInApp(true)
+  }, [phase, panel])
 
   // Nothing of the run is left on screen: no download, no panel, no server
   // hint, and the chosen model (if any) can answer.
@@ -268,5 +304,7 @@ export function OnboardingRuntime() {
     }
   }, [phase, settled, guide, showPanel, choice, ready])
 
-  return showPanel ? <OnboardingHandoffPanel /> : null
+  return panel ? (
+    <OnboardingHandoffPanel yieldsCorner={panel === 'ready'} />
+  ) : null
 }

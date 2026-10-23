@@ -20,6 +20,7 @@ import {
   useOnboardingStore,
   type OnboardingDestination,
 } from '@/stores/onboarding-store'
+import { useUpdateBannerSlots } from '@/stores/update-banner-store'
 
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
@@ -136,6 +137,22 @@ const downloadingChat = () =>
 
 const phaseOf = (key: string) =>
   useOnboardingStore.getState().jobs.find((job) => job.key === key)?.phase
+const jobOf = (key: string) =>
+  useOnboardingStore.getState().jobs.find((job) => job.key === key)
+
+const GB = 1024 ** 3
+/** The chat model's transfer at `progress` of 2.7 GB. */
+const chatRow = (progress: number) => ({
+  id: chat.taskId,
+  name: chat.taskId,
+  progress,
+  current: progress * 2.7 * GB,
+  total: 2.7 * GB,
+})
+
+/** An update offer holding the bottom-right corner, or letting it go. */
+const claimUpdateCorner = (claimed: boolean) =>
+  act(() => useUpdateBannerSlots.getState().setSlotVisible('app', claimed))
 
 /** `startMediaJob` calls still waiting to settle, oldest first. */
 let pendingMedia: Array<(placed: boolean) => void> = []
@@ -182,6 +199,9 @@ describe('OnboardingRuntime', () => {
       resumeParams: {},
     })
     useLocalApiServer.setState({ defaultModelLocalApiServer: null })
+    useUpdateBannerSlots.setState({
+      claimed: { download: false, app: false, engine: false },
+    })
   })
 
   afterEach(async () => {
@@ -395,6 +415,58 @@ describe('OnboardingRuntime', () => {
       )
     })
 
+    it('keeps how far it got when it is interrupted, through the Retry', () => {
+      startRun([chat])
+      downloadingChat()
+      act(() => {
+        useDownloadStore.setState({
+          downloads: { [chat.taskId]: chatRow(0.4137) },
+        } as never)
+      })
+      render(<OnboardingRuntime />)
+
+      // DownloadManagement hears of the failure first and drops the row.
+      act(() => {
+        const store = useDownloadStore.getState()
+        store.clearResumeParams(chat.taskId)
+        store.removeDownload(chat.taskId)
+      })
+      emit(DownloadEvent.onFileDownloadError, {
+        modelId: chat.taskId,
+        error: 'HTTP status 500',
+      })
+
+      const panel = screen.getByTestId('onboarding-handoff')
+      const { progress, current, total } = chatRow(0.4137)
+      expect(jobOf(chat.key)?.stoppedAt).toEqual({
+        taskId: chat.taskId,
+        progress,
+        current,
+        total,
+      })
+      expect(panel).toHaveTextContent('41%')
+      expect(panel).toHaveTextContent(
+        'onboarding:download.interrupted · 1.12 / 2.70 GB'
+      )
+
+      fireEvent.click(
+        screen.getByRole('button', { name: 'onboarding-handoff:retryLabel' })
+      )
+
+      // Resuming from the bytes on disk: no step back to 0%.
+      expect(phaseOf(chat.key)).toBe('running')
+      expect(panel).toHaveTextContent('41%')
+
+      act(() => {
+        useDownloadStore.setState({
+          downloads: { [chat.taskId]: chatRow(0.45) },
+        } as never)
+      })
+
+      expect(jobOf(chat.key)?.stoppedAt).toBeUndefined()
+      expect(panel).toHaveTextContent('45%')
+    })
+
     it('is interrupted when the downloaded file fails its check', () => {
       startRun([chat])
       downloadingChat()
@@ -544,13 +616,76 @@ describe('OnboardingRuntime', () => {
       expect(useOnboardingStore.getState().phase).toBe('finished')
     })
 
-    it('ends the run at once when nothing was left to follow', () => {
+    it.each([
+      ['finished downloading during setup', [done(chat)]],
+      ['was downloaded already', []],
+    ])(
+      'says the model is ready when it %s, until Dismiss',
+      (_, jobs: OnboardingJob[]) => {
+        startRun(jobs, { handedOff: false })
+        landChatModel()
+        render(<OnboardingRuntime />)
+        expect(
+          screen.queryByTestId('onboarding-handoff')
+        ).not.toBeInTheDocument()
+
+        act(() => useOnboardingStore.getState().handOff('chat'))
+
+        expect(screen.getByTestId('onboarding-handoff')).toHaveTextContent(
+          'onboarding:download.ready Qwen3.5 4B'
+        )
+        expect(useOnboardingStore.getState().phase).toBe('handedOff')
+
+        fireEvent.click(
+          screen.getByRole('button', {
+            name: 'onboarding-handoff:panel.dismiss',
+          })
+        )
+
+        expect(
+          screen.queryByTestId('onboarding-handoff')
+        ).not.toBeInTheDocument()
+        expect(useOnboardingStore.getState().phase).toBe('finished')
+      }
+    )
+
+    it('ends at the next launch, without the panel, a run left with nothing to follow', () => {
+      // Handed off and never dismissed in an earlier session.
       startRun([done(chat)])
       landChatModel()
       render(<OnboardingRuntime />)
 
       expect(screen.queryByTestId('onboarding-handoff')).not.toBeInTheDocument()
       expect(useOnboardingStore.getState().phase).toBe('finished')
+    })
+
+    it('leaves the corner to an update banner while it only says the model is ready', () => {
+      startRun([done(chat)], { handedOff: false })
+      landChatModel()
+      render(<OnboardingRuntime />)
+      claimUpdateCorner(true)
+      act(() => useOnboardingStore.getState().handOff('chat'))
+
+      expect(screen.queryByTestId('onboarding-handoff')).not.toBeInTheDocument()
+      // Still owed: the run waits for it.
+      expect(useOnboardingStore.getState().phase).toBe('handedOff')
+
+      claimUpdateCorner(false)
+
+      expect(screen.getByTestId('onboarding-handoff')).toHaveTextContent(
+        'onboarding:download.ready Qwen3.5 4B'
+      )
+    })
+
+    it('keeps following the downloads under an update banner', () => {
+      startRun([chat])
+      downloadingChat()
+      claimUpdateCorner(true)
+      render(<OnboardingRuntime />)
+
+      expect(screen.getByTestId('onboarding-handoff')).toHaveTextContent(
+        chat.title
+      )
     })
 
     it('waits for the downloads after the panel is dismissed', async () => {

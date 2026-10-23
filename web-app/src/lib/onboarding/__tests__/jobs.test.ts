@@ -5,6 +5,7 @@ import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import {
   findChatModel,
   ggufMatchIds,
+  handoffPanelContent,
   handoffPanelTracksJobs,
   jobView,
   mlxMatchIds,
@@ -83,6 +84,46 @@ describe('onboarding job view', () => {
 
   it('keeps a waiting job queued whatever the store says', () => {
     expect(jobView(image, idle).state).toBe('queued')
+  })
+
+  const stopped: OnboardingJob = {
+    ...chat,
+    phase: 'failed',
+    stoppedAt: {
+      taskId: chat.taskId,
+      progress: 0.4137,
+      current: 1_117_000_000,
+      total: 2_700_000_000,
+    },
+  }
+
+  it('keeps where an interrupted transfer stopped once its row is gone', () => {
+    expect(jobView(stopped, idle)).toMatchObject({
+      state: 'interrupted',
+      percent: 41,
+      progress: 0.4137,
+      currentBytes: 1_117_000_000,
+      totalBytes: 2_700_000_000,
+    })
+  })
+
+  it('keeps it through a Retry until the resumed transfer reports', () => {
+    const retried = { ...stopped, phase: 'running' as const }
+    expect(jobView(retried, idle)).toMatchObject({
+      state: 'downloading',
+      percent: 41,
+    })
+    expect(jobView(retried, at(0.45, 1_215_000_000))).toMatchObject({
+      state: 'downloading',
+      percent: 45,
+      currentBytes: 1_215_000_000,
+    })
+  })
+
+  it("never lends one transfer's progress to another", () => {
+    expect(
+      jobView({ ...stopped, taskId: 'diffusion-backend-metal' }, idle)
+    ).toMatchObject({ state: 'interrupted', percent: 0, currentBytes: 0 })
   })
 })
 
@@ -200,5 +241,37 @@ describe('the handoff panel', () => {
       false
     )
     expect(handoffPanelTracksJobs({ ...run, panelDismissed: true })).toBe(false)
+  })
+
+  const settled = { ...run, jobs: [{ ...chat, phase: 'done' as const }] }
+
+  it('says the model is ready once the downloads are over, or were before the handoff', () => {
+    const here = { ready: true, seenInApp: true }
+    expect(handoffPanelContent(run, here)).toBe('downloads')
+    expect(handoffPanelContent(settled, here)).toBe('ready')
+    expect(handoffPanelContent({ ...run, jobs: [] }, here)).toBe('ready')
+    expect(
+      handoffPanelContent(settled, { ready: false, seenInApp: true })
+    ).toBeNull()
+  })
+
+  it('says nothing after a dismissal, a server handoff or at a later launch', () => {
+    const here = { ready: true, seenInApp: true }
+    expect(
+      handoffPanelContent({ ...settled, panelDismissed: true }, here)
+    ).toBeNull()
+    expect(
+      handoffPanelContent({ ...settled, destination: 'agents' }, here)
+    ).toBeNull()
+    expect(
+      handoffPanelContent({ ...settled, phase: 'active' }, here)
+    ).toBeNull()
+    expect(
+      handoffPanelContent(settled, { ready: true, seenInApp: false })
+    ).toBeNull()
+    // Downloads still running are followed at any launch.
+    expect(handoffPanelContent(run, { ready: false, seenInApp: false })).toBe(
+      'downloads'
+    )
   })
 })

@@ -5,7 +5,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { isPausableDownload } from '@/lib/downloadControls'
-import { formatDownloadReadout } from '@/lib/downloadFormat'
+import { formatDownloadReadout, formatProgressPair } from '@/lib/downloadFormat'
 import { cn } from '@/lib/utils'
 import {
   pauseOnboardingJob,
@@ -17,9 +17,9 @@ import { useOnboardingStore } from '@/stores/onboarding-store'
 
 /**
  * The run's downloads, one line: the job in flight with its progress and
- * Pause/Resume (Retry once interrupted), how many wait behind it, or the chat
- * model ready once it is. Shown above every step after Welcome, and in the
- * panel after the handoff.
+ * Pause/Resume (Retry once interrupted, its progress kept), how many wait
+ * behind it, or the chat model ready once it is. Shown above every step after
+ * Welcome, and in the panel after the handoff.
  */
 export function DownloadStrip() {
   const { t } = useTranslation()
@@ -61,13 +61,20 @@ export function DownloadStrip() {
   const queued = jobs.filter(
     (job) => job.phase === 'queued' && job !== active
   ).length
+  // Interrupted, the line keeps how far the transfer got, as the percent
+  // beside it does; the running readout adds the estimate.
   const readout =
     view.state === 'queued'
       ? t('onboarding:download.queued')
       : view.state === 'interrupted'
-        ? t('onboarding:download.interrupted')
+        ? [
+            t('onboarding:download.interrupted'),
+            formatProgressPair(view.currentBytes, view.totalBytes),
+          ]
+            .filter(Boolean)
+            .join(' · ')
         : formatDownloadReadout(t, {
-            progress: download?.progress ?? 0,
+            progress: view.progress,
             current: view.currentBytes,
             total: view.totalBytes,
             bytesPerSecond: download?.speed?.bytesPerSecond ?? 0,

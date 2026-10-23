@@ -26,6 +26,7 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
         return `Paused ${vars?.percent}%`
       if (key === 'onboarding-handoff:picker.interrupted')
         return 'Download interrupted'
+      if (key === 'onboarding-handoff:picker.queued') return 'Queued'
       if (key === 'onboarding-handoff:picker.trigger')
         return `${vars?.name} · ${vars?.status}`
       return vars ? `${key}:${JSON.stringify(vars)}` : key
@@ -220,7 +221,8 @@ describe('DropdownModelProvider while the first run downloads its model', () => 
     expect(trigger()).toHaveTextContent('Paused 42%')
   })
 
-  it('goes back to the model name once something is selected', () => {
+  it('names the selected model, and keeps the download at the top of the panel', () => {
+    // A cloud model the app selected at startup, say.
     const model = { id: 'gpt-5' } as Model
     mockProviders({
       providers: [
@@ -238,7 +240,61 @@ describe('DropdownModelProvider while the first run downloads its model', () => 
     render(<DropdownModelProvider />)
 
     expect(trigger()).not.toHaveTextContent('Downloading')
-    expect(screen.queryByTestId('model-picker-pending')).not.toBeInTheDocument()
+    expect(
+      screen.queryByTestId('model-picker-pending-spinner')
+    ).not.toBeInTheDocument()
+    const section = screen.getByRole('region', {
+      name: 'onboarding-handoff:picker.section',
+    })
+    expect(section).toHaveTextContent('Qwen3.5 4B')
+    expect(section).toHaveTextContent('42%')
+    fireEvent.click(
+      screen.getByRole('button', { name: 'onboarding-handoff:picker.pause' })
+    )
+    expect(useDownloadStore.getState().pausedDownloads.has(chat.taskId)).toBe(
+      true
+    )
+  })
+
+  it('says Queued for a model waiting its turn, with no Pause', () => {
+    useOnboardingStore.getState().setJobPhase(chat.key, 'queued')
+    useDownloadStore.setState({ downloads: {} })
+    render(<DropdownModelProvider />)
+
+    expect(trigger()).toHaveTextContent('Queued')
+    expect(trigger()).not.toHaveTextContent('Downloading')
+    expect(screen.getByTestId('model-picker-pending-spinner')).not.toHaveClass(
+      'animate-spin'
+    )
+    const section = screen.getByTestId('model-picker-pending')
+    expect(section).toHaveTextContent('Queued')
+    expect(
+      screen.queryByRole('button', { name: 'onboarding-handoff:picker.pause' })
+    ).not.toBeInTheDocument()
+  })
+
+  it('keeps how far an interrupted download got', () => {
+    // The failure took the row out of the download store.
+    useDownloadStore.setState({ downloads: {} })
+    useOnboardingStore.getState().enqueue({
+      ...chat,
+      phase: 'failed',
+      stoppedAt: {
+        taskId: chat.taskId,
+        progress: 0.42,
+        current: 42,
+        total: 100,
+      },
+    })
+    render(<DropdownModelProvider />)
+
+    expect(trigger()).toHaveTextContent('Download interrupted')
+    expect(
+      screen.getByRole('progressbar', {
+        name: 'onboarding-handoff:picker.progress:{"name":"Qwen3.5 4B"}',
+      })
+    ).toHaveAttribute('aria-valuenow', '42')
+    expect(screen.getByTestId('model-picker-pending')).toHaveTextContent('42%')
   })
 
   it('is gone once the model is ready', () => {

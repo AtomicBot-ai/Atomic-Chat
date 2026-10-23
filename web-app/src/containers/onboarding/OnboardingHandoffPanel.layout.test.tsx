@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import { page } from '@vitest/browser/context'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -139,6 +139,76 @@ describe.each(['light', 'dark'] as const)(
             : getComputedStyle(probe).backgroundColor
         )
         probe.remove()
+      }
+    )
+
+    it.each(['en', 'ru'])(
+      'keeps an interrupted download and the ready note on one line at Extra Large in %s',
+      async (language) => {
+        await page.viewport(1024, 768)
+        setTheme(theme)
+        setFontSize(XL_FONT_SIZE)
+        await i18n.changeLanguage(language)
+        // The failure took the row out of the download store; the job keeps
+        // where it stopped.
+        useDownloadStore.setState({ downloads: {} })
+        useOnboardingStore.getState().enqueue({
+          ...chat,
+          phase: 'failed',
+          stoppedAt: {
+            taskId: chat.taskId,
+            progress: 0.42,
+            current: 0.42 * 18.6 * GB,
+            total: 18.6 * GB,
+          },
+        })
+        render(withTranslations(<OnboardingHandoffPanel />))
+
+        const panel = screen.getByTestId('onboarding-handoff')
+        await settle(panel)
+        const readout = panel.querySelector<HTMLElement>(
+          '.ob-download-row > div > span'
+        )!
+        expect(readout.textContent).toContain(
+          i18n.t('onboarding:download.interrupted')
+        )
+        expect(readout.textContent).toContain('7.81 / 18.60 GB')
+        expectOneLine(readout)
+        expect(within(panel).getByText('42%')).toBeVisible()
+        expectNoHorizontalOverflow(panel)
+
+        // Everything landed: the chosen model is ready.
+        act(() => {
+          const run = useOnboardingStore.getState()
+          run.choose({
+            source: 'download',
+            provider: 'llamacpp-upstream',
+            modelId: chat.taskId,
+            title: chat.title,
+            matchIds: [chat.taskId],
+          })
+          run.jobs.forEach((job) => run.setJobPhase(job.key, 'done'))
+          useModelProvider.setState({
+            providers: [
+              {
+                provider: 'llamacpp-upstream',
+                active: true,
+                models: [{ id: chat.taskId }],
+              },
+            ],
+          } as never)
+        })
+        await settle(panel)
+
+        const ready = within(panel).getByText(
+          i18n.t('onboarding:download.ready', { name: chat.title })
+        )
+        expectOneLine(ready)
+        expectOneLine(
+          within(panel).getByText(i18n.t('onboarding:download.onDevice'))
+        )
+        expectNoHorizontalOverflow(panel)
+        expectNoHorizontalOverflow(document.body)
       }
     )
   }

@@ -253,9 +253,18 @@ type DropdownModelProviderProps = {
 type PickerView = 'main' | 'models'
 
 /**
- * The first run's chat model at the top of the panel while it downloads and
- * nothing else is selected: its progress, and Pause, Resume or Retry, the
- * same controls the run's own strip offers.
+ * What the picker says about the first run's chat model: how its download
+ * stands, or Queued while it waits its turn in the run's queue.
+ */
+const pendingStatusOf = (
+  pending: PendingOnboardingModel
+): PendingOnboardingModel['status'] | 'queued' =>
+  pending.view.state === 'queued' ? 'queued' : pending.status
+
+/**
+ * The first run's chat model at the top of the panel until it is ready,
+ * whatever is selected meanwhile (a cloud model, say): its progress, and
+ * Pause, Resume or Retry, the same controls the run's own strip offers.
  */
 function PendingModelDownload({
   pending,
@@ -267,12 +276,13 @@ function PendingModelDownload({
   const download = useDownloadStore(
     (state) => state.downloads[pending.job.taskId]
   )
-  const { job, view, status } = pending
+  const { job, view } = pending
+  const status = pendingStatusOf(pending)
   const readout =
-    status === 'interrupted'
-      ? t('onboarding-handoff:picker.interrupted')
+    status === 'interrupted' || status === 'queued'
+      ? t(`onboarding-handoff:picker.${status}`)
       : formatDownloadReadout(t, {
-          progress: download?.progress ?? 0,
+          progress: view.progress,
           current: view.currentBytes,
           total: view.totalBytes,
           bytesPerSecond: download?.speed?.bytesPerSecond ?? 0,
@@ -290,7 +300,7 @@ function PendingModelDownload({
             label: t('onboarding-handoff:picker.resume'),
             run: () => resumeOnboardingJob(job, { serviceHub, t }),
           }
-        : view.state !== 'queued' && isPausableDownload(job.taskId)
+        : status === 'downloading' && isPausableDownload(job.taskId)
           ? {
               label: t('onboarding-handoff:picker.pause'),
               run: () => pauseOnboardingJob(job, serviceHub),
@@ -369,7 +379,8 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
     (state) => state.localDownloadingModels
   )
   const pausedDownloads = useDownloadStore((state) => state.pausedDownloads)
-  // The first run's chat model, while it downloads with nothing selected: the
+  // The first run's chat model until it is ready: the panel shows its
+  // download at the top whatever is selected, and with nothing selected the
   // pill says how far it is instead of "Select a model".
   const pendingDownload = usePendingOnboardingModel()
   const pending = selectedModel?.id ? null : pendingDownload
@@ -782,9 +793,15 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
     // The first run's model has its own section at the top of the panel.
     return [...rows.values()].filter(
       (download) =>
-        isChatModelDownload(download.id) && download.id !== pending?.job.taskId
+        isChatModelDownload(download.id) &&
+        download.id !== pendingDownload?.job.taskId
     )
-  }, [downloads, localDownloadingModels, pausedDownloads, pending?.job.taskId])
+  }, [
+    downloads,
+    localDownloadingModels,
+    pausedDownloads,
+    pendingDownload?.job.taskId,
+  ])
 
   // Create Fzf instance for fuzzy search
   const fzfInstance = useMemo(() => {
@@ -948,10 +965,11 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   const detailDisplayModel = selectedModel
     ? qualifiedModelDisplayName(selectedModel)
     : displayModel
+  const pendingStatus = pending ? pendingStatusOf(pending) : null
   const pendingLabel = pending
-    ? pending.status === 'interrupted'
-      ? t('onboarding-handoff:picker.interrupted')
-      : t(`onboarding-handoff:picker.${pending.status}`, {
+    ? pendingStatus === 'interrupted' || pendingStatus === 'queued'
+      ? t(`onboarding-handoff:picker.${pendingStatus}`)
+      : t(`onboarding-handoff:picker.${pendingStatus}`, {
           percent: pending.view.percent,
         })
     : null
@@ -1004,7 +1022,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                   data-testid="model-picker-pending-spinner"
                   className={cn(
                     'shrink-0 text-muted-foreground',
-                    pending.status === 'downloading' &&
+                    pendingStatus === 'downloading' &&
                       'animate-spin motion-reduce:animate-none'
                   )}
                 />
@@ -1048,7 +1066,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
           'w-70 p-0 backdrop-blur-2xl bg-background/95 border',
           // The download section sits above either view; the models view
           // then takes the height that is left.
-          pending && 'flex flex-col',
+          pendingDownload && 'flex flex-col',
           view === 'main' &&
             'w-[min(22rem,calc(100dvw-2rem))] max-h-[var(--radix-popover-content-available-height)] overflow-y-auto',
           view === 'models' &&
@@ -1067,7 +1085,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
         avoidCollisions
         collisionPadding={16}
       >
-        {pending && <PendingModelDownload pending={pending} />}
+        {pendingDownload && <PendingModelDownload pending={pendingDownload} />}
         {view === 'main' ? (
           <div className="flex min-w-0 flex-col p-3">
             {/* The model row: what is selected, and the way into the list. */}
@@ -1113,7 +1131,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
               'flex min-h-0 flex-col',
               pickerEmpty && !searchValue.trim()
                 ? 'w-full'
-                : pending
+                : pendingDownload
                   ? 'w-full flex-1'
                   : 'size-full'
             )}

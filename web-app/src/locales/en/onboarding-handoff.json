@@ -10,6 +10,7 @@
     "downloading": "Downloading {{percent}}%",
     "paused": "Paused {{percent}}%",
     "interrupted": "Download interrupted",
+    "queued": "Queued",
     "trigger": "{{name}} · {{status}}",
     "section": "Model download",
     "progress": "{{name}} download",
