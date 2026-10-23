@@ -65,6 +65,7 @@ import { ModelFactory } from './model-factory'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { getSamplingParamsForThread } from '@/lib/samplingParams'
 import { withRecommendedSampling } from '@/lib/predefinedParams'
+import { withServerSampling } from '@/lib/sampling-defaults'
 import {
   buildReasoningRequestFields,
   canDisableReasoning,
@@ -912,12 +913,17 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         // Gemma 4 QAT, Google's recommended sampler (temp 1.0 / top_p 0.95 /
         // top_k 64) is layered on at request time unless the user has tuned
         // that assistant's sampling — non-destructive, follows the active model.
+        // A server the app does not run (custom endpoint, remote llama-server)
+        // keeps its own sampler unless the user tuned this assistant.
         const sampling = getSamplingParamsForThread(this.threadId)
+        const samplingParams = isLocalInferenceProvider(providerId)
+          ? sampling.params
+          : withServerSampling(sampling.params, sampling.overridden)
         const providerSettings = updatedProvider?.settings ?? provider.settings
         const inferenceParams = withUpstreamDflashSampling(
           providerId,
           providerSettings,
-          withRecommendedSampling(modelId, sampling.params, sampling.overridden)
+          withRecommendedSampling(modelId, samplingParams, sampling.overridden)
         )
 
         // Global "Disable reasoning" setting — best-effort: dispatch the

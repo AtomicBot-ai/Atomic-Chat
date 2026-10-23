@@ -52,3 +52,21 @@ export function hasCustomSampling(assistant: Assistant): boolean {
     (key) => parameters[key] !== defaults[key]
   )
 }
+
+/**
+ * `parameters` for a request to the user's own OpenAI-compatible server (a
+ * custom endpoint, a remote `llama-server`): the panel knobs go only when the
+ * user tuned this assistant. Untuned, they are left out so the server's own
+ * sampler applies — the flags it was started with or the model's
+ * `generation_config` — instead of the app's defaults silently replacing it.
+ * Keys the panel does not show are kept.
+ */
+export function withServerSampling(
+  parameters: Record<string, unknown>,
+  overridden: boolean
+): Record<string, unknown> {
+  if (overridden) return parameters
+  return Object.fromEntries(
+    Object.entries(parameters).filter(([key]) => !isSamplingKey(key))
+  )
+}
