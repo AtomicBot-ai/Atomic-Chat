@@ -22,6 +22,7 @@ const LOCAL_MODEL_PROVIDERS = new Set([
   'atomic-prism',
   'mlx',
   'foundry-local',
+  'litert-lm',
   'jan',
 ])
 

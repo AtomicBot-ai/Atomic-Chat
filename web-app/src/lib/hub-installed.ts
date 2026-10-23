@@ -34,6 +34,11 @@ export const MLX_PROVIDER = 'mlx'
  * `<data>/foundry-local/models`, listed by variant id. Kept apart from the GGUF and MLX ids.
  */
 export const FOUNDRY_LOCAL_PROVIDER = 'foundry-local'
+/**
+ * LiteRT-LM variants (change add-litert-lm-runtime): their own folders under
+ * `<data>/litert-lm/models`, listed by variant id, apart from every other provider's ids.
+ */
+export const LITERT_LM_PROVIDER = 'litert-lm'
 /** Every provider whose models the GGUF and MLX rows of the Hub may claim. */
 export const LOCAL_PROVIDERS = [...LLAMACPP_PROVIDERS, MLX_PROVIDER] as const
 /**
@@ -55,7 +60,7 @@ export function managedProviderIds(): string[] {
 export const sanitizeMlxId = (id: string): string =>
   id.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-_./]/g, '')
 
-type InstalledKind = 'gguf' | 'mlx' | 'managed' | 'foundry-local'
+type InstalledKind = 'gguf' | 'mlx' | 'managed' | 'foundry-local' | 'litert-lm'
 type InstalledModel = { model: Model; kind: InstalledKind }
 
 /**
@@ -67,10 +72,12 @@ function collectLocalModels(providers: readonly ModelProvider[]): {
   local: Map<string, InstalledModel>
   managed: Map<string, InstalledModel>
   foundry: Map<string, InstalledModel>
+  liteRt: Map<string, InstalledModel>
 } {
   const local = new Map<string, InstalledModel>()
   const managed = new Map<string, InstalledModel>()
   const foundry = new Map<string, InstalledModel>()
+  const liteRt = new Map<string, InstalledModel>()
 
   const add = (
     out: Map<string, InstalledModel>,
@@ -93,8 +100,9 @@ function collectLocalModels(providers: readonly ModelProvider[]): {
   add(local, modelsOf(MLX_PROVIDER), 'mlx')
   for (const name of managedProviderIds()) add(managed, modelsOf(name), 'managed')
   add(foundry, modelsOf(FOUNDRY_LOCAL_PROVIDER), 'foundry-local')
+  add(liteRt, modelsOf(LITERT_LM_PROVIDER), 'litert-lm')
 
-  return { local, managed, foundry }
+  return { local, managed, foundry, liteRt }
 }
 
 /**
@@ -191,6 +199,26 @@ function synthesizeEntry(id: string, installed: InstalledModel): CatalogModel {
     }
   }
 
+  if (installed.kind === 'litert-lm') {
+    return {
+      model_name: `litert-lm/${id}`,
+      description: '',
+      downloads: 0,
+      is_litert_lm: true,
+      litert_lm: {
+        origin: 'installed',
+        model_id: id,
+        name: installed.model.name || id,
+        summary: '',
+        license: null,
+        repo: '',
+        revision: '',
+        gated: false,
+        variants: [],
+      },
+    }
+  }
+
   // The id is the Hugging Face repository: the card reads its README and asks the core again.
   if (installed.kind === 'managed') {
     return {
@@ -238,15 +266,16 @@ export function collectInstalledModels(
   catalog: readonly CatalogModel[],
   providers: readonly ModelProvider[]
 ): CatalogModel[] {
-  const { local, managed, foundry } = collectLocalModels(providers)
-  if (local.size === 0 && managed.size === 0 && foundry.size === 0) return []
+  const { local, managed, foundry, liteRt } = collectLocalModels(providers)
+  if (local.size === 0 && managed.size === 0 && foundry.size === 0 && liteRt.size === 0) return []
 
   const claimed = { local: new Set<string>(), managed: new Set<string>() }
   const rows: CatalogModel[] = []
 
   for (const entry of catalog) {
-    // A Foundry Local variant is never claimed by a catalog entry: it is listed by its own row.
-    if (entry.is_foundry_local) continue
+    // A Foundry Local or LiteRT-LM variant is never claimed by a catalog entry: it is listed by its
+    // own row.
+    if (entry.is_foundry_local || entry.is_litert_lm) continue
     const [installed, taken] = entry.is_managed
       ? [managed, claimed.managed]
       : [local, claimed.local]
@@ -260,6 +289,7 @@ export function collectInstalledModels(
     [local, claimed.local],
     [managed, claimed.managed],
     [foundry, new Set<string>()],
+    [liteRt, new Set<string>()],
   ] as const) {
     for (const [id, model] of installed) {
       if (taken.has(id)) continue

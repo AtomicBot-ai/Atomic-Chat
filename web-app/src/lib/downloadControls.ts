@@ -4,6 +4,7 @@ import { isDecisionDownloadTaskId } from '@/lib/decision/models'
 import { isDiffusionModelDownloadTaskId } from '@/lib/diffusion/models'
 import { isEmbeddingDownloadTaskId } from '@/lib/embedding/models'
 import { isFoundryLocalDownloadId } from '@/lib/foundry-local/download-id'
+import { isLiteRtLmDownloadId } from '@/lib/litert-lm/download-id'
 import { isManagedDownloadId } from '@/lib/managed-engine/download-id'
 import { isDiffusionEngineTaskId } from '@/services/diffusion/engine'
 import { cancelTransfer } from '@/services/diffusion/transfer'
@@ -22,7 +23,8 @@ import { isEngineUpdateTaskId } from '@/services/engines/update'
  * Engine updates (`engine-update-*`) are the core's to stop, cancel-only.
  * Managed models are cancel-only too: Download again in the Hub resumes
  * from the files on disk (change add-tensorrt-llm-model-hub, design D6);
- * so are Foundry Local variants (change add-foundry-local).
+ * so are Foundry Local variants (change add-foundry-local) and LiteRT-LM ones
+ * (change add-litert-lm-runtime).
  */
 export function isPausableDownload(id: string): boolean {
   return (
@@ -34,7 +36,8 @@ export function isPausableDownload(id: string): boolean {
     !isDecisionDownloadTaskId(id) &&
     !isEmbeddingDownloadTaskId(id) &&
     !isManagedDownloadId(id) &&
-    !isFoundryLocalDownloadId(id)
+    !isFoundryLocalDownloadId(id) &&
+    !isLiteRtLmDownloadId(id)
   )
 }
 

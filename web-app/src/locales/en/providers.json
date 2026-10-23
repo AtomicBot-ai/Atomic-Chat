@@ -448,6 +448,36 @@
     },
     "telemetry": "Microsoft's Foundry Local library always sends one ProcessInfo event (the app name, operating system and architecture, process name, whether it runs in a virtual machine or container, CPU count and memory size; no device ID). Atomic Chat turns off its optional telemetry and cannot turn off this event."
   },
+  "liteRtLm": {
+    "engine": {
+      "title": "LiteRT-LM engine",
+      "notInstalled": "LiteRT-LM is not installed",
+      "installDescription": "Google's LiteRT-LM library {{version}}, about {{size}} to download. Atomic Chat checks it and runs each model in its own process.",
+      "install": "Install {{version}}",
+      "installing": "Downloading… {{percent}}%",
+      "noBuild": "No LiteRT-LM build for this computer is available right now.",
+      "installed": "LiteRT-LM {{version}}",
+      "installedDescription": "The library models start from, on the CPU, the GPU or an Intel NPU.",
+      "update": "Update to {{version}}",
+      "checking": "Checking what is installed…",
+      "checkAgain": "Check again"
+    },
+    "accelerators": {
+      "title": "Intel NPU",
+      "description": "Models built for this computer's Intel NPU need Intel's OpenVINO libraries. They are downloaded only when you prepare them.",
+      "openvino": "Intel OpenVINO {{version}}",
+      "detail": "For the {{npu}} NPU, {{size}} to download",
+      "ready": "Ready",
+      "notPrepared": "Not prepared",
+      "preparing": "Preparing…",
+      "downloading": "Downloading… {{percent}}%",
+      "retry": "Retry",
+      "prepare": "Prepare ({{size}})",
+      "busy": "OpenVINO is already being prepared; its progress shows above.",
+      "prepareFailed": "Preparing OpenVINO failed: {{message}}",
+      "checkAgain": "Check again"
+    }
+  },
   "tensorrt": {
     "title": "TensorRT-LLM engine",
     "description": "NVIDIA's inference engine, run by Atomic Chat in a Docker container on your NVIDIA GPU.",

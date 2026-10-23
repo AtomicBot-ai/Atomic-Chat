@@ -46,6 +46,7 @@ describe('getProviderLogo', () => {
   it('marks SGLang with its own monogram', () => {
     expect(getProviderLogo('sglang')).toBe('/images/model-provider/sglang.svg')
     expect(getProviderLogo('foundry-local')).toBe('/images/model-provider/foundry-local.svg')
+    expect(getProviderLogo('litert-lm')).toBe('/images/model-provider/litert-lm.svg')
   })
 
   it('marks PrismML with its own mark, the one its Bonsai models carry in the Hub', () => {
@@ -88,6 +89,7 @@ describe('getProviderTitle', () => {
     expect(getProviderTitle('vllm')).toBe('vLLM')
     expect(getProviderTitle('sglang')).toBe('SGLang')
     expect(getProviderTitle('foundry-local')).toBe('Foundry Local')
+    expect(getProviderTitle('litert-lm')).toBe('LiteRT-LM')
     expect(getProviderTitle('edenai')).toBe('Eden AI')
     expect(getProviderTitle('automatic1111')).toBe('Automatic1111 / Forge')
     expect(getProviderTitle('sdcpp-server')).toBe('stable-diffusion.cpp server')

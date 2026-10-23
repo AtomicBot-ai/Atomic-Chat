@@ -40,6 +40,24 @@ describe('Foundry Local models in chat (change add-foundry-local)', () => {
   })
 })
 
+describe('LiteRT-LM models in chat (change add-litert-lm-runtime)', () => {
+  it('keeps a variant without tool calling out of Agent mode, and lets one with it in', () => {
+    // spec litert-lm-desktop "Модель без tool calling".
+    expect(agentModelBlockReason('litert-lm', model([]))).toBe('model-without-tools')
+    expect(agentModelBlockReason('litert-lm', model(['tools', 'vision']))).toBeNull()
+  })
+
+  it('attaches images exactly for a variant whose model.yml reads them', () => {
+    // spec litert-lm-desktop: "Вложения-картинки MUST быть доступны только моделям с вводом картинок".
+    expect(imageAttachmentsAllowed('litert-lm', model(['vision']))).toBe(true)
+    expect(imageAttachmentsAllowed('litert-lm', model(['tools']))).toBe(false)
+  })
+
+  it('never grows the context: the host clamps it to the file at load', () => {
+    expect(canGrowContext('litert-lm')).toBe(false)
+  })
+})
+
 describe('canGrowContext', () => {
   it('never grows a TensorRT-LLM context: it is fixed when the container starts', () => {
     expect(canGrowContext('tensorrt-llm')).toBe(false)

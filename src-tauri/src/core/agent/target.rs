@@ -9,6 +9,7 @@
 //! | `mlx` | direct at the session port, like `createMlxModel` |
 //! | managed (`tensorrt-llm`, …) | direct at the session port (the core's gateway), like `createManagedModel` |
 //! | `foundry-local` | direct at the session port (the core's gateway), like `createFoundryModel` |
+//! | `litert-lm` | direct at the session port (the core's gateway), like `createLiteRtLmModel` |
 //! | cloud | the Local API Server proxy, like `getLocalApiServerBaseURL` |
 //!
 //! Cloud credentials never reach this module: the proxy resolves the provider
@@ -103,6 +104,11 @@ pub async fn resolve_agent_target<R: Runtime>(
         }
         Some(crate::core::sessions::resolver::PROVIDER_FOUNDRY_LOCAL) => {
             resolve_foundry_local_target(app_handle, request)
+                .await
+                .map(AgentTarget::OpenAi)
+        }
+        Some(crate::core::sessions::resolver::PROVIDER_LITERT_LM) => {
+            resolve_litert_lm_target(app_handle, request)
                 .await
                 .map(AgentTarget::OpenAi)
         }
@@ -216,6 +222,39 @@ pub(crate) fn foundry_local_target(
     }
 }
 
+/// A LiteRT-LM session as the agent talks to it, found in the core's mirror like Foundry Local's.
+async fn resolve_litert_lm_target<R: Runtime>(
+    app_handle: &AppHandle<R>,
+    request: &AgentTurnRequest,
+) -> Result<OpenAiTarget, String> {
+    let state: State<AppState> = app_handle.state();
+    let resolver = crate::core::sessions::resolver_for(app_handle, &state);
+    let info = resolver
+        .list_in(crate::core::sessions::resolver::PROVIDER_LITERT_LM)
+        .await
+        .into_iter()
+        .find(|info| super::llm_client::model_ids_match(&info.model_id, &request.model_id))
+        .ok_or_else(|| format!("no active session for model '{}'", request.model_id))?;
+    Ok(litert_lm_target(&info, request))
+}
+
+/// Pure so it can be tested without a Tauri runtime.
+///
+/// Like [`managed_target`]: the port is the core's session gateway, which checks the Bearer key.
+/// Vision as the turn says (the host reads images for a file that declares them, and the model's
+/// `vision` capability comes from its `model.yml`); no array-root `response_format`, which nothing
+/// shows the host's constraint taking, so the prompt contract carries the shape.
+pub(crate) fn litert_lm_target(
+    info: &crate::core::sessions::resolver::ResolvedSession,
+    request: &AgentTurnRequest,
+) -> OpenAiTarget {
+    OpenAiTarget {
+        kind: OpenAiTargetKind::LocalLiteRtLm,
+        has_vision: has_vision(request),
+        ..managed_target(info, request)
+    }
+}
+
 /// Pure so it can be tested without a Tauri runtime.
 pub(crate) fn resolve_cloud_target(
     endpoint: Option<&LocalServerEndpoint>,
@@ -317,6 +356,38 @@ mod tests {
         // The gateway refuses `response_format` unless the model family declares structured
         // output, and nothing here knows the family: the prompt contract carries the shape.
         assert!(!target.json_schema);
+    }
+
+    #[test]
+    fn a_litert_lm_session_is_reached_through_its_gateway_with_vision_from_the_model() {
+        // change add-litert-lm-runtime: the host's own OpenAI server behind the core's gateway. It
+        // reads images for a file that declares vision, so the turn's capability decides; no
+        // array-root response_format (nothing shows the host's constraint taking one), and a kind
+        // of its own for its thinking switch.
+        let mut request = request("gemma-4-e4b-it-gpu");
+        request.provider = Some("litert-lm".into());
+        request.capabilities = vec![VISION_CAPABILITY.into()];
+        let session: crate::core::sessions::resolver::ResolvedSession =
+            serde_json::from_value(serde_json::json!({
+                "pid": 6161,
+                "port": 4202,
+                "model_id": "gemma-4-e4b-it-gpu",
+                "api_key": "litert-key",
+                "provider": "litert-lm",
+            }))
+            .unwrap();
+
+        let target = litert_lm_target(&session, &request);
+
+        assert_eq!(target.kind, OpenAiTargetKind::LocalLiteRtLm);
+        assert_eq!(target.base_url, "http://127.0.0.1:4202/v1");
+        assert_eq!(target.api_key.as_deref(), Some("litert-key"));
+        assert_eq!(target.model_id, "gemma-4-e4b-it-gpu");
+        assert!(target.has_vision);
+        assert!(!target.json_schema);
+
+        request.capabilities = vec![];
+        assert!(!litert_lm_target(&session, &request).has_vision);
     }
 
     #[test]

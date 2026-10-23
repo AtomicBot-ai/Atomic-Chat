@@ -47,6 +47,7 @@ import {
 } from '@/lib/embedding/models'
 import { isManagedDownloadId } from '@/lib/managed-engine/download-id'
 import { isFoundryLocalDownloadId } from '@/lib/foundry-local/download-id'
+import { isLiteRtLmDownloadId } from '@/lib/litert-lm/download-id'
 import { useDecisionStore } from '@/stores/decision-store'
 import { useEmbeddingStore } from '@/stores/embedding-store'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
@@ -191,6 +192,7 @@ export function DownloadManagement({
     const rowName = (id: string) =>
       (isManagedDownloadId(id) && downloadOriginByModelId[id]) ||
       (isFoundryLocalDownloadId(id) && downloadOriginByModelId[id]) ||
+      (isLiteRtLmDownloadId(id) && downloadOriginByModelId[id]) ||
       (isEmbeddingDownloadTaskId(id) &&
         embeddingCatalog.models.find(
           (model) => embeddingDownloadTaskId(model.id) === id
