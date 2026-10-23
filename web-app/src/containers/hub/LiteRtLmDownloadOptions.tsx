@@ -190,6 +190,9 @@ export function LiteRtLmDownloadOptions({
               }
             >
               <Action
+                // One per variant: a download running for one must not leave the next one picked
+                // with its "busy" state (the store, not this state, shows a running download).
+                key={selected.id}
                 fields={fields}
                 variant={selected}
                 verdict={verdicts[selected.id]}

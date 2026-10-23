@@ -234,4 +234,22 @@ describe('LiteRtLmDownloadOptions', () => {
     expect(screen.queryAllByRole('radio')).toEqual([])
     expect(core.checkLiteRtLmModel).not.toHaveBeenCalled()
   })
+
+  it('offers Download for another variant while one variant’s download is still running', async () => {
+    // Found on Linux: after starting the GPU download and picking CPU, CPU showed a busy "100%".
+    verdicts({})
+    installer.installLiteRtLmVariant.mockReturnValue(new Promise(() => {}))
+    const user = userEvent.setup()
+
+    render(<LiteRtLmDownloadOptions model={model()} platform="linux-x64" />)
+    await waitFor(() => expect(option('gemma-4-e2b-gpu')).toHaveAttribute('aria-checked', 'true'))
+    await user.click(screen.getByRole('button', { name: 'hub:download' }))
+    await user.click(option('gemma-4-e2b-cpu'))
+
+    expect(screen.getByRole('button', { name: 'hub:download' })).toBeEnabled()
+    await user.click(screen.getByRole('button', { name: 'hub:download' }))
+    expect(installer.installLiteRtLmVariant).toHaveBeenLastCalledWith(
+      expect.objectContaining({ variant: variants[0] })
+    )
+  })
 })
