@@ -49,7 +49,7 @@ vi.mock('@tanstack/react-router', () => ({
     </a>
   ),
 }))
-vi.mock('@/lib/notifications', () => ({ notifyWhenAway: vi.fn() }))
+vi.mock('@/lib/notifications', () => ({ notifyUnlessWatching: vi.fn() }))
 vi.mock('@/lib/telemetry-queue', () => ({ queuedCapture: vi.fn() }))
 vi.mock('@/hooks/useHardwareTier', () => ({
   useHardwareTier: () => ({

@@ -64,7 +64,7 @@
     "autoApproveTools": "Auto-approve tool calls",
     "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation.",
     "desktopNotifications": "Desktop-Benachrichtigungen",
-    "desktopNotificationsDesc": "Sendet eine Systembenachrichtigung, wenn eine Antwort, Bilder, ein Video oder ein Download fertig ist und das Fenster nicht im Fokus ist.",
+    "desktopNotificationsDesc": "Sendet eine Systembenachrichtigung, wenn eine Antwort, Bilder, ein Video oder ein Download fertig ist.",
     "legacyChatEngine": "Klassische Chat-Engine verwenden",
     "legacyChatEngineDesc": "Erzwingt für jede Nachricht die frühere Chat-Pipeline und deaktiviert den Agentenmodus vollständig. Vorübergehende Notlösung."
   },

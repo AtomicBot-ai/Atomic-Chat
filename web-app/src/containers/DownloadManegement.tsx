@@ -51,12 +51,14 @@ import { isLiteRtLmDownloadId } from '@/lib/litert-lm/download-id'
 import { useDecisionStore } from '@/stores/decision-store'
 import { useEmbeddingStore } from '@/stores/embedding-store'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
-import { notifyWhenAway } from '@/lib/notifications'
+import { notifyUnlessWatching } from '@/lib/notifications'
 import {
   describeDiffusionDownloadToast,
   describeFinishedDownload,
 } from '@/lib/downloadNotification'
+import type { DecisionCatalog } from '@/services/decision-catalog-registry'
 import type { DiffusionCatalog } from '@/services/diffusion-catalog-registry'
+import type { EmbeddingCatalog } from '@/services/embedding-catalog-registry'
 import { handoffPanelTracksJobs } from '@/lib/onboarding/jobs'
 import { useOnboardingStore } from '@/stores/onboarding-store'
 
@@ -114,28 +116,82 @@ function captureDownloadTerminal(
   }
 }
 
+type RowNameSources = {
+  origins: Record<string, string>
+  decisionCatalog: DecisionCatalog
+  embeddingCatalog: EmbeddingCatalog
+}
+
 /**
- * OS notification for a finished download, shown only while the user is away
- * from the window (the toast covers a focused one). Must run before the row is
- * removed: both success events may arrive for one download, and only the
- * first still finds its row.
+ * What the panel calls a download. A managed model's id spells its repository
+ * with `_`; the Hub's Download recorded the repository itself as the
+ * download's origin. A decision or embedding model's task id is its catalog id
+ * behind a prefix: the row shows the model's name instead.
+ */
+function downloadRowName(
+  id: string,
+  { origins, decisionCatalog, embeddingCatalog }: RowNameSources
+): string {
+  return (
+    (isManagedDownloadId(id) && origins[id]) ||
+    (isFoundryLocalDownloadId(id) && origins[id]) ||
+    (isLiteRtLmDownloadId(id) && origins[id]) ||
+    (isEmbeddingDownloadTaskId(id) &&
+      embeddingCatalog.models.find(
+        (model) => embeddingDownloadTaskId(model.id) === id
+      )?.name) ||
+    (isDecisionDownloadTaskId(id) &&
+      decisionCatalog.models.find(
+        (model) => decisionDownloadTaskId(model.id) === id
+      )?.name) ||
+    id
+  )
+}
+
+/**
+ * OS notification for a finished download. A model is announced whether or
+ * not the window has focus: it is what the user was waiting for, wherever
+ * they are, the setup screen (which draws no panel) included. An engine
+ * install is a step of a setup that reports its own end, so a focused window
+ * keeps just its toast.
+ *
+ * Once per download: both success events may arrive for one, and a success
+ * for a transfer that never ran (every file already on disk) says nothing.
+ * `inFlight` holds the downloads that reported progress, so one whose row is
+ * already gone is still announced; the row covers one that has not reported
+ * bytes yet. Must run before the row and its origin are removed, which name
+ * the model.
  */
 function notifyDownloadFinished(
   state: DownloadState,
+  inFlight: Set<string>,
   catalog: DiffusionCatalog | null,
   t: (key: string, options?: Record<string, unknown>) => string
 ): void {
-  const { downloads, localDownloadingModels } = useDownloadStore.getState()
-  const hasRow =
-    state.modelId in downloads || localDownloadingModels.has(state.modelId)
-  if (!hasRow) return
+  const id = state.modelId
+  const { downloads, localDownloadingModels, downloadOriginByModelId } =
+    useDownloadStore.getState()
+  const ran = inFlight.delete(id)
+  if (!ran && !(id in downloads) && !localDownloadingModels.has(id)) return
+  const downloadType = (state as unknown as { downloadType?: string })
+    .downloadType
   const notification = describeFinishedDownload(
-    state.modelId,
-    (state as unknown as { downloadType?: string }).downloadType,
+    id,
+    downloadType,
     catalog,
-    t
+    t,
+    downloadRowName(id, {
+      origins: downloadOriginByModelId,
+      decisionCatalog: useDecisionStore.getState().catalog,
+      embeddingCatalog: useEmbeddingStore.getState().catalog,
+    })
   )
-  if (notification) notifyWhenAway(notification.title, notification.body)
+  if (!notification) return
+  notifyUnlessWatching(
+    downloadKind(id, downloadType) === 'gpu_backend',
+    notification.title,
+    notification.body
+  )
 }
 
 export function DownloadManagement({
@@ -160,6 +216,9 @@ export function DownloadManagement({
     collapsedMs: 0,
     peakDownloads: 0,
   })
+  // The downloads that reported progress and have not ended yet, for
+  // `notifyDownloadFinished`.
+  const inFlight = useRef(new Set<string>())
   const serviceHub = useServiceHub()
   const imageCatalog = useImageGenerationStore((state) => state.catalog)
   const {
@@ -185,23 +244,12 @@ export function DownloadManagement({
   useEffect(() => bindInterruptedDownloads(), [])
 
   const downloadProcesses = useMemo(() => {
-    // A managed model's id spells its repository with `_`; the Hub's Download
-    // recorded the repository itself as the download's origin. A decision or
-    // embedding model's task id is its catalog id behind a prefix: the row
-    // shows the model's name instead.
     const rowName = (id: string) =>
-      (isManagedDownloadId(id) && downloadOriginByModelId[id]) ||
-      (isFoundryLocalDownloadId(id) && downloadOriginByModelId[id]) ||
-      (isLiteRtLmDownloadId(id) && downloadOriginByModelId[id]) ||
-      (isEmbeddingDownloadTaskId(id) &&
-        embeddingCatalog.models.find(
-          (model) => embeddingDownloadTaskId(model.id) === id
-        )?.name) ||
-      (isDecisionDownloadTaskId(id) &&
-        decisionCatalog.models.find(
-          (model) => decisionDownloadTaskId(model.id) === id
-        )?.name) ||
-      id
+      downloadRowName(id, {
+        origins: downloadOriginByModelId,
+        decisionCatalog,
+        embeddingCatalog,
+      })
     // Get downloads with progress data
     const downloadsWithProgress = Object.entries(downloads).map(
       ([downloadKey, download]) => {
@@ -301,6 +349,7 @@ export function DownloadManagement({
 
   const onFileDownloadUpdate = useCallback(
     async (state: DownloadState) => {
+      inFlight.current.add(state.modelId)
       // The downloader also emits status-only updates while its retry ladders
       // run (`stage`), which carry no byte counts. Feeding those through
       // `updateProgress` would publish 0/0 and rewind the bar (#290).
@@ -349,6 +398,7 @@ export function DownloadManagement({
         return
       }
 
+      inFlight.current.delete(state.modelId)
       clearPausedDownload(state.modelId)
       clearResumeParams(state.modelId)
       removeDownload(state.modelId)
@@ -569,6 +619,7 @@ export function DownloadManagement({
         totalBytes: useDownloadStore.getState().downloads[event.modelId]?.total,
       })
 
+      inFlight.current.delete(event.modelId)
       clearResumableDownload(event.modelId)
       clearPausedDownload(event.modelId)
       clearResumeParams(event.modelId)
@@ -618,6 +669,7 @@ export function DownloadManagement({
           ?.downloadType,
         totalBytes: state.size?.total,
       })
+      inFlight.current.delete(state.modelId)
       clearPausedDownload(state.modelId)
       clearResumeParams(state.modelId)
       removeDownload(state.modelId)
@@ -649,7 +701,7 @@ export function DownloadManagement({
     async (state: DownloadState) => {
       console.debug('onFileDownloadSuccess', state)
 
-      notifyDownloadFinished(state, imageCatalog, t)
+      notifyDownloadFinished(state, inFlight.current, imageCatalog, t)
       captureDownloadTerminal('completed', state.modelId, {
         downloadType: (state as unknown as { downloadType?: string })
           ?.downloadType,
@@ -699,7 +751,7 @@ export function DownloadManagement({
     async (state: DownloadState) => {
       console.debug('onFileDownloadAndVerificationSuccess', state)
 
-      notifyDownloadFinished(state, imageCatalog, t)
+      notifyDownloadFinished(state, inFlight.current, imageCatalog, t)
       captureDownloadTerminal('completed', state.modelId, {
         downloadType: (state as unknown as { downloadType?: string })
           ?.downloadType,

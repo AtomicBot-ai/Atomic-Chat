@@ -28,6 +28,31 @@ describe('describeFinishedDownload', () => {
     })
   })
 
+  it('names a model by its download row when its id does not', () => {
+    expect(
+      describeFinishedDownload(
+        'managed-meta-llama_Llama-3_1-8B',
+        'Model',
+        null,
+        t,
+        'meta-llama/Llama-3.1-8B'
+      )
+    ).toEqual({
+      title: 'Model downloaded',
+      body: 'meta-llama/Llama-3.1-8B is ready to use.',
+    })
+    // A row named after the id adds nothing: the file name is shorter.
+    expect(
+      describeFinishedDownload(
+        'bartowski/Kimi-K3-Q4_K_M',
+        'Model',
+        null,
+        t,
+        'bartowski/Kimi-K3-Q4_K_M'
+      )?.body
+    ).toBe('Kimi-K3-Q4_K_M is ready to use.')
+  })
+
   it('names an image or video model by its catalog family', () => {
     expect(
       describeFinishedDownload(

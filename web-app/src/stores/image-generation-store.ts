@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 
+import { route } from '@/constants/routes'
 import { useHardware } from '@/hooks/useHardware'
 import { useImageForm } from '@/hooks/useImageForm'
 import { useImageSetting } from '@/hooks/useImageSetting'
@@ -29,7 +30,8 @@ import {
 } from '@/lib/diffusion/telemetry'
 import { validateImageRequest } from '@/lib/diffusion/validate'
 import { describeHardware, type HardwareProfile } from '@/lib/hardware-tier'
-import { notifyWhenAway } from '@/lib/notifications'
+import { isPageOnScreen } from '@/lib/navigation'
+import { notifyUnlessWatching } from '@/lib/notifications'
 import {
   supportsDiffusionFamily,
   requiredEngineTag,
@@ -400,9 +402,12 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
     })
   }
 
-  const notifyIfUnfocused = (count: number) => {
+  // The Images page shows its results: a user who is on it, in a focused
+  // window, sees them land.
+  const notifyReady = (count: number) => {
     if (count <= 0) return
-    notifyWhenAway(
+    notifyUnlessWatching(
+      isPageOnScreen(route.images.index),
       i18n.t('images:notifications.readyTitle'),
       i18n.t('images:notifications.readyBody', { count })
     )
@@ -497,6 +502,7 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
             generating: false,
             generationStartedAtMs: null,
           })
+          if (job.state === 'completed') notifyReady(job.outputs.length)
         })
       }
 
@@ -1065,7 +1071,7 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
           generating: false,
           generationStartedAtMs: null,
         })
-        notifyIfUnfocused(produced)
+        notifyReady(produced)
       }
     },
 
