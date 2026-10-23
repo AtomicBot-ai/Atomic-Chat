@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
 import { defaultAssistant } from '@/hooks/useAssistant'
-import { hasCustomSampling, withDefaultSampling } from '@/lib/sampling-defaults'
+import {
+  hasCustomSampling,
+  withDefaultSampling,
+  withServerSampling,
+} from '@/lib/sampling-defaults'
 
 const assistant = (extra: Partial<Assistant>) =>
   ({ id: 'writer', name: 'Writer', ...extra }) as Assistant
@@ -61,5 +65,21 @@ describe('hasCustomSampling', () => {
         })
       )
     ).toBe(true)
+  })
+})
+
+describe('withServerSampling', () => {
+  it('leaves untuned knobs to the server and keeps the rest', () => {
+    expect(
+      withServerSampling(
+        { ...defaultAssistant.parameters, stream: true, max_tokens: 512 },
+        false
+      )
+    ).toEqual({ stream: true, max_tokens: 512 })
+  })
+
+  it('sends the knobs as they are once the user tuned them', () => {
+    const tuned = { ...defaultAssistant.parameters, temperature: 1.5 }
+    expect(withServerSampling(tuned, true)).toBe(tuned)
   })
 })
