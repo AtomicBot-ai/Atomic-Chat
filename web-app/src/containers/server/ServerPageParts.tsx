@@ -23,9 +23,10 @@ import './ServerPage.css'
  * A page of the Server section: one scrolling column with the prototype's
  * title block. The window title bar above already carries the drag region,
  * so these pages have no header row of their own. Overview has no title.
- * `layout`: a `form` column (900 px), a `wide` one (Overview's cards), or a
- * `dashboard` built from the app's own components, which gets the title block
- * and the width but keeps the app's styles rather than the section's.
+ * `layout`: a `form` column (900 px, centred on a wider page), a `wide` one
+ * (Overview's cards, the whole page), or a `dashboard` built from the app's
+ * own components, which gets the title block and the whole page but keeps the
+ * app's styles rather than the section's.
  */
 export function ServerPage({
   title,
@@ -55,7 +56,7 @@ export function ServerPage({
     <div className="flex h-svh w-full min-w-0 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {layout === 'dashboard' ? (
-          <div className="w-full max-w-[1200px]">
+          <div className="w-full">
             <div className="server-page server-page-wide">{heading}</div>
             {children}
           </div>
