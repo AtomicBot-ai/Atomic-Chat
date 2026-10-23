@@ -259,10 +259,17 @@ describe('ServerControlPanel', () => {
 
   describe('during first-run setup', () => {
     /** A run handed off to the server, on `guide`, its model downloading or not. */
-    const handedOff = (guide: OnboardingGuide, downloading: boolean) => {
+    const handedOff = (guide: OnboardingGuide | null, downloading: boolean) => {
       const store = useOnboardingStore.getState()
       store.reset()
       store.begin('full', 'server')
+      store.choose({
+        source: 'download',
+        provider: 'llamacpp-upstream',
+        modelId: 'Qwen3.5-4B-Q4_K_M',
+        title: 'Qwen3.5 4B',
+        matchIds: ['Qwen3.5-4B-Q4_K_M'],
+      })
       store.enqueue({
         key: 'chat',
         kind: 'chat',
@@ -270,7 +277,7 @@ describe('ServerControlPanel', () => {
         taskId: 'Qwen3.5-4B-Q4_K_M',
         phase: downloading ? 'running' : 'done',
       })
-      store.handOff(guide.path)
+      store.handOff(guide?.path ?? 'endpoint')
       store.setGuide(guide)
     }
     const guideHint = () =>
@@ -337,12 +344,18 @@ describe('ServerControlPanel', () => {
       ])
     })
 
-    it('leaves Start as it is on the agents hints', async () => {
+    it('holds Start on the agents path too, then opens the setup guide as ever', async () => {
       handedOff({ path: 'agents', hint: 0 }, true)
       render(<ServerControlPanel />)
 
       const power = screen.getByTestId('server-panel-power')
-      expect(power).toBeEnabled()
+      expect(power).toBeDisabled()
+      expect(power).toHaveAttribute(
+        'title',
+        'onboarding-server:guide.stillDownloading'
+      )
+
+      act(() => useOnboardingStore.getState().setJobPhase('chat', 'done'))
       await userEvent.click(power)
 
       // A server never set up still opens the setup guide.
@@ -354,12 +367,110 @@ describe('ServerControlPanel', () => {
       })
     })
 
+    it('holds Start after Skip guide too, until the model lands', () => {
+      handedOff(null, true)
+      render(<ServerControlPanel />)
+
+      const power = screen.getByTestId('server-panel-power')
+      expect(power).toBeDisabled()
+
+      act(() => useOnboardingStore.getState().setJobPhase('chat', 'done'))
+
+      expect(power).toBeEnabled()
+    })
+
     it('lets a running server stop while the model downloads', () => {
       setStatus('running')
       handedOff({ path: 'endpoint', hint: 2 }, true)
       render(<ServerControlPanel />)
 
       expect(screen.getByTestId('server-panel-power')).toBeEnabled()
+    })
+
+    it('says a server already running reached the Start hint, and Stop still stops it', async () => {
+      setStatus('running')
+      handedOff({ path: 'endpoint', hint: 2 }, false)
+      const { rerender } = render(<ServerControlPanel />)
+
+      expect(guideHint()).toHaveTextContent(
+        'onboarding-server:guide.running.title'
+      )
+      const power = screen.getByTestId('server-panel-power')
+      expect(power).toHaveTextContent('common:navigation.serverStop')
+      await userEvent.click(power)
+
+      // Stop, not the guide's Start: the hints are still up.
+      expect(control.toggle).toHaveBeenCalledTimes(1)
+      expect(useOnboardingStore.getState().guide).toEqual({
+        path: 'endpoint',
+        hint: 2,
+      })
+
+      // Stopped, the hint asks for Start again.
+      setStatus('stopped')
+      rerender(<ServerControlPanel />)
+      expect(guideHint()).toHaveTextContent(
+        'onboarding-server:guide.start.title'
+      )
+    })
+
+    it('keeps the Start hint while the server is still starting', () => {
+      setStatus('pending')
+      handedOff({ path: 'endpoint', hint: 2 }, false)
+      render(<ServerControlPanel />)
+
+      expect(guideHint()).toHaveTextContent(
+        'onboarding-server:guide.start.title'
+      )
+    })
+
+    it("names the run's model while it downloads, then the server's", () => {
+      handedOff(null, true)
+      const { rerender } = render(<ServerControlPanel />)
+
+      const row = screen.getByTestId('server-panel-model')
+      expect(within(row).getByText('Qwen3.5 4B').tagName).toBe('STRONG')
+      expect(within(row).getByText('common:downloading')).toHaveClass(
+        'dsc-model-pending'
+      )
+      expect(row).toHaveAttribute(
+        'title',
+        'onboarding-server:guide.stillDownloading'
+      )
+      expect(
+        within(screen.getByTestId('server-panel-engine')).getByText(
+          'title:llamacpp-upstream'
+        )
+      ).toBeInTheDocument()
+
+      // Landed: `OnboardingRuntime` makes it the server's model.
+      act(() => useOnboardingStore.getState().setJobPhase('chat', 'done'))
+      server.defaultModelLocalApiServer = {
+        model: 'Qwen3.5-4B-Q4_K_M',
+        provider: 'llamacpp-upstream',
+      }
+      rerender(<ServerControlPanel />)
+
+      expect(
+        within(row).queryByText('common:downloading')
+      ).not.toBeInTheDocument()
+      expect(within(row).getByText('Q4_K_M')).toBeInTheDocument()
+      expect(row).toHaveAttribute('title', 'Qwen3.5-4B-Q4_K_M')
+    })
+
+    it('keeps a model the server had of its own while the run downloads', () => {
+      server.defaultModelLocalApiServer = {
+        model: 'gemma-4-e2b',
+        provider: 'mlx',
+      }
+      handedOff(null, true)
+      render(<ServerControlPanel />)
+
+      const row = screen.getByTestId('server-panel-model')
+      expect(within(row).getByText('Gemma 4 E2B')).toBeInTheDocument()
+      expect(
+        within(row).queryByText('common:downloading')
+      ).not.toBeInTheDocument()
     })
   })
 })

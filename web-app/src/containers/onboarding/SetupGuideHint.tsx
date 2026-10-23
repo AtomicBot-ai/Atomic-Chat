@@ -3,6 +3,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { ArrowRight } from 'lucide-react'
 
 import { route } from '@/constants/routes'
+import { useServerSetup } from '@/hooks/useServerSetup'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { captureOnboardingEvent } from '@/lib/onboarding-telemetry'
 import {
@@ -81,18 +82,50 @@ export function finishGuide(): void {
 }
 
 /**
- * An agent card's Configure (or, for a tool already set up, its connection
- * details) while "Pick your tool" is up: the hints follow it into the setup
- * guide, or end, since there is nothing left to connect.
+ * The endpoint hints reached their goal, a running server: the endpoint
+ * counts as set up, so a later Start starts the server instead of opening
+ * the setup guide. The handoff marks it already; a run handed off by an
+ * earlier build had not.
  */
-export function pickAgentHint(configured: boolean): void {
-  const { guide, setGuide } = useOnboardingStore.getState()
-  if (guide?.path !== 'agents' || guide.hint !== 0) return
-  captureGuide(configured ? 'done' : 'next', guide)
-  setGuide(configured ? null : { path: 'agents', hint: 1 })
+export function finishEndpointGuide(): void {
+  const setup = useServerSetup.getState()
+  setup.markEndpointConfigured()
+  setup.finishSetup()
+  finishGuide()
 }
 
-type HintProps = { path: GuidePath; hint: number }
+/**
+ * An agent card's action while "Pick your tool" is up. Configure opens the
+ * setup guide and the hints follow it there (`'connect'`); a tool already
+ * set up, or one set up by hand on All integrations, leaves them nothing to
+ * point at, so they end (`'end'`).
+ */
+export function pickAgentHint(next: 'connect' | 'end'): void {
+  const { guide, setGuide } = useOnboardingStore.getState()
+  if (guide?.path !== 'agents' || guide.hint !== 0) return
+  captureGuide(next === 'end' ? 'done' : 'next', guide)
+  setGuide(next === 'end' ? null : { path: 'agents', hint: 1 })
+}
+
+/**
+ * Configure & start in the setup guide while the agents hints are up: they
+ * did their job once the work starts, as in the prototype, however it ends.
+ */
+export function connectAgentHint(): void {
+  if (useOnboardingStore.getState().guide?.path !== 'agents') return
+  finishGuide()
+}
+
+type HintProps = {
+  path: GuidePath
+  hint: number
+  /**
+   * The server panel's Start hint over a server that runs already (the
+   * launch may have started it): its goal is reached, so it says so and
+   * where the address is, and Done ends the hints instead of Skip guide.
+   */
+  running?: boolean
+}
 
 /**
  * One of the hints a server handoff leaves on the real Server pages, shown
@@ -101,17 +134,17 @@ type HintProps = { path: GuidePath; hint: number }
  * agent cards → the setup guide. Mounted on each of those pages; only the
  * current one renders.
  */
-export function SetupGuideHint({ path, hint }: HintProps) {
+export function SetupGuideHint({ path, hint, running = false }: HintProps) {
   const visible = useGuideHint(path, hint)
-  return visible ? <Hint path={path} hint={hint} /> : null
+  return visible ? <Hint path={path} hint={hint} running={running} /> : null
 }
 
-function Hint({ path, hint }: HintProps) {
+function Hint({ path, hint, running }: HintProps) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const modelPending = useChatModelPending()
   const ref = useRef<HTMLElement>(null)
-  const copy = HINTS[path][hint]
+  const copy = running ? 'running' : HINTS[path][hint]
 
   // A hint further down the page, or in a sidebar scrolled away, comes into
   // view when it is the current one.
@@ -138,8 +171,15 @@ function Hint({ path, hint }: HintProps) {
     void navigate({ to: ENDPOINT_PAGES[hint + 1] })
   }
 
+  // The server is up already; its address is on Connections.
+  const viewConnection = () => {
+    finishEndpointGuide()
+    void navigate({ to: route.api.connections })
+  }
+
   // Picking a tool does not depend on the model; every later hint is about
-  // settings that do.
+  // settings that do. A server running already does not load the model when
+  // it lands, so its note says how to.
   const showDownloading = modelPending && !(path === 'agents' && hint === 0)
   const hasNext = path === 'endpoint' && hint < HINTS.endpoint.length - 1
 
@@ -153,13 +193,29 @@ function Hint({ path, hint }: HintProps) {
         <h3>{t(`onboarding-server:guide.${copy}.title`)}</h3>
         <p>{t(`onboarding-server:guide.${copy}.body`)}</p>
         {showDownloading && (
-          <small>{t('onboarding-server:guide.downloading')}</small>
+          <small>
+            {running
+              ? t('onboarding-server:guide.running.downloading')
+              : t('onboarding-server:guide.downloading')}
+          </small>
         )}
       </div>
       <div className="ob-context-actions">
-        <button type="button" onClick={skip}>
-          {t('onboarding-server:guide.skip')}
-        </button>
+        {running ? (
+          <>
+            <button type="button" onClick={finishEndpointGuide}>
+              {t('onboarding-server:guide.done')}
+            </button>
+            <button type="button" onClick={viewConnection}>
+              {t('onboarding-server:guide.viewConnection')}
+              <ArrowRight size={14} aria-hidden="true" />
+            </button>
+          </>
+        ) : (
+          <button type="button" onClick={skip}>
+            {t('onboarding-server:guide.skip')}
+          </button>
+        )}
         {hasNext && (
           <button type="button" onClick={next}>
             {t('onboarding-server:guide.next')}

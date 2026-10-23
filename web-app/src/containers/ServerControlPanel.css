@@ -152,6 +152,10 @@
   font-size: 10px;
   line-height: 15px;
 }
+/* First-run setup's model, still on its way: a word, not an id. */
+.dsc-model-value > small.dsc-model-pending {
+  font-family: inherit;
+}
 .dsc-model-value > strong {
   min-width: 0;
   overflow: hidden;

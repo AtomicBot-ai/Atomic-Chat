@@ -3,6 +3,7 @@ import '@testing-library/jest-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import posthog from 'posthog-js'
 
+import { useServerSetup } from '@/hooks/useServerSetup'
 import { useOnboardingStore } from '@/stores/onboarding-store'
 
 const navigate = vi.hoisted(() => vi.fn())
@@ -15,7 +16,12 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }))
 
-import { finishGuide, pickAgentHint, SetupGuideHint } from '../SetupGuideHint'
+import {
+  connectAgentHint,
+  finishGuide,
+  pickAgentHint,
+  SetupGuideHint,
+} from '../SetupGuideHint'
 
 const region = () =>
   screen.queryByRole('region', { name: 'onboarding-server:guide.label' })
@@ -45,6 +51,7 @@ describe('setup guide hints', () => {
     navigate.mockClear()
     localStorage.clear()
     useOnboardingStore.getState().reset()
+    useServerSetup.setState({ setupDone: false, endpointConfigured: false })
     Element.prototype.scrollIntoView = vi.fn()
   })
 
@@ -127,15 +134,15 @@ describe('setup guide hints', () => {
     ])
   })
 
-  it('follows an agent into the setup guide, or ends for one already set up', () => {
+  it('follows an agent into the setup guide, or ends for one set up already or elsewhere', () => {
     handOff('agents')
-    pickAgentHint(false)
+    pickAgentHint('connect')
     expect(useOnboardingStore.getState().guide).toEqual({
       path: 'agents',
       hint: 1,
     })
     // Configure from the setup guide's own list is not "Pick your tool".
-    pickAgentHint(true)
+    pickAgentHint('end')
     expect(useOnboardingStore.getState().guide).toEqual({
       path: 'agents',
       hint: 1,
@@ -144,12 +151,104 @@ describe('setup guide hints', () => {
     act(() =>
       useOnboardingStore.getState().setGuide({ path: 'agents', hint: 0 })
     )
-    pickAgentHint(true)
+    pickAgentHint('end')
     expect(useOnboardingStore.getState().guide).toBeNull()
     expect(guideEvents().map((props) => props?.guide_action)).toEqual([
       'next',
       'done',
     ])
+  })
+
+  it('ends the agents hints when the setup guide starts its work, and only those', () => {
+    handOff('endpoint')
+    connectAgentHint()
+    expect(useOnboardingStore.getState().guide).toEqual({
+      path: 'endpoint',
+      hint: 0,
+    })
+
+    act(() =>
+      useOnboardingStore.getState().setGuide({ path: 'agents', hint: 1 })
+    )
+    connectAgentHint()
+    expect(useOnboardingStore.getState().guide).toBeNull()
+    expect(guideEvents()).toEqual([
+      expect.objectContaining({
+        guide_path: 'agents',
+        hint: 1,
+        guide_action: 'done',
+      }),
+    ])
+  })
+
+  describe('the Start hint over a server already running', () => {
+    beforeEach(() => {
+      handOff('endpoint')
+      act(() =>
+        useOnboardingStore.getState().setGuide({ path: 'endpoint', hint: 2 })
+      )
+    })
+
+    it('says the server runs and where its address is, with Done for Skip guide', () => {
+      render(<SetupGuideHint path="endpoint" hint={2} running />)
+
+      expect(region()).toHaveTextContent(
+        'onboarding-server:guide.running.title'
+      )
+      expect(region()).toHaveTextContent('onboarding-server:guide.running.body')
+      expect(
+        screen.queryByRole('button', { name: 'onboarding-server:guide.skip' })
+      ).not.toBeInTheDocument()
+
+      fireEvent.click(
+        screen.getByRole('button', { name: 'onboarding-server:guide.done' })
+      )
+
+      expect(region()).toBeNull()
+      expect(useOnboardingStore.getState().guide).toBeNull()
+      // Counted as set up, as Start would have.
+      expect(useServerSetup.getState()).toMatchObject({
+        setupDone: true,
+        endpointConfigured: true,
+      })
+      expect(guideEvents()).toEqual([
+        expect.objectContaining({
+          guide_path: 'endpoint',
+          hint: 2,
+          guide_action: 'done',
+        }),
+      ])
+    })
+
+    it('opens Connections, where the address is, ending the hints', () => {
+      render(<SetupGuideHint path="endpoint" hint={2} running />)
+
+      fireEvent.click(
+        screen.getByRole('button', {
+          name: 'onboarding-server:guide.viewConnection',
+        })
+      )
+
+      expect(navigate).toHaveBeenCalledWith({ to: '/api/connections' })
+      expect(useOnboardingStore.getState().guide).toBeNull()
+    })
+
+    it('says how to load the model once it lands, since a running server does not', () => {
+      render(<SetupGuideHint path="endpoint" hint={2} running />)
+
+      expect(
+        screen.getByText('onboarding-server:guide.running.downloading')
+      ).toBeInTheDocument()
+      expect(
+        screen.queryByText('onboarding-server:guide.downloading')
+      ).not.toBeInTheDocument()
+
+      act(() => useOnboardingStore.getState().setJobPhase('chat', 'done'))
+
+      expect(
+        screen.queryByText('onboarding-server:guide.running.downloading')
+      ).not.toBeInTheDocument()
+    })
   })
 
   it('finishes quietly when there is no guide left', () => {

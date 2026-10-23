@@ -12,11 +12,12 @@ import {
   XL_FONT_SIZE,
 } from '@/test/layout'
 
-// Geometry only: the server is never started here.
+// Geometry only: the server is never started here, only said to run.
+const server = vi.hoisted(() => ({ running: false }))
 vi.mock('@/hooks/useLocalApiServerControl', () => ({
   useLocalApiServerControl: () => ({
-    status: 'stopped',
-    isRunning: false,
+    status: server.running ? 'running' : 'stopped',
+    isRunning: server.running,
     isModelLoading: false,
     isBusy: false,
     start: vi.fn(),
@@ -57,6 +58,7 @@ const hint = () => screen.getByRole('region', { name: 'Setup guidance' })
 
 describe('the Start hint in the server panel', () => {
   beforeEach(() => {
+    server.running = false
     const store = useOnboardingStore.getState()
     store.reset()
     store.begin('full', 'server')
@@ -91,6 +93,32 @@ describe('the Start hint in the server panel', () => {
         hint().getBoundingClientRect().bottom
       )
       expectFits(start, sidebar)
+    }
+  )
+
+  it.each([DEFAULT_FONT_SIZE, XL_FONT_SIZE])(
+    'fits the running variant, its note and both actions inside it, above Stop (%s)',
+    async (fontSize) => {
+      server.running = true
+      setFontSize(fontSize)
+      const sidebar = renderPanel()
+      await settle(sidebar)
+
+      expectNoHorizontalOverflow(sidebar)
+      expect(hint()).toHaveTextContent('Your server is running')
+      expect(screen.getByText(/use Stop and then Start/)).toBeVisible()
+      const done = screen.getByRole('button', { name: 'Done' })
+      const view = screen.getByRole('button', {
+        name: 'View connection details',
+      })
+      expectFits(done, hint())
+      expectFits(view, hint())
+      const stop = screen.getByTestId('server-panel-power')
+      expect(stop).toHaveTextContent('Stop')
+      expect(stop.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+        hint().getBoundingClientRect().bottom
+      )
+      expectFits(stop, sidebar)
     }
   )
 

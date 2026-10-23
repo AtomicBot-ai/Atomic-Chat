@@ -143,7 +143,7 @@ export function ServerAgents() {
                   to={route.api.connections}
                   className="sp-button"
                   title={t('api:agents.connectionDetails')}
-                  onClick={() => pickAgentHint(true)}
+                  onClick={() => pickAgentHint('end')}
                 >
                   <span className="sp-status">
                     <StatusDot tone={status.tone} />
@@ -159,7 +159,7 @@ export function ServerAgents() {
                     name: agent.name,
                   })}
                   onClick={() => {
-                    pickAgentHint(false)
+                    pickAgentHint('connect')
                     openGuide({ path: 'agent', agentId: agent.id })
                   }}
                 >
@@ -167,10 +167,12 @@ export function ServerAgents() {
                   <ArrowRight size={14} />
                 </button>
               ) : (
+                // Set up by hand on All integrations, where no hint follows.
                 <Link
                   to={route.launch.index}
                   hash={agent.id}
                   className="sp-button"
+                  onClick={() => pickAgentHint('end')}
                 >
                   {t('api:agents.setUp')}
                   <ArrowRight size={14} />

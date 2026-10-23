@@ -6,11 +6,13 @@ import { useLocalApiServerControl } from '@/hooks/useLocalApiServerControl'
 import { useServerSetup, useSetupDone } from '@/hooks/useServerSetup'
 import { useServedModel } from '@/containers/server/useServedModel'
 import {
-  finishGuide,
+  finishEndpointGuide,
   SetupGuideHint,
-  useChatModelPending,
   useEndpointGuide,
+  useServerModelPending,
 } from '@/containers/onboarding/SetupGuideHint'
+import { getProviderTitle } from '@/lib/utils'
+import { useOnboardingStore } from '@/stores/onboarding-store'
 import './ServerControlPanel.css'
 
 /**
@@ -32,27 +34,33 @@ export function ServerControlPanel() {
 
   // While running, show what the server actually loaded; otherwise what it
   // will load on the next start.
-  const { engine, model, name, quant } = useServedModel(control.isRunning)
+  const served = useServedModel(control.isRunning)
 
   const busy = control.isBusy
   const starting = control.status === 'pending'
 
+  // A first run handed off to the server waits for the model it is
+  // downloading, which becomes the server's once it lands: Start holds until
+  // then, on either path and with or without the hints, and the model rows
+  // name it already.
+  const modelPending = useServerModelPending()
+  const waitingForModel = modelPending && !control.isRunning
+  const setupChoice = useOnboardingStore((state) => state.choice)
+  const pendingChoice = modelPending && !served.name ? setupChoice : null
+  const engine =
+    served.engine ??
+    (pendingChoice ? getProviderTitle(pendingChoice.provider) : undefined)
+
   // First-run setup's endpoint hints walk the user through Configuration and
-  // Engine & model to this button. Start waits for the model the run is
-  // downloading, which becomes the server's once it lands.
+  // Engine & model to this button.
   const endpointGuide = useEndpointGuide()
-  const modelPending = useChatModelPending()
-  const waitingForModel = endpointGuide && modelPending && !control.isRunning
 
   // Until the server is set up once, Start opens the setup guide: it picks
   // the model and what to connect, then starts the server itself. During the
   // endpoint hints the pages were that setup, so Start starts it.
   const power = () => {
     if (!control.isRunning && endpointGuide) {
-      const setup = useServerSetup.getState()
-      setup.markEndpointConfigured()
-      setup.finishSetup()
-      finishGuide()
+      finishEndpointGuide()
       void control.toggle()
       return
     }
@@ -75,7 +83,13 @@ export function ServerControlPanel() {
       className="desktop-server-control"
       aria-label={t('common:navigation.server')}
     >
-      <SetupGuideHint path="endpoint" hint={2} />
+      {/* The launch starts the server, so the hints may find it running:
+          then their goal is reached, and Stop stays Stop. */}
+      <SetupGuideHint
+        path="endpoint"
+        hint={2}
+        running={control.status === 'running'}
+      />
       <div className="dsc-actions">
         <button
           type="button"
@@ -125,7 +139,11 @@ export function ServerControlPanel() {
         <Link
           to={route.api.model}
           className="dsc-detail dsc-model"
-          title={model}
+          title={
+            pendingChoice
+              ? t('onboarding-server:guide.stillDownloading')
+              : served.model
+          }
           data-testid="server-panel-model"
         >
           <Box size={15} />
@@ -133,10 +151,21 @@ export function ServerControlPanel() {
             <span className="dsc-model-label">
               {t('common:navigation.model')}
             </span>
-            <span className="dsc-model-value">
-              <strong>{name ?? t('common:navigation.notSelected')}</strong>
-              {quant && <small>{quant}</small>}
-            </span>
+            {pendingChoice ? (
+              <span className="dsc-model-value">
+                <strong>{pendingChoice.title}</strong>
+                <small className="dsc-model-pending">
+                  {t('common:downloading')}
+                </small>
+              </span>
+            ) : (
+              <span className="dsc-model-value">
+                <strong>
+                  {served.name ?? t('common:navigation.notSelected')}
+                </strong>
+                {served.quant && <small>{served.quant}</small>}
+              </span>
+            )}
           </span>
         </Link>
         <Link

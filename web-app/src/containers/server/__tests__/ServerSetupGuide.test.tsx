@@ -318,7 +318,7 @@ describe('Server setup guide during first-run setup', () => {
     useOnboardingStore.getState().reset()
   })
 
-  it('shows "Connect your tool" until the work starts, and ends the hints once connected', async () => {
+  it('shows "Connect your tool" until Configure & start, which ends the hints', async () => {
     handedOff('agents', false)
     useOnboardingStore.getState().setGuide({ path: 'agents', hint: 1 })
     render(<ServerSetupGuide entry={{ path: 'agent', agentId: 'codex' }} />)
@@ -335,6 +335,25 @@ describe('Server setup guide during first-run setup', () => {
     expect(guideHint()).toBeNull()
     expect(useOnboardingStore.getState().guide).toBeNull()
     expect(useServerSetup.getState().setupDone).toBe(true)
+  })
+
+  it('ends the hints as the work starts, so a failed step does not bring one back', async () => {
+    settle.mockResolvedValueOnce(false)
+    handedOff('agents', false)
+    useOnboardingStore.getState().setGuide({ path: 'agents', hint: 1 })
+    render(<ServerSetupGuide entry={{ path: 'agent', agentId: 'codex' }} />)
+
+    await configure()
+
+    expect(screen.getByText('api:guide.errorTitle')).toBeInTheDocument()
+    expect(useOnboardingStore.getState().guide).toBeNull()
+
+    click('api:guide.reviewSettings')
+
+    expect(
+      screen.getByText('api:guide.reviewAgentTitle:{"name":"Codex CLI"}')
+    ).toBeInTheDocument()
+    expect(guideHint()).toBeNull()
   })
 
   it('waits for the model first-run setup is downloading for the server', () => {

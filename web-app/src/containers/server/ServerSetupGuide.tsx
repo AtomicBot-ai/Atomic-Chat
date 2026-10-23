@@ -19,6 +19,7 @@ import {
 } from '@/constants/integrations'
 import { AgentIcon } from '@/containers/AgentIcon'
 import {
+  connectAgentHint,
   finishGuide,
   SetupGuideHint,
   useServerModelPending,
@@ -211,11 +212,15 @@ export function ServerSetupGuide({ entry }: { entry: SetupGuideEntry }) {
     }
     setFinished(TASKS.length)
     useServerSetup.getState().finishSetup()
+    // The endpoint hints too, when this set up the server they lead to.
     finishGuide()
     setStep('done')
   }
 
   const configure = () => {
+    // First-run setup's "Connect your tool" is done with once the work
+    // starts; a failure is the guide's to show, not a hint's.
+    connectAgentHint()
     portChanged.current =
       path === 'endpoint' &&
       Number(port) !== useLocalApiServer.getState().serverPort

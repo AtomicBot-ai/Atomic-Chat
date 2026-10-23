@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import posthog from 'posthog-js'
@@ -15,6 +15,7 @@ import {
 
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
+  setServerRunning: vi.fn(),
   context: {
     winOrLinux: false,
     backendStepDone: false,
@@ -40,6 +41,12 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 vi.mock('@/hooks/useServiceHub', () => ({ useServiceHub: () => ({}) }))
 vi.mock('../useStepContext', () => ({
   useStepContext: () => mocks.context,
+}))
+// Stopping the server is the core's; the stand-in moves the app state as the
+// real helper does.
+vi.mock('@/utils/localApiServerControl', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/utils/localApiServerControl')>()),
+  setLocalApiServerRunning: mocks.setServerRunning,
 }))
 // The model list has screens and tests of its own (ModelStep.test).
 vi.mock('../steps/ModelStep', () => ({
@@ -93,12 +100,17 @@ describe('purpose and server steps', () => {
   beforeEach(() => {
     vi.mocked(posthog.capture).mockClear()
     mocks.navigate.mockClear()
+    mocks.setServerRunning.mockReset()
+    mocks.setServerRunning.mockImplementation(async (running: boolean) =>
+      useAppState.getState().setServerStatus(running ? 'running' : 'stopped')
+    )
     localStorage.clear()
     useOnboardingStore.getState().reset()
-    useAppState.setState({ serverStatus: 'stopped' })
+    useAppState.setState({ serverStatus: 'stopped', activeModels: [] })
     useServerSetup.setState({
       setupDone: false,
       setupDismissed: false,
+      endpointConfigured: false,
       guide: null,
       guideActive: false,
     })
@@ -266,10 +278,13 @@ describe('purpose and server steps', () => {
       guide: { path: 'endpoint', hint: 0 },
     })
     expect(useAppState.getState().serverStatus).toBe('stopped')
-    // The hints stand in for the first-visit guide on Overview.
+    // The hints stand in for the first-visit guide on Overview, and the
+    // endpoint counts as set up: Start starts the server, hints or not.
     expect(useServerSetup.getState()).toMatchObject({
       setupDismissed: true,
       guideActive: false,
+      setupDone: true,
+      endpointConfigured: true,
     })
     expect(named('onboarding_completed')[0]).toMatchObject({
       destination: 'endpoint',
@@ -279,6 +294,34 @@ describe('purpose and server steps', () => {
       step: 'server',
       step_action: 'configure_endpoint',
     })
+  })
+
+  it('stops the server the launch started with nothing loaded, so Start loads the model', async () => {
+    useAppState.setState({ serverStatus: 'running', activeModels: [] })
+    startAt('server', QWEN)
+    render(<Onboarding />)
+
+    click(/onboarding-server:server\.endpoint/)
+
+    // Only the listener: a turn-off would unload models, and there are none.
+    expect(mocks.setServerRunning).toHaveBeenCalledWith(false)
+    await waitFor(() =>
+      expect(useAppState.getState().serverStatus).toBe('stopped')
+    )
+  })
+
+  it('leaves a server that serves a model running', () => {
+    useAppState.setState({
+      serverStatus: 'running',
+      activeModels: ['Qwen3.5-4B-Q4_K_M'],
+    })
+    startAt('server', QWEN)
+    render(<Onboarding />)
+
+    click(/onboarding-server:server\.endpoint/)
+
+    expect(mocks.setServerRunning).not.toHaveBeenCalled()
+    expect(useAppState.getState().serverStatus).toBe('running')
   })
 
   it('hands off to the agents with the first-visit guide out of the way', () => {
@@ -294,10 +337,26 @@ describe('purpose and server steps', () => {
       path: 'agents',
       hint: 0,
     })
-    expect(useServerSetup.getState().setupDismissed).toBe(true)
+    expect(useServerSetup.getState()).toMatchObject({
+      setupDismissed: true,
+      // The setup guide is still how an agent is set up.
+      setupDone: false,
+      endpointConfigured: false,
+    })
     expect(useAppState.getState().serverStatus).toBe('stopped')
     expect(named('onboarding_step_left').at(-1)).toMatchObject({
       step_action: 'connect_agent',
     })
+  })
+
+  it('leaves a running server alone on the agents path: Configure & start loads the model', () => {
+    useAppState.setState({ serverStatus: 'running', activeModels: [] })
+    startAt('server', QWEN)
+    render(<Onboarding />)
+
+    click(/onboarding-server:server\.agents/)
+
+    expect(mocks.setServerRunning).not.toHaveBeenCalled()
+    expect(useAppState.getState().serverStatus).toBe('running')
   })
 })

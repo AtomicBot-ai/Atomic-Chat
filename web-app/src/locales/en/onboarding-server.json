@@ -27,6 +27,8 @@
     "label": "Setup guidance",
     "skip": "Skip guide",
     "next": "Next hint",
+    "done": "Done",
+    "viewConnection": "View connection details",
     "downloading": "Your model is downloading. You can prepare these settings while you wait.",
     "stillDownloading": "Your model is still downloading",
     "waitingForModel": "Waiting for model download",
@@ -41,6 +43,11 @@
     "start": {
       "title": "Start your server",
       "body": "Use Start below when your model is ready. Then copy the endpoint address into your client."
+    },
+    "running": {
+      "title": "Your server is running",
+      "body": "Copy the endpoint address into your client. You’ll find it under Connections.",
+      "downloading": "Your model is downloading. Once it’s ready, use Stop and then Start to load it."
     },
     "pick": {
       "title": "Pick your tool",

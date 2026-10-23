@@ -205,6 +205,21 @@ describe('Overview, agents and tools', () => {
       expect(guideHint()).toBeNull()
     })
 
+    it('ends the hints when the tool picked is set up by hand on All integrations', () => {
+      render(<ServerAgents />)
+      const setUp = within(card('VS Code')).getByRole('link', {
+        name: /api:agents\.setUp/,
+      })
+      setUp.addEventListener('click', (event) => event.preventDefault())
+
+      fireEvent.click(setUp)
+
+      // No hint follows it there, so none is left waiting.
+      expect(useOnboardingStore.getState().guide).toBeNull()
+      expect(guideHint()).toBeNull()
+      expect(section()).not.toHaveClass('ob-agent-pick')
+    })
+
     it('goes away with Skip guide, leaving the cards as they were', () => {
       render(<ServerAgents />)
 

@@ -177,7 +177,7 @@ describe('server handoff from first-run setup', () => {
     mocks.navigate.mockClear()
     localStorage.clear()
     useOnboardingStore.getState().reset()
-    useAppState.setState({ serverStatus: 'stopped' })
+    useAppState.setState({ serverStatus: 'stopped', activeModels: [] })
     useLocalApiServer.setState({
       defaultModelLocalApiServer: null,
       lastServerModels: [],
@@ -241,6 +241,10 @@ describe('server handoff from first-run setup', () => {
       'title',
       'onboarding-server:guide.stillDownloading'
     )
+    // The model the run is downloading for the server, named already.
+    const model = screen.getByTestId('server-panel-model')
+    expect(model).toHaveTextContent('Qwen3.5 4B')
+    expect(model).toHaveTextContent('common:downloading')
 
     act(() => useOnboardingStore.getState().setJobPhase('chat', 'done'))
 
@@ -261,6 +265,65 @@ describe('server handoff from first-run setup', () => {
         guide_path: 'endpoint',
         hint: 1,
         guide_action: 'next',
+      }),
+    ])
+  })
+
+  it('after Skip guide, Start still waits for the model, then starts the server', () => {
+    atServerStep(false)
+    click(/onboarding-server:server\.endpoint/)
+    cleanup()
+
+    render(<ServerConfigurationPage />)
+    click('onboarding-server:guide.skip')
+    cleanup()
+
+    render(<ServerControlPanel />)
+    const start = screen.getByTestId('server-panel-power')
+    expect(start).toBeDisabled()
+
+    act(() => useOnboardingStore.getState().setJobPhase('chat', 'done'))
+    expect(start).toBeEnabled()
+    mocks.navigate.mockClear()
+    act(() => {
+      fireEvent.click(start)
+    })
+
+    // The endpoint was set up by the handoff: Start starts the server rather
+    // than sending the user through the setup guide.
+    expect(useAppState.getState().serverStatus).toBe('running')
+    expect(useServerSetup.getState().guideActive).toBe(false)
+    expect(mocks.navigate).not.toHaveBeenCalled()
+  })
+
+  it('a server running already reaches the Start hint: it says so, and Done ends the hints', () => {
+    // Serving a model, so the handoff leaves it running.
+    useAppState.setState({ serverStatus: 'running', activeModels: [QWEN_ID] })
+    atServerStep(true)
+    click(/onboarding-server:server\.endpoint/)
+    act(() =>
+      useOnboardingStore.getState().setGuide({ path: 'endpoint', hint: 2 })
+    )
+    cleanup()
+
+    render(<ServerControlPanel />)
+    expect(
+      within(hint()).getByText('onboarding-server:guide.running.title')
+    ).toBeInTheDocument()
+    expect(screen.getByTestId('server-panel-power')).toHaveTextContent(
+      'common:navigation.serverStop'
+    )
+
+    click('onboarding-server:guide.done')
+
+    expect(noHint()).toBe(true)
+    expect(useAppState.getState().serverStatus).toBe('running')
+    expect(useOnboardingStore.getState().guide).toBeNull()
+    expect(named('onboarding_guide')).toEqual([
+      expect.objectContaining({
+        guide_path: 'endpoint',
+        hint: 2,
+        guide_action: 'done',
       }),
     ])
   })

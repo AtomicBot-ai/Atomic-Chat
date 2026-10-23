@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/sidebar'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useServerSetup } from '@/hooks/useServerSetup'
+import { useOnboardingStore } from '@/stores/onboarding-store'
 import {
   XL_FONT_SIZE,
   expectFits,
@@ -86,7 +87,34 @@ const modelRow = () => modelLabel().closest('a') as HTMLElement
 
 beforeEach(() => {
   useServerSetup.setState({ setupDone: true, configuredAgents: [] })
+  useOnboardingStore.getState().reset()
 })
+
+/** A first run handed off to the endpoint, `title` still downloading. */
+function downloading(title: string) {
+  useLocalApiServer.setState({
+    defaultModelLocalApiServer: null,
+    lastServerModels: [],
+  })
+  const store = useOnboardingStore.getState()
+  store.begin('full', 'server')
+  store.choose({
+    source: 'download',
+    provider: 'llamacpp-upstream',
+    modelId: title,
+    title,
+    matchIds: [title],
+  })
+  store.enqueue({
+    key: 'chat',
+    kind: 'chat',
+    title,
+    taskId: title,
+    phase: 'running',
+  })
+  store.handOff('endpoint')
+  store.setGuide(null)
+}
 
 describe.each(['light', 'dark'] as const)(
   'the Server card in the sidebar, %s theme',
@@ -160,6 +188,41 @@ describe.each(['light', 'dark'] as const)(
           row.querySelector('.dsc-model-text') as HTMLElement
         )
         expect(row).toHaveAttribute('title', GEMMA)
+      }
+    )
+
+    it.each(
+      cases.flatMap((c) => [
+        { ...c, sidebar: undefined, label: 'default' },
+        { ...c, sidebar: '14rem', label: 'narrowest' },
+      ])
+    )(
+      "names first-run setup's model while it downloads, the word kept whole, in the $label sidebar, at $width px / $fontSize",
+      async ({ width, fontSize, sidebar }) => {
+        await page.viewport(width, 800)
+        setTheme(theme)
+        setFontSize(fontSize)
+        downloading('Qwen3.5 4B')
+        render(<Shell width={sidebar} />)
+        await settle()
+
+        expectNoHorizontalOverflow(
+          screen.getByRole('region', { name: 'Server' })
+        )
+        const row = modelRow()
+        const name = row.querySelector('strong') as HTMLElement
+        expect(name.textContent).toBe('Qwen3.5 4B')
+        expectOneLine(name)
+        const note = row.querySelector('small') as HTMLElement
+        expect(note.textContent).toBe('Downloading')
+        expectOneLine(note)
+        expect(note.scrollWidth).toBeLessThanOrEqual(note.clientWidth)
+        expectFits(note, row)
+        expectVerticallyCentered(note, name)
+        // A word in the row's type, not an id in the quant's.
+        expect(getComputedStyle(note).fontFamily).toBe(
+          getComputedStyle(name).fontFamily
+        )
       }
     )
 
