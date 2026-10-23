@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-464 records, 2026-05-19 → 2026-10-23.
+466 records, 2026-05-19 → 2026-10-23.
 
 ---
 
@@ -318,8 +318,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-10** — [Throttle crashloop `model_load` failure spam client-side; confirm `model_load.status` / api 404-noise are already-fixed-pending-rollout, not code bugs (ATO-130: ATO-133 + ATO-131 + ATO-132)](2026-06-10-throttle-crashloop-model-load-failure-spam-client-side-confirm.md)
 - **2026-06-09** — [Add zero-PII Sentry crash/error tracking to both the React frontend and the Rust/Tauri desktop, gated behind `productAnalytic` (ATO-113)](2026-06-09-add-zero-pii-sentry-crash-error-tracking-to-both-the-react.md)
 
-## Packaging, installers, autostart & platform policy (26)
+## Packaging, installers, autostart & platform policy (27)
 
+- **2026-10-22** — [Sign every Windows PE file through Tauri's signCommand and ship a Microsoft Store installer](2026-10-22-sign-every-windows-pe-via-tauri-signcommand-and-ship-an-msstore-installer.md) — x64 installers fully signed; `*_x64_msstore.exe` embeds the offline WebView2 installer; ARM64 and the publisher name stay as they were.
 - **2026-10-21** — [Give the Linux window a stable app id](2026-10-21-give-the-linux-window-a-stable-app-id.md) — Wayland `app_id` / Hyprland class is `chat.atomic.app`, matched by the desktop entry's `StartupWMClass`.
 - **2026-10-21** — [Close the Linux window to the tray](2026-10-21-close-the-linux-window-to-the-tray.md) — under a bar with a tray, closing hides the window instead of stopping `:1337`; tray "Quit" exits; without a StatusNotifier host closing still quits.
 - **2026-10-21** — [Let a package manager own updates](2026-10-21-let-a-package-manager-own-updates.md) — a marker file beside the AppImage or binary, or `ATOMIC_CHAT_PACKAGE_MANAGED=1`, turns the updater off, including its startup check and the updater service's plugin fallback.
