@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import '@testing-library/jest-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import posthog from 'posthog-js'
 
 import { localStorageKey } from '@/constants/localStorage'
@@ -47,6 +47,10 @@ vi.mock('../steps/ModelStep', () => ({
       <button onClick={() => next('download')}>pick a model</button>
     </>
   ),
+}))
+// Asking the OS needs the service hub; only reaching the step matters here.
+vi.mock('../steps/PermissionsStep', () => ({
+  PermissionsStep: () => <h1 tabIndex={-1}>permissions step</h1>,
 }))
 // Detecting the GPU needs the llama.cpp extension; its outcomes are enough.
 vi.mock('@/containers/SetupBackendStep', () => ({
@@ -246,5 +250,91 @@ describe('first-run flow', () => {
       screen.getByText('onboarding:download.ready Qwen3.5 4B')
     ).toBeInTheDocument()
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+  })
+})
+
+describe('the model-only variant', () => {
+  const nothingElse = {
+    permissionRows: 0,
+    cloudProviders: 0,
+    mediaCards: 0,
+    localApiServer: false,
+  }
+
+  beforeEach(() => {
+    vi.mocked(posthog.capture).mockClear()
+    mocks.navigate.mockClear()
+    localStorage.clear()
+    useOnboardingStore.getState().reset()
+    useModelProvider.setState({ providers: [] } as never)
+    vi.stubGlobal('FORCE_ONBOARDING_VARIANT', 'model_only')
+    // Everything the full flow would go on to is on offer.
+    mocks.context = {
+      ...mocks.context,
+      winOrLinux: false,
+      permissionRows: 2,
+      cloudProviders: 5,
+      mediaCards: 2,
+      localApiServer: true,
+    }
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    mocks.context = { ...mocks.context, ...nothingElse }
+  })
+
+  it('runs Welcome and the model, then hands off to the chat', () => {
+    render(<Onboarding />)
+
+    expect(useOnboardingStore.getState()).toMatchObject({
+      phase: 'active',
+      variant: 'model_only',
+      step: 'welcome',
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /welcome.start/ }))
+    expect(screen.getByText('onboarding:stepOf 02 02')).toBeInTheDocument()
+    // What reports the run as abandoned if the app closes here.
+    expect(
+      JSON.parse(localStorage.getItem(localStorageKey.onboardingInFlight)!)
+    ).toMatchObject({ step: 'model', variant: 'model_only' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'pick a model' }))
+
+    expect(useOnboardingStore.getState()).toMatchObject({
+      phase: 'handedOff',
+      destination: 'chat',
+    })
+    expect(mocks.navigate).toHaveBeenCalledWith(
+      expect.objectContaining({ to: '/', replace: true })
+    )
+    expect(named('onboarding_completed')).toEqual([
+      expect.objectContaining({
+        step_reached: 'model',
+        onboarding_variant: 'model_only',
+      }),
+    ])
+    // Every event of the run names the variant it ran.
+    const stepEvents = [
+      ...named('onboarding_step_shown'),
+      ...named('onboarding_step_left'),
+    ]
+    expect(stepEvents).toHaveLength(4)
+    for (const props of stepEvents) {
+      expect(props.onboarding_variant).toBe('model_only')
+    }
+  })
+
+  it('keeps a run under way on the variant it began with', () => {
+    useOnboardingStore.getState().begin('full', 'model')
+
+    render(<Onboarding />)
+    fireEvent.click(screen.getByRole('button', { name: 'pick a model' }))
+
+    expect(
+      screen.getByRole('heading', { name: 'permissions step' })
+    ).toBeVisible()
+    expect(named('onboarding_step_left')[0].onboarding_variant).toBe('full')
   })
 })

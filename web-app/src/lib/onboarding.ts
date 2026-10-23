@@ -1,8 +1,14 @@
 import { localStorageKey } from '@/constants/localStorage'
+import { route } from '@/constants/routes'
 import {
   isAnswerableModel,
   type AnswerableModelLike,
 } from '@/lib/answerable-model'
+import {
+  getOnboardingVariant,
+  hasNoSteps,
+  type OnboardingVariant,
+} from '@/lib/onboarding/steps'
 import { useOnboardingStore } from '@/stores/onboarding-store'
 import { isKnownProvider } from '@/stores/provider-registry-store'
 import { isSubscriptionProvider } from '@/utils/registerRemoteProvider'
@@ -129,8 +135,40 @@ function isSetupCompleted(): boolean {
 export function isOnboardingPending(providers: ProviderLike[]): boolean {
   if (isOnboardingInProgress()) return true
   if (isSetupCompleted()) return false
+  if (skipsOnboarding()) return false
   if (typeof FORCE_ONBOARDING !== 'undefined' && FORCE_ONBOARDING) return true
   return !hasValidProviders(providers)
+}
+
+/**
+ * The variant this launch runs: the saved run's once one has begun, so a
+ * relaunch never switches flows halfway; otherwise the one a new run would
+ * start with.
+ */
+export function currentOnboardingVariant(): OnboardingVariant {
+  const { phase, variant } = useOnboardingStore.getState()
+  return phase === 'idle' ? getOnboardingVariant() : variant
+}
+
+/**
+ * This install has no setup screen to show (`none`): the app itself is the
+ * first run, so nothing waits for onboarding and nothing sends the user to it,
+ * `FORCE_ONBOARDING` included. A run already under way still resumes.
+ */
+export function skipsOnboarding(): boolean {
+  return hasNoSteps(currentOnboardingVariant())
+}
+
+/**
+ * The setup screen is the page on screen. Read from the router's matches, not
+ * its location: a navigation moves the location first and the page only once
+ * it is ready, so a layout that switched on the location drew the old page in
+ * the other branch for a moment, remounting it.
+ */
+export function isOnboardingOnScreen(
+  matches: ReadonlyArray<{ routeId: string }>
+): boolean {
+  return matches.some((match) => match.routeId === route.onboarding)
 }
 
 /**
@@ -145,8 +183,9 @@ export function isOnboardingInProgress(): boolean {
 /**
  * Whether the home route sends this launch to the setup screen. A run in
  * progress always resumes; otherwise only an install that has neither a
- * finished setup, a chat, nor a model or key to answer with goes there.
- * `force` (`FORCE_ONBOARDING`) enters it despite chats and models.
+ * finished setup, a chat, nor a model or key to answer with goes there, and
+ * only when its variant has steps. `force` (`FORCE_ONBOARDING`) enters it
+ * despite chats and models.
  */
 export function shouldEnterOnboarding({
   providers,
@@ -161,6 +200,7 @@ export function shouldEnterOnboarding({
 }): boolean {
   if (isOnboardingInProgress()) return true
   if (setupCompleted) return false
+  if (skipsOnboarding()) return false
   if (force) return true
   return !hasPriorThread && !hasValidProviders(providers)
 }

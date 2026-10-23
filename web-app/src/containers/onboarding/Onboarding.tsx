@@ -86,12 +86,15 @@ export function Onboarding() {
   )
   const step = normalizeStep(variant, steps, savedStep)
 
-  // A fresh run starts here; a run that handed off and came back through
-  // "Back to setup" is active again.
+  // A fresh run starts here, on the first step of the variant it runs; a run
+  // that handed off and came back through "Back to setup" is active again. A
+  // variant without steps never starts one (the route keeps it out anyway).
   useEffect(() => {
     const store = useOnboardingStore.getState()
     if (store.phase === 'idle') {
-      store.begin(getOnboardingVariant(), steps[0]?.id ?? 'welcome')
+      const fresh = getOnboardingVariant()
+      const first = resolveSteps(fresh, context)[0]
+      if (first) store.begin(fresh, first.id)
     } else if (store.phase === 'handedOff') {
       store.reopen()
     }
@@ -121,7 +124,8 @@ export function Onboarding() {
     })
     markOnboardingInFlight(
       step,
-      useOnboardingStore.getState().startedAt ?? Date.now()
+      useOnboardingStore.getState().startedAt ?? Date.now(),
+      variant
     )
     contentRef.current?.querySelector<HTMLElement>('h1')?.focus()
     // Reported once per step change.

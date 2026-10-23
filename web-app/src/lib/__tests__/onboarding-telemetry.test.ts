@@ -170,6 +170,19 @@ describe('isFirstLaunch', () => {
     expect(isFirstLaunch()).toBe(true)
   })
 
+  // A `none` install marks setup done on its first render, before
+  // `app_opened` is sent.
+  it('answers for the launch as it began once that was remembered', async () => {
+    vi.resetModules()
+    const telemetry = await import('../onboarding-telemetry')
+    telemetry.rememberFirstLaunch()
+
+    localStorage.setItem(localStorageKey.setupCompleted, 'true')
+    localStorage.setItem(localStorageKey.lastSeenVersion, '2.2.23')
+
+    expect(telemetry.isFirstLaunch()).toBe(true)
+  })
+
   it('is false once onboarding has been completed', () => {
     localStorage.setItem(localStorageKey.setupCompleted, 'true')
     expect(isFirstLaunch()).toBe(false)
@@ -266,6 +279,23 @@ describe('abandoned onboarding', () => {
     reportAbandonedOnboarding()
 
     expect(lastCall()[1]).toMatchObject({ step_reached: 'cloud' })
+  })
+
+  it('names the variant the run was on, and none for an older record', () => {
+    markOnboardingInFlight('model', Date.now(), 'model_only')
+    reportAbandonedOnboarding()
+    expect(lastCall()[1]).toMatchObject({ onboarding_variant: 'model_only' })
+
+    localStorage.setItem(
+      localStorageKey.onboardingInFlight,
+      JSON.stringify({
+        started_at: Date.now(),
+        step: 'model',
+        app_version: '1',
+      })
+    )
+    reportAbandonedOnboarding()
+    expect(lastCall()[1]).toMatchObject({ onboarding_variant: null })
   })
 
   it('reports an unknown step as the model, as before', () => {

@@ -9,7 +9,11 @@ import { cn } from '@/lib/utils'
 
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { route } from '@/constants/routes'
-import { hasPriorAppUse, shouldEnterOnboarding } from '@/lib/onboarding'
+import {
+  hasPriorAppUse,
+  shouldEnterOnboarding,
+  skipsOnboarding,
+} from '@/lib/onboarding'
 import { localStorageKey } from '@/constants/localStorage'
 import { useSetupCompleted } from '@/hooks/useSetupCompleted'
 import { useCallback, useEffect } from 'react'
@@ -81,11 +85,15 @@ function Index() {
   // later, Welcome incorrectly returned. Any usable provider or durable chat
   // is proof that first-run onboarding is over; migrate that proof once so
   // deleting everything later still lands on the normal empty composer.
+  //
+  // An install whose variant has no setup screen (`none`) is done with setup
+  // on arrival: the update banners, the backend progress and the load
+  // snackbar that wait for the flag are part of its first run.
   useEffect(() => {
+    if (localStorage.getItem(localStorageKey.setupCompleted) === 'true') return
     if (
-      forceOnboarding ||
-      localStorage.getItem(localStorageKey.setupCompleted) === 'true' ||
-      !hasPriorAppUse(providers, hasPriorThread)
+      !skipsOnboarding() &&
+      (forceOnboarding || !hasPriorAppUse(providers, hasPriorThread))
     ) {
       return
     }

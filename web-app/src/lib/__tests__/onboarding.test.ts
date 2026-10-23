@@ -5,6 +5,7 @@ import { useOnboardingStore } from '@/stores/onboarding-store'
 import { useProviderRegistryStore } from '@/stores/provider-registry-store'
 
 import {
+  currentOnboardingVariant,
   describeProviderState,
   hasPriorAppUse,
   hasValidProviders,
@@ -232,6 +233,54 @@ describe('entering the setup screen', () => {
     expect(
       shouldEnterOnboarding({ ...freshInstall, setupCompleted: true })
     ).toBe(false)
+  })
+})
+
+describe('variants without a setup screen', () => {
+  const freshInstall = {
+    providers: [],
+    hasPriorThread: false,
+    setupCompleted: false,
+    force: false,
+  }
+
+  beforeEach(() => {
+    localStorage.clear()
+    useOnboardingStore.getState().reset()
+    vi.stubGlobal('FORCE_ONBOARDING_VARIANT', 'none')
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('keeps a fresh none install out of onboarding, even in a forced build', () => {
+    expect(shouldEnterOnboarding(freshInstall)).toBe(false)
+    expect(shouldEnterOnboarding({ ...freshInstall, force: true })).toBe(false)
+  })
+
+  // Nothing waits for a setup screen that never comes: on Windows/Linux the
+  // startup coordinator picks the GPU backend as soon as hardware is known.
+  it('lets startup work run at once with nothing installed', () => {
+    vi.stubGlobal('FORCE_ONBOARDING', true)
+
+    expect(isOnboardingPending([])).toBe(false)
+  })
+
+  it('still resumes a run that began under another variant', () => {
+    useOnboardingStore.getState().begin('full', 'backend')
+
+    expect(currentOnboardingVariant()).toBe('full')
+    expect(shouldEnterOnboarding(freshInstall)).toBe(true)
+    expect(isOnboardingPending([])).toBe(true)
+  })
+
+  it('sends a model-only install to the setup screen like the full flow', () => {
+    vi.stubGlobal('FORCE_ONBOARDING_VARIANT', 'model_only')
+
+    expect(currentOnboardingVariant()).toBe('model_only')
+    expect(shouldEnterOnboarding(freshInstall)).toBe(true)
+    expect(isOnboardingPending([])).toBe(true)
   })
 })
 

@@ -21,6 +21,17 @@ import { getAnalyticsPlatform, normalizeModelId } from '@/lib/telemetry'
 import { queuedCapture } from '@/lib/telemetry-queue'
 import type { OnboardingStepId } from '@/lib/onboarding/steps'
 
+function readFirstLaunch(): boolean {
+  if (typeof window === 'undefined') return false
+  return (
+    localStorage.getItem(localStorageKey.setupCompleted) === null &&
+    localStorage.getItem(localStorageKey.lastSeenVersion) === null
+  )
+}
+
+/** What `readFirstLaunch` said as this launch began (`rememberFirstLaunch`). */
+let firstLaunchAtStart: boolean | null = null
+
 /**
  * Whether this looks like the very first launch on this device.
  *
@@ -28,13 +39,18 @@ import type { OnboardingStepId } from '@/lib/onboarding/steps'
  * correct for users who upgraded from a build that never wrote one: both
  * markers are set the first time the app is used at all — `setup-completed` by
  * any exit from onboarding, `last-seen-version` by the What's New check.
+ *
+ * Answered as of the launch's start once `rememberFirstLaunch` ran: an install
+ * without a setup screen (`none`) writes both markers on its first render,
+ * before `app_opened`, which waits for the hardware properties.
  */
 export function isFirstLaunch(): boolean {
-  if (typeof window === 'undefined') return false
-  return (
-    localStorage.getItem(localStorageKey.setupCompleted) === null &&
-    localStorage.getItem(localStorageKey.lastSeenVersion) === null
-  )
+  return firstLaunchAtStart ?? readFirstLaunch()
+}
+
+/** Pins `isFirstLaunch` for this launch. Called before React mounts. */
+export function rememberFirstLaunch(): void {
+  firstLaunchAtStart = readFirstLaunch()
 }
 
 /** How the user left onboarding. Mutually exclusive and single-fire — the
@@ -231,6 +247,8 @@ export function captureOnboardingAbandoned(params: {
    *  user may have updated in between. */
   abandonedAppVersion?: string | null
   startedAtMs?: number | null
+  /** The run's variant; `null` for a record written before there were any. */
+  variant?: string | null
 }): void {
   capture('onboarding_abandoned', {
     step_reached: params.stepReached,
@@ -239,6 +257,7 @@ export function captureOnboardingAbandoned(params: {
       params.startedAtMs != null
         ? Math.max(0, Date.now() - params.startedAtMs)
         : null,
+    onboarding_variant: params.variant ?? null,
   })
 }
 
@@ -253,11 +272,13 @@ export type OnboardingInFlight = {
   started_at: number
   step: OnboardingStep
   app_version: string
+  variant?: string
 }
 
 export function markOnboardingInFlight(
   step: OnboardingStep,
-  startedAt: number
+  startedAt: number,
+  variant?: string
 ): void {
   try {
     localStorage.setItem(
@@ -266,6 +287,7 @@ export function markOnboardingInFlight(
         started_at: startedAt,
         step,
         app_version: VERSION,
+        variant,
       } satisfies OnboardingInFlight)
     )
   } catch {
@@ -295,6 +317,7 @@ export function reportAbandonedOnboarding(): void {
       abandonedAppVersion: record.app_version ?? null,
       startedAtMs:
         typeof record.started_at === 'number' ? record.started_at : null,
+      variant: typeof record.variant === 'string' ? record.variant : null,
     })
   } catch {
     // malformed record — nothing worth reporting

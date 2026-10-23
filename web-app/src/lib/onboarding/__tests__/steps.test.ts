@@ -1,12 +1,14 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   getOnboardingVariant,
+  hasNoSteps,
   nextStep,
   normalizeStep,
   prevStep,
   progressOf,
   resolveSteps,
+  type OnboardingVariant,
   type StepContext,
 } from '../steps'
 
@@ -20,8 +22,8 @@ const mac: StepContext = {
 }
 const windows: StepContext = { ...mac, winOrLinux: true, permissionRows: 0 }
 
-const ids = (context: StepContext) =>
-  resolveSteps('full', context).map((step) => step.id)
+const ids = (context: StepContext, variant: OnboardingVariant = 'full') =>
+  resolveSteps(variant, context).map((step) => step.id)
 
 describe('onboarding steps', () => {
   it('runs the full flow on every install for now', () => {
@@ -130,5 +132,71 @@ describe('onboarding steps', () => {
     it('has nowhere to go when a variant shows no steps', () => {
       expect(normalizeStep('full', [], 'model')).toBeNull()
     })
+  })
+})
+
+describe('onboarding variants', () => {
+  it('stops after the model in the model-only flow, whatever else the machine offers', () => {
+    expect(ids(mac, 'model_only')).toEqual(['welcome', 'model'])
+    const steps = resolveSteps('model_only', mac)
+    expect(nextStep(steps, 'welcome')).toBe('model')
+    // Past the last step Continue hands off to the chat.
+    expect(nextStep(steps, 'model')).toBeNull()
+    expect(prevStep(steps, 'model')).toBe('welcome')
+    expect(progressOf(steps, 'model')).toEqual({ index: 2, count: 2 })
+  })
+
+  it('keeps the backend step before the model on Windows, as the full flow does', () => {
+    expect(ids(windows, 'model_only')).toEqual(['welcome', 'backend', 'model'])
+    expect(ids({ ...windows, backendStepDone: true }, 'model_only')).toEqual([
+      'welcome',
+      'model',
+    ])
+    expect(
+      normalizeStep(
+        'model_only',
+        resolveSteps('model_only', { ...windows, backendStepDone: true }),
+        'backend'
+      )
+    ).toBe('model')
+  })
+
+  it('shows no setup screen at all in the none variant', () => {
+    expect(ids(mac, 'none')).toEqual([])
+    expect(ids(windows, 'none')).toEqual([])
+    expect(normalizeStep('none', resolveSteps('none', mac), null)).toBeNull()
+    expect(hasNoSteps('none')).toBe(true)
+    expect(hasNoSteps('model_only')).toBe(false)
+    expect(hasNoSteps('full')).toBe(false)
+  })
+})
+
+describe('previewing a variant in a dev build', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  it.each<OnboardingVariant>(['none', 'model_only', 'full'])(
+    'starts new runs on %s when FORCE_ONBOARDING_VARIANT names it',
+    (variant) => {
+      vi.stubGlobal('FORCE_ONBOARDING_VARIANT', variant)
+      expect(getOnboardingVariant()).toBe(variant)
+    }
+  )
+
+  it('keeps the default when the define is empty, as in a shipped build', () => {
+    vi.stubGlobal('FORCE_ONBOARDING_VARIANT', '')
+    expect(getOnboardingVariant()).toBe('full')
+  })
+
+  it('ignores a value that is not a variant, and says so once', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.stubGlobal('FORCE_ONBOARDING_VARIANT', 'model-only')
+
+    expect(getOnboardingVariant()).toBe('full')
+    expect(getOnboardingVariant()).toBe('full')
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(warn.mock.calls[0][0]).toContain('model-only')
   })
 })

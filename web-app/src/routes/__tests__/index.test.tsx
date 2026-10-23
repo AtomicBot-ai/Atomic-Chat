@@ -1,5 +1,5 @@
 import { act, render, screen } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { localStorageKey } from '@/constants/localStorage'
 import { SETUP_COMPLETED_EVENT } from '@/hooks/useSetupCompleted'
 
@@ -58,6 +58,10 @@ describe('home route onboarding gate', () => {
     mocks.search = {}
   })
 
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
   it('sends a first-run user to the setup screen', () => {
     render(<Index />)
 
@@ -93,6 +97,49 @@ describe('home route onboarding gate', () => {
       'data-to',
       '/onboarding'
     )
+  })
+
+  // `make dev-fresh` forces onboarding; a variant without steps still has none.
+  it.each([false, true])(
+    'opens a none install on the composer and counts setup as done (forced: %s)',
+    (forced) => {
+      vi.stubGlobal('FORCE_ONBOARDING', forced)
+      vi.stubGlobal('FORCE_ONBOARDING_VARIANT', 'none')
+      const completed = vi.fn()
+      window.addEventListener(SETUP_COMPLETED_EVENT, completed)
+
+      render(<Index />)
+
+      expect(screen.queryByTestId('redirect')).not.toBeInTheDocument()
+      expect(screen.getByTestId('chat-input')).toBeInTheDocument()
+      expect(localStorage.getItem(localStorageKey.setupCompleted)).toBe('true')
+      expect(completed).toHaveBeenCalledTimes(1)
+      window.removeEventListener(SETUP_COMPLETED_EVENT, completed)
+    }
+  )
+
+  it('never sends a none install back to setup, whatever a later launch assigns', () => {
+    vi.stubGlobal('FORCE_ONBOARDING_VARIANT', 'none')
+    const { unmount } = render(<Index />)
+    unmount()
+
+    vi.stubGlobal('FORCE_ONBOARDING_VARIANT', 'full')
+    render(<Index />)
+
+    expect(screen.queryByTestId('redirect')).not.toBeInTheDocument()
+    expect(screen.getByTestId('chat-input')).toBeInTheDocument()
+  })
+
+  it('sends a model-only install to the setup screen', () => {
+    vi.stubGlobal('FORCE_ONBOARDING_VARIANT', 'model_only')
+
+    render(<Index />)
+
+    expect(screen.getByTestId('redirect')).toHaveAttribute(
+      'data-to',
+      '/onboarding'
+    )
+    expect(localStorage.getItem(localStorageKey.setupCompleted)).toBeNull()
   })
 
   it('greets an empty chat with the logo above the question', () => {

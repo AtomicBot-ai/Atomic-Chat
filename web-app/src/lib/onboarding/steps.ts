@@ -15,8 +15,28 @@ export type OnboardingStepId =
   | 'purpose'
   | 'server'
 
-/** Only the full flow exists today; the onboarding experiment adds the rest. */
-export type OnboardingVariant = 'full'
+/**
+ * The first runs the onboarding experiment compares:
+ * - `full`: every step this machine has something for;
+ * - `model_only`: Welcome and the model (with the backend step before it, as
+ *   in the full flow), then the chat;
+ * - `none`: no setup screen. The app opens on the composer, the reply gate
+ *   offers the first model, and on Windows/Linux the startup coordinator picks
+ *   the GPU backend without asking.
+ */
+export type OnboardingVariant = 'full' | 'model_only' | 'none'
+
+export const ONBOARDING_VARIANTS: readonly OnboardingVariant[] = [
+  'full',
+  'model_only',
+  'none',
+]
+
+export function isOnboardingVariant(
+  value: unknown
+): value is OnboardingVariant {
+  return ONBOARDING_VARIANTS.includes(value as OnboardingVariant)
+}
 
 /** What the machine and the build offer, for the steps that depend on it. */
 export type StepContext = {
@@ -45,15 +65,19 @@ export type StepDef = {
   include?: (context: StepContext) => boolean
 }
 
+const WELCOME: StepDef = { id: 'welcome', counted: true }
+const BACKEND: StepDef = {
+  id: 'backend',
+  counted: false,
+  include: (context) => context.winOrLinux && !context.backendStepDone,
+}
+const MODEL: StepDef = { id: 'model', counted: true }
+
 export const ONBOARDING_STEPS: Record<OnboardingVariant, readonly StepDef[]> = {
   full: [
-    { id: 'welcome', counted: true },
-    {
-      id: 'backend',
-      counted: false,
-      include: (context) => context.winOrLinux && !context.backendStepDone,
-    },
-    { id: 'model', counted: true },
+    WELCOME,
+    BACKEND,
+    MODEL,
     {
       id: 'permissions',
       counted: true,
@@ -81,11 +105,43 @@ export const ONBOARDING_STEPS: Record<OnboardingVariant, readonly StepDef[]> = {
       include: (context) => context.localApiServer,
     },
   ],
+  model_only: [WELCOME, BACKEND, MODEL],
+  none: [],
 }
 
-/** The variant this install runs. The onboarding experiment replaces this. */
+/** The variant shows no setup screen at all, on any machine. */
+export function hasNoSteps(variant: OnboardingVariant): boolean {
+  return ONBOARDING_STEPS[variant].length === 0
+}
+
+let warnedForcedVariant = false
+
+/**
+ * The variant a dev build pins with `FORCE_ONBOARDING_VARIANT` (see the
+ * Makefile), or `null`. The define is '' in every shipped build; a value that
+ * is not a variant is ignored, with a warning so a typo is not mistaken for
+ * the full flow.
+ */
+function forcedVariant(): OnboardingVariant | null {
+  if (typeof FORCE_ONBOARDING_VARIANT === 'undefined') return null
+  const raw = FORCE_ONBOARDING_VARIANT
+  if (isOnboardingVariant(raw)) return raw
+  if (raw && !warnedForcedVariant) {
+    warnedForcedVariant = true
+    console.warn(
+      `[onboarding] FORCE_ONBOARDING_VARIANT="${raw}" is not one of ${ONBOARDING_VARIANTS.join(', ')}; ignored`
+    )
+  }
+  return null
+}
+
+/**
+ * The variant a new run starts with. A run already under way keeps the one
+ * it began with (`stores/onboarding-store`). The onboarding experiment
+ * replaces the `full` default with the install's cohort.
+ */
 export function getOnboardingVariant(): OnboardingVariant {
-  return 'full'
+  return forcedVariant() ?? 'full'
 }
 
 /** The steps this machine shows, in order. Empty means no onboarding at all. */

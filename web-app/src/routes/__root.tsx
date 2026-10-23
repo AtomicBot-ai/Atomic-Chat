@@ -21,6 +21,7 @@ import { useOnboardingModelReminder } from '@/hooks/useOnboardingModelReminder'
 import { PromptOnboardingModel } from '@/containers/PromptOnboardingModel'
 import { DownloadManagement } from '@/containers/DownloadManegement'
 import { OnboardingRuntime } from '@/containers/onboarding/OnboardingRuntime'
+import { isOnboardingOnScreen } from '@/lib/onboarding'
 import { AnalyticProvider } from '@/providers/AnalyticProvider'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useTrayStatusSync } from '@/hooks/useTrayStatusSync'
@@ -69,8 +70,11 @@ const AppLayout = () => {
   // The first-run flow takes the whole window, without the navigation, while
   // the providers below keep running for it: downloads, analytics and the
   // image/video stores all work during setup.
+  // Decided by the page on screen, not the location: leaving setup for the
+  // chat used to remount the setup screen, which re-opened the run and sent
+  // the user back to it.
   const onOnboarding = useRouterState({
-    select: (state) => state.location.pathname === route.onboarding,
+    select: (state) => isOnboardingOnScreen(state.matches),
   })
   const isLeftPanelOpen = useLeftPanel((state) => state.open)
   const setLeftPanel = useLeftPanel((state) => state.setLeftPanel)
