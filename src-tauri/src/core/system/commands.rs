@@ -187,7 +187,11 @@ pub async fn factory_reset<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let autostart_preference = get_app_configurations(app_handle.clone()).autostart_preference;
+    let previous_config = get_app_configurations(app_handle.clone());
+    let autostart_preference = previous_config.autostart_preference;
+    // The install stays the same analytics person across a reset
+    // (docs/decisions/2026-10-22-keep-the-analytics-distinct-id-in-settings-json.md).
+    let distinct_id = previous_config.distinct_id;
 
     // close window (not available on mobile platforms)
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
@@ -247,6 +251,7 @@ pub async fn factory_reset<R: Runtime>(
     let mut default_config = AppConfiguration::default();
     default_config.data_folder = default_data_folder_path(app_handle.clone());
     default_config.autostart_preference = autostart_preference;
+    default_config.distinct_id = distinct_id;
     // Into the folder the app comes back up on, which is the default one now.
     put_guest_scope(std::path::Path::new(&default_config.data_folder), guest_scope);
     let _ = update_app_configuration(app_handle.clone(), default_config);

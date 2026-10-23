@@ -22,6 +22,7 @@ import {
   reportBackendRestartIntent,
 } from '@/lib/onboarding-telemetry'
 import { flushTelemetryQueue } from '@/lib/telemetry-queue'
+import { restoreInstallDistinctId } from '@/lib/telemetry-identity'
 import {
   setSentryConsent,
   setSentryTags,
@@ -307,11 +308,9 @@ export function AnalyticProvider() {
         platform: osPlatform,
         telemetry_schema: TELEMETRY_SCHEMA,
       })
-      serviceHub
-        .analytic()
-        .getAppDistinctId()
-        .then((id) => {
-          if (id) posthog.identify(id)
+      restoreInstallDistinctId(serviceHub.analytic())
+        .catch((err) => {
+          console.warn('Failed to restore the analytics distinct id:', err)
         })
         .finally(async () => {
           posthog.opt_in_capturing()
@@ -320,7 +319,6 @@ export function AnalyticProvider() {
         platform: osPlatform,
         telemetry_schema: TELEMETRY_SCHEMA,
       })
-          serviceHub.analytic().updateDistinctId(posthog.get_distinct_id())
 
           // ATO-111: register hardware/OS/backend super-properties BEFORE
           // app_opened so they attach to it and every subsequent event. Bounded

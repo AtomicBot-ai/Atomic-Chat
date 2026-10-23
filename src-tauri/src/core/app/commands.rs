@@ -86,6 +86,19 @@ fn resolve_data_folder_from_config(config_file: &Path, default_folder: &Path) ->
         .unwrap_or_else(|| default_folder.to_path_buf())
 }
 
+/// Every writer sends the whole configuration it read earlier. One that read it
+/// before the analytics id was stored — the startup autostart reconcile races
+/// the first launch's id write — would otherwise erase the id it never saw.
+fn keep_stored_distinct_id(configuration: &mut AppConfiguration, config_file: &Path) {
+    if configuration.distinct_id.is_some() {
+        return;
+    }
+    configuration.distinct_id = fs::read_to_string(config_file)
+        .ok()
+        .and_then(|content| serde_json::from_str::<AppConfiguration>(&content).ok())
+        .and_then(|stored| stored.distinct_id);
+}
+
 /// Resolve the Jan config file path without an AppHandle (for CLI use).
 /// Mirrors the logic in get_configuration_file_path() using the dirs crate.
 #[cfg_attr(feature = "e2e", allow(unreachable_code, unused_variables))]
@@ -212,10 +225,11 @@ pub fn get_app_configurations<R: Runtime>(app_handle: tauri::AppHandle<R>) -> Ap
 #[tauri::command]
 pub fn update_app_configuration<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
-    configuration: AppConfiguration,
+    mut configuration: AppConfiguration,
 ) -> Result<(), String> {
     let configuration_file = get_configuration_file_path(app_handle);
     log::info!("update_app_configuration, configuration_file: {configuration_file:?}");
+    keep_stored_distinct_id(&mut configuration, &configuration_file);
 
     // Ensure the parent dir exists before writing — on a clean install it may
     // not (os error 3), which silently drops every config update.
@@ -506,6 +520,42 @@ mod tests {
             resolve_data_folder_from_config(&config_file, &default),
             default
         );
+    }
+
+    #[test]
+    fn a_write_that_never_saw_the_distinct_id_keeps_the_stored_one() {
+        let root = tempdir().unwrap();
+        let config_file = root.path().join(CONFIGURATION_FILE_NAME);
+        let stored = AppConfiguration {
+            distinct_id: Some("stored-id".to_string()),
+            ..AppConfiguration::default()
+        };
+        fs::write(&config_file, serde_json::to_vec(&stored).unwrap()).unwrap();
+
+        let mut stale = AppConfiguration::default();
+        keep_stored_distinct_id(&mut stale, &config_file);
+        assert_eq!(stale.distinct_id.as_deref(), Some("stored-id"));
+
+        let mut newer = AppConfiguration {
+            distinct_id: Some("newer-id".to_string()),
+            ..AppConfiguration::default()
+        };
+        keep_stored_distinct_id(&mut newer, &config_file);
+        assert_eq!(newer.distinct_id.as_deref(), Some("newer-id"));
+    }
+
+    #[test]
+    fn a_write_without_a_stored_distinct_id_stays_without_one() {
+        let root = tempdir().unwrap();
+        let config_file = root.path().join(CONFIGURATION_FILE_NAME);
+
+        let mut configuration = AppConfiguration::default();
+        keep_stored_distinct_id(&mut configuration, &config_file);
+        assert_eq!(configuration.distinct_id, None);
+
+        fs::write(&config_file, r#"{"data_folder":"./d"}"#).unwrap();
+        keep_stored_distinct_id(&mut configuration, &config_file);
+        assert_eq!(configuration.distinct_id, None);
     }
 
     #[test]
