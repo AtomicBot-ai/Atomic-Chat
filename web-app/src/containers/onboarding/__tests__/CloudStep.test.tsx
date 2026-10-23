@@ -157,17 +157,17 @@ describe('cloud step', () => {
     const group = screen.getByRole('group', {
       name: 'onboarding-cloud:providers',
     })
-    // The Add provider gallery's order: the sign-in first, then demand.
+    // The prototype's order: the names people know, then the sign-in.
     expect(
       within(group)
         .getAllByRole('button')
         .map((button) => button.getAttribute('aria-label'))
     ).toEqual([
-      'ChatGPT (Codex)',
-      'OpenRouter',
-      'Gemini',
       'OpenAI',
       'Anthropic',
+      'Gemini',
+      'OpenRouter',
+      'ChatGPT (Codex)',
     ])
     expect(
       within(group).getByRole('img', { name: 'openai - Logo' })
@@ -177,8 +177,8 @@ describe('cloud step', () => {
         .getByRole('img', { name: 'gemini - Logo' })
         .getAttribute('src')
     ).toBe('/images/model-provider/gemini.svg')
-    // Selected first: the provider with nothing to paste.
-    expect(card('ChatGPT (Codex)')).toHaveAttribute('aria-pressed', 'true')
+    // Selected first: one key for every model family.
+    expect(card('OpenRouter')).toHaveAttribute('aria-pressed', 'true')
     expect(
       screen.getByRole('button', { name: 'onboarding-cloud:skip' })
     ).toBeInTheDocument()
@@ -285,6 +285,7 @@ describe('cloud step', () => {
       { id: 'gpt-5.1-codex', display_name: 'GPT-5.1 Codex', listed: true },
     ])
     renderStep()
+    fireEvent.click(card('ChatGPT (Codex)'))
 
     const signIn = await screen.findByRole('button', {
       name: 'setup:cloudStep.subscriptionConnect',
@@ -292,8 +293,9 @@ describe('cloud step', () => {
     await waitFor(() => expect(signIn).toBeEnabled())
     fireEvent.click(signIn)
 
+    // The last in the list: the selection wraps round to the first.
     expect(
-      await screen.findByLabelText('onboarding-cloud:keyFor OpenRouter')
+      await screen.findByLabelText('onboarding-cloud:keyFor OpenAI')
     ).toBeEnabled()
     expect(useOnboardingStore.getState().clouds).toEqual(['chatgpt'])
     expect(card('ChatGPT (Codex)')).toHaveClass('connected')

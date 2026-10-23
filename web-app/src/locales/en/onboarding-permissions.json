@@ -17,7 +17,7 @@
   "microphone": {
     "title": "Microphone",
     "reason": "Speak your prompts and use voice conversations.",
-    "ask": "Allow microphone access?",
+    "ask": "Allow microphone?",
     "detail": "Microphone access is used only when you start recording. Text chat works without it."
   },
   "warning": {

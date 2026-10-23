@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { ArrowRight, Check, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 
-import { selectCloudGalleryProviders } from '@/containers/dialogs/AddCloudProviderDialog'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useProviderKeyConnect } from '@/hooks/useProviderKeyConnect'
@@ -21,7 +20,11 @@ import {
   type ProviderKeyStatus,
 } from '@/stores/provider-key-status-store'
 
-import { useCloudGalleryProviders } from './cloudAvailability'
+import {
+  ONBOARDING_FIRST_PICK,
+  selectOnboardingCloudProviders,
+  useCloudGalleryProviders,
+} from './cloudAvailability'
 import type { StepProps } from './types'
 import '../cloud.css'
 
@@ -83,7 +86,7 @@ function KeyPane({
   const placeholder =
     (provider.settings?.find((setting) => setting.key === 'api-key')
       ?.controller_props?.placeholder as string | undefined) ??
-    t('setup:cloudStep.keyPlaceholder')
+    t('onboarding-cloud:keyPlaceholder')
 
   return (
     <>
@@ -119,7 +122,7 @@ function KeyPane({
           disabled={checking || done || !apiKey.trim()}
         >
           {checking
-            ? t('setup:cloudStep.checkingKey')
+            ? t('onboarding-cloud:connecting')
             : done
               ? t('onboarding-cloud:connected')
               : t('setup:cloudStep.connect')}
@@ -220,7 +223,7 @@ function SubscriptionPane({ provider, onConnected, onBusy }: PaneProps) {
 
 /**
  * "Your cloud models, too.": every cloud provider the app can connect from
- * here, in the Add provider gallery's order, with the selected one's key form
+ * here, in the step's order (`cloudAvailability`), with the selected one's key form
  * or sign-in underneath. Each connection is checked as the Add provider
  * dialog checks it; the selection then moves on to the next provider not yet
  * connected. The local download carries on above meanwhile.
@@ -244,11 +247,18 @@ export function CloudStep({ next }: StepProps) {
   )
   // Held rather than derived, so the selection stays put while a sign-in
   // writes its models and the provider turns connected under it.
-  const [picked, setPicked] = useState(
-    () =>
-      gallery.find((provider) => !connectedBefore.has(provider.provider))
-        ?.provider ?? null
-  )
+  // OpenRouter first, as the prototype opens; else the first one still open.
+  const [picked, setPicked] = useState(() => {
+    const open = gallery.filter(
+      (provider) => !connectedBefore.has(provider.provider)
+    )
+    return (
+      open.find((provider) => provider.provider === ONBOARDING_FIRST_PICK)
+        ?.provider ??
+      open[0]?.provider ??
+      null
+    )
+  })
   const selected =
     gallery.find((provider) => provider.provider === picked) ?? gallery[0]
   const selectedConnection = selected ? connectionOf(selected, statuses) : null
@@ -257,7 +267,7 @@ export function CloudStep({ next }: StepProps) {
     setBusy(false)
     useOnboardingStore.getState().connectCloud(providerName)
     // Read the stores again: this render's lists predate the key just saved.
-    const providers = selectCloudGalleryProviders(
+    const providers = selectOnboardingCloudProviders(
       useModelProvider.getState().providers
     )
     const latest = useProviderKeyStatusStore.getState().statuses

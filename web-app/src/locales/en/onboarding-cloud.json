@@ -5,5 +5,7 @@
   "keyFor": "{{provider}} API key",
   "connected": "Connected",
   "notVerified": "Not verified",
-  "skip": "Skip"
+  "skip": "Skip",
+  "keyPlaceholder": "Enter API key",
+  "connecting": "Connecting…"
 }

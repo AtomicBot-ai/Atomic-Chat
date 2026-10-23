@@ -5,5 +5,7 @@
   "keyFor": "API-ключ {{provider}}",
   "connected": "Подключено",
   "notVerified": "Не проверен",
-  "skip": "Пропустить"
+  "skip": "Пропустить",
+  "keyPlaceholder": "Введите API-ключ",
+  "connecting": "Подключаем…"
 }
