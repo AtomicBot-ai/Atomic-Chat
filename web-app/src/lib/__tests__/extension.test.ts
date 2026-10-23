@@ -17,6 +17,18 @@ vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
 }))
 
+const getActiveExtensions = vi.fn()
+vi.mock('@/hooks/useServiceHub', () => ({
+  getServiceHub: () => ({
+    core: () => ({
+      getActiveExtensions,
+      // A URL no module lives at, so its import() rejects like a bundle
+      // whose bare `@tauri-apps/plugin-log` import the webview cannot resolve.
+      convertFileSrc: (path: string) => `/__missing__/${path}`,
+    }),
+  }),
+}))
+
 // Mock window.core.extensionManager
 Object.defineProperty(window, 'core', {
   writable: true,
@@ -118,6 +130,48 @@ describe('extension.ts', () => {
 
     it('should handle unloading extensions', () => {
       expect(() => manager.unload()).not.toThrow()
+    })
+
+    it('skips an extension that cannot be imported and registers the rest', async () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const healthy = { onLoad: vi.fn(), onUnload: vi.fn() }
+      getActiveExtensions.mockResolvedValue([
+        { url: 'broken/dist/index.js', name: '@janhq/broken-extension' },
+        {
+          url: 'healthy/dist/index.js',
+          name: '@janhq/healthy-extension',
+          extensionInstance: healthy,
+        },
+      ])
+
+      await expect(manager.registerActive()).resolves.toBeUndefined()
+
+      expect(manager.getByName('@janhq/healthy-extension')).toBe(healthy)
+      expect(manager.getByName('@janhq/broken-extension')).toBeUndefined()
+      expect(error).toHaveBeenCalledWith(
+        "Extension '@janhq/broken-extension' failed to import and was skipped:",
+        expect.anything()
+      )
+      error.mockRestore()
+    })
+
+    it('loads the other extensions when one onLoad rejects', async () => {
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const failing = {
+        onLoad: vi.fn().mockRejectedValue(new Error('engine missing')),
+      }
+      const healthy = { onLoad: vi.fn().mockResolvedValue(undefined) }
+      manager.register('failing', failing as never)
+      manager.register('healthy', healthy as never)
+
+      await expect(manager.load()).resolves.toBeUndefined()
+
+      expect(healthy.onLoad).toHaveBeenCalledOnce()
+      expect(error).toHaveBeenCalledWith(
+        "Extension 'failing' failed to load:",
+        expect.objectContaining({ message: 'engine missing' })
+      )
+      error.mockRestore()
     })
   })
 

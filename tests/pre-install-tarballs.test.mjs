@@ -17,6 +17,7 @@ import assert from 'node:assert/strict'
 import { readdirSync, readFileSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { execFileSync } from 'node:child_process'
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const PRE_INSTALL = join(REPO_ROOT, 'src-tauri', 'resources', 'pre-install')
@@ -142,3 +143,55 @@ test('the llama.cpp upstream extension is bundled, since local inference depends
     'the provider that owns local models must ship with the app'
   )
 })
+
+/**
+ * Bare specifiers a bundle still imports (`import … from "@tauri-apps/plugin-log"`), static or
+ * dynamic. Relative and absolute paths and URLs are fine; JSDoc examples (`* import …`) are not
+ * statements and are ignored.
+ */
+function bareImports(source) {
+  const found = new Set()
+  const statement = /^\s*(?:import|export)\b[^;]*?\bfrom\s*["']([^"']+)["']|^\s*import\s*["']([^"']+)["']/gm
+  const dynamic = /\bimport\(\s*["']([^"']+)["']\s*\)/g
+  for (const match of [...source.matchAll(statement), ...source.matchAll(dynamic)]) {
+    const specifier = match[1] ?? match[2]
+    if (!/^(\.{1,2}\/|\/|[a-z][a-z0-9+.-]*:)/i.test(specifier)) found.add(specifier)
+  }
+  return [...found]
+}
+
+test('the bundled extensions import nothing the webview would have to resolve by name', () => {
+  // The app imports each extension straight from its asset URL, where a bare specifier cannot
+  // resolve. Rolldown leaves an import bare when the package is missing from the extension's own
+  // node_modules (a stale install), and the extension then fails to load at startup. Seen
+  // 2026-10-23: Foundry Local's tarball kept `@tauri-apps/plugin-log` and the window stayed blank.
+  const offenders = readdirSync(PRE_INSTALL)
+    .filter((name) => name.endsWith('.tgz'))
+    .flatMap((name) => {
+      const source = execFileSync('tar', ['-xzOf', join(PRE_INSTALL, name), 'package/dist/index.js'], {
+        encoding: 'utf8',
+        maxBuffer: 64 * 1024 * 1024,
+      })
+      return bareImports(source).map((specifier) => `${name}: ${specifier}`)
+    })
+
+  assert.deepEqual(offenders, [], 'rebuild these tarballs after `yarn install` in extensions/')
+})
+
+test('the bare-import check recognises what it must and only that', () => {
+  assert.deepEqual(
+    bareImports(
+      [
+        'import { error, info } from "@tauri-apps/plugin-log";',
+        "export { x } from 'ulidx'",
+        'const m = await import("fetch-retry")',
+        "import './side-effect.js'",
+        "* import { warn } from '@tauri-apps/plugin-log';",
+        'import { a } from "./chunk.js"',
+        'import("https://example.com/x.js")',
+      ].join('\n')
+    ),
+    ['@tauri-apps/plugin-log', 'ulidx', 'fetch-retry']
+  )
+})
+
