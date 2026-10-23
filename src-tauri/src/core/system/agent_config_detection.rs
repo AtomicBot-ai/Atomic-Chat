@@ -30,6 +30,7 @@ const GOOSE_SHELL_MARKER: &str = "# Atomic Chat - Goose Config";
 const OPENHANDS_SHELL_MARKER: &str = "# Atomic Chat - OpenHands Config";
 const POOLSIDE_SHELL_MARKER: &str = "# Atomic Chat - Poolside Config";
 const MUSE_SHELL_MARKER: &str = "# Atomic Chat - Muse Code Config";
+const STACK_AGENT_SHELL_MARKER: &str = "# Atomic Chat - stack-agent Config";
 const LEGACY_CLAUDE_CODE_SHELL_MARKER: &str = "# Jan Local API Server - Claude Code Config";
 
 /// `customModels[].displayName` `configure_droid` upserts by.
@@ -180,6 +181,12 @@ pub(crate) fn detect_configured_agents_in(
             block(POOLSIDE_SHELL_MARKER)
                 .is_some_and(|vars| var_is_local(&vars, "POOLSIDE_STANDALONE_BASE_URL"))
                 || user_env_is_local("POOLSIDE_STANDALONE_BASE_URL"),
+        ),
+        (
+            "stack-agent",
+            block(STACK_AGENT_SHELL_MARKER)
+                .is_some_and(|vars| var_is_local(&vars, "CHIP_ENDPOINT"))
+                || user_env_is_local("CHIP_ENDPOINT"),
         ),
         (
             "goose",
@@ -616,11 +623,12 @@ mod tests {
             ("GOOSE_PROVIDER", "openai"),
             ("OPENAI_HOST", "http://localhost:1337"),
             ("META_API_KEY", "sk-real-meta-key"),
+            ("CHIP_ENDPOINT", "http://127.0.0.1:1337/v1/chat/completions"),
         ]);
         let lookup = |name: &str| env.get(name).map(|v| v.to_string());
         let found =
             detect_configured_agents_in(&AgentConfigPaths::under_home(home.path(), None), &lookup);
-        assert_eq!(found, vec!["poolside", "goose"]);
+        assert_eq!(found, vec!["poolside", "stack-agent", "goose"]);
     }
 
     #[test]

@@ -471,6 +471,33 @@ function LaunchPage() {
               const modelArg = model ? ` --model '${model}'` : ''
               command = `META_API_KEY='${key}' ${launcher} --provider meta --base-url '${apiUrl}'${modelArg}`
             }
+          } else if (agent.id === 'stack-agent') {
+            // stack-agent has no config file and no interactive chat: it reads
+            // CHIP_* from the environment and takes one goal per `work` run.
+            // Export the selection into the terminal's own shell (the rc block
+            // configure_stack_agent wrote only reaches new shells), then run
+            // `doctor`, which checks the model answers and that pax and the
+            // project are usable, and leave the user at a prompt to run
+            // `stack-agent work "<goal>"` from their project directory.
+            const apiUrl = `http://${agentConnectHost(serverHost)}:${serverPort}${apiPrefix}`
+            const env: [string, string][] = [
+              ['CHIP_PROVIDER', 'openai-compatible'],
+              ['CHIP_ENDPOINT', `${apiUrl}/chat/completions`],
+              ['CHIP_MODEL', model ?? ''],
+              ['CHIP_API_KEY', apiKey || 'atomic'],
+              ['CHIP_CALL_TIMEOUT_SECS', '600'],
+            ]
+            const hint =
+              'Next: cd into your project, then run  stack-agent work "Fix the failing test"'
+            if (osType() === 'windows') {
+              const sets = env.map(([k, v]) => `set ${k}=${v}&& `).join('')
+              command = `${sets}${launcher} doctor & echo. & echo ${hint}`
+            } else {
+              const exports = env
+                .map(([k, v]) => `export ${k}='${v}'`)
+                .join('; ')
+              command = `${exports}; ${launcher} doctor; echo; echo '${hint}'`
+            }
           } else if (agent.id === 'poolside') {
             const apiUrl = `http://${agentConnectHost(serverHost)}:${serverPort}${apiPrefix}`
             const standaloneBase = apiUrl.replace(/\/v1\/?$/, '')

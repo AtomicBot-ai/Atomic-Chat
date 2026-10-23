@@ -271,6 +271,21 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
     endpointWithPrefix: true,
   },
   {
+    id: 'stack-agent',
+    name: 'stack-agent',
+    description:
+      'Rust coding agent that edits your project until its tests pass.',
+    kind: 'coding',
+    detectBin: 'stack-agent',
+    docsUrl: 'https://github.com/rkendel1/stack-agent',
+    installable: true,
+    configurable: true,
+    // stack-agent never guesses a model: CHIP_MODEL is required.
+    requiresModel: true,
+    // CHIP_ENDPOINT is the full chat-completions URL, built on the `/v1` root.
+    endpointWithPrefix: true,
+  },
+  {
     id: 'atomic-agent',
     name: 'Atomic Agent',
     description:

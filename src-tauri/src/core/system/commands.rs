@@ -2128,6 +2128,41 @@ fn agent_install_spec(
             let prereq = if cfg!(windows) { "powershell" } else { "curl" };
             Ok((program, args, prereq, "https://docs.poolside.ai/cli"))
         }
+        "stack-agent" => {
+            // stack-agent ships a release installer that verifies the archive's
+            // SHA-256 and drops one file into ~/.local/bin (never sudo, never a
+            // profile edit; see `off_path_candidates`). It has prebuilt releases
+            // for macOS arm64 and Linux x86_64 only, so when that installer
+            // fails -- another platform, or no release published yet -- build
+            // it from source with cargo, which lands in ~/.cargo/bin. Windows
+            // has no release at all and always builds from source.
+            const GIT: &str = "https://github.com/rkendel1/stack-agent";
+            let (program, args): (String, Vec<String>) = if cfg!(windows) {
+                (
+                    "cmd".to_string(),
+                    vec![
+                        "/C".to_string(),
+                        format!("cargo install --locked --git {GIT} stack-agent"),
+                    ],
+                )
+            } else {
+                (
+                    "bash".to_string(),
+                    vec![
+                        "-c".to_string(),
+                        format!(
+                            "set -o pipefail; curl -fsSL {GIT}/releases/latest/download/install.sh | sh -s -- --force \
+                             || {{ echo 'No prebuilt stack-agent for this machine; building it from source with cargo.'; \
+                             CARGO=$(command -v cargo || echo \"$HOME/.cargo/bin/cargo\"); \
+                             [ -x \"$CARGO\" ] || {{ echo 'cargo not found: install Rust from https://rustup.rs and try again.' >&2; exit 1; }}; \
+                             \"$CARGO\" install --locked --git {GIT} stack-agent; }}"
+                        ),
+                    ],
+                )
+            };
+            let prereq = if cfg!(windows) { "cargo" } else { "curl" };
+            Ok((program, args, prereq, GIT))
+        }
         "zed" => {
             // Zed ships its own installer (NOT npm). On macOS/Linux the official
             // shell script downloads the editor and drops a `zed` CLI shim on
@@ -2493,8 +2528,34 @@ pub fn off_path_candidates(bin: &str) -> Vec<PathBuf> {
     match bin {
         "openclaw" => openclaw_off_path_candidates(),
         "zcode" => zcode_app_candidates(),
+        "stack-agent" => stack_agent_off_path_candidates(),
         _ => Vec::new(),
     }
+}
+
+/// Where stack-agent's installers put it: its release installer writes
+/// ~/.local/bin (and, like a cargo build into ~/.cargo/bin, leaves PATH alone),
+/// which macOS login shells do not include by default.
+fn stack_agent_off_path_candidates() -> Vec<PathBuf> {
+    let Ok(home) = agent_home_dir() else {
+        return Vec::new();
+    };
+    let home = PathBuf::from(home);
+    let name = if cfg!(windows) {
+        "stack-agent.exe"
+    } else {
+        "stack-agent"
+    };
+    let mut out = Vec::with_capacity(3);
+    if let Some(dir) = std::env::var("STACK_AGENT_INSTALL_DIR")
+        .ok()
+        .filter(|d| !d.trim().is_empty())
+    {
+        out.push(PathBuf::from(dir).join(name));
+    }
+    out.push(home.join(".local").join("bin").join(name));
+    out.push(home.join(".cargo").join("bin").join(name));
+    out
 }
 
 fn openclaw_off_path_candidates() -> Vec<PathBuf> {
@@ -5364,6 +5425,84 @@ pub fn configure_poolside(
     Ok(())
 }
 
+/// Environment stack-agent reads to select its model.
+///
+/// stack-agent deliberately has no configuration file: each setting comes from
+/// its flag, then its `CHIP_*` variable, then a default. The endpoint must be
+/// the full chat-completions URL (`api_url` already carries the `/v1` prefix).
+/// Its 30 s default per-call timeout is sized for hosted models; a local model
+/// prefilling a long work prompt routinely takes longer, so it is raised here.
+pub fn stack_agent_env_vars(
+    api_url: &str,
+    model: &str,
+    api_key: Option<&str>,
+) -> Vec<(String, String)> {
+    let key_val = api_key.filter(|k| !k.is_empty()).unwrap_or("atomic");
+    let endpoint = format!(
+        "{}/chat/completions",
+        api_url.trim().trim_end_matches('/')
+    );
+    vec![
+        ("CHIP_PROVIDER".to_string(), "openai-compatible".to_string()),
+        ("CHIP_ENDPOINT".to_string(), endpoint),
+        ("CHIP_MODEL".to_string(), model.to_string()),
+        ("CHIP_API_KEY".to_string(), key_val.to_string()),
+        (
+            "CHIP_CALL_TIMEOUT_SECS".to_string(),
+            STACK_AGENT_CALL_TIMEOUT_SECS.to_string(),
+        ),
+    ]
+}
+
+/// Per-call timeout written for stack-agent against a local model.
+pub const STACK_AGENT_CALL_TIMEOUT_SECS: u64 = 600;
+
+/// Configure stack-agent by persisting its `CHIP_*` selection to the user's
+/// shell rc (Windows: `setx`), so `stack-agent work` in any new terminal uses
+/// the Local API Server. The terminal Run opens also sets them inline.
+#[tauri::command]
+pub fn configure_stack_agent(
+    api_url: String,
+    model: String,
+    api_key: Option<String>,
+) -> Result<(), String> {
+    let env_vars = stack_agent_env_vars(&api_url, &model, api_key.as_deref());
+
+    const MARKER: &str = "# Atomic Chat - stack-agent Config";
+
+    if cfg!(target_os = "windows") {
+        for (key, value) in &env_vars {
+            let output = std::process::Command::new("setx")
+                .arg(key)
+                .arg(value)
+                .output()
+                .map_err(|e| e.to_string())?;
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(format!("Failed to set env var {}: {}", key, stderr));
+            }
+        }
+        log::info!(
+            "stack-agent configured (Windows env): base_url={}, model={}",
+            api_url,
+            model
+        );
+        return Ok(());
+    }
+
+    let home = agent_home_dir()?;
+    let is_macos = cfg!(target_os = "macos");
+    let (_shell, env_file_path) = detect_shell_env_file(&home, is_macos);
+    write_marked_env_to_shell(&env_file_path, MARKER, "CHIP_", &env_vars)?;
+    log::info!(
+        "stack-agent configured: base_url={}, model={}, rc={}",
+        api_url,
+        model,
+        env_file_path
+    );
+    Ok(())
+}
+
 /// Environment Muse Code needs before it will talk to a non-Meta endpoint.
 ///
 /// Muse Code is the one agent here with no writable endpoint configuration:
@@ -6234,7 +6373,15 @@ mod tests {
     #[cfg(not(windows))]
     #[test]
     fn curl_agent_installers_propagate_download_failures() {
-        for agent_id in ["goose", "atomic-agent", "hermes", "poolside", "zed", "muse"] {
+        for agent_id in [
+            "goose",
+            "atomic-agent",
+            "hermes",
+            "poolside",
+            "zed",
+            "muse",
+            "stack-agent",
+        ] {
             let (program, arguments, prerequisite, _) =
                 agent_install_spec(agent_id).expect("known install spec");
             assert_eq!(program, "bash", "{agent_id} must support pipefail");
@@ -6955,7 +7102,7 @@ mod openclaw_tests {
     /// Only OpenClaw's launcher and ZCode's desktop app live off PATH; guessing
     /// paths for the other agents would only produce false positives.
     #[test]
-    fn off_path_candidates_cover_only_openclaw_and_zcode() {
+    fn off_path_candidates_cover_only_prefix_installed_agents() {
         assert!(off_path_candidates("claude").is_empty());
         assert!(off_path_candidates("codex").is_empty());
 
@@ -6971,6 +7118,45 @@ mod openclaw_tests {
         assert!(candidates
             .iter()
             .any(|p| p.to_string_lossy().contains(".openclaw")));
+    }
+}
+
+#[cfg(test)]
+mod stack_agent_tests {
+    use super::*;
+
+    fn var<'a>(vars: &'a [(String, String)], name: &str) -> Option<&'a str> {
+        vars.iter()
+            .find(|(k, _)| k == name)
+            .map(|(_, v)| v.as_str())
+    }
+
+    #[test]
+    fn env_selects_the_local_chat_completions_endpoint() {
+        let vars = stack_agent_env_vars("http://127.0.0.1:1337/v1/", "qwen3-8b", Some("sk-x"));
+        assert_eq!(var(&vars, "CHIP_PROVIDER"), Some("openai-compatible"));
+        assert_eq!(
+            var(&vars, "CHIP_ENDPOINT"),
+            Some("http://127.0.0.1:1337/v1/chat/completions")
+        );
+        assert_eq!(var(&vars, "CHIP_MODEL"), Some("qwen3-8b"));
+        assert_eq!(var(&vars, "CHIP_API_KEY"), Some("sk-x"));
+        assert_eq!(var(&vars, "CHIP_CALL_TIMEOUT_SECS"), Some("600"));
+    }
+
+    #[test]
+    fn empty_key_uses_the_placeholder() {
+        let vars = stack_agent_env_vars("http://127.0.0.1:1337/v1", "m", Some(""));
+        assert_eq!(var(&vars, "CHIP_API_KEY"), Some("atomic"));
+    }
+
+    #[test]
+    fn off_path_candidates_cover_the_installer_and_cargo_dirs() {
+        let candidates = off_path_candidates("stack-agent");
+        assert!(candidates.iter().any(|p| p.ends_with(".local/bin/stack-agent")
+            || p.ends_with(".local/bin/stack-agent.exe")));
+        assert!(candidates.iter().any(|p| p.ends_with(".cargo/bin/stack-agent")
+            || p.ends_with(".cargo/bin/stack-agent.exe")));
     }
 }
 

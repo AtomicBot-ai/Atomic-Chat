@@ -115,6 +115,9 @@ export async function writeAgentConfig(
     case 'muse':
       await invoke('configure_muse', { apiUrl, model, apiKey })
       break
+    case 'stack-agent':
+      await invoke('configure_stack_agent', { apiUrl, model, apiKey })
+      break
     case 'openclaw':
       await invoke('configure_openclaw', { apiUrl, model, apiKey })
       break
