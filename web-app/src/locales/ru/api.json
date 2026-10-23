@@ -132,7 +132,8 @@
       "vllm": "Высокая пропускная способность на GPU NVIDIA",
       "sglang": "Быстрый инференс на GPU NVIDIA",
       "tensorrt": "Оптимизированный инференс от NVIDIA",
-      "foundry": "Локальная среда выполнения Microsoft"
+      "foundry": "Локальная среда выполнения Microsoft",
+      "litert": "Локальная среда выполнения Google"
     },
     "engineModels_one": "{{count}} модель",
     "engineModels_few": "{{count}} модели",

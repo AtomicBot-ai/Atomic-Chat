@@ -117,6 +117,7 @@ const ENGINE_FACTS: Record<string, { detail: string; format?: string }> = {
   'sglang': { detail: 'api:model.engineDetail.sglang' },
   'tensorrt-llm': { detail: 'api:model.engineDetail.tensorrt' },
   'foundry-local': { detail: 'api:model.engineDetail.foundry', format: 'ONNX' },
+  'litert-lm': { detail: 'api:model.engineDetail.litert', format: 'LiteRT-LM' },
 }
 
 const joinFacts = (facts: (string | undefined | false)[]) =>

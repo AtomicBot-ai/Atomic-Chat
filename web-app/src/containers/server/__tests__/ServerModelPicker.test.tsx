@@ -179,6 +179,27 @@ describe('Server → Engine & model', () => {
     )
   })
 
+  it('describes the LiteRT-LM engine as it does the others', async () => {
+    useModelProvider.setState({
+      providers: [
+        engine('litert-lm', [{ id: 'gemma-4-e2b-it', name: 'Gemma 4 E2B' }]),
+      ],
+    })
+    render(<ServerModelPicker />)
+
+    await user.click(dropdown('api:model.engine'))
+
+    const litert = row(getProviderTitle('litert-lm'))
+    expect(litert.querySelector('img')).toHaveAttribute(
+      'src',
+      '/images/model-provider/litert-lm.svg'
+    )
+    expect(litert).toHaveTextContent('api:model.engineDetail.litert')
+    expect(litert).toHaveTextContent(
+      'LiteRT-LM · api:model.engineModels:{"count":1}'
+    )
+  })
+
   it('shows each model with its family’s mark, the quantization its name leaves out and its size on disk', async () => {
     useModelProvider.setState({
       providers: [

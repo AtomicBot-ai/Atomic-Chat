@@ -132,7 +132,8 @@
       "vllm": "High-throughput serving on NVIDIA GPUs",
       "sglang": "Fast serving on NVIDIA GPUs",
       "tensorrt": "NVIDIA's optimized inference",
-      "foundry": "Microsoft's on-device runtime"
+      "foundry": "Microsoft's on-device runtime",
+      "litert": "Google's on-device runtime"
     },
     "engineModels_one": "{{count}} model",
     "engineModels_other": "{{count}} models",
