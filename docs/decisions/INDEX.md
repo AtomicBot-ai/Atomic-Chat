@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-468 records, 2026-05-19 → 2026-10-23.
+469 records, 2026-05-19 → 2026-10-23.
 
 ---
 
@@ -284,8 +284,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-04** — [Recover from unsupported multimodal projector (`gemma4a`) by falling back to text-only instead of crashing the load (issue #44)](2026-06-04-recover-from-unsupported-multimodal-projector-gemma4a-by.md)
 - **2026-05-27** — [Replace `janhq/model-catalog` + Fuse.js with curated `AtomicBot-ai/atomic-chat-model-catalog` and a pre-built MiniSearch index](2026-05-27-replace-janhq-model-catalog-fuse-js-with-curated-atomicbot-ai.md)
 
-## Local API server & OpenAI compatibility (14)
+## Local API server & OpenAI compatibility (15)
 
+- **2026-10-23** — [Stop an idle server at the first-run endpoint handoff](2026-10-23-stop-an-idle-server-at-the-first-run-endpoint-handoff.md) — supersedes in part 2026-10-21.
 - **2026-10-21** — [The Local API Server routes a model id to the provider selected for it](2026-10-21-the-server-routes-a-model-id-to-the-provider-selected-for-it.md) — supersedes "remote wins over local" for ids the server page shows.
 - **2026-10-21** — [Refuse the Local API Server as a custom endpoint](2026-10-21-refuse-the-local-api-server-as-a-custom-endpoint.md)
 - **2026-10-21** — [Start the Local API Server at launch without a model](2026-10-21-start-the-local-api-server-at-launch-without-a-model.md) — supersedes the startup clauses of the 2026-08-19 and 2026-09-25 records.
