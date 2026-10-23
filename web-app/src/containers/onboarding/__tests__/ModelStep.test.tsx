@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   startMlx: vi.fn(async () => true),
   importBackground: vi.fn(),
   engineImport: vi.fn(async () => undefined),
+  cancel: vi.fn(),
 }))
 
 vi.mock('posthog-js', () => ({
@@ -33,6 +34,9 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
   }),
 }))
 vi.mock('@/hooks/useServiceHub', () => ({ useServiceHub: () => ({}) }))
+vi.mock('@/lib/downloadCancellation', () => ({
+  cancelDownload: mocks.cancel,
+}))
 vi.mock('../useModelOptions', () => ({
   useModelOptions: () => mocks.options,
 }))
@@ -340,5 +344,35 @@ describe('model step', () => {
     expect(named('recommended_model_clicked')[0]).toMatchObject({
       position: 1,
     })
+  })
+
+  it('stops the first download when the user comes back for another model', () => {
+    withOptions({ huggingFace: [fromHub] })
+    useOnboardingStore.getState().enqueue({
+      key: 'chat',
+      kind: 'chat',
+      title: 'Qwen3.5 4B',
+      taskId: 'Qwen3.5-4B-Q4_K_M',
+      phase: 'running',
+    })
+    useOnboardingStore.getState().choose({
+      source: 'download',
+      provider: 'llamacpp-upstream',
+      modelId: 'Qwen3.5-4B-Q4_K_M',
+      title: 'Qwen3.5 4B',
+      matchIds: ['Qwen3.5-4B-Q4_K_M'],
+    })
+    render(<ModelStep next={next} handOff={handOff} />)
+
+    fireEvent.click(screen.getByRole('radio', { name: /Mistral 7B Instruct/ }))
+    fireEvent.click(screen.getByRole('button', { name: /onboarding:continue/ }))
+
+    expect(mocks.cancel).toHaveBeenCalledWith(
+      { id: 'Qwen3.5-4B-Q4_K_M', name: 'Qwen3.5-4B-Q4_K_M' },
+      {}
+    )
+    expect(useOnboardingStore.getState().jobs).toEqual([
+      expect.objectContaining({ key: 'chat', taskId: 'Mistral-7B-Q4_K_M' }),
+    ])
   })
 })

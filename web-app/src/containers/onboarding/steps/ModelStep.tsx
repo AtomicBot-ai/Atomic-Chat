@@ -11,6 +11,7 @@ import { useConfirmWontFitDownload } from '@/hooks/useConfirmWontFitDownload'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { cancelDownload } from '@/lib/downloadCancellation'
 import { estimatedMemoryGb } from '@/lib/model-card'
 import { HUGGINGFACE_LOGO_SRC } from '@/lib/model-logo'
 import {
@@ -164,6 +165,24 @@ export function ModelStep({ next }: StepProps) {
         : undefined,
       position: option.position,
     })
+    // Back here for another model: the first one's transfer stops, as the
+    // run downloads one chat model.
+    const previous = store.jobs.find((job) => job.key === 'chat')
+    if (
+      previous &&
+      previous.phase !== 'done' &&
+      previous.taskId !== option.taskId
+    ) {
+      cancelDownload({ id: previous.taskId, name: previous.taskId }, serviceHub)
+    }
+    // A stopped download settles late; only this one's settles the job.
+    const settle = (phase: 'done' | 'failed') => {
+      const current = useOnboardingStore
+        .getState()
+        .jobs.find((job) => job.key === 'chat')
+      if (current?.taskId === option.taskId)
+        useOnboardingStore.getState().setJobPhase('chat', phase)
+    }
     store.enqueue({
       key: 'chat',
       kind: 'chat',
@@ -177,11 +196,7 @@ export function ModelStep({ next }: StepProps) {
         serviceHub,
         huggingfaceToken,
         requestOrigin: 'onboarding',
-      }).then((imported) =>
-        useOnboardingStore
-          .getState()
-          .setJobPhase('chat', imported ? 'done' : 'failed')
-      )
+      }).then((imported) => settle(imported ? 'done' : 'failed'))
     } else if (option.variant) {
       startGgufCatalogDownload(
         option.catalog,
@@ -191,8 +206,7 @@ export function ModelStep({ next }: StepProps) {
           serviceHub,
           huggingfaceToken,
           requestOrigin: 'onboarding',
-          onRefused: () =>
-            useOnboardingStore.getState().setJobPhase('chat', 'failed'),
+          onRefused: () => settle('failed'),
         }
       )
     }
