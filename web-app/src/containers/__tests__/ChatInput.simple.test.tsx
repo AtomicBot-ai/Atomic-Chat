@@ -811,10 +811,16 @@ describe('ChatInput', () => {
       prompt: 'Keep working even if I leave this screen',
       downloadModelIds: [modelId],
     })
+    // New Chat sends it itself while mounted, so the root stands down for it…
+    const queueId = useDeferredFirstSend.getState().queued!.id
+    expect(useDeferredFirstSend.getState().claimedId).toBe(queueId)
     expect(screen.getByTestId('chat-input')).toHaveValue(
       'Keep working even if I leave this screen'
     )
     unmount()
+    // …and hands it back on leaving, still queued.
+    expect(useDeferredFirstSend.getState().claimedId).toBeNull()
+    expect(useDeferredFirstSend.getState().queued?.id).toBe(queueId)
   })
 
   it('queues the approval mode and workspace New Chat showed at Send with the message', async () => {
