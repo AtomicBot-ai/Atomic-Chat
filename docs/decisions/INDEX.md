@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-463 records, 2026-05-19 → 2026-10-23.
+464 records, 2026-05-19 → 2026-10-23.
 
 ---
 
@@ -301,8 +301,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-07-15** — [Aggregate Local API Server request telemetry into three-minute summaries (ATO-297)](2026-07-15-aggregate-local-api-server-request-telemetry-into-three-minute.md)
 - **2026-06-09** — [Make the Local API Server "Invalid host header" rejection actionable + fix Trusted Hosts field copy (ATO-118, scope I+II)](2026-06-09-make-the-local-api-server-invalid-host-header-rejection.md)
 
-## Telemetry, crash reporting & error handling (13)
+## Telemetry, crash reporting & error handling (14)
 
+- **2026-10-23** — [Count Local API traffic as a first request in the onboarding experiment](2026-10-23-count-local-api-traffic-as-a-first-request-in-the-onboarding-experiment.md)
 - **2026-10-23** — [Split new installs into three onboarding cohorts, drawn on the device and recorded in PostHog](2026-10-23-split-new-installs-into-three-onboarding-cohorts.md)
 - **2026-10-22** — [Keep the analytics distinct id in settings.json, across a factory reset](2026-10-22-keep-the-analytics-distinct-id-in-settings-json.md)
 - **2026-09-30** — [Run hardware probes off the UI thread](2026-09-30-run-hardware-probes-off-the-ui-thread.md)
