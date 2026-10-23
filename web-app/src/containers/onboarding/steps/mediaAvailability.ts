@@ -12,6 +12,7 @@ import {
   type InstalledArtifact,
 } from '@/lib/diffusion/models'
 import type { HardwareProfile } from '@/lib/hardware-tier'
+import { DIFFUSION_FAMILY_ICON_KEYS, iconKeyLogoSrc } from '@/lib/model-logo'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import type {
@@ -33,6 +34,8 @@ export type MediaCard = {
   family: DiffusionFamilyId
   modality: DiffusionModality
   title: string
+  /** The family's mark, as the Hub shows it; `null` when none is bundled. */
+  logoSrc: string | null
   /** The model file a queued job downloads (`family:quantId`). */
   artifactId: string
   /** Bytes still to fetch; the whole artifact once it is on disk. */
@@ -78,6 +81,7 @@ function mediaCards(
         family: family.id,
         modality: family.modality,
         title: family.name,
+        logoSrc: iconKeyLogoSrc(DIFFUSION_FAMILY_ICON_KEYS[family.id]),
         artifactId: artifactId(family.id, quant.id),
         downloadBytes: downloaded ? plan.totalBytes : plan.missingBytes,
         memoryBytes: estimate.residentBytes,

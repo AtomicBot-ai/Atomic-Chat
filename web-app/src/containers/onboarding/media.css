@@ -77,7 +77,29 @@
     letter-spacing: 2px;
     text-transform: uppercase;
   }
+  .ob-media-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+  }
+  /* The model step's logo tile (`.ob-model-icon`), a size down. */
+  .ob-media-logo {
+    display: grid;
+    flex-shrink: 0;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border: 1px solid var(--ob-icon-line);
+    border-radius: 9px;
+    background: var(--ob-icon-bg);
+  }
+  .ob-media-logo > * {
+    width: 22px;
+    height: 22px;
+  }
   .ob-media-grid h2 {
+    min-width: 0;
     overflow-wrap: anywhere;
   }
   .ob-media-grid p {

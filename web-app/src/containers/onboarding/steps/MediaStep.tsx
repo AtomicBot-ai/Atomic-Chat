@@ -1,5 +1,6 @@
 import { ArrowRight, Check, Download, ImageIcon, Video } from 'lucide-react'
 
+import { FamilyLogoMark } from '@/containers/ModelLogo'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { diffusionDownloadTaskId } from '@/lib/diffusion/models'
 import { captureOnboardingEvent } from '@/lib/onboarding-telemetry'
@@ -92,7 +93,14 @@ export function MediaStep({ next }: StepProps) {
                 <Icon size={36} />
                 <span>{t(`onboarding-media:art.${card.modality}`)}</span>
               </div>
-              <h2 id={titleId}>{card.title}</h2>
+              <div className="ob-media-title">
+                {card.logoSrc && (
+                  <span className="ob-media-logo" aria-hidden="true">
+                    <FamilyLogoMark src={card.logoSrc} />
+                  </span>
+                )}
+                <h2 id={titleId}>{card.title}</h2>
+              </div>
               <p>{t(`onboarding-media:purpose.${card.modality}`)}</p>
               <small>
                 {[

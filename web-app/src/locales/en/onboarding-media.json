@@ -7,7 +7,7 @@
   },
   "purpose": {
     "image": "Create images from a prompt",
-    "video": "Create short videos from a prompt"
+    "video": "Create short videos · high memory use"
   },
   "size": {
     "download": "{{size}} GB download",

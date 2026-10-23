@@ -159,6 +159,18 @@ describe('media step', () => {
     expect(renderHook(() => useMediaCardCount()).result.current).toBe(2)
   })
 
+  it('marks each card with its family’s logo', () => {
+    renderStep()
+
+    // An <img>, or a CSS mask for a single-colour mark.
+    expect(
+      card('Z-Image Turbo').querySelector('.ob-media-logo')?.innerHTML
+    ).toContain('/svg/z-image.svg')
+    expect(
+      card('LTX-2.3 Distilled').querySelector('.ob-media-logo')?.innerHTML
+    ).toContain('/svg/lightricks.svg')
+  })
+
   it('hides a model that will not fit and cautions about one that is tight', () => {
     mocks.hardware = { profile: machine(16), ready: true }
     const { unmount } = renderStep()
