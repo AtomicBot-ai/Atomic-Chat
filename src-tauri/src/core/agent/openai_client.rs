@@ -98,6 +98,10 @@ pub enum OpenAiTargetKind {
     /// the model's host process. Its context is fixed by the variant, and the library splits
     /// reasoning on the markers the variant was registered with, so no reasoning field is sent.
     LocalFoundryLocal,
+    /// A LiteRT-LM session (change `add-litert-lm-runtime`): the core's gateway in front of the
+    /// host's own OpenAI server. Its context is clamped to the file at load, and it switches
+    /// thinking by `chat_template_kwargs.enable_thinking`, which it reads before anything else.
+    LocalLiteRtLm,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -523,6 +527,20 @@ fn insert_reasoning_fields(
 ) {
     let is_mlx = target.kind == OpenAiTargetKind::LocalMlx;
     if target.kind == OpenAiTargetKind::LocalFoundryLocal {
+        return;
+    }
+    if target.kind == OpenAiTargetKind::LocalLiteRtLm {
+        // Unset keeps the model's own default (`reasoning` in its model.yml); the host splits the
+        // thinking into `reasoning_content` itself.
+        let enable = match reasoning {
+            CompletionReasoning::Unset => return,
+            CompletionReasoning::Off => false,
+            CompletionReasoning::On { .. } => true,
+        };
+        body.insert(
+            "chat_template_kwargs".into(),
+            json!({"enable_thinking": enable}),
+        );
         return;
     }
     if target.kind == OpenAiTargetKind::LocalManaged {
@@ -1408,6 +1426,34 @@ mod tests {
                 "enable_thinking",
                 "chat_template_kwargs",
             ] {
+                assert!(payload.get(field).is_none(), "unexpected {field}");
+            }
+        }
+    }
+
+    #[test]
+    fn litert_lm_targets_switch_thinking_through_the_template_kwargs_only() {
+        // The LiteRT-LM host reads `chat_template_kwargs.enable_thinking` first; without it the
+        // model's own default applies (change add-litert-lm-runtime, core ruling 5.4).
+        let client =
+            OpenAiCompatibleClient::new(target(OpenAiTargetKind::LocalLiteRtLm, false)).unwrap();
+        let on = CompletionReasoning::On {
+            tags: ReasoningTags {
+                open: "<think>",
+                close: "</think>",
+            },
+            budget_tokens: Some(1_024),
+            effort_value: Some("high".into()),
+        };
+        for (reasoning, expected) in [
+            (CompletionReasoning::Off, Some(json!({"enable_thinking": false}))),
+            (on, Some(json!({"enable_thinking": true}))),
+            (CompletionReasoning::Unset, None),
+        ] {
+            let payload =
+                client.chat_payload(&client.target(), &request_with_reasoning(reasoning), false);
+            assert_eq!(payload.get("chat_template_kwargs").cloned(), expected);
+            for field in ["reasoning_effort", "thinking_budget", "enable_thinking"] {
                 assert!(payload.get(field).is_none(), "unexpected {field}");
             }
         }

@@ -94,6 +94,7 @@ export type LoadBackend =
   | 'vllm'
   | 'sglang'
   | 'foundry-local'
+  | 'litert-lm'
   | 'unknown'
 
 const STDERR_TAIL_BYTES = 2048
@@ -377,7 +378,8 @@ export function loadBackendFromProvider(provider?: string | null): LoadBackend {
     provider === 'tensorrt-llm' ||
     provider === 'vllm' ||
     provider === 'sglang' ||
-    provider === 'foundry-local'
+    provider === 'foundry-local' ||
+    provider === 'litert-lm'
   )
     return provider
   return 'unknown'

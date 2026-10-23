@@ -38,6 +38,10 @@ pub const MANAGED_PROVIDERS: [&str; 3] = ["vllm", "sglang", "tensorrt-llm"];
 /// core's own `:1337` routes it; the app asks for it by name (chat, agent).
 pub const PROVIDER_FOUNDRY_LOCAL: &str = "foundry-local";
 
+/// Google LiteRT-LM (change `add-litert-lm-runtime`): the same shape as Foundry Local — a host
+/// process per model with its own OpenAI server behind the core's gateway. Asked for by name only.
+pub const PROVIDER_LITERT_LM: &str = "litert-lm";
+
 /// Whether `provider` is a managed engine: its sessions are containers behind the core's gateway.
 pub fn is_managed_provider(provider: &str) -> bool {
     MANAGED_PROVIDERS.contains(&provider)

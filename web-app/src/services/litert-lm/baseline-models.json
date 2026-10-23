@@ -1,0 +1,163 @@
+{
+  "$schema": "./schema.litert-lm-models.json",
+  "schema_version": 1,
+  "updated_at": "2026-10-22T00:00:00Z",
+  "huggingface": {
+    "orgs": ["litert-community"],
+    "filter": "litert-lm",
+    "backends": {
+      "macos-arm64": ["cpu", "gpu"],
+      "linux-x64": ["cpu", "gpu"],
+      "linux-arm64": ["cpu", "gpu"],
+      "win-x64": ["cpu", "gpu"]
+    }
+  },
+  "models": [
+    {
+      "id": "gemma-4-e2b",
+      "name": "Gemma 4 E2B",
+      "description": "Smallest Google Gemma 4, quantized by Google for on-device use: chat, images, tool calling and a thinking mode in about 2.6 GB.",
+      "task": "chat",
+      "license": "apache-2.0",
+      "repo": "litert-community/gemma-4-E2B-it-litert-lm",
+      "revision": "41c5569623a7c189d6eec3e5225260c58cedbce7",
+      "gated": false,
+      "context_length": 32003,
+      "tools": true,
+      "reasoning": true,
+      "vision": true,
+      "variants": [
+        {
+          "id": "gemma-4-e2b-cpu",
+          "backend": "cpu",
+          "platforms": ["macos-arm64", "linux-x64", "linux-arm64", "win-x64"],
+          "file": {
+            "path": "gemma-4-E2B-it.litertlm",
+            "size": 2588147712,
+            "sha256": "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c"
+          }
+        },
+        {
+          "id": "gemma-4-e2b-gpu",
+          "backend": "gpu",
+          "platforms": ["macos-arm64", "linux-x64", "linux-arm64", "win-x64"],
+          "file": {
+            "path": "gemma-4-E2B-it.litertlm",
+            "size": 2588147712,
+            "sha256": "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c"
+          }
+        }
+      ]
+    },
+    {
+      "id": "gemma-4-e4b",
+      "name": "Gemma 4 E4B",
+      "description": "Google Gemma 4 for laptops, quantized by Google for on-device use: chat, images, tool calling and a thinking mode in about 3.7 GB.",
+      "task": "chat",
+      "license": "apache-2.0",
+      "repo": "litert-community/gemma-4-E4B-it-litert-lm",
+      "revision": "e6a3892a8c22cf87ff99583996149cf3cb32452b",
+      "gated": false,
+      "context_length": 32768,
+      "tools": true,
+      "reasoning": true,
+      "vision": true,
+      "variants": [
+        {
+          "id": "gemma-4-e4b-cpu",
+          "backend": "cpu",
+          "platforms": ["macos-arm64", "linux-x64", "linux-arm64", "win-x64"],
+          "file": {
+            "path": "gemma-4-E4B-it.litertlm",
+            "size": 3659530240,
+            "sha256": "0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0"
+          }
+        },
+        {
+          "id": "gemma-4-e4b-gpu",
+          "backend": "gpu",
+          "platforms": ["macos-arm64", "linux-x64", "linux-arm64", "win-x64"],
+          "file": {
+            "path": "gemma-4-E4B-it.litertlm",
+            "size": 3659530240,
+            "sha256": "0b2a8980ce155fd97673d8e820b4d29d9c7d99b8fa6806f425d969b145bd52e0"
+          }
+        }
+      ]
+    },
+    {
+      "id": "gemma-4-12b",
+      "name": "Gemma 4 12B",
+      "description": "Larger Google Gemma 4 for machines with 16 GB of memory or more: stronger chat and reasoning, images, tool calling and a thinking mode.",
+      "task": "chat",
+      "license": "apache-2.0",
+      "repo": "litert-community/gemma-4-12B-it-litert-lm",
+      "revision": "7a0b1ce0ea821bcd01c5f72af84155e02191152f",
+      "gated": false,
+      "context_length": 32768,
+      "tools": true,
+      "reasoning": true,
+      "vision": true,
+      "variants": [
+        {
+          "id": "gemma-4-12b-cpu",
+          "backend": "cpu",
+          "platforms": ["macos-arm64", "linux-x64", "linux-arm64", "win-x64"],
+          "file": {
+            "path": "gemma-4-12B-it.litertlm",
+            "size": 6883278368,
+            "sha256": "58fd31b778ca2c21c80d634fb34fc5a89d11d563a38dfd3cbf1b40dbf252a8b6"
+          }
+        },
+        {
+          "id": "gemma-4-12b-gpu",
+          "backend": "gpu",
+          "platforms": ["macos-arm64", "linux-x64", "linux-arm64", "win-x64"],
+          "file": {
+            "path": "gemma-4-12B-it.litertlm",
+            "size": 6883278368,
+            "sha256": "58fd31b778ca2c21c80d634fb34fc5a89d11d563a38dfd3cbf1b40dbf252a8b6"
+          }
+        }
+      ]
+    },
+    {
+      "id": "qwen3-4b",
+      "name": "Qwen3 4B",
+      "description": "Compact Qwen text model with a thinking mode and tool calling, int8 weights. Short 4K context: best for quick questions and tool use.",
+      "task": "chat",
+      "license": "apache-2.0",
+      "repo": "litert-community/Qwen3-4B",
+      "revision": "8b4c3d3f6e727cdb445f42feff14b808db8da4fa",
+      "gated": false,
+      "context_length": 4096,
+      "tools": true,
+      "reasoning": true,
+      "vision": false,
+      "variants": [
+        {
+          "id": "qwen3-4b-cpu",
+          "backend": "cpu",
+          "platforms": ["macos-arm64", "linux-x64", "linux-arm64", "win-x64"],
+          "min_runtime_version": "0.18.0",
+          "file": {
+            "path": "qwen3_4b_channelwise_int8_float32kv.litertlm",
+            "size": 5672367472,
+            "sha256": "fe7483c11797806140cec66adf4162c369ac503e66a8029bf713af19297df4bf"
+          }
+        },
+        {
+          "id": "qwen3-4b-gpu",
+          "backend": "gpu",
+          "platforms": ["macos-arm64", "linux-x64", "linux-arm64", "win-x64"],
+          "min_runtime_version": "0.18.0",
+          "file": {
+            "path": "qwen3_4b_channelwise_int8_float32kv.litertlm",
+            "size": 5672367472,
+            "sha256": "fe7483c11797806140cec66adf4162c369ac503e66a8029bf713af19297df4bf"
+          }
+        }
+      ]
+    }
+  ]
+}

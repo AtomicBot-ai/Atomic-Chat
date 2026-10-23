@@ -18,6 +18,7 @@ import { useManagedHubStates } from '@/hooks/useManagedHubState'
 import { useModelLikes } from '@/hooks/useModelLikes'
 import { usePrismHubVisible } from '@/hooks/useModelSetup'
 import { useFoundryLocalHubVisible } from '@/hooks/useFoundryLocalHub'
+import { useLiteRtLmHubVisible } from '@/hooks/useLiteRtLmHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   HUB_FORMAT_LABELS,
@@ -88,11 +89,13 @@ export function HubFilters({
     .map((entry) => entry.engine.id)
   const prismVisible = usePrismHubVisible()
   const foundryLocalVisible = useFoundryLocalHubVisible()
+  const liteRtLmVisible = useLiteRtLmHubVisible()
   const availableFormats = hubFormats({
     mlx: IS_MACOS,
     managed: visibleManaged,
     prism: prismVisible,
     foundryLocal: foundryLocalVisible,
+    liteRtLm: liteRtLmVisible,
   })
   const engines = useHubEngines(availableFormats)
   const sortKeys = HUB_SORT_KEYS.filter(

@@ -11,6 +11,7 @@ import {
 } from '@janhq/core'
 import { Model as CoreModel } from '@janhq/core'
 import type { FoundryLocalHubModel } from '@/services/foundry-local/types'
+import type { LiteRtLmHubModel } from '@/services/litert-lm/types'
 
 // Types for model catalog
 export interface ModelQuant {
@@ -64,6 +65,12 @@ export interface CatalogModel {
    */
   is_foundry_local?: boolean
   foundry_local?: FoundryLocalHubModel
+  /**
+   * A LiteRT-LM model (change `add-litert-lm-runtime`), listed under the "LiteRT-LM" format from
+   * conf's curated list or the `litert-lm` repositories of its Hugging Face organisations.
+   */
+  is_litert_lm?: boolean
+  litert_lm?: LiteRtLmHubModel
 }
 
 export interface ManagedCatalogFields {

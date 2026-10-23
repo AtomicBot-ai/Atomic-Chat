@@ -20,7 +20,8 @@ import {
  *
  * `foundry-local` is driven over its session's OpenAI-compatible endpoint, the core's gateway in
  * front of the model's host process, like a managed engine; a variant that cannot call tools is
- * kept out by the model-level check (`agentModelBlockReason`).
+ * kept out by the model-level check (`agentModelBlockReason`). `litert-lm` (change
+ * `add-litert-lm-runtime`) is driven the same way, its host's own OpenAI server behind the gateway.
  *
  * `foundation-models` is deliberately absent: Apple's on-device runtime exposes
  * no endpoint the agent can drive.
@@ -31,6 +32,7 @@ export const AGENT_LOCAL_PROVIDERS = [
   'atomic-prism',
   'mlx',
   'foundry-local',
+  'litert-lm',
 ] as const
 
 /** Why Agent mode is unavailable. `null` from the helpers below means it is. */
