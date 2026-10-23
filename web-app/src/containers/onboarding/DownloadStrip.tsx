@@ -5,7 +5,10 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { isPausableDownload } from '@/lib/downloadControls'
-import { formatDownloadReadout, formatProgressPair } from '@/lib/downloadFormat'
+import {
+  formatDownloadStatusLine,
+  formatProgressPair,
+} from '@/lib/downloadFormat'
 import { cn } from '@/lib/utils'
 import {
   pauseOnboardingJob,
@@ -73,8 +76,7 @@ export function DownloadStrip() {
           ]
             .filter(Boolean)
             .join(' · ')
-        : formatDownloadReadout(t, {
-            progress: view.progress,
+        : formatDownloadStatusLine(t, {
             current: view.currentBytes,
             total: view.totalBytes,
             bytesPerSecond: download?.speed?.bytesPerSecond ?? 0,

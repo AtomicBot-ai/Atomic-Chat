@@ -1,0 +1,50 @@
+/* Same layer order as index.css: the root layout imports the panel ahead of
+ * it, and a layer this file used first would otherwise come before `base`. */
+@layer theme, base, components, utilities;
+
+/* The download panel in the first-run strip's look (`onboarding/onboarding.css`
+ * `.ob-download`, `handoff.css` `.ob-handoff`): the same teal on both themes,
+ * light from the app's tokens, dark from the prototype's palette. The panel
+ * and its collapsed badge both carry `.dl-panel`; the markup reads the
+ * colours through Tailwind's arbitrary values. */
+.dl-panel {
+  --dl-panel-bg: var(--background);
+  --dl-panel-line: color-mix(in oklab, #28786c 22%, var(--border));
+  --dl-panel-shadow: 0 12px 40px #00000024;
+  --dl-divider: #28786c40;
+  --dl-row: color-mix(in oklab, #28786c 7%, var(--card));
+  --dl-title: var(--foreground);
+  --dl-text: var(--muted-foreground);
+  --dl-strong: #1d5e54;
+  --dl-icon-line: var(--border);
+  --dl-icon-hover: color-mix(in oklab, #28786c 10%, var(--secondary));
+  --dl-track: #28786c24;
+  --dl-progress: #28786c;
+  --dl-badge-text: #ffffff;
+  --dl-warn: #c98f3d;
+}
+.dark .dl-panel {
+  --dl-panel-bg: #17211b;
+  --dl-panel-line: #4c6656;
+  --dl-panel-shadow: 0 15px 60px #00000088;
+  --dl-divider: #425d4b;
+  --dl-row: #1d2c25;
+  --dl-title: #f1f4f2;
+  --dl-text: #a8bdb0;
+  --dl-strong: #bbdfcc;
+  --dl-icon-line: #ffffff17;
+  --dl-icon-hover: #35463e;
+  --dl-track: #395244;
+  --dl-progress: #b6e7d0;
+  --dl-badge-text: #16362c;
+  --dl-warn: #e4b777;
+}
+
+@layer components {
+  /* A transfer that is reconnecting reads in the strip's warning colour, as
+     an interrupted one does on the setup screen. */
+  .dl-row.is-warn {
+    --dl-strong: var(--dl-warn);
+    --dl-progress: var(--dl-warn);
+  }
+}
