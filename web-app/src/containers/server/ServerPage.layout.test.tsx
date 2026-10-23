@@ -104,7 +104,7 @@ describe('Server pages on a wide window', () => {
   )
 
   it.each([1024, 1280, 1920, 2560])(
-    'a form page keeps its 900 px column, centred once there is room (%i px)',
+    'a form page takes the whole page too, its title where Overview and Activity start (%i px)',
     async (width) => {
       const { column, inner } = await renderInColumn(
         width,
@@ -113,10 +113,13 @@ describe('Server pages on a wide window', () => {
         </ServerPage>
       )
 
-      const box = column.querySelector('.server-page')!.getBoundingClientRect()
-      const available = inner.right - inner.left
-      expect(box.width).toBeCloseTo(Math.min(900, available), 0)
-      expect(box.left - inner.left).toBeCloseTo(inner.right - box.right, 0)
+      const panel = screen.getByTestId('panel').getBoundingClientRect()
+      expect(panel.left).toBeCloseTo(inner.left, 0)
+      expect(panel.right).toBeCloseTo(inner.right, 0)
+      const title = screen
+        .getByRole('heading', { name: 'Engine & model' })
+        .getBoundingClientRect()
+      expect(title.left).toBeCloseTo(inner.left, 0)
       expectNoHorizontalOverflow(column)
     }
   )

@@ -103,16 +103,25 @@ export function ServerControlPanel() {
         </button>
       </div>
       <div className="dsc-details">
-        <Link to={route.api.model} className="dsc-detail">
+        {/* Engine and model read alike: the label over the value. The model's
+            quant follows its readable name on the same line, and the id
+            clients pass (owner and quant included) is the row's tooltip. */}
+        <Link
+          to={route.api.model}
+          className="dsc-detail dsc-model"
+          title={engine}
+          data-testid="server-panel-engine"
+        >
           <Cpu size={15} />
-          <span>{t('common:navigation.engine')}</span>
-          <strong title={engine}>
-            {engine ?? t('common:navigation.notSelected')}
-          </strong>
+          <span className="dsc-model-text">
+            <span className="dsc-model-label">
+              {t('common:navigation.engine')}
+            </span>
+            <span className="dsc-model-value">
+              <strong>{engine ?? t('common:navigation.notSelected')}</strong>
+            </span>
+          </span>
         </Link>
-        {/* The readable name gets a line of its own, the quant sits beside
-            the label, and the id clients pass (owner and quant included) is
-            the row's tooltip. */}
         <Link
           to={route.api.model}
           className="dsc-detail dsc-model"
@@ -122,10 +131,12 @@ export function ServerControlPanel() {
           <Box size={15} />
           <span className="dsc-model-text">
             <span className="dsc-model-label">
-              <span>{t('common:navigation.model')}</span>
+              {t('common:navigation.model')}
+            </span>
+            <span className="dsc-model-value">
+              <strong>{name ?? t('common:navigation.notSelected')}</strong>
               {quant && <small>{quant}</small>}
             </span>
-            <strong>{name ?? t('common:navigation.notSelected')}</strong>
           </span>
         </Link>
         <Link

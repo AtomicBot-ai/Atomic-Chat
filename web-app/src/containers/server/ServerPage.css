@@ -25,10 +25,9 @@
   --server-accent-soft: #28786c14;
   --server-step: #28786c;
   --server-progress: #28786c;
+  /* Every Server page takes the whole page, its title at the same offset
+   * from the sidebar as Overview's and Activity's. */
   width: 100%;
-  /* A form reads as one column, centred once the window is wider than it. */
-  max-width: 900px;
-  margin-inline: auto;
   color: var(--foreground);
   font-family: var(--font-sans);
   font-size: calc(var(--font-size-base) * 0.8125);
@@ -51,11 +50,6 @@
   --server-accent-soft: #b8e5da09;
   --server-step: #95b8a5;
   --server-progress: #b5e6cd;
-}
-/* Overview's cards and Activity's dashboard take the whole page, as the Hub
- * does; the cards grid adds columns rather than leaving the right side empty. */
-.server-page.server-page-wide {
-  max-width: none;
 }
 
 @layer base {

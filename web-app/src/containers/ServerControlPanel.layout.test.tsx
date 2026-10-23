@@ -55,7 +55,7 @@ vi.mock('@/hooks/useModelProvider', () => ({
 }))
 
 // The model of the QA report (2.2.23, finding 07), and a worst-case id.
-const MUSE = 'AtomicChat/Muse-Glimmer-30B-AD-IQ4_XS'
+const GEMMA = 'ggml-org/Gemma-4-E4B-IQ4_XS'
 const LONG = 'unsloth/' + 'VeryLongModelName'.repeat(6) + '-Q4_K_M'
 
 /** The card in the real floating sidebar, beside the 60 px rail. */
@@ -96,12 +96,12 @@ describe.each(['light', 'dark'] as const)(
     )
 
     it.each(cases)(
-      'names the served model whole, its quant apart, at $width px / $fontSize',
+      'names the served model and its quant on one line, at $width px / $fontSize',
       async ({ width, fontSize }) => {
         await page.viewport(width, 800)
         setTheme(theme)
         setFontSize(fontSize)
-        serve(MUSE)
+        serve(GEMMA)
         render(<Shell />)
         await settle()
 
@@ -116,22 +116,50 @@ describe.each(['light', 'dark'] as const)(
           name.scrollWidth,
           `"${name.textContent}" needs ${name.scrollWidth} px and has ${name.clientWidth}`
         ).toBeLessThanOrEqual(name.clientWidth)
-        expect(name.textContent).toBe('Muse Glimmer 30B AD')
+        expect(name.textContent).toBe('Gemma 4 E4B')
         expectOneLine(name)
 
-        // The quant is a small meta beside the label, inside the row.
+        // The quant follows the name on its line, under the label.
         const quant = row.querySelector('small') as HTMLElement
         expect(quant.textContent).toBe('IQ4_XS')
         expectOneLine(quant)
         expectFits(quant, row)
-        expectVerticallyCentered(quant, modelLabel())
+        expectVerticallyCentered(quant, name)
+        expect(quant.getBoundingClientRect().left).toBeGreaterThanOrEqual(
+          name.getBoundingClientRect().right
+        )
+        expect(modelLabel().getBoundingClientRect().bottom).toBeLessThanOrEqual(
+          name.getBoundingClientRect().top + 1
+        )
+
+        // The engine reads the same way: its label over its value, in the
+        // model name's type.
+        const engineRow = screen.getByTestId('server-panel-engine')
+        const engine = engineRow.querySelector('strong') as HTMLElement
+        expect(engine.textContent).toBe('llama.cpp')
+        expectOneLine(engine)
+        expect(
+          screen
+            .getByText('Engine', { selector: 'span' })
+            .getBoundingClientRect().bottom
+        ).toBeLessThanOrEqual(engine.getBoundingClientRect().top + 1)
+        expect(getComputedStyle(engine).fontSize).toBe(
+          getComputedStyle(name).fontSize
+        )
+        expect(getComputedStyle(engine).fontWeight).toBe(
+          getComputedStyle(name).fontWeight
+        )
+        expect(engine.getBoundingClientRect().left).toBeCloseTo(
+          name.getBoundingClientRect().left,
+          0
+        )
 
         // The icon sits at the centre of the label-and-name block.
         expectVerticallyCentered(
           row.querySelector('svg') as SVGElement,
           row.querySelector('.dsc-model-text') as HTMLElement
         )
-        expect(row).toHaveAttribute('title', MUSE)
+        expect(row).toHaveAttribute('title', GEMMA)
       }
     )
 
