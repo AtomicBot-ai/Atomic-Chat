@@ -200,7 +200,11 @@ export function Onboarding() {
         {step !== 'welcome' && <DownloadStrip />}
         <div
           ref={contentRef}
-          className={cn('ob-content', step === 'welcome' && 'ob-welcome')}
+          className={cn(
+            'ob-content',
+            step === 'welcome' && 'ob-welcome',
+            step === 'model' && 'ob-model-step'
+          )}
         >
           {progress && (
             <div className="ob-eyebrow">

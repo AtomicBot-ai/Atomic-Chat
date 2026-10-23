@@ -51,6 +51,18 @@ const SIZE_UNIT_BYTES: Record<string, number> = {
   TB: 1024 ** 4,
 }
 
+/**
+ * About how much memory a model of this download size takes once loaded, in
+ * GB: the weights plus room for the context and the runtime. An estimate for
+ * a model row, not a fit verdict (`judgeMemoryFit`).
+ */
+export function estimatedMemoryGb(
+  sizeBytes: number | undefined
+): number | null {
+  if (!sizeBytes || sizeBytes <= 0) return null
+  return Math.ceil((sizeBytes / 1024 ** 3) * 1.2 + 0.5)
+}
+
 /** Parse catalog file-size strings like "5.3 GB" / "412 MB" into bytes. */
 export function parseFileSizeToBytes(fileSize?: string): number | undefined {
   if (!fileSize) return undefined

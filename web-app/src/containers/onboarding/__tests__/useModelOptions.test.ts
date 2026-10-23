@@ -10,8 +10,13 @@ const mocks = vi.hoisted(() => ({
   recommended: [] as { rec: Record<string, unknown>; model: unknown }[],
   picks: [] as { pick: Record<string, unknown>; model: unknown }[],
   providers: [] as unknown[],
+  sources: [] as unknown[],
   profile: null as unknown,
   tierReady: true,
+}))
+
+vi.mock('@/i18n/react-i18next-compat', () => ({
+  useTranslation: () => ({ t: (key: string) => key }),
 }))
 
 vi.mock('@/services/models/localScan', () => ({
@@ -39,7 +44,11 @@ vi.mock('@/hooks/useHardwareTier', () => ({
 }))
 vi.mock('@/hooks/useModelSources', () => ({
   useModelSources: (select: (state: unknown) => unknown) =>
-    select({ sources: [], fetchSources: async () => {}, loading: false }),
+    select({
+      sources: mocks.sources,
+      fetchSources: async () => {},
+      loading: false,
+    }),
 }))
 vi.mock('@/stores/recommended-models-registry-store', () => ({
   useRecommendedModelsRegistryStore: { getState: () => ({ refresh: vi.fn() }) },
@@ -53,12 +62,16 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 
 import { MODEL_INPUT_DEADLINE_MS, useModelOptions } from '../useModelOptions'
 
-const gguf = (name: string, sizeGb: number): CatalogModel =>
+const gguf = (
+  name: string,
+  sizeGb: number,
+  { tags = [], downloads = 0 }: { tags?: string[]; downloads?: number } = {}
+): CatalogModel =>
   ({
     model_name: name,
     developer: name.split('/')[0],
-    description: '',
-    downloads: 0,
+    description: tags.length ? `**Tags**: ${tags.join(', ')}` : '',
+    downloads,
     quants: [
       {
         model_id: `${name.split('/')[1]}-Q4_K_M`,
@@ -90,6 +103,7 @@ describe('model step options', () => {
       },
     ]
     mocks.picks = []
+    mocks.sources = []
     useModelProvider.setState({ providers: [] } as never)
     useHardware.setState((state) => ({
       hardwareData: {
@@ -127,7 +141,7 @@ describe('model step options', () => {
     expect(result.current.detected).toEqual([])
   })
 
-  it('leads with the tier offer, then picks this machine can run, four at most', async () => {
+  it('leads with the tier offer, then picks this machine can run, three in all', async () => {
     mocks.picks = [
       { pick: { model_name: 'big/Huge-70B' }, model: gguf('big/Huge-70B', 40) },
       {
@@ -155,7 +169,7 @@ describe('model step options', () => {
     await waitFor(() => expect(result.current.ready).toBe(true))
 
     const rows = result.current.recommended
-    expect(rows.map((row) => row.title)).toHaveLength(4)
+    expect(rows.map((row) => row.title)).toHaveLength(3)
     expect(rows[0]).toMatchObject({
       catalog: { model_name: 'unsloth/Qwen3.5-4B' },
       bestFit: true,
@@ -167,8 +181,114 @@ describe('model step options', () => {
     expect(rows.some((row) => row.catalog.model_name === 'big/Huge-70B')).toBe(
       false
     )
-    expect(rows.map((row) => row.position)).toEqual([0, 1, 2, 3])
+    expect(rows.map((row) => row.position)).toEqual([0, 1, 2])
+    expect(rows.every((row) => row.source === 'recommended')).toBe(true)
     expect(rows.find((row) => row.title === 'Gemma 4B')?.fit).toBe('ok')
+  })
+
+  it('describes every offer: a pick by its summary, the rest by what they are', async () => {
+    mocks.picks = [
+      {
+        pick: {
+          model_name: 'unsloth/Qwen3.5-4B',
+          summary: 'Everyday chat, writing & code',
+        },
+        model: gguf('unsloth/Qwen3.5-4B', 2.5),
+      },
+      {
+        pick: { model_name: 'mistral/Devstral-Small-3B' },
+        model: gguf('mistral/Devstral-Small-3B', 2),
+      },
+    ]
+    const { result } = renderHook(() => useModelOptions())
+    await waitFor(() => expect(result.current.ready).toBe(true))
+
+    expect(
+      result.current.recommended.map((row) => [row.title, row.detail])
+    ).toEqual([
+      ['Qwen3.5 4B', 'Everyday chat, writing & code'],
+      ['Devstral Small 3B', 'onboarding:model.tagline.code'],
+    ])
+  })
+
+  it('follows the offers with the most downloaded chat models of the catalog, one upload each', async () => {
+    const chat = ['conversational', 'text-generation']
+    mocks.sources = [
+      gguf('unsloth/Qwen3.5-4B', 2.5, { tags: chat, downloads: 900 }),
+      gguf('bartowski/Mistral-7B-Instruct-GGUF', 4, {
+        tags: [...chat, 'base_model:quantized:mistralai/mistral-7b-instruct'],
+        downloads: 500,
+      }),
+      gguf('lmstudio/Mistral-7B-Instruct-GGUF', 4, {
+        tags: [...chat, 'base_model:quantized:mistralai/mistral-7b-instruct'],
+        downloads: 300,
+      }),
+      gguf('kitten/tts-2-GGUF', 0.1, {
+        tags: ['text-to-speech', 'conversational'],
+        downloads: 800,
+      }),
+      gguf('someone/Qwen3.5-9B-Uncensored-GGUF', 5, {
+        tags: chat,
+        downloads: 700,
+      }),
+      gguf('unsloth/Z-Image-Turbo-GGUF', 4, {
+        tags: ['text-to-image'],
+        downloads: 600,
+      }),
+      gguf('big/Huge-120B-GGUF', 70, { tags: chat, downloads: 400 }),
+      gguf('liquid/LFM2.5-1.2B-GGUF', 0.8, { tags: chat, downloads: 200 }),
+    ]
+    const { result } = renderHook(() => useModelOptions())
+    await waitFor(() => expect(result.current.ready).toBe(true))
+
+    expect(
+      result.current.huggingFace.map((row) => [
+        row.catalog.model_name,
+        row.detail,
+        row.source,
+        row.position,
+      ])
+    ).toEqual([
+      [
+        'bartowski/Mistral-7B-Instruct-GGUF',
+        'onboarding:model.tagline.general',
+        'huggingface',
+        1,
+      ],
+      [
+        'liquid/LFM2.5-1.2B-GGUF',
+        'onboarding:model.tagline.small',
+        'huggingface',
+        2,
+      ],
+    ])
+    expect(new Set(result.current.huggingFace.map((row) => row.key)).size).toBe(
+      2
+    )
+  })
+
+  it('describes a Hugging Face upload of a curated model by its summary', async () => {
+    mocks.picks = [
+      {
+        pick: {
+          model_name: 'AtomicChat/Qwen3.5-9B-GGUF',
+          summary: 'Stronger reasoning while still fitting a 16 GB machine.',
+        },
+        model: null,
+      },
+    ]
+    mocks.sources = [
+      gguf('unsloth/Qwen3.5-9B-GGUF', 5, {
+        tags: ['conversational', 'image-text-to-text'],
+        downloads: 100,
+      }),
+    ]
+    const { result } = renderHook(() => useModelOptions())
+    await waitFor(() => expect(result.current.ready).toBe(true))
+
+    expect(result.current.huggingFace[0].detail).toBe(
+      'Stronger reasoning while still fitting a 16 GB machine.'
+    )
   })
 
   it('moves on to the next rung when the offer is already downloaded', async () => {

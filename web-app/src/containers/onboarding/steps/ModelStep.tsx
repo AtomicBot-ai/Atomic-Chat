@@ -5,11 +5,14 @@ import { toast } from 'sonner'
 
 import { modelSourceLabel } from '@/components/ModelSourceBadge'
 import { ConfirmWontFitDownload } from '@/containers/ConfirmWontFitDownload'
+import { FamilyLogoMark } from '@/containers/ModelLogo'
 import { fitLabelKey } from '@/containers/SetupScreenHelpers'
 import { useConfirmWontFitDownload } from '@/hooks/useConfirmWontFitDownload'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { estimatedMemoryGb } from '@/lib/model-card'
+import { HUGGINGFACE_LOGO_SRC } from '@/lib/model-logo'
 import {
   buildRecommendedImpressions,
   captureRecommendedModelClicked,
@@ -24,6 +27,7 @@ import {
   startMlxCatalogDownload,
 } from '@/lib/onboarding/downloads'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { cn } from '@/lib/utils'
 import { useOnboardingStore } from '@/stores/onboarding-store'
 
 import {
@@ -39,7 +43,12 @@ const importedPaths = new Set<string>()
 const GB = 1024 ** 3
 
 function OptionIcon({ option }: { option: ModelOption }) {
-  if (option.iconSrc) return <img src={option.iconSrc} alt="" />
+  const src =
+    option.iconSrc ??
+    (option.kind === 'download' && option.source === 'huggingface'
+      ? HUGGINGFACE_LOGO_SRC
+      : null)
+  if (src) return <FamilyLogoMark src={src} className="ob-model-logo" />
   return option.kind === 'download' ? (
     <Sparkles size={20} aria-hidden="true" />
   ) : (
@@ -49,9 +58,11 @@ function OptionIcon({ option }: { option: ModelOption }) {
 
 /**
  * "Choose your first model": what is already on this machine first, then
- * the offer for its tier and a few curated picks it can run. Continue starts
- * the download — it carries on through the next steps — or takes the model
- * already here.
+ * the offer for its tier and two curated picks it can run, then Hugging
+ * Face's most downloaded chat models — every row with a line on what it is
+ * good for. The list scrolls under a bar that names the choice; Continue
+ * starts the download — it carries on through the next steps — or takes the
+ * model already here.
  */
 export function ModelStep({ next }: StepProps) {
   const { t } = useTranslation()
@@ -60,8 +71,8 @@ export function ModelStep({ next }: StepProps) {
   const { guardWontFit, confirmation } = useConfirmWontFitDownload()
   const choice = useOnboardingStore((state) => state.choice)
   const all = useMemo(
-    () => [...options.onDevice, ...options.recommended],
-    [options.onDevice, options.recommended]
+    () => [...options.onDevice, ...options.recommended, ...options.huggingFace],
+    [options.onDevice, options.recommended, options.huggingFace]
   )
 
   // What is on the machine is preselected; otherwise the best fit is.
@@ -273,21 +284,39 @@ export function ModelStep({ next }: StepProps) {
 
   const row = (option: ModelOption) => {
     const checked = option.key === selected?.key
-    const tag =
-      option.kind === 'download' ? null : (
-        <span className="ob-tag">
-          <Check size={13} aria-hidden="true" />
-          {t('onboarding:model.downloaded')}
-        </span>
+    const meta =
+      option.kind === 'download' ? (
+        option.sizeLabel && (
+          <small
+            className={cn(
+              'ob-model-meta',
+              option.fit === 'no' && 'ob-warn-text'
+            )}
+          >
+            {[
+              t('onboarding:model.size', { size: option.sizeLabel }),
+              estimatedMemoryGb(option.sizeBytes) != null &&
+                t('onboarding:model.aboutMemory', {
+                  size: estimatedMemoryGb(option.sizeBytes),
+                }),
+              option.fit === 'no' && t(fitLabelKey(option.fit)),
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </small>
+        )
+      ) : (
+        <small className="ob-model-meta">
+          <Check size={12} aria-hidden="true" />
+          {option.kind === 'scan'
+            ? t('onboarding:model.foundIn', {
+                source:
+                  modelSourceLabel(option.candidate.source) ??
+                  option.candidate.source,
+              })
+            : t('onboarding:model.downloaded')}
+        </small>
       )
-    const detail =
-      option.kind === 'scan'
-        ? t('onboarding:model.foundIn', {
-            source:
-              modelSourceLabel(option.candidate.source) ??
-              option.candidate.source,
-          })
-        : option.detail
     return (
       <button
         key={option.key}
@@ -303,27 +332,32 @@ export function ModelStep({ next }: StepProps) {
         <span className="ob-model-text">
           <strong>
             {option.title}
-            {option.kind === 'download' && option.bestFit && (
-              <em>{t('onboarding:model.bestFit')}</em>
+            {option.kind === 'download' && option.source === 'huggingface' && (
+              <img
+                className="ob-hf-mark"
+                src={HUGGINGFACE_LOGO_SRC}
+                alt={t('onboarding:model.huggingFace')}
+              />
             )}
           </strong>
-          {detail && <small>{detail}</small>}
-          {option.kind === 'download' && option.sizeLabel && (
-            <small className={option.fit === 'no' ? 'ob-warn-text' : undefined}>
-              {[
-                t('onboarding:model.size', { size: option.sizeLabel }),
-                option.fit ? t(fitLabelKey(option.fit)) : null,
-              ]
-                .filter(Boolean)
-                .join(' · ')}
-            </small>
-          )}
+          <small className="ob-model-tagline">{option.detail}</small>
+          {meta}
         </span>
-        {tag}
         <i className="ob-radio" aria-hidden="true" />
       </button>
     )
   }
+
+  const section = (id: string, title: React.ReactNode, rows: ModelOption[]) => (
+    <section aria-labelledby={id}>
+      <h2 className="ob-model-section-title" id={id}>
+        {title}
+      </h2>
+      <div className="ob-model-list" role="radiogroup" aria-labelledby={id}>
+        {rows.map(row)}
+      </div>
+    </section>
+  )
 
   const deviceLine = [
     options.device.memoryGb != null &&
@@ -358,39 +392,62 @@ export function ModelStep({ next }: StepProps) {
         </div>
       ) : (
         <>
-          {options.onDevice.length > 0 && (
-            <>
-              <div className="ob-section-label" id="ob-on-device">
-                {t('onboarding:model.onDevice')}
-              </div>
-              <div
-                className="ob-model-list"
-                role="radiogroup"
-                aria-labelledby="ob-on-device"
-              >
-                {options.onDevice.map(row)}
-              </div>
-            </>
-          )}
-          <div className="ob-section-label" id="ob-recommended">
-            {t('onboarding:model.recommended')}
+          <div
+            className="ob-model-catalog"
+            role="region"
+            aria-label={t('onboarding:model.choose')}
+            tabIndex={0}
+          >
+            {options.onDevice.length > 0 &&
+              section(
+                'ob-on-device',
+                t('onboarding:model.onDevice'),
+                options.onDevice
+              )}
+            {options.recommended.length > 0 ? (
+              section(
+                'ob-recommended',
+                t('onboarding:model.recommended'),
+                options.recommended
+              )
+            ) : (
+              <section aria-labelledby="ob-recommended">
+                <h2 className="ob-model-section-title" id="ob-recommended">
+                  {t('onboarding:model.recommended')}
+                </h2>
+                <p className="ob-note">
+                  {options.catalogLoading
+                    ? t('common:loading')
+                    : t('onboarding:model.noRecommendations')}
+                </p>
+              </section>
+            )}
+            {options.huggingFace.length > 0 &&
+              section(
+                'ob-hugging-face',
+                <>
+                  <img src={HUGGINGFACE_LOGO_SRC} alt="" />
+                  {t('onboarding:model.huggingFace')}
+                </>,
+                options.huggingFace
+              )}
           </div>
-          {options.recommended.length > 0 ? (
-            <div
-              className="ob-model-list"
-              role="radiogroup"
-              aria-labelledby="ob-recommended"
-            >
-              {options.recommended.map(row)}
+          <div className="ob-model-actionbar">
+            <div>
+              {selected && (
+                <>
+                  <strong>{selected.title}</strong>
+                  <small>
+                    {selected.kind !== 'download'
+                      ? t('onboarding:model.readyHere')
+                      : selected.sizeLabel &&
+                        t('onboarding:model.size', {
+                          size: selected.sizeLabel,
+                        })}
+                  </small>
+                </>
+              )}
             </div>
-          ) : (
-            <p className="ob-note">
-              {options.catalogLoading
-                ? t('common:loading')
-                : t('onboarding:model.noRecommendations')}
-            </p>
-          )}
-          <div className="ob-actions">
             <button type="button" className="ob-primary" onClick={proceed}>
               {continueLabel}
               <ArrowRight size={17} aria-hidden="true" />

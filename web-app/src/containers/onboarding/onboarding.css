@@ -42,8 +42,6 @@
   --ob-icon-text: #2f6f61;
   --ob-tag: #28786c17;
   --ob-tag-text: #1d5e54;
-  --ob-badge-line: #8aa775;
-  --ob-badge-text: #4d6b35;
   --ob-download: color-mix(in oklab, #28786c 7%, var(--card));
   --ob-download-line: #28786c40;
   --ob-download-text: var(--muted-foreground);
@@ -54,6 +52,17 @@
   --ob-warn: #c98f3d;
   --ob-logo-filter: none;
   --ob-logo-glow: drop-shadow(0 0 28px #28786c40);
+  /* The model step's choice bar stands out by inverting the page. */
+  --ob-bar: #17211c;
+  --ob-bar-line: #17211c;
+  --ob-bar-text: #f1f4f2;
+  --ob-bar-muted: #aeb9b2;
+  --ob-bar-action: #cdeee6;
+  --ob-bar-action-hover: #b7e4d9;
+  --ob-bar-action-text: #16362c;
+  --ob-bar-shadow:
+    0 -10px 28px color-mix(in oklab, var(--background) 85%, transparent),
+    0 6px 20px #0002;
 }
 .dark .ob-shell,
 .dark .ob-handoff {
@@ -84,8 +93,6 @@
   --ob-icon-text: #a5c5b0;
   --ob-tag: #263d30;
   --ob-tag-text: #bbdec6;
-  --ob-badge-line: #708561;
-  --ob-badge-text: #c0d9ad;
   --ob-download: #1d2c25;
   --ob-download-line: #3f574b;
   --ob-download-text: #a8bdb0;
@@ -96,6 +103,14 @@
   --ob-warn: #e4b777;
   --ob-logo-filter: brightness(0) invert(1);
   --ob-logo-glow: drop-shadow(0 0 40px #b4f3d680);
+  --ob-bar: #f1f4f2;
+  --ob-bar-line: #ffffff;
+  --ob-bar-text: #17211c;
+  --ob-bar-muted: #526159;
+  --ob-bar-action: #203e34;
+  --ob-bar-action-hover: #2e5145;
+  --ob-bar-action-text: #ffffff;
+  --ob-bar-shadow: 0 -10px 28px #101211aa, 0 6px 20px #0003;
 }
 
 /* Over the whole window: the app shell keeps its title-bar offset, and the
@@ -423,13 +438,6 @@
     font-size: calc(var(--font-size-base) * 0.6875);
   }
 
-  .ob-section-label {
-    margin: 27px 0 12px;
-    color: var(--ob-muted);
-    font-size: calc(var(--font-size-base) * 0.625);
-    letter-spacing: 1.2px;
-    text-transform: uppercase;
-  }
   .ob-model-list {
     display: grid;
     gap: 10px;
@@ -464,10 +472,9 @@
     background: var(--ob-icon-bg);
     color: var(--ob-icon-text);
   }
-  .ob-model-icon img {
+  .ob-model-icon .ob-model-logo {
     width: 27px;
     height: 27px;
-    object-fit: contain;
   }
   .ob-model-text {
     flex: 1;
@@ -485,30 +492,113 @@
     color: var(--ob-subtle);
     font-size: calc(var(--font-size-base) * 0.6875);
   }
+  .ob-model small.ob-model-tagline {
+    color: var(--ob-muted);
+    line-height: 1.4;
+  }
+  .ob-model small.ob-model-meta {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    line-height: 1.4;
+  }
   .ob-model small.ob-warn-text {
     color: var(--ob-warn);
   }
-  .ob-model em {
-    margin-left: 8px;
-    padding: 3px 5px;
-    border: 1px solid var(--ob-badge-line);
-    border-radius: 4px;
-    color: var(--ob-badge-text);
-    font-size: calc(var(--font-size-base) * 0.5625);
-    font-style: normal;
-    font-weight: 400;
-    white-space: nowrap;
+  .ob-hf-mark {
+    display: inline-block;
+    width: 15px;
+    height: 15px;
+    margin-left: 7px;
+    vertical-align: middle;
   }
-  .ob-tag {
-    display: inline-flex;
+
+  /* The model step: the list scrolls behind a raised bar naming the choice. */
+  .ob-model-step {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    scrollbar-gutter: auto;
+    padding-bottom: 16px;
+  }
+  .ob-model-step > * {
+    flex-shrink: 0;
+  }
+  .ob-model-step .ob-device {
+    margin: 16px 0;
+  }
+  .ob-model-step > .ob-model-catalog {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    padding: 4px 6px 26px 4px;
+  }
+  .ob-model-catalog:focus-visible {
+    outline: 2px solid var(--ob-focus);
+    outline-offset: -2px;
+  }
+  .ob-shell .ob-model-section-title {
+    display: flex;
     align-items: center;
-    gap: 5px;
-    padding: 4px 7px;
-    border-radius: 5px;
-    background: var(--ob-tag);
-    color: var(--ob-tag-text);
-    font-size: calc(var(--font-size-base) * 0.625);
-    white-space: nowrap;
+    gap: 8px;
+    margin: 24px 0 12px;
+    color: var(--ob-muted);
+    font-size: calc(var(--font-size-base) * 0.8125);
+    font-weight: 500;
+    letter-spacing: 0;
+  }
+  .ob-model-catalog section:first-child .ob-model-section-title {
+    margin-top: 0;
+  }
+  .ob-model-section-title img {
+    width: 19px;
+    height: 19px;
+  }
+  .ob-model-step .ob-model {
+    min-height: 96px;
+  }
+  .ob-model-actionbar {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px 20px;
+    border: 1px solid var(--ob-bar-line);
+    border-radius: 14px;
+    background: var(--ob-bar);
+    box-shadow: var(--ob-bar-shadow);
+    color: var(--ob-bar-text);
+  }
+  .ob-model-actionbar > div {
+    min-width: 0;
+  }
+  .ob-model-actionbar strong {
+    display: block;
+    font-size: calc(var(--font-size-base) * 0.875);
+    font-weight: 550;
+    overflow-wrap: anywhere;
+  }
+  .ob-model-actionbar small {
+    display: block;
+    margin-top: 4px;
+    color: var(--ob-bar-muted);
+    font-size: calc(var(--font-size-base) * 0.6875);
+  }
+  .ob-model-actionbar .ob-primary {
+    flex-shrink: 0;
+    border-color: var(--ob-bar-action);
+    background: var(--ob-bar-action);
+    color: var(--ob-bar-action-text);
+  }
+  .ob-model-actionbar .ob-primary:hover:not(:disabled) {
+    background: var(--ob-bar-action-hover);
+  }
+  .ob-model-actionbar .ob-primary:focus-visible {
+    outline-color: var(--ob-bar-action);
   }
   .ob-radio {
     flex-shrink: 0;
@@ -558,6 +648,18 @@
   .ob-footer-row > :first-child,
   .ob-footer-row > :last-child {
     min-width: 70px;
+  }
+  .ob-model-actionbar {
+    gap: 10px;
+    padding: 12px;
+  }
+  .ob-model-actionbar strong {
+    font-size: calc(var(--font-size-base) * 0.75);
+  }
+  .ob-model-actionbar .ob-primary {
+    max-width: 60%;
+    padding-inline: 14px;
+    white-space: normal;
   }
 }
 @media (prefers-reduced-motion: reduce) {

@@ -208,7 +208,6 @@ describe('model step options, as the old setup screen proved them', () => {
       ['Qwen3.5 4B', 'ok'],
       ['Gemma 3 4B', 'ok'],
       ['Mistral Small', 'warn'],
-      ['Llama 3.1 8B', 'warn'],
     ])
   })
 
@@ -227,7 +226,6 @@ describe('model step options, as the old setup screen proved them', () => {
       'Qwen3.5 4B',
       'Gemma 3 4B',
       'Qwen3.5 2B',
-      'Qwen3.5 0.8B',
     ])
   })
 

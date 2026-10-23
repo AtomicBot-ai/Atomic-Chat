@@ -54,7 +54,7 @@ const download = (overrides: Partial<DownloadOption> = {}): DownloadOption => ({
   kind: 'download',
   key: 'download:qwen',
   title: 'Qwen3.5 4B',
-  detail: null,
+  detail: 'Everyday chat, writing & code',
   iconSrc: null,
   catalog,
   variant: { model_id: 'Qwen3.5-4B-Q4_K_M', path: 'q4.gguf' } as ModelQuant,
@@ -66,6 +66,7 @@ const download = (overrides: Partial<DownloadOption> = {}): DownloadOption => ({
   sizeBytes: 2.5 * 1024 ** 3,
   fit: 'ok',
   bestFit: true,
+  source: 'recommended',
   position: 0,
   ...overrides,
 })
@@ -74,7 +75,7 @@ const found: ModelOption = {
   kind: 'scan',
   key: 'scan:/lm/llama.gguf',
   title: 'Llama 3.1 8B',
-  detail: 'lmstudio',
+  detail: 'onboarding:model.tagline.general',
   iconSrc: null,
   provider: 'llamacpp-upstream',
   matchIds: ['llama.gguf'],
@@ -88,12 +89,32 @@ const found: ModelOption = {
   } as LocalModelCandidate,
 }
 
+const fromHub = download({
+  key: 'huggingface:bartowski/Mistral-7B-Instruct-v0.3-GGUF',
+  title: 'Mistral 7B Instruct v0.3',
+  detail: 'onboarding:model.tagline.agent',
+  catalog: {
+    model_name: 'bartowski/Mistral-7B-Instruct-v0.3-GGUF',
+    developer: 'bartowski',
+  } as CatalogModel,
+  variant: { model_id: 'Mistral-7B-Q4_K_M', path: 'm.gguf' } as ModelQuant,
+  taskId: 'Mistral-7B-Q4_K_M',
+  matchIds: ['Mistral-7B-Q4_K_M'],
+  sizeLabel: '4.4 GB',
+  sizeBytes: 4.4 * 1024 ** 3,
+  bestFit: false,
+  source: 'huggingface',
+  position: 1,
+})
+
 function withOptions({
   onDevice = [],
   recommended = [download()],
+  huggingFace = [],
 }: {
   onDevice?: ModelOption[]
   recommended?: DownloadOption[]
+  huggingFace?: DownloadOption[]
 }) {
   mocks.options = {
     ready: true,
@@ -102,6 +123,7 @@ function withOptions({
     detected: onDevice.filter((option) => option.kind === 'scan'),
     library: onDevice.filter((option) => option.kind === 'library'),
     recommended,
+    huggingFace,
     device: { name: 'Apple M2', memoryGb: 16, freeGb: 84 },
     tier: 'unified_16',
     tierReady: true,
@@ -126,7 +148,7 @@ describe('model step', () => {
     useOnboardingStore.getState().begin('full', 'model')
   })
 
-  it('describes the machine and leads with the best fit', () => {
+  it('describes the machine and leads with the best fit, each row with its tagline', () => {
     withOptions({})
     render(<ModelStep next={next} handOff={handOff} />)
 
@@ -138,7 +160,10 @@ describe('model step', () => {
     ).toBeInTheDocument()
     const best = screen.getByRole('radio', { name: /Qwen3.5 4B/ })
     expect(best).toHaveAttribute('aria-checked', 'true')
-    expect(best).toHaveTextContent('onboarding:model.bestFit')
+    expect(best).toHaveTextContent('Everyday chat, writing & code')
+    expect(best).toHaveTextContent(
+      'onboarding:model.size 2.5 GB · onboarding:model.aboutMemory 4'
+    )
     expect(named('setup_screen_shown')[0]).toMatchObject({
       recommended_count: 1,
       primary_model_id: 'Qwen3.5-4B-Q4_K_M',
@@ -185,7 +210,9 @@ describe('model step', () => {
 
     const row = screen.getByRole('radio', { name: /Llama 3.1 8B/ })
     expect(row).toHaveAttribute('aria-checked', 'true')
+    expect(row).toHaveTextContent('onboarding:model.tagline.general')
     expect(row).toHaveTextContent('onboarding:model.foundIn LM Studio')
+    expect(screen.getByText('onboarding:model.readyHere')).toBeInTheDocument()
 
     fireEvent.click(
       screen.getByRole('button', { name: /onboarding:model.use Llama 3.1 8B/ })
@@ -214,7 +241,7 @@ describe('model step', () => {
           kind: 'library',
           key: 'library:mlx:qwen',
           title: 'Qwen MLX',
-          detail: null,
+          detail: 'onboarding:model.tagline.general',
           iconSrc: null,
           provider: 'mlx',
           modelId: 'Qwen3-4B-4bit',
@@ -279,5 +306,39 @@ describe('model step', () => {
       screen.getByRole('button', { name: /onboarding:model.continueWithout/ })
     )
     expect(next).toHaveBeenCalledWith('no_model')
+  })
+
+  it('offers Hugging Face models after the recommendations and downloads the one picked', () => {
+    withOptions({ huggingFace: [fromHub] })
+    render(<ModelStep next={next} handOff={handOff} />)
+
+    const hub = screen.getByRole('radiogroup', {
+      name: 'onboarding:model.huggingFace',
+    })
+    const row = screen.getByRole('radio', { name: /Mistral 7B Instruct/ })
+    expect(hub).toContainElement(row)
+    expect(row).toHaveTextContent('onboarding:model.tagline.agent')
+    expect(
+      screen.getByRole('radiogroup', { name: 'onboarding:model.recommended' })
+    ).not.toContainElement(row)
+
+    fireEvent.click(row)
+    expect(screen.getByText('onboarding:model.size 4.4 GB')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /onboarding:continue/ }))
+
+    expect(mocks.startGguf).toHaveBeenCalledWith(
+      fromHub.catalog,
+      expect.objectContaining({ model_id: 'Mistral-7B-Q4_K_M' }),
+      undefined,
+      expect.objectContaining({ requestOrigin: 'onboarding' })
+    )
+    expect(useOnboardingStore.getState().choice).toMatchObject({
+      source: 'download',
+      modelId: 'Mistral-7B-Q4_K_M',
+      title: 'Mistral 7B Instruct v0.3',
+    })
+    expect(named('recommended_model_clicked')[0]).toMatchObject({
+      position: 1,
+    })
   })
 })

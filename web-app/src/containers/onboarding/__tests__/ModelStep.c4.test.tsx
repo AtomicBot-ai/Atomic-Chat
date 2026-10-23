@@ -62,7 +62,7 @@ const download = (
   kind: 'download',
   key: `download:${id}`,
   title,
-  detail: null,
+  detail: `${title} tagline`,
   iconSrc: null,
   catalog: gguf(`AtomicChat/${id}-GGUF`),
   variant: { model_id: `${id}-Q4_K_M`, path: `${id}.gguf` } as ModelQuant,
@@ -74,6 +74,7 @@ const download = (
   sizeBytes: 2.5 * 1024 ** 3,
   fit: 'ok',
   bestFit: false,
+  source: 'recommended',
   position: 0,
   ...overrides,
 })
@@ -90,7 +91,7 @@ const found = (path: string): Extract<ModelOption, { kind: 'scan' }> => ({
   kind: 'scan',
   key: `scan:${path}`,
   title: 'Llama 3.1 8B',
-  detail: 'lmstudio',
+  detail: 'onboarding:model.tagline.general',
   iconSrc: null,
   provider: 'llamacpp-upstream',
   matchIds: [path],
@@ -122,6 +123,7 @@ function withOptions({
     detected: onDevice.filter((option) => option.kind === 'scan'),
     library: onDevice.filter((option) => option.kind === 'library'),
     recommended,
+    huggingFace: [],
     device: { name: null, memoryGb: null, freeGb: null },
     tier: 'unified_16',
     tierReady: true,
@@ -213,17 +215,21 @@ describe('model step, as the old setup screen proved it', () => {
   })
 
   describe('each offer', () => {
-    it('says its size and how it fits, and marks a model that will not load', () => {
+    it('says its size and the memory it takes, and marks a model that will not load', () => {
       withOptions({
         recommended: [qwen, { ...gemma, fit: 'no' }],
       })
       renderStep()
 
       expect(
-        screen.getByText('onboarding:model.size 2.5 GB · setup:recommend.fitOk')
+        screen.getByText(
+          'onboarding:model.size 2.5 GB · onboarding:model.aboutMemory 4'
+        )
       ).not.toHaveClass('ob-warn-text')
       expect(
-        screen.getByText('onboarding:model.size 7.3 GB · setup:recommend.fitNo')
+        screen.getByText(
+          'onboarding:model.size 7.3 GB · onboarding:model.aboutMemory 10 · setup:recommend.fitNo'
+        )
       ).toHaveClass('ob-warn-text')
     })
 
