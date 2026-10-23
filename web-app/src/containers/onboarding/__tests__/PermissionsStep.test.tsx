@@ -135,7 +135,7 @@ describe('permissions step', () => {
     seedVoice()
   })
 
-  it('offers notifications and the microphone, and explains files without asking', async () => {
+  it('offers notifications and the microphone, and nothing for files', async () => {
     renderStep()
     const microphone = await microphoneRow()
 
@@ -150,11 +150,9 @@ describe('permissions step', () => {
         name: 'onboarding-permissions:allow',
       })
     ).toBeEnabled()
-    const files = row('onboarding-permissions:files.title')
-    expect(within(files).queryByRole('button')).not.toBeInTheDocument()
     expect(
-      within(files).getByText('onboarding-permissions:files.note')
-    ).toBeInTheDocument()
+      screen.queryByText('onboarding-permissions:files.title')
+    ).not.toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: 'onboarding-permissions:skip' })
     ).toBeInTheDocument()

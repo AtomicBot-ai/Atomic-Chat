@@ -20,11 +20,6 @@
     "ask": "Allow microphone access?",
     "detail": "Microphone access is used only when you start recording. Text chat works without it."
   },
-  "files": {
-    "title": "Files & folders",
-    "reason": "Attach the documents you choose, one at a time. Atomic Chat never gets your whole disk.",
-    "note": "You pick each file"
-  },
   "warning": {
     "title": "Continue without permissions?",
     "body": "Voice input and download notifications stay off until you allow them. You can enable access later in Settings.",

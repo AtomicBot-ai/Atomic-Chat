@@ -63,12 +63,6 @@
     font-size: calc(var(--font-size-base) * 0.8125);
     font-weight: 500;
   }
-  .ob-permission-note {
-    max-width: 120px;
-    color: var(--ob-subtle);
-    font-size: calc(var(--font-size-base) * 0.6875);
-    text-align: right;
-  }
 }
 
 @media (max-width: 720px) {

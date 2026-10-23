@@ -4,7 +4,6 @@ import {
   Bell,
   Check,
   ExternalLink,
-  Folder,
   Mic,
   ShieldCheck,
   type LucideIcon,
@@ -44,10 +43,9 @@ type RowState = 'idle' | 'asking' | OnboardingPermissionResult
 /** What a user said to a row, as `onboarding_permission` reports it. */
 type PermissionAnswer = OnboardingPermissionResult | 'not_now'
 
-const ICONS: Record<AskablePermission | 'files', LucideIcon> = {
+const ICONS: Record<AskablePermission, LucideIcon> = {
   notifications: Bell,
   microphone: Mic,
-  files: Folder,
 }
 
 type PermissionsStepProps = StepProps & {
@@ -67,10 +65,9 @@ function reportAnswer(permission: AskablePermission, answer: PermissionAnswer) {
 
 /**
  * "A little access. More possibilities.": notifications and the microphone,
- * asked for ahead of time with a word on why, and "Files & folders" explained
- * only — macOS cannot grant file access ahead of time, and an attachment is
- * picked one file at a time anyway. Everything is optional; leaving with
- * nothing allowed asks once whether that was meant.
+ * asked for ahead of time with a word on why. Files are not asked for here:
+ * an attachment is picked one file at a time anyway. Everything is optional;
+ * leaving with nothing allowed asks once whether that was meant.
  */
 export function PermissionsStep({
   next,
@@ -243,10 +240,7 @@ export function PermissionsStep({
     )
   }
 
-  const row = (
-    permission: AskablePermission | 'files',
-    side: React.ReactNode
-  ) => {
+  const row = (permission: AskablePermission, side: React.ReactNode) => {
     const Icon = ICONS[permission]
     return (
       <div className="ob-permission" key={permission}>
@@ -270,12 +264,6 @@ export function PermissionsStep({
       <p className="ob-lead">{t('onboarding-permissions:lead')}</p>
       <div className="ob-permissions">
         {rows.map((permission) => row(permission, action(permission)))}
-        {row(
-          'files',
-          <span className="ob-permission-note">
-            {t('onboarding-permissions:files.note')}
-          </span>
-        )}
       </div>
       <div className="ob-actions">
         <button type="button" className="ob-primary" onClick={proceed}>

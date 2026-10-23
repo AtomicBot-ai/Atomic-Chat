@@ -52,9 +52,7 @@ export function usePermissionAvailability(): PermissionAvailability {
 
 /**
  * Permissions this platform can actually ask for, as rows of the permissions
- * step. Only rows with an Allow count: "Files & folders" explains itself and
- * asks nothing, so a machine with nothing else to offer skips the step
- * (`lib/onboarding/steps`).
+ * step; a machine with none skips the step (`lib/onboarding/steps`).
  */
 export function usePermissionRowCount(): number {
   const { notifications, microphone } = usePermissionAvailability()
