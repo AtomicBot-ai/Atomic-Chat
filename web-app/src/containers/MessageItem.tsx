@@ -50,6 +50,7 @@ import {
   linkDocCitations,
 } from '@/lib/doc-citations'
 import { DocCitationChip } from '@/containers/DocCitationChip'
+import { messageClockLabel } from '@/lib/messageClock'
 
 const CHAT_STATUS = {
   STREAMING: 'streaming',
@@ -537,6 +538,16 @@ export const MessageItem = memo(
 
     return (
       <div className="w-full mb-4">
+        {message.role === 'user' && messageClockLabel(message.metadata) && (
+          <div className="mb-1 flex min-w-0 justify-end">
+            <span
+              data-testid="message-clock"
+              className="max-w-[80%] break-words text-xs tabular-nums text-muted-foreground"
+            >
+              {messageClockLabel(message.metadata)}
+            </span>
+          </div>
+        )}
         {/* Render message parts */}
         {traceBlocks.map((block, index) => {
           switch (block.kind) {

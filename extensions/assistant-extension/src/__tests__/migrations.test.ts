@@ -140,6 +140,8 @@ describe('short default assistant instructions', () => {
     expect(readAssistant('jan')).toMatchObject({
       name: 'Atomic Chat',
       instructions: SHORT_PROMPT,
+      include_date: false,
+      include_time: false,
       parameters: {
         temperature: 0.7,
         top_k: 20,

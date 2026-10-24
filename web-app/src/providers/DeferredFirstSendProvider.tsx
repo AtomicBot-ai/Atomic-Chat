@@ -19,13 +19,13 @@ import { usePrompt } from '@/hooks/usePrompt'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useThreads } from '@/hooks/useThreads'
 import { newUserThreadContent } from '@/lib/completion'
+import { resolveAssistantForThread } from '@/lib/samplingParams'
 import {
   executeChatToolCalls,
   shouldSendToolFollowUp,
   type ChatToolCall,
   type ChatToolOutput,
 } from '@/lib/execute-chat-tool-calls'
-import { renderInstructions } from '@/lib/instructionTemplate'
 import { extractContentPartsFromUIMessage } from '@/lib/messages'
 import { downscaleToolResultContent } from '@/lib/toolResultImages'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -361,9 +361,7 @@ export function DeferredFirstSendProvider() {
         title: thread.title ?? queued.prompt,
         prompt: queued.prompt,
         navigateWhenStarted,
-        systemMessage: assistant?.instructions
-          ? renderInstructions(assistant.instructions)
-          : undefined,
+        systemMessage: assistant?.instructions,
       })
       clearQueue(queued.id)
       startingIdRef.current = null
@@ -396,7 +394,8 @@ export function DeferredFirstSendProvider() {
       worker.threadId,
       worker.prompt,
       [],
-      messageId
+      messageId,
+      resolveAssistantForThread(worker.threadId)
     )
     const turnIndex = useMessages.getState().getMessages(worker.threadId).length
     useMessages.getState().addMessage(userMessage)
@@ -404,7 +403,9 @@ export function DeferredFirstSendProvider() {
     turnErrorRef.current = undefined
     sendMessage({
       id: messageId,
-      parts: [{ type: 'text', text: worker.prompt }],
+      parts: [
+        { type: 'text', text: userMessage.content[0].text?.value ?? worker.prompt },
+      ],
       metadata: userMessage.metadata,
     })
 

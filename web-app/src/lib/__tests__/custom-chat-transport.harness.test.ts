@@ -295,6 +295,51 @@ describe('CustomChatTransport skill injection', () => {
     },
   ]
 
+  it('adds saved clocks only at the model boundary and preserves prior turns on a later send', async () => {
+    const model = fakeStreamingModel(idleStream)
+    vi.spyOn(ModelFactory, 'createModel').mockResolvedValue(model)
+    const transport = new CustomChatTransport('be brief', 'thread-7')
+    const first: UIMessage = {
+      ...userMessage,
+      metadata: { message_clock: { date: '2026-10-23', time: '02:04:15' } },
+    }
+    const snapshot = JSON.stringify(first)
+    const send = async (messages: UIMessage[]) =>
+      readChunks(
+        (await transport.sendMessages({
+          chatId: 'clock',
+          messages,
+          abortSignal: undefined,
+          trigger: 'submit-message',
+          messageId: undefined,
+        })) as ReadableStream<Record<string, unknown>>
+      )
+    await send([first])
+    await send([
+      first,
+      { id: 'reply', role: 'assistant', parts: [{ type: 'text', text: 'ok' }] },
+      {
+        id: 'next',
+        role: 'user',
+        metadata: { message_clock: { time: '02:05:16' } },
+        parts: [{ type: 'text', text: 'next question' }],
+      },
+    ])
+    const calls = (model as unknown as { doStream: ReturnType<typeof vi.fn> })
+      .doStream.mock.calls
+    const a = calls[0][0].prompt as Array<{ role: string; content: unknown }>
+    const b = calls[1][0].prompt as Array<{ role: string; content: unknown }>
+    expect(a.find((m) => m.role === 'system')).toEqual(
+      b.find((m) => m.role === 'system')
+    )
+    expect(a.find((m) => m.role === 'user')).toEqual(
+      b.find((m) => m.role === 'user')
+    )
+    expect(JSON.stringify(a)).toContain('[Date: 2026-10-23 | Time: 02:04:15]')
+    expect(JSON.stringify(b)).toContain('[Time: 02:05:16]')
+    expect(JSON.stringify(first)).toBe(snapshot)
+  })
+
   it('appends invoked-skill bodies to the system prompt', async () => {
     vi.mocked(loadChatSkillDetails).mockResolvedValueOnce([
       {
