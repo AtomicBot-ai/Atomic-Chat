@@ -134,11 +134,10 @@ export async function startMlxCatalogDownload(
 
     // `await` is load-bearing: without it the rejection escapes the catch and
     // the download fails with no toast and a row stuck in "downloading".
-    await engine.import(mlxId, {
-      modelPath: modelUrl,
-      files: extraFiles,
-      resume,
-    })
+    await serviceHub.models().pullModelWithMetadata(
+      mlxId, modelUrl, undefined, huggingfaceToken, true, resume,
+      { provider: 'mlx', files: extraFiles }
+    )
     return true
   } catch (error) {
     console.error('Error downloading MLX model:', error)

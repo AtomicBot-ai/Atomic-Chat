@@ -134,10 +134,10 @@ describe('DownloadManagement after a relaunch', () => {
       MODEL_URL,
       undefined,
       'hf_from_settings',
+      false,
       true,
-      true,
-      { provider: 'llamacpp-upstream' }
+      expect.objectContaining({ provider: 'llamacpp-upstream' })
     )
-    expect(useDownloadStore.getState().pausedDownloads.has(MODEL)).toBe(false)
+    expect(useDownloadStore.getState().pausedDownloads.has(MODEL)).toBe(true)
   })
 })

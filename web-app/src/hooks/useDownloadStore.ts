@@ -1,10 +1,21 @@
 import { create } from 'zustand'
+import { createJSONStorage, persist } from 'zustand/middleware'
+import { restoreDownloadRecovery, saveDownloadRecovery, type DownloadRecovery } from '@/lib/downloadRecovery'
 import {
   advanceSpeedSample,
   newSpeedSample,
   type SpeedSample,
 } from '@/lib/downloadFormat'
 import type { PullModelOptions } from '@/services/models/types'
+
+/** Ephemeral requests from Downloads; the app-wide manager owns their lifecycle. */
+export type DownloadControlRequest = {
+  requestId: number
+  action: 'pause' | 'resume' | 'cancel'
+  id: string
+  name: string
+}
+let nextControlRequest = 0
 
 /**
  * What the Rust downloader is doing while it has no bytes to report. Mirrors
@@ -23,6 +34,8 @@ export interface DownloadProgressProps {
   name: string
   current: number
   total: number
+  /** A discovered partial is visible even when its source metadata cannot be trusted. */
+  recoveryBlocked?: 'missing_source' | 'invalid_manifest' | 'source_conflict' | 'installed_model' | 'unsupported_layout'
   // ATO — #290: a transfer that cannot reach the host spends ~60s inside the
   // retry ladders with no bytes and no events, which rendered as a permanent
   // "Preparing". The stage is the only thing the row can show in that window.
@@ -94,8 +107,15 @@ export type DownloadState = {
   // `downloads[id]` entry so the popover row survives, and makes the
   // stop/error listeners early-return instead of cleaning up.
   pausedDownloads: Set<string>
+  /** Explicit Cancel hides a job across restarts without deleting its files. */
+  dismissedDownloads: Set<string>
+  dismissDownload: (id: string) => void
+  clearDismissedDownload: (id: string) => void
   // ATO-154: resume parameters keyed by model id (see DownloadResumeParams).
   resumeParams: { [modelId: string]: DownloadResumeParams }
+  controlRequests: DownloadControlRequest[]
+  requestControl: (action: DownloadControlRequest['action'], download: { id: string; name: string }) => void
+  takeControlRequest: (requestId: number) => boolean
   removeDownload: (id: string) => void
   updateProgress: (
     id: string,
@@ -128,11 +148,41 @@ export type DownloadState = {
 /**
  * This store is used to manage the download progress of files.
  */
-export const useDownloadStore = create<DownloadState>((set) => ({
+export const useDownloadStore = create<DownloadState>()(persist<DownloadState, [], [], { recovery: DownloadRecovery }>((set) => ({
+  controlRequests: [],
+  requestControl: (action, download) => set((state) => {
+    if (state.controlRequests.some((request) => request.id === download.id && request.action === action)) return state
+    return { controlRequests: [...state.controlRequests, { ...download, action, requestId: ++nextControlRequest }] }
+  }),
+  takeControlRequest: (requestId) => {
+    let taken = false
+    set((state) => {
+      if (state.controlRequests[0]?.requestId !== requestId) return state
+      taken = true
+      return { controlRequests: state.controlRequests.slice(1) }
+    })
+    return taken
+  },
   downloads: {},
   localDownloadingModels: new Set(),
   resumableDownloads: new Set(),
   pausedDownloads: new Set(),
+  dismissedDownloads: new Set(),
+  dismissDownload: (id) => set((state) => {
+    const downloads = { ...state.downloads }
+    delete downloads[id]
+    const pausedDownloads = new Set(state.pausedDownloads)
+    const localDownloadingModels = new Set(state.localDownloadingModels)
+    pausedDownloads.delete(id)
+    localDownloadingModels.delete(id)
+    return { downloads, pausedDownloads, localDownloadingModels,
+      dismissedDownloads: new Set(state.dismissedDownloads).add(id) }
+  }),
+  clearDismissedDownload: (id) => set((state) => {
+    const dismissedDownloads = new Set(state.dismissedDownloads)
+    dismissedDownloads.delete(id)
+    return { dismissedDownloads }
+  }),
   resumeParams: {},
   downloadOriginByModelId: {},
   downloadRequestOriginByModelId: {},
@@ -145,6 +195,7 @@ export const useDownloadStore = create<DownloadState>((set) => ({
 
   updateProgress: (id, progress, name, current, total) =>
     set((state) => {
+      if (state.dismissedDownloads.has(id)) return state
       const previous = state.downloads[id]
       // `??` (not `||`) so explicit zero values — e.g. a restarted or
       // resumed transfer whose byte counter resets to 0 — are honored
@@ -176,6 +227,7 @@ export const useDownloadStore = create<DownloadState>((set) => ({
   // `current`/`total`, or a retry would rewind the bar to zero.
   updateStage: (id, stage) =>
     set((state) => {
+      if (state.dismissedDownloads.has(id)) return state
       const previous = state.downloads[id]
       const current = previous?.current ?? 0
       // No bytes are moving while the downloader waits on a quiet connection
@@ -310,4 +362,17 @@ export const useDownloadStore = create<DownloadState>((set) => ({
         downloadRequestOriginByModelId: requestOrigins,
       }
     }),
+}), {
+  name: 'atomic-model-downloads-v1',
+  storage: createJSONStorage(() => ({
+    // Storage may be unavailable or full; recovery must never stop a live transfer.
+    getItem: (name) => { try { return localStorage.getItem(name) } catch { return null } },
+    setItem: (name, value) => { try { localStorage.setItem(name, value) } catch { /* Best effort journal. */ } },
+    removeItem: (name) => { try { localStorage.removeItem(name) } catch { /* Storage is unavailable. */ } },
+  })),
+  partialize: (state) => ({ recovery: saveDownloadRecovery(state) }),
+  merge: (saved, current) => ({
+    ...current,
+    ...restoreDownloadRecovery((saved as { recovery?: unknown } | undefined)?.recovery),
+  }),
 }))

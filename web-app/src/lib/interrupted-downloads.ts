@@ -26,6 +26,10 @@ import {
 } from '@/hooks/useDownloadStore'
 import { isDiffusionModelDownloadTaskId } from '@/lib/diffusion/models'
 import { newSpeedSample } from '@/lib/downloadFormat'
+import {
+  modelDownloadKey,
+  restoreDownloadRecovery,
+} from '@/lib/downloadRecovery'
 
 export type InterruptedDownload = {
   /** The download store key: the model id, or a checkpoint's task id. */
@@ -60,8 +64,8 @@ export function interruptedDownloadsOf(
       progress: entry.progress ?? 0,
     }
     if (params) {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { hfToken: _token, ...resume } = params
+      const resume = parseResume(params)
+      if (!resume) continue
       record.resume = resume
     }
     records.push(record)
@@ -78,25 +82,9 @@ const finiteOr = (value: unknown, fallback: number): number =>
 function parseResume(
   value: unknown
 ): InterruptedDownload['resume'] | undefined {
-  if (!value || typeof value !== 'object') return undefined
-  const raw = value as Record<string, unknown>
-  if (typeof raw.modelPath !== 'string' || raw.modelPath === '')
-    return undefined
-  const resume: NonNullable<InterruptedDownload['resume']> = {
-    modelPath: raw.modelPath,
-  }
-  for (const key of [
-    'mmprojPath',
-    'provider',
-    'modelSha256',
-    'mmprojSha256',
-  ] as const)
-    if (typeof raw[key] === 'string') resume[key] = raw[key] as string
-  for (const key of ['modelSize', 'mmprojSize'] as const)
-    if (typeof raw[key] === 'number') resume[key] = raw[key] as number
-  if (typeof raw.skipVerification === 'boolean')
-    resume.skipVerification = raw.skipVerification
-  return resume
+  return restoreDownloadRecovery({
+    entries: [{ id: 'legacy-model', params: value }],
+  }).resumeParams?.['legacy-model']
 }
 
 /** Records from storage, the malformed ones dropped. */
@@ -116,7 +104,9 @@ export function parseInterruptedDownloads(
     if (!value || typeof value !== 'object') continue
     const entry = value as Record<string, unknown>
     if (typeof entry.id !== 'string' || entry.id === '') continue
-    const resume = parseResume(entry.resume)
+    const resume = restoreDownloadRecovery({
+      entries: [{ id: entry.id, params: entry.resume }],
+    }).resumeParams?.[entry.id]
     if (!resume && !isDiffusionModelDownloadTaskId(entry.id)) continue
     records.push({
       id: entry.id,
@@ -170,8 +160,21 @@ export function restoreInterruptedDownloads(
     const pausedDownloads = new Set(state.pausedDownloads)
     const resumableDownloads = new Set(state.resumableDownloads)
     const resumeParams = { ...state.resumeParams }
+    const identities = new Set(
+      Object.values(resumeParams).map(modelDownloadKey)
+    )
     for (const record of records) {
-      if (record.id in downloads) continue
+      if (
+        record.id in downloads ||
+        record.id in resumeParams ||
+        state.dismissedDownloads.has(record.id) ||
+        state.dismissedDownloads.has(record.name)
+      )
+        continue
+      const resume = record.resume ? parseResume(record.resume) : undefined
+      if (record.resume && !resume) continue
+      if (resume && identities.has(modelDownloadKey(resume))) continue
+      if (resume) identities.add(modelDownloadKey(resume))
       const entry: DownloadProgressProps = {
         id: record.id,
         name: record.name,
@@ -185,7 +188,7 @@ export function restoreInterruptedDownloads(
         pausedDownloads.add(key)
         resumableDownloads.add(key)
       }
-      if (record.resume) resumeParams[record.id] = { ...record.resume }
+      if (resume) resumeParams[record.id] = resume
     }
     return { downloads, pausedDownloads, resumableDownloads, resumeParams }
   })
@@ -209,9 +212,13 @@ const signatureOf = (records: readonly InterruptedDownload[]): string =>
 
 /** Keep the stored list in step with the store; returns the unsubscribe. */
 export function persistInterruptedDownloads(): () => void {
-  let last = signatureOf(interruptedDownloadsOf(useDownloadStore.getState()))
+  const mediaRecords = (state: DownloadState) =>
+    interruptedDownloadsOf(state).filter((record) =>
+      isDiffusionModelDownloadTaskId(record.id)
+    )
+  let last = signatureOf(mediaRecords(useDownloadStore.getState()))
   return useDownloadStore.subscribe((state) => {
-    const records = interruptedDownloadsOf(state)
+    const records = mediaRecords(state)
     const signature = signatureOf(records)
     if (signature === last) return
     last = signature
@@ -245,6 +252,14 @@ export function bindInterruptedDownloads(): () => void {
   if (!restored) {
     restored = true
     restoreInterruptedDownloads(readInterruptedDownloads())
+    // Model requests migrate into atomic-model-downloads-v1 through the store.
+    // Keep only media checkpoints in this older journal, so a stale duplicate
+    // cannot resurrect a cancelled model or replace its validated source.
+    writeInterruptedDownloads(
+      interruptedDownloadsOf(useDownloadStore.getState()).filter((record) =>
+        isDiffusionModelDownloadTaskId(record.id)
+      )
+    )
   }
   return persistInterruptedDownloads()
 }

@@ -175,7 +175,7 @@ describe('pullModelWithMetadata disk-space preflight', () => {
     expect(mockToast.error).not.toHaveBeenCalled()
     expect(engine.import).toHaveBeenCalledWith(
       'small-q4_k_m',
-      expect.objectContaining({ modelPath: SMALL_PATH, resume: false })
+      expect.objectContaining({ modelPath: SMALL_PATH, resume: true })
     )
     const after = useDownloadStore.getState()
     expect(after.localDownloadingModels.has('small-q4_k_m')).toBe(true)

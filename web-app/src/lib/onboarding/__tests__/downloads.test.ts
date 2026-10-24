@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 const mocks = vi.hoisted(() => ({
   engines: {} as Record<string, { import: ReturnType<typeof vi.fn> }>,
   markSilentImport: vi.fn(),
+  pullModelWithMetadata: vi.fn(),
 }))
 
 vi.mock('@janhq/core', async (importOriginal) => ({
@@ -44,7 +45,7 @@ const repo = {
 
 const hubWith = (fetchHuggingFaceRepo: () => Promise<unknown>) =>
   ({
-    models: () => ({ fetchHuggingFaceRepo }),
+    models: () => ({ fetchHuggingFaceRepo, pullModelWithMetadata: mocks.pullModelWithMetadata }),
   }) as unknown as ServiceHub
 
 const candidate = (
@@ -65,6 +66,7 @@ describe('MLX downloads from setup', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.engines = { mlx: { import: vi.fn().mockResolvedValue(undefined) } }
+    mocks.pullModelWithMetadata.mockReset().mockResolvedValue(undefined)
     useDownloadStore.setState({
       localDownloadingModels: new Set(),
       resumableDownloads: new Set(),
@@ -86,13 +88,12 @@ describe('MLX downloads from setup', () => {
     expect(started).toBe(true)
     const base =
       'https://huggingface.co/mlx-community/Qwen3.5 4B 4bit/resolve/main'
-    expect(mocks.engines.mlx.import).toHaveBeenCalledWith('Qwen3.5-4B-4bit', {
-      modelPath: `${base}/model.safetensors`,
+    expect(mocks.pullModelWithMetadata).toHaveBeenCalledWith('Qwen3.5-4B-4bit', `${base}/model.safetensors`, undefined, undefined, true, false, {
+      provider: 'mlx',
       files: [
         { url: `${base}/config.json`, filename: 'config.json' },
         { url: `${base}/tokenizer.json`, filename: 'tokenizer.json' },
       ],
-      resume: false,
     })
     const state = useDownloadStore.getState()
     expect(state.localDownloadingModels.has('Qwen3.5-4B-4bit')).toBe(true)
@@ -110,7 +111,8 @@ describe('MLX downloads from setup', () => {
       serviceHub: hubWith(async () => repo),
     })
 
-    expect(mocks.engines.mlx.import.mock.calls[0][1].resume).toBe(true)
+    expect(mocks.pullModelWithMetadata.mock.calls[0][5]).toBe(true)
+    expect(mocks.engines.mlx.import).not.toHaveBeenCalled()
   })
 
   it('reports a repository without weights and leaves it resumable', async () => {
@@ -130,7 +132,7 @@ describe('MLX downloads from setup', () => {
   })
 
   it('stays quiet when the download was cancelled', async () => {
-    mocks.engines.mlx.import.mockRejectedValue(new Error('Download cancelled'))
+    mocks.pullModelWithMetadata.mockRejectedValue(new Error('Download cancelled'))
 
     const started = await startMlxCatalogDownload(catalog, {
       serviceHub: hubWith(async () => repo),

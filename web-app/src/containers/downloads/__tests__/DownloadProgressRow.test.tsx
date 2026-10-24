@@ -158,7 +158,8 @@ describe('DownloadProgressRow readout line', () => {
 
     // `truncate` is nowrap plus an ellipsis: a line that cannot fit is cut at
     // its end — the estimate — instead of pushing the card up by a row.
-    expect(screen.getByText(line)).toHaveClass('truncate', 'tabular-nums')
+    const viewport = screen.getByText(line).closest('[title]')
+    expect(viewport).toHaveClass('whitespace-nowrap', 'tabular-nums')
   })
 
   it('leaves the transfer speed out of the row', () => {
@@ -186,7 +187,7 @@ describe('DownloadProgressRow readout line', () => {
 
     const name = screen.getByTitle(transfer.id)
     expect(name).toHaveTextContent('Qwen3-Coder-30B-A3B-Instruct-GGUF')
-    expect(name).toHaveClass('truncate')
+    expect(name).toHaveClass('overflow-hidden')
   })
 
   it('reports the transfer’s own percentage to assistive tech, not a constant', () => {

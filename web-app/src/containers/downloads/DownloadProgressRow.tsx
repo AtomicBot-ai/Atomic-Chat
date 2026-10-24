@@ -1,3 +1,4 @@
+import { OverflowText } from '@/components/OverflowText'
 import { formatDownloadStatusLine, shortModelName } from '@/lib/downloadFormat'
 import { quantFromModelId } from '@/lib/telemetry'
 import { cn } from '@/lib/utils'
@@ -41,6 +42,8 @@ export type DownloadRowProps = {
    * has simply not started, for the full ~60s the ladders take.
    */
   stage?: DownloadRowStage
+  /** Recovery explanation overrides the transport status. */
+  statusText?: string
   paused?: boolean
   /** Pause/resume is offered only for resumable (GGUF) transfers. */
   pausable?: boolean
@@ -71,6 +74,7 @@ export function DownloadProgressRow({
   bytesPerSecond,
   stage,
   paused,
+  statusText,
   pausable,
   onPause,
   onResume,
@@ -85,7 +89,7 @@ export function DownloadProgressRow({
     quant && !label.toLowerCase().includes(quant.toLowerCase()) ? quant : null
   // The panel is narrow: a running transfer's line is its size and estimate,
   // the icon, the bar and Pause already say it is downloading.
-  const line = formatDownloadStatusLine(
+  const line = statusText ?? formatDownloadStatusLine(
     t,
     { current, total, bytesPerSecond, stage, paused },
     { runningWord: false }
@@ -107,29 +111,19 @@ export function DownloadProgressRow({
           <IconDownload size={18} aria-hidden />
         </span>
         <div className="min-w-0 flex-1">
-          <p
-            className="truncate text-xs font-semibold text-[var(--dl-title)]"
+          <OverflowText
+            className="text-xs font-semibold text-[var(--dl-title)]"
             title={id}
-          >
-            {label}
-            {quantApart && (
-              <span className="font-normal text-[var(--dl-text)]">
-                {' · '}
-                {quantApart}
-              </span>
-            )}
-          </p>
-          {/* One line that never wraps: past the row's width it is cut at its
-              end — the estimate, the part that matters least — instead of
-              growing the bottom-anchored card. `aria-live` is deliberately
+            text={quantApart ? `${label} · ${quantApart}` : label}
+          />
+          {/* One line that never wraps: overflow scrolls without growing the
+              bottom-anchored card. The percentage and controls stay fixed. `aria-live` is deliberately
               absent: this text changes every few seconds and would talk over
               everything else. */}
-          <p className="mt-0.5 truncate text-[11px] tabular-nums text-[var(--dl-text)]">
-            {line}
-          </p>
+          <OverflowText text={line} className="mt-0.5 text-[11px] tabular-nums text-[var(--dl-text)]" />
         </div>
         {percent !== null && (
-          <b className="shrink-0 text-xs font-medium tabular-nums text-[var(--dl-strong)]">
+          <b data-testid="download-percent" className="shrink-0 text-xs font-medium tabular-nums text-[var(--dl-strong)]">
             {percent}%
           </b>
         )}

@@ -69,6 +69,28 @@ export function cancelDownload(
   download: { id: string; name: string },
   serviceHub: ServiceHub
 ): void {
+  const {
+    markResumableDownload,
+    clearPausedDownload,
+    clearResumeParams,
+    dismissDownload,
+    clearDownloadOrigin,
+    resumeParams,
+  } = useDownloadStore.getState()
+  const modelRequest =
+    !!(resumeParams[download.id] || resumeParams[download.name]) ||
+    !(
+      isDiffusionEngineTaskId(download.id) ||
+      isEngineBuildTaskId(download.id) ||
+      isEngineUpdateTaskId(download.id) ||
+      isDiffusionModelDownloadTaskId(download.id) ||
+      isDecisionDownloadTaskId(download.id) ||
+      isEmbeddingDownloadTaskId(download.id) ||
+      isManagedDownloadId(download.id) ||
+      isFoundryLocalDownloadId(download.id) ||
+      download.id.startsWith('llamacpp') ||
+      download.id.startsWith('mlx')
+    )
   const store = useDownloadStore.getState()
   const keys = new Set([download.name, download.id])
   // Pause already stopped the transfer, so no stop event will come to clear a
@@ -77,13 +99,20 @@ export function cancelDownload(
   const paused = [...keys].some((key) => store.pausedDownloads.has(key))
   for (const key of keys) {
     markDownloadCancellationRequested(key)
-    store.markResumableDownload(key)
-    store.clearPausedDownload(key)
-    store.clearResumeParams(key)
-    if (paused) {
-      store.removeDownload(key)
-      store.removeLocalDownloadingModel(key)
-      store.clearDownloadOrigin(key)
+    markResumableDownload(key)
+    if (modelRequest) {
+      // Cancel is distinct from Pause: hide now, suppress late events/startup
+      // discovery, and retain the source mapping only for an explicit retry.
+      dismissDownload(key)
+      clearDownloadOrigin(key)
+    } else {
+      clearPausedDownload(key)
+      clearResumeParams(key)
+      if (paused) {
+        store.removeDownload(key)
+        store.removeLocalDownloadingModel(key)
+        clearDownloadOrigin(key)
+      }
     }
   }
   // A checkpoint's transfer has nothing left to stop. The model service's
@@ -104,6 +133,9 @@ export function cancelDownload(
     isLiteRtLmDownloadId(download.id)
   ) {
     void cancelTransfer(download.id)
+  } else if (resumeParams[download.id] || resumeParams[download.name]) {
+    // Model ids beginning with `mlx` still need the engine's provider/task-id mapping.
+    void serviceHub.models().abortDownload(download.name)
   } else if (
     download.id.startsWith('llamacpp') ||
     download.id.startsWith('mlx')

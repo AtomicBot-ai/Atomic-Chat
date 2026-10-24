@@ -18,6 +18,7 @@ import { isEngineUpdateTaskId } from '@/services/engines/update'
  * ATO-154: pause/resume is only offered for resumable model (GGUF) downloads.
  * Backend-binary downloads (`llamacpp*`) and MLX repos (`mlx-community/*`,
  * which start with `mlx`) get cancel-only, matching Jan's gating.
+ * These legacy exclusions apply only without a canonical model request.
  * Decision and embedding models resume from their Hub or settings card,
  * not from here.
  * Engine updates (`engine-update-*`) are the core's to stop, cancel-only.
@@ -27,6 +28,10 @@ import { isEngineUpdateTaskId } from '@/services/engines/update'
  * (change add-litert-lm-runtime).
  */
 export function isPausableDownload(id: string): boolean {
+  // A canonical request is resumable even when its display/provider id starts
+  // with a prefix historically reserved for cancel-only binary transfers.
+  const { resumeParams } = useDownloadStore.getState()
+  if (resumeParams[id]) return true
   return (
     !id.startsWith('llamacpp') &&
     !isDiffusionEngineTaskId(id) &&

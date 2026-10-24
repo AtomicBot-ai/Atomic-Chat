@@ -5,6 +5,7 @@ import {
   bytesUnit,
   formatBytes,
   formatDownloadReadout,
+  downloadStageLabel,
   formatDownloadStatusLine,
   formatEta,
   formatProgressPair,
@@ -43,6 +44,12 @@ describe('formatDownloadReadout', () => {
   it('says Paused with the size and no estimate', () => {
     expect(formatDownloadReadout(t, { ...transfer, paused: true })).toBe(
       'common:downloadPanel.paused · 4.20 / 12.40 GB'
+    )
+  })
+
+  it('shows recovered bytes without inventing a total or percentage', () => {
+    expect(formatDownloadReadout(t, { ...transfer, total: 0, paused: true })).toBe(
+      'common:downloadPanel.paused · 4.20 GB'
     )
   })
 
@@ -266,5 +273,20 @@ describe('advanceSpeedSample', () => {
 
     expect(restarted.bytesPerSecond).toBe(0)
     expect(restarted.atBytes).toBe(0)
+  })
+})
+
+
+describe('connection retry status', () => {
+  it('shows automatic recovery without a misleading five-attempt maximum', () => {
+    expect(downloadStageLabel(t, { kind: 'retrying', attempt: 7, maxAttempts: 0 }))
+      .toBe('common:downloadPanel.retryingConnection(attempt=7,seconds=64)')
+    expect(downloadStageLabel(t, { kind: 'retrying', attempt: 80, maxAttempts: 0 }))
+      .toBe('common:downloadPanel.retryingConnection(attempt=80,seconds=64)')
+  })
+  it('keeps a manually paused row paused even when a retry stage is retained', () => {
+    expect(formatDownloadReadout(t, { progress: 12, current: 12, total: 100,
+      paused: true, stage: { kind: 'retrying', attempt: 8, maxAttempts: 0 } }))
+      .toContain('common:downloadPanel.paused')
   })
 })

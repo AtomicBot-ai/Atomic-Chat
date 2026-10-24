@@ -113,6 +113,10 @@ export function expectNoHorizontalOverflow(
   for (const el of elements) {
     const style = getComputedStyle(el)
     if (style.display === 'none' || style.visibility === 'hidden') continue
+    // A marquee deliberately paints beyond its track. Its viewport owns
+    // clipping; measure that box, while the dedicated animation tests verify
+    // the track reveals both ends without moving the percentage/actions.
+    if (el.closest('[data-testid="overflow-text-track"]')) continue
 
     // `scrollWidth` is only meaningful on a box that lays out content; an
     // SVG's is 0. Its box is still held inside the root below.
@@ -151,11 +155,17 @@ export function expectNoHorizontalOverflow(
 /** Distinct line tops of the text laid out inside `el`, clipped lines included. */
 function lineTops(el: Element): number[] {
   const range = document.createRange()
-  range.selectNodeContents(el)
   const tops = new Set<number>()
-  for (const line of range.getClientRects()) {
-    if (line.width === 0 || line.height === 0) continue
-    tops.add(Math.round(line.top))
+  // Nested inline blocks contribute their own box as well as their text box.
+  // Measure text nodes so different box baselines do not invent extra lines.
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+  while (walker.nextNode()) {
+    if (!walker.currentNode.textContent?.trim()) continue
+    range.selectNodeContents(walker.currentNode)
+    for (const line of range.getClientRects()) {
+      if (line.width === 0 || line.height === 0) continue
+      tops.add(Math.round(line.top))
+    }
   }
   range.detach()
   return [...tops].sort((a, b) => a - b)

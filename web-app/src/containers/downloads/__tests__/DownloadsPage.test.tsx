@@ -66,12 +66,6 @@ vi.mock('@/services/engines/core', () => ({
 const copyToClipboard = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/clipboard', () => ({ copyToClipboard }))
 
-const cancelDownload = vi.hoisted(() => vi.fn())
-vi.mock('@/lib/downloadCancellation', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/lib/downloadCancellation')>()),
-  cancelDownload,
-}))
-
 // What the disk holds without an owner comes from `downloads-disk`, tested on
 // its own; here it answers a scan and records what removal deletes.
 const disk = vi.hoisted(() => ({
@@ -164,6 +158,9 @@ beforeEach(() => {
     },
   })
   useDownloadStore.setState({
+    controlRequests: [],
+    resumeParams: {},
+    dismissedDownloads: new Set(),
     downloads: {},
     localDownloadingModels: new Set(),
     pausedDownloads: new Set(),
@@ -410,10 +407,49 @@ describe('DownloadsPage', () => {
     fireEvent.click(
       within(first).getByRole('button', { name: 'common:cancelDownload' })
     )
-    expect(cancelDownload).toHaveBeenCalledWith(
-      { id: 'unsloth/Big-Model-Q4_K_M', name: 'unsloth/Big-Model-Q4_K_M' },
-      serviceHub
+    expect(useDownloadStore.getState().controlRequests).toEqual([
+      expect.objectContaining({
+        action: 'cancel',
+        id: 'unsloth/Big-Model-Q4_K_M',
+        name: 'unsloth/Big-Model-Q4_K_M',
+      }),
+    ])
+  })
+
+  it('offers Resume for a restored paused request and queues its shared lifecycle', () => {
+    const state = useDownloadStore.getState()
+    state.setResumeParams('org/restored', {
+      provider: 'llamacpp-upstream',
+      modelPath: 'https://huggingface.co/org/model/resolve/main/model.gguf',
+    })
+    state.updateProgress('org/restored', 0.25, 'org/restored', 5 * GB, 20 * GB)
+    state.markPausedDownload('org/restored')
+    render(<DownloadsPage />)
+    const row = rowNamed('Restored')
+    fireEvent.click(
+      within(row).getByRole('button', { name: 'common:resumeDownload' })
     )
+    expect(useDownloadStore.getState().controlRequests).toEqual([
+      expect.objectContaining({ action: 'resume', id: 'org/restored' }),
+    ])
+  })
+
+  it('offers Pause for an active resumable model', () => {
+    const state = useDownloadStore.getState()
+    state.setResumeParams('org/running', {
+      provider: 'llamacpp-upstream',
+      modelPath: 'https://huggingface.co/org/model/resolve/main/model.gguf',
+    })
+    state.updateProgress('org/running', 0.25, 'org/running', 5 * GB, 20 * GB)
+    render(<DownloadsPage />)
+    fireEvent.click(
+      within(rowNamed('Running')).getByRole('button', {
+        name: 'common:pauseDownload',
+      })
+    )
+    expect(useDownloadStore.getState().controlRequests).toEqual([
+      expect.objectContaining({ action: 'pause', id: 'org/running' }),
+    ])
   })
 
   it('offers Resume on a paused download, also one a relaunch brought back', () => {
@@ -453,16 +489,11 @@ describe('DownloadsPage', () => {
       within(row).getByRole('button', { name: 'common:resumeDownload' })
     )
 
-    expect(pullModelWithMetadata).toHaveBeenCalledWith(
-      paused,
-      'https://huggingface.co/x/resolve/main/m.gguf',
-      undefined,
-      undefined,
-      true,
-      true,
-      {}
-    )
-    expect(useDownloadStore.getState().pausedDownloads.has(paused)).toBe(false)
+    expect(pullModelWithMetadata).not.toHaveBeenCalled()
+    expect(useDownloadStore.getState().controlRequests).toEqual([
+      expect.objectContaining({ action: 'resume', id: paused }),
+    ])
+    expect(useDownloadStore.getState().pausedDownloads.has(paused)).toBe(true)
     // Cancel stays beside it.
     expect(
       within(row).getByRole('button', { name: 'common:cancelDownload' })
@@ -477,7 +508,9 @@ describe('DownloadsPage', () => {
     expect(
       within(row).getByText('llama.cpp · Q4_K_M · unsloth')
     ).toBeInTheDocument()
-    expect(within(row).getByText('Qwen3.5 4B')).toHaveAttribute('title', id)
+    expect(
+      within(row).getByText('Qwen3.5 4B').closest('[title]')
+    ).toHaveAttribute('title', id)
     expect(row).not.toHaveTextContent(id)
 
     // Keyboard focus shows the id as hover does, and the button copies it.

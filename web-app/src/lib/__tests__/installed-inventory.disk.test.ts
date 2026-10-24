@@ -137,6 +137,22 @@ describe('partial downloads', () => {
       ...patch,
     })
 
+  it('shows cancelled leftovers even when retry metadata remains resumable', () => {
+    const id = 'org/cancelled'
+    const active = store({
+      resumableDownloads: new Set([id]),
+      dismissedDownloads: new Set([id]),
+    })
+    expect(active).not.toContain(id)
+    expect(partialDownloadItems([partial(id)], active)).toHaveLength(1)
+    expect(
+      partialDownloadItems(
+        [partial(id)],
+        store({ pausedDownloads: new Set([id]) })
+      )
+    ).toHaveLength(0)
+  })
+
   it('leaves out the partial files of a download the app is running, paused or can resume', () => {
     const partials = [
       partial('AtomicChat/qwen35-4b-IQ4_XS'),
@@ -180,6 +196,23 @@ describe('partial downloads', () => {
     })
     expect(items[1].details).toEqual(['MLX'])
   })
+
+  it.each(['running', 'paused'])(
+    'does not duplicate the reported long model id while %s',
+    (phase) => {
+      const id =
+        'AtomicChat/Qwen3_8-Flash-Next-AD-4_27bpw-Q4_K_M-M64/Qwen3_8-Flash-Next-AD-4_27bpw-Q4_K_M-M64'
+      const active = store(
+        phase === 'running'
+          ? { localDownloadingModels: new Set([id]) }
+          : phase === 'paused'
+            ? { pausedDownloads: new Set([id]) }
+            : {}
+      )
+      const scanned = [partial(id)]
+      expect(partialDownloadItems(scanned, active)).toEqual([])
+    }
+  )
 
   it('names an unfinished download by its model, with the quant apart and the id kept', () => {
     const [item] = partialDownloadItems(

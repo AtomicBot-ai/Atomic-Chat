@@ -66,12 +66,12 @@ describe.each(['light', 'dark'] as const)(
 
         const rows = within(panel).getAllByRole('listitem')
         for (const row of rows) {
-          const [name, line] = row.querySelectorAll<HTMLElement>('p')
+          const [name, line] = row.querySelectorAll<HTMLElement>('[data-testid="overflow-text-primary"]')
           expectOneLine(name)
           expectOneLine(line)
         }
         // The running transfer keeps its size; a cut line loses the estimate.
-        expect(rows[0].querySelectorAll('p')[1].textContent).toContain(
+        expect(rows[0].querySelectorAll('[data-testid="overflow-text-primary"]')[1].textContent).toContain(
           '7.81 / 18.60 GB'
         )
         expect(within(rows[1]).getByText('100%')).toBeVisible()
