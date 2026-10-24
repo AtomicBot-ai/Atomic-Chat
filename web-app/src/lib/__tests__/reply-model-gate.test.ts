@@ -372,6 +372,18 @@ describe('resolveReplyModel', () => {
     })
   })
 
+  it('starts a LiteRT-LM model when no other default engine holds one, before the fork', () => {
+    // change add-litert-lm-runtime: its variants are a download of their own, like Foundry Local's.
+    const options = collectReplyModels([
+      provider('llamacpp', [model('LFM2.5-1.2B-Q4_K_M')]),
+      provider('litert-lm', [model('gemma-4-e2b-it-cpu')]),
+    ])
+
+    expect(resolveReplyModel(options)).toMatchObject({
+      option: { providerName: 'litert-lm', modelId: 'gemma-4-e2b-it-cpu' },
+    })
+  })
+
   it('uses the fork when it is the only engine holding a model', () => {
     const options = collectReplyModels([
       provider('llamacpp', [

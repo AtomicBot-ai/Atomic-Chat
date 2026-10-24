@@ -11,8 +11,6 @@ type ModelLoadState = {
   // Session-only: leaving setup without a choice must override startup preload.
   modelSelectionDeferred: boolean
   deferModelSelection: () => void
-  onboardingActive: boolean
-  setOnboardingActive: (value: boolean) => void
 }
 
 export const useModelLoad = create<ModelLoadState>()((set) => ({
@@ -25,6 +23,4 @@ export const useModelLoad = create<ModelLoadState>()((set) => ({
     }),
   modelSelectionDeferred: false,
   deferModelSelection: () => set({ modelSelectionDeferred: true }),
-  onboardingActive: false,
-  setOnboardingActive: (value) => set({ onboardingActive: value }),
 }))

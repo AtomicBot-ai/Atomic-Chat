@@ -7,6 +7,7 @@
  */
 
 import { foundryLocalMatches } from '@/lib/foundry-local/hub'
+import { liteRtLmMatches } from '@/lib/litert-lm/hub'
 import { isManagedProvider } from '@/lib/managed-engines'
 import type { ModelFormat } from '@/lib/model-card'
 import type { GpuFacts } from '@/services/managed-environment/types'
@@ -113,6 +114,11 @@ export function hubListSources(format: ModelFormat): HubListSources {
   if (format === 'foundry-local') {
     return { staffPicks: false, catalog: false, curated: true, feedFormat: 'gguf', prefilter: false }
   }
+  // LiteRT-LM lists conf's curated models, then its Hugging Face organisations' `litert-lm`
+  // repositories (`liteRtLmRows`); nothing from the GGUF feed or search.
+  if (format === 'litert-lm') {
+    return { staffPicks: false, catalog: false, curated: true, feedFormat: 'gguf', prefilter: false }
+  }
   // PrismML lists the Bonsai families of the core's model rules, and nothing else.
   if (format === 'atomic-prism') {
     return { staffPicks: false, catalog: false, curated: true, feedFormat: 'gguf', prefilter: false }
@@ -191,4 +197,28 @@ export function foundryLocalRows(options: {
       .filter((model) => foundryLocalMatches(model, query))
       .map((model): FoundryLocalRow => ({ model, section }))
   return [...pick(options.curated, 'curated'), ...pick(options.catalog, 'microsoft')]
+}
+
+export interface LiteRtLmRow {
+  model: CatalogModel
+  /** `curated` — conf's checked list; `huggingface` — Hugging Face, not verified by Atomic Chat. */
+  section: 'curated' | 'huggingface'
+}
+
+/**
+ * The LiteRT-LM list (change add-litert-lm-runtime): conf's curated models first, then the
+ * Hugging Face ones, each narrowed by name when `query` is set. The Hugging Face part is empty
+ * while it cannot be read; the curated part may be empty too.
+ */
+export function liteRtLmRows(options: {
+  curated: readonly CatalogModel[]
+  huggingFace: readonly CatalogModel[]
+  query: string
+}): LiteRtLmRow[] {
+  const query = options.query.trim()
+  const pick = (models: readonly CatalogModel[], section: LiteRtLmRow['section']) =>
+    models
+      .filter((model) => liteRtLmMatches(model, query))
+      .map((model): LiteRtLmRow => ({ model, section }))
+  return [...pick(options.curated, 'curated'), ...pick(options.huggingFace, 'huggingface')]
 }

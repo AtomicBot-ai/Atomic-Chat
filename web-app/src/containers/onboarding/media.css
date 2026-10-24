@@ -1,0 +1,148 @@
+/* Tailwind's layer order, stated first: this file can load before index.css,
+ * and a layer it used first would otherwise come before `base`. */
+@layer theme, base, components, utilities;
+
+/* The media step (`steps/MediaStep.tsx`), ported from the prototype's
+ * `.ob-media-*` and `.ob-caution` rules. The cards sit on the shell's surface
+ * colours; only the art tiles and the caution have colours of their own,
+ * defined here for both themes the way `onboarding.css` defines the rest: the
+ * dark values are the prototype's, the light ones the same hues on a light
+ * ground. */
+.ob-shell {
+  --ob-media-image: #dcefe8;
+  --ob-media-image-glow: #9fd3c6;
+  --ob-media-image-text: #1d5e54;
+  --ob-media-video: #e8e7f3;
+  --ob-media-video-glow: #bfbde0;
+  --ob-media-video-text: #3e3c66;
+  --ob-caution: #8a6420;
+}
+.dark .ob-shell {
+  --ob-media-image: #1e3429;
+  --ob-media-image-glow: #56876c;
+  --ob-media-image-text: #d0e9d8;
+  --ob-media-video: #292936;
+  --ob-media-video-glow: #686784;
+  --ob-media-video-text: #d5d5ea;
+  --ob-caution: #cab68b;
+}
+
+@layer components {
+  .ob-media-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .ob-media-grid > article {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    padding: 0 20px 20px;
+    overflow: hidden;
+    border: 1px solid var(--ob-surface-line);
+    border-radius: 14px;
+    background: var(--ob-surface);
+  }
+  .ob-media-grid > article.is-queued {
+    border-color: var(--ob-selected-line);
+  }
+  .ob-media-art {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 126px;
+    margin: 0 -20px 23px;
+    padding: 24px;
+    background:
+      radial-gradient(
+        ellipse at 10% 20%,
+        var(--ob-media-image-glow),
+        transparent 80%
+      ),
+      var(--ob-media-image);
+    color: var(--ob-media-image-text);
+  }
+  .ob-media-art.is-video {
+    background:
+      radial-gradient(
+        ellipse at 90% 10%,
+        var(--ob-media-video-glow),
+        transparent 80%
+      ),
+      var(--ob-media-video);
+    color: var(--ob-media-video-text);
+  }
+  .ob-media-art span {
+    font-size: calc(var(--font-size-base) * 0.625);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+  .ob-media-title {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+  }
+  /* The model step's logo tile (`.ob-model-icon`), a size down. */
+  .ob-media-logo {
+    display: grid;
+    flex-shrink: 0;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    border: 1px solid var(--ob-icon-line);
+    border-radius: 9px;
+    background: var(--ob-icon-bg);
+  }
+  .ob-media-logo > * {
+    width: 22px;
+    height: 22px;
+  }
+  .ob-media-grid h2 {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .ob-media-grid p {
+    margin: 8px 0;
+    color: var(--ob-muted);
+    font-size: calc(var(--font-size-base) * 0.75);
+  }
+  .ob-media-grid small {
+    display: block;
+    margin-bottom: 14px;
+    color: var(--ob-subtle);
+    font-size: calc(var(--font-size-base) * 0.6875);
+    line-height: 1.5;
+  }
+  .ob-media-grid small.ob-caution {
+    color: var(--ob-caution);
+  }
+  .ob-media-grid button,
+  .ob-media-done {
+    margin-top: auto;
+    font-size: calc(var(--font-size-base) * 0.75);
+  }
+  /* Where the button would be: the same pill, as a status rather than a
+     choice, in the tag colours the model step marks a downloaded model with. */
+  .ob-media-done {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    min-height: 42px;
+    padding: 10px 18px;
+    border-radius: 25px;
+    background: var(--ob-tag);
+    color: var(--ob-tag-text);
+    font-weight: 500;
+  }
+}
+
+@media (max-width: 720px) {
+  .ob-media-grid {
+    grid-template-columns: 1fr;
+  }
+  .ob-media-art {
+    height: 100px;
+  }
+}

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 
+import { route } from '@/constants/routes'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { i18n } from '@/i18n/react-i18next-compat'
 import { toDiffusionError } from '@/lib/diffusion/errors'
@@ -10,7 +11,8 @@ import {
   mediaTargetProps,
   videoEstimateProps,
 } from '@/lib/diffusion/telemetry'
-import { notifyWhenAway } from '@/lib/notifications'
+import { isPageOnScreen } from '@/lib/navigation'
+import { notifyUnlessWatching } from '@/lib/notifications'
 import { capturePosterForClip, PosterBackfillQueue } from '@/lib/video/poster'
 import { validateVideoRequest } from '@/lib/video/validate'
 import type {
@@ -204,8 +206,11 @@ export const useVideoGenerationStore = create<VideoGenerationState>()((
     })
   }
 
-  const notifyIfUnfocused = () =>
-    notifyWhenAway(
+  // The Videos page shows the clip: a user who is on it, in a focused window,
+  // sees it land.
+  const notifyReady = () =>
+    notifyUnlessWatching(
+      isPageOnScreen(route.videos.index),
       i18n.t('videos:notifications.readyTitle'),
       i18n.t('videos:notifications.readyBody')
     )
@@ -217,6 +222,7 @@ export const useVideoGenerationStore = create<VideoGenerationState>()((
       for (const item of job.outputs) {
         requestPoster(item)
       }
+      notifyReady()
     } else if (
       job.error &&
       shouldReportGenerateError({
@@ -376,7 +382,6 @@ export const useVideoGenerationStore = create<VideoGenerationState>()((
       set({ currentJob: placeholderJob(jobId) })
       const job = await waitForTerminal(jobId)
       settle(job)
-      if (job.state === 'completed') notifyIfUnfocused()
     },
 
     stop: async () => {

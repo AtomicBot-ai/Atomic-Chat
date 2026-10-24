@@ -97,7 +97,7 @@ describe('DownloadProgressRow status while no bytes have moved', () => {
 })
 
 describe('DownloadProgressRow activity colour', () => {
-  it('uses product blue instead of the green ready-state colour', () => {
+  it('uses the first-run strip’s teal, and its warning colour while reconnecting', () => {
     const { container } = render(
       <DownloadProgressRow
         id="AtomicChat/some-model"
@@ -109,8 +109,19 @@ describe('DownloadProgressRow activity colour', () => {
     const indicator = container.querySelector(
       '[data-slot="progress-indicator"]'
     )
-    expect(indicator).toHaveClass('bg-blue-500/60')
-    expect(indicator).not.toHaveClass('bg-emerald-400/50')
+    expect(indicator).toHaveClass('bg-[var(--dl-progress)]')
+    expect(container.querySelector('li')).not.toHaveClass('is-warn')
+
+    const reconnecting = render(
+      <DownloadProgressRow
+        id="AtomicChat/other-model"
+        progress={0.42}
+        current={420}
+        total={1000}
+        stage={{ kind: 'stalled', attempt: 0, maxAttempts: 5 }}
+      />
+    )
+    expect(reconnecting.container.querySelector('li')).toHaveClass('is-warn')
   })
 })
 
@@ -133,12 +144,13 @@ describe('DownloadProgressRow readout line', () => {
     // 8.2 GB left at 18.4 MB/s is 456 s: 7m 36s.
     bytesPerSecond: 18.4 * MB,
   }
-  const line = '42% · 4.20 / 12.40 GB · common:downloadPanel.left(eta=7m 36s)'
+  const line = '4.20 / 12.40 GB · common:downloadPanel.left(eta=7m 36s)'
 
-  it('states percent, size and time left on one line, in that order', () => {
+  it('states size and time left on one line, the percent apart', () => {
     render(<DownloadProgressRow {...transfer} />)
 
     expect(screen.getByText(line)).toBeInTheDocument()
+    expect(screen.getByText('42%')).toBeInTheDocument()
   })
 
   it('never lets the line wrap: one element, nowrap, tabular digits', () => {
@@ -166,7 +178,7 @@ describe('DownloadProgressRow readout line', () => {
   it('omits the estimate until there is a rate to base it on', () => {
     render(<DownloadProgressRow {...transfer} bytesPerSecond={0} />)
 
-    expect(screen.getByText('42% · 4.20 / 12.40 GB')).toBeInTheDocument()
+    expect(screen.getByText('4.20 / 12.40 GB')).toBeInTheDocument()
   })
 
   it('truncates a long model name and keeps the full id as its tooltip', () => {

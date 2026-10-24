@@ -30,6 +30,26 @@ async function ensurePermission(): Promise<boolean> {
   return granted
 }
 
+/** Whether the OS already lets the app notify. Never shows a prompt. */
+export async function notificationPermissionGranted(): Promise<boolean> {
+  if (!IS_TAURI) return false
+  try {
+    return await isPermissionGranted()
+  } catch (error) {
+    console.error(`${LOG_PREFIX} isPermissionGranted failed`, error)
+    return false
+  }
+}
+
+/**
+ * Asks the OS for notification access ahead of the first notification, as
+ * the first-run flow does. Resolves `true` once granted.
+ */
+export async function requestNotificationPermission(): Promise<boolean> {
+  if (!IS_TAURI) return false
+  return ensurePermission()
+}
+
 /** Sends an OS notification; callers decide whether one is wanted. */
 export async function showDesktopNotification(
   title: string,
@@ -77,13 +97,19 @@ export function isWindowAway(): boolean {
 }
 
 /**
- * Something the user waited for is done (a download, images, a clip). Tell the
- * OS only while they are away and the master switch is on — in a focused
- * window the in-app toast or the studio already shows it. Returns whether the
+ * Something the user waited for is done: a reply, a download, images, a clip.
+ * Tell the OS unless they are watching it — `watching` says the thing itself
+ * is on screen (its thread, its studio page), which only counts in a focused,
+ * visible window. The master switch silences everything. Returns whether the
  * OS was asked.
  */
-export function notifyWhenAway(title: string, body: string): boolean {
-  if (!desktopNotificationsEnabled() || !isWindowAway()) return false
+export function notifyUnlessWatching(
+  watching: boolean,
+  title: string,
+  body: string
+): boolean {
+  if (!desktopNotificationsEnabled()) return false
+  if (watching && !isWindowAway()) return false
   void showDesktopNotification(title, body)
   return true
 }

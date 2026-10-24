@@ -1951,3 +1951,81 @@ fn a_download_item_without_a_resume_key_still_deserializes() {
     .unwrap();
     assert_eq!(keyed.resume_key.as_deref(), Some("foundry-local/v/m.onnx"));
 }
+
+/// A server that answers every request with `respond(request)` and records whether each request
+/// carried an `Authorization` header.
+async fn spawn_header_recording_server(
+    respond: fn(&Request<Body>) -> Response<Body>,
+) -> (
+    String,
+    Arc<std::sync::Mutex<Vec<bool>>>,
+    tokio::task::JoinHandle<Result<(), hyper::Error>>,
+) {
+    let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let service_seen = seen.clone();
+    let make_service = make_service_fn(move |_| {
+        let service_seen = service_seen.clone();
+        async move {
+            Ok::<_, Infallible>(service_fn(move |request: Request<Body>| {
+                let service_seen = service_seen.clone();
+                async move {
+                    service_seen
+                        .lock()
+                        .unwrap()
+                        .push(request.headers().contains_key("authorization"));
+                    Ok::<_, Infallible>(respond(&request))
+                }
+            }))
+        }
+    });
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = Server::from_tcp(listener).unwrap().serve(make_service);
+    (format!("http://{address}"), seen, tokio::spawn(server))
+}
+
+#[tokio::test]
+async fn the_hugging_face_token_does_not_follow_a_redirect_to_another_host() {
+    // change add-litert-lm-runtime, spec litert-lm-models "Токен не уходит на чужой хост": Hugging
+    // Face answers a `resolve` URL with a redirect to its CDN on another host. The token the app
+    // hands `download_files` for a Hugging Face URL must reach Hugging Face only.
+    let (cdn, cdn_seen, cdn_server) = spawn_header_recording_server(|_| {
+        Response::builder()
+            .status(StatusCode::OK)
+            .body(Body::from("model"))
+            .unwrap()
+    })
+    .await;
+    static CDN: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    CDN.set(format!("{cdn}/blob")).unwrap();
+    let (hub, hub_seen, hub_server) = spawn_header_recording_server(|_| {
+        Response::builder()
+            .status(StatusCode::FOUND)
+            .header("location", CDN.get().unwrap().as_str())
+            .body(Body::empty())
+            .unwrap()
+    })
+    .await;
+
+    let item = DownloadItem {
+        url: format!("{hub}/litert-community/gemma/resolve/abc/gemma.litertlm"),
+        save_path: "unused".into(),
+        proxy: None,
+        sha256: None,
+        size: None,
+        model_id: None,
+        resume_key: None,
+    };
+    let mut headers = HashMap::new();
+    headers.insert("Authorization".to_string(), "Bearer hf_secret".to_string());
+    let client = build_client_for_item(&item, &_convert_headers(&headers).unwrap(), false).unwrap();
+
+    let response = client.get(&item.url).send().await.unwrap();
+
+    assert_eq!(response.text().await.unwrap(), "model");
+    assert_eq!(*hub_seen.lock().unwrap(), vec![true], "the hub gets the token");
+    assert_eq!(*cdn_seen.lock().unwrap(), vec![false], "the CDN never does");
+    hub_server.abort();
+    cdn_server.abort();
+}

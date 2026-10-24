@@ -78,6 +78,16 @@ export const localStorageKey = {
   // means the app was closed mid-flow — the only way to see that at all, since
   // a window close gives the renderer no reliable chance to report it.
   onboardingInFlight: 'onboarding-in-flight',
+  // The first-run flow (`stores/onboarding-store`): its step, the chat model
+  // chosen, the download queue it started and where it handed off. Kept until
+  // the run settles, so a relaunch — the Windows/Linux backend step forces
+  // one — comes back to the same screen with the same queue.
+  onboarding: 'atomic-onboarding',
+  // This install's cohort in the onboarding experiment
+  // (`lib/onboarding/experiment`): `{experiment, variant, assignedAt}`, drawn
+  // once on the first launch. Kept through a factory reset, as the analytics
+  // id is, so a reset install stays in its cohort.
+  onboardingCohort: 'atomic-onboarding-cohort',
   // A `backend_step_resolved` that a relaunch is about to interrupt. Written
   // just before "Restart now" kills the process and sent on the next launch —
   // otherwise a successful restart reports nothing at all and the data shows
@@ -134,6 +144,12 @@ export const BACKEND_PRESERVE_KEYS = [
   'llama_cpp_backend_type',
   'atomic_llamacpp_upstream_backend_type',
   'atomic_llamacpp_turboquant_backend_type',
+] as const
+
+/** What a factory reset keeps in localStorage: the backend builds and the onboarding cohort. */
+export const FACTORY_RESET_PRESERVE_KEYS = [
+  ...BACKEND_PRESERVE_KEYS,
+  localStorageKey.onboardingCohort,
 ] as const
 
 export const CACHE_EXPIRY_MS = 1000 * 60 * 60 * 24

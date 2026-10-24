@@ -94,7 +94,14 @@ for (const width of [1024, 1280]) {
             (card) =>
               Array.from(card.children).find((el) => el.tagName === 'P')!
           )
-          expectSameHeight(descriptions)
+          // Copy wraps to its own length (at most three lines); what lines
+          // up across the grid is where each description starts.
+          descriptions.forEach((el) => {
+            const lineHeight = parseFloat(getComputedStyle(el).lineHeight)
+            expect(el.getBoundingClientRect().height).toBeLessThanOrEqual(
+              lineHeight * 3 + 0.5
+            )
+          })
           const descriptionOffsets = descriptions.map(
             (el, i) =>
               el.getBoundingClientRect().top -
@@ -122,8 +129,9 @@ for (const width of [1024, 1280]) {
             const menuBox = menu.getBoundingClientRect()
             const toggleBox = toggle.getBoundingClientRect()
             expect(toggleBox.left - menuBox.right).toBeGreaterThanOrEqual(8)
+            // 16 px of padding inside the card's border.
             expect(toggleBox.right).toBeCloseTo(
-              card.getBoundingClientRect().right - 16,
+              card.getBoundingClientRect().right - card.clientLeft - 16,
               0
             )
             expect(

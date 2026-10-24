@@ -1,8 +1,15 @@
 import { localStorageKey } from '@/constants/localStorage'
+import { route } from '@/constants/routes'
 import {
   isAnswerableModel,
   type AnswerableModelLike,
 } from '@/lib/answerable-model'
+import {
+  getOnboardingVariant,
+  hasNoSteps,
+  type OnboardingVariant,
+} from '@/lib/onboarding/steps'
+import { useOnboardingStore } from '@/stores/onboarding-store'
 import { isKnownProvider } from '@/stores/provider-registry-store'
 import { isSubscriptionProvider } from '@/utils/registerRemoteProvider'
 
@@ -21,6 +28,7 @@ const LOCAL_MODEL_PROVIDERS = new Set([
   'atomic-prism',
   'mlx',
   'foundry-local',
+  'litert-lm',
   'jan',
 ])
 
@@ -114,20 +122,87 @@ function isSetupCompleted(): boolean {
 
 /**
  * Whether the onboarding screen will be shown for this launch. Deterministic
- * (derived from providers + the persisted `setupCompleted` flag), so it does
- * NOT depend on whether SetupScreen has mounted yet — unlike a runtime flag,
- * which races against DataProvider's own startup effect.
+ * (derived from providers, the persisted `setupCompleted` flag and the saved
+ * run), so it does NOT depend on whether `/onboarding` has mounted yet —
+ * unlike a runtime flag, which races against DataProvider's own startup effect.
  *
  * `FORCE_ONBOARDING` decides whether onboarding is *entered* despite installed
  * models; it deliberately does not decide whether it can be *left*, or the
- * auto-exit, the chat handoff and the model reminder would be unreachable in
- * the one build made for exercising them. `resetForcedOnboardingRun()` clears
- * the completion flag once per launch so the forced run still repeats.
+ * chat handoff and the model reminder would be unreachable in the one build
+ * made for exercising them. `resetForcedOnboardingRun()` clears the completion
+ * flag once per launch so the forced run still repeats.
  */
 export function isOnboardingPending(providers: ProviderLike[]): boolean {
+  if (isOnboardingInProgress()) return true
   if (isSetupCompleted()) return false
+  if (skipsOnboarding()) return false
   if (typeof FORCE_ONBOARDING !== 'undefined' && FORCE_ONBOARDING) return true
   return !hasValidProviders(providers)
+}
+
+/**
+ * The variant this launch runs: the saved run's once one has begun, so a
+ * relaunch never switches flows halfway; otherwise the one a new run would
+ * start with.
+ */
+export function currentOnboardingVariant(): OnboardingVariant {
+  const { phase, variant } = useOnboardingStore.getState()
+  return phase === 'idle' ? getOnboardingVariant() : variant
+}
+
+/**
+ * This install has no setup screen to show (`none`): the app itself is the
+ * first run, so nothing waits for onboarding and nothing sends the user to it,
+ * `FORCE_ONBOARDING` included. A run already under way still resumes.
+ */
+export function skipsOnboarding(): boolean {
+  return hasNoSteps(currentOnboardingVariant())
+}
+
+/**
+ * The setup screen is the page on screen. Read from the router's matches, not
+ * its location: a navigation moves the location first and the page only once
+ * it is ready, so a layout that switched on the location drew the old page in
+ * the other branch for a moment, remounting it.
+ */
+export function isOnboardingOnScreen(
+  matches: ReadonlyArray<{ routeId: string }>
+): boolean {
+  return matches.some((match) => match.routeId === route.onboarding)
+}
+
+/**
+ * A first run is on screen, or was when the app last closed: the next launch
+ * goes back to it. Set from the setup screen's first step until the handoff,
+ * and again after "Back to setup".
+ */
+export function isOnboardingInProgress(): boolean {
+  return useOnboardingStore.getState().phase === 'active'
+}
+
+/**
+ * Whether the home route sends this launch to the setup screen. A run in
+ * progress always resumes; otherwise only an install that has neither a
+ * finished setup, a chat, nor a model or key to answer with goes there, and
+ * only when its variant has steps. `force` (`FORCE_ONBOARDING`) enters it
+ * despite chats and models.
+ */
+export function shouldEnterOnboarding({
+  providers,
+  hasPriorThread,
+  setupCompleted,
+  force,
+}: {
+  providers: ProviderLike[]
+  hasPriorThread: boolean
+  setupCompleted: boolean
+  force: boolean
+}): boolean {
+  if (isOnboardingInProgress()) return true
+  if (setupCompleted) return false
+  if (skipsOnboarding()) return false
+  if (force) return true
+  return !hasPriorThread && !hasValidProviders(providers)
 }
 
 /**
@@ -139,4 +214,5 @@ export function resetForcedOnboardingRun(): void {
   if (typeof FORCE_ONBOARDING === 'undefined' || !FORCE_ONBOARDING) return
   if (typeof window === 'undefined') return
   localStorage.removeItem(localStorageKey.setupCompleted)
+  useOnboardingStore.getState().reset()
 }

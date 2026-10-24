@@ -3,11 +3,12 @@
 Byte-exact copies of the local engines' settings descriptors from
 `atomic-chat-core/src/settings/schema/` (`llamacpp.json`, `llamacpp-upstream.json`,
 `atomic-prism.json`, `mlx.json`, `tensorrt-llm.json`, `vllm.json`, `sglang.json`,
-`foundry-local.json`).
+`foundry-local.json`, `litert-lm.json`).
 `vllm.json` comes from the core's `change/add-vllm-runtime` branch until the core
 release with that change is pinned (openspec change `add-vllm-runtime`, task 6.3);
 `sglang.json` from the core release `v0.16.0` (openspec change `add-sglang-runtime`, task 4.3);
-`foundry-local.json` from the core release `v0.18.0` (openspec change `add-foundry-local`, task 10.1). The copy is pinned
+`foundry-local.json` from the core release `v0.18.0` (openspec change `add-foundry-local`, task 10.1);
+`litert-lm.json` from the core release `v0.19.0` (openspec change `add-litert-lm-runtime`, task 7.1). The copy is pinned
 to the core version named in the root
 `package.json` under `atomicCore.version`; when that version changes, copy the
 files again from the matching core source with `cp` (never retype them) and

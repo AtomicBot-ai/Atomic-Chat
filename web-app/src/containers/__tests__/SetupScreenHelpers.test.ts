@@ -1,32 +1,25 @@
 /**
- * The pure pickers behind the first-run screen.
+ * The pure pickers behind the first-run model list and the reply-model gate.
  *
- * They decide which file a first launch downloads, which one auto-starts, and
- * which screen the flow opens on — the choices the whole onboarding funnel is
- * measured against — and none of them had a test.
+ * They decide which file a first launch downloads and how a row says it fits
+ * this machine — the choices the whole onboarding funnel is measured against —
+ * and none of them had a test.
  */
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import {
   describeRecommendationFit,
-  formatDetectedSize,
+  fitLevel,
   formatMemoryGb,
-  getInitialStep,
   interleaveByPublisher,
-  pickAutoRunCandidate,
+  orderRowsByFit,
   pickMmprojModel,
   pickPreferredVariant,
   publisherKey,
-  sizeStringToGb,
-} from '@/containers/SetupScreen'
-import {
-  fitLevel,
-  orderRowsByFit,
   type FitLevel,
 } from '@/containers/SetupScreenHelpers'
 import type { HardwareProfile } from '@/lib/hardware-tier'
 import type { CatalogModel, ModelQuant } from '@/services/models/types'
-import type { LocalModelCandidate } from '@/services/models/localScan'
 
 const quant = (model_id: string): ModelQuant =>
   ({
@@ -78,98 +71,6 @@ describe('pickMmprojModel', () => {
     expect(pickMmprojModel(model, 'Q8_0')?.model_id).toBe(
       'mmproj-LFM2_5-VL-450m-Q8_0'
     )
-  })
-})
-
-describe('formatDetectedSize', () => {
-  it('switches unit at a gigabyte and refuses to invent a size', () => {
-    expect(formatDetectedSize(5 * 1024 ** 3)).toBe('5.00 GB')
-    expect(formatDetectedSize(850 * 1024 ** 2)).toBe('850 MB')
-    expect(formatDetectedSize(0)).toBeNull()
-    expect(formatDetectedSize(undefined)).toBeNull()
-  })
-
-  it('never shows a detected model as 0 MB', () => {
-    expect(formatDetectedSize(1)).toBe('1 MB')
-  })
-})
-
-describe('sizeStringToGb', () => {
-  it('parses the catalog strings that feed size_gb', () => {
-    expect(sizeStringToGb('4.5 GB')).toBe(4.5)
-    expect(sizeStringToGb('850 MB')).toBe(0.83)
-    expect(sizeStringToGb('2GB')).toBe(2)
-  })
-
-  it('returns undefined rather than a wrong number', () => {
-    expect(sizeStringToGb(undefined)).toBeUndefined()
-    expect(sizeStringToGb('unknown')).toBeUndefined()
-    expect(sizeStringToGb('4.5 TB')).toBeUndefined()
-  })
-})
-
-describe('pickAutoRunCandidate', () => {
-  const cand = (
-    id: string,
-    runnable: boolean,
-    sizeBytes?: number
-  ): LocalModelCandidate => ({ id, runnable, sizeBytes }) as LocalModelCandidate
-
-  it('picks the smallest runnable model, so the first launch feels instant', () => {
-    expect(
-      pickAutoRunCandidate([
-        cand('big', true, 9_000_000_000),
-        cand('small', true, 1_000_000_000),
-      ])?.id
-    ).toBe('small')
-  })
-
-  it('prefers a measured model over an unmeasured one', () => {
-    expect(
-      pickAutoRunCandidate([cand('unknown', true), cand('known', true, 9e9)])
-        ?.id
-    ).toBe('known')
-  })
-
-  it('never auto-starts something that cannot run', () => {
-    // LoRA adapters are listed but need a base model first.
-    expect(pickAutoRunCandidate([cand('adapter', false, 1)])).toBeNull()
-    expect(pickAutoRunCandidate([])).toBeNull()
-  })
-})
-
-describe('getInitialStep', () => {
-  afterEach(() => {
-    vi.unstubAllGlobals()
-    localStorage.clear()
-  })
-
-  it('opens on the backend step only on a first Windows launch', () => {
-    vi.stubGlobal('IS_WINDOWS', true)
-    vi.stubGlobal('IS_LINUX', false)
-    expect(getInitialStep()).toBe('backend')
-
-    // Set by `handleBackendStepDone` — and, since ATO-459, before a
-    // "Restart now" too, which previously showed the step a second time.
-    localStorage.setItem('llama_cpp_onboarding_done', 'downloaded')
-    expect(getInitialStep()).toBe('model')
-  })
-
-  it('opens on the backend step on a first Linux launch too', () => {
-    // Linux installs on the CPU build with a Vulkan build to offer, exactly
-    // the situation the step exists for (ATO-464).
-    vi.stubGlobal('IS_WINDOWS', false)
-    vi.stubGlobal('IS_LINUX', true)
-    expect(getInitialStep()).toBe('backend')
-
-    localStorage.setItem('llama_cpp_onboarding_done', 'skipped')
-    expect(getInitialStep()).toBe('model')
-  })
-
-  it('goes straight to the picker on macOS', () => {
-    vi.stubGlobal('IS_WINDOWS', false)
-    vi.stubGlobal('IS_LINUX', false)
-    expect(getInitialStep()).toBe('model')
   })
 })
 

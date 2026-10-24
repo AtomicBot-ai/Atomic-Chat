@@ -30,6 +30,8 @@ export const LOCAL_PROVIDER_NAMES = [
   // Microsoft Foundry Local (change add-foundry-local): the core runs each model in a host process
   // behind its session gateway.
   'foundry-local',
+  // Google LiteRT-LM (change add-litert-lm-runtime): the same, a host process per model.
+  'litert-lm',
   // The managed engines (Linux, Windows): the core runs them in a container behind its session
   // gateway. `isLocalProvider` also asks the registry (`lib/managed-engines.ts`).
   'vllm',

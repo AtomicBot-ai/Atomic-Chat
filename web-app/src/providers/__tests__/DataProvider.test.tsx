@@ -154,7 +154,7 @@ vi.mock('@/utils/serverModelSelection', () => ({
 
 vi.mock('@/hooks/useModelLoad', () => ({
   useModelLoad: {
-    getState: () => ({ onboardingActive: false }),
+    getState: () => ({ modelSelectionDeferred: false }),
   },
 }))
 

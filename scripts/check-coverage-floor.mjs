@@ -33,9 +33,15 @@ const summaryRoots = [
 
 const targetPaths = [
   'web-app/src/lib/custom-chat-transport.ts',
-  'web-app/src/containers/SetupScreen.tsx',
-  // The first-run auto-start rule, extracted from SetupScreen (ATO-458) and
-  // shared with the composer widget; guarded here so the move keeps its cover.
+  // The first-run flow: its shell, the steps it shows, where a run stands,
+  // and the download queue it hands to the app.
+  'web-app/src/containers/onboarding/Onboarding.tsx',
+  'web-app/src/lib/onboarding/steps.ts',
+  'web-app/src/stores/onboarding-store.ts',
+  'web-app/src/lib/onboarding/jobs.ts',
+  // The auto-start rule for a model found on disk, extracted from the old
+  // first-run screen (ATO-458) and used by the composer widget; guarded here
+  // so the move keeps its cover.
   'web-app/src/lib/scanned-model-import.ts',
   'web-app/src/containers/SetupBackendStep.tsx',
   'web-app/src/utils/getModelToStart.ts',

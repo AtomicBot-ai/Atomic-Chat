@@ -149,14 +149,16 @@ Gap:
 
 Production entrypoints:
 
-- `web-app/src/containers/SetupScreen.tsx`
+- `web-app/src/containers/onboarding/Onboarding.tsx`
 - `web-app/src/containers/SetupBackendStep.tsx`
+- `web-app/src/lib/onboarding/handoff.ts`
 - `web-app/src/hooks/useModelProvider.ts`
 
-`SetupScreen.test.tsx` now renders the production component and verifies the
-post-discovery onboarding UI plus persisted skip completion. Backend
-recommendation, failed download recovery, provider selection, and the
-transition into the main application remain unproved as one flow.
+`Onboarding.test.tsx` renders the production flow from Welcome through the
+model step to the handoff, and `handoff.test.ts` verifies persisted completion
+and the model selected on the way out. Backend recommendation, failed download
+recovery, provider selection, and the transition into the main application
+remain unproved as one flow.
 
 ### Hub model install and start — partial, P0
 

@@ -34,10 +34,12 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }))
 
-const folders: ThreadFolder[] = [
+const PROJECTS: ThreadFolder[] = [
   { id: 'p-1', name: 'QA Project', updated_at: 1 },
   { id: 'p-2', name: 'Research', updated_at: 2 },
 ]
+let folders: ThreadFolder[] = PROJECTS
+let threads: Record<string, unknown> = {}
 
 vi.mock('@/hooks/useThreadManagement', () => ({
   useThreadManagement: () => ({
@@ -49,7 +51,7 @@ vi.mock('@/hooks/useThreadManagement', () => ({
 
 vi.mock('@/hooks/useThreads', () => ({
   useThreads: (selector: (state: unknown) => unknown) =>
-    selector({ threads: {}, currentThreadId: undefined }),
+    selector({ threads, currentThreadId: undefined }),
 }))
 
 vi.mock('@/hooks/useLeftPanel', () => ({
@@ -89,6 +91,8 @@ describe('NavProjects', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     openPage({})
+    folders = PROJECTS
+    threads = {}
   })
 
   it('highlights the project whose page is open, like an open chat row', () => {
@@ -109,5 +113,33 @@ describe('NavProjects', () => {
 
     expect(projectRow('QA Project')).toHaveAttribute('data-active', 'false')
     expect(projectRow('Research')).toHaveAttribute('data-active', 'false')
+  })
+
+  it('shows Projects as a plain label until there is a project to fold', () => {
+    folders = []
+    renderProjects()
+
+    expect(screen.getByText('common:projects.title').tagName).toBe('SPAN')
+    expect(screen.queryByRole('button', { expanded: true })).toBeNull()
+    // "+" still starts the first project.
+    expect(
+      screen.getByRole('button', { name: 'common:projects.new' })
+    ).toBeInTheDocument()
+  })
+
+  it('folds the group, and unfolds only the projects that have chats', () => {
+    threads = {
+      't-1': { id: 't-1', updated: 3, metadata: { project: { id: 'p-2' } } },
+    }
+    renderProjects()
+
+    expect(
+      screen.getByRole('button', { name: 'common:projects.title' })
+    ).toHaveAttribute('aria-expanded', 'true')
+    const expanders = screen.getAllByRole('button', { name: 'Expand project' })
+    expect(expanders).toHaveLength(1)
+    expect(expanders[0].closest('li')?.textContent?.includes('Research')).toBe(
+      true
+    )
   })
 })

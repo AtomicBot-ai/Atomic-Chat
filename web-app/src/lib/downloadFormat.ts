@@ -165,6 +165,48 @@ export function formatDownloadReadout(
 }
 
 /**
+ * The first-run strip's line, for a row that shows its percent apart:
+ * `Downloading · 4.20 / 12.40 GB · 7m 36s left`, `Paused · 4.20 / 12.40 GB`,
+ * `Stalled, reconnecting… · 4.20 / 12.40 GB`, or what the downloader is doing
+ * before the first byte. The same parts as `formatDownloadReadout`, with a
+ * word for the state where that one puts the percent. `runningWord: false`
+ * leaves "Downloading" out of a transfer that is simply running, for a row
+ * too narrow to keep the estimate otherwise; the other states keep theirs.
+ */
+export function formatDownloadStatusLine(
+  t: (key: string, vars?: Record<string, unknown>) => string,
+  download: {
+    current: number
+    total: number
+    bytesPerSecond?: number | null
+    stage?: { kind: string; attempt: number; maxAttempts: number }
+    paused?: boolean
+  },
+  { runningWord = true }: { runningWord?: boolean } = {}
+): string {
+  const stageNote = download.paused
+    ? null
+    : downloadStageLabel(t, download.stage)
+  const state = download.paused
+    ? t('common:downloadPanel.paused')
+    : (stageNote ??
+      (download.total > 0
+        ? runningWord && t('common:downloading')
+        : t('common:downloadPanel.preparing')))
+  const eta =
+    download.paused || stageNote
+      ? null
+      : formatEta(download.total - download.current, download.bytesPerSecond)
+  return [
+    state,
+    download.total > 0 && formatProgressPair(download.current, download.total),
+    eta && t('common:downloadPanel.left', { eta }),
+  ]
+    .filter(Boolean)
+    .join(' · ')
+}
+
+/**
  * Strip the HuggingFace org prefix for display: `unsloth/Qwen3-4B-GGUF` reads
  * as `Qwen3-4B-GGUF`. The full id stays in the `title` attribute.
  */
