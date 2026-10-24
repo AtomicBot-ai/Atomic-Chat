@@ -12,7 +12,7 @@ import { readdir, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { existsSync } from 'node:fs'
-import { coreSessions, pageShows, send, waitForChat } from '../harness/chat.js'
+import { coreSessions, pageShows, send, waitForChat, skipOnboarding } from '../harness/chat.js'
 import { installFakeBackend, startHubFixture, type HubFixture } from '../harness/fixtures.js'
 import { CAN_RUN_FAKE_BACKEND } from '../harness/platform.js'
 import { endSession, startSession, withArtifacts, type Session } from '../harness/session.js'
@@ -51,7 +51,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('downloading a model from the Hub', () =>
       const dataFolder = session.profile.dataFolder
 
       // No model yet, so the app opens on onboarding; the Hub is the way in here.
-      await browser.$('button=Skip').click()
+      await skipOnboarding(session)
       await waitForChat(session)
       await openSection(browser, 'models')
 
@@ -142,7 +142,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('cancelling a Hub download', () => {
           () => (document.querySelector('[role="region"][aria-label="Downloads"]') as HTMLElement | null)?.innerText ?? ''
         )
 
-      await browser.$('button=Skip').click()
+      await skipOnboarding(session)
       await waitForChat(session)
       await openSection(browser, 'models')
       const card = browser.$(`//*[normalize-space(text())="${TITLE}"]`)
@@ -210,7 +210,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('pausing a Hub download', () => {
         return sizes.reduce((sum, size) => sum + size, 0)
       }
 
-      await browser.$('button=Skip').click()
+      await skipOnboarding(session)
       await waitForChat(session)
       await openSection(browser, 'models')
       const card = browser.$(`//*[normalize-space(text())="${TITLE}"]`)
@@ -284,7 +284,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a Hub download the server refuses', () =
     session = await startSession('download-failures', {
       prepare: async (profile) => installFakeBackend(profile),
     })
-    await session.app.browser.$('button=Skip').click()
+    await skipOnboarding(session)
     await waitForChat(session)
   })
 
@@ -369,7 +369,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a Hub download that has to retry', () =>
     await withArtifacts(session, async () => {
       const browser = session.app.browser
       const dataFolder = session.profile.dataFolder
-      await browser.$('button=Skip').click()
+      await skipOnboarding(session)
       await waitForChat(session)
       await openSection(browser, 'models')
       const card = browser.$(`//*[normalize-space(text())="${TITLE}"]`)

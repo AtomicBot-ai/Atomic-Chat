@@ -134,20 +134,26 @@ const ProjectItem = memo(function ProjectItem({
             >
               <GripVertical className="size-3.5" />
             </button>
-            <CollapsibleTrigger asChild>
-              <button
-                type="button"
-                className="hover:bg-sidebar-foreground/8 flex size-6 shrink-0 items-center justify-center rounded-md transition-colors"
-                aria-label={isOpen ? 'Collapse project' : 'Expand project'}
-              >
-                <ChevronRight
-                  className={cn(
-                    'text-muted-foreground size-4 shrink-0 transition-transform',
-                    isOpen && 'rotate-90'
-                  )}
-                />
-              </button>
-            </CollapsibleTrigger>
+            {/* A project without chats has nothing to unfold; the spacer
+                keeps its name in line with the others. */}
+            {threads.length > 0 ? (
+              <CollapsibleTrigger asChild>
+                <button
+                  type="button"
+                  className="hover:bg-sidebar-foreground/8 flex size-6 shrink-0 items-center justify-center rounded-md transition-colors"
+                  aria-label={isOpen ? 'Collapse project' : 'Expand project'}
+                >
+                  <ChevronRight
+                    className={cn(
+                      'text-muted-foreground size-4 shrink-0 transition-transform',
+                      isOpen && 'rotate-90'
+                    )}
+                  />
+                </button>
+              </CollapsibleTrigger>
+            ) : (
+              <span className="size-6 shrink-0" aria-hidden="true" />
+            )}
             <NavRowTooltip
               name={item.name}
               lastActivity={lastActivity || undefined}
@@ -336,21 +342,26 @@ export function NavProjects({ onCreate }: { onCreate: () => void }) {
   return (
     <>
       <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+        {/* Folds only once there is a project to fold. */}
         <SidebarGroupLabel asChild>
-          <button
-            type="button"
-            aria-expanded={!collapsed}
-            onClick={() => toggleGroup('projects')}
-          >
-            <ChevronRight
-              size={12}
-              className={cn(
-                'mr-1 transition-transform',
-                !collapsed && 'rotate-90'
-              )}
-            />
-            {t('common:projects.title')}
-          </button>
+          {folders.length > 0 ? (
+            <button
+              type="button"
+              aria-expanded={!collapsed}
+              onClick={() => toggleGroup('projects')}
+            >
+              <ChevronRight
+                size={12}
+                className={cn(
+                  'mr-1 transition-transform',
+                  !collapsed && 'rotate-90'
+                )}
+              />
+              {t('common:projects.title')}
+            </button>
+          ) : (
+            <span>{t('common:projects.title')}</span>
+          )}
         </SidebarGroupLabel>
         <SidebarGroupAction
           className="hover:bg-sidebar-foreground/8"

@@ -18,6 +18,12 @@ pub struct AppConfiguration {
     pub data_folder: String,
     #[serde(default = "existing_install_autostart_preference")]
     pub autostart_preference: AutostartPreference,
+    /// The install's analytics id: the PostHog distinct id, also the Sentry
+    /// user. The web app stores PostHog's id here on its first launch and
+    /// identifies with it afterwards, so the person outlives cleared webview
+    /// storage. Absent from configurations written before it existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub distinct_id: Option<String>,
     // Add other fields as needed
 }
 
@@ -26,6 +32,7 @@ impl AppConfiguration {
         Self {
             data_folder: String::from("./data"), // Set a default value for the data_folder
             autostart_preference: AutostartPreference::Unmanaged,
+            distinct_id: None,
             // Add other fields with default values as needed
         }
     }
@@ -81,5 +88,34 @@ mod tests {
         .unwrap();
 
         assert_eq!(config.data_folder, "./d");
+    }
+
+    #[test]
+    fn the_distinct_id_round_trips() {
+        let config = AppConfiguration {
+            distinct_id: Some("0192f3a4-5b6c-7d8e-9f01-23456789abcd".to_string()),
+            ..AppConfiguration::default()
+        };
+
+        let written = serde_json::to_string(&config).unwrap();
+        let read: AppConfiguration = serde_json::from_str(&written).unwrap();
+
+        assert_eq!(
+            read.distinct_id.as_deref(),
+            Some("0192f3a4-5b6c-7d8e-9f01-23456789abcd")
+        );
+    }
+
+    #[test]
+    fn a_configuration_without_a_distinct_id_still_loads_and_writes_none() {
+        // Every settings.json written before the field existed lacks it.
+        let config: AppConfiguration =
+            serde_json::from_str(r#"{"data_folder":"./d","autostart_preference":"disabled"}"#)
+                .unwrap();
+
+        assert_eq!(config.distinct_id, None);
+        assert_eq!(config.autostart_preference, AutostartPreference::Disabled);
+        let written = serde_json::to_string(&config).unwrap();
+        assert!(!written.contains("distinct_id"));
     }
 }

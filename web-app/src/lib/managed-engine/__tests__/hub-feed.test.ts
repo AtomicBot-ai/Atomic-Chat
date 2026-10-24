@@ -4,6 +4,7 @@ import {
   ENGINE_OVERHEAD_BYTES,
   estimateWeightBytes,
   foundryLocalRows,
+  liteRtLmRows,
   hubListSources,
   passesManagedPrefilter,
   managedBrowseRows,
@@ -12,6 +13,9 @@ import {
 import type { GpuFacts } from '@/services/managed-environment/types'
 import type { CatalogModel } from '@/services/models/types'
 import { catalogHubCard, curatedHubCard } from '@/lib/foundry-local/hub'
+import { curatedLiteRtLmCard, hfLiteRtLmCard } from '@/lib/litert-lm/hub'
+import type { LiteRtLmModel } from '@/services/litert-lm/curated'
+import type { LiteRtLmHfModel } from '@/services/litert-lm/huggingface'
 import type { FoundryLocalModel } from '@/services/foundry-local/curated'
 import type { CatalogModel as MicrosoftModel } from '@/services/foundry-local/microsoft-catalog'
 
@@ -201,6 +205,89 @@ describe('hubListSources', () => {
       feedFormat: 'gguf',
       prefilter: false,
     })
+  })
+})
+
+describe('liteRtLmRows (change add-litert-lm-runtime)', () => {
+  const curatedModel = (id: string, name: string, repo: string): LiteRtLmModel => ({
+    id,
+    name,
+    description: `${name}, checked by Atomic Chat`,
+    task: 'chat',
+    license: 'apache-2.0',
+    repo,
+    revision: 'a'.repeat(40),
+    gated: false,
+    context_length: 32768,
+    tools: true,
+    reasoning: true,
+    vision: true,
+    variants: [
+      {
+        id: `${id}-cpu`,
+        backend: 'cpu',
+        platforms: ['macos-arm64', 'win-x64'],
+        file: { path: 'model.litertlm', size: 5, sha256: 'b'.repeat(64) },
+      },
+    ],
+  })
+  const hfModel = (repo: string): LiteRtLmHfModel => ({
+    repo,
+    name: repo.split('/')[1],
+    revision: 'c'.repeat(40),
+    gated: false,
+    license: 'apache-2.0',
+    variants: [
+      {
+        id: `${repo.split('/')[1].toLowerCase()}-cpu`,
+        backend: 'cpu',
+        platforms: ['macos-arm64'],
+        file: { path: 'model.litertlm', size: 7, sha256: 'd'.repeat(64) },
+      },
+    ],
+  })
+  const curated = [curatedLiteRtLmCard(curatedModel('gemma-4-e4b', 'Gemma 4 E4B', 'litert-community/gemma-4-E4B-it-litert-lm'))]
+  const huggingFace = [hfLiteRtLmCard(hfModel('litert-community/Qwen3-4B')), hfLiteRtLmCard(hfModel('litert-community/Phi-4-mini-instruct'))]
+
+  const shape = (rows: ReturnType<typeof liteRtLmRows>) =>
+    rows.map((row) => [row.section, row.model.litert_lm?.model_id])
+
+  it('lists its own models: no picks, no catalog, no GGUF feed', () => {
+    expect(hubListSources('litert-lm')).toEqual({
+      staffPicks: false,
+      catalog: false,
+      curated: true,
+      feedFormat: 'gguf',
+      prefilter: false,
+    })
+  })
+
+  it('lists the curated models first, then Hugging Face’s, marked as such', () => {
+    const rows = liteRtLmRows({ curated, huggingFace, query: '' })
+    expect(shape(rows)).toEqual([
+      ['curated', 'gemma-4-e4b'],
+      ['huggingface', 'litert-community/Qwen3-4B'],
+      ['huggingface', 'litert-community/Phi-4-mini-instruct'],
+    ])
+    expect(rows.every((row) => row.model.is_litert_lm)).toBe(true)
+    expect(rows[1].model.litert_lm?.origin).toBe('huggingface')
+  })
+
+  it('searches both by name', () => {
+    expect(shape(liteRtLmRows({ curated, huggingFace, query: 'QWEN3' }))).toEqual([
+      ['huggingface', 'litert-community/Qwen3-4B'],
+    ])
+    expect(shape(liteRtLmRows({ curated, huggingFace, query: 'gemma 4' }))).toEqual([
+      ['curated', 'gemma-4-e4b'],
+    ])
+  })
+
+  it('shows the curated list alone while Hugging Face is unavailable, and Hugging Face alone over an empty list', () => {
+    expect(shape(liteRtLmRows({ curated, huggingFace: [], query: '' }))).toEqual([['curated', 'gemma-4-e4b']])
+    expect(shape(liteRtLmRows({ curated: [], huggingFace, query: '' }))).toEqual([
+      ['huggingface', 'litert-community/Qwen3-4B'],
+      ['huggingface', 'litert-community/Phi-4-mini-instruct'],
+    ])
   })
 })
 

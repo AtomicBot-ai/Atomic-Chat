@@ -1,0 +1,61 @@
+{
+  "purpose": {
+    "title": "How will you use Atomic Chat?",
+    "lead": "Start with what you need today. You can do both later.",
+    "everyday": "Everyday use",
+    "everydayBody": "Chat, write, explore ideas, and create images or video.",
+    "everydayAction": "Open my workspace",
+    "power": "Power other tools",
+    "powerBody": "Run a local endpoint or connect your favorite coding agent.",
+    "powerAction": "Set up a server"
+  },
+  "server": {
+    "title": "Connect on your terms.",
+    "lead": "We’ll show you the controls in the app.",
+    "incompatibleTitle": "Choose a server-compatible model",
+    "incompatibleNone": "The server runs a model on this device. Pick a local model to expose an endpoint or connect an agent.",
+    "incompatibleModel": "{{name}} works for chat, but the local API server can’t run it. Pick a local model to expose an endpoint or connect an agent.",
+    "chooseModel": "Choose a local model",
+    "endpoint": "Configure an endpoint",
+    "endpointBody": "Choose a host and port, set an API key, and start your server.",
+    "endpointAction": "Show me the settings",
+    "agents": "Connect an agent",
+    "agentsBody": "Choose Claude Code, Codex CLI, or another tool and test its connection.",
+    "agentsAction": "Explore agents & tools"
+  },
+  "guide": {
+    "label": "Setup guidance",
+    "skip": "Skip guide",
+    "next": "Next hint",
+    "done": "Done",
+    "viewConnection": "View connection details",
+    "downloading": "Your model is downloading. You can prepare these settings while you wait.",
+    "stillDownloading": "Your model is still downloading",
+    "waitingForModel": "Waiting for model download",
+    "settings": {
+      "title": "Set your connection details",
+      "body": "Set the host and port, add an API key, then save your changes."
+    },
+    "model": {
+      "title": "Choose the model",
+      "body": "Select the engine and model for your endpoint, then save your changes."
+    },
+    "start": {
+      "title": "Start your server",
+      "body": "Use Start below when your model is ready. Then copy the endpoint address into your client."
+    },
+    "running": {
+      "title": "Your server is running",
+      "body": "Copy the endpoint address into your client. You’ll find it under Connections.",
+      "downloading": "Your model is downloading. Once it’s ready, use Stop and then Start to load it."
+    },
+    "pick": {
+      "title": "Pick your tool",
+      "body": "Choose Configure on an agent below. We’ll guide you through connecting it."
+    },
+    "connect": {
+      "title": "Connect your tool",
+      "body": "Choose the engine and model, then select Configure & start."
+    }
+  }
+}

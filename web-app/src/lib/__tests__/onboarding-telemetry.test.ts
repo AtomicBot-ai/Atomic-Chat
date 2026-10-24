@@ -18,6 +18,8 @@ import {
   captureSetupScreenShown,
   captureRecommendedModelsShown,
   isFirstLaunch,
+  captureOnboardingStepLeft,
+  captureOnboardingStepShown,
   markOnboardingInFlight,
   reportAbandonedOnboarding,
 } from '@/lib/onboarding-telemetry'
@@ -168,6 +170,19 @@ describe('isFirstLaunch', () => {
     expect(isFirstLaunch()).toBe(true)
   })
 
+  // A `none` install marks setup done on its first render, before
+  // `app_opened` is sent.
+  it('answers for the launch as it began once that was remembered', async () => {
+    vi.resetModules()
+    const telemetry = await import('../onboarding-telemetry')
+    telemetry.rememberFirstLaunch()
+
+    localStorage.setItem(localStorageKey.setupCompleted, 'true')
+    localStorage.setItem(localStorageKey.lastSeenVersion, '2.2.23')
+
+    expect(telemetry.isFirstLaunch()).toBe(true)
+  })
+
   it('is false once onboarding has been completed', () => {
     localStorage.setItem(localStorageKey.setupCompleted, 'true')
     expect(isFirstLaunch()).toBe(false)
@@ -256,6 +271,42 @@ describe('abandoned onboarding', () => {
     vi.mocked(posthog.capture).mockClear()
     reportAbandonedOnboarding()
     expect(posthog.capture).not.toHaveBeenCalled()
+  })
+
+  it('names a later step of the first-run flow', () => {
+    markOnboardingInFlight('cloud', Date.now())
+
+    reportAbandonedOnboarding()
+
+    expect(lastCall()[1]).toMatchObject({ step_reached: 'cloud' })
+  })
+
+  it('names the variant the run was on, and none for an older record', () => {
+    markOnboardingInFlight('model', Date.now(), 'model_only')
+    reportAbandonedOnboarding()
+    expect(lastCall()[1]).toMatchObject({ onboarding_variant: 'model_only' })
+
+    localStorage.setItem(
+      localStorageKey.onboardingInFlight,
+      JSON.stringify({
+        started_at: Date.now(),
+        step: 'model',
+        app_version: '1',
+      })
+    )
+    reportAbandonedOnboarding()
+    expect(lastCall()[1]).toMatchObject({ onboarding_variant: null })
+  })
+
+  it('reports an unknown step as the model, as before', () => {
+    localStorage.setItem(
+      localStorageKey.onboardingInFlight,
+      JSON.stringify({ started_at: Date.now(), step: 'tour', app_version: '1' })
+    )
+
+    reportAbandonedOnboarding()
+
+    expect(lastCall()[1]).toMatchObject({ step_reached: 'model' })
   })
 
   it('stays quiet when onboarding finished', () => {
@@ -479,5 +530,57 @@ describe('restart intent', () => {
     reportBackendRestartIntent()
 
     expect(posthog.capture).not.toHaveBeenCalled()
+  })
+})
+
+describe('first-run step funnel', () => {
+  it('reports a step as it comes on screen', () => {
+    captureOnboardingStepShown({
+      step: 'permissions',
+      stepIndex: 3,
+      stepCount: 6,
+      variant: 'full',
+    })
+
+    expect(lastCall()).toEqual([
+      'onboarding_step_shown',
+      expect.objectContaining({
+        step: 'permissions',
+        step_index: 3,
+        step_count: 6,
+        onboarding_variant: 'full',
+      }),
+    ])
+  })
+
+  it('reports how a step was left, in whole milliseconds', () => {
+    captureOnboardingStepLeft({
+      step: 'model',
+      action: 'download',
+      durationMs: 1234.6,
+      variant: 'full',
+    })
+
+    expect(lastCall()).toEqual([
+      'onboarding_step_left',
+      expect.objectContaining({
+        step: 'model',
+        step_action: 'download',
+        duration_ms: 1235,
+      }),
+    ])
+  })
+
+  it('carries the variant and the destination on completion', () => {
+    captureOnboardingCompleted({
+      exitPath: 'download_started',
+      variant: 'full',
+      destination: 'endpoint',
+    })
+
+    expect(lastCall()[1]).toMatchObject({
+      onboarding_variant: 'full',
+      destination: 'endpoint',
+    })
   })
 })

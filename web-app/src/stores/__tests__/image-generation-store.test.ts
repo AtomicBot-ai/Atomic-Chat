@@ -82,7 +82,8 @@ const engines = vi.hoisted(() => ({
   engineVersions: vi.fn(),
 }))
 vi.mock('@/services/engines/core', () => engines)
-vi.mock('@/lib/notifications', () => ({ notifyWhenAway: vi.fn() }))
+const notify = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/notifications', () => ({ notifyUnlessWatching: notify }))
 const captured = vi.hoisted(() => ({
   events: [] as Array<[string, Record<string, unknown>]>,
 }))
@@ -333,6 +334,42 @@ describe('image-generation-store', () => {
       expect(state.lastError).toBeNull()
     })
 
+    it('tells the OS about the pictures, as watched only while the Images page is on screen', async () => {
+      notify.mockClear()
+      fake.generate.mockImplementation(async (request) => {
+        emitLater(fake, () => ({
+          type: 'job',
+          job: makeJob({
+            id: 'job-1',
+            state: 'completed',
+            request,
+            outputs: [makeItem({ id: 'job-1-00' })],
+          }),
+        }))
+        return { jobId: 'job-1' }
+      })
+      const generate = () =>
+        useImageGenerationStore
+          .getState()
+          .startGeneration({ request: makeRequest(), runs: 1, baseSeed: 1 })
+
+      try {
+        window.history.replaceState(null, '', '/threads/t1')
+        await generate()
+        window.history.replaceState(null, '', '/images/txt2img')
+        await generate()
+      } finally {
+        window.history.replaceState(null, '', '/')
+      }
+
+      expect(
+        notify.mock.calls.map(([watching, title]) => [watching, title])
+      ).toEqual([
+        [false, 'Images ready'],
+        [true, 'Images ready'],
+      ])
+    })
+
     it('lets the engine draw the seed when none is set', async () => {
       fake.generate.mockImplementation(async (request) => {
         emitLater(fake, () => ({
@@ -529,6 +566,7 @@ describe('image-generation-store', () => {
   describe('bind', () => {
     it('adopts a job that was already running and lands its outputs', async () => {
       resetImageGenerationForTests()
+      notify.mockClear()
       fake.getStatus.mockResolvedValue({
         ...makeLoadedStatus(),
         activeJob: makeJob({ id: 'job-a', state: 'generating' }),
@@ -554,6 +592,12 @@ describe('image-generation-store', () => {
       state = useImageGenerationStore.getState()
       expect(state.runsDone).toBe(1)
       expect(useImageGalleryStore.getState().items[0]?.id).toBe('job-a-00')
+      // The user waited for these pictures too.
+      expect(notify).toHaveBeenCalledWith(
+        false,
+        'Images ready',
+        expect.any(String)
+      )
     })
 
     it('reads the capabilities of a model that is already resident', async () => {

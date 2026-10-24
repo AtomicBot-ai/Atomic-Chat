@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { createFileRoute, useSearch } from '@tanstack/react-router'
+import { createFileRoute, Navigate, useSearch } from '@tanstack/react-router'
 import ChatInput from '@/containers/ChatInput'
 import { LazyAtomicLogo } from '@/components/LazyAtomicLogo'
 import HeaderPage from '@/containers/HeaderPage'
@@ -8,12 +8,15 @@ import { useTools } from '@/hooks/useTools'
 import { cn } from '@/lib/utils'
 
 import { useModelProvider } from '@/hooks/useModelProvider'
-import SetupScreen from '@/containers/SetupScreen'
 import { route } from '@/constants/routes'
-import { hasPriorAppUse, isOnboardingPending } from '@/lib/onboarding'
+import {
+  hasPriorAppUse,
+  shouldEnterOnboarding,
+  skipsOnboarding,
+} from '@/lib/onboarding'
 import { localStorageKey } from '@/constants/localStorage'
 import { useSetupCompleted } from '@/hooks/useSetupCompleted'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect } from 'react'
 import { useThreads } from '@/hooks/useThreads'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
@@ -71,8 +74,6 @@ function Index() {
     })
   }, [serviceHub])
 
-  //* After auto-logout without remounting the router — raise the flag, otherwise a re-render is not guaranteed
-  const [setupSkippedThisSession, setSetupSkippedThisSession] = useState(false)
   const forceOnboarding =
     typeof FORCE_ONBOARDING !== 'undefined' && FORCE_ONBOARDING
   const hasPriorThread = Object.values(threads).some(
@@ -84,11 +85,15 @@ function Index() {
   // later, Welcome incorrectly returned. Any usable provider or durable chat
   // is proof that first-run onboarding is over; migrate that proof once so
   // deleting everything later still lands on the normal empty composer.
+  //
+  // An install whose variant has no setup screen (`none`) is done with setup
+  // on arrival: the update banners, the backend progress and the load
+  // snackbar that wait for the flag are part of its first run.
   useEffect(() => {
+    if (localStorage.getItem(localStorageKey.setupCompleted) === 'true') return
     if (
-      forceOnboarding ||
-      localStorage.getItem(localStorageKey.setupCompleted) === 'true' ||
-      !hasPriorAppUse(providers, hasPriorThread)
+      !skipsOnboarding() &&
+      (forceOnboarding || !hasPriorAppUse(providers, hasPriorThread))
     ) {
       return
     }
@@ -96,27 +101,27 @@ function Index() {
     window.dispatchEvent(new Event('app:setup-completed'))
   }, [forceOnboarding, hasPriorThread, providers])
 
-  // Every exit from SetupScreen persists the flag and fires the same-tab event,
-  // but not every exit changes this route's search: starting a download
-  // navigates to `/` with an empty one, so without the subscription nothing
-  // re-renders and the Welcome screen stays up over a download in progress.
+  // Leaving the setup screen persists the flag and fires the same-tab event;
+  // subscribing keeps this route from sending the user back to it.
   const setupCompleted = useSetupCompleted()
 
   // Shared with the startup auto-start gate so the two can never disagree about
-  // onboarding. Also covers the dev-only FORCE_ONBOARDING flag, which enters
-  // onboarding despite installed models without blocking the way out.
-  const onboardingPending =
-    !setupSkippedThisSession &&
-    !setupCompleted &&
-    (forceOnboarding || !hasPriorThread) &&
-    isOnboardingPending(providers)
+  // onboarding. A run left on screen at the last close resumes. Also covers
+  // the dev-only FORCE_ONBOARDING flag, which enters onboarding despite
+  // installed models without blocking the way out.
+  const enterOnboarding = shouldEnterOnboarding({
+    providers,
+    hasPriorThread,
+    setupCompleted,
+    force: forceOnboarding,
+  })
 
   useEffect(() => {
     setCurrentThreadId(undefined)
   }, [setCurrentThreadId])
 
-  if (onboardingPending) {
-    return <SetupScreen onSkipped={() => setSetupSkippedThisSession(true)} />
+  if (enterOnboarding) {
+    return <Navigate to={route.onboarding} replace />
   }
 
   return (

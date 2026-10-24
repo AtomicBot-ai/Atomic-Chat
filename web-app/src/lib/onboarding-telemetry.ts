@@ -19,6 +19,18 @@
 import { localStorageKey } from '@/constants/localStorage'
 import { getAnalyticsPlatform, normalizeModelId } from '@/lib/telemetry'
 import { queuedCapture } from '@/lib/telemetry-queue'
+import type { OnboardingStepId } from '@/lib/onboarding/steps'
+
+function readFirstLaunch(): boolean {
+  if (typeof window === 'undefined') return false
+  return (
+    localStorage.getItem(localStorageKey.setupCompleted) === null &&
+    localStorage.getItem(localStorageKey.lastSeenVersion) === null
+  )
+}
+
+/** What `readFirstLaunch` said as this launch began (`rememberFirstLaunch`). */
+let firstLaunchAtStart: boolean | null = null
 
 /**
  * Whether this looks like the very first launch on this device.
@@ -27,13 +39,18 @@ import { queuedCapture } from '@/lib/telemetry-queue'
  * correct for users who upgraded from a build that never wrote one: both
  * markers are set the first time the app is used at all — `setup-completed` by
  * any exit from onboarding, `last-seen-version` by the What's New check.
+ *
+ * Answered as of the launch's start once `rememberFirstLaunch` ran: an install
+ * without a setup screen (`none`) writes both markers on its first render,
+ * before `app_opened`, which waits for the hardware properties.
  */
 export function isFirstLaunch(): boolean {
-  if (typeof window === 'undefined') return false
-  return (
-    localStorage.getItem(localStorageKey.setupCompleted) === null &&
-    localStorage.getItem(localStorageKey.lastSeenVersion) === null
-  )
+  return firstLaunchAtStart ?? readFirstLaunch()
+}
+
+/** Pins `isFirstLaunch` for this launch. Called before React mounts. */
+export function rememberFirstLaunch(): void {
+  firstLaunchAtStart = readFirstLaunch()
 }
 
 /** How the user left onboarding. Mutually exclusive and single-fire — the
@@ -61,13 +78,25 @@ export type OnboardingExitPath =
   | 'timeout'
 
 /**
- * Which screen of onboarding the user got to.
+ * Which screen of onboarding the user got to: a step of the first-run flow
+ * (`lib/onboarding/steps`).
  *
- * `backend` is Windows-only and comes first. It was unreachable in telemetry
- * until now: `step_reached` was the literal `'model'` at all four exit sites,
- * and a user who quit on the backend step emitted no exit event at all.
+ * `backend` is Windows/Linux-only and comes before the model. Until the
+ * full-screen flow only `backend` and `model` existed, so a series filtered on
+ * `step_reached = 'model'` now misses the users who got further.
  */
-export type OnboardingStep = 'backend' | 'model'
+export type OnboardingStep = OnboardingStepId
+
+const ONBOARDING_STEP_IDS: readonly OnboardingStep[] = [
+  'welcome',
+  'backend',
+  'model',
+  'permissions',
+  'cloud',
+  'media',
+  'purpose',
+  'server',
+]
 
 /** Shape of `describeProviderState`, kept structural so this module does not
  *  have to import the provider store. */
@@ -120,6 +149,10 @@ export function captureOnboardingCompleted(params: {
   exitProvider?: string | null
   stepReached?: OnboardingStep
   startedAtMs?: number | null
+  /** The first-run variant this install ran (`lib/onboarding/steps`). */
+  variant?: string | null
+  /** Where the run handed off: chat, the endpoint or the agents page. */
+  destination?: string | null
 }): void {
   // The run finished, so the record that would otherwise report it as
   // abandoned on the next launch has to go. Done here rather than at the four
@@ -139,6 +172,56 @@ export function captureOnboardingCompleted(params: {
       params.startedAtMs != null
         ? Math.max(0, Date.now() - params.startedAtMs)
         : null,
+    onboarding_variant: params.variant ?? null,
+    destination: params.destination ?? null,
+  })
+}
+
+/**
+ * An event of one first-run step (a permission answered, a purpose chosen),
+ * sent with the platform and app version like every onboarding event. Each
+ * step names its own events next to the code that sends them.
+ */
+export function captureOnboardingEvent(
+  event: string,
+  props: Record<string, unknown>
+): void {
+  capture(event, props)
+}
+
+/**
+ * A step of the first-run flow came on screen. With `onboarding_step_left`,
+ * this is the per-step funnel `onboarding_completed.step_reached` can only
+ * sample at the exit.
+ */
+export function captureOnboardingStepShown(params: {
+  step: OnboardingStep
+  /** 1-based place among the steps this machine shows. */
+  stepIndex: number
+  stepCount: number
+  variant: string
+}): void {
+  capture('onboarding_step_shown', {
+    step: params.step,
+    step_index: params.stepIndex,
+    step_count: params.stepCount,
+    onboarding_variant: params.variant,
+  })
+}
+
+/** How a step was left, and after how long. */
+export function captureOnboardingStepLeft(params: {
+  step: OnboardingStep
+  /** `next`, `back`, `skip_setup` or a step's own exit such as `use_model`. */
+  action: string
+  durationMs: number
+  variant: string
+}): void {
+  capture('onboarding_step_left', {
+    step: params.step,
+    step_action: params.action,
+    duration_ms: Math.max(0, Math.round(params.durationMs)),
+    onboarding_variant: params.variant,
   })
 }
 
@@ -164,6 +247,8 @@ export function captureOnboardingAbandoned(params: {
    *  user may have updated in between. */
   abandonedAppVersion?: string | null
   startedAtMs?: number | null
+  /** The run's variant; `null` for a record written before there were any. */
+  variant?: string | null
 }): void {
   capture('onboarding_abandoned', {
     step_reached: params.stepReached,
@@ -172,6 +257,7 @@ export function captureOnboardingAbandoned(params: {
       params.startedAtMs != null
         ? Math.max(0, Date.now() - params.startedAtMs)
         : null,
+    onboarding_variant: params.variant ?? null,
   })
 }
 
@@ -186,11 +272,13 @@ export type OnboardingInFlight = {
   started_at: number
   step: OnboardingStep
   app_version: string
+  variant?: string
 }
 
 export function markOnboardingInFlight(
   step: OnboardingStep,
-  startedAt: number
+  startedAt: number,
+  variant?: string
 ): void {
   try {
     localStorage.setItem(
@@ -199,6 +287,7 @@ export function markOnboardingInFlight(
         started_at: startedAt,
         step,
         app_version: VERSION,
+        variant,
       } satisfies OnboardingInFlight)
     )
   } catch {
@@ -222,10 +311,13 @@ export function reportAbandonedOnboarding(): void {
   try {
     const record = JSON.parse(raw) as Partial<OnboardingInFlight>
     captureOnboardingAbandoned({
-      stepReached: record.step === 'backend' ? 'backend' : 'model',
+      stepReached: ONBOARDING_STEP_IDS.includes(record.step as OnboardingStep)
+        ? (record.step as OnboardingStep)
+        : 'model',
       abandonedAppVersion: record.app_version ?? null,
       startedAtMs:
         typeof record.started_at === 'number' ? record.started_at : null,
+      variant: typeof record.variant === 'string' ? record.variant : null,
     })
   } catch {
     // malformed record — nothing worth reporting
@@ -437,10 +529,9 @@ const BACKEND_DETECTION_FAILED = 'BACKEND_DETECTION_FAILED'
 /**
  * Classify a thrown detection error.
  *
- * Lives here, not in `SetupBackendStep`, because that component is a shell
- * whose branch-coverage floor is satisfied by never executing: the moment a
- * conditional lands in it, it has to be exercised or the floor breaks. So the
- * call site stays `ref.current = classifyDetectionFailure(err)`.
+ * Lives here, not in `SetupBackendStep`, so the classification is tested on
+ * its own and the component's call site stays
+ * `ref.current = classifyDetectionFailure(err)`.
  */
 export function classifyDetectionFailure(
   err: unknown

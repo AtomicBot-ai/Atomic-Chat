@@ -1,0 +1,51 @@
+{
+  "stepOf": "Step {{index}} / {{count}}",
+  "back": "Back",
+  "skipSetup": "Skip setup",
+  "continue": "Continue",
+  "welcome": {
+    "logo": "Atomic Chat logo",
+    "title": "Meet Atomic Chat.",
+    "lead": "Your private, local AI.",
+    "leadDetail": "The simplest way to run open models on any hardware.",
+    "start": "Let’s get set up"
+  },
+  "download": {
+    "label": "Model download",
+    "progress": "{{name}} download",
+    "ready": "{{name}} is ready",
+    "onDevice": "Available on this device",
+    "queued": "Queued",
+    "interrupted": "Download interrupted",
+    "withQueued": "{{readout}} · {{count}} queued",
+    "pause": "Pause download",
+    "resume": "Resume download"
+  },
+  "model": {
+    "title": "Choose your first model.",
+    "onDevice": "On this device",
+    "recommended": "Recommended for this device",
+    "huggingFace": "Hugging Face",
+    "choose": "Choose a model",
+    "downloaded": "Downloaded",
+    "foundIn": "Found in {{source}}",
+    "readyHere": "Ready on this device",
+    "size": "{{size}} download",
+    "aboutMemory": "about {{size}} GB memory",
+    "memory": "{{size}} GB memory",
+    "freeStorage": "{{size}} GB free storage",
+    "use": "Use {{name}}",
+    "continueWithout": "Continue without a model",
+    "noRecommendations": "Recommendations need an internet connection. You can add a model later from Models.",
+    "tagline": {
+      "code": "Writes, explains and fixes code",
+      "reasoning": "Works through hard problems step by step",
+      "agent": "Uses tools and carries out multi-step tasks",
+      "vision": "Chats about images as well as text",
+      "small": "Quick replies with a small memory footprint",
+      "sparse": "A large model that answers at small-model speed",
+      "large": "Deeper answers for machines with memory to spare",
+      "general": "General-purpose chat and writing"
+    }
+  }
+}

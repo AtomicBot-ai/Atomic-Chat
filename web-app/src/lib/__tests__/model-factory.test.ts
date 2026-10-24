@@ -638,6 +638,142 @@ describe('ModelFactory foundry-local provider (change add-foundry-local)', () =>
   })
 })
 
+describe('ModelFactory litert-lm provider (change add-litert-lm-runtime)', () => {
+  const liteRtProvider = {
+    provider: 'litert-lm',
+    base_url: 'http://example.invalid/v1',
+    api_key: '',
+    settings: [],
+    models: [],
+    active: true,
+  } as unknown as ProviderObject
+
+  const session = {
+    pid: 6161,
+    port: 4202,
+    model_id: 'gemma-4-e4b-it-gpu',
+    api_key: 'litert-key',
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockStartModel.mockResolvedValue(undefined)
+    seedServiceHub({
+      models: {
+        startModel: mockStartModel,
+      } as ModelsService,
+    })
+    ModelFactory.invalidateLocalSessionCache('litert-lm')
+  })
+
+  async function liteRtModel(
+    route: (command: string, args: Record<string, unknown>) => unknown
+  ) {
+    mockedInvoke.mockImplementation(async (command, args) =>
+      route(command, (args ?? {}) as Record<string, unknown>)
+    )
+    const { OpenAICompatibleChatLanguageModel } = await import(
+      '@ai-sdk/openai-compatible'
+    )
+    await ModelFactory.createModel('gemma-4-e4b-it-gpu', liteRtProvider, {
+      temperature: 0.7,
+      top_k: 20,
+      repeat_penalty: 1.1,
+      n_predict: -1,
+      cache_prompt: true,
+      reasoning_format: 'deepseek',
+    })
+    const [modelId, config] = vi.mocked(OpenAICompatibleChatLanguageModel).mock
+      .calls[0] as unknown as [
+      string,
+      {
+        provider: string
+        url: (options: { path: string }) => string
+        headers: () => Record<string, string>
+        fetch: typeof fetch
+      },
+    ]
+    return { modelId, config }
+  }
+
+  async function sentBodyFor(request: Record<string, unknown>) {
+    let sentBody = ''
+    const { config } = await liteRtModel((command, args) => {
+      if (command === 'resolve_local_session') return session
+      if (command === 'stream_local_http') {
+        sentBody = args.body as string
+        return Promise.reject('HTTP 400: {"error":{"message":"stop here"}}')
+      }
+      return null
+    })
+    await config.fetch('http://localhost:4202/v1/chat/completions', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    })
+    return JSON.parse(sentBody)
+  }
+
+  it('starts the model through the core and talks to its session gateway with the session key', async () => {
+    const { modelId, config } = await liteRtModel((command) =>
+      command === 'resolve_local_session' ? session : null
+    )
+
+    expect(mockStartModel).toHaveBeenCalledWith(liteRtProvider, 'gemma-4-e4b-it-gpu')
+    expect(modelId).toBe('gemma-4-e4b-it-gpu')
+    expect(config.provider).toBe('litert-lm')
+    expect(config.url({ path: '/chat/completions' })).toBe(
+      'http://localhost:4202/v1/chat/completions'
+    )
+    expect(config.headers().Authorization).toBe('Bearer litert-key')
+  })
+
+  it('sends the host what it reads: OpenAI fields, top_k, response_format and the thinking switch; no llama.cpp knobs', async () => {
+    const body = await sentBodyFor({
+      model: 'gemma-4-e4b-it-gpu',
+      messages: [{ role: 'user', content: 'hi' }],
+      stream: true,
+      stream_options: { include_usage: true },
+      response_format: { type: 'json_object' },
+      tools: [{ type: 'function', function: { name: 'f', parameters: {} } }],
+      tool_choice: 'auto',
+      chat_template_kwargs: { enable_thinking: false },
+    })
+
+    expect(body).toEqual({
+      model: 'gemma-4-e4b-it-gpu',
+      messages: [{ role: 'user', content: 'hi' }],
+      stream: true,
+      stream_options: { include_usage: true },
+      response_format: { type: 'json_object' },
+      tools: [{ type: 'function', function: { name: 'f', parameters: {} } }],
+      tool_choice: 'auto',
+      chat_template_kwargs: { enable_thinking: false },
+      temperature: 0.7,
+      top_k: 20,
+    })
+  })
+
+  it('leaves out a tool_choice the host refuses (a named function, required); auto is its default', async () => {
+    const body = await sentBodyFor({
+      model: 'gemma-4-e4b-it-gpu',
+      messages: [{ role: 'user', content: 'hi' }],
+      tools: [{ type: 'function', function: { name: 'f', parameters: {} } }],
+      tool_choice: { type: 'function', function: { name: 'f' } },
+    })
+
+    expect(body.tools).toHaveLength(1)
+    expect(body).not.toHaveProperty('tool_choice')
+  })
+
+  it('fails with the provider named when the core serves no session after the start', async () => {
+    mockedInvoke.mockResolvedValue(null)
+
+    await expect(
+      ModelFactory.createModel('gemma-4-e4b-it-gpu', liteRtProvider)
+    ).rejects.toThrow('No running LiteRT-LM session found for model: gemma-4-e4b-it-gpu')
+  })
+})
+
 describe('countLocalPromptTokens', () => {
   const session = { port: 4242, api_key: 'k', model_id: 'm' }
 

@@ -15,8 +15,16 @@ export type DeferredFirstSend = {
 
 type DeferredFirstSendState = {
   queued: DeferredFirstSend | null
+  /**
+   * The queued send New Chat's composer is completing itself, while it stays
+   * mounted with it. The root stands down for it, or both would send the same
+   * first message; leaving the route releases it to the root.
+   */
+  claimedId: string | null
   enqueue: (send: DeferredFirstSend) => void
   clear: (id?: string) => void
+  claim: (id: string) => void
+  release: (id: string) => void
 }
 
 /**
@@ -26,9 +34,14 @@ type DeferredFirstSendState = {
  */
 export const useDeferredFirstSend = create<DeferredFirstSendState>((set) => ({
   queued: null,
-  enqueue: (queued) => set({ queued }),
+  claimedId: null,
+  enqueue: (queued) => set({ queued, claimedId: null }),
   clear: (id) =>
     set((state) =>
-      !id || state.queued?.id === id ? { queued: null } : state
+      !id || state.queued?.id === id ? { queued: null, claimedId: null } : state
     ),
+  claim: (id) =>
+    set((state) => (state.queued?.id === id ? { claimedId: id } : state)),
+  release: (id) =>
+    set((state) => (state.claimedId === id ? { claimedId: null } : state)),
 }))

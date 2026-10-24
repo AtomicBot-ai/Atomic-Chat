@@ -26,6 +26,7 @@ const EXTENSIONS = [
   'vllm-extension',
   'sglang-extension',
   'foundry-local-extension',
+  'litert-lm-extension',
 ]
 
 for (const extension of EXTENSIONS) {

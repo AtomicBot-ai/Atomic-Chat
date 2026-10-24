@@ -51,6 +51,18 @@ const SIZE_UNIT_BYTES: Record<string, number> = {
   TB: 1024 ** 4,
 }
 
+/**
+ * About how much memory a model of this download size takes once loaded, in
+ * GB: the weights plus room for the context and the runtime. An estimate for
+ * a model row, not a fit verdict (`judgeMemoryFit`).
+ */
+export function estimatedMemoryGb(
+  sizeBytes: number | undefined
+): number | null {
+  if (!sizeBytes || sizeBytes <= 0) return null
+  return Math.ceil((sizeBytes / 1024 ** 3) * 1.2 + 0.5)
+}
+
 /** Parse catalog file-size strings like "5.3 GB" / "412 MB" into bytes. */
 export function parseFileSizeToBytes(fileSize?: string): number | undefined {
   if (!fileSize) return undefined
@@ -218,6 +230,7 @@ export type ModelFormat =
   | 'tensorrt-llm'
   | 'atomic-prism'
   | 'foundry-local'
+  | 'litert-lm'
 
 /**
  * The format a card is shown under. A managed engine's checkpoint is one for every managed engine
@@ -228,6 +241,7 @@ export function modelFormat(
   managedFormat: ModelFormat = 'tensorrt-llm'
 ): ModelFormat {
   if (model.is_foundry_local) return 'foundry-local'
+  if (model.is_litert_lm) return 'litert-lm'
   if (model.is_managed) return managedFormat
   if (model.is_mlx || model.library_name?.toLowerCase() === 'mlx') return 'mlx'
   return 'gguf'

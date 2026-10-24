@@ -1,15 +1,17 @@
 import { IconCheck, IconCopy } from '@tabler/icons-react'
-import { ChevronDown } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { Check, ChevronDown } from 'lucide-react'
+import { useEffect, useId, useRef, useState } from 'react'
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { FamilyLogoMark } from '@/containers/ModelLogo'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { copyToClipboard } from '@/lib/clipboard'
 import { generateLocalApiKey } from '@/lib/localApiKey'
@@ -21,9 +23,10 @@ import './ServerPage.css'
  * A page of the Server section: one scrolling column with the prototype's
  * title block. The window title bar above already carries the drag region,
  * so these pages have no header row of their own. Overview has no title.
- * `layout`: a `form` column (900 px), a `wide` one (Overview's cards), or a
- * `dashboard` built from the app's own components, which gets the title block
- * and the width but keeps the app's styles rather than the section's.
+ * Every layout takes the whole page. `layout`: a `form`, a `wide` one
+ * (Overview's cards), or a `dashboard` built from the app's own components,
+ * which gets the title block but keeps the app's styles rather than the
+ * section's.
  */
 export function ServerPage({
   title,
@@ -53,7 +56,7 @@ export function ServerPage({
     <div className="flex h-svh w-full min-w-0 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {layout === 'dashboard' ? (
-          <div className="w-full max-w-[1200px]">
+          <div className="w-full">
             <div className="server-page server-page-wide">{heading}</div>
             {children}
           </div>
@@ -161,6 +164,99 @@ export function ServerSelect({
         </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>
+  )
+}
+
+export type ServerDetailChoice = {
+  value: string
+  name: string
+  /** A bundled mark (monochrome ones take the text colour); else its initial. */
+  logo?: string
+  /** What it is, in a line. */
+  detail?: string
+  /** Its facts ("GGUF · 2 models"), smaller still. */
+  metadata?: string
+}
+
+function DetailChoiceRow({ choice }: { choice: ServerDetailChoice }) {
+  return (
+    <>
+      {choice.logo ? (
+        <FamilyLogoMark src={choice.logo} className="sp-picker-logo" />
+      ) : (
+        <span className="sp-picker-logo sp-picker-initial" aria-hidden>
+          {choice.name.charAt(0).toUpperCase()}
+        </span>
+      )}
+      <span className="sp-picker-copy">
+        <strong>{choice.name}</strong>
+        {choice.detail && <span>{choice.detail}</span>}
+        {choice.metadata && <small>{choice.metadata}</small>}
+      </span>
+    </>
+  )
+}
+
+/**
+ * A labelled dropdown whose choices need more than a name: the field and
+ * every row of its menu show the same logo, name, line on what it is and its
+ * facts, so the choice reads the same before and after it is made. Opens
+ * under the field, as wide as it, like `ServerSelect`.
+ */
+export function ServerDetailPicker({
+  label,
+  value,
+  choices,
+  onChange,
+}: {
+  label: string
+  value: string
+  choices: ServerDetailChoice[]
+  onChange: (value: string) => void
+}) {
+  const id = useId()
+  const selected = choices.find((choice) => choice.value === value)
+  return (
+    <div className="sp-field">
+      <span id={id}>{label}</span>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild disabled={choices.length === 0}>
+          <button
+            type="button"
+            className="sp-detail-picker"
+            aria-labelledby={id}
+          >
+            {selected ? (
+              <DetailChoiceRow choice={selected} />
+            ) : (
+              <span className="sp-picker-copy">{value}</span>
+            )}
+            <ChevronDown aria-hidden size={18} />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          side="bottom"
+          align="start"
+          aria-labelledby={id}
+          // Utilities, so they win over the menu's own padding and corners.
+          className="sp-picker-menu w-(--radix-dropdown-menu-trigger-width) max-w-[calc(100vw-32px)] rounded-xl p-1.5"
+        >
+          {choices.map((choice) => (
+            <DropdownMenuItem
+              key={choice.value}
+              role="menuitemradio"
+              aria-checked={choice.value === value}
+              textValue={choice.name}
+              className="sp-picker-option gap-3.5 rounded-lg p-3 aria-checked:bg-primary/10"
+              onSelect={() => onChange(choice.value)}
+            >
+              <DetailChoiceRow choice={choice} />
+              {choice.value === value && <Check aria-hidden />}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
   )
 }
 

@@ -104,6 +104,9 @@ export function getProviderLogo(provider: string) {
     // nor the Foundry product icon, which are their trademarks (change add-foundry-local).
     case 'foundry-local':
       return '/images/model-provider/foundry-local.svg'
+    // A monogram, like SGLang's: LiteRT and its mark are Google's (change add-litert-lm-runtime).
+    case 'litert-lm':
+      return '/images/model-provider/litert-lm.svg'
     case 'anthropic':
       return '/images/model-provider/anthropic.svg'
     case 'huggingface':
@@ -236,6 +239,8 @@ export const getProviderTitle = (provider: string) => {
       return 'SGLang'
     case 'foundry-local':
       return 'Foundry Local'
+    case 'litert-lm':
+      return 'LiteRT-LM'
     // The media engine, named on the engine-update banner. Not a chat provider.
     case 'sd-cpp':
       return 'stable-diffusion.cpp'

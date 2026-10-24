@@ -154,6 +154,16 @@ describe('cancelDownload', () => {
     expect(wasDownloadCancellationRequested(id)).toBe(true)
   })
 
+  it('stops a LiteRT-LM variant’s transfer by its task id (change add-litert-lm-runtime)', () => {
+    const id = 'litert-lm-gemma-4-e4b-gpu'
+
+    cancelDownload({ id, name: id }, serviceHub)
+
+    expect(extensionCancel).toHaveBeenCalledWith(id)
+    expect(abortDownload).not.toHaveBeenCalled()
+    expect(wasDownloadCancellationRequested(id)).toBe(true)
+  })
+
   it('stops an engine update in the core by its task id', () => {
     const id = 'engine-update-llamacpp-upstream-b11500'
 

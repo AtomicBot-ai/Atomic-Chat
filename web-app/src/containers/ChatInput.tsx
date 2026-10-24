@@ -1343,6 +1343,16 @@ const ChatInput = memo(function ChatInput({
   // re-firing when the key changes.
   const composerThreadKeyRef = useRef(composerThreadKey)
   composerThreadKeyRef.current = composerThreadKey
+  // The root queue entry this composer is completing itself (claimed, so the
+  // root does not send it too); released to the root if New Chat unmounts.
+  const claimedRootSendRef = useRef<string | null>(null)
+  useEffect(
+    () => () => {
+      const claimed = claimedRootSendRef.current
+      if (claimed) useDeferredFirstSend.getState().release(claimed)
+    },
+    []
+  )
 
   const handleReplyGateResolved = useCallback(
     (resolution: ReplyModelGateResolution) => {
@@ -1359,8 +1369,9 @@ const ChatInput = memo(function ChatInput({
         // What the composer showed at Send travels with the message, for a
         // thread created after the user may have left (and changed it).
         const agent = useAgentMode.getState()
+        const queueId = generateId()
         useDeferredFirstSend.getState().enqueue({
-          id: generateId(),
+          id: queueId,
           prompt: usePrompt.getState().getDraft(composerThreadKey),
           downloadModelIds: resolution.downloadModelIds!,
           createdAt: Date.now(),
@@ -1372,6 +1383,8 @@ const ChatInput = memo(function ChatInput({
         // Keep the fast path local while New Chat is still mounted. The root
         // queue is its navigation-safe backup and takes over only if the user
         // leaves this route before the download finishes.
+        useDeferredFirstSend.getState().claim(queueId)
+        claimedRootSendRef.current = queueId
         setQueuedSend(resolution)
         return
       }
@@ -1437,6 +1450,12 @@ const ChatInput = memo(function ChatInput({
 
     setQueuedSend(null)
     setReplyGateOpen(false)
+    // This composer completes the send (or drops it, below), so the root's
+    // backup of it goes too.
+    if (claimedRootSendRef.current) {
+      useDeferredFirstSend.getState().clear(claimedRootSendRef.current)
+      claimedRootSendRef.current = null
+    }
 
     // The user may have cleared or rewritten the field while the model came up.
     // Whatever is in it now is what they meant; an empty field means they

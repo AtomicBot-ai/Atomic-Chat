@@ -79,7 +79,7 @@
     "autoApproveTools": "Auto-approve tool calls",
     "autoApproveToolsDesc": "Skip the approval popup and automatically allow every tool/MCP call. When disabled, you'll be asked to confirm each new tool.",
     "desktopNotifications": "Desktop notifications",
-    "desktopNotificationsDesc": "Send a system notification when a reply, images, a video or a download is ready and the window isn't focused.",
+    "desktopNotificationsDesc": "Send a system notification when a download finishes, and when a reply, images or a video is ready while you're looking elsewhere.",
     "legacyChatEngine": "Use legacy chat engine",
     "legacyChatEngineDesc": "Force the previous chat pipeline for every message and disable Agent mode entirely. Temporary escape hatch."
   },

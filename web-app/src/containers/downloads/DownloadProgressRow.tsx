@@ -1,13 +1,23 @@
 import { OverflowText } from '@/components/OverflowText'
-import { Button } from '@/components/ui/button'
-import { Progress } from '@/components/ui/progress'
-import { formatDownloadReadout, shortModelName } from '@/lib/downloadFormat'
+import { formatDownloadStatusLine, shortModelName } from '@/lib/downloadFormat'
 import { quantFromModelId } from '@/lib/telemetry'
+import { cn } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { IconPlayerPause, IconPlayerPlay, IconX } from '@tabler/icons-react'
+import {
+  IconDownload,
+  IconPlayerPause,
+  IconPlayerPlay,
+  IconX,
+} from '@tabler/icons-react'
 
-//* Product blue: downloading is activity, not the green "ready" state.
-export const DOWNLOAD_PROGRESS_INDICATOR = 'bg-blue-500/60 dark:bg-blue-400/55'
+import './download-panel.css'
+
+//* The first-run strip's teal: the same activity colour as the setup screen.
+export const DOWNLOAD_PROGRESS_INDICATOR = 'bg-[var(--dl-progress)]'
+
+/** The strip's round control: 32px, a hairline ring, the icon in teal. */
+const ROUND_BUTTON =
+  'grid size-8 cursor-pointer place-items-center rounded-full border border-[var(--dl-icon-line)] text-[var(--dl-strong)] transition-colors hover:bg-[var(--dl-icon-hover)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--dl-progress)]'
 
 /** Status while a transfer has no bytes to report — see `useDownloadStore`. */
 export type DownloadRowStage = {
@@ -32,9 +42,9 @@ export type DownloadRowProps = {
    * has simply not started, for the full ~60s the ladders take.
    */
   stage?: DownloadRowStage
-  paused?: boolean
-  /** Explains a discovered partial whose metadata needs attention. */
+  /** Recovery explanation overrides the transport status. */
   statusText?: string
+  paused?: boolean
   /** Pause/resume is offered only for resumable (GGUF) transfers. */
   pausable?: boolean
   onPause?: () => void
@@ -50,6 +60,10 @@ export type DownloadRowProps = {
  * stretch of the first session — median 7 minutes, an hour at p90 for large
  * models — so the row states plainly what is being fetched, how far along it
  * is, how fast, and how much longer.
+ *
+ * Drawn as the first-run strip (`onboarding/DownloadStrip`): the download
+ * mark, the name over one status line, the percent and round controls on the
+ * right, and a hairline of progress along the bottom edge.
  */
 export function DownloadProgressRow({
   id,
@@ -68,104 +82,102 @@ export function DownloadProgressRow({
 }: DownloadRowProps) {
   const { t } = useTranslation()
 
-  const label = name || id
+  const label = shortModelName(name || id)
+  // Most names already end in their quant; the rest get it beside the name.
   const quant = quantFromModelId(id)
-  const readout = formatDownloadReadout(t, {
-    progress,
-    current,
-    total,
-    bytesPerSecond,
-    stage,
-    paused,
-  })
-
-  const percent =
-    !statusText && !paused && total > 0
-      ? `${Math.round(progress * 100)}%`
-      : null
-  const suffix = percent
-    ? readout.slice(percent.length).replace(/^ · /, '')
-    : (statusText ?? readout)
+  const quantApart =
+    quant && !label.toLowerCase().includes(quant.toLowerCase()) ? quant : null
+  // The panel is narrow: a running transfer's line is its size and estimate,
+  // the icon, the bar and Pause already say it is downloading.
+  const line = statusText ?? formatDownloadStatusLine(
+    t,
+    { current, total, bytesPerSecond, stage, paused },
+    { runningWord: false }
+  )
+  const percent = total > 0 ? Math.round(progress * 100) : null
+  const barPercent = Math.min(100, Math.max(0, Math.round(progress * 100)))
+  const reconnecting =
+    !paused && (stage?.kind === 'stalled' || stage?.kind === 'retrying')
 
   return (
-    <li className="rounded-lg bg-secondary p-2">
-      <div className="flex items-start justify-between gap-2">
+    <li
+      className={cn(
+        'dl-row overflow-hidden bg-[var(--dl-row)]',
+        reconnecting && 'is-warn'
+      )}
+    >
+      <div className="flex items-center gap-3 px-4 py-3">
+        <span className="flex shrink-0 text-[var(--dl-strong)]">
+          <IconDownload size={18} aria-hidden />
+        </span>
         <div className="min-w-0 flex-1">
           <OverflowText
-            className="font-medium"
+            className="text-xs font-semibold text-[var(--dl-title)]"
             title={id}
-            text={shortModelName(label)}
+            text={quantApart ? `${label} · ${quantApart}` : label}
           />
-          {quant && (
-            <OverflowText
-              className="text-xs text-muted-foreground"
-              text={quant}
-            />
-          )}
+          {/* One line that never wraps: overflow scrolls without growing the
+              bottom-anchored card. The percentage and controls stay fixed. `aria-live` is deliberately
+              absent: this text changes every few seconds and would talk over
+              everything else. */}
+          <OverflowText text={line} className="mt-0.5 text-[11px] tabular-nums text-[var(--dl-text)]" />
         </div>
-        <div className="flex shrink-0 items-center space-x-0.5">
+        {percent !== null && (
+          <b data-testid="download-percent" className="shrink-0 text-xs font-medium tabular-nums text-[var(--dl-strong)]">
+            {percent}%
+          </b>
+        )}
+        <div className="flex shrink-0 items-center gap-1.5">
           {pausable &&
             (paused ? (
-              <Button
-                variant="secondary"
-                size="icon-xs"
+              <button
+                type="button"
+                className={ROUND_BUTTON}
                 onClick={onResume}
                 aria-label={t('common:resumeDownload')}
               >
-                <IconPlayerPlay
-                  size={16}
-                  className="cursor-pointer text-muted-foreground"
-                />
-              </Button>
+                <IconPlayerPlay size={15} aria-hidden />
+              </button>
             ) : (
-              <Button
-                variant="secondary"
-                size="icon-xs"
+              <button
+                type="button"
+                className={ROUND_BUTTON}
                 onClick={onPause}
                 aria-label={t('common:pauseDownload')}
               >
-                <IconPlayerPause
-                  size={16}
-                  className="cursor-pointer text-muted-foreground"
-                />
-              </Button>
+                <IconPlayerPause size={15} aria-hidden />
+              </button>
             ))}
-          <Button
-            variant="secondary"
-            size="icon-xs"
+          <button
+            type="button"
+            className={ROUND_BUTTON}
             onClick={onCancel}
             aria-label={t('common:cancelDownload')}
           >
-            <IconX size={16} className="cursor-pointer text-muted-foreground" />
-          </Button>
+            <IconX size={15} aria-hidden />
+          </button>
         </div>
       </div>
 
-      <Progress
-        value={progress * 100}
-        aria-label={shortModelName(label)}
-        indicatorClassName={DOWNLOAD_PROGRESS_INDICATOR}
-        className="my-2 h-1.5 rounded-full bg-muted-foreground/15 dark:bg-muted-foreground/20"
-      />
-
-      {/* One line that never wraps: it used to be two flex spans, and past the
-          row's width the first one broke at its spaces, so the size pair
-          dropped to a second line and the bottom-anchored card grew upwards.
-          Overflowing copy now scrolls inside that same reserved line. `aria-live` is deliberately absent: this
-          text changes every few seconds and would talk over everything else. */}
-      {/* Keep the percentage anchored while the suffix reveals all its copy. */}
-      <div className="flex min-w-0 items-center gap-1 whitespace-nowrap text-xs tabular-nums text-muted-foreground">
-        {percent && (
-          <span data-testid="download-percent" className="shrink-0">
-            {percent}
-          </span>
-        )}
-        {percent && suffix && (
-          <span aria-hidden="true" className="shrink-0">
-            ·
-          </span>
-        )}
-        <OverflowText text={suffix} className="flex-1" />
+      {/* The strip's hairline, filled by width as on the setup screen: a
+          translated fill would sit outside the row it is clipped by. */}
+      <div
+        role="progressbar"
+        aria-label={label}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={barPercent}
+        aria-valuetext={`${barPercent}%`}
+        className="h-[3px] bg-[var(--dl-track)]"
+      >
+        <i
+          data-slot="progress-indicator"
+          className={cn(
+            'block h-full transition-[width] duration-500 motion-reduce:transition-none',
+            DOWNLOAD_PROGRESS_INDICATOR
+          )}
+          style={{ width: `${barPercent}%` }}
+        />
       </div>
     </li>
   )

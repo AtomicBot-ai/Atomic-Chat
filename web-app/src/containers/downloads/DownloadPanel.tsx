@@ -1,8 +1,6 @@
-import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { IconChevronDown } from '@tabler/icons-react'
-import { DownloadIcon } from 'lucide-react'
+import { IconChevronDown, IconDownload } from '@tabler/icons-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   DownloadProgressRow,
@@ -174,65 +172,66 @@ export function DownloadPanel({
     return (
       <div
         ref={containerRef}
-        className="fixed right-4 z-50"
+        className="dl-panel fixed right-4 z-50"
         style={{ bottom: layout.bottom }}
       >
-        <Button
-          variant="secondary"
-          size="icon"
-          className="relative size-11 rounded-full shadow-lg"
+        <button
+          type="button"
+          className="relative grid size-11 cursor-pointer place-items-center rounded-full border border-[var(--dl-panel-line)] bg-[var(--dl-row)] text-[var(--dl-strong)] shadow-[var(--dl-panel-shadow)]"
           onClick={() => setCollapsed(false)}
           aria-label={t('common:downloadPanel.expand')}
           aria-expanded={false}
         >
-          <DownloadIcon className="size-4 text-muted-foreground" />
-          <span className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full bg-blue-500 text-[11px] font-semibold tabular-nums text-white">
+          <IconDownload size={18} aria-hidden />
+          <span className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full bg-[var(--dl-progress)] text-[11px] font-semibold tabular-nums text-[var(--dl-badge-text)]">
             {count}
           </span>
-        </Button>
+        </button>
       </div>
     )
   }
 
+  // The first-run handoff panel's shell (`onboarding/handoff.css`): one card,
+  // the strips inside it divided by hairlines.
   return (
     <div
       ref={containerRef}
       className={cn(
-        'fixed right-4 z-50 w-[min(22rem,calc(100vw-2rem))]',
-        'select-none overflow-hidden rounded-2xl border bg-background text-sm shadow-lg'
+        'dl-panel fixed right-4 z-50 w-[min(22rem,calc(100vw-2rem))]',
+        'select-none overflow-hidden rounded-[15px] border border-[var(--dl-panel-line)] bg-[var(--dl-panel-bg)] text-sm text-[var(--dl-title)] shadow-[var(--dl-panel-shadow)]'
       )}
       style={{ bottom: layout.bottom }}
       role="region"
       aria-label={t('common:downloads')}
     >
-      <div className="flex items-center justify-between gap-2 px-3 py-2">
+      <div className="flex items-center justify-between gap-2 border-b border-[var(--dl-divider)] py-2 pl-4 pr-3">
         {/* The count is a pill rather than part of the sentence: the app's i18n
             layer does no plural selection, and "Downloading {{count}} items"
             would be wrong in every language that inflects. */}
-        <p className="flex min-w-0 items-center gap-1.5 font-medium">
+        <p className="flex min-w-0 items-center gap-1.5 text-[13px] font-medium">
           <span className="truncate">{t('common:downloading')}</span>
           {count > 1 && (
-            <span className="shrink-0 rounded-full bg-muted-foreground/15 px-1.5 text-xs tabular-nums text-muted-foreground">
+            <span className="shrink-0 rounded-full bg-[var(--dl-track)] px-1.5 text-xs tabular-nums text-[var(--dl-strong)]">
               {count}
             </span>
           )}
         </p>
-        <Button
-          variant="ghost"
-          size="icon-xs"
+        <button
+          type="button"
+          className="grid size-7 cursor-pointer place-items-center rounded-full text-[var(--dl-text)] transition-colors hover:bg-[var(--dl-icon-hover)]"
           onClick={() => setCollapsed(true)}
           aria-label={t('common:downloadPanel.collapse')}
           aria-expanded
         >
-          <IconChevronDown size={16} className="text-muted-foreground" />
-        </Button>
+          <IconChevronDown size={16} aria-hidden />
+        </button>
       </div>
       {/* Height comes from `panelLayout`: whatever is left once the composer
           has its space. A longer queue scrolls rather than growing the panel.
           Realistic queues are one or two items — a model plus a backend
           binary — and those fit whole. */}
       <ul
-        className="space-y-2 overflow-y-auto px-2 pb-2"
+        className="divide-y divide-[var(--dl-divider)] overflow-y-auto"
         style={{ maxHeight: layout.listMax }}
       >
         {items.map((item) => (

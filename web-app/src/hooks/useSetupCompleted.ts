@@ -20,8 +20,8 @@ export function useSetupCompleted(): boolean {
         localStorage.getItem(localStorageKey.setupCompleted) === 'true'
       )
     }
-    // Same-tab signal dispatched explicitly by SetupScreen when it persists
-    // the flag (the native 'storage' event only fires across tabs).
+    // Same-tab signal dispatched by `handOffOnboarding` when it persists the
+    // flag (the native 'storage' event only fires across tabs).
     window.addEventListener(SETUP_COMPLETED_EVENT, sync)
     window.addEventListener('storage', sync)
     return () => {

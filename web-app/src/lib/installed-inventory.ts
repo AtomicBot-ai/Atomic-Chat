@@ -37,6 +37,7 @@ import {
   isEmbeddingDownloadTaskId,
 } from '@/lib/embedding/models'
 import { isFoundryLocalDownloadId } from '@/lib/foundry-local/download-id'
+import { isLiteRtLmDownloadId } from '@/lib/litert-lm/download-id'
 import {
   FOUNDRY_LOCAL_PROVIDER,
   LLAMACPP_PROVIDERS,
@@ -586,12 +587,13 @@ function describeDownload(
       details: [],
     }
   }
-  const ownList = isManagedDownloadId(id) || isFoundryLocalDownloadId(id)
+  const ownList =
+    isManagedDownloadId(id) || isFoundryLocalDownloadId(id) || isLiteRtLmDownloadId(id)
   const origin = ownList && sources.downloadOriginByModelId[id]
   return {
     category: 'local',
     kind: 'model',
-    // A managed or Foundry Local id is not a Hugging Face file name.
+    // A managed, Foundry Local or LiteRT-LM id is not a Hugging Face file name.
     ...(origin ? { name: origin } : ownList ? { name: id } : readableModel(id)),
     details: [],
   }

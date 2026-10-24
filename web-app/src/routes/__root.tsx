@@ -1,4 +1,4 @@
-import { createRootRoute, Outlet } from '@tanstack/react-router'
+import { createRootRoute, Outlet, useRouterState } from '@tanstack/react-router'
 // import { TanStackRouterDevtools } from '@tanstack/react-router-devtools'
 
 import DialogAppUpdater from '@/containers/dialogs/AppUpdater'
@@ -20,6 +20,8 @@ import { ToasterProvider } from '@/providers/ToasterProvider'
 import { useOnboardingModelReminder } from '@/hooks/useOnboardingModelReminder'
 import { PromptOnboardingModel } from '@/containers/PromptOnboardingModel'
 import { DownloadManagement } from '@/containers/DownloadManegement'
+import { OnboardingRuntime } from '@/containers/onboarding/OnboardingRuntime'
+import { isOnboardingOnScreen } from '@/lib/onboarding'
 import { AnalyticProvider } from '@/providers/AnalyticProvider'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useTrayStatusSync } from '@/hooks/useTrayStatusSync'
@@ -65,6 +67,15 @@ export const Route = createRootRoute({
 
 const AppLayout = () => {
   const { showOnboardingModelReminder } = useOnboardingModelReminder()
+  // The first-run flow takes the whole window, without the navigation, while
+  // the providers below keep running for it: downloads, analytics and the
+  // image/video stores all work during setup.
+  // Decided by the page on screen, not the location: leaving setup for the
+  // chat used to remount the setup screen, which re-opened the run and sent
+  // the user back to it.
+  const onOnboarding = useRouterState({
+    select: (state) => isOnboardingOnScreen(state.matches),
+  })
   const isLeftPanelOpen = useLeftPanel((state) => state.open)
   const setLeftPanel = useLeftPanel((state) => state.setLeftPanel)
   const sidebarWidth = useLeftPanel((state) => state.width)
@@ -106,7 +117,7 @@ const AppLayout = () => {
         minInsetWidth={MIN_PAGE_WIDTH}
       >
         <AnalyticProvider />
-        <KeyboardShortcutsProvider />
+        {!onOnboarding && <KeyboardShortcutsProvider />}
         <DialogAppUpdater />
         {isSetupCompleted && <BackendUpdater />}
         {/* ATO-528/531: offers a new inference-engine build. Gated on
@@ -119,25 +130,40 @@ const AppLayout = () => {
         {/* Unlike the recommendation dialogs above, this dialog only opens
             after ChatInput dispatches a mismatch prompt. Keep it mounted for
             upgraded/legacy users whose setup-completed flag is absent. */}
-        <SuboptimalBackendDialog />
-        <WhatsNewDialog />
-        <LeftSidebar />
-        <SidebarInset>
-          <div className="bg-neutral-50 dark:bg-background size-full">
-            <Outlet />
-          </div>
-        </SidebarInset>
+        {onOnboarding ? (
+          <Outlet />
+        ) : (
+          <>
+            <SuboptimalBackendDialog />
+            <WhatsNewDialog />
+            <LeftSidebar />
+            <SidebarInset>
+              <div className="bg-neutral-50 dark:bg-background size-full">
+                <Outlet />
+              </div>
+            </SidebarInset>
+          </>
+        )}
 
         {/* Analytics consent popup is disabled; Settings → Privacy is still available */}
         {/* {productAnalyticPrompt && <PromptAnalytic />} */}
-        {showOnboardingModelReminder && <PromptOnboardingModel />}
+        {showOnboardingModelReminder && !onOnboarding && (
+          <PromptOnboardingModel />
+        )}
         {/* ATO-462: mounted once at the root, not inside the sidebar or the
             header. It used to render in one of two places depending on whether
             the left panel was open, so a download's progress moved around the
             screen — or vanished — as the user toggled the sidebar. This is also
             the component that registers the download event listeners, so a
-            single mount keeps them registered exactly once. */}
-        <DownloadManagement />
+            single mount keeps them registered exactly once. On the setup
+            screen it keeps listening but leaves the run's downloads to the
+            screen's own strip. */}
+        <DownloadManagement hidePanel={onOnboarding} />
+        {/* The first run's queue and handoff panel, on every route: its
+            downloads carry on whichever page is open. After the routes, so
+            the model it selects once a download lands wins over a startup
+            default the picker fills in at the same moment. */}
+        <OnboardingRuntime />
         {/* Binds the image-generation store to the native plugin for the life
             of the app: a job lives in the plugin, so the run loop and the
             event subscription must outlive the Images page. */}

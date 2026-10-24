@@ -27,6 +27,7 @@ for (const [file, method] of [
  ['@/lib/embedding/models','isEmbeddingDownloadTaskId'],
  ['@/lib/managed-engine/download-id','isManagedDownloadId'],
  ['@/lib/foundry-local/download-id','isFoundryLocalDownloadId'],
+ ['@/lib/litert-lm/download-id','isLiteRtLmDownloadId'],
 ]) mocks[file] = { [method]: () => false }
 function load(file) {
   if (cache.has(file)) return cache.get(file).exports

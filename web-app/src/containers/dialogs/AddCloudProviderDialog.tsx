@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ChevronRight, Eye, EyeOff, Loader2, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -13,20 +13,13 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
-import { useChatGptAuth } from '@/hooks/useChatGptAuth'
-import { captureSubscriptionCardShown } from '@/lib/subscription-telemetry'
+import { useSubscriptionConnect } from '@/hooks/useSubscriptionConnect'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { useServiceHub } from '@/hooks/useServiceHub'
+import { useProviderKeyConnect } from '@/hooks/useProviderKeyConnect'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
-import { saveProviderApiKey } from '@/lib/provider-api-key'
-import {
-  checkProviderKey,
-  recordKeyCheck,
-  savedAnyway,
-  type KeyCheckOutcome,
-} from '@/lib/provider-key-check'
-import { cn, getProviderTitle } from '@/lib/utils'
+import { cn } from '@/lib/utils'
+import { galleryLabel } from '@/lib/cloud-providers'
 import {
   isLocalProvider,
   isLoopbackUrl,
@@ -52,19 +45,6 @@ function isGallerySubscription(providerName: string): boolean {
     isSubscriptionProvider(providerName) &&
     PlatformFeatures[PlatformFeature.CHATGPT_SUBSCRIPTION]
   )
-}
-
-/**
- * Names `getProviderTitle` spells out too long for a one-line card.
- *
- * The subscription's full title is "ChatGPT subscription (Codex)", which the
- * half-width card truncates mid-word; the line underneath already says it is a
- * sign-in, so the card carries the brand alone.
- */
-const GALLERY_LABELS: Record<string, string> = { chatgpt: 'ChatGPT (Codex)' }
-
-function galleryLabel(providerName: string): string {
-  return GALLERY_LABELS[providerName] ?? getProviderTitle(providerName)
 }
 
 /**
@@ -200,48 +180,10 @@ function SubscriptionStep({
   onConnected: (result: CloudProviderSaveResult) => void
 }) {
   const { t } = useTranslation()
-  // The dialog is the onboarding entry point as well as the settings one; the
-  // whole point of ATO-456 is knowing which of them people actually use.
-  const { state, error, connect, cancel } = useChatGptAuth('onboarding')
-
-  // Held in a ref so the effect below depends on the connection state alone.
-  // The callback is rebuilt on every parent render, and re-running the exit for
-  // that would navigate out of onboarding twice.
-  // This step renders its own UI rather than `CloudSubscriptionCard`, so the
-  // impression has to be emitted here or the onboarding surface would have a
-  // conversion rate with no denominator.
-  useEffect(() => {
-    captureSubscriptionCardShown({
-      provider: provider.provider,
-      surface: 'onboarding',
-    })
-  }, [provider.provider])
-
-  const onConnectedRef = useRef(onConnected)
-  useEffect(() => {
-    onConnectedRef.current = onConnected
-  }, [onConnected])
-  const finished = useRef(false)
-
-  // Driven off the state rather than off `connect()` resolving: a session
-  // signed in before onboarding started reports `connected` on the first status
-  // read, and that user has as little left to do as the one who just signed in.
-  useEffect(() => {
-    if (state !== 'connected' || finished.current) return
-    finished.current = true
-    // The sign-in writes the account's catalogue onto the provider before it
-    // reports connected, so the current model list is the store's — not the
-    // `provider` object this step was opened with.
-    const models = useModelProvider
-      .getState()
-      .getProviderByName(provider.provider)?.models
-    onConnectedRef.current({
-      providerName: provider.provider,
-      modelId: models?.[0]?.id ?? null,
-    })
-  }, [provider.provider, state])
-
-  const connecting = state === 'connecting'
+  const { state, error, connect, cancel, connecting } = useSubscriptionConnect(
+    provider,
+    onConnected
+  )
   const label = galleryLabel(provider.provider)
 
   return (
@@ -329,19 +271,16 @@ export function AddCloudProviderDialog({
   duringOnboarding = true,
 }: AddCloudProviderDialogProps) {
   const { t } = useTranslation()
-  const serviceHub = useServiceHub()
   // Destructured rather than selector-based, matching how the rest of the app
   // consumes this store (see SetupScreen).
-  const { providers, updateProvider } = useModelProvider()
+  const { providers } = useModelProvider()
 
   const [step, setStep] = useState<Step>({ name: 'gallery' })
   const [apiKey, setApiKey] = useState('')
   const [revealed, setRevealed] = useState(false)
   // The key is checked with the provider before it is saved.
-  const [checking, setChecking] = useState(false)
-  const [keyError, setKeyError] = useState<string | null>(null)
-  // The key the provider called invalid, which the user may save anyway.
-  const [refusedKey, setRefusedKey] = useState<string | null>(null)
+  const { connect, checking, keyError, canSaveAnyway, clearKeyError } =
+    useProviderKeyConnect({ duringOnboarding })
 
   const cloudProviders = useMemo(
     () => selectCloudGalleryProviders(providers),
@@ -384,8 +323,7 @@ export function AddCloudProviderDialog({
     setStep(openingStep())
     setApiKey('')
     setRevealed(false)
-    setKeyError(null)
-    setRefusedKey(null)
+    clearKeyError()
   }
 
   const handleOpenChange = (next: boolean) => {
@@ -425,67 +363,12 @@ export function AddCloudProviderDialog({
 
   /** Check the typed key, then save it; `saveAnyway` saves one it refused. */
   const handleSave = async (saveAnyway = false) => {
-    if (step.name !== 'key' || checking) return
-    const provider = step.provider
-    const key = apiKey.trim()
-    if (!key) return
-
-    // Ask the provider before calling it connected: a key it calls invalid
-    // keeps the dialog open with the reason (and "Save anyway"); one it could
-    // not be asked about is saved and said to be unverified.
-    let outcome: KeyCheckOutcome
-    if (saveAnyway && keyError && refusedKey === key) {
-      outcome = savedAnyway(keyError)
-    } else {
-      setKeyError(null)
-      setRefusedKey(null)
-      setChecking(true)
-      try {
-        outcome = await checkProviderKey(provider, key, serviceHub)
-      } finally {
-        setChecking(false)
-      }
-      if (outcome.kind === 'refused') {
-        setKeyError(
-          outcome.reason === 'ownServer'
-            ? outcome.message
-            : [
-                t('setup:cloudStep.keyRejected', {
-                  provider: galleryLabel(provider.provider),
-                }),
-                outcome.message,
-              ]
-                .filter(Boolean)
-                .join(' ')
-        )
-        if (outcome.reason === 'key') setRefusedKey(key)
-        return
-      }
-    }
-
-    try {
-      saveProviderApiKey({
-        provider,
-        apiKey: key,
-        duringOnboarding,
-        updateProvider,
-        serviceHub,
-      })
-    } catch (error) {
-      // Keep the dialog open — closing here would strand the user back on the
-      // picker with no key saved and no explanation.
-      console.error('[AddCloudProviderDialog] failed to save key', error)
-      toast.error(t('setup:cloudStep.saveFailed'))
-      return
-    }
-    recordKeyCheck(provider.provider, key, outcome)
-
+    if (step.name !== 'key') return
+    const result = await connect(step.provider, apiKey, saveAnyway)
+    if (result.kind !== 'saved') return
     finishWith(
-      {
-        providerName: provider.provider,
-        modelId: provider.models?.[0]?.id ?? null,
-      },
-      outcome.kind === 'unverified' ? outcome.message : undefined
+      { providerName: result.providerName, modelId: result.modelId },
+      result.unverifiedReason
     )
   }
 
@@ -600,8 +483,7 @@ export function AddCloudProviderDialog({
                   }
                   onChange={(e) => {
                     setApiKey(e.target.value)
-                    setKeyError(null)
-                    setRefusedKey(null)
+                    clearKeyError()
                   }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && apiKey.trim()) {
@@ -640,7 +522,7 @@ export function AddCloudProviderDialog({
                   {keyError}
                 </p>
               )}
-              {keyError && refusedKey === apiKey.trim() && (
+              {canSaveAnyway(apiKey) && (
                 <Button
                   variant="outline"
                   size="sm"
