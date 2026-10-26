@@ -11,6 +11,7 @@ import {
   mlxMatchIds,
   nextRunnable,
   queueSettled,
+  waitsForChatModel,
   type DownloadSnapshot,
   type OnboardingJob,
 } from '../jobs'
@@ -273,5 +274,39 @@ describe('the handoff panel', () => {
     expect(handoffPanelContent(run, { ready: false, seenInApp: false })).toBe(
       'downloads'
     )
+  })
+})
+
+describe('waiting for the chat model', () => {
+  const choice = {
+    source: 'download',
+    provider: 'llamacpp-upstream',
+    matchIds: ['Qwen3.5-4B-Q4_K_M'],
+  }
+  const installed = [
+    { provider: 'llamacpp-upstream', models: [{ id: 'Qwen3.5-4B-Q4_K_M' }] },
+  ]
+
+  it('waits while the chosen download is queued, running or interrupted', () => {
+    for (const phase of ['queued', 'running', 'failed'] as const) {
+      expect(waitsForChatModel(choice, [{ ...chat, phase }], [])).toBe(true)
+    }
+    // The media queue behind it does not change that.
+    expect(waitsForChatModel(choice, [chat, image], [])).toBe(true)
+  })
+
+  it('does not wait once the model can answer, or with nothing on its way', () => {
+    expect(waitsForChatModel(choice, [chat], installed)).toBe(false)
+    expect(waitsForChatModel(choice, [{ ...chat, phase: 'done' }], [])).toBe(
+      false
+    )
+    expect(waitsForChatModel(choice, [image], [])).toBe(false)
+    expect(waitsForChatModel(null, [chat], [])).toBe(false)
+  })
+
+  it('never waits for a model from the library or the disk', () => {
+    for (const source of ['library', 'scan', 'builtin']) {
+      expect(waitsForChatModel({ ...choice, source }, [chat], [])).toBe(false)
+    }
   })
 })

@@ -189,6 +189,23 @@ export function findChatModel(
   return model ? { provider: choice.provider, modelId: model.id } : null
 }
 
+/**
+ * Everyday use leads to the wait screen instead of the chat while the chosen
+ * model is still on its way: the run's chat job is queued, running or
+ * interrupted, and the model cannot answer yet. A model in the library or on
+ * disk, a cloud provider or no choice at all goes straight to the chat.
+ */
+export function waitsForChatModel(
+  choice: (ChatModelRef & { source: string }) | null,
+  jobs: readonly OnboardingJob[],
+  providers: readonly ProviderLike[]
+): boolean {
+  if (!choice || choice.source !== 'download') return false
+  const chat = jobs.find((job) => job.kind === 'chat')
+  if (!chat || chat.phase === 'done') return false
+  return findChatModel(choice, providers) === null
+}
+
 /** The slice of the onboarding store the handoff panel decides on. */
 export type HandoffRun = {
   phase: string

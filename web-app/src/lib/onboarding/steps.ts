@@ -16,6 +16,7 @@ export type OnboardingStepId =
   | 'media'
   | 'purpose'
   | 'server'
+  | 'wait'
 
 /**
  * The first runs the onboarding experiment compares:
@@ -102,6 +103,14 @@ export const ONBOARDING_STEPS: Record<OnboardingVariant, readonly StepDef[]> = {
     },
     {
       id: 'server',
+      counted: false,
+      branchOf: 'purpose',
+      include: (context) => context.localApiServer,
+    },
+    // Everyday use while the chat model is still downloading: something to
+    // do (or an email to leave) instead of an empty chat.
+    {
+      id: 'wait',
       counted: false,
       branchOf: 'purpose',
       include: (context) => context.localApiServer,
