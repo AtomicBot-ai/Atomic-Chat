@@ -79,6 +79,7 @@ import { basename } from '@tauri-apps/api/path'
 import * as coreRuntime from './adapter/coreRuntime'
 import { LoadCancelTracker, toLoadError } from '../../shared/loadCancel'
 import { isPrismModel } from '../../shared/atomicCoreRuntime'
+import { mirrorLoadedContext } from '../../shared/loadedContext'
 import { updateEngineThroughCore } from '../../shared/coreEngineUpdate'
 import {
   readGgufMetadata,
@@ -3470,7 +3471,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
             ),
           })
         }
-        return await this.loadCancel.loadInCore(modelId, () =>
+        const session = await this.loadCancel.loadInCore(modelId, () =>
           coreRuntime.load(modelId, {
             ...(overrideSettings
               ? { settings: overrideSettings as Record<string, unknown> }
@@ -3479,9 +3480,44 @@ export default class llamacpp_upstream_extension extends AIEngine {
             bypassAutoUnload,
           })
         )
+        if (!isEmbedding)
+          void this.syncLoadedCtxSize(session, overrideSettings?.ctx_size)
+        return session
       } catch (error) {
         throw toLoadError(error)
       }
+    })
+  }
+
+  /**
+   * ATO-465: under fit the core sends no `--ctx-size` and llama.cpp picks the
+   * window, so the model's `ctx_len` is only what the load asked for. Read the
+   * window the server got and, when it differs, put it in the context controls
+   * through the same two channels the context ladder uses. Never throws.
+   */
+  private syncLoadedCtxSize(
+    session: SessionInfo,
+    requested: unknown
+  ): Promise<number | undefined> {
+    return mirrorLoadedContext({
+      server: session,
+      requested,
+      fetch: (url, init) => globalThis.fetch(url, init),
+      notify: async (modelId, newCtxLen) => {
+        const notifyPayload = { provider: this.provider, modelId, newCtxLen }
+        if (events && typeof events.emit === 'function') {
+          events.emit(ModelEvent.OnAutoIncreasedCtxLen, notifyPayload)
+        }
+        try {
+          await tauriEmit(AUTO_INCREASE_CTX_NOTIFY, notifyPayload)
+        } catch (e) {
+          logger.warn(`Failed to Tauri-emit ${AUTO_INCREASE_CTX_NOTIFY}: ${e}`)
+        }
+        logger.info(
+          `loaded context of ${modelId}: ${newCtxLen} tokens (asked for ${String(requested ?? 'default')}); mirrored to the UI`
+        )
+      },
+      warn: (message) => logger.warn(message),
     })
   }
 
