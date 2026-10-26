@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Atomic Chat
+GenericName=Local AI chat
+Comment=Run open-weight LLMs locally, private, on your machine
+Exec=/opt/atomic-chat/bin/Atomic-Chat
+Icon=chat.atomic.app
+Terminal=false
+Categories=Utility;Development;
+Keywords=AI;LLM;chat;local;model;
+StartupNotify=true
+StartupWMClass=chat.atomic.app

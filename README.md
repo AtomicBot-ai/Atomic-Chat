@@ -27,6 +27,13 @@ Local AI app and inference engine for agents. Run open-weight LLMs locally — p
   <a href="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v2.0.0/Atomic.Chat_2.0.0_amd64.AppImage"><img src="https://img.shields.io/badge/Linux-AppImage-FCC624?style=for-the-badge&logo=linux&logoColor=black" height="46" alt="Download for Linux" /></a>
 </p>
 
+<p align="left"><b>Linux packages</b> — from the Atomic Chat repository, updated by your package manager (<a href="#-running-on-linux">how to install</a>)</p>
+<p align="left">
+  <a href="#-running-on-linux"><img src="https://img.shields.io/badge/Debian_%2F_Ubuntu-apt-A81D33?style=for-the-badge&logo=debian&logoColor=white" height="46" alt="Install on Debian or Ubuntu with apt" /></a>&nbsp;
+  <a href="#-running-on-linux"><img src="https://img.shields.io/badge/Fedora-dnf-51A2DA?style=for-the-badge&logo=fedora&logoColor=white" height="46" alt="Install on Fedora with dnf" /></a>&nbsp;
+  <a href="#-running-on-linux"><img src="https://img.shields.io/badge/Arch-AUR-1793D1?style=for-the-badge&logo=archlinux&logoColor=white" height="46" alt="Install on Arch Linux from the AUR" /></a>
+</p>
+
 <p align="left"><b>Mobile</b></p>
 <p align="left">
   <a href="https://apps.apple.com/us/app/atomic-chat-private-local-ai/id6761720226"><img src="https://img.shields.io/badge/iOS-App_Store-0D96F6?style=for-the-badge&logo=appstore&logoColor=white" height="46" alt="Download for iOS" /></a>&nbsp;
@@ -198,7 +205,43 @@ yarn dev
 
 ### 🐧 Running on Linux
 
-Atomic Chat ships as a single self-contained `.AppImage` — no installer, no root:
+Install it from the Atomic Chat package repository, and your package manager updates it with the rest of
+the system. The packages put the app in `/opt/atomic-chat` with an `atomic-chat` command, a menu entry, and
+the system's WebKitGTK; the built-in updater stays off. On arm64 they need glibc 2.38 or newer, which the
+bundled llama.cpp engine is built against there. The repository and the rpm packages are signed with
+the Atomic Chat packages key in [`packaging/atomic-chat.asc`](packaging/atomic-chat.asc), fingerprint
+`1047 F119 58C6 442D D472  E497 E4C3 D361 FB7F F123`.
+
+**Debian, Ubuntu** — Debian 12+ / Ubuntu 22.04+ on x86-64, Debian 13+ / Ubuntu 24.04+ on arm64:
+
+<!-- install:apt -->
+
+```sh
+curl -fsSL https://atomic-chat-packages.fsn1.your-objectstorage.com/atomic-chat.gpg | sudo tee /usr/share/keyrings/atomic-chat-app.gpg >/dev/null
+echo "deb [signed-by=/usr/share/keyrings/atomic-chat-app.gpg] https://atomic-chat-packages.fsn1.your-objectstorage.com/deb stable main" \
+  | sudo tee /etc/apt/sources.list.d/atomic-chat-app.list
+sudo apt update && sudo apt install atomic-chat
+```
+
+**Fedora** 40+ (x86-64, aarch64):
+
+<!-- install:dnf -->
+
+```sh
+sudo curl -fsSL -o /etc/yum.repos.d/atomic-chat-app.repo https://atomic-chat-packages.fsn1.your-objectstorage.com/rpm/atomic-chat.repo
+sudo dnf install atomic-chat
+```
+
+**Arch Linux** (x86-64, aarch64): `yay -S atomic-chat-bin`, or any other AUR helper.
+
+Then start Atomic Chat from the app menu, or run `atomic-chat`.
+
+Updates come with `sudo apt upgrade`, `sudo dnf upgrade` or `yay -Syu`. `sudo apt remove atomic-chat`,
+`sudo dnf remove atomic-chat` or `sudo pacman -R atomic-chat-bin` removes the app and leaves your chats and
+models. The repository keeps the last three releases; every release also carries its `.deb` and `.rpm` files
+on the [releases page](https://github.com/AtomicBot-ai/Atomic-Chat/releases).
+
+Or run the self-contained `.AppImage` — no installer, no root, and it updates itself:
 
 ```bash
 chmod +x Atomic.Chat_*_amd64.AppImage

@@ -443,7 +443,8 @@ test-hardening-contracts:
 		tests/desktop-legacy-path.test.mjs \
 		tests/extension-bundles.test.mjs \
 		tests/cli-launch-catalog.test.mjs \
-		tests/macos-signing.test.mjs
+		tests/macos-signing.test.mjs \
+		tests/linux-packaging.test.mjs
 
 test-coverage-critical:
 	yarn test:coverage
