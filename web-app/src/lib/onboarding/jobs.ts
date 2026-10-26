@@ -229,27 +229,34 @@ export function handoffPanelTracksJobs(run: HandoffRun): boolean {
   )
 }
 
-/** What the handoff panel has to say: the downloads, or the model ready. */
-export type HandoffPanelContent = 'downloads' | 'ready'
+/**
+ * What the handoff panel has to say: the downloads, the model ready, or —
+ * with neither — only the way back to setup.
+ */
+export type HandoffPanelContent = 'downloads' | 'ready' | 'setup'
 
 /**
  * Whether the handoff panel shows, and what for. It follows the run's
  * downloads after a handoff to the chat; once they are over — or were over
  * before the handoff — it says the chosen model is ready, until dismissed.
- * The ready note belongs to the app session that handed off or followed a
- * download (`seenInApp`): a later launch with nothing left to follow brings
- * no news, and the run ends without it.
+ * With nothing to follow and no model ready (Skip setup, a cloud-only run)
+ * it still offers "Back to setup", as the prototype does after every chat
+ * handoff. The ready note and the way back belong to the app session that
+ * handed off or followed a download (`seenInApp`): a later launch with
+ * nothing left to follow brings no news, and the run ends without them.
  */
 export function handoffPanelContent(
   run: HandoffRun,
   { ready, seenInApp }: { ready: boolean; seenInApp: boolean }
 ): HandoffPanelContent | null {
   if (handoffPanelTracksJobs(run)) return 'downloads'
-  return seenInApp &&
-    ready &&
-    run.phase === 'handedOff' &&
-    run.destination === 'chat' &&
-    !run.panelDismissed
-    ? 'ready'
-    : null
+  if (
+    !seenInApp ||
+    run.phase !== 'handedOff' ||
+    run.destination !== 'chat' ||
+    run.panelDismissed
+  ) {
+    return null
+  }
+  return ready ? 'ready' : 'setup'
 }

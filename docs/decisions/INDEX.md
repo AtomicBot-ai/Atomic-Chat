@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-473 records, 2026-05-19 → 2026-10-26.
+474 records, 2026-05-19 → 2026-10-26.
 
 ---
 
@@ -356,8 +356,9 @@ decision is reversed, add a new one that says which record it supersedes.
 ## UI / UX (2)
 - **2026-10-20** — [Show hosted providers on Cloud and the user's own servers on Custom Endpoint](2026-10-20-show-hosted-providers-on-cloud-and-own-servers-on-custom-endpoint.md)
 - **2026-10-20** — [List everything downloaded on a Downloads page](2026-10-20-list-everything-downloaded-on-a-downloads-page.md)
-## UI / UX (119)
+## UI / UX (120)
 - **2026-10-26** — [Download the first-run chat model before image and video, even when chosen last](2026-10-26-download-the-chat-model-before-image-and-video.md)
+- **2026-10-26** — [Offer Back to setup after every chat handoff, in the session that handed off](2026-10-26-offer-back-to-setup-after-every-chat-handoff.md)
 - **2026-10-26** — [Show a wait screen while the first model downloads](2026-10-26-show-a-wait-screen-while-the-first-model-downloads.md) — supersedes in part 2026-10-22.
 - **2026-10-26** — [Show notifications as allowed only once the user allows them in setup](2026-10-26-show-notifications-allowed-only-once-allowed-in-setup.md)
 - **2026-10-23** — [Draw the download panel as the first-run strip](2026-10-23-draw-the-download-panel-as-the-first-run-strip.md)
