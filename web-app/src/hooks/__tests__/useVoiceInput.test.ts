@@ -336,6 +336,129 @@ describe('useVoiceInput', () => {
     expect(state.error?.code).toBe('deviceDisconnected')
   })
 
+  describe('while the voice model is still starting', () => {
+    /** An engine start the test finishes by hand — loading took 85 s in QA. */
+    function holdEngineStart() {
+      let finish!: () => void
+      let fail!: (error: Error) => void
+      ensureVoiceEngine.mockImplementationOnce(
+        () =>
+          new Promise((resolve, reject) => {
+            finish = () =>
+              resolve({
+                baseUrl: 'http://127.0.0.1:1234/v1',
+                apiKey: 'k',
+                model: 'voxtral',
+              })
+            fail = reject
+          })
+      )
+      return { finish: () => finish(), fail: (error: Error) => fail(error) }
+    }
+
+    it('stops at once and never opens the microphone', async () => {
+      const engine = holdEngineStart()
+      const starting = useVoiceInput.getState().begin('thread-1', ANCHOR)
+      expect(useVoiceInput.getState().phase).toBe('starting')
+
+      await useVoiceInput.getState().stop()
+
+      // Not ignored: the press ends the session before the model is up, and
+      // the composer that owned it is told nothing was recorded.
+      let state = useVoiceInput.getState()
+      expect(state.phase).toBe('idle')
+      expect(state.lastOutcome).toBe('not-recorded')
+      expect(state.ownerKey).toBe('thread-1')
+      expect(state.anchor).toBeNull()
+
+      engine.finish()
+      await starting
+
+      // The model coming up a minute later must not start recording.
+      expect(startSession).not.toHaveBeenCalled()
+      state = useVoiceInput.getState()
+      expect(state.phase).toBe('idle')
+      expect(state.sessionId).toBeNull()
+      expect(state.startedAt).toBeNull()
+    })
+
+    it('does not open the microphone after a discard', async () => {
+      const engine = holdEngineStart()
+      const starting = useVoiceInput.getState().begin('thread-1', ANCHOR)
+
+      await useVoiceInput.getState().cancel()
+      engine.finish()
+      await starting
+
+      // Discard used to reset the store and let the start carry on, leaving a
+      // live microphone that no composer showed or could stop.
+      expect(startSession).not.toHaveBeenCalled()
+      expect(cancelSession).not.toHaveBeenCalled()
+      expect(useVoiceInput.getState().phase).toBe('idle')
+      expect(useVoiceInput.getState().lastOutcome).toBe('cancelled')
+    })
+
+    it('closes a microphone that opened just as the user stopped', async () => {
+      let openMicrophone!: () => void
+      startSession.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            openMicrophone = () =>
+              resolve({
+                sessionId: 'session-late',
+                deviceId: null,
+                deviceName: 'Built-in',
+                sampleRate: 48000,
+                resampled: true,
+                fellBackToDefault: false,
+              })
+          })
+      )
+      const starting = useVoiceInput.getState().begin('thread-1', ANCHOR)
+      await vi.waitFor(() => expect(startSession).toHaveBeenCalled())
+
+      await useVoiceInput.getState().stop()
+      openMicrophone()
+      await starting
+
+      expect(cancelSession).toHaveBeenCalledWith('session-late')
+      const state = useVoiceInput.getState()
+      expect(state.phase).toBe('idle')
+      expect(state.sessionId).toBeNull()
+      expect(state.startedAt).toBeNull()
+    })
+
+    it('reports nothing when a start the user stopped then fails', async () => {
+      const engine = holdEngineStart()
+      const starting = useVoiceInput.getState().begin('thread-1', ANCHOR)
+
+      await useVoiceInput.getState().stop()
+      engine.fail(new Error('engine down'))
+      await starting
+
+      const state = useVoiceInput.getState()
+      expect(state.phase).toBe('idle')
+      expect(state.error).toBeNull()
+      expect(state.lastOutcome).toBe('not-recorded')
+    })
+
+    it('can start again after a stop', async () => {
+      const engine = holdEngineStart()
+      const first = useVoiceInput.getState().begin('thread-1', ANCHOR)
+      await useVoiceInput.getState().stop()
+      useVoiceInput.getState().reset()
+
+      await useVoiceInput.getState().begin('thread-1', ANCHOR)
+      engine.finish()
+      await first
+
+      // Only the second start opened the microphone.
+      expect(startSession).toHaveBeenCalledTimes(1)
+      expect(useVoiceInput.getState().phase).toBe('listening')
+      expect(useVoiceInput.getState().sessionId).toBe('session-1')
+    })
+  })
+
   it('gives up the ability to undo once the user types', async () => {
     await useVoiceInput.getState().begin('thread-1', ANCHOR)
     expect(useVoiceInput.getState().canRevert).toBe(true)

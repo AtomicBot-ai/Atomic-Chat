@@ -991,11 +991,16 @@ const ChatInput = memo(function ChatInput({
   }, [voiceOutcome, voiceAnchor, composerThreadKey, setPrompt, t])
 
   // Stop dictation when this composer goes away, otherwise the microphone
-  // stays open with nowhere to put the text.
+  // stays open with nowhere to put the text. That includes a start still
+  // waiting for the voice model: left alone it opened the microphone once the
+  // model was up, for a composer that no longer existed.
   useEffect(() => {
     return () => {
       const state = useVoiceInput.getState()
-      if (state.ownerKey === composerThreadKey && state.sessionId) {
+      if (
+        state.ownerKey === composerThreadKey &&
+        (state.sessionId || state.phase === 'starting')
+      ) {
         void state.cancel()
       }
     }
@@ -3160,7 +3165,11 @@ const ChatInput = memo(function ChatInput({
                   onPaste={handlePaste}
                   placeholder={
                     isVoiceActive && !prompt
-                      ? t('common:voiceInput.placeholder')
+                      ? // Nothing is captured until the voice model is up, so
+                        // "Listening — start speaking" would lose those words.
+                        voicePhase === 'starting'
+                        ? t('common:voiceInput.startingPlaceholder')
+                        : t('common:voiceInput.placeholder')
                       : t('common:placeholder.chatInput')
                   }
                   autoFocus

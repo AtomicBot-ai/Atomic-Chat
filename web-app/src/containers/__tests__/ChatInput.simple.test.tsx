@@ -23,6 +23,7 @@ import { useAgentMode } from '@/hooks/useAgentMode'
 import { useAgentRun } from '@/hooks/useAgentRun'
 import { useThreads } from '@/hooks/useThreads'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { useVoiceInput } from '@/hooks/useVoiceInput'
 import { useDeferredFirstSend } from '@/stores/deferred-first-send-store'
 import { seedServiceHub } from '@/test/service-hub'
 import type { ServiceHub } from '@/services'
@@ -356,6 +357,64 @@ describe('ChatInput', () => {
       document.querySelector('[data-test-id="send-message-button"]')
     ).not.toBeInTheDocument()
     unmount()
+  })
+
+  describe('while the voice model is starting', () => {
+    const KEY = 'voice-starting-thread'
+
+    /** Owns the microphone for this composer; `cancel` is a spy. */
+    function startVoiceHere() {
+      const previousThreadId = useThreads.getState().currentThreadId
+      const realCancel = useVoiceInput.getState().cancel
+      const cancel = vi.fn(async () => {})
+      useThreads.setState({ currentThreadId: KEY })
+      useVoiceInput.setState({ phase: 'starting', ownerKey: KEY, cancel })
+      return {
+        cancel,
+        restore: () => {
+          useVoiceInput.setState({ cancel: realCancel })
+          useVoiceInput.getState().reset()
+          useThreads.setState({ currentThreadId: previousThreadId })
+        },
+      }
+    }
+
+    it('does not tell the user to speak before the microphone is open', () => {
+      const voice = startVoiceHere()
+      try {
+        const { unmount } = render(<ChatInput />)
+        const input = screen.getByTestId('chat-input')
+        expect(input).toHaveAttribute(
+          'placeholder',
+          'common:voiceInput.startingPlaceholder'
+        )
+
+        act(() =>
+          useVoiceInput.setState({ phase: 'listening', sessionId: 'session-1' })
+        )
+        expect(input).toHaveAttribute(
+          'placeholder',
+          'common:voiceInput.placeholder'
+        )
+        unmount()
+      } finally {
+        voice.restore()
+      }
+    })
+
+    it('stops the start when the composer goes away', () => {
+      // Left running, the start opened the microphone once the model was up,
+      // for a composer that no longer existed.
+      const voice = startVoiceHere()
+      try {
+        const { unmount } = render(<ChatInput />)
+        expect(voice.cancel).not.toHaveBeenCalled()
+        unmount()
+        expect(voice.cancel).toHaveBeenCalledTimes(1)
+      } finally {
+        voice.restore()
+      }
+    })
   })
 
   it('shows Send once there is text, and Stop while a reply streams', async () => {
