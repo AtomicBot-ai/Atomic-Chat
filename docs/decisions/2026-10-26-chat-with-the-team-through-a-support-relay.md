@@ -9,7 +9,9 @@ title: "Chat with the team through a support relay, with diagnostics attached"
   the app and make the team ask what they run. The redesign prototype adds Help → Chat with us: a
   right-side sheet where the user writes to the team and reads the answers. The team works in a
   Telegram group; the app must not hold a bot token or talk to Telegram itself.
-- **Decision:** the app talks only to our support relay (`SUPPORT_API_URL`, default
+- **Decision:** the app talks only to our support relay
+  ([AtomicBot-ai/atomic-support-bot](https://github.com/AtomicBot-ai/atomic-support-bot), whose
+  README holds the API contract; `SUPPORT_API_URL`, default
   `https://hatchet.atomic.chat/support`, `VITE_SUPPORT_API_URL` to override), which forwards to
   Telegram and returns replies. API v1: a conversation created lazily on the first send returns a
   bearer token; messages carry a client UUID the relay deduplicates on, so Retry is safe; a long
