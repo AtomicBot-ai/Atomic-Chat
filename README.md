@@ -27,6 +27,13 @@ Local AI app and inference engine for agents. Run open-weight LLMs locally — p
   <a href="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v2.0.0/Atomic.Chat_2.0.0_amd64.AppImage"><img src="https://img.shields.io/badge/Linux-AppImage-FCC624?style=for-the-badge&logo=linux&logoColor=black" height="46" alt="Download for Linux" /></a>
 </p>
 
+<p align="left"><b>Linux packages</b> — from the Atomic Chat repository, updated by your package manager (<a href="#-running-on-linux">how to install</a>)</p>
+<p align="left">
+  <a href="#-running-on-linux"><img src="https://img.shields.io/badge/Debian_%2F_Ubuntu-apt-A81D33?style=for-the-badge&logo=debian&logoColor=white" height="46" alt="Install on Debian or Ubuntu with apt" /></a>&nbsp;
+  <a href="#-running-on-linux"><img src="https://img.shields.io/badge/Fedora-dnf-51A2DA?style=for-the-badge&logo=fedora&logoColor=white" height="46" alt="Install on Fedora with dnf" /></a>&nbsp;
+  <a href="#-running-on-linux"><img src="https://img.shields.io/badge/Arch-AUR-1793D1?style=for-the-badge&logo=archlinux&logoColor=white" height="46" alt="Install on Arch Linux from the AUR" /></a>
+</p>
+
 <p align="left"><b>Mobile</b></p>
 <p align="left">
   <a href="https://apps.apple.com/us/app/atomic-chat-private-local-ai/id6761720226"><img src="https://img.shields.io/badge/iOS-App_Store-0D96F6?style=for-the-badge&logo=appstore&logoColor=white" height="46" alt="Download for iOS" /></a>&nbsp;
@@ -205,7 +212,7 @@ bundled llama.cpp engine is built against there. The repository and the rpm pack
 the Atomic Chat packages key in [`packaging/atomic-chat.asc`](packaging/atomic-chat.asc), fingerprint
 `1047 F119 58C6 442D D472  E497 E4C3 D361 FB7F F123`.
 
-Debian 12+, Ubuntu 22.04+ on x86-64; Debian 13+, Ubuntu 24.04+ on arm64:
+**Debian, Ubuntu** — Debian 12+ / Ubuntu 22.04+ on x86-64, Debian 13+ / Ubuntu 24.04+ on arm64:
 
 <!-- install:apt -->
 
@@ -216,7 +223,7 @@ echo "deb [signed-by=/usr/share/keyrings/atomic-chat-app.gpg] https://atomic-cha
 sudo apt update && sudo apt install atomic-chat
 ```
 
-Fedora 40+ (x86-64, aarch64):
+**Fedora** 40+ (x86-64, aarch64):
 
 <!-- install:dnf -->
 
@@ -225,7 +232,9 @@ sudo curl -fsSL -o /etc/yum.repos.d/atomic-chat-app.repo https://atomic-chat-pac
 sudo dnf install atomic-chat
 ```
 
-Arch Linux: `yay -S atomic-chat-bin`, or any other AUR helper.
+**Arch Linux** (x86-64, aarch64): `yay -S atomic-chat-bin`, or any other AUR helper.
+
+Then start Atomic Chat from the app menu, or run `atomic-chat`.
 
 Updates come with `sudo apt upgrade`, `sudo dnf upgrade` or `yay -Syu`. `sudo apt remove atomic-chat`,
 `sudo dnf remove atomic-chat` or `sudo pacman -R atomic-chat-bin` removes the app and leaves your chats and
