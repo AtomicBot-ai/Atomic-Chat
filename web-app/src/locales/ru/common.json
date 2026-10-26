@@ -721,6 +721,7 @@
     "modelsHub": "Хаб моделей",
     "help": "Помощь",
     "helpTitle": "Чем можем помочь?",
+    "chatWithUs": "Чат с нами",
     "emailSupport": "Написать в поддержку",
     "discord": "Discord",
     "newGithubIssue": "Новый issue на GitHub",
@@ -756,5 +757,21 @@
     "connections": "Подключения",
     "connectionsCount": "настроено: {{count}}",
     "configured": "Настроен"
+  },
+  "support": {
+    "title": "Поддержка Atomic Chat",
+    "subtitle": "Напишите нашей команде",
+    "close": "Закрыть чат поддержки",
+    "greeting": "Здравствуйте! Чем можем помочь?",
+    "messages": "Сообщения",
+    "teamName": "Команда Atomic Chat",
+    "inputLabel": "Сообщение команде Atomic Chat",
+    "placeholder": "Напишите сообщение…",
+    "send": "Отправить сообщение",
+    "sending": "Отправляется…",
+    "notSent": "Не отправлено.",
+    "rateLimited": "Слишком много сообщений. Подождите немного и повторите.",
+    "retry": "Повторить",
+    "disclosure": "Сообщения получает команда Atomic Chat. К ним прикладываются версия приложения, ОС и сведения об оборудовании, чтобы нам было проще ответить."
   }
 }

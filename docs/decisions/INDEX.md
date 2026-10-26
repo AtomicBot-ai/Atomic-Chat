@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-470 records, 2026-05-19 → 2026-10-23.
+471 records, 2026-05-19 → 2026-10-26.
 
 ---
 
@@ -519,8 +519,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-09-30** — [TensorRT-LLM is a Linux-only extension that decides its own visibility](2026-09-30-tensorrt-llm-is-a-linux-only-extension-that-decides-its-own-visibility.md)
 - **2026-09-30** — [Run Agent turns on TensorRT-LLM through its session gateway](2026-09-30-run-agent-turns-on-tensorrt-llm-through-its-session-gateway.md)
 
-## Other (19)
+## Other (20)
 
+- **2026-10-26** — [Chat with the team through a support relay, with diagnostics attached](2026-10-26-chat-with-the-team-through-a-support-relay.md)
 - **2026-09-30** — [Hide the Apple on-device provider](2026-09-30-hide-the-apple-on-device-provider.md)
 - **2026-09-22** — [Keep an unseen e2e window rendering](2026-09-22-keep-an-unseen-e2e-window-rendering.md)
 - **2026-09-21** — [Run desktop e2e scenarios side by side](2026-09-21-run-desktop-e2e-scenarios-side-by-side.md)

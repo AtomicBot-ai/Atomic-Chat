@@ -816,6 +816,7 @@
     "modelsHub": "Models Hub",
     "help": "Help",
     "helpTitle": "How can we help?",
+    "chatWithUs": "Chat with us",
     "emailSupport": "Email support",
     "discord": "Discord",
     "newGithubIssue": "New GitHub issue",
@@ -851,5 +852,21 @@
     "connections": "Connections",
     "connectionsCount": "{{count}} set up",
     "configured": "Configured"
+  },
+  "support": {
+    "title": "Atomic Chat support",
+    "subtitle": "Chat with our team",
+    "close": "Close support chat",
+    "greeting": "Hi there. What can we help you with?",
+    "messages": "Messages",
+    "teamName": "Atomic Chat team",
+    "inputLabel": "Message to the Atomic Chat team",
+    "placeholder": "Write a message…",
+    "send": "Send message",
+    "sending": "Sending…",
+    "notSent": "Not sent.",
+    "rateLimited": "Too many messages. Wait a moment, then retry.",
+    "retry": "Retry",
+    "disclosure": "Your messages go to the Atomic Chat team. App version, OS and hardware info are attached to help us answer."
   }
 }

@@ -28,6 +28,7 @@ import { useTrayStatusSync } from '@/hooks/useTrayStatusSync'
 import { useRemoteAccessSync } from '@/hooks/useRemoteAccessSync'
 import { useManagedEnvironmentSync } from '@/hooks/useManagedEnvironmentSync'
 import { useEngineVersionsSync } from '@/hooks/useEngineVersionsSync'
+import { useSupportChatSync } from '@/hooks/useSupportChatSync'
 import ToolApproval from '@/containers/dialogs/ToolApproval'
 import AgentApprovalDialog from '@/containers/dialogs/AgentApprovalDialog'
 import AgentFolderAccessDialog from '@/containers/dialogs/AgentFolderAccessDialog'
@@ -93,6 +94,9 @@ const AppLayout = () => {
   // Asks the core about every engine's versions for the update banner and the
   // installed builds lists, again whenever an engine changes. Desktop only.
   useEngineVersionsSync()
+  // Follows the support chat's conversation with the team, so a reply raises
+  // a notification while the chat is closed. Idle until the first message.
+  useSupportChatSync()
   const isSetupCompleted = useSetupCompleted()
 
   return (
