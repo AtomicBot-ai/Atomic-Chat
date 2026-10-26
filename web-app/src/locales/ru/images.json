@@ -330,6 +330,13 @@
     "confirm": "Delete",
     "failed": "The images could not be deleted"
   },
+  "confirmExceeds": {
+    "title": "Изображение, скорее всего, не поместится в память",
+    "needs": "Нужно около {{required}} ГБ памяти; для него свободно около {{available}} ГБ.",
+    "body": "Компьютер уйдёт в своп: он замедлится, изображение может делаться очень долго, а медиадвижок может остановиться, не закончив его. Генерацию можно остановить в любой момент.",
+    "advice": "Меньший размер или меньший квант помещаются лучше.",
+    "confirm": "Всё равно генерировать"
+  },
   "errors": {
     "actions": {
       "install": "Install the engine",
@@ -405,6 +412,10 @@
     "JOB_NOT_FOUND": {
       "title": "The job disappeared",
       "body": "The renderer no longer knows this job. It may have restarted."
+    },
+    "ENGINE_STOPPED": {
+      "title": "Медиадвижок остановился",
+      "body": "Он остановился, не закончив работу, — скорее всего, компьютеру не хватило памяти. Попробуйте снова; с моделью или размером поменьше памяти скорее хватит."
     },
     "QUEUE_FULL": {
       "title": "Too many jobs queued",

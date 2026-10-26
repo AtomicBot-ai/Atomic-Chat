@@ -330,6 +330,13 @@
     "confirm": "Delete",
     "failed": "The images could not be deleted"
   },
+  "confirmExceeds": {
+    "title": "This image likely won't fit in memory",
+    "needs": "Needs about {{required}} GB of memory; about {{available}} GB is free for it.",
+    "body": "The computer will swap: it slows down, the image can take a very long time, and the media engine may stop before it finishes. You can stop it at any time.",
+    "advice": "A smaller size or a smaller quant fits better.",
+    "confirm": "Generate anyway"
+  },
   "errors": {
     "actions": {
       "install": "Install the engine",
@@ -410,6 +417,10 @@
     "JOB_NOT_FOUND": {
       "title": "The job disappeared",
       "body": "The renderer no longer knows this job. It may have restarted."
+    },
+    "ENGINE_STOPPED": {
+      "title": "The media engine stopped",
+      "body": "It stopped before this finished, most likely because the computer ran out of memory. Try again; a smaller model or a smaller size is less likely to run out."
     },
     "QUEUE_FULL": {
       "title": "Too many jobs queued",

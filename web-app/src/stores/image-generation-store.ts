@@ -12,6 +12,12 @@ import { configureDiffusion, getDiffusionPaths } from '@/lib/diffusion/config'
 import { toDiffusionError } from '@/lib/diffusion/errors'
 import { autoOffload, fitForQuant } from '@/lib/diffusion/fit'
 import {
+  CoreInstanceTracker,
+  ENGINE_STOPPED_MESSAGE,
+  lostJobError,
+  noCoreWillReturn,
+} from '@/lib/diffusion/lost-job'
+import {
   shouldContinueGenerating,
   shouldReportGenerateError,
 } from '@/lib/diffusion/generation-stop'
@@ -206,6 +212,12 @@ const waiters = new Map<string, (job: ImageJob) => void>()
 
 let unsubscribe: (() => void) | null = null
 
+/**
+ * Which core instance each local job runs in: a re-attach to the same core
+ * keeps the job, a new instance has lost it (`lib/diffusion/lost-job.ts`).
+ */
+const instances = new CoreInstanceTracker()
+
 function hardwareProfile(): HardwareProfile | null {
   const hw = useHardware.getState().hardwareData
   return describeHardware({
@@ -268,6 +280,14 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
   const diffusion = () => getServiceHub().diffusion()
   let updatingEngine = false
 
+  /** The job as it ends when its core is gone or no longer knows it. */
+  const lostJob = (jobId: string, error: DiffusionError): ImageJob => ({
+    ...(get().currentJob ?? placeholderJob(jobId)),
+    id: jobId,
+    state: 'failed',
+    error,
+  })
+
   /** Resolve when the job reaches a terminal state, by event or by polling. */
   const waitForTerminal = (jobId: string): Promise<ImageJob> =>
     new Promise((resolve) => {
@@ -277,6 +297,7 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
         if (settled) return
         settled = true
         waiters.delete(jobId)
+        instances.forget(jobId)
         if (timer) clearInterval(timer)
         resolve(job)
       }
@@ -286,25 +307,35 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
       timer = setInterval(() => {
         void diffusion()
           .getJob(jobId)
-          .then((job) => {
+          .then(async (job) => {
             if (job === null) {
-              // The plugin forgot the job — nothing more will arrive for it.
-              finish({
-                ...(get().currentJob ?? placeholderJob(jobId)),
-                id: jobId,
-                state: 'failed',
-                error: {
-                  code: 'JOB_NOT_FOUND',
-                  message: 'The job disappeared before it finished.',
-                },
-              })
+              // The core forgot the job — nothing more will arrive for it.
+              // Which core answered says why: a new one means the engine
+              // stopped under the job, the same one that it vanished.
+              instances.note(await diffusion().coreInstance?.())
+              finish(
+                lostJob(
+                  jobId,
+                  lostJobError(instances.instanceOf(jobId), instances.current)
+                )
+              )
               return
             }
             if (isTerminal(job)) finish(job)
             else if (get().currentJob?.id === jobId) set({ currentJob: job })
           })
-          .catch(() => {
-            // A transient IPC failure: the next tick tries again.
+          .catch((error) => {
+            // The app gave up starting a core: the job cannot come back.
+            if (noCoreWillReturn(error) && instances.instanceOf(jobId)) {
+              finish(
+                lostJob(jobId, {
+                  code: 'ENGINE_STOPPED',
+                  message: ENGINE_STOPPED_MESSAGE,
+                })
+              )
+            }
+            // Otherwise a transient failure, or a core too busy to answer in
+            // time: the next tick tries again.
           })
       }, FALLBACK_POLL_MS)
     })
@@ -425,6 +456,11 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
 
       unsubscribe?.()
       unsubscribe = service.subscribe((event) => get().handleEvent(event))
+      // The instance a running job is adopted into, and later jobs submitted to.
+      const instanceRead = service
+        .coreInstance?.()
+        .then((id) => instances.note(id))
+        .catch(() => {})
 
       try {
         const status = await configureCore()
@@ -435,6 +471,7 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
       }
 
       await Promise.all([
+        instanceRead,
         get().refreshStatus(),
         get().refreshCatalog(),
         get().refreshModelFiles(),
@@ -474,6 +511,7 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
       // blank form that lets the user submit a second job on top.
       const active = get().status?.activeJob
       if (active && !isTerminal(active) && !get().generating) {
+        if (!active.request.target) instances.track(active.id)
         useImageGalleryStore.getState().selectLive()
         set({
           currentJob: active,
@@ -600,6 +638,35 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
           // which still holds its configuration; the configure below sends
           // every setting the app keeps, so it restores a new core and
           // changes nothing on the old one. Take its status as the truth.
+          instances.note(event.instanceId)
+          const running = get().currentJob
+          if (running && !isTerminal(running)) {
+            if (instances.replaced(running.id)) {
+              // Another core answers now: the one rendering this job is gone.
+              waiters.get(running.id)?.(
+                lostJob(
+                  running.id,
+                  lostJobError(
+                    instances.instanceOf(running.id),
+                    instances.current
+                  )
+                )
+              )
+            } else {
+              // The same core, attached again: the job goes on; read where it is.
+              void diffusion()
+                .getJob(running.id)
+                .then((job) => {
+                  if (
+                    job &&
+                    !isTerminal(job) &&
+                    get().currentJob?.id === job.id
+                  )
+                    set({ currentJob: job })
+                })
+                .catch(() => {})
+            }
+          }
           void get()
             .applyIdleSettings()
             .then(() => {
@@ -857,10 +924,12 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
         (file) =>
           file.field !== 'llm_vision' || workflowNeedsLlmVision(workflow)
       )
+      // A text encoder on the CPU is off a discrete GPU, but on unified
+      // memory it takes the same RAM a chat model would keep.
       const sideBytes =
         (family.vae?.bytes ?? 0) +
         (family.audio_vae?.bytes ?? 0) +
-        (teOnCpu
+        (teOnCpu && profile?.memoryKind !== 'unified'
           ? 0
           : requiredTextEncoders.reduce((sum, file) => sum + file.bytes, 0))
 
@@ -1024,6 +1093,14 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
       })
       let produced = 0
       try {
+        // A local job is tied to the core it is submitted to (`lost-job.ts`).
+        if (!request.target && instances.current === null) {
+          instances.note(
+            await diffusion()
+              .coreInstance?.()
+              .catch(() => null)
+          )
+        }
         for (let run = 0; run < runsTotal; run += 1) {
           if (get().stopRequested) break
           // Each run gets its own seed range so the batches do not repeat:
@@ -1038,6 +1115,7 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
             set({ lastError: toDiffusionError(error) })
             break
           }
+          if (!request.target) instances.track(jobId)
           set({ currentJob: placeholderJob(jobId) })
           const job = await waitForTerminal(jobId)
           reportJob(job, runsTotal)
@@ -1094,6 +1172,7 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
 
     reset: () => {
       waiters.clear()
+      instances.clear()
       set({ ...initial })
     },
   }

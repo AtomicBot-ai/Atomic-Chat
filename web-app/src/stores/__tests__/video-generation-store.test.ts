@@ -420,6 +420,23 @@ describe('video-generation-store', () => {
       expect(useVideoGenerationStore.getState().lastError?.code).toBe('JOB_NOT_FOUND')
     })
 
+    it('says the engine stopped when a new core attaches under a running clip', async () => {
+      fake.coreInstance = vi.fn(async () => 'instance-a')
+      fake.generateVideo.mockImplementation(async () => ({ jobId: 'vjob-1' }))
+      const run = useVideoGenerationStore.getState().startGeneration({
+        request: makeVideoRequest(),
+        seed: null,
+      })
+      await flush()
+      // The same core again: the clip goes on.
+      fake.emit({ type: 'reset', generation: 2, instanceId: 'instance-a' })
+      expect(useVideoGenerationStore.getState().generating).toBe(true)
+      fake.emit({ type: 'reset', generation: 3, instanceId: 'instance-b' })
+      await run
+      expect(useVideoGenerationStore.getState().lastError?.code).toBe('ENGINE_STOPPED')
+      expect(useVideoGenerationStore.getState().generating).toBe(false)
+    })
+
     it('records an error event for the running job only', async () => {
       fake.generateVideo.mockImplementation(async () => ({ jobId: 'vjob-1' }))
       const run = useVideoGenerationStore.getState().startGeneration({

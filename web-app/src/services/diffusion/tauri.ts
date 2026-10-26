@@ -341,6 +341,19 @@ export class TauriDiffusionService extends DefaultDiffusionService {
     )
   }
 
+  override async coreInstance(): Promise<string | null> {
+    try {
+      const { snapshot } = await invoke<{
+        snapshot?: { instance_id?: unknown }
+      }>('atomic_core_snapshot')
+      return typeof snapshot?.instance_id === 'string'
+        ? snapshot.instance_id
+        : null
+    } catch {
+      return null
+    }
+  }
+
   override subscribe(handler: (event: DiffusionEvent) => void): () => void {
     const pending: Promise<UnlistenFn>[] = []
 
@@ -352,13 +365,18 @@ export class TauriDiffusionService extends DefaultDiffusionService {
       )
     }
     pending.push(
-      listen<{ generation?: unknown }>(RESET_EVENT, (event) => {
-        const generation = event.payload?.generation
-        handler({
-          type: 'reset',
-          generation: typeof generation === 'number' ? generation : null,
-        })
-      })
+      listen<{ generation?: unknown; snapshot?: { instance_id?: unknown } }>(
+        RESET_EVENT,
+        (event) => {
+          const generation = event.payload?.generation
+          const instanceId = event.payload?.snapshot?.instance_id
+          handler({
+            type: 'reset',
+            generation: typeof generation === 'number' ? generation : null,
+            instanceId: typeof instanceId === 'string' ? instanceId : null,
+          })
+        }
+      )
     )
 
     let detached = false

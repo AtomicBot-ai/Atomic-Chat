@@ -56,6 +56,7 @@ import { MediaModeSelect } from './MediaModeSelect'
 import { MediaSettingsHeading } from './MediaSettingsHeading'
 import { MediaPageHeading } from './MediaPageHeading'
 import { WORKFLOW_ICONS } from './workflowIcons'
+import { ConfirmImageExceedsMemory } from './ConfirmImageExceedsMemory'
 import { ImageGenerateButton } from './ImageGenerateButton'
 import { ImageModelPicker } from './ImageModelPicker'
 import { AdvancedSelect } from './AdvancedSelect'
@@ -324,6 +325,10 @@ export const ImagePromptForm = memo(function ImagePromptForm({
             onGenerate={() => void generation.generate()}
             onStop={() => void generation.stop()}
           />
+          {/* Portalled out of the form: its buttons never submit it. */}
+          {generation.confirmation && (
+            <ConfirmImageExceedsMemory {...generation.confirmation} />
+          )}
         </div>
 
         {showNegative && (
