@@ -35,13 +35,21 @@ export const CORE_BINARIES = [
   'jan-cli',
 ]
 
-/** src-tauri/icons file → hicolor size. */
-export const ICONS = [
-  ['32x32.png', '32x32'],
-  ['64x64.png', '64x64'],
-  ['128x128.png', '128x128'],
-  ['128x128@2x.png', '256x256'],
-]
+/**
+ * Where a PNG icon goes in the hicolor theme: by its own pixel size, read from the PNG header (IHDR width
+ * and height at bytes 16-23). The stage takes the icons from Tauri's deb, whose directory names are not
+ * the size (it puts the 256 px icon in `256x256@2`, the theme's 512 px HiDPI directory); src-tauri/icons
+ * is generated at build time and not in the checkout the packages job packs from.
+ */
+export function hicolorPath(png) {
+  if (
+    png.length < 24 ||
+    png.toString('latin1', 1, 4) !== 'PNG' ||
+    png.toString('latin1', 12, 16) !== 'IHDR'
+  )
+    throw new Error('not a PNG file')
+  return `hicolor/${png.readUInt32BE(16)}x${png.readUInt32BE(20)}/apps/${APP_ID}.png`
+}
 
 /** One package per architecture, each built from that architecture's AppImage job. */
 export const PACKAGE_TARGETS = [
@@ -311,12 +319,8 @@ export function nfpmConfig({
         `${root}/packaging/atomic-chat.desktop`,
         `/usr/share/applications/${APP_ID}.desktop`
       ),
-      ...ICONS.map(([name, size]) =>
-        file(
-          `${root}/src-tauri/icons/${name}`,
-          `/usr/share/icons/hicolor/${size}/apps/${APP_ID}.png`
-        )
-      ),
+      // The stage's icons, renamed to the app id (hicolorPath).
+      { src: `${stage}/icons`, dst: '/usr/share/icons', type: 'tree' },
       file(`${root}/LICENSE`, `/usr/share/licenses/${PACKAGE_NAME}/LICENSE`),
     ],
     // On an upgrade: quit and restart the running app (packaging/postinstall.sh says why).

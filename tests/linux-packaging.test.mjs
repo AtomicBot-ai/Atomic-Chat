@@ -22,6 +22,7 @@ import {
   debDepends,
   externalLibraries,
   glibcFloor,
+  hicolorPath,
   nfpmConfig,
   packageAssets,
   packageDigests,
@@ -312,7 +313,12 @@ test('nfpmConfig installs the tree under /opt, a /usr/bin link, the desktop entr
   const dsts = deb.contents.map((c) => c.dst)
   assert.ok(dsts.includes('/usr/share/applications/chat.atomic.app.desktop'))
   assert.ok(
-    dsts.includes('/usr/share/icons/hicolor/256x256/apps/chat.atomic.app.png')
+    deb.contents.some(
+      (c) =>
+        c.src === '/st/x86_64/icons' &&
+        c.dst === '/usr/share/icons' &&
+        c.type === 'tree'
+    )
   )
   assert.ok(dsts.includes('/usr/share/licenses/atomic-chat/LICENSE'))
   assert.equal(deb.rpm.signature, undefined)
@@ -334,18 +340,16 @@ test('nfpmConfig installs the tree under /opt, a /usr/bin link, the desktop entr
   assert.deepEqual(rpm.rpm.signature, { key_file: '/k.asc' })
 })
 
-test('every icon the packages install exists', () => {
-  const deps = { deb: { depends: [], recommends: [] } }
-  const config = nfpmConfig({
-    version: '1.0.0',
-    target: PACKAGE_TARGETS[0],
-    format: 'deb',
-    stage: '/s',
-    deps,
-    root: '',
-  })
-  for (const c of config.contents.filter((c) => c.dst.endsWith('.png')))
-    assert.ok(read(c.src.replace(/^\//, '')).length > 0, c.src)
+test('hicolorPath files an icon under its own pixel size and the app id', () => {
+  // src-tauri/icons/icon.png is the one icon in the checkout (the rest are generated from it).
+  const png = readFileSync(
+    new URL('../src-tauri/icons/icon.png', import.meta.url)
+  )
+  assert.equal(hicolorPath(png), 'hicolor/1024x1024/apps/chat.atomic.app.png')
+  assert.throws(
+    () => hicolorPath(Buffer.from('not a png at all, really not')),
+    /not a PNG/
+  )
 })
 
 test('renderPkgbuild fills every placeholder of the template and pins both debs', () => {

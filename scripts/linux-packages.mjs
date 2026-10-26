@@ -39,7 +39,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   AUR_INSTALL_FILE,
@@ -54,6 +54,7 @@ import {
   debDepends,
   externalLibraries,
   glibcFloor,
+  hicolorPath,
   nfpmConfig,
   packageFileName,
   parseDpkgSearch,
@@ -211,9 +212,20 @@ function stage() {
     // An intact Bun payload still runs; a truncated one does not (the reason for the copy above).
     run(join(resBin, 'atomic-chat-core'), ['--version'])
     writeFileSync(join(bin, PACKAGE_MANAGED_MARKER), '')
+    // The icons Tauri bundled (from the generated src-tauri/icons), under the app id, by their size.
+    const tauriIcons = join(tauriRoot, 'usr/share/icons/hicolor')
+    const pngs = existsSync(tauriIcons)
+      ? walk(tauriIcons).files.filter((p) => p.endsWith('.png'))
+      : []
+    if (pngs.length === 0) fail(`${tauriIcons} holds no icons`)
+    for (const png of pngs) {
+      const target = join(out, 'icons', hicolorPath(readFileSync(png)))
+      mkdirSync(dirname(target), { recursive: true })
+      copyFileSync(png, target)
+    }
     // nfpm keeps the stage's modes. Whatever the source tree had (an extracted AppImage has 0700
     // directories), users must read everything and run what is executable: 0755 / 0644.
-    run('chmod', ['-R', 'u+rwX,go=rX', join(out, 'opt')])
+    run('chmod', ['-R', 'u+rwX,go=rX', join(out, 'opt'), join(out, 'icons')])
 
     const tree = walk(join(out, 'opt'))
     // A versioned library's links (libfoo.so → libfoo.so.1) provide it under their names too.

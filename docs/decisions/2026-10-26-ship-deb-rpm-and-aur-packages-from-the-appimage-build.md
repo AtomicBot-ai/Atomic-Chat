@@ -35,19 +35,19 @@ title: 'Ship deb, rpm and AUR packages from the AppImage build'
   record); X11 is not a target. The `linux-packages` job packs both
   architectures, signs the rpms (required on tag pushes), uploads
   `atomic-chat_<version>_<arch>.{deb,rpm}` to the draft; `smoke-linux-packages`
-  installs them in Debian 13, Ubuntu 24.04, Fedora and Arch containers
+  installs them in Debian 12/13, Ubuntu 22.04/24.04, Fedora and Arch containers
   (ldd of every ELF file, the app alive 20 s under Xvfb, clean removal). After
   a person publishes the release, `linux-repo.yml` rebuilds the repository
   (its own bucket `atomic-chat-packages`, the newest 3 releases, same key as
   eye-cli) and pushes `atomic-chat-bin` (the PKGBUILD unpacks the deb) to the
   AUR.
-- **Consequences:** The packages need glibc 2.38: the ELF scan of the 2.2.26
-  arm64 payload found the bundled upstream llama.cpp (`llamacpp-backend-upstream`,
-  ggml-org's prebuilt) requiring `GLIBC_2.38` and `GLIBCXX_3.4.32`, while the
-  app, core and sidecars need 2.35. So they install on Debian 13+, Ubuntu
-  24.04+, Fedora 39+ and Arch, and apt refuses them on Ubuntu 22.04 / Debian 12
-  instead of installing an engine that cannot load — the same engine the
-  AppImage ships there today, despite README's "glibc ≥ 2.35".
+- **Consequences:** The glibc floor differs by architecture. x86-64 needs
+  2.34 (Debian 12+, Ubuntu 22.04+). arm64 needs 2.38: the ELF scan found its
+  bundled upstream llama.cpp (`llamacpp-backend-upstream`, ggml-org's prebuilt)
+  requiring `GLIBC_2.38` and `GLIBCXX_3.4.32`, while the app, core and sidecars
+  need 2.35. So arm64 installs on Debian 13+, Ubuntu 24.04+, and apt refuses it
+  on Ubuntu 22.04 / Debian 12 instead of installing an engine that cannot load
+  — the same engine the arm64 AppImage ships there today.
   The built-in updater never runs (the marker reaches every check), so the
   package manager is the only updater; but it replaces `/opt` under a running
   app, which the AppImage's immutable mount and its updater (which stops the

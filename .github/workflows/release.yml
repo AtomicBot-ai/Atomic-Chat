@@ -2570,7 +2570,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { runner: ubuntu-latest, arch: amd64, image: 'debian:13', manager: apt }
+          # x86-64 needs glibc 2.34, arm64 2.38 (its bundled llama.cpp): the oldest each supports.
+          - { runner: ubuntu-latest, arch: amd64, image: 'debian:12', manager: apt }
+          - { runner: ubuntu-latest, arch: amd64, image: 'ubuntu:22.04', manager: apt }
           - { runner: ubuntu-latest, arch: amd64, image: 'ubuntu:24.04', manager: apt }
           - { runner: ubuntu-latest, arch: amd64, image: 'fedora:44', manager: dnf }
           - { runner: ubuntu-latest, arch: amd64, image: 'archlinux:latest', manager: pacman }

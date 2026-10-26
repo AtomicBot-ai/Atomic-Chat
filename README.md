@@ -200,12 +200,12 @@ yarn dev
 
 Install it from the Atomic Chat package repository, and your package manager updates it with the rest of
 the system. The packages put the app in `/opt/atomic-chat` with an `atomic-chat` command, a menu entry, and
-the system's WebKitGTK; the built-in updater stays off. They need glibc 2.38 or newer, which the bundled
-llama.cpp engine is built against. The repository and the rpm packages are signed with
+the system's WebKitGTK; the built-in updater stays off. On arm64 they need glibc 2.38 or newer, which the
+bundled llama.cpp engine is built against there. The repository and the rpm packages are signed with
 the Atomic Chat packages key in [`packaging/atomic-chat.asc`](packaging/atomic-chat.asc), fingerprint
 `1047 F119 58C6 442D D472  E497 E4C3 D361 FB7F F123`.
 
-Debian 13+, Ubuntu 24.04+ (x86-64, arm64):
+Debian 12+, Ubuntu 22.04+ on x86-64; Debian 13+, Ubuntu 24.04+ on arm64:
 
 <!-- install:apt -->
 
