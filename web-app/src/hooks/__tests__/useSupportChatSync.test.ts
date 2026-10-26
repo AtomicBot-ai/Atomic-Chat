@@ -112,6 +112,7 @@ describe('useSupportChatSync', () => {
     await advance(5000)
 
     expect(client.pollMessages).not.toHaveBeenCalled()
+    expect(signals).toHaveLength(0)
   })
 
   it('notifies once per team reply while the chat is closed', async () => {
@@ -156,6 +157,7 @@ describe('useSupportChatSync', () => {
 
     expect(notifications.showDesktopNotification).toHaveBeenCalledTimes(1)
     expect(client.markRead).not.toHaveBeenCalled()
+    expect(useSupportChatStore.getState().lastReadSeq).toBe(0)
   })
 
   it('respects the notifications switch', async () => {
@@ -166,6 +168,10 @@ describe('useSupportChatSync', () => {
     await flush()
 
     expect(notifications.showDesktopNotification).not.toHaveBeenCalled()
+    // The reply still lands in the chat.
+    expect(useSupportChatStore.getState().messages.map((m) => m.id)).toEqual([
+      'a',
+    ])
   })
 
   it('marks replies read instead of notifying while the chat is watched', async () => {
@@ -193,6 +199,7 @@ describe('useSupportChatSync', () => {
 
     expect(client.markRead).toHaveBeenCalledTimes(1)
     expect(client.markRead).toHaveBeenCalledWith('tok', 5)
+    expect(useSupportChatStore.getState().lastReadSeq).toBe(5)
   })
 
   it('backs off while the relay cannot be reached', async () => {
@@ -217,6 +224,8 @@ describe('useSupportChatSync', () => {
 
     await advance(4000)
     expect(client.pollMessages).toHaveBeenCalledTimes(4)
+    // Failures leave the conversation in place for the next attempt.
+    expect(useSupportChatStore.getState().token).toBe('tok')
   })
 
   it('gives up a poll the relay holds past its wait', async () => {

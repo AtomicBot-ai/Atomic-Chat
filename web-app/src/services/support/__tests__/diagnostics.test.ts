@@ -128,9 +128,12 @@ describe('support diagnostics', () => {
 
   it('reads the machine once per session when it answered', async () => {
     const services = hub()
-    await collectSupportMeta()
-    await collectSupportMeta()
+    const first = await collectSupportMeta()
+    const second = await collectSupportMeta()
     expect(services.getHardwareInfo).toHaveBeenCalledTimes(1)
+    // The second read is served from the first answer, not left empty.
+    expect(second.cpu).toBe('Apple M3 Pro')
+    expect(second).toEqual(first)
   })
 
   it('still collects what it can before services exist', async () => {
