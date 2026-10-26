@@ -160,6 +160,9 @@ describe('useVoiceModel', () => {
       })
 
       expect(toast.error).not.toHaveBeenCalled()
+      expect(
+        useDownloadStore.getState().localDownloadingModels.has(VOICE_MODEL_ID)
+      ).toBe(false)
     })
 
     it('still reports a download that really failed', async () => {

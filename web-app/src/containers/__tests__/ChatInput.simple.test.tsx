@@ -362,11 +362,11 @@ describe('ChatInput', () => {
   describe('while the voice model is starting', () => {
     const KEY = 'voice-starting-thread'
 
-    /** Owns the microphone for this composer; `cancel` is a spy. */
+    /** Owns the microphone for this composer; `cancel` spies on the real one. */
     function startVoiceHere() {
       const previousThreadId = useThreads.getState().currentThreadId
       const realCancel = useVoiceInput.getState().cancel
-      const cancel = vi.fn(async () => {})
+      const cancel = vi.fn(() => realCancel())
       useThreads.setState({ currentThreadId: KEY })
       useVoiceInput.setState({ phase: 'starting', ownerKey: KEY, cancel })
       return {
@@ -411,6 +411,10 @@ describe('ChatInput', () => {
         expect(voice.cancel).not.toHaveBeenCalled()
         unmount()
         expect(voice.cancel).toHaveBeenCalledTimes(1)
+        const after = useVoiceInput.getState()
+        expect(after.phase).toBe('idle')
+        expect(after.ownerKey).toBeNull()
+        expect(after.lastOutcome).toBe('cancelled')
       } finally {
         voice.restore()
       }
