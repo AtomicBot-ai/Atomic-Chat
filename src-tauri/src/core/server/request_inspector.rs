@@ -206,6 +206,9 @@ pub struct ApiRequestRecord {
     pub finished_at_ms: Option<u64>,
     #[serde(flatten)]
     pub finish: FinishFields,
+    /// It arrived while no Server page watched, so no prompt or reply text was kept (ATO-113). The
+    /// UI says so, and how to see it, instead of "nothing captured".
+    pub unwatched: bool,
 }
 
 impl std::fmt::Debug for ApiRequestRecord {
@@ -216,6 +219,7 @@ impl std::fmt::Debug for ApiRequestRecord {
             .field("started", &self.started)
             .field("done", &self.done)
             .field("finish", &self.finish)
+            .field("unwatched", &self.unwatched)
             .finish()
     }
 }
@@ -227,6 +231,8 @@ struct StartedEvent<'a> {
     started_at_ms: u64,
     #[serde(flatten)]
     fields: &'a StartedFields,
+    /// See `ApiRequestRecord::unwatched`.
+    unwatched: bool,
 }
 
 #[derive(Serialize)]
@@ -379,7 +385,7 @@ impl RequestInspector {
     /// The core's own sequence numbers are not reused: requests get this inspector's next number
     /// when they start, so the UI keeps one monotonic sequence across a change of server owner.
     pub fn ingest_core_event(&self, event: &serde_json::Value) {
-        use crate::core::server::api_request_analytics::{endpoint_label, error_kind_label};
+        use crate::core::server::api_request_analytics::endpoint_label;
 
         let Some(id) = event.get("id").and_then(|v| v.as_str()) else {
             return;
@@ -410,6 +416,7 @@ impl RequestInspector {
                     seq,
                     started_at_ms,
                     fields: &fields,
+                    unwatched: false,
                 })
                 .unwrap_or(serde_json::Value::Null);
                 self.push_record(ApiRequestRecord {
@@ -420,6 +427,7 @@ impl RequestInspector {
                     done: false,
                     finished_at_ms: None,
                     finish: FinishFields::default(),
+                    unwatched: false,
                 });
                 self.emit(API_INSPECTOR_STARTED, payload);
             }
@@ -454,24 +462,7 @@ impl RequestInspector {
                 let Some(finish) = event.get("finish").filter(|f| f.is_object()) else {
                     return;
                 };
-                let f = |key: &str| finish.get(key);
-                let fields = FinishFields {
-                    status: number(f("status")).and_then(|v| u16::try_from(v).ok()),
-                    error_kind: f("error_kind").and_then(|v| v.as_str()).map(error_kind_label),
-                    aborted: f("aborted").and_then(|v| v.as_bool()).unwrap_or(false),
-                    headers_ms: number(f("headers_ms")),
-                    ttft_ms: number(f("ttft_ms")),
-                    duration_ms: number(f("duration_ms")),
-                    prompt_tokens: number(f("prompt_tokens")),
-                    completion_tokens: number(f("completion_tokens")),
-                    total_tokens: number(f("total_tokens")),
-                    tokens_estimated: f("tokens_estimated").and_then(|v| v.as_bool()).unwrap_or(false),
-                    prompt_per_second: f("prompt_per_second").and_then(|v| v.as_f64()),
-                    predicted_per_second: f("predicted_per_second").and_then(|v| v.as_f64()),
-                    finish_reason: f("finish_reason").and_then(|v| v.as_str()).map(str::to_string),
-                    reply_preview: f("reply_preview").and_then(|v| v.as_str()).map(str::to_string),
-                    reply_chars: number(f("reply_chars")),
-                };
+                let fields = finish_fields_from_core(finish);
                 let finished_at_ms = number(event.get("finished_at_ms")).unwrap_or_else(now_ms);
                 self.patch_record(id, true, finished_at_ms, &fields);
                 let payload = serde_json::to_value(FinishedEvent {
@@ -488,10 +479,12 @@ impl RequestInspector {
         }
     }
 
-    /// A row for a core request that finished without a `started` event, built from the analytics
-    /// observation its `finished` event carries. That observation is content-free by contract, so
-    /// the row has no prompt or reply preview (ATO-113 holds: none was collected). The core does
-    /// not send the start time with it, so the row is stamped with the finish time.
+    /// A row for a core request that finished without a `started` event: one that arrived while no
+    /// Server page watched. The analytics observation every such event carries says what it was and
+    /// how it ended; a core that measures unwatched requests also sends their finish fields —
+    /// duration, time to first token, token counts, rates — and those fill the row. It never has a
+    /// prompt or reply preview (ATO-113: none was collected) and is marked `unwatched` so the UI can
+    /// say why. The start is the finish less the duration, or the finish time when that is unknown.
     fn record_unannounced_core_request(&self, id: &str, event: &serde_json::Value) {
         use crate::core::server::api_request_analytics::observation_from_core;
 
@@ -514,20 +507,31 @@ impl RequestInspector {
             has_non_text_parts: false,
             client_max_tokens: None,
         };
-        // Status 0 is the core's "no response headers were sent": the client hung up first.
-        let answered = observation.status != 0;
-        let finish = FinishFields {
-            status: answered.then_some(observation.status),
-            error_kind: observation.error_kind,
-            aborted: !answered,
-            headers_ms: answered.then_some(observation.latency_ms),
-            ..FinishFields::default()
+        let mut finish = match event.get("finish").filter(|f| f.is_object()) {
+            Some(finish) => finish_fields_from_core(finish),
+            None => {
+                // Status 0 is the core's "no response headers were sent": the client hung up first.
+                let answered = observation.status != 0;
+                FinishFields {
+                    status: answered.then_some(observation.status),
+                    error_kind: observation.error_kind,
+                    aborted: !answered,
+                    headers_ms: answered.then_some(observation.latency_ms),
+                    ..FinishFields::default()
+                }
+            }
         };
+        // Nobody watched, so whatever arrived, no reply text is kept.
+        finish.reply_preview = None;
+        let started_at_ms = finish
+            .duration_ms
+            .map_or(finished_at_ms, |duration| finished_at_ms.saturating_sub(duration));
         let started_payload = serde_json::to_value(StartedEvent {
             id,
             seq,
-            started_at_ms: finished_at_ms,
+            started_at_ms,
             fields: &started,
+            unwatched: true,
         })
         .unwrap_or(serde_json::Value::Null);
         let finished_payload = serde_json::to_value(FinishedEvent {
@@ -541,11 +545,12 @@ impl RequestInspector {
         self.push_record(ApiRequestRecord {
             id: id.to_string(),
             seq,
-            started_at_ms: finished_at_ms,
+            started_at_ms,
             started,
             done: true,
             finished_at_ms: Some(finished_at_ms),
             finish,
+            unwatched: true,
         });
         self.emit(API_INSPECTOR_STARTED, started_payload);
         self.emit(API_INSPECTOR_FINISHED, finished_payload);
@@ -577,6 +582,31 @@ impl RequestInspector {
                 record.finish = fields.clone();
             }
         }
+    }
+}
+
+/// The core's `finish` object (atomic-chat-core `ApiRequestFinishFields`) as the inspector's fields.
+fn finish_fields_from_core(finish: &serde_json::Value) -> FinishFields {
+    use crate::core::server::api_request_analytics::error_kind_label;
+
+    let f = |key: &str| finish.get(key);
+    let number = |key: &str| f(key).and_then(|v| v.as_u64());
+    FinishFields {
+        status: number("status").and_then(|v| u16::try_from(v).ok()),
+        error_kind: f("error_kind").and_then(|v| v.as_str()).map(error_kind_label),
+        aborted: f("aborted").and_then(|v| v.as_bool()).unwrap_or(false),
+        headers_ms: number("headers_ms"),
+        ttft_ms: number("ttft_ms"),
+        duration_ms: number("duration_ms"),
+        prompt_tokens: number("prompt_tokens"),
+        completion_tokens: number("completion_tokens"),
+        total_tokens: number("total_tokens"),
+        tokens_estimated: f("tokens_estimated").and_then(|v| v.as_bool()).unwrap_or(false),
+        prompt_per_second: f("prompt_per_second").and_then(|v| v.as_f64()),
+        predicted_per_second: f("predicted_per_second").and_then(|v| v.as_f64()),
+        finish_reason: f("finish_reason").and_then(|v| v.as_str()).map(str::to_string),
+        reply_preview: f("reply_preview").and_then(|v| v.as_str()).map(str::to_string),
+        reply_chars: number("reply_chars"),
     }
 }
 
@@ -621,6 +651,7 @@ impl InspectorHandle {
             seq: self.0.seq,
             started_at_ms: self.0.started_at_ms,
             fields: &fields,
+            unwatched: false,
         })
         .unwrap_or(serde_json::Value::Null);
         self.0.inspector.push_record(ApiRequestRecord {
@@ -631,6 +662,7 @@ impl InspectorHandle {
             done: false,
             finished_at_ms: None,
             finish: FinishFields::default(),
+            unwatched: false,
         });
         self.0.inspector.emit(API_INSPECTOR_STARTED, payload);
     }
@@ -1749,6 +1781,7 @@ mod tests {
                 reply_preview: Some("a secret reply".into()),
                 ..Default::default()
             },
+            unwatched: false,
         };
         let rendered = format!("{record:?}");
         assert!(!rendered.contains("a secret prompt"), "{rendered}");
@@ -1923,14 +1956,63 @@ mod core_ingest_tests {
         );
         assert!(record.started.prompt_preview.is_none());
         assert!(record.finish.reply_preview.is_none());
+        assert!(record.unwatched);
 
         let seen = seen.lock().unwrap();
         let channels: Vec<_> = seen.iter().map(|(c, _)| *c).collect();
         assert_eq!(channels, vec![API_INSPECTOR_STARTED, API_INSPECTOR_FINISHED]);
         assert_eq!(seen[0].1["id"], json!("apireq_quiet"));
         assert_eq!(seen[0].1["model_id"], json!("demo"));
+        assert_eq!(seen[0].1["unwatched"], json!(true));
         assert_eq!(seen[1].1["status"], json!(503));
         assert_eq!(seen[1].1["done"], json!(true));
+    }
+
+    /// A core that measures unwatched requests sends their finish fields with the observation.
+    #[test]
+    fn an_unannounced_request_keeps_the_timings_and_tokens_the_core_measured_but_no_text() {
+        let (inspector, seen) = inspector();
+        let mut event = unannounced_finish("apireq_timed", 200, None);
+        event["finish"] = json!({
+            "status": 200, "error_kind": null, "aborted": false, "headers_ms": 1190, "ttft_ms": null,
+            "duration_ms": 1200, "prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20,
+            "tokens_estimated": false, "prompt_per_second": 16.6, "predicted_per_second": 44.4,
+            "finish_reason": "stop", "reply_preview": "should never be kept", "reply_chars": 31
+        });
+        inspector.ingest_core_event(&event);
+
+        let record = &inspector.snapshot().records[0];
+        assert!(record.unwatched);
+        assert_eq!((record.started_at_ms, record.finished_at_ms), (3800, Some(5000)));
+        assert_eq!(
+            (record.finish.status, record.finish.duration_ms, record.finish.headers_ms),
+            (Some(200), Some(1200), Some(1190))
+        );
+        assert_eq!(
+            (record.finish.prompt_tokens, record.finish.completion_tokens, record.finish.total_tokens),
+            (Some(10), Some(10), Some(20))
+        );
+        assert_eq!(record.finish.predicted_per_second, Some(44.4));
+        assert_eq!(record.finish.finish_reason.as_deref(), Some("stop"));
+        assert!(record.finish.reply_preview.is_none());
+        assert!(record.started.prompt_preview.is_none());
+
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen[0].1["started_at_ms"], json!(3800));
+        assert_eq!(seen[1].1["duration_ms"], json!(1200));
+        assert_eq!(seen[1].1["completion_tokens"], json!(10));
+        assert!(!seen.iter().any(|(_, payload)| payload.to_string().contains("should never be kept")));
+    }
+
+    #[test]
+    fn a_watched_request_is_not_marked_unwatched() {
+        let (inspector, seen) = inspector();
+        inspector.ingest_core_event(&json!({
+            "phase": "started", "id": "apireq_seen", "seq": 0, "started_at_ms": 1000,
+            "endpoint": "chat/completions", "method": "POST", "model_id": "demo", "stream": false
+        }));
+        assert!(!inspector.snapshot().records[0].unwatched);
+        assert_eq!(seen.lock().unwrap()[0].1["unwatched"], json!(false));
     }
 
     #[test]
