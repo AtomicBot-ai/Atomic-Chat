@@ -13,7 +13,11 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { markDownloadCancellationRequested } from '@/lib/downloadCancellation'
+import {
+  isDownloadCancellationError,
+  markDownloadCancellationRequested,
+  wasDownloadCancellationRequested,
+} from '@/lib/downloadCancellation'
 import { deleteLocalModel } from '@/lib/model-deletion'
 import { releaseVoiceEngine } from '@/lib/voice/engine'
 import { markSilentImport } from '@/utils/backgroundImports'
@@ -101,9 +105,20 @@ export function useVoiceModel(): VoiceModelState {
     } catch (error) {
       // If the pull rejects before any DownloadEvent fires, the global listener
       // never clears `localDownloadingModels` and the button sticks.
-      console.error('[voice] voice model download failed:', error)
       removeLocalDownloadingModel(VOICE_MODEL_ID)
       markResumableDownload(VOICE_MODEL_ID)
+      // Cancel rejects the pull too ("Download cancelled"). The download
+      // listener has already said "Download cancelled" by then, so a failure
+      // toast on top read as if the cancel had broken something. The request
+      // flag alone is not enough: that listener clears it before the rejection
+      // gets here, so the error text is checked as well.
+      if (
+        wasDownloadCancellationRequested(VOICE_MODEL_ID) ||
+        isDownloadCancellationError(error)
+      ) {
+        return
+      }
+      console.error('[voice] voice model download failed:', error)
       toast.error(t('common:voiceInput.setup.model.failed'), {
         description: error instanceof Error ? error.message : String(error),
       })

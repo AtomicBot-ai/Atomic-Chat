@@ -97,6 +97,7 @@ export function normalizeStarted(payload: unknown): ApiRequestEntry | null {
     ),
     promptChars: pickNumber(raw, ['prompt_chars', 'promptChars']),
     hasNonTextParts: pickBool(raw, ['has_non_text_parts', 'hasNonTextParts']),
+    unwatched: pickBool(raw, ['unwatched']),
   }
 }
 

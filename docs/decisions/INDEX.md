@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-471 records, 2026-05-19 → 2026-10-26.
+480 records, 2026-05-19 → 2026-10-26.
 
 ---
 
@@ -33,8 +33,9 @@ decision is reversed, add a new one that says which record it supersedes.
 
 ---
 
-## Local image & video generation (28)
+## Local image & video generation (29)
 
+- **2026-10-26** — [Judge an image model against the RAM it shares on a Mac, and ask before a run that will not fit](2026-10-26-judge-an-image-model-against-the-ram-it-shares-on-a-mac.md)
 - **2026-10-22** — [Size the media viewer to its preview and give the gallery the rest](2026-10-22-size-the-media-viewer-to-its-preview-and-give-the-gallery-the-rest.md)
 - **2026-10-22** — [Show only the generation settings a recipe can vouch for](2026-10-22-show-only-the-generation-settings-a-recipe-can-vouch-for.md)
 - **2026-10-13** — [Offer providers' media models beside the local ones, through the core](2026-10-13-offer-providers-media-models-beside-the-local-ones.md)
@@ -174,8 +175,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-05** — [Port `gemma4_unified` (+ vision fixes) into the `mlx-vlm` fork so Gemma 4 12B loads under MLX (ATO-88, head 1)](2026-06-05-port-gemma4-unified-vision-fixes-into-the-mlx-vlm-fork-so-gemma.md)
 - **2026-06-02** — [Surface MLX KV-cache quantization (TurboQuant / uniform) as a provider setting](2026-06-02-surface-mlx-kv-cache-quantization-turboquant-uniform-as-a.md)
 
-## llama.cpp providers & backend selection (55)
+## llama.cpp providers & backend selection (56)
 
+- **2026-10-26** — [Show the context llama.cpp fitted, not the one the load asked for](2026-10-26-show-the-context-llama-cpp-fitted-not-the-one-asked-for.md)
 - **2026-10-13** — [Bundle the upstream llama.cpp release the pinned core would choose](2026-10-13-bundle-the-upstream-release-the-pinned-core-would-choose.md) — supersedes the bundled-tag rule of 2026-08-12 and the extension baseline of 2026-08-13.
 - **2026-10-08** — [Take engine versions from the core, and update and switch engine builds only through it](2026-10-08-take-engine-versions-from-the-core-and-update-through-it.md) — supersedes the 2026-07-01 hot-swap ordering record; refines 2026-09-14 (offers come from the core).
 - **2026-10-06** — [Show PrismML only where it has a build, and say what its engine is for until it is installed](2026-10-06-show-prismml-where-it-has-a-build-and-onboard-its-engine.md)
@@ -233,8 +235,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Ship `janhq/llama.cpp` cudart DLLs with every Windows CUDA backend](2026-05-22-ship-janhq-llama-cpp-cudart-dlls-with-every-windows-cuda-backend.md)
 - **2026-05-19** — [Windows uses upstream `ggml-org/llama.cpp`, not the TurboQuant fork](2026-05-19-windows-uses-upstream-ggml-org-llama-cpp-not-the-turboquant-fork.md)
 
-## Models, Hub & downloads (48)
+## Models, Hub & downloads (49)
 
+- **2026-10-26** — [Count a task's finished files on resume, and reopen a connection that only trickles](2026-10-26-count-finished-files-on-resume-and-reopen-trickling-connections.md)
 - **2026-10-22** — [Run LiteRT-LM through the core; download its models from Hugging Face in the app](2026-10-22-run-litert-lm-through-the-core-and-download-its-models-in-the-app.md)
 - **2026-10-22** — [Step the Hub toolbar down by its own width, search first](2026-10-22-step-the-hub-toolbar-down-by-its-own-width.md)
 - **2026-10-22** — [Name Downloads rows by their model, with the quant apart](2026-10-22-name-downloads-rows-by-model-with-the-quant-apart.md)
@@ -284,8 +287,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-04** — [Recover from unsupported multimodal projector (`gemma4a`) by falling back to text-only instead of crashing the load (issue #44)](2026-06-04-recover-from-unsupported-multimodal-projector-gemma4a-by.md)
 - **2026-05-27** — [Replace `janhq/model-catalog` + Fuse.js with curated `AtomicBot-ai/atomic-chat-model-catalog` and a pre-built MiniSearch index](2026-05-27-replace-janhq-model-catalog-fuse-js-with-curated-atomicbot-ai.md)
 
-## Local API server & OpenAI compatibility (15)
+## Local API server & OpenAI compatibility (16)
 
+- **2026-10-26** — [Keep the Activity log live while no Server page is open, and say why a request has no text](2026-10-26-keep-the-activity-log-live-and-say-why-a-request-has-no-text.md)
 - **2026-10-23** — [Stop an idle server at the first-run endpoint handoff](2026-10-23-stop-an-idle-server-at-the-first-run-endpoint-handoff.md) — supersedes in part 2026-10-21.
 - **2026-10-21** — [The Local API Server routes a model id to the provider selected for it](2026-10-21-the-server-routes-a-model-id-to-the-provider-selected-for-it.md) — supersedes "remote wins over local" for ids the server page shows.
 - **2026-10-21** — [Refuse the Local API Server as a custom endpoint](2026-10-21-refuse-the-local-api-server-as-a-custom-endpoint.md)
@@ -356,7 +360,11 @@ decision is reversed, add a new one that says which record it supersedes.
 ## UI / UX (2)
 - **2026-10-20** — [Show hosted providers on Cloud and the user's own servers on Custom Endpoint](2026-10-20-show-hosted-providers-on-cloud-and-own-servers-on-custom-endpoint.md)
 - **2026-10-20** — [List everything downloaded on a Downloads page](2026-10-20-list-everything-downloaded-on-a-downloads-page.md)
-## UI / UX (116)
+## UI / UX (120)
+- **2026-10-26** — [Keep unsent drafts across a relaunch](2026-10-26-keep-unsent-drafts-across-a-relaunch.md) — supersedes in part 2026-10-21.
+- **2026-10-26** — [Show the update check result on its Settings row](2026-10-26-show-the-update-check-result-on-its-settings-row.md)
+- **2026-10-26** — [Ask before removing a file from a project](2026-10-26-ask-before-removing-a-file-from-a-project.md)
+- **2026-10-26** — [Let Stop end a voice start while the voice model is still loading](2026-10-26-let-stop-end-a-voice-start-while-the-voice-model-loads.md)
 - **2026-10-23** — [Draw the download panel as the first-run strip](2026-10-23-draw-the-download-panel-as-the-first-run-strip.md)
 - **2026-10-23** — [Notify every completion unless it is on screen](2026-10-23-notify-every-completion-unless-it-is-on-screen.md) — supersedes in part 2026-09-29.
 - **2026-10-23** — [Offer three models, then Hugging Face, on the first-run model step](2026-10-23-offer-three-models-then-hugging-face-on-the-first-run-model-step.md) — supersedes in part 2026-09-11.
@@ -475,8 +483,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-11** — [Add a unified "Sampling — {assistant}" popover (assistant switcher + sampling params in one place) (ATO-155)](2026-06-11-add-a-unified-sampling-assistant-popover-assistant-switcher.md)
 - **2026-06-10** — [Render inline image (`file`) parts in the chat thread bubble (ATO-120)](2026-06-10-render-inline-image-file-parts-in-the-chat-thread-bubble-ato-120.md)
 
-## Inference core extraction — atomic-chat-core (26)
+## Inference core extraction — atomic-chat-core (27)
 
+- **2026-10-26** — [Keep a slow core that is still alive attached](2026-10-26-keep-a-slow-core-that-is-still-alive-attached.md)
 - **2026-09-28** — [The Logs window merges the app's and the core's logs from disk](2026-09-28-the-logs-window-merges-app-and-core-logs-from-disk.md)
 - **2026-09-27** — [The core is the only source of hardware facts and backend decisions](2026-09-27-the-core-is-the-only-source-of-hardware-facts-and-backend-decisions.md)
 - **2026-09-22** — [Desktop e2e brings its own image engine, tunnel and catalog, and expects what the app unpacks by itself](2026-09-22-desktop-e2e-brings-its-own-image-engine-tunnel-and-catalog.md)

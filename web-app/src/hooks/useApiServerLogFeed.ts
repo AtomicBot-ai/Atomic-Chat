@@ -1,6 +1,8 @@
 import { useCallback, useEffect } from 'react'
 
 import { useServiceHub } from '@/hooks/useServiceHub'
+import { isPlatformTauri } from '@/lib/platform/utils'
+import type { ServiceHub } from '@/services'
 import {
   API_SERVER_LOG_CLEAR_COMMAND,
   API_SERVER_LOG_SNAPSHOT_COMMAND,
@@ -19,18 +21,23 @@ import {
 import { useApiServerLog, type BatchOp } from './useApiServerLog'
 
 /**
- * Subscribes the API screen to the proxy's live request channel.
+ * Feeds the Local API Server's request log into the webview.
  *
- * Mounted by the route only: a closed dashboard costs nothing, and the Rust
- * ring buffer is what fills the log back in when the user returns — it is kept
- * across unsubscribes for exactly that reason.
+ * Two parts. The request channels are listened to for the whole app run
+ * (`useApiServerLogLive`, mounted once at the root), so the log is current the
+ * moment a Server page opens: listened to only while a page was mounted, the
+ * store kept what it last showed, and a page opened after a request (Send test
+ * request on Connections, then Activity) showed the old list until its
+ * snapshot came back — "0 requests" until a manual Refresh.
  *
- * Consequence worth knowing: prompt and reply previews are collected only
- * while someone watches. With the core serving the Local API, a request that
- * came while the screen was closed is still in the log, without previews; the
- * app's own proxy (mobile) records nothing then.
+ * Watching is the pages' (`useApiServerLogFeed`): while Overview or Activity is
+ * mounted the backend collects prompt and reply previews (ATO-113), and each
+ * page reads the Rust ring on mount. With the core serving the Local API every
+ * request is in the ring and on the channels — one that came while nobody
+ * watched without previews, marked `unwatched`; the app's own proxy (mobile)
+ * records nothing then.
  *
- * The listeners are attached before the snapshot is read, and what they hear
+ * The listeners are attached before a snapshot is read, and what they hear
  * while a snapshot is in flight is held and replayed on top of it: attached
  * after, a request that started between the read and the attach was in
  * neither, and stayed off the screen until it was opened again.
@@ -84,6 +91,91 @@ export function resetFeedBuffers() {
   held = []
 }
 
+type LiveFeed = {
+  refs: number
+  /** Settles once the three listeners are attached. */
+  ready: Promise<void>
+  detachers: Array<() => void>
+  closed: boolean
+}
+
+/** The one set of request-channel listeners, shared by everything that holds it. */
+let live: LiveFeed | null = null
+
+function openLiveFeed(serviceHub: ServiceHub): LiveFeed {
+  const feed: LiveFeed = {
+    refs: 0,
+    ready: Promise.resolve(),
+    detachers: [],
+    closed: false,
+  }
+  const events = serviceHub.events()
+  feed.ready = Promise.all([
+    events.listen<unknown>(API_SERVER_REQUEST_STARTED_EVENT, (event) => {
+      const entry = normalizeStarted(event.payload)
+      if (entry) push({ t: 'start', entry })
+    }),
+    events.listen<unknown>(API_SERVER_REQUEST_PROGRESS_EVENT, (event) => {
+      const patch = normalizeProgressPatch(event.payload)
+      if (patch) push({ t: 'patch', ...patch })
+    }),
+    events.listen<unknown>(API_SERVER_REQUEST_FINISHED_EVENT, (event) => {
+      const patch = normalizeFinishedPatch(event.payload)
+      if (patch) push({ t: 'patch', ...patch })
+    }),
+  ]).then((detachers) => {
+    // Released while still attaching: nobody is left to hear them.
+    if (feed.closed) detachers.forEach((detach) => detach())
+    else feed.detachers.push(...detachers)
+  })
+  return feed
+}
+
+/**
+ * Holds the request channels open. The first holder attaches the listeners,
+ * the last release detaches them and drops what was still queued.
+ */
+function retainLiveFeed(serviceHub: ServiceHub): {
+  ready: Promise<void>
+  release: () => void
+} {
+  live ??= openLiveFeed(serviceHub)
+  const feed = live
+  feed.refs += 1
+  let released = false
+  return {
+    ready: feed.ready,
+    release: () => {
+      if (released) return
+      released = true
+      feed.refs -= 1
+      if (feed.refs > 0) return
+      feed.closed = true
+      feed.detachers.splice(0).forEach((detach) => detach())
+      if (live === feed) live = null
+      resetFeedBuffers()
+    },
+  }
+}
+
+/**
+ * Keeps the request log current for the whole app run, whether or not a
+ * Server page is open. Mounted once, at the root (`GlobalEventHandler`). It
+ * only listens: it does not ask the backend to collect previews.
+ */
+export function useApiServerLogLive() {
+  const serviceHub = useServiceHub()
+
+  useEffect(() => {
+    if (!isPlatformTauri()) return
+    return retainLiveFeed(serviceHub).release
+  }, [serviceHub])
+}
+
+/**
+ * A Server page that shows the log: watches (previews are collected while at
+ * least one page does), reads the ring on mount, and offers refresh and clear.
+ */
 export function useApiServerLogFeed() {
   const serviceHub = useServiceHub()
 
@@ -122,35 +214,13 @@ export function useApiServerLogFeed() {
     // Only a view that subscribed unsubscribes: the count is shared, and a
     // stray "off" would end another view's subscription.
     let subscribed = false
-    const detachers: Array<() => void> = []
+    // Usually already open (the root holds it); held here too so the page
+    // never reads a snapshot it cannot hear the follow-up of.
+    const feed = retainLiveFeed(serviceHub)
 
     const attach = async () => {
-      const listeners = await Promise.all([
-        serviceHub
-          .events()
-          .listen<unknown>(API_SERVER_REQUEST_STARTED_EVENT, (event) => {
-            const entry = normalizeStarted(event.payload)
-            if (entry) push({ t: 'start', entry })
-          }),
-        serviceHub
-          .events()
-          .listen<unknown>(API_SERVER_REQUEST_PROGRESS_EVENT, (event) => {
-            const patch = normalizeProgressPatch(event.payload)
-            if (patch) push({ t: 'patch', ...patch })
-          }),
-        serviceHub
-          .events()
-          .listen<unknown>(API_SERVER_REQUEST_FINISHED_EVENT, (event) => {
-            const patch = normalizeFinishedPatch(event.payload)
-            if (patch) push({ t: 'patch', ...patch })
-          }),
-      ])
-
-      if (cancelled) {
-        listeners.forEach((detach) => detach())
-        return
-      }
-      detachers.push(...listeners)
+      await feed.ready
+      if (cancelled) return
 
       subscribed = true
       try {
@@ -172,8 +242,7 @@ export function useApiServerLogFeed() {
 
     return () => {
       cancelled = true
-      detachers.splice(0).forEach((detach) => detach())
-      resetFeedBuffers()
+      feed.release()
       if (!subscribed) return
       serviceHub
         .core()

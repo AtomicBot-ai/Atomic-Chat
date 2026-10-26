@@ -12,7 +12,11 @@ import {
 } from '@/types/apiServerLog'
 
 import { useApiServerLog } from '../useApiServerLog'
-import { resetFeedBuffers, useApiServerLogFeed } from '../useApiServerLogFeed'
+import {
+  resetFeedBuffers,
+  useApiServerLogFeed,
+  useApiServerLogLive,
+} from '../useApiServerLogFeed'
 
 type Handler = (event: { payload: unknown }) => void
 
@@ -144,6 +148,88 @@ describe('useApiServerLogFeed', () => {
         ([command]) => command === API_SERVER_LOG_SUBSCRIBE_COMMAND
       )
     ).toEqual([])
+    expect(feed.handlers.size).toBe(0)
+  })
+})
+
+describe('useApiServerLogLive', () => {
+  beforeEach(() => {
+    resetFeedBuffers()
+    useApiServerLog.getState().reset()
+  })
+
+  /** What the Rust inspector emits for a request the core served while no page watched. */
+  function unwatchedRequest(feed: ReturnType<typeof setup>) {
+    feed.emit(API_SERVER_REQUEST_STARTED_EVENT, {
+      id: 'test-request',
+      seq: 0,
+      started_at_ms: 1_700_000_000_000,
+      endpoint: 'chat/completions',
+      method: 'POST',
+      model_id: 'LiquidAI/LFM2_5-1_2B-Instruct-Q4_K_M',
+      unwatched: true,
+    })
+    feed.emit(API_SERVER_REQUEST_FINISHED_EVENT, {
+      id: 'test-request',
+      seq: 0,
+      done: true,
+      finished_at_ms: 1_700_000_001_200,
+      status: 200,
+      duration_ms: 1200,
+      completion_tokens: 10,
+    })
+  }
+
+  it('keeps the log current while no Server page is open, so Activity lists a request before its snapshot is back', async () => {
+    const feed = setup()
+    const root = renderHook(() => useApiServerLogLive())
+    feed.openListeners()
+    await waitFor(() => expect(feed.handlers.size).toBe(3))
+    // Watching is the pages' business: the root only listens.
+    expect(feed.invoke).not.toHaveBeenCalled()
+
+    // Send test request on Connections, then open Activity.
+    unwatchedRequest(feed)
+    await waitFor(() => expect(entries()[0]?.durationMs).toBe(1200))
+    const page = renderHook(() => useApiServerLogFeed())
+    await waitFor(() =>
+      expect(feed.invoke).toHaveBeenCalledWith(API_SERVER_LOG_SNAPSHOT_COMMAND)
+    )
+
+    // The snapshot is still being read, and the request is already listed.
+    expect(
+      entries().map((entry) => [entry.id, entry.status, entry.unwatched])
+    ).toEqual([['test-request', 'completed', true]])
+    expect(entries()[0].completionTokens).toBe(10)
+    await act(async () => feed.resolveSnapshot([record('test-request', true)]))
+    expect(entries().map((entry) => entry.id)).toEqual(['test-request'])
+
+    page.unmount()
+    root.unmount()
+  })
+
+  it('shares one set of listeners, which outlives a page and goes with the last holder', async () => {
+    const feed = setup()
+    const root = renderHook(() => useApiServerLogLive())
+    feed.openListeners()
+    const page = renderHook(() => useApiServerLogFeed())
+    await waitFor(() =>
+      expect(feed.invoke).toHaveBeenCalledWith(API_SERVER_LOG_SNAPSHOT_COMMAND)
+    )
+    await act(async () => feed.resolveSnapshot([]))
+    expect(feed.handlers.size).toBe(3)
+    expect(
+      feed.invoke.mock.calls.filter(
+        ([command]) => command === API_SERVER_LOG_SNAPSHOT_COMMAND
+      )
+    ).toHaveLength(1)
+
+    page.unmount()
+    expect(feed.handlers.size).toBe(3)
+    unwatchedRequest(feed)
+    await waitFor(() => expect(entries()).toHaveLength(1))
+
+    root.unmount()
     expect(feed.handlers.size).toBe(0)
   })
 })

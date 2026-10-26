@@ -89,6 +89,8 @@
     "reply": "Reply",
     "noPrompt": "No prompt captured.",
     "noReply": "No reply captured.",
+    "notRecorded": "Не записано.",
+    "notRecordedHint": "Текст запроса и ответа сохраняется, только в памяти, пока открыта страница Сервер → Активность или Обзор. Этот запрос пришёл, когда ни одна из них не была открыта, поэтому его текст не записан. Оставьте эту страницу открытой и отправьте запрос снова, чтобы увидеть текст.",
     "estimated": "estimated from streamed deltas",
     "nonTextParts": "Includes non-text content"
   },

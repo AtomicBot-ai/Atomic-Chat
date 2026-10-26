@@ -89,6 +89,8 @@
     "reply": "Reply",
     "noPrompt": "No prompt captured.",
     "noReply": "No reply captured.",
+    "notRecorded": "Not recorded.",
+    "notRecordedHint": "Prompt and reply text are kept, in memory only, while Server → Activity or Overview is open. This request arrived while neither was, so its text was not recorded. Keep this page open and send it again to see it.",
     "estimated": "estimated from streamed deltas",
     "nonTextParts": "Includes non-text content"
   },

@@ -1,6 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
-import { usePrompt } from '../usePrompt'
+import {
+  DRAFT_MAX_AGE_MS,
+  DRAFT_MAX_COUNT,
+  loadStoredDrafts,
+  selectDraft,
+  usePrompt,
+} from '../usePrompt'
+import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 
 describe('usePrompt', () => {
   beforeEach(() => {
@@ -180,7 +187,7 @@ describe('usePrompt', () => {
     expect(usePrompt.getState().draftKey).toBe('thread-a')
   })
 
-  it('starts empty in a fresh app session instead of rehydrating draft text', async () => {
+  it('does not bring back text no composer owned, or the old single-prompt blob', async () => {
     usePrompt.getState().setPrompt('Old in-memory draft')
     localStorage.setItem(
       'prompt',
@@ -192,5 +199,169 @@ describe('usePrompt', () => {
     const { usePrompt: freshSessionPrompt } = await import('../usePrompt')
 
     expect(freshSessionPrompt.getState().prompt).toBe('')
+    expect(freshSessionPrompt.getState().drafts).toEqual({})
+  })
+})
+
+/** The store a relaunched app starts with: a fresh module over the same localStorage. */
+async function relaunch() {
+  vi.resetModules()
+  return (await import('../usePrompt')).usePrompt
+}
+
+describe('usePrompt across a relaunch (QA 2.2.25 NEW-03)', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    usePrompt.setState({ prompt: '', draftKey: null, drafts: {} })
+  })
+
+  it("brings a saved chat's unsent draft back after a quit and relaunch", async () => {
+    act(() => {
+      usePrompt.getState().bindDraft('thread-a')
+      usePrompt.getState().setPrompt('DRAFT RESTART 274')
+    })
+
+    const relaunched = await relaunch()
+    // The composer's first render already shows it, before it binds.
+    expect(selectDraft('thread-a')(relaunched.getState())).toBe(
+      'DRAFT RESTART 274'
+    )
+    act(() => relaunched.getState().bindDraft('thread-a'))
+    expect(relaunched.getState().prompt).toBe('DRAFT RESTART 274')
+  })
+
+  it('keeps a restored project draft out of every other composer (AC-04)', async () => {
+    act(() => {
+      usePrompt.getState().bindDraft('project:p1')
+      usePrompt.getState().setPrompt('DRAFT PROJECT ONLY 274')
+    })
+
+    const relaunched = await relaunch()
+    expect(selectDraft('thread-a')(relaunched.getState())).toBe('')
+    act(() => relaunched.getState().bindDraft('thread-a'))
+    expect(relaunched.getState().prompt).toBe('')
+    act(() => relaunched.getState().bindDraft(TEMPORARY_CHAT_ID))
+    expect(relaunched.getState().prompt).toBe('')
+
+    act(() => relaunched.getState().bindDraft('project:p1'))
+    expect(relaunched.getState().prompt).toBe('DRAFT PROJECT ONLY 274')
+  })
+
+  it('forgets a draft once it is sent', async () => {
+    act(() => {
+      usePrompt.getState().bindDraft('thread-a')
+      usePrompt.getState().setPrompt('About to send')
+    })
+    // ChatInput clears its draft by key when the message goes out.
+    act(() => usePrompt.getState().setDraft('thread-a', ''))
+
+    expect(localStorage.getItem('composer-draft:thread-a')).toBeNull()
+    const relaunched = await relaunch()
+    act(() => relaunched.getState().bindDraft('thread-a'))
+    expect(relaunched.getState().prompt).toBe('')
+  })
+
+  it("does not keep the home composer's draft, which a temporary chat shares", async () => {
+    act(() => {
+      usePrompt.getState().bindDraft(TEMPORARY_CHAT_ID)
+      usePrompt.getState().setPrompt('Typed in a temporary chat')
+    })
+
+    expect(
+      localStorage.getItem(`composer-draft:${TEMPORARY_CHAT_ID}`)
+    ).toBeNull()
+    const relaunched = await relaunch()
+    act(() => relaunched.getState().bindDraft(TEMPORARY_CHAT_ID))
+    expect(relaunched.getState().prompt).toBe('')
+  })
+
+  it('never writes over a draft another chat window saved', () => {
+    // This window parked a draft for thread-b, then a detached window for
+    // thread-b changed it there.
+    act(() => {
+      usePrompt.getState().bindDraft('thread-b')
+      usePrompt.getState().setPrompt('First words in B')
+      usePrompt.getState().bindDraft('thread-a')
+    })
+    localStorage.setItem(
+      'composer-draft:thread-b',
+      JSON.stringify({ text: 'Rewritten in the B window', at: Date.now() })
+    )
+
+    act(() => usePrompt.getState().setPrompt('Typing in A'))
+    expect(
+      JSON.parse(localStorage.getItem('composer-draft:thread-b')!).text
+    ).toBe('Rewritten in the B window')
+
+    // Coming back to B shows the newest text, not the stale parked copy.
+    act(() => usePrompt.getState().bindDraft('thread-b'))
+    expect(usePrompt.getState().prompt).toBe('Rewritten in the B window')
+  })
+
+  it('keeps the text in memory when storage refuses the write', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const setItem = vi
+      .spyOn(Storage.prototype, 'setItem')
+      .mockImplementation(() => {
+        throw new DOMException('quota', 'QuotaExceededError')
+      })
+    try {
+      act(() => {
+        usePrompt.getState().bindDraft('thread-a')
+        usePrompt.getState().setPrompt('Too big to store')
+        usePrompt.getState().bindDraft('thread-b')
+        usePrompt.getState().bindDraft('thread-a')
+      })
+      expect(usePrompt.getState().prompt).toBe('Too big to store')
+    } finally {
+      setItem.mockRestore()
+    }
+  })
+
+  it("drops a deleted chat's draft from memory and disk", () => {
+    act(() => {
+      usePrompt.getState().bindDraft('thread-a')
+      usePrompt.getState().setPrompt('Draft in A')
+      usePrompt.getState().bindDraft('thread-b')
+      usePrompt.getState().setPrompt('Draft in B')
+    })
+
+    act(() => {
+      usePrompt.getState().clearDraft('thread-a')
+      usePrompt.getState().clearDraft('thread-b')
+    })
+
+    expect(usePrompt.getState().drafts).toEqual({})
+    expect(usePrompt.getState().prompt).toBe('')
+    expect(localStorage.getItem('composer-draft:thread-a')).toBeNull()
+    expect(localStorage.getItem('composer-draft:thread-b')).toBeNull()
+  })
+
+  it('prunes old, surplus and unreadable drafts at launch', () => {
+    const now = Date.UTC(2026, 9, 26)
+    const store = (key: string, text: string, at: number) =>
+      localStorage.setItem(
+        `composer-draft:${key}`,
+        JSON.stringify({ text, at })
+      )
+    store('stale', 'Untouched for too long', now - DRAFT_MAX_AGE_MS - 1)
+    for (let index = 0; index < DRAFT_MAX_COUNT + 2; index++) {
+      store(`thread-${index}`, `Draft ${index}`, now - index * 1000)
+    }
+    localStorage.setItem('composer-draft:broken', '{not json')
+    localStorage.setItem('setting-general', 'untouched')
+
+    const drafts = loadStoredDrafts(now)
+
+    expect(Object.keys(drafts)).toHaveLength(DRAFT_MAX_COUNT)
+    expect(drafts['thread-0']).toBe('Draft 0')
+    expect(drafts[`thread-${DRAFT_MAX_COUNT - 1}`]).toBeDefined()
+    expect(drafts[`thread-${DRAFT_MAX_COUNT}`]).toBeUndefined()
+    expect(
+      localStorage.getItem(`composer-draft:thread-${DRAFT_MAX_COUNT}`)
+    ).toBeNull()
+    expect(localStorage.getItem('composer-draft:stale')).toBeNull()
+    expect(localStorage.getItem('composer-draft:broken')).toBeNull()
+    expect(localStorage.getItem('setting-general')).toBe('untouched')
   })
 })

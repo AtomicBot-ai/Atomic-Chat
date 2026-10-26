@@ -1067,6 +1067,104 @@ describe('image-generation-store', () => {
       )
     })
 
+    it('says the engine stopped when a new core no longer knows the job', async () => {
+      // QA 2026-10-23: the core that rendered the image was stopped and the
+      // app started another; "the job disappeared" told the user nothing.
+      vi.useFakeTimers()
+      let instance = 'instance-a'
+      fake.coreInstance = vi.fn(async () => instance)
+      fake.generate.mockImplementation(async () => ({ jobId: 'job-x' }))
+      fake.getJob.mockResolvedValue(null)
+      const done = useImageGenerationStore.getState().startGeneration({
+        request: makeRequest(),
+        runs: 1,
+        baseSeed: null,
+      })
+      await vi.advanceTimersByTimeAsync(0)
+      instance = 'instance-b'
+      await vi.advanceTimersByTimeAsync(2_100)
+      await done
+      expect(useImageGenerationStore.getState().lastError?.code).toBe(
+        'ENGINE_STOPPED'
+      )
+    })
+
+    it('fails the running job at once when a new core attaches', async () => {
+      fake.coreInstance = vi.fn(async () => 'instance-a')
+      fake.generate.mockImplementation(async () => ({ jobId: 'job-1' }))
+      const done = useImageGenerationStore.getState().startGeneration({
+        request: makeRequest(),
+        runs: 2,
+        baseSeed: null,
+      })
+      await waitFor(() =>
+        expect(useImageGenerationStore.getState().currentJob?.id).toBe('job-1')
+      )
+      fake.emit({ type: 'reset', generation: 3, instanceId: 'instance-b' })
+      await done
+      const state = useImageGenerationStore.getState()
+      expect(state.lastError?.code).toBe('ENGINE_STOPPED')
+      expect(state.generating).toBe(false)
+      expect(fake.generate).toHaveBeenCalledTimes(1)
+    })
+
+    it('keeps the running job when the app attaches to the same core again', async () => {
+      // A heartbeat timed out while the machine swapped; the core went on.
+      fake.coreInstance = vi.fn(async () => 'instance-a')
+      fake.generate.mockImplementation(async () => ({ jobId: 'job-1' }))
+      fake.getJob.mockResolvedValue(makeJob({ id: 'job-1', state: 'generating' }))
+      const done = useImageGenerationStore.getState().startGeneration({
+        request: makeRequest(),
+        runs: 1,
+        baseSeed: null,
+      })
+      await waitFor(() =>
+        expect(useImageGenerationStore.getState().currentJob?.id).toBe('job-1')
+      )
+      fake.emit({ type: 'reset', generation: 4, instanceId: 'instance-a' })
+      await waitFor(() =>
+        expect(useImageGenerationStore.getState().currentJob?.state).toBe(
+          'generating'
+        )
+      )
+      expect(useImageGenerationStore.getState().generating).toBe(true)
+      expect(useImageGenerationStore.getState().lastError).toBeNull()
+
+      fake.emit({
+        type: 'job',
+        job: makeJob({
+          id: 'job-1',
+          state: 'completed',
+          outputs: [makeItem({ id: 'job-1-00' })],
+        }),
+      })
+      await done
+      expect(useImageGenerationStore.getState().lastError).toBeNull()
+      expect(
+        useImageGalleryStore.getState().items.map((item) => item.id)
+      ).toEqual(['job-1-00'])
+    })
+
+    it('says the engine stopped once the app gives up starting a core', async () => {
+      vi.useFakeTimers()
+      fake.coreInstance = vi.fn(async () => 'instance-a')
+      fake.generate.mockImplementation(async () => ({ jobId: 'job-x' }))
+      fake.getJob.mockRejectedValue({
+        code: 'CORE_START_FAILED',
+        message: 'The Atomic Chat core keeps stopping.',
+      })
+      const done = useImageGenerationStore.getState().startGeneration({
+        request: makeRequest(),
+        runs: 1,
+        baseSeed: null,
+      })
+      await vi.advanceTimersByTimeAsync(2_100)
+      await done
+      expect(useImageGenerationStore.getState().lastError?.code).toBe(
+        'ENGINE_STOPPED'
+      )
+    })
+
     it('surfaces an error event for the running job, but not a cancel the user asked for', async () => {
       fake.generate.mockImplementation(async () => ({ jobId: 'job-1' }))
       const done = useImageGenerationStore.getState().startGeneration({

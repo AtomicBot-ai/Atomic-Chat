@@ -195,12 +195,15 @@
   "voiceInput": {
     "start": "Start voice input",
     "stop": "Stop and insert",
+    "stopStarting": "Stop voice input",
     "cancel": "Discard recording",
     "listening": "Listening…",
     "preparing": "Preparing voice input…",
     "starting": "Starting the voice model…",
     "transcribing": "Transcribing…",
     "placeholder": "Listening — start speaking",
+    "startingPlaceholder": "Starting the voice model — speak once it's listening",
+    "stoppedBeforeReady": "Voice input stopped before the voice model was ready. Nothing was recorded.",
     "level": "Microphone level",
     "elapsed": "Recording time",
     "unavailableWhileStreaming": "Voice input is unavailable while a reply is streaming",
@@ -642,8 +645,8 @@
       "title": "Unsupported file type"
     },
     "fileDeleted": {
-      "title": "File Deleted",
-      "description": "File has been removed from the project"
+      "title": "Removed from project",
+      "description": "Chats in this project no longer use {{fileName}}. The file on your computer wasn't changed."
     },
     "deleteFailed": {
       "title": "Delete Failed",
@@ -702,7 +705,11 @@
     "fileReadFailedDescription": "{{fileName}} could not be read from disk"
   },
   "files": {
-    "chunksCount": "{{count}} chunks"
+    "chunksCount": "{{count}} chunks",
+    "removeFromProject": "Remove {{fileName}} from project",
+    "removeTitle": "Remove this file from the project?",
+    "removeDescription": "Chats in this project will stop using {{fileName}}. The file on your computer isn't deleted, and you can upload it again at any time.",
+    "remove": "Remove"
   },
   "connectorsMenu": {
     "title": "Connectors",

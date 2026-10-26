@@ -10,10 +10,15 @@ import { useProjectUploads } from '@/stores/project-upload-store'
 
 const mocks = vi.hoisted(() => ({
   listAttachmentsForProject: vi.fn(),
+  deleteFileForProject: vi.fn(),
 }))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    // The file name is the part of a string these tests care about.
+    t: (key: string, options?: { fileName?: string }) =>
+      options?.fileName ? `${key} ${options.fileName}` : key,
+  }),
 }))
 
 vi.mock('sonner', () => ({
@@ -25,6 +30,7 @@ vi.mock('@/lib/extension', () => ({
     getInstance: () => ({
       get: () => ({
         listAttachmentsForProject: mocks.listAttachmentsForProject,
+        deleteFileForProject: mocks.deleteFileForProject,
       }),
     }),
   },
@@ -41,6 +47,7 @@ vi.mock('@janhq/core', async (importOriginal) => {
   }
 })
 
+import { toast } from 'sonner'
 import ProjectFiles from '../ProjectFiles'
 
 describe('ProjectFiles', () => {
@@ -52,6 +59,60 @@ describe('ProjectFiles', () => {
     // an earlier test would otherwise still be running.
     useProjectUploads.setState({ inFlight: {}, revision: {} })
     mocks.listAttachmentsForProject.mockResolvedValue([])
+    mocks.deleteFileForProject.mockResolvedValue(undefined)
+  })
+
+  // QA 2.2.25 AC-14: the row action had no name, and one click dropped the
+  // indexed copy at once.
+  it('names the row action after the file and asks before removing it', async () => {
+    const indexed = [
+      {
+        id: 'file-1',
+        name: 'qa-project-note.txt',
+        path: '/tmp/qa-project-note.txt',
+        type: 'txt',
+        size: 216,
+        chunk_count: 1,
+      },
+    ]
+    mocks.listAttachmentsForProject.mockImplementation(async () => [...indexed])
+    seedServiceHub()
+
+    render(<ProjectFiles projectId="p1" lng="en" />)
+    const remove = await screen.findByRole('button', {
+      name: 'common:files.removeFromProject qa-project-note.txt',
+    })
+
+    fireEvent.click(remove)
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveTextContent('common:files.removeTitle')
+    expect(dialog).toHaveTextContent('qa-project-note.txt')
+    expect(mocks.deleteFileForProject).not.toHaveBeenCalled()
+
+    // Cancel keeps the file.
+    fireEvent.click(screen.getByRole('button', { name: 'common:cancel' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(mocks.deleteFileForProject).not.toHaveBeenCalled()
+    expect(screen.getByText('qa-project-note.txt')).toBeInTheDocument()
+
+    // Confirming removes the indexed copy, says so, and re-reads the list.
+    fireEvent.click(remove)
+    indexed.length = 0
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'common:files.remove' })
+    )
+    await waitFor(() =>
+      expect(mocks.deleteFileForProject).toHaveBeenCalledWith('p1', 'file-1')
+    )
+    expect(toast.success).toHaveBeenCalledWith(
+      'common:toast.fileDeleted.title',
+      {
+        description: 'common:toast.fileDeleted.description qa-project-note.txt',
+      }
+    )
+    await waitFor(() =>
+      expect(screen.queryByText('qa-project-note.txt')).toBeNull()
+    )
   })
 
   it('tells the user what an upload is waiting on instead of spinning silently', async () => {

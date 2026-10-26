@@ -131,6 +131,11 @@ export const localStorageKey = {
   // its token, the last messages, the sync and read positions, and messages
   // not yet delivered, so a crash or a relaunch does not lose their text.
   supportChat: 'atomic-support-chat',
+  // Prefix of one item per composer with unsent text (`hooks/usePrompt`):
+  // `composer-draft:<thread id | project:<id>>` → `{text, at}`. One item per
+  // composer, so a chat window writes only the drafts it changed and never
+  // replaces another window's. Pruned at launch by age and count.
+  composerDraftPrefix: 'composer-draft:',
 }
 
 /**
