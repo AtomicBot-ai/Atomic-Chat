@@ -30,3 +30,7 @@ title: "Keep each composer's unsent draft with its own chat"
 - **Owner:** `team`.
 - **Links:** `web-app/src/hooks/usePrompt.ts`, `web-app/src/containers/ChatInput.tsx`,
   `web-app/src/providers/DeferredFirstSendProvider.tsx`, `web-app/src/lib/composer-thread-key.ts`
+
+Superseded in part by
+[2026-10-26-keep-unsent-drafts-across-a-relaunch.md](2026-10-26-keep-unsent-drafts-across-a-relaunch.md):
+drafts of saved chats and projects are now kept across a relaunch.

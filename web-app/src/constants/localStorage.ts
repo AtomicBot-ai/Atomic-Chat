@@ -127,6 +127,11 @@ export const localStorageKey = {
   // next launch lists them as paused with a Resume (`lib/interrupted-downloads`).
   // Never holds the Hugging Face token.
   interruptedDownloads: 'atomic-interrupted-downloads',
+  // Prefix of one item per composer with unsent text (`hooks/usePrompt`):
+  // `composer-draft:<thread id | project:<id>>` → `{text, at}`. One item per
+  // composer, so a chat window writes only the drafts it changed and never
+  // replaces another window's. Pruned at launch by age and count.
+  composerDraftPrefix: 'composer-draft:',
 }
 
 /**

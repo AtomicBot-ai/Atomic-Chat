@@ -26,6 +26,19 @@ export interface UpdateState {
   currentVersion: string
 }
 
+/// What one update check found. The startup and periodic checks only need
+/// the update, if any (`checkForUpdate`); a check the user asked for in
+/// Settings must also tell a failed check from an up-to-date app, and say why
+/// nothing was asked (`checkForUpdateNow`).
+export type UpdateCheckOutcome =
+  | { status: 'available'; update: UpdateInfo }
+  | { status: 'up-to-date' }
+  | { status: 'failed' }
+  | {
+      status: 'not-checked'
+      reason: 'development' | 'disabled' | 'package-managed'
+    }
+
 const FORCE_UPDATE_PREVIEW = import.meta.env.VITE_FORCE_UPDATE_BANNER === 'true'
 export const QA_UPDATE_COMPLETE_KEY = 'atomic_qa_update_complete_version_v2'
 
@@ -162,8 +175,8 @@ export const useAppUpdater = () => {
     []
   )
 
-  const checkForUpdate = useCallback(
-    async (resetRemindMeLater = false) => {
+  const runUpdateCheck = useCallback(
+    async (resetRemindMeLater: boolean): Promise<UpdateCheckOutcome> => {
       console.log('Checking for updates...')
 
       // A local QA build deliberately owns the updater state: the normal
@@ -180,7 +193,9 @@ export const useAppUpdater = () => {
         }
         setUpdateState((prev) => ({ ...prev, ...previewState }))
         syncStateToOtherInstances(previewState)
-        return alreadyInstalled ? null : PREVIEW_UPDATE_INFO
+        return alreadyInstalled
+          ? { status: 'up-to-date' }
+          : { status: 'available', update: PREVIEW_UPDATE_INFO }
       }
 
       try {
@@ -200,9 +215,13 @@ export const useAppUpdater = () => {
         if (!isDev()) {
           // Updates are off for this build or owned by a package manager:
           // do not even ask the update server.
-          if (AUTO_UPDATER_DISABLED || (await isPackageManaged())) {
+          if (AUTO_UPDATER_DISABLED) {
             console.log('Auto updater is disabled')
-            return null
+            return { status: 'not-checked', reason: 'disabled' }
+          }
+          if (await isPackageManaged()) {
+            console.log('Updates are owned by the package manager')
+            return { status: 'not-checked', reason: 'package-managed' }
           }
 
           // Production mode - use actual Tauri updater
@@ -221,7 +240,7 @@ export const useAppUpdater = () => {
             // Sync to other instances
             syncStateToOtherInstances(newState)
             console.log('Update available:', update.version)
-            return update
+            return { status: 'available', update }
           } else {
             // No update available - reset state
             const newState = {
@@ -234,7 +253,7 @@ export const useAppUpdater = () => {
             }))
             // Sync to other instances
             syncStateToOtherInstances(newState)
-            return null
+            return { status: 'up-to-date' }
           }
         } else {
           const newState = {
@@ -248,7 +267,7 @@ export const useAppUpdater = () => {
           }))
           // Sync to other instances
           syncStateToOtherInstances(newState)
-          return null
+          return { status: 'not-checked', reason: 'development' }
         }
       } catch (error) {
         console.error('Error checking for updates:', error)
@@ -263,10 +282,27 @@ export const useAppUpdater = () => {
         }))
         // Sync to other instances
         syncStateToOtherInstances(newState)
-        return null
+        return { status: 'failed' }
       }
     },
     [syncStateToOtherInstances]
+  )
+
+  /// The startup and periodic check: the update, or null for anything else —
+  /// a failed check included, which must not interrupt the user.
+  const checkForUpdate = useCallback(
+    async (resetRemindMeLater = false): Promise<UpdateInfo | null> => {
+      const outcome = await runUpdateCheck(resetRemindMeLater)
+      return outcome.status === 'available' ? outcome.update : null
+    },
+    [runUpdateCheck]
+  )
+
+  /// The check the user asked for in Settings: brings back a dismissed
+  /// banner, and says what it found so the page can show it.
+  const checkForUpdateNow = useCallback(
+    (): Promise<UpdateCheckOutcome> => runUpdateCheck(true),
+    [runUpdateCheck]
   )
 
   const setRemindMeLater = useCallback(
@@ -430,6 +466,7 @@ export const useAppUpdater = () => {
     updateState,
     packageManaged,
     checkForUpdate,
+    checkForUpdateNow,
     downloadAndInstallUpdate,
     setRemindMeLater,
   }
