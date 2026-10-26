@@ -189,6 +189,23 @@ export function findChatModel(
   return model ? { provider: choice.provider, modelId: model.id } : null
 }
 
+/**
+ * Everyday use leads to the wait screen instead of the chat while the chosen
+ * model is still on its way: the run's chat job is queued, running or
+ * interrupted, and the model cannot answer yet. A model in the library or on
+ * disk, a cloud provider or no choice at all goes straight to the chat.
+ */
+export function waitsForChatModel(
+  choice: (ChatModelRef & { source: string }) | null,
+  jobs: readonly OnboardingJob[],
+  providers: readonly ProviderLike[]
+): boolean {
+  if (!choice || choice.source !== 'download') return false
+  const chat = jobs.find((job) => job.kind === 'chat')
+  if (!chat || chat.phase === 'done') return false
+  return findChatModel(choice, providers) === null
+}
+
 /** The slice of the onboarding store the handoff panel decides on. */
 export type HandoffRun = {
   phase: string
@@ -212,27 +229,34 @@ export function handoffPanelTracksJobs(run: HandoffRun): boolean {
   )
 }
 
-/** What the handoff panel has to say: the downloads, or the model ready. */
-export type HandoffPanelContent = 'downloads' | 'ready'
+/**
+ * What the handoff panel has to say: the downloads, the model ready, or —
+ * with neither — only the way back to setup.
+ */
+export type HandoffPanelContent = 'downloads' | 'ready' | 'setup'
 
 /**
  * Whether the handoff panel shows, and what for. It follows the run's
  * downloads after a handoff to the chat; once they are over — or were over
  * before the handoff — it says the chosen model is ready, until dismissed.
- * The ready note belongs to the app session that handed off or followed a
- * download (`seenInApp`): a later launch with nothing left to follow brings
- * no news, and the run ends without it.
+ * With nothing to follow and no model ready (Skip setup, a cloud-only run)
+ * it still offers "Back to setup", as the prototype does after every chat
+ * handoff. The ready note and the way back belong to the app session that
+ * handed off or followed a download (`seenInApp`): a later launch with
+ * nothing left to follow brings no news, and the run ends without them.
  */
 export function handoffPanelContent(
   run: HandoffRun,
   { ready, seenInApp }: { ready: boolean; seenInApp: boolean }
 ): HandoffPanelContent | null {
   if (handoffPanelTracksJobs(run)) return 'downloads'
-  return seenInApp &&
-    ready &&
-    run.phase === 'handedOff' &&
-    run.destination === 'chat' &&
-    !run.panelDismissed
-    ? 'ready'
-    : null
+  if (
+    !seenInApp ||
+    run.phase !== 'handedOff' ||
+    run.destination !== 'chat' ||
+    run.panelDismissed
+  ) {
+    return null
+  }
+  return ready ? 'ready' : 'setup'
 }

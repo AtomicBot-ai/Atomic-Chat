@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-480 records, 2026-05-19 → 2026-10-26.
+484 records, 2026-05-19 → 2026-10-26.
 
 ---
 
@@ -360,11 +360,15 @@ decision is reversed, add a new one that says which record it supersedes.
 ## UI / UX (2)
 - **2026-10-20** — [Show hosted providers on Cloud and the user's own servers on Custom Endpoint](2026-10-20-show-hosted-providers-on-cloud-and-own-servers-on-custom-endpoint.md)
 - **2026-10-20** — [List everything downloaded on a Downloads page](2026-10-20-list-everything-downloaded-on-a-downloads-page.md)
-## UI / UX (120)
+## UI / UX (124)
 - **2026-10-26** — [Keep unsent drafts across a relaunch](2026-10-26-keep-unsent-drafts-across-a-relaunch.md) — supersedes in part 2026-10-21.
 - **2026-10-26** — [Show the update check result on its Settings row](2026-10-26-show-the-update-check-result-on-its-settings-row.md)
 - **2026-10-26** — [Ask before removing a file from a project](2026-10-26-ask-before-removing-a-file-from-a-project.md)
 - **2026-10-26** — [Let Stop end a voice start while the voice model is still loading](2026-10-26-let-stop-end-a-voice-start-while-the-voice-model-loads.md)
+- **2026-10-26** — [Download the first-run chat model before image and video, even when chosen last](2026-10-26-download-the-chat-model-before-image-and-video.md)
+- **2026-10-26** — [Offer Back to setup after every chat handoff, in the session that handed off](2026-10-26-offer-back-to-setup-after-every-chat-handoff.md)
+- **2026-10-26** — [Show a wait screen while the first model downloads](2026-10-26-show-a-wait-screen-while-the-first-model-downloads.md) — supersedes in part 2026-10-22.
+- **2026-10-26** — [Show notifications as allowed only once the user allows them in setup](2026-10-26-show-notifications-allowed-only-once-allowed-in-setup.md)
 - **2026-10-23** — [Draw the download panel as the first-run strip](2026-10-23-draw-the-download-panel-as-the-first-run-strip.md)
 - **2026-10-23** — [Notify every completion unless it is on screen](2026-10-23-notify-every-completion-unless-it-is-on-screen.md) — supersedes in part 2026-09-29.
 - **2026-10-23** — [Offer three models, then Hugging Face, on the first-run model step](2026-10-23-offer-three-models-then-hugging-face-on-the-first-run-model-step.md) — supersedes in part 2026-09-11.

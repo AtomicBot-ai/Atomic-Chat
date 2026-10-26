@@ -11,6 +11,7 @@ import {
   mlxMatchIds,
   nextRunnable,
   queueSettled,
+  waitsForChatModel,
   type DownloadSnapshot,
   type OnboardingJob,
 } from '../jobs'
@@ -250,8 +251,22 @@ describe('the handoff panel', () => {
     expect(handoffPanelContent(run, here)).toBe('downloads')
     expect(handoffPanelContent(settled, here)).toBe('ready')
     expect(handoffPanelContent({ ...run, jobs: [] }, here)).toBe('ready')
+  })
+
+  // The prototype offers "Back to setup" after every handoff to the chat:
+  // Skip setup, a cloud-only run, a download the user cancelled.
+  it('offers only the way back to setup with nothing to follow and no model ready', () => {
+    const noModel = { ready: false, seenInApp: true }
+    expect(handoffPanelContent({ ...run, jobs: [] }, noModel)).toBe('setup')
+    expect(handoffPanelContent(settled, noModel)).toBe('setup')
     expect(
-      handoffPanelContent(settled, { ready: false, seenInApp: true })
+      handoffPanelContent({ ...run, jobs: [], panelDismissed: true }, noModel)
+    ).toBeNull()
+    expect(
+      handoffPanelContent(
+        { ...run, jobs: [] },
+        { ready: false, seenInApp: false }
+      )
     ).toBeNull()
   })
 
@@ -273,5 +288,39 @@ describe('the handoff panel', () => {
     expect(handoffPanelContent(run, { ready: false, seenInApp: false })).toBe(
       'downloads'
     )
+  })
+})
+
+describe('waiting for the chat model', () => {
+  const choice = {
+    source: 'download',
+    provider: 'llamacpp-upstream',
+    matchIds: ['Qwen3.5-4B-Q4_K_M'],
+  }
+  const installed = [
+    { provider: 'llamacpp-upstream', models: [{ id: 'Qwen3.5-4B-Q4_K_M' }] },
+  ]
+
+  it('waits while the chosen download is queued, running or interrupted', () => {
+    for (const phase of ['queued', 'running', 'failed'] as const) {
+      expect(waitsForChatModel(choice, [{ ...chat, phase }], [])).toBe(true)
+    }
+    // The media queue behind it does not change that.
+    expect(waitsForChatModel(choice, [chat, image], [])).toBe(true)
+  })
+
+  it('does not wait once the model can answer, or with nothing on its way', () => {
+    expect(waitsForChatModel(choice, [chat], installed)).toBe(false)
+    expect(waitsForChatModel(choice, [{ ...chat, phase: 'done' }], [])).toBe(
+      false
+    )
+    expect(waitsForChatModel(choice, [image], [])).toBe(false)
+    expect(waitsForChatModel(null, [chat], [])).toBe(false)
+  })
+
+  it('never waits for a model from the library or the disk', () => {
+    for (const source of ['library', 'scan', 'builtin']) {
+      expect(waitsForChatModel({ ...choice, source }, [chat], [])).toBe(false)
+    }
   })
 })

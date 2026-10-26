@@ -43,6 +43,27 @@ describe('onboarding store', () => {
     })
   })
 
+  it('queues the chat model ahead of image and video jobs added before it', () => {
+    const store = useOnboardingStore.getState()
+    const video = { ...image, key: 'ltx-2', title: 'LTX-2' }
+    store.enqueue(image)
+    store.enqueue(video)
+    store.enqueue(chat)
+
+    expect(useOnboardingStore.getState().jobs.map((job) => job.key)).toEqual([
+      'chat',
+      'z-image',
+      'ltx-2',
+    ])
+
+    // Replacing a job keeps its place.
+    store.enqueue({ ...image, phase: 'running' })
+    expect(useOnboardingStore.getState().jobs[1]).toMatchObject({
+      key: 'z-image',
+      phase: 'running',
+    })
+  })
+
   it('keeps the step, the choice and the queue for the next launch', async () => {
     const store = useOnboardingStore.getState()
     store.begin('full', 'welcome')

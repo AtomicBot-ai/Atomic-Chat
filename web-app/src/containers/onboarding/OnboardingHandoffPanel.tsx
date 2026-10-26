@@ -21,10 +21,10 @@ import './onboarding.css'
  * put it away. `OnboardingRuntime` decides when it shows; "Back to setup"
  * only navigates, the setup route re-opens the run itself.
  *
- * With nothing left to download it only says the model is ready, and
- * `yieldsCorner` gives the corner to an update banner or the model reminder
- * there: it comes back once they are gone, until it is dismissed. Live
- * progress never gives way.
+ * With nothing left to download it only says the model is ready — or, with
+ * no model ready either, shows only its links — and `yieldsCorner` gives the
+ * corner to an update banner or the model reminder there: it comes back once
+ * they are gone, until it is dismissed. Live progress never gives way.
  */
 export function OnboardingHandoffPanel({
   yieldsCorner = false,
@@ -60,6 +60,7 @@ export function OnboardingHandoffPanel({
         <button
           type="button"
           className="ob-text"
+          data-testid="onboarding-handoff-dismiss"
           onClick={() => useOnboardingStore.getState().dismissPanel()}
         >
           {t('onboarding-handoff:panel.dismiss')}
