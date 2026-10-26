@@ -1686,6 +1686,9 @@ jobs:
         # the AppImage: without them on this machine it ships the Ubuntu
         # libgstreamer alone, which looks for plugins under Ubuntu's path and
         # finds none on Arch/Fedora, so <video> hangs (tauri-apps/tauri#4642).
+        # libvulkan1 and libgomp1: the TurboQuant Vulkan and the llama.cpp CPU
+        # backends link them, and the package stage looks up which package
+        # owns every library the payload links.
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -1704,6 +1707,8 @@ jobs:
             libasound2-dev \
             gstreamer1.0-plugins-base \
             gstreamer1.0-plugins-good \
+            libvulkan1 \
+            libgomp1 \
             pkg-config \
             patchelf \
             squashfs-tools \
@@ -1858,10 +1863,36 @@ jobs:
           # `build:tauri:linux` script in package.json.
           NO_STRIP: "1"
         # The tail of `yarn build:tauri:linux`: its download:bin, download:core
-        # and build:cli already ran above, as separate steps.
+        # and build:cli already ran above, as separate steps. The deb bundle is
+        # only the deb and rpm packages' source (see the next step); it is not
+        # released as it is.
         run: |
-          ./src-tauri/build-utils/shim-linuxdeploy.sh yarn tauri build
+          ./src-tauri/build-utils/shim-linuxdeploy.sh yarn tauri build --bundles appimage,deb
           ./src-tauri/build-utils/buildAppImage.sh
+
+      # The deb and rpm payload: Tauri's deb tree moved under /opt/atomic-chat,
+      # plus bun and the core binaries as buildAppImage.sh adds them, and the
+      # dependencies read from its ELF files (scripts/linux-packages.mjs).
+      # linux-packages packs it. A failure here leaves the AppImage released.
+      - name: Stage the Linux packages
+        id: stage
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          deb="$(ls src-tauri/target/release/bundle/deb/*.deb | head -1)"
+          node scripts/linux-packages.mjs stage --arch x86_64 --tauri-deb "$deb" --out dist/linux-stage
+          tar -C dist/linux-stage --zstd -cf linux-stage-x86_64.tar.zst x86_64
+
+      - name: Hand the stage to linux-packages
+        if: steps.stage.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-stage-x86_64
+          path: linux-stage-x86_64.tar.zst
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
+          overwrite: true
 
       - name: Upload Rust debug files to Sentry (Linux)
         continue-on-error: true
@@ -2004,7 +2035,8 @@ jobs:
 
       - name: Install Linux system dependencies
         # Unlike the full x64 image, ubuntu-22.04-arm ships without xdg-utils,
-        # and tauri-bundler copies xdg-open into the AppImage.
+        # and tauri-bundler copies xdg-open into the AppImage. libgomp1: see
+        # build-linux-x64.
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -2023,6 +2055,7 @@ jobs:
             libasound2-dev \
             gstreamer1.0-plugins-base \
             gstreamer1.0-plugins-good \
+            libgomp1 \
             pkg-config \
             patchelf \
             squashfs-tools \
@@ -2143,8 +2176,29 @@ jobs:
           NO_STRIP: "1"
         # The tail of `yarn build:tauri:linux:arm64`; see build-linux-x64.
         run: |
-          ./src-tauri/build-utils/shim-linuxdeploy.sh yarn tauri build --config src-tauri/tauri.linux-arm64.conf.json
+          ./src-tauri/build-utils/shim-linuxdeploy.sh yarn tauri build --config src-tauri/tauri.linux-arm64.conf.json --bundles appimage,deb
           ./src-tauri/build-utils/buildAppImage.sh
+
+      # See build-linux-x64.
+      - name: Stage the Linux packages
+        id: stage
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          deb="$(ls src-tauri/target/release/bundle/deb/*.deb | head -1)"
+          node scripts/linux-packages.mjs stage --arch aarch64 --tauri-deb "$deb" --out dist/linux-stage
+          tar -C dist/linux-stage --zstd -cf linux-stage-aarch64.tar.zst aarch64
+
+      - name: Hand the stage to linux-packages
+        if: steps.stage.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-stage-aarch64
+          path: linux-stage-aarch64.tar.zst
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
+          overwrite: true
 
       - name: Upload Rust debug files to Sentry (Linux ARM64)
         continue-on-error: true
@@ -2363,6 +2417,235 @@ jobs:
           files: |
             release-files/${{ steps.metadata.outputs.appimage_name }}
             ${{ steps.metadata.outputs.linux_sig != '' && format('release-files/{0}.sig', steps.metadata.outputs.appimage_name) || '' }}
+
+  # ──────────────────────────────────────────────────────────────
+  # Linux packages  (deb + rpm per architecture, from the AppImage jobs' stage)
+  # ──────────────────────────────────────────────────────────────
+  # nfpm packs what build-linux-x64 and build-linux-arm64 staged: the very
+  # build the AppImage carries, no rebuild. x64 only after gate-linux passed
+  # (upload-linux-x64 succeeded), as for the AppImage. The rpms are signed
+  # with the packages key (packaging/atomic-chat.asc, shared with eye-cli's
+  # atc); a tag push without the key fails here, a manual test build packs
+  # them unsigned. The apt/dnf repository and the AUR follow the release once
+  # a person publishes it: .github/workflows/linux-repo.yml.
+  linux-packages:
+    if: |
+      always() && needs.create-draft-release.result == 'success' &&
+      (needs.upload-linux-x64.result == 'success' || needs.build-linux-arm64.result == 'success')
+    needs: [create-draft-release, upload-linux-x64, build-linux-arm64]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      signed: ${{ steps.key.outputs.signed }}
+    env:
+      VERSION: ${{ needs.create-draft-release.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # A missing stage means that job's "Stage the Linux packages" step failed.
+      - name: Fetch the x86_64 stage
+        if: needs.upload-linux-x64.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-stage-x86_64
+          path: stage-archives
+
+      - name: Fetch the aarch64 stage
+        if: needs.build-linux-arm64.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-stage-aarch64
+          path: stage-archives
+
+      - name: Unpack the stages
+        run: |
+          set -euo pipefail
+          mkdir -p dist/linux-stage
+          for archive in stage-archives/*.tar.zst; do tar -C dist/linux-stage --zstd -xf "$archive"; done
+          ls dist/linux-stage
+          cat dist/linux-stage/*/deps.json
+
+      - name: Install nfpm (pinned, checksum checked)
+        env:
+          NFPM_VERSION: 2.48.0
+          NFPM_SHA256: 6d7f9a28b2f397934403950fcbba83f598b08d02edbe79a0815b3b4897341750
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/nfpm.tar.gz"
+          curl -fsSLo "$archive" \
+            "https://github.com/goreleaser/nfpm/releases/download/v$NFPM_VERSION/nfpm_${NFPM_VERSION}_Linux_x86_64.tar.gz"
+          echo "$NFPM_SHA256  $archive" | sha256sum -c -
+          tar -xzf "$archive" -C "$RUNNER_TEMP" nfpm
+          sudo install "$RUNNER_TEMP/nfpm" /usr/local/bin/nfpm
+
+      - name: Import the packages key (must be packaging/atomic-chat.asc)
+        id: key
+        env:
+          KEY: ${{ secrets.LINUX_PACKAGES_GPG_KEY }}
+          REQUIRED: ${{ github.event_name == 'push' }}
+        run: |
+          set -euo pipefail
+          if [ -z "$KEY" ]; then
+            if [ "$REQUIRED" = true ]; then echo "::error::the LINUX_PACKAGES_GPG_KEY secret is not set"; exit 1; fi
+            echo "::warning::LINUX_PACKAGES_GPG_KEY is not set: this test build's rpms are unsigned"
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+          file="$RUNNER_TEMP/packages-key.asc"
+          (umask 077; printf '%s\n' "$KEY" > "$file")
+          fpr() { gpg --show-keys --with-colons "$1" | awk -F: '/^fpr:/ {print $10; exit}'; }
+          if [ "$(fpr "$file")" != "$(fpr packaging/atomic-chat.asc)" ]; then
+            echo "::error::LINUX_PACKAGES_GPG_KEY is not the key in packaging/atomic-chat.asc"; exit 1
+          fi
+          echo "RPM_SIGNING_KEY_FILE=$file" >> "$GITHUB_ENV"
+
+      - name: Build the packages
+        env:
+          NFPM_RPM_PASSPHRASE: ${{ secrets.LINUX_PACKAGES_GPG_PASSPHRASE }}
+        run: node scripts/linux-packages.mjs build --version "$VERSION" --stage dist/linux-stage --out dist/pkg
+
+      - name: Check the packages
+        env:
+          COMPLETE: ${{ github.event_name == 'push' }}
+        run: |
+          set -euo pipefail
+          ls -la dist/pkg
+          # A release carries all four; a manual build may have one architecture.
+          if [ "$COMPLETE" = true ]; then
+            node --input-type=module -e "
+              import { existsSync } from 'node:fs'
+              import { packageAssets } from './scripts/linux-packaging.mjs'
+              const missing = packageAssets(process.env.VERSION).filter((f) => !existsSync('dist/pkg/' + f))
+              if (missing.length) { console.error('::error::missing packages: ' + missing.join(', ')); process.exit(1) }"
+          fi
+          if [ -n "${RPM_SIGNING_KEY_FILE:-}" ]; then
+            sudo apt-get install -y -qq rpm >/dev/null
+            db="$RUNNER_TEMP/rpmdb"
+            mkdir -p "$db"
+            rpmkeys --dbpath "$db" --import packaging/atomic-chat.asc
+            for rpm in dist/pkg/*.rpm; do
+              out="$(rpmkeys --dbpath "$db" --checksig "$rpm")"
+              echo "$out"
+              case "$out" in *'signatures OK'*) ;; *) echo "::error::$rpm is not signed by the packages key"; exit 1 ;; esac
+            done
+          fi
+          {
+            echo 'FILES<<EOF'
+            ls dist/pkg/atomic-chat_*
+            echo 'EOF'
+          } >> "$GITHUB_ENV"
+
+      - name: Hand the packages to smoke-linux-packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: dist/pkg/atomic-chat_*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
+          overwrite: true
+
+      - name: Upload to the draft
+        uses: ./.github/actions/upload-draft-assets
+        with:
+          release-id: ${{ needs.create-draft-release.outputs.release_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          files: ${{ env.FILES }}
+
+  # Each package installed the way README.md says, in a clean container of the
+  # distro: apt and dnf from a repository of these packages served on loopback
+  # (its metadata signed with a throwaway key), Arch by building the AUR
+  # PKGBUILD against them. scripts/smoke-linux-package.sh holds the checks. It
+  # gates nothing automatically: whoever publishes the draft looks for green.
+  smoke-linux-packages:
+    needs: [create-draft-release, linux-packages]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-latest, arch: amd64, image: 'debian:13', manager: apt }
+          - { runner: ubuntu-latest, arch: amd64, image: 'ubuntu:24.04', manager: apt }
+          - { runner: ubuntu-latest, arch: amd64, image: 'fedora:44', manager: dnf }
+          - { runner: ubuntu-latest, arch: amd64, image: 'archlinux:latest', manager: pacman }
+          - { runner: ubuntu-24.04-arm, arch: arm64, image: 'debian:13', manager: apt }
+          - { runner: ubuntu-24.04-arm, arch: arm64, image: 'fedora:44', manager: dnf }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    env:
+      VERSION: ${{ needs.create-draft-release.outputs.version }}
+      IMAGE: ${{ matrix.image }}
+      MANAGER: ${{ matrix.manager }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Fetch the packages
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-packages
+          path: pkg
+
+      - name: Skip an architecture this run did not build
+        id: present
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          if ls pkg/atomic-chat_*_"$ARCH".deb >/dev/null 2>&1; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::no $ARCH packages in this run"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Serve a repository of the packages on loopback
+        if: steps.present.outputs.run == 'true' && matrix.manager != 'pacman'
+        env:
+          SIGNED: ${{ needs.linux-packages.outputs.signed }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq dpkg-dev apt-utils createrepo-c >/dev/null
+          gpg --batch --passphrase '' --quick-gen-key 'atomic-chat smoke <smoke@invalid>' rsa3072 sign 1d
+          smoke="$(gpg --list-keys --with-colons smoke@invalid | awk -F: '/^fpr:/ {print $10; exit}')"
+          keys="$smoke"
+          flags=()
+          # Signed rpms are checked against the real key, as users' dnf does; a test build's are unsigned.
+          if [ "$SIGNED" = true ]; then
+            gpg --batch --import packaging/atomic-chat.asc
+            keys="$keys,$(gpg --show-keys --with-colons packaging/atomic-chat.asc | awk -F: '/^fpr:/ {print $10; exit}')"
+          else
+            flags+=(--unsigned-packages)
+          fi
+          node scripts/linux-repo.mjs build --assets pkg --key "$smoke" --publish-keys "$keys" --out site \
+            --base-url http://127.0.0.1:8766 "${flags[@]}"
+          node scripts/linux-repo.mjs readme --block "$MANAGER" --base-url http://127.0.0.1:8766 > install-commands.sh
+          python3 -m http.server 8766 --bind 127.0.0.1 --directory site >/dev/null 2>&1 &
+          sleep 2
+
+      - name: Render the AUR PKGBUILD against the packages
+        if: steps.present.outputs.run == 'true' && matrix.manager == 'pacman'
+        # --partial: a manual build may lack the aarch64 deb, which an x86_64 container never fetches.
+        run: node scripts/linux-packages.mjs pkgbuild --version "$VERSION" --assets pkg --source-base file:///w/pkg --out aur --partial
+
+      - name: Install and check in the container
+        if: steps.present.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          input=/w/install-commands.sh
+          if [ "$MANAGER" = pacman ]; then input=/w/aur; fi
+          docker run --rm --network host -v "$PWD:/w:ro" "$IMAGE" sh /w/scripts/smoke-linux-package.sh "$MANAGER" "$VERSION" "$input"
 
   # ──────────────────────────────────────────────────────────────
   # Tauri updater manifest  (macOS + Windows + Linux; tolerant of any being skipped)

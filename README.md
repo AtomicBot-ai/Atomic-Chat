@@ -198,7 +198,41 @@ yarn dev
 
 ### 🐧 Running on Linux
 
-Atomic Chat ships as a single self-contained `.AppImage` — no installer, no root:
+Install it from the Atomic Chat package repository, and your package manager updates it with the rest of
+the system. The packages put the app in `/opt/atomic-chat` with an `atomic-chat` command, a menu entry, and
+the system's WebKitGTK; the built-in updater stays off. They need glibc 2.38 or newer, which the bundled
+llama.cpp engine is built against. The repository and the rpm packages are signed with
+the Atomic Chat packages key in [`packaging/atomic-chat.asc`](packaging/atomic-chat.asc), fingerprint
+`1047 F119 58C6 442D D472  E497 E4C3 D361 FB7F F123`.
+
+Debian 13+, Ubuntu 24.04+ (x86-64, arm64):
+
+<!-- install:apt -->
+
+```sh
+curl -fsSL https://atomic-chat-packages.fsn1.your-objectstorage.com/atomic-chat.gpg | sudo tee /usr/share/keyrings/atomic-chat-app.gpg >/dev/null
+echo "deb [signed-by=/usr/share/keyrings/atomic-chat-app.gpg] https://atomic-chat-packages.fsn1.your-objectstorage.com/deb stable main" \
+  | sudo tee /etc/apt/sources.list.d/atomic-chat-app.list
+sudo apt update && sudo apt install atomic-chat
+```
+
+Fedora 40+ (x86-64, aarch64):
+
+<!-- install:dnf -->
+
+```sh
+sudo curl -fsSL -o /etc/yum.repos.d/atomic-chat-app.repo https://atomic-chat-packages.fsn1.your-objectstorage.com/rpm/atomic-chat.repo
+sudo dnf install atomic-chat
+```
+
+Arch Linux: `yay -S atomic-chat-bin`, or any other AUR helper.
+
+Updates come with `sudo apt upgrade`, `sudo dnf upgrade` or `yay -Syu`. `sudo apt remove atomic-chat`,
+`sudo dnf remove atomic-chat` or `sudo pacman -R atomic-chat-bin` removes the app and leaves your chats and
+models. The repository keeps the last three releases; every release also carries its `.deb` and `.rpm` files
+on the [releases page](https://github.com/AtomicBot-ai/Atomic-Chat/releases).
+
+Or run the self-contained `.AppImage` — no installer, no root, and it updates itself:
 
 ```bash
 chmod +x Atomic.Chat_*_amd64.AppImage
