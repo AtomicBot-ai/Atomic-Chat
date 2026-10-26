@@ -1,0 +1,4 @@
+# pacman does not run the deb's scripts; this is packaging/postinstall.sh for the AUR package.
+post_upgrade() {
+  echo 'Atomic Chat: a running Atomic Chat keeps the previous version; quit it (tray menu, Quit) and start it again.'
+}
