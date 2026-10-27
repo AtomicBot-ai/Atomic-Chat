@@ -56,6 +56,12 @@ export function DownloadPanel({
   const visible = count > 0
   const wasVisibleRef = useRef(visible)
 
+  useEffect(() => {
+    const open = () => setCollapsed(false)
+    window.addEventListener('atomic-open-download-panel', open)
+    return () => window.removeEventListener('atomic-open-download-panel', open)
+  }, [])
+
   // A collapse is intentional only for the current run. Reset at the next
   // idle-to-active transition so the first text or image download is visible
   // immediately, while another item joining the active queue stays collapsed.

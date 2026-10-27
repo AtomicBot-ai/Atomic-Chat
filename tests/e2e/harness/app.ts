@@ -242,7 +242,7 @@ export async function launchApp(extraEnv: Record<string, string>): Promise<Runni
     return app
   } catch (error) {
     await stopProcess(child)
-    throw error
+    throw new Error(`${String(error)}\napp exit: ${child.exitCode}/${child.signalCode}\n${output()}`, { cause: error })
   }
 }
 

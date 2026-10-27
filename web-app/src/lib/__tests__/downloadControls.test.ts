@@ -22,6 +22,8 @@ describe('download controls', () => {
     abortDownload.mockReset()
     transfer.cancelTransfer.mockReset()
     useDownloadStore.setState({
+      downloads: {},
+      resumeParams: {},
       pausedDownloads: new Set(),
       resumableDownloads: new Set(),
     })
@@ -35,6 +37,18 @@ describe('download controls', () => {
   it('keeps backend builds and MLX repos cancel-only', () => {
     expect(isPausableDownload('llamacpp-b8000-macos-arm64')).toBe(false)
     expect(isPausableDownload('mlx-community/Qwen3-4B-4bit')).toBe(false)
+  })
+
+  it('offers the same Pause control for a journaled MLX request', () => {
+    const id = 'mlx-community/Qwen3-4B-4bit'
+    useDownloadStore.getState().setResumeParams(id, {
+      provider: 'mlx',
+      modelPath: 'https://huggingface.co/mlx-community/Qwen3-4B-4bit/resolve/main/model.safetensors',
+    })
+    expect(isPausableDownload(id)).toBe(true)
+    pauseDownload({ id, name: id }, serviceHub)
+    expect(useDownloadStore.getState().pausedDownloads.has(id)).toBe(true)
+    expect(useDownloadStore.getState().resumableDownloads.has(id)).toBe(true)
   })
 
   it('pauses a model download so it can resume, under both of its ids', () => {

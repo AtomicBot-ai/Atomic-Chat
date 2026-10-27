@@ -288,6 +288,7 @@ export function activeDownloadIds(state: {
   localDownloadingModels: ReadonlySet<string>
   pausedDownloads: ReadonlySet<string>
   resumableDownloads: ReadonlySet<string>
+  dismissedDownloads?: ReadonlySet<string>
 }): string[] {
   const ids = new Set<string>()
   for (const [key, entry] of Object.entries(state.downloads)) {
@@ -300,7 +301,8 @@ export function activeDownloadIds(state: {
   ]) {
     for (const id of set) ids.add(id)
   }
-  return [...ids]
+  // Retained retry metadata does not keep an explicitly cancelled job active.
+  return [...ids].filter((id) => !state.dismissedDownloads?.has(id))
 }
 
 /**

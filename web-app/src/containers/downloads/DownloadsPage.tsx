@@ -9,6 +9,7 @@ import {
   Image,
   Mic,
   PieChart,
+  Pause,
   Play,
   Search,
   Trash2,
@@ -17,6 +18,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 
+import { OverflowText } from '@/components/OverflowText'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -33,6 +35,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import HeaderPage from '@/containers/HeaderPage'
+import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useInstalledInventory } from '@/hooks/useInstalledInventory'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -119,7 +122,10 @@ type Refusal = { code?: unknown; message?: unknown }
 export function DownloadsPage() {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
-  const { items, totalBytes, remove, cancel, resume } = useInstalledInventory()
+  const { items, totalBytes, remove, cancel, pause, resume } =
+    useInstalledInventory()
+  const resumeParams = useDownloadStore((state) => state.resumeParams)
+  const downloads = useDownloadStore((state) => state.downloads)
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<CategoryFilter>('all')
   const [confirming, setConfirming] = useState<InventoryItem | null>(null)
@@ -325,7 +331,7 @@ export function DownloadsPage() {
                 <th className="w-[11em] p-3 font-medium">
                   {t('downloads:column.storage')}
                 </th>
-                <th className="w-[3.75rem] p-3">
+                <th className="w-[6.5rem] p-3">
                   <span className="sr-only">
                     {t('downloads:column.actions')}
                   </span>
@@ -347,23 +353,20 @@ export function DownloadsPage() {
                         <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-secondary">
                           <Icon size={17} />
                         </div>
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                           <div className="flex min-w-0 items-center gap-1">
-                            <div
-                              className="truncate font-medium"
+                            <OverflowText
+                              className="flex-1 font-medium"
+                              text={item.name}
                               title={item.modelId ?? item.name}
-                            >
-                              {item.name}
-                            </div>
+                            />
                             {item.modelId && <ModelIdCopy id={item.modelId} />}
                           </div>
                           {detail && (
-                            <div
-                              className="mt-0.5 truncate text-xs text-muted-foreground"
-                              title={detail}
-                            >
-                              {detail}
-                            </div>
+                            <OverflowText
+                              className="mt-0.5 text-xs text-muted-foreground"
+                              text={detail}
+                            />
                           )}
                         </div>
                       </div>
@@ -371,16 +374,17 @@ export function DownloadsPage() {
                     <td className="p-3 whitespace-nowrap tabular-nums">
                       {item.download ? (
                         <div className="min-w-0">
-                          <div className="truncate">
-                            {downloadStatusLabel(t, item.download)}
-                          </div>
+                          <OverflowText
+                            text={downloadStatusLabel(t, item.download)}
+                          />
                           {item.download.total > 0 && (
-                            <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                              {formatProgressPair(
+                            <OverflowText
+                              className="mt-0.5 text-xs text-muted-foreground"
+                              text={formatProgressPair(
                                 item.download.current,
                                 item.download.total
                               )}
-                            </div>
+                            />
                           )}
                         </div>
                       ) : (
@@ -398,29 +402,48 @@ export function DownloadsPage() {
                     <td className="p-3 text-right whitespace-nowrap">
                       {/* A paused download, also one a quit cut off and the
                           relaunch brought back, picks up from its bytes. */}
-                      {item.download?.paused && (
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label={t('common:resumeDownload')}
-                          title={t('common:resumeDownload')}
-                          onClick={() => resume(item)}
-                          className="text-muted-foreground"
-                        >
-                          <Play size={15} />
-                        </Button>
-                      )}
                       {item.download ? (
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label={t('common:cancelDownload')}
-                          title={t('common:cancelDownload')}
-                          onClick={() => cancel(item)}
-                          className="text-muted-foreground"
-                        >
-                          <X size={15} />
-                        </Button>
+                        <div className="flex items-center justify-end gap-1">
+                          {(resumeParams[item.download.id] ||
+                            item.download.id.startsWith('diffusion-model-')) &&
+                            !downloads[item.download.id]?.recoveryBlocked && (
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                aria-label={t(
+                                  item.download.paused
+                                    ? 'common:resumeDownload'
+                                    : 'common:pauseDownload'
+                                )}
+                                title={t(
+                                  item.download.paused
+                                    ? 'common:resumeDownload'
+                                    : 'common:pauseDownload'
+                                )}
+                                onClick={() =>
+                                  item.download?.paused
+                                    ? resume(item)
+                                    : pause(item)
+                                }
+                              >
+                                {item.download.paused ? (
+                                  <Play size={15} />
+                                ) : (
+                                  <Pause size={15} />
+                                )}
+                              </Button>
+                            )}
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={t('common:cancelDownload')}
+                            title={t('common:cancelDownload')}
+                            onClick={() => cancel(item)}
+                            className="text-muted-foreground"
+                          >
+                            <X size={15} />
+                          </Button>
+                        </div>
                       ) : (
                         <Button
                           variant="ghost"

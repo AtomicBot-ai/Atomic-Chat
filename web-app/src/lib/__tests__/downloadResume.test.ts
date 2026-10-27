@@ -20,6 +20,7 @@ import { resumeDownload } from '@/lib/downloadResume'
 import { persistInterruptedDownloads } from '@/lib/interrupted-downloads'
 import type { ServiceHub } from '@/services'
 import { getBaselineDiffusionCatalog } from '@/services/diffusion-catalog-registry'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 
 const t = (key: string) => key
@@ -130,5 +131,52 @@ describe('resumeDownload for a download nothing can resume', () => {
     expect(state.downloads).toHaveProperty(CHECKPOINT)
     expect(state.pausedDownloads.has(CHECKPOINT)).toBe(false)
     expect(toast.error).not.toHaveBeenCalled()
+  })
+})
+
+describe('resumeDownload for a chat-model request', () => {
+  it('keeps Pause until the shared importer takes over and uses the current token', () => {
+    const id = 'org/model'
+    const pullModelWithMetadata = vi.fn(async () => undefined)
+    const hub = {
+      models: () => ({ pullModelWithMetadata }),
+    } as unknown as ServiceHub
+    useGeneralSetting.setState({ huggingfaceToken: 'hf_current' })
+    useDownloadStore.setState({
+      downloads: { [id]: row(id) },
+      pausedDownloads: new Set([id]),
+      resumeParams: {
+        [id]: {
+          modelPath: 'https://huggingface.co/org/model/resolve/main/model.gguf',
+          hfToken: 'hf_old',
+          provider: 'llamacpp-upstream',
+        },
+      },
+    })
+    resumeDownload({ id, name: id }, { serviceHub: hub, t })
+    expect(useDownloadStore.getState().pausedDownloads.has(id)).toBe(true)
+    expect(pullModelWithMetadata).toHaveBeenCalledWith(
+      id,
+      'https://huggingface.co/org/model/resolve/main/model.gguf',
+      undefined,
+      'hf_current',
+      true,
+      true,
+      { provider: 'llamacpp-upstream' }
+    )
+  })
+
+  it('does not drop or start an unresolved legacy model', () => {
+    const id = 'org/blocked'
+    useDownloadStore.setState({
+      downloads: { [id]: { ...row(id), recoveryBlocked: 'missing_source' } },
+      pausedDownloads: new Set([id]),
+    })
+    resumeDownload({ id, name: id }, { serviceHub, t })
+    expect(useDownloadStore.getState().downloads[id].recoveryBlocked).toBe(
+      'missing_source'
+    )
+    expect(useDownloadStore.getState().pausedDownloads.has(id)).toBe(true)
+    expect(transfers.downloadArtifact).not.toHaveBeenCalled()
   })
 })

@@ -94,12 +94,17 @@ export type ModelCatalog = CatalogModel[]
  * report — the choke point has already told the user and cleared the
  * pre-download state it set.
  */
-export interface DownloadRefusal {
+export interface DiskSpaceDownloadRefusal {
   kind: 'disk_full'
   /** Bytes the drive would need free: the files plus the downloader's headroom. */
   needed: number
   /** Bytes the drive has free. */
   available: number
+}
+
+export type DownloadRefusal = DiskSpaceDownloadRefusal | {
+  kind: 'destination_busy' | 'recovery_required'
+  modelId: string
 }
 
 /**
@@ -111,6 +116,10 @@ export interface DownloadRefusal {
  */
 export interface PullModelOptions {
   provider?: string
+  /** MLX repository companions, kept with the request so restart can resume it. */
+  files?: { url: string; filename: string }[]
+  /** Legacy MLX sidecars do not record the complete repository file list. */
+  recoverRepository?: boolean
   modelSha256?: string
   modelSize?: number
   mmprojSha256?: string

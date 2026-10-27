@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
+import {
+  restoreDownloadRecovery,
+  saveDownloadRecovery,
+} from '@/lib/downloadRecovery'
 import { localStorageKey } from '@/constants/localStorage'
 import {
   useDownloadStore,
@@ -40,13 +44,18 @@ const emptyStore = () =>
     resumableDownloads: new Set(),
     pausedDownloads: new Set(),
     resumeParams: {},
+    dismissedDownloads: new Set(),
+    downloadOriginByModelId: {},
+    downloadRequestOriginByModelId: {},
   })
 
 const stored = () => localStorage.getItem(localStorageKey.interruptedDownloads)
 
 /** What a relaunch does: the in-memory store is gone, storage is read again. */
 const relaunch = () => {
+  const canonical = saveDownloadRecovery(useDownloadStore.getState())
   emptyStore()
+  useDownloadStore.setState(restoreDownloadRecovery(canonical))
   restoreInterruptedDownloads(readInterruptedDownloads())
 }
 
@@ -102,7 +111,7 @@ describe('interrupted downloads across a relaunch', () => {
     expect([...state.pausedDownloads].sort()).toEqual([CHECKPOINT, MODEL])
     expect(state.resumableDownloads.has(CHECKPOINT)).toBe(true)
     expect(state.resumableDownloads.has(MODEL)).toBe(true)
-    expect(state.resumeParams[MODEL]).toEqual({
+    expect(state.resumeParams[MODEL]).toMatchObject({
       modelPath: MODEL_URL,
       skipVerification: true,
       provider: 'llamacpp-upstream',
@@ -119,8 +128,13 @@ describe('interrupted downloads across a relaunch', () => {
     })
     stop()
 
-    expect(stored()).toContain(MODEL_URL)
-    expect(stored()).not.toContain('hf_secret_token')
+    // Model requests now have one durable owner; the older journal is media-only.
+    const canonical = JSON.stringify(
+      saveDownloadRecovery(useDownloadStore.getState())
+    )
+    expect(stored()).toBeNull()
+    expect(canonical).toContain(MODEL_URL)
+    expect(canonical).not.toContain('hf_secret_token')
     // Nor reads one back from a list someone else wrote.
     expect(
       parseInterruptedDownloads(
@@ -128,7 +142,81 @@ describe('interrupted downloads across a relaunch', () => {
           { id: MODEL, resume: { modelPath: MODEL_URL, hfToken: 'hf_x' } },
         ])
       )[0].resume
-    ).toEqual({ modelPath: MODEL_URL })
+    ).toMatchObject({ modelPath: MODEL_URL })
+  })
+
+  it('migrates a legacy model record through the source allowlist, without restoring credentials', () => {
+    const records = parseInterruptedDownloads(
+      JSON.stringify([
+        {
+          id: MODEL,
+          current: 250,
+          total: 1000,
+          resume: {
+            modelPath: MODEL_URL,
+            provider: 'llamacpp-upstream',
+            hfToken: 'hf_secret',
+          },
+        },
+        {
+          id: 'unsafe-model',
+          resume: { modelPath: MODEL_URL + '?token=secret' },
+        },
+      ])
+    )
+    restoreInterruptedDownloads(records)
+    const canonical = saveDownloadRecovery(useDownloadStore.getState())
+    expect(canonical.entries).toHaveLength(1)
+    expect(canonical.entries[0]).toMatchObject({
+      id: MODEL,
+      current: 250,
+      total: 1000,
+    })
+    expect(JSON.stringify(canonical)).not.toMatch(/hf_secret|token=secret/)
+    expect(useDownloadStore.getState().pausedDownloads.has(MODEL)).toBe(true)
+  })
+
+  it('does not resurrect a cancelled model from the older journal', () => {
+    useDownloadStore.getState().dismissDownload(MODEL)
+    restoreInterruptedDownloads([
+      {
+        id: MODEL,
+        name: MODEL,
+        current: 10,
+        total: 100,
+        progress: 0.1,
+        resume: { modelPath: MODEL_URL },
+      },
+    ])
+    expect(useDownloadStore.getState().downloads[MODEL]).toBeUndefined()
+    expect(useDownloadStore.getState().resumeParams[MODEL]).toBeUndefined()
+  })
+
+  it('keeps canonical source identity and counters when both journals describe the same file', () => {
+    useDownloadStore.setState(
+      restoreDownloadRecovery({
+        entries: [
+          {
+            id: MODEL,
+            current: 750,
+            total: 1000,
+            params: { modelPath: MODEL_URL, provider: 'llamacpp-upstream' },
+          },
+        ],
+      })
+    )
+    restoreInterruptedDownloads([
+      {
+        id: 'alias/model',
+        name: 'alias/model',
+        current: 10,
+        total: 1000,
+        progress: 0.01,
+        resume: { modelPath: MODEL_URL, provider: 'atomic-prism' },
+      },
+    ])
+    expect(Object.keys(useDownloadStore.getState().downloads)).toEqual([MODEL])
+    expect(useDownloadStore.getState().downloads[MODEL].current).toBe(750)
   })
 
   it('leaves out downloads nothing here could resume', () => {

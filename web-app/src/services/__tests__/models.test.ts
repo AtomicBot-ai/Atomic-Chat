@@ -255,7 +255,7 @@ describe('DefaultModelsService', () => {
         modelSize: 2_000,
         mmprojSha256: 'c'.repeat(64),
         mmprojSize: 500,
-        resume: false,
+        resume: true,
       })
       expect(mockEngine.import).not.toHaveBeenCalled()
       expect(

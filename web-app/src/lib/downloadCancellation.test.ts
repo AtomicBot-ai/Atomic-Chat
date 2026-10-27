@@ -37,6 +37,9 @@ describe('cancelDownload', () => {
       },
     }
     useDownloadStore.setState({
+      downloads: {},
+      localDownloadingModels: new Set(),
+      dismissedDownloads: new Set(),
       resumableDownloads: new Set(),
       pausedDownloads: new Set(['LiquidAI/LFM2.5-1.2B-Q4_K_M']),
       resumeParams: {
@@ -45,7 +48,7 @@ describe('cancelDownload', () => {
     })
   })
 
-  it('aborts a model file through the model service and leaves it resumable', () => {
+  it('cancels a model job and hides it without discarding its resumable source', () => {
     const id = 'LiquidAI/LFM2.5-1.2B-Q4_K_M'
 
     cancelDownload({ id, name: id }, serviceHub)
@@ -55,7 +58,9 @@ describe('cancelDownload', () => {
     const state = useDownloadStore.getState()
     expect(state.resumableDownloads.has(id)).toBe(true)
     expect(state.pausedDownloads.has(id)).toBe(false)
-    expect(state.resumeParams).not.toHaveProperty(id)
+    expect(state.dismissedDownloads.has(id)).toBe(true)
+    expect(state.downloads[id]).toBeUndefined()
+    expect(state.resumeParams).toHaveProperty(id)
     // The stop event that follows is read as a cancel, not a failure.
     expect(wasDownloadCancellationRequested(id)).toBe(true)
   })

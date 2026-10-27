@@ -80,7 +80,11 @@ describe('ModelDownloadAction', () => {
     vi.clearAllMocks()
     mocks.pullModelWithMetadata.mockResolvedValue(undefined)
     useDownloadStore.setState({
+      controlRequests: [],
+      resumeParams: {},
+      dismissedDownloads: new Set(),
       downloads: {},
+      pausedDownloads: new Set(),
       localDownloadingModels: new Set(),
       resumableDownloads: new Set(),
       downloadOriginByModelId: {},
@@ -93,6 +97,33 @@ describe('ModelDownloadAction', () => {
     seedServiceHub({
       models: { pullModelWithMetadata: mocks.pullModelWithMetadata } as never,
     })
+  })
+
+  it('reopens a restored paused download without cancelling or creating a job', () => {
+    useDownloadStore.setState({
+      pausedDownloads: new Set([variant.model_id]),
+    })
+    useDownloadStore
+      .getState()
+      .updateProgress(variant.model_id, 0.4, variant.model_id, 40, 100)
+    const open = vi.fn()
+    window.addEventListener('atomic-open-download-panel', open)
+    render(<ModelDownloadAction variant={variant} model={model} asButton />)
+    fireEvent.click(
+      screen.getByRole('button', { name: 'common:showDownloadProgress' })
+    )
+    expect(open).toHaveBeenCalledTimes(1)
+    const state = useDownloadStore.getState()
+    expect(Object.keys(state.downloads)).toEqual([variant.model_id])
+    expect(state.pausedDownloads.has(variant.model_id)).toBe(true)
+    expect(state.downloads[variant.model_id]).toMatchObject({
+      progress: 0.4,
+      current: 40,
+      total: 100,
+    })
+    expect(mocks.pullModelWithMetadata).not.toHaveBeenCalled()
+    expect(mocks.abortDownload).not.toHaveBeenCalled()
+    window.removeEventListener('atomic-open-download-panel', open)
   })
 
   it('offers Download as the primary action, like "New chat" beside it', () => {
@@ -224,20 +255,16 @@ describe('ModelDownloadAction', () => {
 
       fireEvent.click(resume)
 
-      expect(mocks.pullModelWithMetadata).toHaveBeenCalledWith(
-        id,
-        variant.path,
-        undefined,
-        '',
-        true,
-        true,
-        {}
-      )
-      expect(useDownloadStore.getState().pausedDownloads.has(id)).toBe(false)
+      expect(mocks.pullModelWithMetadata).not.toHaveBeenCalled()
+      expect(useDownloadStore.getState().controlRequests).toEqual([
+        expect.objectContaining({ action: 'resume', id }),
+      ])
+      expect(useDownloadStore.getState().pausedDownloads.has(id)).toBe(true)
     } finally {
       useDownloadStore.setState({
         pausedDownloads: new Set(),
         resumeParams: {},
+        controlRequests: [],
       })
     }
   })
@@ -295,13 +322,19 @@ describe('ModelDownloadAction', () => {
         },
       ],
     }
-    const prismBuild = { version: 'prism-b9000-abcdef0', backend: 'macos-arm64' }
+    const prismBuild = {
+      version: 'prism-b9000-abcdef0',
+      backend: 'macos-arm64',
+    }
     const catalog = (installed: boolean): PrismCatalog => ({
       installed: installed ? [prismBuild] : [],
       available: [prismBuild],
       recommended: 'prism-b9000-abcdef0/macos-arm64',
       releases: [
-        { tag: prismBuild.version, variants: [{ id: prismBuild.backend, size: 20 }] },
+        {
+          tag: prismBuild.version,
+          variants: [{ id: prismBuild.backend, size: 20 }],
+        },
       ],
     })
 
@@ -455,7 +488,7 @@ describe('ModelDownloadAction', () => {
       expect(screen.queryByTestId('model-setup-sheet')).toBeNull()
     })
 
-    it('downloads under PrismML with the app\'s own downloader when the build is installed, and keeps a file PrismML runs', async () => {
+    it("downloads under PrismML with the app's own downloader when the build is installed, and keeps a file PrismML runs", async () => {
       known('compatible')
       planVerdict = verdict('compatible')
       mocks.prismCatalog.mockResolvedValue(catalog(true))
@@ -505,7 +538,11 @@ describe('ModelDownloadAction', () => {
       mocks.pullModelWithMetadata.mockImplementationOnce(async () => {
         useModelProvider.setState({
           providers: [
-            { provider: 'atomic-prism', settings: [], models: [{ id: prismId }] } as never,
+            {
+              provider: 'atomic-prism',
+              settings: [],
+              models: [{ id: prismId }],
+            } as never,
           ],
         })
       })
@@ -580,7 +617,9 @@ describe('ModelDownloadAction', () => {
       )
       expect(mocks.activatePrismBuild).not.toHaveBeenCalled()
       expect(mocks.pullModelWithMetadata).not.toHaveBeenCalled()
-      expect(await screen.findByRole('button', { name: 'hub:download' })).toBeEnabled()
+      expect(
+        await screen.findByRole('button', { name: 'hub:download' })
+      ).toBeEnabled()
     })
 
     it('keeps following a running Bonsai download when the verdict is forgotten', async () => {
@@ -596,9 +635,10 @@ describe('ModelDownloadAction', () => {
         screen.getByRole('button', { name: 'common:cancelDownload' })
       )
 
-      await waitFor(() =>
-        expect(mocks.abortDownload).toHaveBeenCalledWith(prismId)
-      )
+      expect(mocks.abortDownload).not.toHaveBeenCalled()
+      expect(useDownloadStore.getState().controlRequests).toEqual([
+        expect.objectContaining({ action: 'cancel', id: prismId }),
+      ])
       expect(screen.queryByRole('button', { name: 'hub:download' })).toBeNull()
     })
 
@@ -615,12 +655,14 @@ describe('ModelDownloadAction', () => {
         screen.getByRole('button', { name: 'common:cancelDownload' })
       )
 
-      await waitFor(() =>
-        expect(mocks.abortDownload).toHaveBeenCalledWith(prismId)
-      )
-      expect(useDownloadStore.getState().resumableDownloads.has(prismId)).toBe(
-        true
-      )
+      expect(mocks.abortDownload).not.toHaveBeenCalled()
+      expect(useDownloadStore.getState().controlRequests).toEqual([
+        expect.objectContaining({ action: 'cancel', id: prismId }),
+      ])
+      // Cancel does not alter the download until the shared confirmation is answered.
+      expect(
+        useDownloadStore.getState().localDownloadingModels.has(prismId)
+      ).toBe(true)
     })
   })
 })

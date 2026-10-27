@@ -28,7 +28,10 @@ struct ToolFixture {
 
 impl ToolFixture {
     fn allowed() -> Self {
-        let workspace = TestWorkspace::new();
+        Self::allowed_in(TestWorkspace::new())
+    }
+
+    fn allowed_in(workspace: TestWorkspace) -> Self {
         let editable_roots = EditableRoots::for_test(workspace.path());
         let skill_registry = workspace.skill_registry();
         Self {
@@ -333,7 +336,10 @@ async fn filesystem_patch_defaults_to_validation_and_prevalidates_every_file() {
 
 #[tokio::test]
 async fn filesystem_trash_moves_directories_through_the_native_trash_api() {
-    let fixture = ToolFixture::allowed();
+    // A checkout under Documents can be managed by iCloud/FileProvider. Finder
+    // may then require a download before trashing a freshly-created fixture and
+    // display a modal alert. Exercise the real native API on local OS temp data.
+    let fixture = ToolFixture::allowed_in(TestWorkspace::new_in(std::env::temp_dir()));
     fixture.workspace.write("discard/nested.txt", "recoverable");
     // The FreeDesktop trash is the native mechanism on Linux, so only the other
     // platforms can treat that directory as evidence of a hand-rolled fallback.
@@ -347,7 +353,7 @@ async fn filesystem_trash_moves_directories_through_the_native_trash_api() {
     let trashed = fixture
         .call("os.fs.trash", serde_json::json!({"path": "discard"}))
         .await;
-    assert_eq!(trashed.status, ToolStatus::Ok);
+    assert_eq!(trashed.status, ToolStatus::Ok, "{}", trashed.summary);
     assert!(!fixture.workspace.path().join("discard").exists());
     assert_eq!(fixture.approval.requests().len(), 1);
     #[cfg(not(target_os = "linux"))]

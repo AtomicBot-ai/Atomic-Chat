@@ -194,11 +194,10 @@ export const MlxModelDownloadAction = memo(
         // `await` is load-bearing: a bare `return engine.import(...)` inside
         // try{} lets the rejection escape the catch — the download then fails
         // with no toast, no console.error and a button stuck in "downloading".
-        return await engine.import(modelId, {
-          modelPath: modelUrl,
-          files: extraFiles,
-          resume: resumableDownloads.has(modelId),
-        })
+        await serviceHub.models().pullModelWithMetadata(
+          modelId, modelUrl, undefined, huggingfaceToken, true,
+          resumableDownloads.has(modelId), { provider: 'mlx', files: extraFiles }
+        )
       } catch (error) {
         console.error('Error downloading MLX model:', error)
         markResumableDownload(modelId)

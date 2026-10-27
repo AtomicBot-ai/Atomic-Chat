@@ -1478,55 +1478,60 @@ async fn a_server_that_ignores_ranges_gets_one_plain_download() {
 
 #[tokio::test]
 async fn a_saved_segment_map_resumes_only_the_missing_bytes() {
-    let body = segmented_test_body();
-    let server = spawn_range_server(body.clone(), true).await;
-    let save_path = test_download_path("model.gguf");
-    tokio::fs::create_dir_all(save_path.parent().unwrap())
+    // Both legacy layouts must reuse the same already-written ranges.
+    for keep_url_marker in [true, false] {
+        let body = segmented_test_body();
+        let server = spawn_range_server(body.clone(), true).await;
+        let save_path = test_download_path("model.gguf");
+        tokio::fs::create_dir_all(save_path.parent().unwrap())
+            .await
+            .unwrap();
+
+        // The first half is on disk in a full-size partial, as a cancel leaves it.
+        let half = SEGMENTED_TEST_SIZE / 2;
+        let mut partial = body[..half].to_vec();
+        partial.resize(SEGMENTED_TEST_SIZE, 0);
+        tokio::fs::write(sidecar_path(&save_path, "tmp"), &partial)
+            .await
+            .unwrap();
+        if keep_url_marker {
+            tokio::fs::write(sidecar_path(&save_path, "url"), &server.url)
+                .await
+                .unwrap();
+        }
+        let map = serde_json::json!({
+            "version": 1,
+            "url": server.url,
+            "size": SEGMENTED_TEST_SIZE,
+            "segments": [[0, half, half], [half, half, SEGMENTED_TEST_SIZE]],
+        });
+        tokio::fs::write(sidecar_path(&save_path, "parts"), map.to_string())
+            .await
+            .unwrap();
+
+        download_segmented_for_test(
+            &server,
+            &save_path,
+            true,
+            CancellationToken::new(),
+            segmented_test_tuning(),
+        )
         .await
         .unwrap();
 
-    // The first half is on disk in a full-size partial, as a cancel leaves it.
-    let half = SEGMENTED_TEST_SIZE / 2;
-    let mut partial = body[..half].to_vec();
-    partial.resize(SEGMENTED_TEST_SIZE, 0);
-    tokio::fs::write(sidecar_path(&save_path, "tmp"), &partial)
-        .await
-        .unwrap();
-    tokio::fs::write(sidecar_path(&save_path, "url"), &server.url)
-        .await
-        .unwrap();
-    let map = serde_json::json!({
-        "version": 1,
-        "url": server.url,
-        "size": SEGMENTED_TEST_SIZE,
-        "segments": [[0, half, half], [half, half, SEGMENTED_TEST_SIZE]],
-    });
-    tokio::fs::write(sidecar_path(&save_path, "parts"), map.to_string())
-        .await
-        .unwrap();
+        assert_eq!(tokio::fs::read(&save_path).await.unwrap(), *body);
+        let starts = server.starts.lock().unwrap().clone();
+        assert!(
+            starts
+                .iter()
+                .all(|start| start.is_some_and(|start| start >= half as u64)),
+            "bytes already on disk were fetched again: {starts:?}"
+        );
+        assert_no_sidecars(&save_path);
 
-    download_segmented_for_test(
-        &server,
-        &save_path,
-        true,
-        CancellationToken::new(),
-        segmented_test_tuning(),
-    )
-    .await
-    .unwrap();
-
-    assert_eq!(tokio::fs::read(&save_path).await.unwrap(), *body);
-    let starts = server.starts.lock().unwrap().clone();
-    assert!(
-        starts
-            .iter()
-            .all(|start| start.is_some_and(|start| start >= half as u64)),
-        "bytes already on disk were fetched again: {starts:?}"
-    );
-    assert_no_sidecars(&save_path);
-
-    server.handle.abort();
-    let _ = tokio::fs::remove_dir_all(save_path.parent().unwrap()).await;
+        server.handle.abort();
+        let _ = tokio::fs::remove_dir_all(save_path.parent().unwrap()).await;
+    }
 }
 
 #[tokio::test]
@@ -1950,6 +1955,573 @@ fn a_download_item_without_a_resume_key_still_deserializes() {
     )
     .unwrap();
     assert_eq!(keyed.resume_key.as_deref(), Some("foundry-local/v/m.onnx"));
+}
+
+// Connection recovery must outlive the old five-retry limit without turning
+// HTTP refusals, manual pauses, or corrupt files into endless background work.
+#[test]
+fn connection_retry_intervals_cap_at_sixty_four_seconds() {
+    let seconds: Vec<_> = (0..10).map(|n| retry_interval(n).as_secs()).collect();
+    assert_eq!(seconds, vec![1, 2, 4, 8, 16, 32, 64, 64, 64, 64]);
+    assert_eq!(retry_interval(u32::MAX).as_secs(), 64);
+    assert!(should_retry_download("[network] DNS failure", u32::MAX));
+    for error in [
+        "HTTP status 401",
+        "HTTP status 403",
+        "HTTP status 429",
+        "HTTP status 503",
+        "[disk_full] no space",
+        "SHA256 mismatch",
+        "invalid certificate",
+        "Download cancelled",
+    ] {
+        assert!(!should_retry_download(error, MAX_STREAM_RETRIES), "{error}");
+    }
+}
+
+#[tokio::test]
+async fn connection_retry_get_stops_immediately_on_manual_cancellation() {
+    let port = refused_port().await;
+    let token = CancellationToken::new();
+    let stop = token.clone();
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let seen = attempts.clone();
+    let reporter = StageReporter::from_fn(move |stage| {
+        if stage.kind == DownloadStage::RETRYING {
+            assert_eq!(stage.max_attempts, 0);
+            seen.fetch_add(1, Ordering::SeqCst);
+            if stage.attempt == 9 {
+                stop.cancel();
+            }
+        }
+    });
+    let result = tokio::time::timeout(
+        Duration::from_secs(3),
+        request_download_response_with_retry(
+            &reqwest::Client::new(),
+            &format!("http://127.0.0.1:{port}/model"),
+            0,
+            None,
+            6,
+            Duration::from_secs(1),
+            &token,
+            Some(&reporter),
+        ),
+    )
+    .await
+    .unwrap()
+    .unwrap_err();
+    assert!(result.to_string().contains("cancelled"));
+    assert_eq!(attempts.load(Ordering::SeqCst), 9);
+    tokio::time::sleep(Duration::from_millis(25)).await;
+    assert_eq!(attempts.load(Ordering::SeqCst), 9);
+}
+
+#[tokio::test]
+async fn connection_retry_http_refusals_remain_bounded() {
+    for status in [
+        StatusCode::UNAUTHORIZED,
+        StatusCode::FORBIDDEN,
+        StatusCode::NOT_FOUND,
+        StatusCode::TOO_MANY_REQUESTS,
+        StatusCode::INTERNAL_SERVER_ERROR,
+        StatusCode::SERVICE_UNAVAILABLE,
+    ] {
+        let (url, count, server) = spawn_preflight_head_server(usize::MAX, status).await;
+        let result = tokio::time::timeout(
+            Duration::from_secs(3),
+            request_download_response_with_retry(
+                &reqwest::Client::new(),
+                &url,
+                0,
+                None,
+                6,
+                Duration::from_secs(1),
+                &CancellationToken::new(),
+                None,
+            ),
+        )
+        .await
+        .unwrap();
+        assert!(result.is_err());
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            if status.as_u16() < 429 { 1 } else { 6 }
+        );
+        server.abort();
+    }
+}
+
+/// Two interrupted responses separated by eight dropped connections each.
+/// The body is identical for plain and Range requests; only transport breaks.
+async fn spawn_connection_retry_body_server(
+    body: Arc<Vec<u8>>,
+) -> (String, Arc<AtomicUsize>, tokio::task::JoinHandle<()>) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let count = Arc::new(AtomicUsize::new(0));
+    let seen = count.clone();
+    let handle = tokio::spawn(async move {
+        loop {
+            let Ok((mut socket, _)) = listener.accept().await else {
+                break;
+            };
+            let mut request = Vec::new();
+            let mut buffer = [0; 1024];
+            loop {
+                let Ok(len) = socket.read(&mut buffer).await else {
+                    break;
+                };
+                if len == 0 {
+                    break;
+                }
+                request.extend_from_slice(&buffer[..len]);
+                if request.windows(4).any(|bytes| bytes == b"\r\n\r\n") || request.len() > 8192 {
+                    break;
+                }
+            }
+            let request = String::from_utf8_lossy(&request).to_ascii_lowercase();
+            let n = seen.fetch_add(1, Ordering::SeqCst);
+            if (1..=8).contains(&n) || (10..=17).contains(&n) {
+                continue;
+            }
+            let range = request
+                .lines()
+                .find_map(|line| line.strip_prefix("range:").map(str::trim));
+            let (start, end) = range
+                .and_then(|s| parse_range(s.trim(), body.len() as u64))
+                .unwrap_or((0, body.len() as u64 - 1));
+            let payload = &body[start as usize..=end as usize];
+            let range_header = if range.is_some() {
+                format!("Content-Range: bytes {start}-{end}/{}\r\n", body.len())
+            } else {
+                String::new()
+            };
+            let status = if range.is_some() {
+                "206 Partial Content"
+            } else {
+                "200 OK"
+            };
+            let header = format!("HTTP/1.1 {status}\r\n{range_header}Content-Length: {}\r\nConnection: close\r\n\r\n", payload.len());
+            let _ = socket.write_all(header.as_bytes()).await;
+            let sent = if n == 0 || n == 9 { 3 } else { payload.len() };
+            let _ = socket.write_all(&payload[..sent]).await;
+            if n == 0 || n == 9 {
+                // Let the client consume this chunk before the deliberate EOF;
+                // otherwise a truncated body can be rejected before yielding bytes.
+                let _ = socket.flush().await;
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+        }
+    });
+    (format!("http://{address}/model.gguf"), count, handle)
+}
+
+#[tokio::test]
+async fn connection_retry_resumes_plain_and_segmented_bodies_and_resets_on_bytes() {
+    for segmented in [false, true] {
+        let body = Arc::new((0..128).collect::<Vec<u8>>());
+        let (url, count, server) = spawn_connection_retry_body_server(body.clone()).await;
+        let save_path = test_download_path("model.gguf");
+        let neighbour = save_path.with_file_name("finished-neighbour.gguf");
+        tokio::fs::create_dir_all(save_path.parent().unwrap())
+            .await
+            .unwrap();
+        tokio::fs::write(&neighbour, b"keep finished model")
+            .await
+            .unwrap();
+        let item = test_item(url, &save_path, body.len() as u64);
+        let app = mock_app();
+        let events = record_download_events(&app);
+        let tuning = TransferTuning {
+            segmented_min_size: if segmented { 1 } else { u64::MAX },
+            min_segment_size: 128,
+            max_connections: 2,
+            response_timeout: Duration::from_millis(500),
+            ..TransferTuning::default()
+        };
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            download_single_file_with_tuning_for_test(
+                app.handle().clone(),
+                &item,
+                &save_path,
+                body.len() as u64,
+                false,
+                CancellationToken::new(),
+                tuning,
+            ),
+        )
+        .await
+        .expect("connection retries did not recover")
+        .unwrap();
+        assert!(count.load(Ordering::SeqCst) >= 19);
+        assert_eq!(tokio::fs::read(&save_path).await.unwrap(), *body);
+        assert_eq!(
+            tokio::fs::read(&neighbour).await.unwrap(),
+            b"keep finished model"
+        );
+        let attempts: Vec<_> = events
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|event| {
+                let event: serde_json::Value = serde_json::from_str(event).unwrap();
+                let stage = event.get("stage")?;
+                (stage["kind"] == "retrying").then(|| {
+                    assert_eq!(stage["maxAttempts"], 0);
+                    stage["attempt"].as_u64().unwrap()
+                })
+            })
+            .collect();
+        let peak = attempts
+            .iter()
+            .position(|n| *n >= 8)
+            .expect("stopped at five retries");
+        assert!(
+            attempts[peak + 1..].contains(&1),
+            "bytes must reset the ladder (segmented={segmented}): {attempts:?}"
+        );
+        assert_no_sidecars(&save_path);
+        server.abort();
+        let _ = tokio::fs::remove_dir_all(save_path.parent().unwrap()).await;
+    }
+}
+
+#[tokio::test]
+async fn connection_retry_header_wait_can_be_cancelled_without_waiting_for_timeout() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let token = CancellationToken::new();
+    let stop = token.clone();
+    let server = tokio::spawn(async move {
+        let (socket, _) = listener.accept().await.unwrap();
+        tokio::time::sleep(Duration::from_millis(25)).await;
+        stop.cancel();
+        // Keep the socket open: only cancellation can end the header wait.
+        std::future::pending::<()>().await;
+        drop(socket);
+    });
+    let result = tokio::time::timeout(
+        Duration::from_secs(1),
+        request_download_response_cancellable(
+            &reqwest::Client::new(),
+            &format!("http://{address}/model"),
+            3,
+            None,
+            128,
+            Duration::from_secs(30),
+            &token,
+        ),
+    )
+    .await
+    .expect("manual pause waited for the network timeout")
+    .unwrap_err();
+    assert!(result.to_string().contains("cancelled"));
+    server.abort();
+}
+
+#[tokio::test]
+async fn resume_reuses_completed_files_without_requests_or_payload_changes() {
+    let (url, count, server) =
+        spawn_preflight_head_server(usize::MAX, StatusCode::UNAUTHORIZED).await;
+    let save_path = test_download_path("already-complete.gguf");
+    tokio::fs::create_dir_all(save_path.parent().unwrap())
+        .await
+        .unwrap();
+    tokio::fs::write(&save_path, b"abcdef").await.unwrap();
+    tokio::fs::write(sidecar_path(&save_path, "tmp"), b"old partial")
+        .await
+        .unwrap();
+    let item = test_item(url, &save_path, 6);
+    let returned = download_single_file_with_tuning_for_test(
+        mock_app().handle().clone(),
+        &item,
+        &save_path,
+        6,
+        true,
+        CancellationToken::new(),
+        TransferTuning::default(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(returned, save_path);
+    assert_eq!(count.load(Ordering::SeqCst), 0);
+    assert_eq!(tokio::fs::read(&save_path).await.unwrap(), b"abcdef");
+    assert_eq!(
+        tokio::fs::read(sidecar_path(&save_path, "tmp"))
+            .await
+            .unwrap(),
+        b"old partial"
+    );
+    assert_eq!(
+        reusable_completed_file_size(&save_path, 6, true)
+            .await
+            .unwrap(),
+        Some(6)
+    );
+    // Accounting uses complete bytes instead of also counting its stale partial.
+    assert_eq!(super::disk::remaining_bytes(10, &[6, 2]), 2);
+    server.abort();
+    let _ = tokio::fs::remove_dir_all(save_path.parent().unwrap()).await;
+}
+
+#[tokio::test]
+async fn resume_never_overwrites_a_mismatched_or_unverified_completed_file() {
+    let save_path = test_download_path("already-complete.gguf");
+    tokio::fs::create_dir_all(save_path.parent().unwrap())
+        .await
+        .unwrap();
+    tokio::fs::write(&save_path, b"abcdef").await.unwrap();
+    for expected in [0, 7] {
+        let result = reusable_completed_file_size(&save_path, expected, true).await;
+        assert!(result.unwrap_err().contains("left unchanged"));
+        assert_eq!(tokio::fs::read(&save_path).await.unwrap(), b"abcdef");
+    }
+    let _ = tokio::fs::remove_dir_all(save_path.parent().unwrap()).await;
+}
+
+#[tokio::test]
+async fn verified_completed_download_removes_only_owned_sidecars() {
+    let save_path = test_download_path("cleanup.gguf");
+    tokio::fs::create_dir_all(save_path.parent().unwrap())
+        .await
+        .unwrap();
+    tokio::fs::write(&save_path, b"abcdef").await.unwrap();
+    let neighbor = save_path.parent().unwrap().join("neighbor.gguf");
+    tokio::fs::write(&neighbor, b"neighbor").await.unwrap();
+    let item = test_item("https://example.invalid/model.gguf".into(), &save_path, 6);
+    for suffix in ["tmp", "url", "parts", "parts.new"] {
+        let body = match suffix {
+            "tmp" => "abc".to_string(),
+            "url" => item.url.clone(),
+            _ => serde_json::json!({"url": item.url, "size": 6}).to_string(),
+        };
+        tokio::fs::write(sidecar_path(&save_path, suffix), body)
+            .await
+            .unwrap();
+    }
+    cleanup_completed_sidecars(
+        mock_app().handle(),
+        &item,
+        &save_path,
+        6,
+        &CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    for suffix in ["tmp", "url", "parts", "parts.new"] {
+        assert!(!sidecar_path(&save_path, suffix).exists());
+    }
+    assert_eq!(tokio::fs::read(&save_path).await.unwrap(), b"abcdef");
+    assert_eq!(tokio::fs::read(&neighbor).await.unwrap(), b"neighbor");
+    cleanup_completed_sidecars(
+        mock_app().handle(),
+        &item,
+        &save_path,
+        6,
+        &CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn completed_cleanup_preserves_unverified_or_conflicting_recovery_files() {
+    for reason in ["size", "source", "hash", "cancel", "unknown"] {
+        let save_path = test_download_path(&format!("cleanup-{reason}.gguf"));
+        tokio::fs::create_dir_all(save_path.parent().unwrap())
+            .await
+            .unwrap();
+        tokio::fs::write(&save_path, b"abcdef").await.unwrap();
+        tokio::fs::write(sidecar_path(&save_path, "tmp"), b"abc")
+            .await
+            .unwrap();
+        let mut item = test_item("https://example.invalid/model.gguf".into(), &save_path, 6);
+        if reason != "unknown" {
+            tokio::fs::write(
+                sidecar_path(&save_path, "url"),
+                if reason == "source" {
+                    "other"
+                } else {
+                    &item.url
+                },
+            )
+            .await
+            .unwrap();
+        }
+        if reason == "hash" {
+            item.sha256 = Some("0".repeat(64));
+        }
+        let token = CancellationToken::new();
+        if reason == "cancel" {
+            token.cancel();
+        }
+        assert!(cleanup_completed_sidecars(
+            mock_app().handle(),
+            &item,
+            &save_path,
+            if reason == "size" { 7 } else { 6 },
+            &token
+        )
+        .await
+        .is_err());
+        assert_eq!(tokio::fs::read(&save_path).await.unwrap(), b"abcdef");
+        assert_eq!(
+            tokio::fs::read(sidecar_path(&save_path, "tmp"))
+                .await
+                .unwrap(),
+            b"abc"
+        );
+    }
+}
+
+#[tokio::test]
+async fn completed_batch_cleans_reused_shards_before_reporting_success() {
+    let root = tempfile::tempdir().unwrap();
+    let app = mock_app();
+    tauri::Manager::manage(
+        &app,
+        crate::test_support::TestDataRoot(root.path().to_path_buf()),
+    );
+    let (url, requests, server) = spawn_preflight_head_server(0, StatusCode::OK).await;
+    let save_path = root.path().join("llamacpp/models/org/cleanup/model.gguf");
+    tokio::fs::create_dir_all(save_path.parent().unwrap())
+        .await
+        .unwrap();
+    let payload = vec![b'a'; 42];
+    tokio::fs::write(&save_path, &payload).await.unwrap();
+    tokio::fs::write(sidecar_path(&save_path, "tmp"), b"aaaaaaaaaa")
+        .await
+        .unwrap();
+    tokio::fs::write(sidecar_path(&save_path, "url"), &url)
+        .await
+        .unwrap();
+    tokio::fs::write(
+        sidecar_path(&save_path, "parts"),
+        serde_json::json!({"url":url,"size":42}).to_string(),
+    )
+    .await
+    .unwrap();
+    let mut item = test_item(url, &save_path, 42);
+    item.save_path = "llamacpp/models/org/cleanup/model.gguf".into();
+    _download_files_internal(
+        app.handle().clone(),
+        &[item],
+        &HashMap::new(),
+        "completed-cleanup-test",
+        true,
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(requests.load(Ordering::SeqCst), 0); // Known size and completed payload require no HTTP requests.
+    assert_eq!(tokio::fs::read(&save_path).await.unwrap(), payload);
+    for suffix in ["tmp", "url", "parts", "parts.new"] {
+        assert!(!sidecar_path(&save_path, suffix).exists());
+    }
+    server.abort();
+}
+
+#[tokio::test]
+async fn completed_batch_validation_failure_preserves_existing_payload_and_sidecars() {
+    let root = tempfile::tempdir().unwrap();
+    let app = mock_app();
+    tauri::Manager::manage(
+        &app,
+        crate::test_support::TestDataRoot(root.path().to_path_buf()),
+    );
+    let (url, _, server) = spawn_preflight_head_server(0, StatusCode::OK).await;
+    let save_path = root.path().join("llamacpp/models/org/cleanup/model.gguf");
+    tokio::fs::create_dir_all(save_path.parent().unwrap())
+        .await
+        .unwrap();
+    let payload = vec![b'a'; 42];
+    tokio::fs::write(&save_path, &payload).await.unwrap();
+    tokio::fs::write(sidecar_path(&save_path, "tmp"), b"aaaaaaaaaa")
+        .await
+        .unwrap();
+    tokio::fs::write(sidecar_path(&save_path, "url"), &url)
+        .await
+        .unwrap();
+    let mut item = test_item(url, &save_path, 42);
+    item.save_path = "llamacpp/models/org/cleanup/model.gguf".into();
+    item.sha256 = Some("0".repeat(64));
+    assert!(_download_files_internal(
+        app.handle().clone(),
+        &[item.clone()],
+        &HashMap::new(),
+        "completed-bad-hash-test",
+        true,
+        CancellationToken::new()
+    )
+    .await
+    .is_err());
+    assert_eq!(tokio::fs::read(&save_path).await.unwrap(), payload);
+    assert_eq!(
+        tokio::fs::read(sidecar_path(&save_path, "tmp"))
+            .await
+            .unwrap(),
+        b"aaaaaaaaaa"
+    );
+    assert!(sidecar_path(&save_path, "url").exists());
+    item.sha256 = None;
+    tokio::fs::write(sidecar_path(&save_path, "url"), b"different source")
+        .await
+        .unwrap();
+    assert!(_download_files_internal(
+        app.handle().clone(),
+        &[item],
+        &HashMap::new(),
+        "completed-cleanup-failure-test",
+        true,
+        CancellationToken::new()
+    )
+    .await
+    .is_err());
+    assert_eq!(tokio::fs::read(&save_path).await.unwrap(), payload);
+    assert_eq!(
+        tokio::fs::read(sidecar_path(&save_path, "tmp"))
+            .await
+            .unwrap(),
+        b"aaaaaaaaaa"
+    );
+    assert_eq!(
+        tokio::fs::read(sidecar_path(&save_path, "url"))
+            .await
+            .unwrap(),
+        b"different source"
+    );
+    server.abort();
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn completed_cleanup_never_unlinks_linked_sidecars_or_their_targets() {
+    let root = tempfile::tempdir().unwrap();
+    let save_path = root.path().join("model.gguf");
+    let neighbor = root.path().join("neighbor.gguf");
+    tokio::fs::write(&save_path, b"abcdef").await.unwrap();
+    tokio::fs::write(&neighbor, b"protected").await.unwrap();
+    std::os::unix::fs::symlink(&neighbor, sidecar_path(&save_path, "tmp")).unwrap();
+    let item = test_item("https://example.invalid/model.gguf".into(), &save_path, 6);
+    tokio::fs::write(sidecar_path(&save_path, "url"), &item.url)
+        .await
+        .unwrap();
+    assert!(cleanup_completed_sidecars(
+        mock_app().handle(),
+        &item,
+        &save_path,
+        6,
+        &CancellationToken::new()
+    )
+    .await
+    .is_err());
+    assert!(sidecar_path(&save_path, "tmp").is_symlink());
+    assert!(sidecar_path(&save_path, "url").exists());
+    assert_eq!(tokio::fs::read(&neighbor).await.unwrap(), b"protected");
+    assert_eq!(tokio::fs::read(&save_path).await.unwrap(), b"abcdef");
 }
 
 /// A server that answers every request with `respond(request)` and records whether each request

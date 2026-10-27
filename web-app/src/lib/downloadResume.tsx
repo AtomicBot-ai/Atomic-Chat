@@ -34,6 +34,8 @@ export function resumeDownload(
 ): void {
   const { resumeParams, clearPausedDownload, markResumableDownload } =
     useDownloadStore.getState()
+  if (useDownloadStore.getState().downloads[download.id]?.recoveryBlocked)
+    return
   const imageCatalog = useImageGenerationStore.getState().catalog
   const huggingfaceToken = useGeneralSetting.getState().huggingfaceToken
 
@@ -95,8 +97,7 @@ export function resumeDownload(
     })
     return
   }
-  clearPausedDownload(download.id)
-  if (download.id !== download.name) clearPausedDownload(download.name)
+  // Keep Pause visible until the previous model importer has unwound.
   markResumableDownload(download.id)
   const { modelPath, mmprojPath, hfToken, skipVerification, ...pullOptions } =
     params
@@ -106,7 +107,7 @@ export function resumeDownload(
       download.id,
       modelPath,
       mmprojPath,
-      hfToken ?? huggingfaceToken,
+      huggingfaceToken || hfToken,
       skipVerification ?? true,
       true,
       pullOptions

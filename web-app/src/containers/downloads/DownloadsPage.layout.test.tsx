@@ -210,6 +210,15 @@ function seed() {
     },
   })
   useDownloadStore.setState({
+    controlRequests: [],
+    dismissedDownloads: new Set(),
+    resumeParams: {
+      'unsloth/GLM-4.6-Q4_K_M': {
+        provider: 'llamacpp-upstream',
+        modelPath:
+          'https://huggingface.co/unsloth/model/resolve/main/model.gguf',
+      },
+    },
     downloads: {
       'unsloth/GLM-4.6-Q4_K_M': {
         id: 'unsloth/GLM-4.6-Q4_K_M',
@@ -240,14 +249,20 @@ beforeEach(async () => {
 describe.each(['light', 'dark'] as const)('Downloads, %s theme', (theme) => {
   it.each(
     [1024, 1280].flatMap((width) =>
-      [DEFAULT_FONT_SIZE, XL_FONT_SIZE].map((fontSize) => ({
-        width,
-        fontSize,
-      }))
+      [DEFAULT_FONT_SIZE, XL_FONT_SIZE].flatMap((fontSize) =>
+        [false, true].map((paused) => ({
+          width,
+          fontSize,
+          paused,
+        }))
+      )
     )
   )(
-    'keeps every row and action in place at $width px / $fontSize',
-    async ({ width, fontSize }) => {
+    'keeps every row and action in place at $width px / $fontSize, paused=$paused',
+    async ({ width, fontSize, paused }) => {
+      useDownloadStore.setState({
+        pausedDownloads: new Set(paused ? ['unsloth/GLM-4.6-Q4_K_M'] : []),
+      })
       await page.viewport(width, 800)
       setTheme(theme)
       setFontSize(fontSize)
@@ -303,8 +318,19 @@ describe.each(['light', 'dark'] as const)('Downloads, %s theme', (theme) => {
 
       // The running download's readout is one line in the Storage column.
       const running = rows[0]
-      expectOneLine(within(running).getByText('62%'))
+      expectOneLine(within(running).getByText(paused ? 'Paused' : '62%'))
       expectOneLine(within(running).getByText('12.34 / 20.00 GB'))
+      const control = within(running).getByRole('button', {
+        name: paused ? 'Resume download' : 'Pause download',
+      })
+      const cancel = within(running).getByRole('button', {
+        name: 'Cancel download',
+      })
+      expectFits(control, running)
+      expectFits(cancel, running)
+      expect(control.getBoundingClientRect().right).toBeLessThanOrEqual(
+        cancel.getBoundingClientRect().left
+      )
 
       // A build the core keeps says why on its detail line, on one line.
       const kept = rows.find((row) =>
@@ -330,7 +356,41 @@ describe.each(['light', 'dark'] as const)('Downloads, %s theme', (theme) => {
       const nemotron = rows.find((row) =>
         row.contains(nemotronName)
       ) as HTMLElement
-      expectTextShown(nemotron, 'NVIDIA Nemotron 3.5 Lightning 30B A3B')
+      const titleTrack = nemotronName.querySelector(
+        '[data-testid="overflow-text-track"]'
+      ) as HTMLElement
+      const titlePrimary = titleTrack.querySelector(
+        '[data-testid="overflow-text-primary"]'
+      ) as HTMLElement
+      if (titlePrimary.scrollWidth > nemotronName.clientWidth + 1) {
+        // The readable model name can itself overflow at Extra Large fonts.
+        // Both ends must become readable while the action slot stays fixed.
+        const [animation] = titleTrack.getAnimations()
+        expect(animation).toBeDefined()
+        animation.pause()
+        const frames = (animation.effect as KeyframeEffect).getKeyframes()
+        const duration = Number(animation.effect!.getComputedTiming().duration)
+        animation.currentTime = 750
+        expect(
+          Math.abs(
+            titlePrimary.getBoundingClientRect().left -
+              nemotronName.getBoundingClientRect().left
+          )
+        ).toBeLessThanOrEqual(1)
+        animation.currentTime =
+          ((Number(frames[2].offset) + Number(frames[3].offset)) / 2) * duration
+        expect(
+          Math.abs(
+            titlePrimary.getBoundingClientRect().right -
+              nemotronName.getBoundingClientRect().right
+          )
+        ).toBeLessThanOrEqual(1)
+        expect(
+          titleTrack.querySelector('[data-testid="overflow-text-repeat"]')
+        ).toHaveAttribute('aria-hidden', 'true')
+      } else {
+        expectTextShown(nemotron, 'NVIDIA Nemotron 3.5 Lightning 30B A3B')
+      }
       expectTextShown(nemotron, 'Q4_K_M')
       expectOneLine(within(nemotron).getByText(/Q4_K_M · incomplete download/))
       const copy = within(nemotron).getByRole('button', {
@@ -351,7 +411,8 @@ describe.each(['light', 'dark'] as const)('Downloads, %s theme', (theme) => {
 
       // Remove and Cancel form one column of equal controls.
       const actions = rows.map(
-        (row) => row.querySelector('td:last-child button') as HTMLElement
+        (row) =>
+          row.querySelector('td:last-child button:last-child') as HTMLElement
       )
       expectSameWidth(actions)
       const lefts = actions.map((button) =>

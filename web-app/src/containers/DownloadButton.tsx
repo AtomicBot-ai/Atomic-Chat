@@ -6,7 +6,6 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n'
 import {
   isDownloadCancellationError,
-  markDownloadCancellationRequested,
   wasDownloadCancellationRequested,
 } from '@/lib/downloadCancellation'
 import { extractModelName } from '@/lib/models'
@@ -200,10 +199,8 @@ export function DownloadButtonPlaceholder({
   }
 
   const handleCancelDownload = useCallback(() => {
-    markDownloadCancellationRequested(modelId)
-    markResumableDownload(modelId)
-    void serviceHub.models().abortDownload(modelId)
-  }, [modelId, markResumableDownload, serviceHub])
+    useDownloadStore.getState().requestControl('cancel', { id: modelId, name: modelId })
+  }, [modelId])
 
   if ((model.quants?.length ?? 0) === 0) {
     return (

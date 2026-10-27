@@ -265,6 +265,7 @@ pub fn run() {
         // Download
         core::downloads::commands::download_files,
         core::downloads::commands::cancel_download_task,
+        core::downloads::discard::delete_unfinished_model_download,
         core::downloads::commands::test_proxy_connection,
         core::downloads::commands::get_download_free_space,
         // Custom updater commands (desktop only)
@@ -451,6 +452,7 @@ pub fn run() {
         // Download
         core::downloads::commands::download_files,
         core::downloads::commands::cancel_download_task,
+        core::downloads::discard::delete_unfinished_model_download,
         core::downloads::commands::test_proxy_connection,
         core::downloads::commands::get_download_free_space,
         // HTTP (bypasses tauri_plugin_http fetch interception).

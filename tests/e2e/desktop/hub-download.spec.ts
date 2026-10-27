@@ -133,7 +133,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('cancelling a Hub download', () => {
     expect(left).toEqual([])
   })
 
-  it('stops the transfer, leaves no model behind, and lets the same model be downloaded again', async () => {
+  it('confirms cancellation, leaves no registered model, and lets the same model be downloaded again', async () => {
     await withArtifacts(session, async () => {
       const browser = session.app.browser
       const modelDir = join(session.profile.dataFolder, 'llamacpp', 'models', ...QUANT_ID.split('/'))
@@ -155,16 +155,20 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('cancelling a Hub download', () => {
       // Part of it has arrived; then the user changes their mind.
       await expect.poll(panelStatus, { timeout: 60_000, interval: 100 }).toMatch(/\b[1-9]\d?% · /)
       await browser.$('[role="region"][aria-label="Downloads"] button[aria-label="Cancel download"]').click()
+      // Cancellation now asks what to do with the partial files before stopping.
+      await browser.$('button=Cancel download and keep files').waitForDisplayed()
+      await browser.$('button=Cancel download and keep files').click()
 
       // The panel goes away, the Hub offers the model again, and no model was
       // registered: nothing the app would list, nothing a load could pick up.
       await expect.poll(panelStatus, { timeout: 30_000 }).toBe('')
-      await download.waitForDisplayed({ timeout: 30_000 })
+      // The confirmation replaces the active control; reacquire its new DOM node.
+      await browser.$('//button[normalize-space(.)="Download"]').waitForClickable({ timeout: 30_000 })
       await expect(stat(join(modelDir, 'model.yml'))).rejects.toThrow()
       expect(await pageShows(session, 'Download Complete', 3_000).then(() => true, () => false)).toBe(false)
 
       // Cancelling left nothing in the way of doing it properly.
-      await download.click()
+      await browser.$('//button[normalize-space(.)="Download"]').click()
       await pageShows(session, 'Download Complete', 120_000)
       expect((await stat(join(modelDir, 'model.gguf'))).size).toBe(hub.modelBytes)
       // The model's description is written a moment after the toast.
