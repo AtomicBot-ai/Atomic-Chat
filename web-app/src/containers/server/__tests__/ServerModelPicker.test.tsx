@@ -53,6 +53,13 @@ vi.mock('sonner', () => ({ toast: { error: toastError } }))
 
 // The embedding and decision stores talk to the core; the page only needs
 // what they offer, which model runs and how to change it.
+// The engine's own settings page is the Hub's; the dialog only hosts it.
+vi.mock('@/containers/engines/EngineDetail', () => ({
+  EngineDetail: (props: Record<string, unknown>) => (
+    <div data-testid="engine-detail">{JSON.stringify(props)}</div>
+  ),
+}))
+
 vi.mock('../useServedHelperModels', () => ({
   NO_HELPER_MODEL: 'none',
   useServedEmbeddingModels: () => helpers.embedding,
@@ -283,6 +290,54 @@ describe('Server → Engine & model', () => {
     await user.click(dropdown('api:model.engine'))
 
     expect(screen.getByRole('menu')).toHaveAttribute('data-side', 'bottom')
+  })
+
+  it('opens the chosen engine’s settings from the gear beside its name, not its list', async () => {
+    render(<ServerModelPicker />)
+    const name = getProviderTitle('llamacpp-upstream')
+    const gear = screen.getByRole('button', {
+      name: `api:model.configureEngine:${JSON.stringify({ name })}`,
+    })
+    // Only the engine has one: a model's settings are the model's own.
+    expect(
+      screen.getAllByRole('button', { name: /api:model\.configureEngine/ })
+    ).toHaveLength(1)
+
+    await user.click(gear)
+
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+    const dialog = screen.getByRole('dialog')
+    expect(dialog).toHaveTextContent(
+      `api:model.engineConfigTitle:${JSON.stringify({ name })}`
+    )
+    // The Hub's settings for this engine, without the on/off switch.
+    expect(
+      JSON.parse(within(dialog).getByTestId('engine-detail').textContent ?? '')
+    ).toEqual({
+      providerName: 'llamacpp-upstream',
+      embedded: true,
+      engineSwitch: false,
+    })
+
+    await user.click(
+      within(dialog).getByRole('button', { name: 'api:model.engineConfigDone' })
+    )
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    // Nothing on the page changed, so there is nothing to save.
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+
+  it('follows the engine choice with its gear', async () => {
+    render(<ServerModelPicker />)
+
+    await choose('api:model.engine', getProviderTitle('atomic-prism'))
+    await user.click(
+      screen.getByRole('button', { name: /api:model\.configureEngine/ })
+    )
+
+    expect(
+      JSON.parse(screen.getByTestId('engine-detail').textContent ?? '')
+    ).toMatchObject({ providerName: 'atomic-prism' })
   })
 
   it('replaces a model the new engine cannot run, and saves without a restart while stopped', async () => {

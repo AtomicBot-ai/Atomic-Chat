@@ -172,17 +172,22 @@ function EngineModelsSummary({
  * One local engine: its settings with the build controls, and on its own page
  * (`/settings/providers/$providerName`) also its models and helper models.
  * `embedded` is the settings alone, unfolded inside the engine's card on
- * Models Hub → Inference engines; the models stay on the page.
+ * Models Hub → Inference engines; the models stay on the page. The Server's
+ * engine configuration shows them too, without the on/off switch: the engine
+ * it opens on is the one the server runs.
  */
 export function EngineDetail({
   providerName,
   engineUpdate,
   embedded = false,
+  engineSwitch = true,
 }: {
   providerName: string
   /** The engine update banner's "Update" for a managed engine lands here. */
   engineUpdate?: boolean
   embedded?: boolean
+  /** Embedded only: whether the "Engine enabled" row is shown. */
+  engineSwitch?: boolean
 }) {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
@@ -1904,7 +1909,7 @@ export function EngineDetail({
     }
     updateProvider(providerName, { active })
   }
-  const engineSwitch = (
+  const engineSwitchControl = (
     <Switch
       aria-label={t('providers:overview.enable', {
         name: getProviderTitle(providerName),
@@ -1929,18 +1934,20 @@ export function EngineDetail({
         <div className={cn('w-full', !embedded && 'p-4 pt-0 overflow-y-auto')}>
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             {embedded ? (
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-sm font-medium">
-                  {t('providers:overview.engineEnabled')}
-                </span>
-                {engineSwitch}
-              </div>
+              engineSwitch && (
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-sm font-medium">
+                    {t('providers:overview.engineEnabled')}
+                  </span>
+                  {engineSwitchControl}
+                </div>
+              )
             ) : (
               <div className="flex items-center justify-between">
                 <h1 className="font-medium text-base">
                   {getProviderTitle(providerName)}
                 </h1>
-                {engineSwitch}
+                {engineSwitchControl}
               </div>
             )}
 

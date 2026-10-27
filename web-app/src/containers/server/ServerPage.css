@@ -327,8 +327,54 @@
     color: var(--muted-foreground);
     transition: transform 150ms ease;
   }
-  .sp-detail-picker[data-state='open'] > svg {
+  .sp-detail-picker[data-state='open'] > svg,
+  .sp-picker-with-configure:has(> .sp-picker-hit-area[data-state='open']) > svg {
     transform: rotate(180deg);
+  }
+  /* The field with a gear (`ServerDetailPicker`'s `configure`): the trigger
+   * fills the box from behind, the row on top lets clicks through to it, and
+   * only the gear takes its own. */
+  .sp-picker-with-configure {
+    position: relative;
+  }
+  .sp-picker-with-configure:has(> .sp-picker-hit-area:focus-visible) {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  .sp-picker-hit-area {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    outline: none;
+  }
+  .sp-picker-with-configure > :not(.sp-picker-hit-area) {
+    position: relative;
+    pointer-events: none;
+  }
+  .sp-picker-copy > .sp-picker-name {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 8px;
+  }
+  .sp-picker-configure {
+    position: relative;
+    display: inline-grid;
+    flex-shrink: 0;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    color: var(--muted-foreground);
+    pointer-events: auto;
+    transition: color 0.15s;
+  }
+  .sp-picker-configure:hover {
+    color: var(--foreground);
+  }
+  .sp-picker-configure:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
   }
   .sp-picker-logo {
     display: block;
@@ -353,7 +399,8 @@
     gap: 4px;
     text-align: left;
   }
-  .sp-picker-copy > strong {
+  .sp-picker-copy > strong,
+  .sp-picker-name > strong {
     color: var(--foreground);
     font-size: calc(var(--font-size-base) * 0.875);
     font-weight: 600;

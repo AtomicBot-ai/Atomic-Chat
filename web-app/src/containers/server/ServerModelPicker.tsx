@@ -29,6 +29,7 @@ import {
   ServerField,
   ServerSelect,
 } from './ServerPageParts'
+import { ServerEngineConfigDialog } from './ServerEngineConfigDialog'
 import {
   NO_HELPER_MODEL,
   type ServedHelperModels,
@@ -159,6 +160,8 @@ function modelChoice(
  * show what each choice is, as their rows do. Each opens on its own unless
  * the parent holds which one is open (`onOpenPickerChange`), as the page
  * does to open the one the tray asked for.
+ * The engine's gear opens its settings over the page
+ * (`ServerEngineConfigDialog`).
  */
 export function EngineModelFields({
   engines,
@@ -176,6 +179,7 @@ export function EngineModelFields({
   const { t } = useTranslation()
   const engine =
     engines.find((e) => e.provider === choice.provider) ?? engines[0]
+  const [configuring, setConfiguring] = useState<string | null>(null)
   const openProps = (picker: ServerPickerTarget) =>
     onOpenPickerChange
       ? {
@@ -187,9 +191,20 @@ export function EngineModelFields({
 
   return (
     <div className="sp-engine-model">
+      {configuring && (
+        <ServerEngineConfigDialog
+          key={configuring}
+          provider={configuring}
+          onClose={() => setConfiguring(null)}
+        />
+      )}
       <ServerDetailPicker
         {...openProps('engine')}
         label={t('api:model.engine')}
+        configure={{
+          label: t('api:model.configureEngine', { name: engine.title }),
+          onConfigure: () => setConfiguring(engine.provider),
+        }}
         value={engine.provider}
         choices={engines.map((e) => {
           const facts = ENGINE_FACTS[e.provider]
