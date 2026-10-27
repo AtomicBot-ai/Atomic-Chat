@@ -9,6 +9,7 @@ import { useOnboardingStore } from '@/stores/onboarding-store'
 
 import { AtomicMines } from './AtomicMines'
 import type { StepProps } from './types'
+import { EMAIL_REMINDER_OFFERED } from './waitAvailability'
 import '../wait.css'
 
 /**
@@ -20,7 +21,8 @@ import '../wait.css'
  *
  * The reminder is the prototype's: the address is neither kept nor sent yet
  * (ADR 2026-10-26-show-a-wait-screen-while-the-first-model-downloads), only
- * that one was asked for is reported.
+ * that one was asked for is reported, so the form stays hidden until it is
+ * delivered (`EMAIL_REMINDER_OFFERED`).
  */
 export function WaitStep({ handOff }: StepProps) {
   const { t } = useTranslation()
@@ -69,7 +71,7 @@ export function WaitStep({ handOff }: StepProps) {
           </button>
         )}
       </div>
-      {!ready && (
+      {!ready && EMAIL_REMINDER_OFFERED && (
         <form
           className="ob-email"
           onSubmit={(event) => {

@@ -40,6 +40,14 @@ vi.mock('@/hooks/useServiceHub', () => ({ useServiceHub: () => ({}) }))
 vi.mock('../useStepContext', () => ({
   useStepContext: () => mocks.context,
 }))
+// The email reminder ships switched off until it is delivered; the tests of
+// the form turn it on.
+const reminder = vi.hoisted(() => ({ offered: false }))
+vi.mock('../steps/waitAvailability', () => ({
+  get EMAIL_REMINDER_OFFERED() {
+    return reminder.offered
+  },
+}))
 // The model list has screens and tests of its own (ModelStep.test).
 vi.mock('../steps/ModelStep', () => ({
   ModelStep: () => <h1 tabIndex={-1}>model step</h1>,
@@ -101,6 +109,7 @@ describe('the wait screen', () => {
     localStorage.clear()
     useOnboardingStore.getState().reset()
     setInstalled(false)
+    reminder.offered = false
   })
 
   it('follows everyday use while the model downloads, under the purpose counter', () => {
@@ -164,7 +173,23 @@ describe('the wait screen', () => {
     })
   })
 
+  it('leaves the email reminder out while nothing delivers it', () => {
+    startAt('wait', [QWEN_JOB])
+    render(<Onboarding />)
+
+    expect(
+      screen.getByRole('heading', { name: 'onboarding-wait:title' })
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByLabelText('onboarding-wait:email.label')
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'onboarding-wait:playGame' })
+    ).toBeInTheDocument()
+  })
+
   it('takes an email for a reminder without keeping or reporting the address', () => {
+    reminder.offered = true
     startAt('wait', [QWEN_JOB])
     render(<Onboarding />)
     const field = screen.getByLabelText('onboarding-wait:email.label')
@@ -205,6 +230,7 @@ describe('the wait screen', () => {
   })
 
   it('turns into the ready screen once the model can answer, keeping a game under way', () => {
+    reminder.offered = true
     startAt('wait', [QWEN_JOB])
     render(<Onboarding />)
     click('onboarding-wait:playGame')
