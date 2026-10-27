@@ -94,6 +94,9 @@ async function main() {
       verifyBinaryVersion(output)
       console.log(`Using local core build: ${local} -> ${output}`)
     }
+    // Stamp only after both local binaries pass the pinned-version checks,
+    // matching the release-download path below.
+    writeFileSync(path.join(BIN_DIR, 'atomic-chat-core-version.txt'), `${VERSION}\n`)
     return
   }
 

@@ -70,7 +70,7 @@ test('the CLI in resources/bin is the core build it claims to be', () => {
   assert.match(version, /^\d+\.\d+\.\d+/, 'jan-cli --version should print a semantic version')
   const pinned = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).atomicCore?.version
   const stamp = join(ROOT, 'src-tauri/resources/bin/atomic-chat-core-version.txt')
-  // The stamp only exists after `yarn download:core`; a local build (ATOMIC_CORE_LOCAL) has none.
+  // Release downloads and verified local overrides both record the pinned version.
   if (pinned && existsSync(stamp)) {
     assert.equal(readFileSync(stamp, 'utf8').trim(), pinned, 'resources/bin holds a different core version')
     assert.equal(version, pinned, 'jan-cli reports a different version than the pinned core')
