@@ -10,13 +10,18 @@ import { CORE_REPO, startHubFixture, type HubFixture } from '../harness/fixtures
 import { proxySeed } from '../harness/backend-mirror.js'
 import { endSession, restartApp, startSession, withArtifacts, type Session } from '../harness/session.js'
 import { openSection, openSidebarRow } from '../harness/navigation.js'
-import { waitForChat, pageShows } from '../harness/chat.js'
+import { waitForChatOrSkipSetup as waitForChat, pageShows } from '../harness/chat.js'
 import { ARTIFACTS_ROOT } from '../harness/artifacts.js'
 
 const MODEL = 'e2e/recovery-fixture-GGUF'
 const ID = 'e2e/recovery-fixture-Q4_K_M'
 const TITLE = 'E2E Recovery Fixture'
 const SOURCE = 'https://huggingface.co/e2e/recovery-fixture/resolve/main/model-Q4_K_M.gguf'
+const ALIASES = [1, 2, 3].map((index) => ({
+  modelName: `e2e/recovery-alias-${index}-GGUF`,
+  quantId: `e2e/recovery-alias-${index}-Q4_K_M`,
+  title: `E2E Recovery Alias ${index}`,
+}))
 const PANEL = '[role="region"][aria-label="Downloads"]'
 const sha = (value: Buffer) => createHash('sha256').update(value).digest('hex')
 
@@ -34,6 +39,9 @@ async function mirrorDownload() {
       method: req.method, headers: req.headers,
     }, (reply) => {
       res.writeHead(reply.statusCode ?? 500, reply.headers)
+      // Forward headers even while the fixture deliberately holds the body;
+      // the downloader validates its first ranged response before adding peers.
+      res.flushHeaders()
       reply.pipe(res)
     })
     upstream.on('error', () => res.destroy())
@@ -52,14 +60,16 @@ async function mirrorDownload() {
     const upstream = connect(port, '127.0.0.1', () => {
       socket.write('HTTP/1.1 200 Connection Established\r\n\r\n')
       if (head.length) upstream.write(head)
-      socket.pipe(upstream); upstream.pipe(socket)
+      socket.pipe(upstream)
+      upstream.pipe(socket)
     })
     upstream.on('error', () => socket.destroy())
     socket.on('error', () => upstream.destroy())
     socket.on('close', () => upstream.destroy())
   })
   for (const server of [origin, proxy]) server.on('connection', (socket: Socket) => {
-    sockets.add(socket); socket.once('close', () => sockets.delete(socket))
+    sockets.add(socket)
+    socket.once('close', () => sockets.delete(socket))
   })
   const proxyPort = await listen(proxy)
   return {
@@ -78,7 +88,7 @@ describe('real app download recovery and guarded deletion', () => {
   const evidence = join(ARTIFACTS_ROOT, 'download-recovery-success')
   const modelDir = () => join(session.profile.dataFolder, 'llamacpp/models', ID)
   const status = () => session.app.browser.execute((selector) =>
-    (document.querySelector(selector) as HTMLElement | null)?.innerText ?? '', PANEL)
+    ((document.querySelector(selector) as HTMLElement | null)?.innerText ?? '').replace(/\s+/g, ' '), PANEL)
   const rows = () => session.app.browser.$$(`${PANEL} li`).length
   const payload = async () => {
     const names = await readdir(modelDir())
@@ -91,11 +101,13 @@ describe('real app download recovery and guarded deletion', () => {
     await new Promise((resolve) => setTimeout(resolve, 350))
     return session.app.browser.saveScreenshot(join(evidence, `${name}.png`))
   }
-  async function openHub() {
+  async function openHub(title = TITLE) {
     const browser = session.app.browser
     await openSection(browser, 'models')
-    const row = browser.$(`//button[@aria-expanded="false"][.//*[normalize-space(text())="${TITLE}"]]`)
-    await browser.$(`//*[normalize-space(text())="${TITLE}"]`).waitForDisplayed({ timeout: 60_000 })
+    const row = browser.$(
+      `//button[@aria-expanded="false"][.//*[normalize-space(text())="${title}"]]`
+    )
+    await browser.$(`//*[normalize-space(text())="${title}"]`).waitForDisplayed({ timeout: 60_000 })
     if (await row.isExisting()) await row.click()
   }
   async function startPartial(probeVisibility = false) {
@@ -103,7 +115,7 @@ describe('real app download recovery and guarded deletion', () => {
     const button = session.app.browser.$('//button[normalize-space(.)="Download"]')
     await button.waitForClickable({ timeout: 30_000 })
     await button.click()
-    await expect.poll(status, { timeout: 60_000 }).toMatch(/\b[1-9]\d?% · /)
+    await expect.poll(status, { timeout: 60_000 }).toMatch(/\b[1-9]\d?%/)
     if (probeVisibility) {
       // Reproduce an early/late terminal notification while native I/O still
       // runs. Wait for React to paint, not for another progress update to hide
@@ -126,10 +138,12 @@ describe('real app download recovery and guarded deletion', () => {
   beforeAll(async () => {
     await mkdir(evidence, { recursive: true })
     hub = await startHubFixture({ modelName: MODEL, quantId: ID, title: TITLE,
-      modelBytes: 64 * 1024 * 1024, chunkDelayMs: 300, modelUrl: SOURCE, sizeLabel: '0.06 GB' })
+      modelBytes: 128 * 1024 * 1024, chunkDelayMs: 300, modelUrl: SOURCE, sizeLabel: '0.13 GB',
+      aliases: ALIASES,
+    })
     mirror = await mirrorDownload()
-    session = await startSession('download-recovery', { webviewSeed: proxySeed(mirror.url) })
-    await session.app.browser.$('button=Skip').click()
+    session = await startSession('download-recovery', { webviewSeed: proxySeed(mirror.url),
+    })
     await waitForChat(session)
   })
   afterAll(async () => {
@@ -139,7 +153,7 @@ describe('real app download recovery and guarded deletion', () => {
     expect(left).toEqual([])
   })
 
-  it('restores one paused row after a full restart and reopens the same Hub request without another transfer', async () => {
+  it('restores one paused row after a full restart and coalesces three real Hub download clicks', async () => {
     await withArtifacts(session, async () => {
       await startPartial(true)
       const before = await payload()
@@ -157,21 +171,81 @@ describe('real app download recovery and guarded deletion', () => {
       const getCount = () => hub.requests().filter((r) => r.path === '/model.gguf' && r.method === 'GET').length
       const requests = getCount()
       await openHub()
-      const show = session.app.browser.$('button[aria-label="Show download progress"]')
+      const show = session.app.browser.$(
+        `[data-model-row="${MODEL}"] button[aria-label="Resume download"]`
+      )
       await show.waitForClickable({ timeout: 30_000 })
-      for (let at = 0; at < 3; at++) await show.click()
       expect(await rows()).toBe(1)
       expect(getCount()).toBe(requests)
       expect(sha(await payload())).toBe(sha(before))
       await screenshot('02-restored-single-row')
-      await writeFile(join(evidence, 'restoration.json'), JSON.stringify({ pausedBytes: transferred,
-        pausedSha256: sha(before), rowsAfterRestart: 1, extraGetsAfterRepeatedSelection: 0 }, null, 2))
-      await openSection(session.app.browser, 'models')
-      await openSidebarRow(session.app.browser, 'Downloads')
-      await session.app.browser.$('[data-testid="downloads-row"] button[aria-label="Resume download"]').click()
-      await session.app.browser.$('[data-testid="downloads-row"] button[aria-label="Pause download"]').waitForClickable()
-      await session.app.browser.$('[data-testid="downloads-row"] button[aria-label="Pause download"]').click()
-      await session.app.browser.$('[data-testid="downloads-row"] button[aria-label="Resume download"]').waitForDisplayed()
+
+      // Resume the original once, holding all body bytes while its existing
+      // ranges reconnect. New aliases still offer Download, so real clicks
+      // reach the public coordinator instead of merely opening the same card.
+      const pendingRanges = manifest.segments.filter(
+        ([, written, end]) => written! < end!
+      ).length
+      hub.holdBody(true)
+      try {
+        await show.click()
+        await expect.poll(getCount).toBe(requests + pendingRanges)
+        const resumedRequests = getCount()
+        for (const alias of ALIASES) {
+          await openHub(alias.title)
+          const duplicate = session.app.browser.$(
+            `[data-model-row="${alias.modelName}"] button[title="Download model"]`
+          )
+          await duplicate.waitForClickable()
+          await duplicate.click()
+          await pageShows(session, 'This model is already downloading.', 15_000)
+          expect(await rows()).toBe(1)
+          expect(getCount()).toBe(resumedRequests)
+          expect(
+            await stat(
+              join(session.profile.dataFolder, 'llamacpp/models', alias.quantId)
+            ).then(
+              () => true,
+              () => false
+            )
+          ).toBe(false)
+        }
+        expect(sha(await payload())).toBe(sha(before))
+        await screenshot('02a-three-real-duplicate-downloads')
+        await writeFile(join(evidence, 'restoration.json'), JSON.stringify({
+          pausedBytes: transferred,
+          pausedSha256: sha(before),
+          rowsAfterRestart: 1,
+          duplicateDownloadClicks: ALIASES.length,
+          resumeGetRequests: pendingRanges,
+          extraGetsAfterDuplicateClicks: getCount() - resumedRequests,
+          aliasDestinationsCreated: 0,
+        }, null, 2))
+        await openSection(session.app.browser, 'models')
+        await openSidebarRow(session.app.browser, 'Downloads')
+        await session.app.browser.$(
+          '[data-testid="downloads-row"] button[aria-label="Pause download"]'
+        ).click()
+        await session.app.browser.$(
+          '[data-testid="downloads-row"] button[aria-label="Resume download"]'
+        ).waitForDisplayed()
+      } finally {
+        // Leave the original paused even when a duplicate assertion fails;
+        // otherwise releasing the barrier would mutate the next case's input.
+        try {
+          const pause = session.app.browser.$(
+            `${PANEL} button[aria-label="Pause download"]`
+          )
+          if (await pause.isDisplayed()) {
+            await pause.click()
+            await session.app.browser
+              .$(`${PANEL} button[aria-label="Resume download"]`)
+              .waitForDisplayed()
+          }
+        } finally {
+          hub.holdBody(false)
+        }
+      }
       await new Promise((resolve) => setTimeout(resolve, 1000))
       expect(await rows()).toBe(1)
       await screenshot('02b-downloads-page-paused')
@@ -212,7 +286,6 @@ describe('real app download recovery and guarded deletion', () => {
     expect(await endSession(session)).toEqual([])
     session = await startSession('download-recovery-delete', { webviewSeed: proxySeed(mirror.url) })
     await withArtifacts(session, async () => {
-      await session.app.browser.$('button=Skip').click()
       await waitForChat(session)
       const neighbour = join(session.profile.dataFolder, 'llamacpp/models/e2e/untouched')
       await mkdir(neighbour, { recursive: true })

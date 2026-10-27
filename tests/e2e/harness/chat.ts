@@ -61,6 +61,22 @@ export async function waitForChat(session: Session): Promise<void> {
   await session.app.browser.$(CHAT_INPUT).waitForDisplayed({ timeout: 60_000 })
 }
 
+/** A download scenario may start before model discovery decides whether setup is needed. */
+export async function waitForChatOrSkipSetup(session: Session): Promise<void> {
+  await session.app.browser.waitUntil(
+    async () => {
+      if (await session.app.browser.$(CHAT_INPUT).isDisplayed()) return true
+      const skip = session.app.browser.$(SKIP_ONBOARDING)
+      if (await skip.isDisplayed()) await skip.click()
+      return false
+    },
+    {
+      timeout: 60_000,
+      timeoutMsg: 'the download scenario did not reach the chat after setup',
+    }
+  )
+}
+
 /**
  * Picks a model in the composer's picker. With nothing selected the picker
  * opens straight on the model list; with a model selected it opens on a summary

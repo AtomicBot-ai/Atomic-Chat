@@ -12,7 +12,7 @@ import { readdir, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { existsSync } from 'node:fs'
-import { coreSessions, pageShows, send, waitForChat, skipOnboarding } from '../harness/chat.js'
+import { coreSessions, pageShows, send, waitForChatOrSkipSetup as waitForChat } from '../harness/chat.js'
 import { installFakeBackend, startHubFixture, type HubFixture } from '../harness/fixtures.js'
 import { CAN_RUN_FAKE_BACKEND } from '../harness/platform.js'
 import { endSession, startSession, withArtifacts, type Session } from '../harness/session.js'
@@ -51,7 +51,6 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('downloading a model from the Hub', () =>
       const dataFolder = session.profile.dataFolder
 
       // No model yet, so the app opens on onboarding; the Hub is the way in here.
-      await skipOnboarding(session)
       await waitForChat(session)
       await openSection(browser, 'models')
 
@@ -83,14 +82,17 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('downloading a model from the Hub', () =>
           await new Promise((r) => setTimeout(r, 100))
         }
       })()
-      await download.click()
-      await pageShows(session, 'Download Complete', 120_000)
-      watching = false
-      await watcher
+      try {
+        await download.click()
+        await pageShows(session, 'Download Complete', 120_000)
+      } finally {
+        watching = false
+        await watcher
+      }
 
       // It was seen on its way — a share of the real total, not only the end —
       // and while it ran the user could pause or cancel it.
-      const inFlight = seen.filter((s) => /\b([1-9]\d?)% · \d+ \/ 32 MB/.test(s.status))
+      const inFlight = seen.filter((s) => /\b([1-9]\d?)%/.test(s.status) && /\d+ \/ 32 MB/.test(s.status))
       expect(inFlight.length, `the panel showed: ${JSON.stringify([...new Set(seen.map((s) => s.status))])}`).toBeGreaterThan(0)
       expect(inFlight[0]!.status).toContain(QUANT_ID.split('/')[1])
       expect(inFlight[0]!.controls).toEqual(expect.arrayContaining(['Pause download', 'Cancel download']))
@@ -142,7 +144,6 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('cancelling a Hub download', () => {
           () => (document.querySelector('[role="region"][aria-label="Downloads"]') as HTMLElement | null)?.innerText ?? ''
         )
 
-      await skipOnboarding(session)
       await waitForChat(session)
       await openSection(browser, 'models')
       const card = browser.$(`//*[normalize-space(text())="${TITLE}"]`)
@@ -153,7 +154,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('cancelling a Hub download', () => {
       await download.click()
 
       // Part of it has arrived; then the user changes their mind.
-      await expect.poll(panelStatus, { timeout: 60_000, interval: 100 }).toMatch(/\b[1-9]\d?% · /)
+      await expect.poll(panelStatus, { timeout: 60_000, interval: 100 }).toMatch(/\b[1-9]\d?%/)
       await browser.$('[role="region"][aria-label="Downloads"] button[aria-label="Cancel download"]').click()
       // Cancellation now asks what to do with the partial files before stopping.
       await browser.$('button=Cancel download and keep files').waitForDisplayed()
@@ -210,7 +211,6 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('pausing a Hub download', () => {
         return sizes.reduce((sum, size) => sum + size, 0)
       }
 
-      await skipOnboarding(session)
       await waitForChat(session)
       await openSection(browser, 'models')
       const card = browser.$(`//*[normalize-space(text())="${TITLE}"]`)
@@ -220,7 +220,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('pausing a Hub download', () => {
       await download.waitForClickable({ timeout: 30_000 })
       await download.click()
 
-      await expect.poll(panelStatus, { timeout: 60_000, interval: 100 }).toMatch(/\b[1-9]\d?% · /)
+      await expect.poll(panelStatus, { timeout: 60_000, interval: 100 }).toMatch(/\b[1-9]\d?%/)
       await browser.$(`${panel} button[aria-label="Pause download"]`).click()
 
       // The panel says so and offers to go on; what has arrived stays, and no
@@ -273,7 +273,8 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a Hub download the server refuses', () =
       `//button[@aria-expanded="false"][.//*[normalize-space(text())="${REFUSED_TITLE}"]]`
     )
     if (await closedRow.isExisting()) await closedRow.click()
-    const download = browser.$('//button[normalize-space(.)="Download"]')
+    // Failed requests remain paused; use the retained request's Resume action.
+    const download = browser.$(`[data-model-row="${REFUSED_MODEL_NAME}"] button[title="Download model"], [data-model-row="${REFUSED_MODEL_NAME}"] button[aria-label="Resume download"]`)
     await download.waitForClickable({ timeout: 30_000 })
     await download.click()
   }
@@ -284,7 +285,6 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a Hub download the server refuses', () =
     session = await startSession('download-failures', {
       prepare: async (profile) => installFakeBackend(profile),
     })
-    await skipOnboarding(session)
     await waitForChat(session)
   })
 
@@ -369,7 +369,6 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a Hub download that has to retry', () =>
     await withArtifacts(session, async () => {
       const browser = session.app.browser
       const dataFolder = session.profile.dataFolder
-      await skipOnboarding(session)
       await waitForChat(session)
       await openSection(browser, 'models')
       const card = browser.$(`//*[normalize-space(text())="${TITLE}"]`)
@@ -392,10 +391,13 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a Hub download that has to retry', () =>
           await new Promise((r) => setTimeout(r, 100))
         }
       })()
-      await download.click()
-      await pageShows(session, 'Download Complete', 180_000)
-      watching = false
-      await watcher
+      try {
+        await download.click()
+        await pageShows(session, 'Download Complete', 180_000)
+      } finally {
+        watching = false
+        await watcher
+      }
 
       // The retry was said, as its own line, not as progress going backwards.
       const retrying = statuses.filter((status) => /Connection failed, retrying \(\d+\/\d+\)/.test(status))

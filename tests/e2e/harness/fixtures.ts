@@ -285,6 +285,8 @@ export interface HubFixture {
   failWith: (status: number | null) => void
   /** Cut the connection once this many bytes have been sent; `null` serves the file whole. */
   abortAfter: (bytes: number | null) => void
+  /** Keep GET connections open without sending bytes, to observe duplicate requests deterministically. */
+  holdBody: (held: boolean) => void
   stop: () => Promise<void>
 }
 
@@ -313,6 +315,8 @@ export async function startHubFixture(options: {
   sizeLabel?: string
   /** Answer the first N requests for the file with a 503, the way a flaky mirror does. */
   failFirst?: number
+  /** Separate Hub entries for the exact same source, exercising canonical request reuse through real buttons. */
+  aliases?: Array<{ modelName: string; quantId: string; title: string }>
 }): Promise<HubFixture> {
   let failuresLeft = options.failFirst ?? 0
   const modelBytes = options.modelBytes ?? 32 * 1024 * 1024
@@ -326,37 +330,47 @@ export async function startHubFixture(options: {
   for (let at = header.length; at + 4 <= modelBytes; at += 4) model.writeUInt32LE(at, at)
   header.copy(model)
 
+  const entries = [
+    {
+      modelName: options.modelName,
+      quantId: options.quantId,
+      title: options.title,
+    },
+    ...(options.aliases ?? []),
+  ]
   const catalog = {
     manifest_version: 1,
     schema_version: 1,
     updated_at: '2026-01-01T00:00:00Z',
-    models: [
-      {
-        model_name: options.modelName,
-        developer: 'e2e',
-        description: 'A fixture model served by the desktop e2e suite.',
-        downloads: 0,
-        num_quants: 1,
-        quants: [
-          { model_id: options.quantId, path: options.modelUrl ?? `${origin}/model.gguf`, file_size: options.sizeLabel ?? '0.03 GB' },
-        ],
-        num_mmproj: 0,
-        mmproj_models: [],
-        num_safetensors: 0,
-        safetensors_files: [],
-        is_mlx: false,
-      },
-    ],
+    models: entries.map((entry) => ({
+      model_name: entry.modelName,
+      developer: 'e2e',
+      description: 'A fixture model served by the desktop e2e suite.',
+      downloads: 0,
+      num_quants: 1,
+      quants: [
+        { model_id: entry.quantId, path: options.modelUrl ?? `${origin}/model.gguf`, file_size: options.sizeLabel ?? '0.03 GB' },
+      ],
+      num_mmproj: 0,
+      mmproj_models: [],
+      num_safetensors: 0,
+      safetensors_files: [],
+      is_mlx: false,
+    })),
   }
   const picks = {
     schema_version: 1,
     updated_at: '2026-01-01T00:00:00Z',
-    picks: [{ model_name: options.modelName, title: options.title, summary: 'Fixture pick.', format: 'gguf', order: 1, active: true }],
+    picks: entries.map((entry, index) => ({
+      model_name: entry.modelName, title: entry.title, summary: 'Fixture pick.',
+      format: 'gguf', order: index + 1, active: true,
+    })),
   }
 
   const seen: HubFixtureRequest[] = []
   let failStatus: number | null = null
   let abortAfterBytes: number | null = null
+  let bodyHeld = false
   const server = createServer((req, res) => {
     const path = (req.url ?? '').split('?')[0] ?? ''
     seen.push({
@@ -376,31 +390,38 @@ export async function startHubFixture(options: {
       return res.end(JSON.stringify({ error: `fixture refused with ${failStatus}` }))
     }
     if (path === '/model.gguf') {
-      if (failuresLeft > 0) {
+      if (req.method === 'GET' && failuresLeft > 0) {
         failuresLeft -= 1
         res.writeHead(503, { 'content-type': 'text/plain', 'access-control-allow-origin': '*' })
         return res.end('try again')
       }
-      const range = /^bytes=(\d+)-/.exec(req.headers.range ?? '')
+      const range = /^bytes=(\d+)-(\d*)$/.exec(req.headers.range ?? '')
       const from = range ? Number(range[1]) : 0
+      // Honour the end as well: parallel resume connections request bounded
+      // ranges. Sending the file tail would trigger a protocol fallback.
+      const until = range?.[2]
+        ? Math.min(Number(range[2]) + 1, model.length)
+        : model.length
       res.writeHead(range ? 206 : 200, {
         'content-type': 'application/octet-stream',
-        'content-length': String(model.length - from),
+        'content-length': String(until - from),
         'accept-ranges': 'bytes',
-        ...(range ? { 'content-range': `bytes ${from}-${model.length - 1}/${model.length}` } : {}),
+        ...(range ? { 'content-range': `bytes ${from}-${until - 1}/${model.length}` } : {}),
       })
       if (req.method === 'HEAD') return res.end()
+      res.flushHeaders()
       // A megabyte every 150 ms: about five seconds for the default size, so
       // each of the app's 10 MB progress reports stays on screen long enough to
       // be read.
       let offset = from
       const pump = () => {
         if (res.destroyed) return
+        if (bodyHeld) return void setTimeout(pump, 50)
         // A transfer that dies with the promised length unmet: what a dropped connection looks
         // like from the app's side, and the only way to reach the retry ladder from a fixture.
         if (abortAfterBytes !== null && offset - from >= abortAfterBytes) return res.destroy()
-        if (offset >= model.length) return res.end()
-        const end = Math.min(offset + 1024 * 1024, model.length)
+        if (offset >= until) return res.end()
+        const end = Math.min(offset + 1024 * 1024, until)
         res.write(model.subarray(offset, end))
         offset = end
         setTimeout(pump, options.chunkDelayMs ?? 150)
@@ -426,6 +447,9 @@ export async function startHubFixture(options: {
     },
     abortAfter: (bytes) => {
       abortAfterBytes = bytes
+    },
+    holdBody: (held) => {
+      bodyHeld = held
     },
     stop: async () => {
       server.closeAllConnections()
