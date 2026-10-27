@@ -75,11 +75,13 @@
     font-size: calc(var(--font-size-base) * 0.8125);
     line-height: 1.7;
   }
+  /* The gap above it holds when the card has no body (the purpose step). */
   .ob-choice-action {
     display: flex;
     align-items: center;
     gap: 8px;
     margin-top: auto;
+    padding-top: 24px;
     color: var(--ob-choice-action);
     font-size: calc(var(--font-size-base) * 0.75);
   }

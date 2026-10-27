@@ -1,4 +1,4 @@
-import { ArrowRight, Check, Download, ImageIcon, Video } from 'lucide-react'
+import { ArrowRight, Check, Download } from 'lucide-react'
 
 import { FamilyLogoMark } from '@/containers/ModelLogo'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -8,6 +8,7 @@ import type { OnboardingJob } from '@/lib/onboarding/jobs'
 import { cn } from '@/lib/utils'
 import { useOnboardingStore } from '@/stores/onboarding-store'
 
+import { MediaPreview } from './MediaPreview'
 import { useMediaCards, type MediaCard } from './mediaAvailability'
 import type { StepProps } from './types'
 import '../media.css'
@@ -76,23 +77,13 @@ export function MediaStep({ next }: StepProps) {
           const job = jobs.find((candidate) => candidate.key === card.family)
           const downloaded = card.downloaded || job?.phase === 'done'
           const titleId = `ob-media-${card.family}`
-          const Icon = card.modality === 'video' ? Video : ImageIcon
           return (
             <article
               key={card.family}
               className={cn(job && 'is-queued')}
               aria-labelledby={titleId}
             >
-              <div
-                className={cn(
-                  'ob-media-art',
-                  card.modality === 'video' && 'is-video'
-                )}
-                aria-hidden="true"
-              >
-                <Icon size={36} />
-                <span>{t(`onboarding-media:art.${card.modality}`)}</span>
-              </div>
+              <MediaPreview modality={card.modality} />
               <div className="ob-media-title">
                 {card.logoSrc && (
                   <span className="ob-media-logo" aria-hidden="true">

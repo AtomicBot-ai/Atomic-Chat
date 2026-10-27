@@ -41,14 +41,12 @@ export function PurposeStep({ goTo, handOff }: StepProps) {
         <ChoiceCard
           icon={<MessageCircle aria-hidden="true" />}
           title={t('onboarding-server:purpose.everyday')}
-          body={t('onboarding-server:purpose.everydayBody')}
           action={t('onboarding-server:purpose.everydayAction')}
           onClick={() => choose('everyday')}
         />
         <ChoiceCard
           icon={<Server aria-hidden="true" />}
           title={t('onboarding-server:purpose.power')}
-          body={t('onboarding-server:purpose.powerBody')}
           action={t('onboarding-server:purpose.powerAction')}
           onClick={() => choose('power_tools')}
         />
