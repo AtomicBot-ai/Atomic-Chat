@@ -6,6 +6,7 @@ import {
   FileTooLargeError,
   READ_FILE_CHUNK_BYTES,
   readFileBytes,
+  readFileHead,
 } from '../readFileBytes'
 import { TauriCoreService } from '@/services/core/tauri'
 import { seedServiceHub } from '@/test/service-hub'
@@ -123,5 +124,40 @@ describe('readFileBytes', () => {
       /not a file/
     )
     expect(calls).toHaveLength(0)
+  })
+})
+
+describe('readFileHead', () => {
+  it('reads only the head of a file longer than the limit', async () => {
+    const { bytes, size, truncated } = await readFileHead(
+      '/docs/big.log',
+      3 * MiB
+    )
+
+    expect(size).toBe(5 * MiB)
+    expect(truncated).toBe(true)
+    expect(calls.map((c) => [c.offset, c.length])).toEqual([
+      [0, 2 * MiB],
+      [2 * MiB, 1 * MiB],
+    ])
+    expect(sameBytes(bytes, file.subarray(0, 3 * MiB))).toBe(true)
+  })
+
+  it('reads a short file whole and says so', async () => {
+    fillFile(1000)
+
+    const { bytes, truncated } = await readFileHead('/docs/notes.md', 3 * MiB)
+
+    expect(truncated).toBe(false)
+    expect(sameBytes(bytes, file)).toBe(true)
+  })
+
+  it('returns what it got when the file shrinks under it', async () => {
+    mockIPC(() => new ArrayBuffer(0))
+
+    const { bytes, truncated } = await readFileHead('/docs/notes.md', 3 * MiB)
+
+    expect(bytes.byteLength).toBe(0)
+    expect(truncated).toBe(true)
   })
 })

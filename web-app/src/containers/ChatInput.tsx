@@ -112,8 +112,14 @@ import {
   createImageAttachment,
   createDocumentAttachment,
   createAudioAttachment,
+  createVideoAttachment,
 } from '@/types/attachment'
 import { AttachmentChip } from '@/containers/AttachmentChip'
+import {
+  AttachmentPreviewDialog,
+  type AttachmentPreviewSource,
+} from '@/containers/AttachmentPreviewDialog'
+import { attachmentPreviewMediaType } from '@/lib/attachment-preview'
 import { FileTooLargeError } from '@/lib/readFileBytes'
 import { readImageAttachmentFromPath } from '@/containers/chatInput/imageFromPath'
 import {
@@ -127,6 +133,7 @@ import {
   DOCUMENT_EXTENSIONS,
   IMAGE_EXTENSIONS,
   AUDIO_EXTENSIONS,
+  VIDEO_EXTENSIONS,
   classifyDroppedPaths,
 } from '@/containers/chatInput/classifyDroppedPaths'
 import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionDialog'
@@ -173,6 +180,7 @@ import type { AgentSkill } from '@/services/agent/skills'
 const ATTACHABLE_EXTENSIONS = [
   ...IMAGE_EXTENSIONS,
   ...AUDIO_EXTENSIONS,
+  ...VIDEO_EXTENSIONS,
   ...DOCUMENT_EXTENSIONS,
 ]
 
@@ -496,6 +504,8 @@ const ChatInput = memo(function ChatInput({
   const [dropdownToolsAvailable, setDropdownToolsAvailable] = useState(false)
   const [tooltipToolsAvailable, setTooltipToolsAvailable] = useState(false)
   const [isDragOver, setIsDragOver] = useState(false)
+  const [previewSource, setPreviewSource] =
+    useState<AttachmentPreviewSource | null>(null)
   // The Send slot clips its button only while it grows or shrinks; settled,
   // the button's focus ring must show whole.
   const [sendControlMoving, setSendControlMoving] = useState(false)
@@ -1147,7 +1157,7 @@ const ChatInput = memo(function ChatInput({
       // store can be cleared immediately while we still know what to forward
       // to the new thread page.
       const docsSnapshot = attachments
-        .filter((att) => att.type === 'document')
+        .filter((att) => att.type === 'document' || att.type === 'video')
         .map((att) => ({ ...att }))
 
       const messagePayload = {
@@ -2500,6 +2510,50 @@ const ChatInput = memo(function ChatInput({
     await commitAudioAttachments(outcome)
   }
 
+  // Video is only referenced by path: nothing is read, parsed or indexed, so
+  // the document size limit and model checks do not apply.
+  const ingestVideoPaths = async (paths: readonly string[]) => {
+    const prepared: Attachment[] = []
+    for (const p of paths) {
+      const name = p.split(/[\\/]/).pop() || p
+      const fileType = name.split('.').pop()?.toLowerCase()
+      let size: number | undefined
+      try {
+        const stat = await fs.fileStat(p)
+        size = stat?.size ? Number(stat.size) : undefined
+      } catch (e) {
+        console.warn('Failed to read file size for', p, e)
+      }
+      prepared.push(
+        createVideoAttachment({
+          name,
+          path: p,
+          fileType,
+          mimeType: attachmentPreviewMediaType(name, fileType),
+          size,
+        })
+      )
+    }
+
+    let duplicates: string[] = []
+    setAttachmentsForThread(attachmentsKey, (current) => {
+      const existingPaths = new Set(
+        current.filter((a) => a.type === 'video').map((a) => a.path)
+      )
+      duplicates = prepared
+        .filter((att) => existingPaths.has(att.path))
+        .map((att) => att.name)
+      const fresh = prepared.filter((att) => !existingPaths.has(att.path))
+      return fresh.length > 0 ? [...current, ...fresh] : current
+    })
+
+    if (duplicates.length > 0) {
+      toast.warning('Files already attached', {
+        description: `${duplicates.join(', ')} ${duplicates.length === 1 ? 'is' : 'are'} already in the list`,
+      })
+    }
+  }
+
   const handleVisionModelDownloadComplete = useCallback(
     (modelId: string) => {
       setShowVisionModelPrompt(false)
@@ -2564,7 +2618,8 @@ const ChatInput = memo(function ChatInput({
       toast.info('Attachments are disabled in Settings')
       return
     }
-    const { images, audio, docs, unsupported } = classifyDroppedPaths(paths)
+    const { images, audio, videos, docs, unsupported } =
+      classifyDroppedPaths(paths)
 
     if (unsupported.length > 0) {
       const names = unsupported.map((p) => p.split(/[\\/]/).pop() || p)
@@ -2595,6 +2650,10 @@ const ChatInput = memo(function ChatInput({
       } else {
         void ingestAudioPaths(audio)
       }
+    }
+
+    if (videos.length > 0) {
+      void ingestVideoPaths(videos)
     }
 
     if (docs.length > 0) {
@@ -2943,6 +3002,22 @@ const ChatInput = memo(function ChatInput({
                               size={att.size}
                               error={att.error}
                               isProcessing={showAttachmentLoader}
+                              note={
+                                att.type === 'video'
+                                  ? t('chat:attachmentPreview.videoModelNote')
+                                  : undefined
+                              }
+                              onOpen={() =>
+                                setPreviewSource({
+                                  name: att.name,
+                                  path: att.path,
+                                  url: att.dataUrl,
+                                  mimeType: att.mimeType,
+                                  fileType: att.fileType,
+                                  size: att.size,
+                                  inlineContent: att.inlineContent,
+                                })
+                              }
                               onRemove={() => handleRemoveAttachment(idx)}
                               onRetry={() => handleRetryAttachment(idx)}
                             />
@@ -2956,10 +3031,26 @@ const ChatInput = memo(function ChatInput({
                           >
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <div
+                                <button
+                                  type="button"
+                                  disabled={!att.dataUrl}
+                                  aria-label={t(
+                                    'chat:attachmentPreview.openPreview',
+                                    { name: att.name }
+                                  )}
+                                  onClick={() =>
+                                    setPreviewSource({
+                                      name: att.name,
+                                      url: att.dataUrl,
+                                      mimeType: att.mimeType,
+                                      size: att.size,
+                                    })
+                                  }
                                   className={cn(
                                     'relative border rounded-xl size-14 overflow-hidden',
                                     'flex items-center justify-center',
+                                    att.dataUrl &&
+                                      'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                                     showAttachmentLoader &&
                                       'ring-1 ring-primary/30 bg-muted/40'
                                   )}
@@ -2988,7 +3079,7 @@ const ChatInput = memo(function ChatInput({
                                       />
                                     </div>
                                   )}
-                                </div>
+                                </button>
                               </TooltipTrigger>
                               <TooltipContent>
                                 <div className="text-xs">
@@ -3735,6 +3826,11 @@ const ChatInput = memo(function ChatInput({
         onOpenChange={setShowVisionModelPrompt}
         modelName={selectedModel ? getModelDisplayName(selectedModel) : ''}
         onModelReady={handleVisionModelDownloadComplete}
+      />
+
+      <AttachmentPreviewDialog
+        source={previewSource}
+        onClose={() => setPreviewSource(null)}
       />
     </div>
   )

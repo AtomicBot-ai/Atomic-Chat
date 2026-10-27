@@ -305,5 +305,19 @@
     "attachFiles": "Attach files",
     "supportedFiles": "Supported files",
     "attachFailed": "Failed to attach files"
+  },
+  "attachmentPreview": {
+    "open": "Open",
+    "showInFolder": "Show in folder",
+    "openPreview": "Preview {{name}}",
+    "image": "Image",
+    "unsupported": "Preview is not available for this file type.",
+    "failed": "Could not preview this file.",
+    "missing": "This file is no longer at {{path}}.",
+    "unplayable": "This media format cannot be played here.",
+    "truncated": "Showing the first {{size}} of the file.",
+    "extracted": "Text extracted from the document. Open the file to see its original layout.",
+    "noText": "No text could be extracted from this document.",
+    "videoModelNote": "The model can't watch videos: it only sees the file name."
   }
 }
