@@ -98,12 +98,21 @@ describe('useAgentActions', () => {
     await act(() => result.current.connect(agent('codex')))
     expect(settle).toHaveBeenCalledWith(start, { ensureModel: true })
     expect(openAgent).toHaveBeenCalledTimes(1)
+    expect(useServerSetup.getState().configuredAgents).toEqual([
+      expect.objectContaining({ id: 'codex' }),
+    ])
 
+    useServerSetup.setState({ configuredAgents: [] })
     settle.mockResolvedValueOnce(false)
     await act(() => result.current.connect(agent('codex')))
     // The failed start said why itself; nothing is written or opened.
     expect(writeConfig).toHaveBeenCalledTimes(1)
     expect(openAgent).toHaveBeenCalledTimes(1)
+    expect(useServerSetup.getState().configuredAgents).toEqual([])
+    expect(useLaunchStore.getState()).toMatchObject({
+      busy: { codex: false },
+      phase: { codex: undefined },
+    })
   })
 
   it('says so when an agent that needs a model has none to use', async () => {
@@ -118,6 +127,11 @@ describe('useAgentActions', () => {
     )
     expect(writeConfig).not.toHaveBeenCalled()
     expect(openAgent).not.toHaveBeenCalled()
+    expect(useServerSetup.getState().configuredAgents).toEqual([])
+    expect(useLaunchStore.getState()).toMatchObject({
+      busy: { [needsModel.id]: false },
+      phase: { [needsModel.id]: undefined },
+    })
   })
 
   it('reports a config write that fails, and frees the card', async () => {

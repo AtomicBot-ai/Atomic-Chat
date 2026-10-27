@@ -169,9 +169,16 @@ describe('Server setup guide', () => {
 
     await configure()
 
-    await screen.findByText(/api:guide\.doneAgentTitle/)
+    expect(
+      await screen.findByText(/api:guide\.doneAgentTitle/)
+    ).toBeInTheDocument()
     expect(writeConfig).toHaveBeenCalledTimes(1)
     expect(openAgent).not.toHaveBeenCalled()
+    // Written, the agent counts as set up even though it did not open.
+    expect(useServerSetup.getState()).toMatchObject({
+      setupDone: true,
+      configuredAgents: [expect.objectContaining({ id: 'codex' })],
+    })
   })
 
   it('leaves a running server alone when it already serves the chosen model', async () => {
