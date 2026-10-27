@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 
 import { route } from '@/constants/routes'
@@ -17,6 +17,10 @@ import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import { sortProvidersForSettings } from '@/lib/providerOrder'
 import { formatBytes, getProviderLogo, getProviderTitle } from '@/lib/utils'
+import {
+  type ServerPickerTarget,
+  useServerPickerRequest,
+} from '@/stores/server-picker-request-store'
 
 import {
   ServerButton,
@@ -152,24 +156,39 @@ function modelChoice(
 /**
  * Engine first, then a model that engine can run; changing the engine keeps
  * the model when the new engine has it, else takes its first. Both pickers
- * show what each choice is, as their rows do.
+ * show what each choice is, as their rows do. Each opens on its own unless
+ * the parent holds which one is open (`onOpenPickerChange`), as the page
+ * does to open the one the tray asked for.
  */
 export function EngineModelFields({
   engines,
   choice,
   onChange,
+  openPicker = null,
+  onOpenPickerChange,
 }: {
   engines: ServableEngine[]
   choice: ServedModel
   onChange: (next: ServedModel) => void
+  openPicker?: ServerPickerTarget | null
+  onOpenPickerChange?: (picker: ServerPickerTarget | null) => void
 }) {
   const { t } = useTranslation()
   const engine =
     engines.find((e) => e.provider === choice.provider) ?? engines[0]
+  const openProps = (picker: ServerPickerTarget) =>
+    onOpenPickerChange
+      ? {
+          open: openPicker === picker,
+          onOpenChange: (open: boolean) =>
+            onOpenPickerChange(open ? picker : null),
+        }
+      : {}
 
   return (
     <div className="sp-engine-model">
       <ServerDetailPicker
+        {...openProps('engine')}
         label={t('api:model.engine')}
         value={engine.provider}
         choices={engines.map((e) => {
@@ -195,6 +214,7 @@ export function EngineModelFields({
         }}
       />
       <ServerDetailPicker
+        {...openProps('model')}
         label={t('api:model.model')}
         value={choice.model}
         choices={engine.models.map((model) =>
@@ -295,9 +315,11 @@ export function ServerModelPicker() {
   const [draft, setDraft] = useState<ServedModel | null>(null)
   const [helperDraft, setHelperDraft] = useState<Partial<HelperChoice>>({})
   const [phase, setPhase] = useState<Phase>('idle')
+  const [openPicker, setOpenPicker] = useState<ServerPickerTarget | null>(null)
 
   const choice = draft ?? baseline
   const engine = engines.find((e) => e.provider === choice?.provider)
+  const hasFields = Boolean(choice && engine)
   const helperChoice = { ...helperBaseline, ...helperDraft }
   // Against what the page opened on, so a first visit with nothing saved yet
   // does not read as an unsaved change.
@@ -310,6 +332,18 @@ export function ServerModelPicker() {
   const dirty = chatDirty || helperChanges.length > 0
   const restarting = phase === 'restarting'
   const showHelpers = embedding.supported || decision.supported
+
+  // The tray's Model or Runtime row asked for a picker: open it once, whether
+  // the page mounts after the request or was already on screen. With no
+  // engine to serve there is no picker, and a request kept for later would
+  // pop one open on some unrelated visit, so it is dropped either way.
+  const requested = useServerPickerRequest((state) => state.target)
+  const requestNonce = useServerPickerRequest((state) => state.nonce)
+  useEffect(() => {
+    if (!requested) return
+    if (hasFields) setOpenPicker(requested)
+    useServerPickerRequest.getState().clear()
+  }, [requested, requestNonce, hasFields])
 
   const discard = () => {
     setDraft(null)
@@ -365,6 +399,8 @@ export function ServerModelPicker() {
               setDraft(next)
               setPhase('idle')
             }}
+            openPicker={openPicker}
+            onOpenPickerChange={setOpenPicker}
           />
         </section>
       ) : (

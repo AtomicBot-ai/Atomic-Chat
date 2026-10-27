@@ -201,25 +201,31 @@ function DetailChoiceRow({ choice }: { choice: ServerDetailChoice }) {
  * A labelled dropdown whose choices need more than a name: the field and
  * every row of its menu show the same logo, name, line on what it is and its
  * facts, so the choice reads the same before and after it is made. Opens
- * under the field, as wide as it, like `ServerSelect`.
+ * under the field, as wide as it, like `ServerSelect`. Opens and closes on
+ * its own unless `open` is given, for a page that opens it for the user (the
+ * tray's Model and Runtime rows).
  */
 export function ServerDetailPicker({
   label,
   value,
   choices,
   onChange,
+  open,
+  onOpenChange,
 }: {
   label: string
   value: string
   choices: ServerDetailChoice[]
   onChange: (value: string) => void
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
 }) {
   const id = useId()
   const selected = choices.find((choice) => choice.value === value)
   return (
     <div className="sp-field">
       <span id={id}>{label}</span>
-      <DropdownMenu>
+      <DropdownMenu open={open} onOpenChange={onOpenChange}>
         <DropdownMenuTrigger asChild disabled={choices.length === 0}>
           <button
             type="button"

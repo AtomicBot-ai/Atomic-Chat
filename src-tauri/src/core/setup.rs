@@ -347,6 +347,24 @@ pub fn setup_mcp<R: Runtime>(app: &App<R>) {
     });
 }
 
+/// Bring the main window back from wherever close-to-tray or minimise left it.
+/// Shared by the tray's "Open" item and the rows that open a page of the app.
+#[cfg(desktop)]
+fn show_main_window(app: &tauri::AppHandle) {
+    // Close-to-tray hides the whole app (NSApplication) on macOS, so
+    // un-hide it first before showing/focusing the window.
+    #[cfg(target_os = "macos")]
+    let _ = app.show();
+    // A close may still be deciding between hide and exit.
+    #[cfg(target_os = "linux")]
+    cancel_pending_close();
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
 #[cfg(desktop)]
 pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
     use crate::core::state::AppState;
@@ -390,9 +408,11 @@ pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
         None::<&str>,
     )?;
 
-    //* Model block — a disabled "Model" header above the live model name.
-    //  The header is kept static (and disabled, so it renders muted) so the
-    //  block reads as a section label, mirroring Pico AI Server's panel.
+    //* Model block — a disabled "Model" header above the live model name,
+    //  then a "Runtime" header above the engine it runs on. The headers are
+    //  kept static (and disabled, so they render muted) so the block reads as
+    //  section labels, mirroring Pico AI Server's panel. Both values are
+    //  clickable: they open the page where the engine and model are chosen.
     let status_model_label = MenuItem::with_id(
         app.handle(),
         "status_model_label",
@@ -404,6 +424,20 @@ pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
         app.handle(),
         "status_model_value",
         "— no model loaded —",
+        true,
+        None::<&str>,
+    )?;
+    let status_runtime_label = MenuItem::with_id(
+        app.handle(),
+        "status_runtime_label",
+        "Runtime",
+        false,
+        None::<&str>,
+    )?;
+    let status_runtime_value = MenuItem::with_id(
+        app.handle(),
+        "status_runtime_value",
+        "—",
         true,
         None::<&str>,
     )?;
@@ -443,6 +477,8 @@ pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
             &sep_after_server,
             &status_model_label,
             &status_model_value,
+            &status_runtime_label,
+            &status_runtime_value,
             &sep_after_model,
             &status_ram_text,
             &status_ram_bar,
@@ -464,6 +500,8 @@ pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
             stop_button: status_stop.clone(),
             model_label: status_model_label.clone(),
             model_value: status_model_value.clone(),
+            runtime_label: status_runtime_label.clone(),
+            runtime_value: status_runtime_value.clone(),
             ram_text: status_ram_text.clone(),
             ram_bar: status_ram_bar.clone(),
             server_url: std::sync::Mutex::new(String::new()),
@@ -497,20 +535,7 @@ pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
 
     tray_builder
         .on_menu_event(|app, event| match event.id.as_ref() {
-            "open" => {
-                // Close-to-tray hides the whole app (NSApplication) on macOS, so
-                // un-hide it first before showing/focusing the window.
-                #[cfg(target_os = "macos")]
-                let _ = app.show();
-                // A close may still be deciding between hide and exit.
-                #[cfg(target_os = "linux")]
-                cancel_pending_close();
-                if let Some(window) = app.get_webview_window("main") {
-                    let _ = window.unminimize();
-                    let _ = window.show();
-                    let _ = window.set_focus();
-                }
-            }
+            "open" => show_main_window(app),
             "quit" => {
                 app.exit(0);
             }
@@ -560,8 +585,27 @@ pub fn setup_tray(app: &App) -> tauri::Result<TrayIcon> {
                     log::warn!("Failed to emit {event}: {e}");
                 }
             }
+            id @ ("status_model_value" | "status_runtime_value") => {
+                //* Open the app on Server → Engine & model with the matching
+                //  picker already open. The frontend owns the routing (and
+                //  knows when the first-run flow is on screen and should be
+                //  left alone), so Rust only shows the window and says which
+                //  row was clicked.
+                show_main_window(app);
+                let target = if id == "status_model_value" {
+                    "model"
+                } else {
+                    "runtime"
+                };
+                if let Err(e) = app.emit("tray-open-model-config", target) {
+                    log::warn!("Failed to emit tray-open-model-config: {e}");
+                }
+            }
             // Live status rows are non-interactive — clicking them is a no-op.
-            "status_server" | "status_model_label" | "status_model_value" | "status_ram_text"
+            "status_server"
+            | "status_model_label"
+            | "status_runtime_label"
+            | "status_ram_text"
             | "status_ram_bar" => {}
             other => {
                 log::debug!("tray menu item {other} not handled");

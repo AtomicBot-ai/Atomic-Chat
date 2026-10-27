@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -63,6 +63,7 @@ import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { getProviderTitle } from '@/lib/utils'
 import { useOnboardingStore } from '@/stores/onboarding-store'
+import { useServerPickerRequest } from '@/stores/server-picker-request-store'
 
 import { isServableEngine, ServerModelPicker } from '../ServerModelPicker'
 
@@ -128,6 +129,7 @@ describe('Server → Engine & model', () => {
       defaultModelLocalApiServer: null,
       lastServerModels: [],
     })
+    useServerPickerRequest.setState({ target: null, nonce: 0 })
     useModelProvider.setState({
       providers: [
         engine('llamacpp-upstream', [
@@ -436,6 +438,68 @@ describe('Server → Engine & model', () => {
     expect(isServableEngine(engine('llamacpp-upstream', []))).toBe(true)
     expect(isServableEngine(engine('vllm', [{ id: 'm' }], false))).toBe(false)
     expect(isServableEngine(engine('openai', [{ id: 'gpt-4.1' }]))).toBe(false)
+  })
+
+  describe('when the tray asks for a picker', () => {
+    /** The open menu's rows, by name. */
+    const openRows = () =>
+      within(screen.getByRole('menu'))
+        .getAllByRole('menuitemradio')
+        .map(
+          (option) =>
+            (option.querySelector('strong') ?? option).textContent ?? ''
+        )
+
+    it('opens the model picker on arrival, once, and leaves it to the user after', async () => {
+      useServerPickerRequest.getState().request('model')
+      render(<ServerModelPicker />)
+
+      // The menu is named by its field, so this is the model picker's.
+      expect(
+        await screen.findByRole('menu', { name: 'api:model.model' })
+      ).toBeInTheDocument()
+      expect(openRows()).toEqual(['Qwen3.5 4B'])
+      expect(useServerPickerRequest.getState().target).toBeNull()
+
+      await user.keyboard('{Escape}')
+      await waitFor(() =>
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+      )
+      // Still a plain dropdown: the user opens the other one as before.
+      await user.click(dropdown('api:model.engine'))
+      expect(openRows()).toEqual([
+        getProviderTitle('llamacpp-upstream'),
+        getProviderTitle('atomic-prism'),
+      ])
+    })
+
+    it('opens the engine picker when asked while the page is already on screen', async () => {
+      render(<ServerModelPicker />)
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+
+      act(() => useServerPickerRequest.getState().request('engine'))
+
+      expect(
+        await screen.findByRole('menu', { name: 'api:model.engine' })
+      ).toBeInTheDocument()
+      expect(openRows()).toEqual([
+        getProviderTitle('llamacpp-upstream'),
+        getProviderTitle('atomic-prism'),
+      ])
+      expect(useServerPickerRequest.getState().target).toBeNull()
+    })
+
+    it('drops the request when there is no engine to pick from', () => {
+      useModelProvider.setState({
+        providers: [engine('openai', [{ id: 'x' }])],
+      })
+      useServerPickerRequest.getState().request('engine')
+      render(<ServerModelPicker />)
+
+      expect(screen.getByText('api:model.emptyTitle')).toBeInTheDocument()
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument()
+      expect(useServerPickerRequest.getState().target).toBeNull()
+    })
   })
 
   describe('on first-run setup’s endpoint hints', () => {
