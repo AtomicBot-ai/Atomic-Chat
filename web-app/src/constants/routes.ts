@@ -42,6 +42,9 @@ export const route = {
     index: '/images/',
     workflow: '/images/$workflow',
   },
+  audios: {
+    index: '/audios/',
+  },
   videos: {
     index: '/videos/',
   },

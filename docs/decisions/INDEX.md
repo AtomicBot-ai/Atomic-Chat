@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-493 records, 2026-05-19 → 2026-10-27.
+495 records, 2026-05-19 → 2026-10-27.
 
 ---
 
@@ -33,8 +33,9 @@ decision is reversed, add a new one that says which record it supersedes.
 
 ---
 
-## Local image & video generation (29)
+## Local image & video generation (30)
 
+- **2026-10-27** — [Lay out an Audios studio, in dev builds only until there is an audio engine](2026-10-27-lay-out-an-audios-studio-in-dev-builds-only.md) — `PlatformFeature.AUDIO_GENERATION`; candidate models, Download and Generate off until the audio engine lands.
 - **2026-10-26** — [Judge an image model against the RAM it shares on a Mac, and ask before a run that will not fit](2026-10-26-judge-an-image-model-against-the-ram-it-shares-on-a-mac.md)
 - **2026-10-22** — [Size the media viewer to its preview and give the gallery the rest](2026-10-22-size-the-media-viewer-to-its-preview-and-give-the-gallery-the-rest.md)
 - **2026-10-22** — [Show only the generation settings a recipe can vouch for](2026-10-22-show-only-the-generation-settings-a-recipe-can-vouch-for.md)
@@ -364,7 +365,8 @@ decision is reversed, add a new one that says which record it supersedes.
 ## UI / UX (2)
 - **2026-10-20** — [Show hosted providers on Cloud and the user's own servers on Custom Endpoint](2026-10-20-show-hosted-providers-on-cloud-and-own-servers-on-custom-endpoint.md)
 - **2026-10-20** — [List everything downloaded on a Downloads page](2026-10-20-list-everything-downloaded-on-a-downloads-page.md)
-## UI / UX (129)
+## UI / UX (130)
+- **2026-10-27** — [Configure the server's engine from its picker, with the Hub's settings](2026-10-27-configure-the-servers-engine-from-its-picker.md) — a gear beside the engine opens the Hub's `EngineDetail` in a dialog; saved as changed, Done closes.
 - **2026-10-27** — [Stack the corner notifications in one column and fold them after three seconds](2026-10-27-stack-the-corner-notifications-and-fold-them-after-three-seconds.md) — supersedes the `download` slot of 2026-09-14; reverses ATO-462's panel that stays expanded.
 - **2026-10-27** — [Show the runtime in the macOS tray, and open the engine or model picker on click](2026-10-27-show-the-runtime-in-the-tray-and-open-its-picker-on-click.md)
 - **2026-10-27** — [Drop the auto-approve note from the access menu](2026-10-27-drop-the-auto-approve-note-from-the-access-menu.md) — supersedes the menu note of 2026-10-21.

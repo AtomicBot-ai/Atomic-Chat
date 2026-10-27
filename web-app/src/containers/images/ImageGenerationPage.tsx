@@ -23,6 +23,7 @@ import { ImageGalleryGrid } from './ImageGalleryGrid'
 import { ImageGenerationPlaceholder } from './ImageGenerationPlaceholder'
 import { ImagePromptForm } from './ImagePromptForm'
 import { ImageSetupCard } from './ImageSetupCard'
+import { MediaStudioFrame } from './MediaStudio'
 import { ImageViewer } from './ImageViewer'
 
 /** In Upscale "make it smaller" is the scale, not the form's width and height. */
@@ -221,10 +222,7 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
   }
 
   return (
-    <div
-      className="grid h-svh w-full grid-cols-[minmax(340px,400px)_1fr] grid-rows-[minmax(0,1fr)] overflow-hidden"
-      data-testid="image-generation-page"
-    >
+    <MediaStudioFrame testId="image-generation-page">
       <aside className="col-start-1 row-start-1 flex min-h-0 min-w-0 flex-col border-r border-border">
         {studioReady ? (
           <ImagePromptForm
@@ -334,7 +332,7 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
           </div>
         )}
       </section>
-    </div>
+    </MediaStudioFrame>
   )
 })
 

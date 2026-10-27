@@ -1,6 +1,7 @@
 import { useLocation, useNavigate } from '@tanstack/react-router'
 import {
   Activity,
+  AudioLines,
   Blocks,
   Clapperboard,
   Cloud,
@@ -55,6 +56,7 @@ function WorkspaceNavigation({
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const media = PlatformFeatures[PlatformFeature.MEDIA_GENERATION]
+  const audio = PlatformFeatures[PlatformFeature.AUDIO_GENERATION]
 
   return (
     <>
@@ -87,6 +89,15 @@ function WorkspaceNavigation({
             icon={<Clapperboard size={16} />}
             active={isPathActive(pathname, route.videos.index, true)}
             testId="videos-link"
+          />
+        )}
+        {audio && (
+          <NavRow
+            to={route.audios.index}
+            label={t('common:audios')}
+            icon={<AudioLines size={16} />}
+            active={isPathActive(pathname, route.audios.index, true)}
+            testId="audios-link"
           />
         )}
       </SidebarMenu>

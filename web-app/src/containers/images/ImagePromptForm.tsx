@@ -55,6 +55,7 @@ import { ImageWorkflowInputs } from './ImageWorkflowInputs'
 import { MediaModeSelect } from './MediaModeSelect'
 import { MediaSettingsHeading } from './MediaSettingsHeading'
 import { MediaPageHeading } from './MediaPageHeading'
+import { MediaPromptCard } from './MediaStudio'
 import { WORKFLOW_ICONS } from './workflowIcons'
 import { ConfirmImageExceedsMemory } from './ConfirmImageExceedsMemory'
 import { ImageGenerateButton } from './ImageGenerateButton'
@@ -294,10 +295,7 @@ export const ImagePromptForm = memo(function ImagePromptForm({
           disabled={busy}
         />
 
-        <div
-          className="space-y-2.5 rounded-2xl border bg-secondary/20 p-2.5"
-          data-testid="image-prompt-card"
-        >
+        <MediaPromptCard testId="image-prompt-card">
           <ImageModelPicker open={modelsOpen} onOpenChange={setModelsOpen} />
           <ImageField
             htmlFor="image-prompt"
@@ -329,7 +327,7 @@ export const ImagePromptForm = memo(function ImagePromptForm({
           {generation.confirmation && (
             <ConfirmImageExceedsMemory {...generation.confirmation} />
           )}
-        </div>
+        </MediaPromptCard>
 
         {showNegative && (
           <Collapsible
