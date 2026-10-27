@@ -30,6 +30,7 @@ export type DownloadStage = {
   kind: 'connecting' | 'retrying' | 'stalled'
   attempt: number
   maxAttempts: number
+  retryAfterMs?: number
 }
 
 type DownloadEvent = {

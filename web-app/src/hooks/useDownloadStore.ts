@@ -26,6 +26,10 @@ export interface DownloadStage {
   kind: string
   attempt: number
   maxAttempts: number
+  retryAfterMs?: number
+  retryAt?: number
+  retrySeconds?: number
+  retryDisplayUntil?: number
 }
 
 export interface DownloadProgressProps {
@@ -125,6 +129,7 @@ export type DownloadState = {
     total?: number
   ) => void
   updateStage: (id: string, stage: DownloadStage) => void
+  tickRetryCountdowns: (now?: number) => void
   addLocalDownloadingModel: (modelId: string) => void
   removeLocalDownloadingModel: (modelId: string) => void
   markResumableDownload: (modelId: string) => void
@@ -148,7 +153,7 @@ export type DownloadState = {
 /**
  * This store is used to manage the download progress of files.
  */
-export const useDownloadStore = create<DownloadState>()(persist<DownloadState, [], [], { recovery: DownloadRecovery }>((set) => ({
+export const useDownloadStore = create<DownloadState>()(persist<DownloadState, [], [], { recovery: DownloadRecovery }>((set, get) => ({
   controlRequests: [],
   requestControl: (action, download) => set((state) => {
     if (state.controlRequests.some((request) => request.id === download.id && request.action === action)) return state
@@ -236,6 +241,14 @@ export const useDownloadStore = create<DownloadState>()(persist<DownloadState, [
       // feedback, 2026-09-29); dropping it hides the ETA until bytes flow and
       // the estimate restarts from the new rate.
       const idle = stage.kind === 'stalled' || stage.kind === 'retrying'
+      const now = Date.now()
+      // Keep the actual attempt visible between backoffs, even if another
+      // failure arrives before the next UI clock tick. Never delay the transfer.
+      const previousStage = previous?.stage
+      const retryDisplayUntil = previousStage?.kind === 'retrying' &&
+        previousStage.retryAt !== undefined && previousStage.retryAt <= now
+          ? Math.max(previousStage.retryDisplayUntil ?? 0, now + 1000)
+          : previousStage?.retryDisplayUntil
       const newStall =
         stage.kind === 'stalled' && previous?.stage?.kind !== 'stalled'
       return {
@@ -256,11 +269,34 @@ export const useDownloadStore = create<DownloadState>()(persist<DownloadState, [
             stalls: (previous?.stalls ?? 0) + (newStall ? 1 : 0),
             retries:
               (previous?.retries ?? 0) + (stage.kind === 'retrying' ? 1 : 0),
-            stage,
+            stage: stage.kind === 'retrying' && stage.retryAfterMs !== undefined
+              ? { ...stage, retryAt: now + stage.retryAfterMs,
+                  retryDisplayUntil,
+                  retrySeconds: retryDisplayUntil !== undefined && retryDisplayUntil > now
+                    ? 0 : Math.ceil(stage.retryAfterMs / 1000) }
+              : stage,
           },
         },
       }
     }),
+
+  // The app-wide manager owns one clock; every view reads the same countdown.
+  tickRetryCountdowns: (now = Date.now()) => {
+    const state = get()
+    let changed = false
+    const downloads = { ...state.downloads }
+    for (const [id, download] of Object.entries(downloads)) {
+      const stage = download.stage
+      if (state.pausedDownloads.has(id) || stage?.kind !== 'retrying' || stage.retryAt === undefined) continue
+      const remaining = Math.max(0, Math.ceil((stage.retryAt - now) / 1000))
+      const retryDisplayUntil = stage.retryDisplayUntil ?? (remaining === 0 ? now + 1000 : undefined)
+      const seconds = retryDisplayUntil !== undefined && retryDisplayUntil > now ? 0 : remaining
+      if (seconds === stage.retrySeconds) continue
+      downloads[id] = { ...download, stage: { ...stage, retrySeconds: seconds, retryDisplayUntil } }
+      changed = true
+    }
+    if (changed) set({ downloads })
+  },
 
   addLocalDownloadingModel: (modelId: string) =>
     set((state) => ({

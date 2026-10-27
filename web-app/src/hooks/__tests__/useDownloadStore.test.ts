@@ -454,6 +454,48 @@ describe('useDownloadStore', () => {
       })
     })
 
+    it('counts down against a deadline without changing bytes or retry statistics', () => {
+      const store = useDownloadStore.getState()
+      store.updateProgress('countdown', 0.9, 'countdown', 900, 1000)
+      store.updateStage('countdown', { kind: 'retrying', attempt: 6, maxAttempts: 0, retryAfterMs: 32000 })
+      const deadline = useDownloadStore.getState().downloads.countdown.stage!.retryAt!
+      store.tickRetryCountdowns(deadline - 31001)
+      expect(useDownloadStore.getState().downloads.countdown.stage!.retrySeconds).toBe(32)
+      store.tickRetryCountdowns(deadline - 31000)
+      expect(useDownloadStore.getState().downloads.countdown.stage!.retrySeconds).toBe(31)
+      store.tickRetryCountdowns(deadline + 500)
+      const entry = useDownloadStore.getState().downloads.countdown
+      expect(entry.stage!.retrySeconds).toBe(0)
+      expect(entry.current).toBe(900)
+      expect(entry.progress).toBe(0.9)
+      expect(entry.retries).toBe(1)
+      store.markPausedDownload('countdown')
+      store.tickRetryCountdowns(deadline + 1500)
+      expect(useDownloadStore.getState().downloads.countdown).toBe(entry)
+      store.updateProgress('countdown', 0.91, 'countdown', 910, 1000)
+      expect(useDownloadStore.getState().downloads.countdown.stage).toBeUndefined()
+    })
+
+    it('holds the active retry for a second while the next real backoff continues', () => {
+      vi.useFakeTimers()
+      try {
+        vi.setSystemTime(1000)
+        const store = useDownloadStore.getState()
+        store.updateStage('hold', { kind: 'retrying', attempt: 1, maxAttempts: 0, retryAfterMs: 1000 })
+        vi.setSystemTime(2000)
+        store.updateStage('hold', { kind: 'retrying', attempt: 2, maxAttempts: 0, retryAfterMs: 4000 })
+        expect(useDownloadStore.getState().downloads.hold.stage!.retrySeconds).toBe(0)
+        store.tickRetryCountdowns(2999)
+        expect(useDownloadStore.getState().downloads.hold.stage!.retrySeconds).toBe(0)
+        store.tickRetryCountdowns(3000)
+        expect(useDownloadStore.getState().downloads.hold.stage!.retrySeconds).toBe(3)
+        // The display hold does not extend the native deadline.
+        expect(useDownloadStore.getState().downloads.hold.stage!.retryAt).toBe(6000)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
     it('clears the stage once bytes actually move', () => {
       const { result } = renderHook(() => useDownloadStore())
 

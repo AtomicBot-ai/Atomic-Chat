@@ -970,6 +970,7 @@ fn test_download_event_stage_serialization() {
             kind: DownloadStage::RETRYING,
             attempt: 2,
             max_attempts: 5,
+            retry_after_ms: Some(2000),
         }),
     };
 
@@ -978,6 +979,7 @@ fn test_download_event_stage_serialization() {
     assert!(json.contains("\"attempt\":2"));
     // camelCase, because the payload is consumed directly by the webview.
     assert!(json.contains("\"maxAttempts\":5"));
+    assert!(json.contains("\"retryAfterMs\":2000"));
 }
 
 #[test]

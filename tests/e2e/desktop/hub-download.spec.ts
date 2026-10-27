@@ -8,7 +8,7 @@
  * on the fixture backend like every other scenario.
  */
 import { createHash } from 'node:crypto'
-import { readdir, readFile, stat } from 'node:fs/promises'
+import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { existsSync } from 'node:fs'
@@ -17,6 +17,7 @@ import { installFakeBackend, startHubFixture, type HubFixture } from '../harness
 import { CAN_RUN_FAKE_BACKEND } from '../harness/platform.js'
 import { endSession, startSession, withArtifacts, type Session } from '../harness/session.js'
 import { openSection } from '../harness/navigation.js'
+import { ARTIFACTS_ROOT } from '../harness/artifacts.js'
 
 const MODEL_NAME = 'e2e/hub-fixture-GGUF'
 const QUANT_ID = 'e2e/hub-fixture-Q4_K_M'
@@ -352,8 +353,8 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a Hub download that has to retry', () =>
   let hub: HubFixture
 
   beforeAll(async () => {
-    // The first two answers are a 503: the app's downloader backs off and tries again.
-    hub = await startHubFixture({ modelName: MODEL_NAME, quantId: QUANT_ID, title: TITLE, failFirst: 2 })
+    // The first three GET answers are a 503: the app's downloader backs off and tries again.
+    hub = await startHubFixture({ modelName: MODEL_NAME, quantId: QUANT_ID, title: TITLE, failFirst: 3 })
     session = await startSession('hub-download-retry', {
       prepare: async (profile) => installFakeBackend(profile, { reply: REPLY }),
     })
@@ -399,14 +400,23 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a Hub download that has to retry', () =>
         await watcher
       }
 
+      const evidence = join(ARTIFACTS_ROOT, 'download-retry-countdown')
+      await mkdir(evidence, { recursive: true })
+      await writeFile(join(evidence, 'statuses.json'), JSON.stringify(statuses, null, 2))
       // The retry was said, as its own line, not as progress going backwards.
-      const retrying = statuses.filter((status) => /Connection failed, retrying \(\d+\/\d+\)/.test(status))
+      const retrying = statuses.filter((status) => /Retrying in \d+s/.test(status))
       expect(retrying.length, `the panel showed: ${JSON.stringify([...new Set(statuses)])}`).toBeGreaterThan(0)
-      // And the file arrived whole, from the third answer on.
+      const retryAttempt = statuses.findIndex((status) => /Retrying…/.test(status))
+      expect(retryAttempt).toBeGreaterThanOrEqual(0)
+      expect(statuses.slice(retryAttempt + 1).some((status) => /Retrying in 3s/.test(status))).toBe(true)
+      expect(statuses.some((status) => /Retrying in 2s/.test(status))).toBe(true)
+      expect(statuses.some((status) => /Retrying in 1s/.test(status))).toBe(true)
+      expect(retrying.every((status) => !/\(\d+\/5\)/.test(status))).toBe(true)
+      // And the file arrived whole, after the third failed GET.
       const modelDir = join(dataFolder, 'llamacpp', 'models', ...QUANT_ID.split('/'))
       expect((await stat(join(modelDir, 'model.gguf'))).size).toBe(hub.modelBytes)
       const fileRequests = hub.requests().filter((r) => r.path === '/model.gguf' && r.method === 'GET')
-      expect(fileRequests.length).toBeGreaterThanOrEqual(3)
+      expect(fileRequests.length).toBeGreaterThanOrEqual(4)
     })
   }, 300_000)
 })

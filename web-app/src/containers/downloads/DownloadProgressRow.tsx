@@ -24,6 +24,7 @@ export type DownloadRowStage = {
   kind: string
   attempt: number
   maxAttempts: number
+  retrySeconds?: number
 }
 
 export type DownloadRowProps = {

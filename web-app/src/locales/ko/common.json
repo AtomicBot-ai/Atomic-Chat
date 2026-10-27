@@ -498,6 +498,8 @@
     "mediaEngineReadyBody": "이미지 및 동영상 엔진이 준비되었습니다."
   },
   "downloadPanel": {
+    "retryCountdown": "{{seconds}}초 후 재시도",
+    "retryingNow": "재시도 중…",
     "retryingConnection": "연결 끊김 · {{seconds}}초 간격으로 자동 재시도 중 ({{attempt}}회)…"
   }
 }

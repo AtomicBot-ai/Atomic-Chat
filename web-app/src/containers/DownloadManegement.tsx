@@ -210,6 +210,10 @@ export function DownloadManagement({
   hidePanel?: boolean
 } = {}) {
   const { t } = useTranslation()
+  useEffect(() => {
+    const timer = setInterval(() => useDownloadStore.getState().tickRetryCountdowns(), 250)
+    return () => clearInterval(timer)
+  }, [])
   const navigate = useNavigate()
   const controlRequest = useDownloadStore((state) => state.controlRequests[0])
   const [cancelTarget, setCancelTarget] = useState<{

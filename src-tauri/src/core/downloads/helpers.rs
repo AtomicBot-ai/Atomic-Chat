@@ -190,6 +190,7 @@ impl StageReporter {
         (self.emit)(DownloadStage {
             kind: DownloadStage::RETRYING,
             attempt,
+            retry_after_ms: Some(retry_delay(attempt.saturating_sub(1)).as_millis() as u64),
             max_attempts: if is_connection_error(error) {
                 0
             } else {
@@ -203,6 +204,8 @@ impl StageReporter {
             kind,
             attempt,
             max_attempts: MAX_STREAM_RETRIES,
+            retry_after_ms: (kind == DownloadStage::RETRYING)
+                .then(|| retry_delay(attempt.saturating_sub(1)).as_millis() as u64),
         });
     }
 }

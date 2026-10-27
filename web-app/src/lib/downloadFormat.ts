@@ -95,7 +95,7 @@ export function downloadStatusLabel(
   }: {
     progress: number
     total: number
-    stage?: { kind: string; attempt: number; maxAttempts: number }
+    stage?: { kind: string; attempt: number; maxAttempts: number; retrySeconds?: number }
     paused?: boolean
   }
 ): string {
@@ -111,19 +111,13 @@ export function downloadStatusLabel(
  */
 export function downloadStageLabel(
   t: (key: string, vars?: Record<string, unknown>) => string,
-  stage?: { kind: string; attempt: number; maxAttempts: number }
+  stage?: { kind: string; attempt: number; maxAttempts: number; retrySeconds?: number }
 ): string | null {
   if (stage?.kind === 'stalled') return t('common:downloadPanel.stalled')
-  if (stage?.kind === 'retrying' && stage.maxAttempts === 0)
-    return t('common:downloadPanel.retryingConnection', {
-      attempt: stage.attempt,
-      seconds: 2 ** Math.min(6, Math.max(0, stage.attempt - 1)),
-    })
   if (stage?.kind === 'retrying')
-    return t('common:downloadPanel.retrying', {
-      attempt: stage.attempt,
-      maxAttempts: stage.maxAttempts,
-    })
+    return stage.retrySeconds !== undefined && stage.retrySeconds > 0
+      ? t('common:downloadPanel.retryCountdown', { seconds: stage.retrySeconds })
+      : t('common:downloadPanel.retryingNow')
   return null
 }
 
@@ -146,7 +140,7 @@ export function formatDownloadReadout(
     current: number
     total: number
     bytesPerSecond?: number | null
-    stage?: { kind: string; attempt: number; maxAttempts: number }
+    stage?: { kind: string; attempt: number; maxAttempts: number; retrySeconds?: number }
     paused?: boolean
   }
 ): string {
@@ -188,7 +182,7 @@ export function formatDownloadStatusLine(
     current: number
     total: number
     bytesPerSecond?: number | null
-    stage?: { kind: string; attempt: number; maxAttempts: number }
+    stage?: { kind: string; attempt: number; maxAttempts: number; retrySeconds?: number }
     paused?: boolean
   },
   { runningWord = true }: { runningWord?: boolean } = {}

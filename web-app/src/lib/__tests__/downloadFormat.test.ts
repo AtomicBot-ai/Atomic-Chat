@@ -77,7 +77,7 @@ describe('formatDownloadReadout', () => {
         stage: { kind: 'retrying', attempt: 1, maxAttempts: 5 },
       })
     ).toBe(
-      '42% · common:downloadPanel.retrying(attempt=1,maxAttempts=5) · 4.20 / 12.40 GB'
+      '42% · common:downloadPanel.retryingNow · 4.20 / 12.40 GB'
     )
   })
 
@@ -109,7 +109,7 @@ describe('formatDownloadReadout', () => {
         total: 0,
         stage: { kind: 'retrying', attempt: 2, maxAttempts: 5 },
       })
-    ).toBe('common:downloadPanel.retrying(attempt=2,maxAttempts=5)')
+    ).toBe('common:downloadPanel.retryingNow')
   })
 })
 
@@ -280,9 +280,17 @@ describe('advanceSpeedSample', () => {
 describe('connection retry status', () => {
   it('shows automatic recovery without a misleading five-attempt maximum', () => {
     expect(downloadStageLabel(t, { kind: 'retrying', attempt: 7, maxAttempts: 0 }))
-      .toBe('common:downloadPanel.retryingConnection(attempt=7,seconds=64)')
+      .toBe('common:downloadPanel.retryingNow')
     expect(downloadStageLabel(t, { kind: 'retrying', attempt: 80, maxAttempts: 0 }))
-      .toBe('common:downloadPanel.retryingConnection(attempt=80,seconds=64)')
+      .toBe('common:downloadPanel.retryingNow')
+  })
+  it('shows remaining seconds for either retry policy, then an active retry', () => {
+    for (const maxAttempts of [0, 5]) {
+      expect(downloadStageLabel(t, { kind: 'retrying', attempt: 6, maxAttempts, retrySeconds: 32 }))
+        .toBe('common:downloadPanel.retryCountdown(seconds=32)')
+      expect(downloadStageLabel(t, { kind: 'retrying', attempt: 6, maxAttempts, retrySeconds: 0 }))
+        .toBe('common:downloadPanel.retryingNow')
+    }
   })
   it('keeps a manually paused row paused even when a retry stage is retained', () => {
     expect(formatDownloadReadout(t, { progress: 12, current: 12, total: 100,
