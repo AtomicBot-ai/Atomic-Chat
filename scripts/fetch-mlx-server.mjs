@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Put the `mlx-server` that conf's `backends/mlx-manifest.json` pins into
-// src-tauri/resources/bin, for the macOS installer.
+// src-tauri/resources/bin, for a local macOS build (`make build-mlx-server`).
+// The installer no longer ships it: the core installs MLX on demand.
 //
 // The manifest names the AtomicBot-ai/mlx-vlm release, its archive, the
 // archive's sha256 and size, and the release date. The archive is checked

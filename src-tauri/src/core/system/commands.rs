@@ -789,13 +789,16 @@ pub async fn check_jan_cli_installed() -> CliInstallStatus {
 }
 
 /// Core install logic — synchronous, no Tauri command overhead.
+///
+/// The CLI is the bundled `atomic-chat-core` itself: it is copied from the app's
+/// `resources/bin` and installed under [`CLI_COMMAND_NAME`].
 pub fn install_jan_cli_sync<R: Runtime>(
     app_handle: &AppHandle<R>,
 ) -> Result<CliInstallStatus, String> {
     let bin_name = if cfg!(windows) {
-        "jan-cli.exe"
+        "atomic-chat-core.exe"
     } else {
-        "jan-cli"
+        "atomic-chat-core"
     };
     let dest_bin_name = if cfg!(windows) {
         "atomic-chat-cli.exe"
@@ -877,7 +880,8 @@ pub fn install_jan_cli_sync<R: Runtime>(
     }
 }
 
-/// Copy the bundled `atomic-chat-cli` binary to the system PATH (Tauri command wrapper).
+/// Copy the bundled `atomic-chat-core` onto the system PATH as `atomic-chat-cli` (Tauri command
+/// wrapper).
 #[tauri::command]
 pub async fn install_jan_cli<R: Runtime>(
     app_handle: AppHandle<R>,

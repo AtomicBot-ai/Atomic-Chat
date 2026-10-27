@@ -9,7 +9,6 @@ $ErrorActionPreference = 'Stop'
 $files = @(
   'src-tauri/resources/LICENSE',
   'src-tauri/resources/pre-install/test-placeholder',
-  'src-tauri/resources/bin/jan-cli.exe',
   'src-tauri/resources/bin/atomic-chat-core.exe',
   'src-tauri/resources/bin/atomic-chat-app-core.exe',
   'src-tauri/resources/bin/bun-x86_64-pc-windows-msvc.exe',
@@ -19,7 +18,6 @@ $files = @(
   'src-tauri/resources/bin/uv-aarch64-pc-windows-msvc.exe',
   'src-tauri/resources/bin/cloudflared-aarch64-pc-windows-msvc.exe',
   'src-tauri/resources/bin/mxc/wxc-exec.exe',
-  'src-tauri/resources/llamacpp-backend/test-placeholder',
   'src-tauri/resources/llamacpp-backend-upstream/test-placeholder'
 )
 

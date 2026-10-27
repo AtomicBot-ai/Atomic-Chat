@@ -3,8 +3,8 @@
 // The core is built and released from its own repository (`atomic-chat-core`), which publishes one
 // CLI and app binaries per target plus a `SHA256SUMS` file. This script downloads what the current platform
 // needs, verifies it against that file, and leaves it at
-// `src-tauri/resources/bin/atomic-chat-core[.exe]`, where `make build-cli` copies it to `jan-cli`
-// and signs it. On macOS both architectures are fetched and `lipo`'d into one universal binary, so
+// `src-tauri/resources/bin/atomic-chat-core[.exe]`, where `make build-cli` signs it (on macOS)
+// and the installer ships it. On macOS both architectures are fetched and `lipo`'d into one universal binary, so
 // the same .app runs on Apple silicon and Intel.
 //
 //   node scripts/download-core.mjs                 # the version pinned in package.json

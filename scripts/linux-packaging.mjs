@@ -29,11 +29,7 @@ export const SIDECARS = ['uv', 'cloudflared']
  * Bun-compiled binaries kept out of `bundle.resources` (buildAppImage.sh copies them into the AppImage
  * after linuxdeploy, whose patchelf would cut their payload off); the stage copies them the same way.
  */
-export const CORE_BINARIES = [
-  'atomic-chat-core',
-  'atomic-chat-app-core',
-  'jan-cli',
-]
+export const CORE_BINARIES = ['atomic-chat-core', 'atomic-chat-app-core']
 
 /**
  * Where a PNG icon goes in the hicolor theme: by its own pixel size, read from the PNG header (IHDR width

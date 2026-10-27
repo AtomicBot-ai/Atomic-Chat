@@ -61,22 +61,21 @@ install-ios-rust-targets:
 download-cloudflared:
 	yarn download:cloudflared
 
+# The dev chains fetch what the installer ships: upstream llama.cpp, not MLX or
+# the TurboQuant fork, which the core installs on demand. Their targets
+# (`build-mlx-server`, `download-llamacpp-backend`) still run by hand.
 dev: install-and-build
 	yarn download:bin
-	make download-llamacpp-backend
 	make download-llamacpp-upstream-backend
-	make build-mlx-server
 	make build-foundation-models-server-if-exists
 	make build-cli-dev
 	yarn dev
 
 # Same as `dev`, but skips (re)installing backends if they are already present.
-# Uses the `-if-exists` targets for llamacpp / mlx-server / foundation-models-server.
+# Uses the `-if-exists` targets for llamacpp-upstream / foundation-models-server.
 dev-fast: install-and-build
 	yarn download:bin
-	make download-llamacpp-backend-if-exists
 	make download-llamacpp-upstream-backend-if-exists
-	make build-mlx-server-if-exists
 	make build-foundation-models-server-if-exists
 	make build-cli-dev
 	yarn dev
@@ -99,9 +98,7 @@ dev-fast: install-and-build
 # It works the same with dev-onboarding and dev-onboarding-low-spec.
 dev-fresh: install-and-build
 	yarn download:bin
-	make download-llamacpp-backend-if-exists
 	make download-llamacpp-upstream-backend-if-exists
-	make build-mlx-server-if-exists
 	make build-foundation-models-server-if-exists
 	make build-cli-dev
 	FRESH_INSTALL=true FORCE_ONBOARDING=true yarn dev
@@ -110,9 +107,7 @@ dev-fresh: install-and-build
 # The FORCE_ONBOARDING flag is passed to vite as a compile-time constant.
 dev-onboarding: install-and-build
 	yarn download:bin
-	make download-llamacpp-backend
 	make download-llamacpp-upstream-backend
-	make build-mlx-server
 	make build-foundation-models-server-if-exists
 	make build-cli-dev
 	FORCE_ONBOARDING=true yarn dev
@@ -140,9 +135,7 @@ FORCE_HARDWARE_TIER ?= vram_2
 # falls back to the built-in ladder, which is exactly the recommendation needed.
 dev-onboarding-low-spec: install-and-build
 	yarn download:bin
-	make download-llamacpp-backend
 	make download-llamacpp-upstream-backend
-	make build-mlx-server
 	make build-foundation-models-server-if-exists
 	make build-cli-dev
 	@if [ -f "$(ATOMIC_CHAT_CONF)/models/recommended.json" ]; then \
@@ -384,14 +377,11 @@ stub-resources:
 ifeq ($(OS),Windows_NT)
 	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/stub-tauri-resources.ps1
 else ifeq ($(shell uname -s),Darwin)
-	@mkdir -p src-tauri/resources/bin src-tauri/resources/pre-install src-tauri/resources/llamacpp-backend src-tauri/resources/llamacpp-backend-upstream
+	@mkdir -p src-tauri/resources/bin src-tauri/resources/pre-install src-tauri/resources/llamacpp-backend-upstream
 	@[ -e src-tauri/resources/LICENSE ] || touch src-tauri/resources/LICENSE
 	@[ -e src-tauri/resources/pre-install/test-placeholder ] || touch src-tauri/resources/pre-install/test-placeholder
-	@[ -e src-tauri/resources/bin/jan-cli ] || touch src-tauri/resources/bin/jan-cli
 	@[ -e src-tauri/resources/bin/atomic-chat-core ] || touch src-tauri/resources/bin/atomic-chat-core
 	@[ -e src-tauri/resources/bin/atomic-chat-app-core ] || touch src-tauri/resources/bin/atomic-chat-app-core
-	@[ -e src-tauri/resources/bin/mlx-server ] || touch src-tauri/resources/bin/mlx-server
-	@[ -e src-tauri/resources/bin/mlx-server.json ] || touch src-tauri/resources/bin/mlx-server.json
 	@[ -e src-tauri/resources/bin/foundation-models-server ] || touch src-tauri/resources/bin/foundation-models-server
 	@[ -e src-tauri/resources/bin/bun-aarch64-apple-darwin ] || touch src-tauri/resources/bin/bun-aarch64-apple-darwin
 	@[ -e src-tauri/resources/bin/bun-x86_64-apple-darwin ] || touch src-tauri/resources/bin/bun-x86_64-apple-darwin
@@ -400,15 +390,13 @@ else ifeq ($(shell uname -s),Darwin)
 	@[ -e src-tauri/resources/bin/cloudflared-aarch64-apple-darwin ] || touch src-tauri/resources/bin/cloudflared-aarch64-apple-darwin
 	@[ -e src-tauri/resources/bin/cloudflared-x86_64-apple-darwin ] || touch src-tauri/resources/bin/cloudflared-x86_64-apple-darwin
 else
-	@mkdir -p src-tauri/resources/bin src-tauri/resources/pre-install src-tauri/resources/llamacpp-backend src-tauri/resources/llamacpp-backend-upstream
+	@mkdir -p src-tauri/resources/bin src-tauri/resources/pre-install src-tauri/resources/llamacpp-backend-upstream
 	@[ -e src-tauri/resources/LICENSE ] || touch src-tauri/resources/LICENSE
 	@[ -e src-tauri/resources/pre-install/test-placeholder ] || touch src-tauri/resources/pre-install/test-placeholder
-	@[ -e src-tauri/resources/bin/jan-cli ] || touch src-tauri/resources/bin/jan-cli
 	@[ -e src-tauri/resources/bin/atomic-chat-app-core ] || touch src-tauri/resources/bin/atomic-chat-app-core
 	@[ -e src-tauri/resources/bin/sqlite-vec.so ] || touch src-tauri/resources/bin/sqlite-vec.so
 	@[ -e src-tauri/resources/bin/uv-$(shell uname -m)-unknown-linux-gnu ] || touch src-tauri/resources/bin/uv-$(shell uname -m)-unknown-linux-gnu
 	@[ -e src-tauri/resources/bin/cloudflared-$(shell uname -m)-unknown-linux-gnu ] || touch src-tauri/resources/bin/cloudflared-$(shell uname -m)-unknown-linux-gnu
-	@[ -e src-tauri/resources/llamacpp-backend/test-placeholder ] || touch src-tauri/resources/llamacpp-backend/test-placeholder
 	@[ -e src-tauri/resources/llamacpp-backend-upstream/test-placeholder ] || touch src-tauri/resources/llamacpp-backend-upstream/test-placeholder
 endif
 
@@ -651,7 +639,6 @@ ifeq ($(OS),Windows_NT)
 endif
 	yarn copy:assets:tauri
 	yarn build:icon
-	yarn build:mlx-server
 	make build-foundation-models-server-if-exists
 	make build-cli
 	$(MAKE) test-local
@@ -664,19 +651,19 @@ test-all: install-and-build install-rust-targets
 	yarn download:bin
 	yarn copy:assets:tauri
 	yarn build:icon
-	yarn build:mlx-server
 	$(MAKE) build-foundation-models-server-if-exists
 	$(MAKE) build-cli
 	python3 scripts/run_test_all.py \
 		--make "$(MAKE)" \
 		$(if $(filter 1,$(REQUIRE)),--require-live,)
 
-# The mlx-server the macOS installer ships, as conf's backends/mlx-manifest.json
-# pins it: release tag, archive, sha256 and size (scripts/fetch-mlx-server.mjs).
-# The archive is checked before it is unpacked, and `mlx-server.json`
-# {tag, published_at} goes beside the binary for the core to order the
-# installer's build against the ones it downloads. A manifest not on conf's
-# main yet, or a local change to it:
+# The mlx-server conf's backends/mlx-manifest.json pins: release tag, archive,
+# sha256 and size (scripts/fetch-mlx-server.mjs). The installer no longer ships
+# it — the core installs MLX on demand — so this runs by hand only, to try a
+# build locally. The archive is checked before it is unpacked, and
+# `mlx-server.json` {tag, published_at} goes beside the binary for the core to
+# order it against the builds it downloads. A manifest not on conf's main yet,
+# or a local change to it:
 #   make build-mlx-server MLX_MANIFEST=../atomic-chat-conf/backends/mlx-manifest.json
 MLX_MANIFEST ?=
 MLX_FETCH = node scripts/fetch-mlx-server.mjs $(if $(MLX_MANIFEST),--manifest "$(MLX_MANIFEST)",)
@@ -757,7 +744,9 @@ else
 	@echo "Skipping Foundation Models server build (macOS only)"
 endif
 
-# Download llamacpp turboquant backend for bundling.
+# Download the llamacpp turboquant backend into src-tauri/resources/llamacpp-backend.
+# The installer no longer bundles it — the core installs TurboQuant on first
+# use — so this runs by hand only (e.g. for ATOMIC_AGENT_E2E_LLAMA_SERVER).
 # No release tag is pinned here: scripts/resolve-turboquant-release.sh asks the
 # fork's own releases/latest which stable release is current, so a new fork
 # release lands in the next build without a commit in this repo. The archive
@@ -770,7 +759,7 @@ TURBOQUANT_RESOLVE = ./scripts/resolve-turboquant-release.sh
 TURBOQUANT_DETECT = ./scripts/detect-turboquant-backend.sh
 LLAMACPP_TAG ?=
 TURBOQUANT_TAG ?= $(LLAMACPP_TAG)
-# Linux only: which variant to fetch. Empty means the bundled Vulkan fallback;
+# Linux only: which variant to fetch. Empty means the portable Vulkan build;
 # `update-llamacpp-backend` fills it with the tier this host would run.
 TURBOQUANT_BACKEND ?=
 download-llamacpp-backend:
@@ -812,25 +801,19 @@ else ifeq ($(OS),Windows_NT)
 else ifeq ($(shell uname -s)-$(shell uname -m),Linux-aarch64)
 	@mkdir -p src-tauri/resources/llamacpp-backend
 	@# The fork has no portable Linux arm64 build (only CUDA 13.3), so the
-	@# Linux arm64 app ships without TurboQuant and bundles nothing here.
+	@# Linux arm64 app hides TurboQuant and nothing is fetched here.
 	@echo "Skipping TurboQuant backend on Linux arm64 (the provider is hidden there)"
 else ifeq ($(shell uname -s),Linux)
 	@mkdir -p src-tauri/resources/llamacpp-backend
-	@# TurboQuant ships on Linux as the second provider alongside
-	@# llamacpp-upstream. The fork also publishes Linux CPU/CUDA/ROCm builds,
-	@# but linux-x64-vulkan is the one a release bundles: it serves both CPU and
-	@# GPU via GGML_BACKEND_DL, so it is the offline fallback that works on any
-	@# host. The GPU tiers are runtime downloads; TURBOQUANT_BACKEND overrides the
-	@# variant for a dev box only. The backend index is resolved
+	@# The fork publishes Linux CPU/CUDA/ROCm builds, but linux-x64-vulkan is
+	@# the default here: it serves both CPU and GPU via GGML_BACKEND_DL, so it
+	@# works on any host. TURBOQUANT_BACKEND picks another variant. The backend
+	@# index is resolved
 	@# from the static turboquant manifest in atomic-chat-conf
 	@# (raw.githubusercontent.com — no api.github.com rate limit); the archive
 	@# download itself comes from the AtomicBot-ai releases CDN.
 	@BACKEND="$(TURBOQUANT_BACKEND)"; \
 	if [ -z "$$BACKEND" ]; then BACKEND="linux-x64-vulkan"; fi; \
-	if [ "$$BACKEND" != "linux-x64-vulkan" ]; then \
-		echo "Warning: bundling $$BACKEND, not the portable linux-x64-vulkan fallback."; \
-		echo "         Run 'make download-llamacpp-backend' before packaging a release."; \
-	fi; \
 	echo "Platform: $$BACKEND (turboquant / Linux)"; \
 	RESOLVED=$$($(TURBOQUANT_RESOLVE) "$$BACKEND" "$(TURBOQUANT_TAG)") || exit 1; \
 	TAG=$${RESOLVED%% *}; \
@@ -859,16 +842,15 @@ else
 	@echo "Skipping llamacpp backend download (unsupported platform)"
 endif
 
-# Refresh the bundled TurboQuant engine only when the fork has published a newer
-# stable release. `download-llamacpp-backend-if-exists` keeps whatever archive is
-# already on disk however old it is; this one compares version.txt/backend.txt
-# against the newest stable release and downloads on a mismatch.
+# Refresh the TurboQuant engine in src-tauri/resources/llamacpp-backend only
+# when the fork has published a newer stable release.
+# `download-llamacpp-backend-if-exists` keeps whatever archive is already on
+# disk however old it is; this one compares version.txt/backend.txt against the
+# newest stable release and downloads on a mismatch.
 #
 # On Linux the variant is the one this host would actually run
 # (scripts/detect-turboquant-backend.sh mirrors the runtime probe), so a dev box
-# with an NVIDIA card gets the CUDA build rather than the Vulkan fallback. That
-# also means the resource dir stops holding the portable fallback a release must
-# bundle — run `make download-llamacpp-backend` before packaging one.
+# with an NVIDIA card gets the CUDA build rather than the Vulkan fallback.
 # Examples:
 #   make update-llamacpp-backend
 #   make update-llamacpp-backend TURBOQUANT_BACKEND=linux-x64-rocm
@@ -896,7 +878,8 @@ endif
 # backend resource dir. The app will auto-detect GPU and download the optimal
 # backend (CUDA/Vulkan) at runtime via the llamacpp-upstream extension.
 # Upstream remains the Windows default; this target owns its CPU fallback.
-# TurboQuant uses the separate `download-llamacpp-backend-win-cpu` target.
+# TurboQuant (by hand only) uses the separate `download-llamacpp-backend-win-cpu`
+# target.
 download-llamacpp-upstream-backend-win-cpu:
 	powershell -NoProfile -Command " \
 		$$ErrorActionPreference = 'Stop'; \
@@ -938,12 +921,10 @@ download-llamacpp-upstream-backend-win-cpu:
 		Write-Host \"CPU backend ($$backend) downloaded successfully. App will auto-download GPU backend at runtime.\"; \
 	"
 
-# Download the bundled CPU fallback for the TurboQuant provider on Windows
-# (pure PowerShell, no bash needed). TurboQuant ships on Windows as the second
-# provider alongside llamacpp-upstream; this target bundles the offline-fallback
-# `windows-x64-cpu` build into the turboquant resource dir. The app auto-detects
-# GPU and downloads the optimal CUDA/Vulkan backend at runtime via the
-# llamacpp-extension. No tag is pinned: the newest stable release is resolved
+# Download the TurboQuant `windows-x64-cpu` build into the turboquant resource
+# dir (pure PowerShell, no bash needed). The installer no longer bundles it —
+# the core installs TurboQuant on first use — so this runs by hand only.
+# No tag is pinned: the newest stable release is resolved
 # from the fork's own index.json, with the legacy atomic-chat-conf manifest as
 # a fallback. Set TURBOQUANT_TAG to pin one. The archive comes from the
 # AtomicBot-ai releases CDN.
@@ -1026,10 +1007,9 @@ release-prod:
 	@test -n "$(RELEASE_VERSION)" || { echo "Usage: make release-prod 2.1.3"; exit 1; }
 	node scripts/release-prod.mjs --tag $(RELEASE_VERSION) $(if $(DRY_RUN),--dry-run)
 
-# Download upstream ggml-org/llama.cpp backend for bundling alongside the
-# turboquant fork on macOS. We ship BOTH backends in the DMG so users can pick
-# the "Llama.cpp" provider (vanilla upstream) or the "llama.cpp" provider
-# (TurboQuant fork) at runtime.
+# Download upstream ggml-org/llama.cpp backend for bundling. It is the only
+# llama.cpp build the installers ship; the core installs the TurboQuant fork
+# (the second "llama.cpp" provider) on first use.
 #
 # Backend-index source (ATO-199): every branch asks
 # scripts/resolve-upstream-backend.mjs for the tag, asset name, URL and hash.
@@ -1265,29 +1245,28 @@ ifeq ($(shell uname -s),Darwin)
 	fi
 else ifeq ($(OS),Windows_NT)
 	@echo "download-llamacpp-backend-if-exists is a no-op on Windows."
-	@echo "Release packaging installs TurboQuant separately; use the upstream dev target for the default provider."
+	@echo "Use download-llamacpp-backend-win-cpu to fetch TurboQuant by hand."
 else
 	@echo "Skipping llamacpp backend (unsupported platform)"
 endif
 
-# The bundled `jan-cli` is the compiled atomic-chat-core (the legacy Rust CLI was removed in stage 6).
+# The CLI is the compiled atomic-chat-core itself (the legacy Rust CLI was removed in stage 6).
+# The installer ships no separate copy of it: `install_jan_cli_sync` copies the bundled
+# `atomic-chat-core` onto the PATH as `atomic-chat-cli`.
 
 # Fetch the pinned core release (or use ATOMIC_CORE_LOCAL) into resources/bin.
 download-core:
 	node ./scripts/download-core.mjs
 
-# Copy the core into place as `jan-cli` and sign it. The file name is the contract the installer,
-# the Settings → Install CLI action and every doc already use; only its contents change.
+# Check the core pair runs and, on macOS, sign it. The target keeps its name so `yarn build:cli`
+# and every build chain that runs it still work.
 build-cli-core: download-core
 	@node ./scripts/download-core.mjs --verify-only
 ifeq ($(shell uname -s),Darwin)
-	cp src-tauri/resources/bin/atomic-chat-core src-tauri/resources/bin/jan-cli
-	chmod +x src-tauri/resources/bin/jan-cli
-	mkdir -p src-tauri/target/universal-apple-darwin/release
 	@echo "Checking for code signing identity..."; \
 	SIGNING_IDENTITY=$$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)".*/\1/'); \
 	if [ -n "$$SIGNING_IDENTITY" ]; then \
-		for binary in jan-cli atomic-chat-core atomic-chat-app-core; do \
+		for binary in atomic-chat-core atomic-chat-app-core; do \
 			echo "Signing $$binary with identity: $$SIGNING_IDENTITY"; \
 			codesign --force --options runtime --timestamp --entitlements src-tauri/Entitlements.sidecar.plist --sign "$$SIGNING_IDENTITY" "src-tauri/resources/bin/$$binary" || exit 1; \
 			codesign --verify --strict --verbose=2 "src-tauri/resources/bin/$$binary" || exit 1; \
@@ -1295,12 +1274,6 @@ ifeq ($(shell uname -s),Darwin)
 	else \
 		echo "Warning: No Developer ID Application identity found. Skipping code signing (notarization will fail)."; \
 	fi
-	cp src-tauri/resources/bin/jan-cli src-tauri/target/universal-apple-darwin/release/jan-cli
-else ifeq ($(OS),Windows_NT)
-	powershell -NoProfile -Command "New-Item -ItemType Directory -Force -Path 'src-tauri/resources/bin' | Out-Null; Copy-Item 'src-tauri/resources/bin/atomic-chat-core.exe' 'src-tauri/resources/bin/jan-cli.exe' -Force"
-else
-	cp src-tauri/resources/bin/atomic-chat-core src-tauri/resources/bin/jan-cli
-	chmod +x src-tauri/resources/bin/jan-cli
 endif
 
 build-cli:

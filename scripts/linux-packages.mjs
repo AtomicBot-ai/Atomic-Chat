@@ -204,7 +204,7 @@ function stage() {
       const src = join(binDir, name)
       if (!existsSync(src))
         fail(
-          `${src} is missing; run \`yarn download:bin\`, \`yarn download:core\` and \`yarn build:cli\` first`
+          `${src} is missing; run \`yarn download:bin\` and \`yarn download:core\` first`
         )
       run('cp', [src, join(dir, name)])
       chmodSync(join(dir, name), 0o755)

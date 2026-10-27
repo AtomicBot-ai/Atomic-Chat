@@ -49,17 +49,17 @@ fi
 cp ./src-tauri/resources/bin/bun "${APP_DIR}/usr/bin/bun"
 mkdir -p "${LIB_DIR}/engines"
 
-# The atomic-chat-core pair (and jan-cli, a copy of the core) are `bun
-# --compile` binaries: the payload is ~5MB appended after the ELF sections.
+# The atomic-chat-core pair are `bun --compile` binaries: the payload is
+# ~5MB appended after the ELF sections.
 # linuxdeploy walks every ELF under usr/lib, runs ldd on it and rewrites its
 # rpath with patchelf — and patchelf drops that trailing payload, which is why
 # these are kept out of `bundle.resources` in tauri.linux.conf.json and copied
 # in here instead, after linuxdeploy has run. Same reason as `bun` above.
 mkdir -p "${RES_BIN_DIR}"
-for core_binary in atomic-chat-core atomic-chat-app-core jan-cli; do
+for core_binary in atomic-chat-core atomic-chat-app-core; do
   src="./src-tauri/resources/bin/${core_binary}"
   if [ ! -f "${src}" ]; then
-    echo "Missing ${src}; run \`yarn download:core\` and \`yarn build:cli\` before this script."
+    echo "Missing ${src}; run \`yarn download:core\` before this script."
     exit 1
   fi
   cp "${src}" "${RES_BIN_DIR}/${core_binary}"

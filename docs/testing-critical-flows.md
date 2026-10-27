@@ -142,8 +142,9 @@ Gap:
   process acceptance before advancing the pinned manifest revision.
 - Live sidecar acceptance is opt-in and still needs platform-native execution
   before advancing a binary pin.
-- `mlx-server/Sources/MLXServer` is legacy Swift source; release builds download
-  the PyInstaller binary from `AtomicBot-ai/mlx-vlm`.
+- `mlx-server/Sources/MLXServer` is legacy Swift source; the core downloads the
+  PyInstaller binary from `AtomicBot-ai/mlx-vlm` on demand (the installer does
+  not ship it).
 
 ### Onboarding — partial, P0
 

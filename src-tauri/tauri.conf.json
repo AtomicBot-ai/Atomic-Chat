@@ -68,8 +68,7 @@
     ],
     "resources": [
       "resources/LICENSE",
-      "resources/agent-skills/**/*",
-      "resources/llamacpp-backend/"
+      "resources/agent-skills/**/*"
     ],
     "windows": {
       "nsis": {

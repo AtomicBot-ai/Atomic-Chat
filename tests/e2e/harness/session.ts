@@ -40,28 +40,24 @@ export interface Session {
 }
 
 /**
- * The backend pair the app bundles and unpacks into a fresh data folder on its
- * first launch (`install_bundled_backend` in each llama.cpp plugin): the tags
- * of `src-tauri/resources/llamacpp-backend{,-upstream}/{version,backend}.txt`
- * when a dev build fetched them. Their arrival is the app's own doing, not a
- * download the scenario missed, so the teardown expects them.
+ * The backend the app bundles and unpacks into a fresh data folder on its first
+ * launch (`install_bundled_backend` in the upstream llama.cpp plugin): the tag
+ * of `src-tauri/resources/llamacpp-backend-upstream/{version,backend}.txt` when
+ * a dev build fetched it. Its arrival is the app's own doing, not a download
+ * the scenario missed, so the teardown expects it. Upstream is the only
+ * llama.cpp the installer ships; a TurboQuant build left in
+ * `resources/llamacpp-backend` by hand is not bundled, so it is not expected.
  */
 export function bundledBackends(): string[] {
-  const root = join(REPO_ROOT, 'src-tauri', 'resources')
-  const found: string[] = []
-  for (const [provider, dir] of [
-    ['llamacpp-upstream', 'llamacpp-backend-upstream'],
-    ['llamacpp', 'llamacpp-backend'],
-  ] as const) {
-    try {
-      const version = readFileSync(join(root, dir, 'version.txt'), 'utf8').replace(/\uFEFF/g, '').trim()
-      const backend = readFileSync(join(root, dir, 'backend.txt'), 'utf8').replace(/\uFEFF/g, '').trim()
-      if (version && backend) found.push(`${provider}:${version}/${backend}`)
-    } catch {
-      // not fetched on this machine: nothing gets unpacked
-    }
+  const dir = join(REPO_ROOT, 'src-tauri', 'resources', 'llamacpp-backend-upstream')
+  try {
+    const version = readFileSync(join(dir, 'version.txt'), 'utf8').replace(/\uFEFF/g, '').trim()
+    const backend = readFileSync(join(dir, 'backend.txt'), 'utf8').replace(/\uFEFF/g, '').trim()
+    if (version && backend) return [`llamacpp-upstream:${version}/${backend}`]
+  } catch {
+    // not fetched on this machine: nothing gets unpacked
   }
-  return found
+  return []
 }
 
 export async function startSession(
