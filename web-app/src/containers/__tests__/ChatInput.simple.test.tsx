@@ -18,7 +18,6 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { modelStopKey, useAppState } from '@/hooks/useAppState'
 import { usePrompt } from '@/hooks/usePrompt'
-import { useToolApproval } from '@/hooks/useToolApproval'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { useAgentRun } from '@/hooks/useAgentRun'
 import { useThreads } from '@/hooks/useThreads'
@@ -232,7 +231,6 @@ vi.mock('@/containers/AgentApprovalModeSelect', () => ({
   // covers how the menu draws them.
   AgentApprovalModeSelect: ({
     toggles = [],
-    manualOverride,
   }: {
     toggles?: Array<{
       id: string
@@ -240,31 +238,18 @@ vi.mock('@/containers/AgentApprovalModeSelect', () => ({
       checked: boolean
       onCheckedChange: (checked: boolean) => void
     }>
-    manualOverride?: {
-      notice: string
-      actionLabel: string
-      onAction: () => void
-    }
   }) => (
-    <>
-      <span data-test-id="approval-mode-select">
-        {toggles.map((toggle) => (
-          <button
-            key={toggle.id}
-            aria-pressed={toggle.checked}
-            onClick={() => toggle.onCheckedChange(!toggle.checked)}
-          >
-            {toggle.label}
-          </button>
-        ))}
-      </span>
-      {manualOverride && (
-        <span data-test-id="approval-manual-override">
-          {manualOverride.notice}
-          <a onClick={manualOverride.onAction}>{manualOverride.actionLabel}</a>
-        </span>
-      )}
-    </>
+    <span data-test-id="approval-mode-select">
+      {toggles.map((toggle) => (
+        <button
+          key={toggle.id}
+          aria-pressed={toggle.checked}
+          onClick={() => toggle.onCheckedChange(!toggle.checked)}
+        >
+          {toggle.label}
+        </button>
+      ))}
+    </span>
   ),
 }))
 
@@ -1713,34 +1698,6 @@ describe('ChatInput', () => {
         .map((toggle) => toggle.textContent)
     ).toEqual(['chat:agentMode.menuItem'])
     unmount()
-  })
-
-  it('says in the access menu when global auto-approve overrides Restricted, linking to that setting', () => {
-    const allowAll = useToolApproval.getState().allowAllMCPPermissions
-    try {
-      // No mode picked on this composer, so it shows Restricted, while the
-      // global switch runs connector tools such as web search unasked.
-      useToolApproval.setState({ allowAllMCPPermissions: true })
-      const { unmount } = render(<ChatInput />)
-
-      const note = document.querySelector<HTMLElement>(
-        '[data-test-id="approval-manual-override"]'
-      )!
-      expect(note).toHaveTextContent('chat:agentApprovals.autoApproveOverride')
-      fireEvent.click(
-        within(note).getByText('chat:agentApprovals.openAutoApproveSetting')
-      )
-      expect(mocks.navigate).toHaveBeenCalledWith({ to: '/settings/general' })
-
-      // With the switch off, Restricted asks as it says: nothing to add.
-      act(() => useToolApproval.setState({ allowAllMCPPermissions: false }))
-      expect(
-        document.querySelector('[data-test-id="approval-manual-override"]')
-      ).not.toBeInTheDocument()
-      unmount()
-    } finally {
-      useToolApproval.setState({ allowAllMCPPermissions: allowAll })
-    }
   })
 
   it('renders the agent chip whose X turns the mode off everywhere', () => {

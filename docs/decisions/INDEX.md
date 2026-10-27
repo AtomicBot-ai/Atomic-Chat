@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-487 records, 2026-05-19 → 2026-10-27.
+488 records, 2026-05-19 → 2026-10-27.
 
 ---
 
@@ -361,7 +361,8 @@ decision is reversed, add a new one that says which record it supersedes.
 ## UI / UX (2)
 - **2026-10-20** — [Show hosted providers on Cloud and the user's own servers on Custom Endpoint](2026-10-20-show-hosted-providers-on-cloud-and-own-servers-on-custom-endpoint.md)
 - **2026-10-20** — [List everything downloaded on a Downloads page](2026-10-20-list-everything-downloaded-on-a-downloads-page.md)
-## UI / UX (126)
+## UI / UX (127)
+- **2026-10-27** — [Drop the auto-approve note from the access menu](2026-10-27-drop-the-auto-approve-note-from-the-access-menu.md) — supersedes the menu note of 2026-10-21.
 - **2026-10-27** — [Hide the wait screen's email reminder until it is delivered](2026-10-27-hide-the-email-reminder-until-it-is-delivered.md) — supersedes in part 2026-10-26.
 - **2026-10-27** — [Make the default interface denser, and show every clickable thing as one](2026-10-27-make-the-default-interface-denser.md) — supersedes the heights of the 2026-10-20 control scale (28 / 24 / 32 px, 13 px Medium type).
 - **2026-10-26** — [Keep unsent drafts across a relaunch](2026-10-26-keep-unsent-drafts-across-a-relaunch.md) — supersedes in part 2026-10-21.

@@ -23,22 +23,6 @@ export function resolveMcpAutoApprove(threadId: string): boolean {
 }
 
 /**
- * Whether the global switch, not the composer's select, decides MCP/RAG
- * approval on this composer right now: no mode picked and the switch on (the
- * first rule above). The select still shows Restricted then, but connector
- * tools such as web search run without asking, so the composer has to say so.
- */
-export function useGlobalAutoApproveOverridesSelect(
-  threadKey: string
-): boolean {
-  const picked = useAgentMode(
-    (state) => state.approvalModes[threadKey] !== undefined
-  )
-  const allowAll = useToolApproval((state) => state.allowAllMCPPermissions)
-  return allowAll && !picked
-}
-
-/**
  * Whether chat's own `run_command` / `run_script` calls run without asking:
  * only on an explicit "skip" (Full access). Like the agent's shell they gate
  * on the approval mode alone — the global "Allow all MCP permissions" switch

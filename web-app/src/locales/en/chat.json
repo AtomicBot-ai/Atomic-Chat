@@ -202,9 +202,7 @@
     "skipConfirmTitle": "Enable Full access?",
     "skipConfirmBody": "No approval prompts: tool calls can modify or delete files, run commands, and use the internet. Enable it only for a task you trust.",
     "skipConfirmCancel": "Cancel",
-    "skipConfirmAccept": "I understand",
-    "autoApproveOverride": "“Auto-approve tool calls” is on in Settings, so web search and other connector tools run without asking.",
-    "openAutoApproveSetting": "Open Settings"
+    "skipConfirmAccept": "I understand"
   },
   "agentApproval": {
     "title": "Agent approval required",

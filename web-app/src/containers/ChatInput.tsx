@@ -63,7 +63,6 @@ import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
 import { generateId, type ChatStatus } from 'ai'
 import { useRouter } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
-import { useGlobalAutoApproveOverridesSelect } from '@/lib/mcp-approval'
 import { TEMPORARY_CHAT_ID, TEMPORARY_CHAT_QUERY_ID } from '@/constants/chat'
 import { composerThreadKey as buildComposerThreadKey } from '@/lib/composer-thread-key'
 import {
@@ -373,10 +372,6 @@ const ChatInput = memo(function ChatInput({
     (state) => state.approvalModes[composerThreadKey] ?? 'manual'
   )
   const setApprovalMode = useAgentMode((state) => state.setApprovalMode)
-  // Restricted is shown, yet global auto-approve runs connector tools (web
-  // search) unasked: the menu says so and links to the setting.
-  const autoApproveOverridesRestricted =
-    useGlobalAutoApproveOverridesSelect(composerThreadKey)
 
   useLayoutEffect(() => {
     const caret = pendingAgentSkillCaretRef.current
@@ -3413,20 +3408,6 @@ const ChatInput = memo(function ChatInput({
                       'chat:agentApprovals.skipConfirmAccept'
                     )}
                     toggles={accessToggles}
-                    manualOverride={
-                      autoApproveOverridesRestricted
-                        ? {
-                            notice: t(
-                              'chat:agentApprovals.autoApproveOverride'
-                            ),
-                            actionLabel: t(
-                              'chat:agentApprovals.openAutoApproveSetting'
-                            ),
-                            onAction: () =>
-                              router.navigate({ to: route.settings.general }),
-                          }
-                        : undefined
-                    }
                   />
                   {/* //! Browse (Chrome) button — temporarily hidden
                 {!agentRouteActive && hasJanBrowserMCPConfig && modelSupportsBrowser && (
