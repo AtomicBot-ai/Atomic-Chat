@@ -47,6 +47,7 @@ import { reportMlxEngineInstallFailure } from '@/lib/mlx-engine'
 import {
   installMlxEngine,
   isMlxEngineInstallCancelled,
+  pendingMlxEngineInstall,
 } from '@/services/engine-builds/mlx'
 import {
   getProviderTitle,
@@ -730,7 +731,7 @@ export async function switchToModel(params: {
     }
 
     try {
-      await doSwitchToModel(params)
+      await doSwitchToModel(params, () => mySeq !== switchSeq)
     } catch (error) {
       // A failed load leaves nothing to chat with, so the composer goes back
       // to "Select Model" rather than showing the model that did not come
@@ -790,12 +791,48 @@ async function settleAfterLocalStart(
   }
 }
 
-async function doSwitchToModel(params: {
-  modelId: string
-  providerName: string
-  serviceHub: ServiceHub
-  isAutoStart?: boolean
-}): Promise<void> {
+/** How often a load waiting for the MLX engine install checks for a Cancel or a newer switch. */
+const MLX_INSTALL_WAIT_POLL_MS = 250
+
+/**
+ * Wait for the MLX engine install running now, if any, until it settles or
+ * `stop()` says the load is no longer wanted. Joins only an install already
+ * running; a failed or cancelled one ends the wait like a finished one.
+ */
+async function waitForRunningMlxEngineInstall(
+  stop: () => boolean
+): Promise<void> {
+  const install = pendingMlxEngineInstall()
+  if (!install) return
+  let timer: ReturnType<typeof setInterval> | undefined
+  const stopped = new Promise<void>((resolve) => {
+    timer = setInterval(() => {
+      if (stop()) resolve()
+    }, MLX_INSTALL_WAIT_POLL_MS)
+  })
+  try {
+    await Promise.race([
+      install.then(
+        () => undefined,
+        () => undefined
+      ),
+      stopped,
+    ])
+  } finally {
+    clearInterval(timer)
+  }
+}
+
+async function doSwitchToModel(
+  params: {
+    modelId: string
+    providerName: string
+    serviceHub: ServiceHub
+    isAutoStart?: boolean
+  },
+  /** A switch requested after this one is waiting behind it. */
+  isSuperseded: () => boolean = () => false
+): Promise<void> {
   const { modelId, providerName, serviceHub, isAutoStart } = params
 
   const { setServerStatus, setActiveModels, updateLoadingModel } =
@@ -888,6 +925,21 @@ async function doSwitchToModel(params: {
   )
 
   try {
+    // 0. MLX: a new model can land before the engine it runs on, which the
+    //    installer does not carry. A load that finds that install running
+    //    waits for it under the usual loading status rather than failing
+    //    with BINARY_NOT_FOUND, before anything is torn down. A failed or
+    //    cancelled install leaves the load to fail as before, with its
+    //    Install; a Cancel or a newer switch ends the wait.
+    if (providerName === 'mlx' && pendingMlxEngineInstall()) {
+      setLoadingModelProgress({ kind: 'installingEngine' })
+      await waitForRunningMlxEngineInstall(
+        () => Boolean(load?.cancelRequested) || isSuperseded()
+      )
+      if (isSuperseded()) throw cancelledLoadError()
+      throwIfLoadCancelled()
+    }
+
     // 1. Stop every other local model (llamacpp + mlx) so only one model is
     //    ever "active" globally. For a local target the target engine's own
     //    copy is left alone: `startModel` short-circuits on an already-loaded

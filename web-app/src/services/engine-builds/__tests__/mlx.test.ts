@@ -21,6 +21,7 @@ import {
   installMlxEngine,
   mlxEngineActive,
   mlxEngineActiveIn,
+  pendingMlxEngineInstall,
   useMlxEngineInstallStore,
 } from '../mlx'
 import type { EngineBuildCatalog } from '../types'
@@ -140,9 +141,12 @@ describe('installMlxEngine', () => {
       }
     )
 
+    expect(pendingMlxEngineInstall()).toBeNull()
     const first = installMlxEngine()
     const second = installMlxEngine()
     expect(second).toBe(first)
+    // A load can join it without starting another.
+    expect(pendingMlxEngineInstall()).toBe(first)
     expect(useMlxEngineInstallStore.getState().installing).toBe(true)
     await vi.waitFor(() =>
       expect(install.installEngineBuildWithProgress).toHaveBeenCalledTimes(1)
@@ -158,6 +162,7 @@ describe('installMlxEngine', () => {
       RESULT,
     ])
     expect(core.engineBuildCatalog).toHaveBeenCalledTimes(1)
+    expect(pendingMlxEngineInstall()).toBeNull()
     expect(useMlxEngineInstallStore.getState()).toMatchObject({
       installing: false,
       progress: null,

@@ -159,7 +159,10 @@ vi.mock('@/i18n/setup', () => ({
   default: { t: (key: string) => key },
 }))
 
-const mlxEngine = vi.hoisted(() => ({ installMlxEngine: vi.fn() }))
+const mlxEngine = vi.hoisted(() => ({
+  installMlxEngine: vi.fn(),
+  pendingMlxEngineInstall: vi.fn((): Promise<unknown> | null => null),
+}))
 vi.mock('@/services/engine-builds/mlx', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/engine-builds/mlx')>()),
   ...mlxEngine,
@@ -671,6 +674,125 @@ describe('load progress and cancel', () => {
       { kind: 'startingServer' },
     ])
     localApiState.enableOnStartup = false
+  })
+
+  describe('while the MLX engine installs', () => {
+    const missing = () =>
+      Object.assign(new Error('MLX is not installed.'), {
+        code: 'BINARY_NOT_FOUND',
+      })
+    const waiting = () =>
+      vi.waitFor(() =>
+        expect(appState.setLoadingModelProgress).toHaveBeenCalledWith({
+          kind: 'installingEngine',
+        })
+      )
+
+    afterEach(() => mlxEngine.pendingMlxEngineInstall.mockReturnValue(null))
+
+    it('waits for the install running now under the loading status, then loads once', async () => {
+      let finish!: () => void
+      mlxEngine.pendingMlxEngineInstall.mockReturnValue(
+        new Promise<void>((resolve) => (finish = resolve))
+      )
+      const startModel = vi.fn().mockResolvedValue(undefined)
+      const serviceHub = hubWith({ startModel })
+
+      const switching = switchToModel({
+        modelId: 'broken-model',
+        providerName: 'mlx',
+        serviceHub,
+      })
+      await waiting()
+      expect(appState.updateLoadingModel).toHaveBeenCalledWith(true, {
+        modelId: 'broken-model',
+        kind: 'start',
+      })
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(startModel).not.toHaveBeenCalled()
+
+      finish()
+      await switching
+      expect(startModel).toHaveBeenCalledTimes(1)
+      // Only the running install is joined; none is started.
+      expect(mlxEngine.installMlxEngine).not.toHaveBeenCalled()
+    })
+
+    it('still loads when the install it waited for failed, and offers Install again', async () => {
+      let fail!: (error: unknown) => void
+      mlxEngine.pendingMlxEngineInstall.mockReturnValue(
+        new Promise((_, reject) => (fail = reject))
+      )
+      const startModel = vi.fn().mockRejectedValue(missing())
+      const serviceHub = hubWith({ startModel })
+
+      const switching = switchToModel({
+        modelId: 'broken-model',
+        providerName: 'mlx',
+        serviceHub,
+      })
+      await waiting()
+      fail({ code: 'ENGINE_INSTALL_FAILED', message: 'sha256 mismatch' })
+
+      await expect(switching).rejects.toMatchObject({
+        code: 'BINARY_NOT_FOUND',
+      })
+      expect(startModel).toHaveBeenCalledTimes(1)
+      expect(toast.error).toHaveBeenCalledWith(
+        'model-errors:mlxEngineMissingTitle',
+        expect.objectContaining({
+          action: expect.objectContaining({
+            label: 'model-errors:mlxEngineMissingAction',
+          }),
+        })
+      )
+    })
+
+    it('stops waiting when the load is cancelled, and loads nothing', async () => {
+      mlxEngine.pendingMlxEngineInstall.mockReturnValue(new Promise(() => {}))
+      const startModel = vi.fn()
+      const serviceHub = hubWith({ startModel })
+
+      const switching = switchToModel({
+        modelId: 'broken-model',
+        providerName: 'mlx',
+        serviceHub,
+      })
+      await waiting()
+      await cancelModelLoad(serviceHub)
+
+      await expect(switching).rejects.toMatchObject({
+        code: 'MODEL_LOAD_CANCELLED',
+      })
+      expect(startModel).not.toHaveBeenCalled()
+    })
+
+    it('gives way to a model picked while it waits', async () => {
+      mlxEngine.pendingMlxEngineInstall.mockReturnValue(new Promise(() => {}))
+      const startModel = vi.fn().mockResolvedValue(undefined)
+      const serviceHub = hubWith({ startModel })
+
+      const waitingSwitch = switchToModel({
+        modelId: 'broken-model',
+        providerName: 'mlx',
+        serviceHub,
+      })
+      await waiting()
+      const next = switchToModel({
+        modelId: 'shared-model',
+        providerName: 'llamacpp-upstream',
+        serviceHub,
+      })
+
+      await expect(waitingSwitch).rejects.toMatchObject({
+        code: 'MODEL_LOAD_CANCELLED',
+      })
+      await next
+      expect(startModel).toHaveBeenCalledTimes(1)
+      expect(startModel.mock.calls[0][0]).toMatchObject({
+        provider: 'llamacpp-upstream',
+      })
+    })
   })
 
   it('says it is unloading the model that was serving before loading the next', async () => {

@@ -79,6 +79,14 @@ export function installMlxEngine(): Promise<EngineBuildInstallResult> {
 }
 
 /**
+ * The install running now, for a load to wait for; `null` when none runs.
+ * Never starts one.
+ */
+export function pendingMlxEngineInstall(): Promise<EngineBuildInstallResult> | null {
+  return running
+}
+
+/**
  * Whether MLX has an active build, from MLX's entry in the core's versions
  * answer (`POST /engines/versions`): `null` when the answer says nothing about
  * it (no answer yet, a host without MLX, or a read that failed outright). A
