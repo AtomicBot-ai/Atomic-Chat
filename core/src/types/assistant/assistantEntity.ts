@@ -29,6 +29,9 @@ export type Assistant = {
   model: string
   /** Represents the instructions for the object. */
   instructions?: string
+  /** Prefix new user messages with their local send date/time. */
+  include_date?: boolean
+  include_time?: boolean
   /** Represents the tools associated with the object. */
   tools?: AssistantTool[]
   /** Represents the file identifiers associated with the object. */

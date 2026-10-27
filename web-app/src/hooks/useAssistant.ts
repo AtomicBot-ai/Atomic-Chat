@@ -69,6 +69,8 @@ export const defaultAssistant: Assistant = {
     "Atomic Chat is a helpful desktop assistant that can reason through complex tasks and use tools to complete them on the user's behalf.",
   instructions:
     'You are Atomic Chat, a helpful AI assistant.\n\nCurrent date: {{current_date}}',
+  include_date: false,
+  include_time: false,
 }
 
 const getDefaultAssistantIdFromStorage = (): string => {

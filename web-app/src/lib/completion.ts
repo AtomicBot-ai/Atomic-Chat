@@ -8,6 +8,7 @@ import {
 import { ulid } from 'ulidx'
 import { Attachment } from '@/types/attachment'
 import { injectFilesIntoPrompt } from './fileMetadata'
+import { captureMessageClock, type MessageClockOptions } from './messageClock'
 
 /**
  * @fileoverview Helper functions for creating thread content.
@@ -21,7 +22,8 @@ export const newUserThreadContent = (
   threadId: string,
   content: string,
   attachments?: Attachment[],
-  id?: string
+  id?: string,
+  clock?: MessageClockOptions
 ): ThreadMessage => {
   // Separate images, audio and documents
   const images = attachments?.filter((a) => a.type === 'image') || []
@@ -84,6 +86,8 @@ export const newUserThreadContent = (
     }))
 
   const metadata: Record<string, unknown> = {}
+  const messageClock = captureMessageClock(clock)
+  if (messageClock) metadata.message_clock = messageClock
   if (inlineDocuments.length > 0) {
     metadata.inline_file_contents = inlineDocuments.map((doc) => ({
       name: doc.name,

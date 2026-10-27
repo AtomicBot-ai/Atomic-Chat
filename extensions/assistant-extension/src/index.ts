@@ -165,6 +165,8 @@ export default class JanAssistantExtension extends AssistantExtension {
     model: '*',
     instructions:
       'You are Atomic Chat, a helpful AI assistant.\n\nCurrent date: {{current_date}}',
+    include_date: false,
+    include_time: false,
     tools: [
       {
         type: 'retrieval',

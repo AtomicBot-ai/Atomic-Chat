@@ -61,6 +61,9 @@ type Assistant = {
   created_at: number
   description?: string
   instructions: string
+  /** Prefix new user messages with their local send date/time; history stays fixed. */
+  include_date?: boolean
+  include_time?: boolean
   /** Sampling bag injected verbatim into local-backend chat requests. */
   parameters: Record<string, unknown>
   /**

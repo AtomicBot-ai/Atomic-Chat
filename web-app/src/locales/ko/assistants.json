@@ -47,5 +47,8 @@
     "penalties": "페널티",
     "general": "일반",
     "context": "컨텍스트"
-  }
+  },
+  "includeDate": "날짜 포함",
+  "includeTime": "시간 포함",
+  "messageClockHint": "새 메시지 위에 보낸 시점의 날짜나 시간을 표시하고 모델에도 전달합니다. 이전 값은 그대로 유지됩니다."
 }
