@@ -318,13 +318,13 @@ describe('switchToModel', () => {
       message: 'MLX needs Apple silicon.',
     })
     await installMlxEngineAndLoad(params)
-    expect(toast.error).toHaveBeenCalledWith(
-      'settings:mlxEngine.installFailed',
-      expect.objectContaining({
-        description: 'MLX needs Apple silicon.',
-        action: expect.objectContaining({ label: 'common:retry' }),
-      })
-    )
+    const [title, options] = vi.mocked(toast.error).mock.calls.at(-1) as [
+      string,
+      { description: string; action: { label: string } },
+    ]
+    expect(title).toBe('settings:mlxEngine.installFailed')
+    expect(options.description).toBe('MLX needs Apple silicon.')
+    expect(options.action.label).toBe('common:retry')
     expect(startModel).not.toHaveBeenCalled()
   })
 
@@ -712,7 +712,7 @@ describe('load progress and cancel', () => {
       expect(startModel).not.toHaveBeenCalled()
 
       finish()
-      await switching
+      await expect(switching).resolves.toBeUndefined()
       expect(startModel).toHaveBeenCalledTimes(1)
       // Only the running install is joined; none is started.
       expect(mlxEngine.installMlxEngine).not.toHaveBeenCalled()

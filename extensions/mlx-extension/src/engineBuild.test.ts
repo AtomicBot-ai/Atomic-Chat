@@ -175,17 +175,21 @@ describe('the MLX version on the provider page', () => {
   // page is open has to reach it without a restart.
   it('tells the provider page when the build changed, and only then', async () => {
     core(() => catalog(ACTIVE))
-    await versionShown(new mlx_extension(), 'none')
+    expect(await versionShown(new mlx_extension(), 'none')).toBe(
+      'mlxvlm-macos-arm64-abc1234/downloaded'
+    )
     expect(eventsEmitMock).toHaveBeenCalledWith('settingsChanged', {
       key: 'version_backend',
       value: 'mlxvlm-macos-arm64-abc1234/downloaded',
     })
 
     eventsEmitMock.mockClear()
-    await versionShown(
-      new mlx_extension(),
-      'mlxvlm-macos-arm64-abc1234/downloaded'
-    )
+    expect(
+      await versionShown(
+        new mlx_extension(),
+        'mlxvlm-macos-arm64-abc1234/downloaded'
+      )
+    ).toBe('mlxvlm-macos-arm64-abc1234/downloaded')
     expect(eventsEmitMock).not.toHaveBeenCalled()
   })
 })

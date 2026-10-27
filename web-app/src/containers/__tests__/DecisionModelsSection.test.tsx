@@ -350,6 +350,11 @@ describe('DecisionModelsSection', () => {
         'b10400-2.1.0/macos-arm64'
       )
     )
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'settings:decision.installEngine' })
+      ).toBeEnabled()
+    )
   })
 
   it('says the install failed when the first build cannot be downloaded', async () => {
@@ -370,6 +375,12 @@ describe('DecisionModelsSection', () => {
       )
     )
     expect(mocks.checkForEngineUpdate).not.toHaveBeenCalled()
+    // The button comes back, so the install can be tried again.
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'settings:decision.installEngine' })
+      ).toBeEnabled()
+    )
   })
 
   it('renders nothing where decision models cannot run', () => {
