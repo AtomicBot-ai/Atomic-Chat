@@ -1768,8 +1768,8 @@ fn upsert_provider_request_timeout(content: &str, provider_id: &str, seconds: u3
 // External coding-agent / assistant integrations (Launch page)
 // ---------------------------------------------------------------------------
 
-const ATOMIC_MANAGED_BEGIN: &str = "# >>> Atomic Chat (managed) >>>";
-const ATOMIC_MANAGED_END: &str = "# <<< Atomic Chat (managed) <<<";
+pub(crate) const ATOMIC_MANAGED_BEGIN: &str = "# >>> Atomic Chat (managed) >>>";
+pub(crate) const ATOMIC_MANAGED_END: &str = "# <<< Atomic Chat (managed) <<<";
 
 /// Resolve the user's home directory in a platform-aware way.
 pub(crate) fn agent_home_dir() -> Result<String, String> {
@@ -1804,7 +1804,7 @@ fn strip_atomic_managed_block(content: &str) -> String {
 
 /// Parse a leading `major.minor.patch` out of a `--version` line, tolerating a
 /// `v` prefix and a `-beta.1` / `+build` suffix.
-fn parse_version(text: &str) -> Option<(u64, u64, u64)> {
+pub(crate) fn parse_version(text: &str) -> Option<(u64, u64, u64)> {
     let core = text.trim().trim_start_matches('v');
     let core = core.split(['-', '+', ' ']).next()?;
     let mut parts = core.split('.');
@@ -1820,6 +1820,11 @@ fn parse_version(text: &str) -> Option<(u64, u64, u64)> {
 /// shim `CreateProcessW` refuses to execute directly (rust-lang/rust#37519) —
 /// the same reason the npm installer below does it.
 fn tool_version(tool: &str) -> Option<(u64, u64, u64)> {
+    parse_version(&tool_version_text(tool)?)
+}
+
+/// What `<tool> --version` prints, for tools that put a name before the number.
+pub(crate) fn tool_version_text(tool: &str) -> Option<String> {
     let mut cmd = if cfg!(windows) {
         let mut c = std::process::Command::new("cmd");
         c.args(["/C", tool, "--version"]);
@@ -1840,7 +1845,7 @@ fn tool_version(tool: &str) -> Option<(u64, u64, u64)> {
     if !out.status.success() {
         return None;
     }
-    parse_version(&String::from_utf8_lossy(&out.stdout))
+    Some(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
 /// npm gained per-package lifecycle-script approval (`--allow-scripts=<pkg>`)
@@ -2913,76 +2918,29 @@ pub async fn install_agent<R: Runtime>(
     }
 }
 
-/// Escape a value for use inside a TOML basic string (delimited by `"`).
-///
-/// TOML basic strings treat `\` as the escape character, so any literal
-/// backslash must be written as `\\`, and any embedded `"` as `\"`. This
-/// avoids invalid TOML when model ids or URLs contain Windows path separators.
-fn toml_basic_string_escape(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"")
-}
-
-/// Configure Codex CLI by upserting a managed block in `~/.codex/config.toml`.
+/// Configure Codex CLI: write Atomic Chat's own profile, which the Launch page
+/// starts Codex with (`codex --profile atomic-chat`). The shared
+/// `~/.codex/config.toml` is only touched to take out what an earlier release
+/// wrote there; see `codex_config`.
 #[tauri::command]
-pub fn configure_codex(
+pub async fn configure_codex(
     api_url: String,
     model: String,
     api_key: Option<String>,
 ) -> Result<(), String> {
-    let home = agent_home_dir()?;
-    let dir = PathBuf::from(&home).join(".codex");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create ~/.codex: {}", e))?;
-    let path = dir.join("config.toml");
-
-    let existing = std::fs::read_to_string(&path).unwrap_or_default();
-    let cleaned = strip_atomic_managed_block(&existing);
-
-    // Codex 0.135+ removed the legacy root-level `profile` selector (named
-    // profiles now live in separate `~/.codex/<name>.config.toml` files chosen
-    // via `--profile`) and dropped `wire_api = "chat"` entirely. So we make
-    // Atomic the *default* provider via the root keys `model` / `model_provider`
-    // — bare TOML keys that must precede any `[table]`, hence a top region —
-    // plus the `[model_providers.atomic]` table below. `wire_api` is left at
-    // its default (`responses`), the only wire API Codex still supports.
-    // `strip_atomic_managed_block` removes both regions on rerun.
-    let mut head = String::new();
-    head.push_str(ATOMIC_MANAGED_BEGIN);
-    head.push('\n');
-    head.push_str(&format!(
-        "model = \"{}\"\n",
-        toml_basic_string_escape(&model)
-    ));
-    head.push_str("model_provider = \"atomic\"\n");
-    head.push_str(ATOMIC_MANAGED_END);
-    head.push('\n');
-
-    let mut block = String::new();
-    block.push_str(ATOMIC_MANAGED_BEGIN);
-    block.push('\n');
-    block.push_str("[model_providers.atomic]\n");
-    block.push_str("name = \"Atomic Chat\"\n");
-    block.push_str(&format!(
-        "base_url = \"{}\"\n",
-        toml_basic_string_escape(&api_url)
-    ));
-    if api_key.as_deref().filter(|k| !k.is_empty()).is_some() {
-        // Codex reads the secret from the env var named here, not inline.
-        block.push_str("env_key = \"ATOMIC_CHAT_API_KEY\"\n");
-    }
-    block.push_str(ATOMIC_MANAGED_END);
-    block.push('\n');
-
-    let final_content = if cleaned.trim().is_empty() {
-        format!("{}\n{}", head, block)
-    } else {
-        // `trim`, not `trim_end`: stripping the previous head block leaves its line break at the
-        // front of what remains, and keeping it made the file two lines longer on every run.
-        format!("{}\n{}\n{}", head, cleaned.trim(), block)
-    };
-
-    std::fs::write(&path, final_content)
-        .map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;
-    log::info!("Codex configured: base_url={}, model={}", api_url, model);
+    let keyed = api_key.as_deref().is_some_and(|k| !k.is_empty());
+    let profile = tauri::async_runtime::spawn_blocking({
+        let (api_url, model) = (api_url.clone(), model.clone());
+        move || super::codex_config::configure(&api_url, &model, keyed)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    log::info!(
+        "Codex configured: profile={}, base_url={}, model={}",
+        profile.display(),
+        api_url,
+        model
+    );
     Ok(())
 }
 

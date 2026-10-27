@@ -1,7 +1,12 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { invoke } from '@tauri-apps/api/core'
+import { toast } from 'sonner'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const navigate = vi.hoisted(() => vi.fn())
+
+vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))
+vi.mock('sonner', () => ({ toast: { error: vi.fn() } }))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({
@@ -51,9 +56,9 @@ describe('Connections, connected tools', () => {
     expect(screen.getAllByText('api:connected.ready')).toHaveLength(2)
   })
 
-  it('only forgets a tool: its own settings are not touched', () => {
+  it('only forgets a tool it cannot undo: its own settings are not touched', () => {
     useServerSetup.setState({
-      configuredAgents: [{ id: 'codex', at: 1 }],
+      configuredAgents: [{ id: 'opencode', at: 1 }],
       endpointConfigured: true,
     })
     useAppState.setState({ serverStatus: 'stopped' })
@@ -62,7 +67,7 @@ describe('Connections, connected tools', () => {
 
     fireEvent.click(
       screen.getByRole('button', {
-        name: 'api:connected.forget:{"name":"Codex CLI"}',
+        name: 'api:connected.forget:{"name":"OpenCode"}',
       })
     )
     fireEvent.click(
@@ -71,10 +76,51 @@ describe('Connections, connected tools', () => {
       })
     )
 
+    expect(invoke).not.toHaveBeenCalled()
     expect(useServerSetup.getState()).toMatchObject({
       configuredAgents: [],
       endpointConfigured: false,
     })
     expect(screen.getByText('api:connected.empty')).toBeInTheDocument()
+  })
+
+  it('disconnects Codex for real before the row goes', async () => {
+    vi.mocked(invoke).mockResolvedValue(undefined)
+    useServerSetup.setState({ configuredAgents: [{ id: 'codex', at: 1 }] })
+    render(<ConnectedTools />)
+
+    const button = screen.getByRole('button', {
+      name: 'api:connected.disconnect:{"name":"Codex CLI"}',
+    })
+    expect(button).toHaveAttribute('title', 'api:connected.disconnectHint')
+    fireEvent.click(button)
+
+    expect(invoke).toHaveBeenCalledWith('disconnect_codex')
+    await waitFor(() =>
+      expect(useServerSetup.getState().configuredAgents).toEqual([])
+    )
+  })
+
+  it('keeps Codex listed and says why when the disconnect fails', async () => {
+    vi.mocked(invoke).mockRejectedValue('config.toml changed meanwhile')
+    useServerSetup.setState({ configuredAgents: [{ id: 'codex', at: 1 }] })
+    render(<ConnectedTools />)
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'api:connected.disconnect:{"name":"Codex CLI"}',
+      })
+    )
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        'api:connected.disconnectFailed:{"name":"Codex CLI"}',
+        { description: 'config.toml changed meanwhile', duration: 15000 }
+      )
+    )
+    expect(useServerSetup.getState().configuredAgents).toEqual([
+      { id: 'codex', at: 1 },
+    ])
+    expect(screen.getByText('Codex CLI')).toBeInTheDocument()
   })
 })

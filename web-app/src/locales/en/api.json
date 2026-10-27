@@ -190,6 +190,9 @@
     "endpoint": "Custom application",
     "forget": "Remove {{name}} from this list",
     "forgetHint": "Only removes it from this list. Its own settings stay as written.",
+    "disconnect": "Disconnect {{name}}",
+    "disconnectHint": "Deletes the profile Atomic Chat wrote for it. Its own settings stay as they are.",
+    "disconnectFailed": "Could not disconnect {{name}}",
     "empty": "No tools connected yet."
   },
   "guide": {

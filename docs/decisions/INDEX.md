@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-488 records, 2026-05-19 → 2026-10-27.
+489 records, 2026-05-19 → 2026-10-27.
 
 ---
 
@@ -66,8 +66,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-09-10** — [Pin the text encoder to CPU under Metal, and restart on the CPU backend after a ggml abort](2026-09-10-pin-the-text-encoder-to-cpu-under-metal-and-restart-on-cpu-after-a-ggml-abort.md)
 - **2026-09-10** — [Curate the diffusion model catalog in atomic-chat-conf](2026-09-10-curate-the-diffusion-model-catalog-in-atomic-chat-conf.md)
 
-## Launch page & external coding agents (19)
+## Launch page & external coding agents (20)
 
+- **2026-10-27** — [Run Codex on an Atomic Chat profile (`codex --profile atomic-chat`), never the shared `~/.codex/config.toml`; repair what earlier releases wrote there](2026-10-27-run-codex-on-its-own-profile-not-the-shared-config.md)
 - **2026-09-21** — [Add ZCode as a Launch-page coding agent, configured by merging an `atomic-chat` provider into `~/.zcode/v2/provider_config.json` — no install](2026-09-21-add-zcode-as-a-launch-page-coding-agent.md)
 - **2026-09-01** — [Track OpenClaw 2026.8: detect the app-installed CLI, widen an existing `modelPolicy.allow`, and gate the npm/Node prerequisites](2026-09-01-track-openclaw-2026-8-detect-the-app-installed-cli-widen.md)
 - **2026-08-25** — [Add Atomic Agent as a one-click Launch-page assistant, configured by merging an `openai-compatible` provider into `~/.atomic-agent/config.json`](2026-08-25-add-atomic-agent-as-a-one-click-launch-page-assistant.md)

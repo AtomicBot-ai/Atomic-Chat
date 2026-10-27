@@ -39,7 +39,8 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('the Server setup guide on a first visit'
         await mkdir(join(profile.home, '.codex'), { recursive: true })
       },
     })
-    configPath = join(session.profile.home, '.codex', 'config.toml')
+    // Codex runs on Atomic Chat's own profile; its shared config.toml stays the user's.
+    configPath = join(session.profile.home, '.codex', 'atomic-chat.config.toml')
   })
 
   afterAll(async () => {
@@ -69,10 +70,12 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('the Server setup guide on a first visit'
       const models = await fetch(`${localApi}/models`, { headers: { authorization: `Bearer ${LOCAL_API_KEY}` } })
       expect(models.status).toBe(200)
 
-      // The agent's config names the local API and the model the guide chose.
+      // The agent's profile names the local API and the model the guide chose,
+      // and nothing was written into the config Codex shares with ChatGPT.
       const configured = await readFile(configPath, 'utf8')
       expect(configured).toContain(localApi)
       expect(configured).toContain(MODEL_ID)
+      expect(await readFile(join(session.profile.home, '.codex', 'config.toml'), 'utf8').catch(() => null)).toBeNull()
 
       // Connections lists it as set up.
       await clickWhenStill(session, '//button[contains(normalize-space(.), "View connection details")]')

@@ -471,6 +471,18 @@ function LaunchPage() {
               const modelArg = model ? ` --model '${model}'` : ''
               command = `META_API_KEY='${key}' ${launcher} --provider meta --base-url '${apiUrl}'${modelArg}`
             }
+          } else if (agent.id === 'codex') {
+            // Codex reads Atomic Chat's settings from their own profile only,
+            // so a plain `codex` and the ChatGPT app keep the user's
+            // config.toml. The profile names the key's variable, not the key.
+            const run = `${launcher} --profile atomic-chat`
+            if (!apiKey) {
+              command = run
+            } else if (osType() === 'windows') {
+              command = `set ATOMIC_CHAT_API_KEY=${apiKey}&& ${run}`
+            } else {
+              command = `ATOMIC_CHAT_API_KEY='${apiKey.replace(/'/g, `'\\''`)}' ${run}`
+            }
           } else if (agent.id === 'poolside') {
             const apiUrl = `http://${agentConnectHost(serverHost)}:${serverPort}${apiPrefix}`
             const standaloneBase = apiUrl.replace(/\/v1\/?$/, '')

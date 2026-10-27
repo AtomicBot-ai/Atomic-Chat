@@ -1,8 +1,13 @@
 import { useNavigate } from '@tanstack/react-router'
+import { invoke } from '@tauri-apps/api/core'
 import { Network, Unplug } from 'lucide-react'
+import { toast } from 'sonner'
 
 import { route } from '@/constants/routes'
-import { INTEGRATION_AGENTS } from '@/constants/integrations'
+import {
+  INTEGRATION_AGENTS,
+  type IntegrationAgent,
+} from '@/constants/integrations'
 import { AgentIcon } from '@/containers/AgentIcon'
 import { StatusDot } from '@/containers/api/ApiStatusIndicators'
 import { useAppState } from '@/hooks/useAppState'
@@ -12,9 +17,19 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { ServerButton } from './ServerPageParts'
 
 /**
+ * Tools whose setup Atomic Chat can undo, and the command that does it.
+ * Codex runs on a profile Atomic Chat owns, so disconnecting deletes it (and
+ * anything an earlier release left in Codex's shared config.toml).
+ */
+const DISCONNECT_COMMANDS: Record<string, string> = {
+  codex: 'disconnect_codex',
+}
+
+/**
  * Server → Connections, "Connected tools": what was set up through Atomic
- * Chat to use this server. Removing a row only forgets it here — the tool's
- * own config stays as written, and nothing in Atomic Chat undoes it.
+ * Chat to use this server. For a tool in `DISCONNECT_COMMANDS` the button
+ * undoes that setup and the row goes only once it has; for every other tool
+ * it only forgets the row — its own config stays as written.
  */
 export function ConnectedTools() {
   const { t } = useTranslation()
@@ -30,6 +45,22 @@ export function ConnectedTools() {
   const state = running
     ? t('api:connected.ready')
     : t('api:connected.serverStopped')
+
+  const remove = async (agent: IntegrationAgent) => {
+    const command = DISCONNECT_COMMANDS[agent.id]
+    if (command) {
+      try {
+        await invoke(command)
+      } catch (err) {
+        toast.error(t('api:connected.disconnectFailed', { name: agent.name }), {
+          description: err instanceof Error ? err.message : String(err),
+          duration: 15000,
+        })
+        return
+      }
+    }
+    forgetAgent(agent.id)
+  }
 
   return (
     <section className="sp-panel" aria-label={t('api:connected.title')}>
@@ -55,9 +86,17 @@ export function ConnectedTools() {
             {state}
           </span>
           <ServerButton
-            aria-label={t('api:connected.forget', { name: agent.name })}
-            title={t('api:connected.forgetHint')}
-            onClick={() => forgetAgent(agent.id)}
+            aria-label={
+              DISCONNECT_COMMANDS[agent.id]
+                ? t('api:connected.disconnect', { name: agent.name })
+                : t('api:connected.forget', { name: agent.name })
+            }
+            title={
+              DISCONNECT_COMMANDS[agent.id]
+                ? t('api:connected.disconnectHint')
+                : t('api:connected.forgetHint')
+            }
+            onClick={() => void remove(agent)}
           >
             <Unplug size={15} />
           </ServerButton>
