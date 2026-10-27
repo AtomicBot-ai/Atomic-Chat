@@ -761,6 +761,9 @@
     "mute": "Turn off {{server}} for this chat",
     "dismiss": "Keep as is"
   },
+  "cornerCard": {
+    "collapse": "Collapse"
+  },
   "downloadPanel": {
     "collapse": "Collapse downloads",
     "expand": "Show downloads",

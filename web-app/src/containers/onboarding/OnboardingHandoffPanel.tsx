@@ -1,6 +1,7 @@
 import { useNavigate } from '@tanstack/react-router'
 
 import { route } from '@/constants/routes'
+import { CORNER_ORDER, CornerSlot } from '@/containers/corner/cornerStack'
 import { useOnboardingModelReminder } from '@/hooks/useOnboardingModelReminder'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useOnboardingStore } from '@/stores/onboarding-store'
@@ -43,29 +44,31 @@ export function OnboardingHandoffPanel({
   }
 
   return (
-    <section
-      className="ob-handoff"
-      aria-label={t('onboarding-handoff:panel.label')}
-      data-testid="onboarding-handoff"
-    >
-      <DownloadStrip />
-      <div className="ob-handoff-links">
-        <button
-          type="button"
-          className="ob-text"
-          onClick={() => void navigate({ to: route.onboarding })}
-        >
-          {t('onboarding-handoff:panel.backToSetup')}
-        </button>
-        <button
-          type="button"
-          className="ob-text"
-          data-testid="onboarding-handoff-dismiss"
-          onClick={() => useOnboardingStore.getState().dismissPanel()}
-        >
-          {t('onboarding-handoff:panel.dismiss')}
-        </button>
-      </div>
-    </section>
+    <CornerSlot order={CORNER_ORDER.handoff}>
+      <section
+        className="ob-handoff"
+        aria-label={t('onboarding-handoff:panel.label')}
+        data-testid="onboarding-handoff"
+      >
+        <DownloadStrip />
+        <div className="ob-handoff-links">
+          <button
+            type="button"
+            className="ob-text"
+            onClick={() => void navigate({ to: route.onboarding })}
+          >
+            {t('onboarding-handoff:panel.backToSetup')}
+          </button>
+          <button
+            type="button"
+            className="ob-text"
+            data-testid="onboarding-handoff-dismiss"
+            onClick={() => useOnboardingStore.getState().dismissPanel()}
+          >
+            {t('onboarding-handoff:panel.dismiss')}
+          </button>
+        </div>
+      </section>
+    </CornerSlot>
   )
 }

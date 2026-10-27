@@ -200,7 +200,7 @@ describe('OnboardingRuntime', () => {
     })
     useLocalApiServer.setState({ defaultModelLocalApiServer: null })
     useUpdateBannerSlots.setState({
-      claimed: { download: false, app: false, engine: false },
+      claimed: { app: false, engine: false },
     })
   })
 

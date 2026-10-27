@@ -528,9 +528,7 @@
     "hotSwapping": "Switching backend",
     "hotSwappingDesc": "Activating {{backend}} without a restart…",
     "hotSwapSuccess": "Backend switched",
-    "hotSwapSuccessDesc": "{{backend}} is now active. No restart needed.",
-    "backgroundUpdateTitle": "Updating llama.cpp backend",
-    "backgroundUpdateDesc": "Downloading {{backend}} in the background. You can keep working."
+    "hotSwapSuccessDesc": "{{backend}} is now active. No restart needed."
   },
   "backendMismatch": {
     "runtimeCpuTitle": "Your model is running on the CPU",
@@ -759,8 +757,6 @@
     "checking": "Checking…",
     "upToDate": "The engine is up to date.",
     "updateCheckFailed": "Could not check for updates",
-    "backgroundUpdateTitle": "Updating the media engine",
-    "backgroundUpdateDesc": "Downloading stable-diffusion.cpp {{tag}} in the background. You can keep working.",
     "updateComplete": "Media engine updated to {{tag}}",
     "updateFailed": "The media engine could not be updated",
     "apiTitle": "Image generation API",

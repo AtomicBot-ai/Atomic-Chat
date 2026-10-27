@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-491 records, 2026-05-19 → 2026-10-27.
+492 records, 2026-05-19 → 2026-10-27.
 
 ---
 
@@ -363,7 +363,8 @@ decision is reversed, add a new one that says which record it supersedes.
 ## UI / UX (2)
 - **2026-10-20** — [Show hosted providers on Cloud and the user's own servers on Custom Endpoint](2026-10-20-show-hosted-providers-on-cloud-and-own-servers-on-custom-endpoint.md)
 - **2026-10-20** — [List everything downloaded on a Downloads page](2026-10-20-list-everything-downloaded-on-a-downloads-page.md)
-## UI / UX (128)
+## UI / UX (129)
+- **2026-10-27** — [Stack the corner notifications in one column and fold them after three seconds](2026-10-27-stack-the-corner-notifications-and-fold-them-after-three-seconds.md) — supersedes the `download` slot of 2026-09-14; reverses ATO-462's panel that stays expanded.
 - **2026-10-27** — [Show the runtime in the macOS tray, and open the engine or model picker on click](2026-10-27-show-the-runtime-in-the-tray-and-open-its-picker-on-click.md)
 - **2026-10-27** — [Drop the auto-approve note from the access menu](2026-10-27-drop-the-auto-approve-note-from-the-access-menu.md) — supersedes the menu note of 2026-10-21.
 - **2026-10-27** — [Hide the wait screen's email reminder until it is delivered](2026-10-27-hide-the-email-reminder-until-it-is-delivered.md) — supersedes in part 2026-10-26.

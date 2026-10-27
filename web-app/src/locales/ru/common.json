@@ -672,6 +672,9 @@
     "mute": "Выключить {{server}} для этого чата",
     "dismiss": "Оставить как есть"
   },
+  "cornerCard": {
+    "collapse": "Свернуть"
+  },
   "downloadPanel": {
     "collapse": "Свернуть закачки",
     "expand": "Показать закачки",

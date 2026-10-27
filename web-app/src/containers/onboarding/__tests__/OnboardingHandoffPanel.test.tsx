@@ -90,7 +90,7 @@ describe('OnboardingHandoffPanel', () => {
       resumeParams: {},
     } as never)
     useUpdateBannerSlots.setState({
-      claimed: { download: false, app: false, engine: false },
+      claimed: { app: false, engine: false },
     })
   })
 

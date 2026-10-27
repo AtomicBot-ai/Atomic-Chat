@@ -8,7 +8,8 @@ import { formatBytes, getProviderTitle } from '@/lib/utils'
 import { useUpdateBannerSlot } from '@/stores/update-banner-store'
 
 /**
- * Bottom-right offer to update an inference engine (ATO-528 / ATO-531).
+ * Bottom-right offer to update an inference engine (ATO-528 / ATO-531), a
+ * card of the corner column like the download panel.
  *
  * The offer is the core's (`POST /engines/versions`, read through
  * `useEngineUpdate`); accepting asks the core to apply it, and the download
@@ -51,19 +52,25 @@ const EngineUpdateBanner = () => {
       }
     : undefined
 
+  const engineTitle = getProviderTitle(offer.provider)
+
   return (
     <UpdateBanner
+      // A new offer is a new card: it shows in full again before it folds.
+      key={offer.targetBackend}
       testId="engine-update-banner"
-      title={t('updater:engine.title', {
-        engine: getProviderTitle(offer.provider),
-      })}
+      title={t('updater:engine.title', { engine: engineTitle })}
+      miniLabel={`${engineTitle} ${offer.targetVersion}`}
       fromVersion={offer.currentVersion || null}
       toVersion={offer.targetVersion}
       subtitle={subtitle}
       highlights={offer.notes ? [{ headline: offer.notes }] : undefined}
       secondaryAction={
         handleShowNotes
-          ? { label: t('updater:engine.showWhatsNew'), onClick: handleShowNotes }
+          ? {
+              label: t('updater:engine.showWhatsNew'),
+              onClick: handleShowNotes,
+            }
           : undefined
       }
       remindLaterLabel={t('updater:remindMeLater')}
@@ -74,6 +81,7 @@ const EngineUpdateBanner = () => {
       busyLabel={t('updater:starting')}
       dismissLabel={t('updater:dismiss')}
       onDismiss={dismiss}
+      collapseLabel={t('common:cornerCard.collapse')}
     />
   )
 }

@@ -46,18 +46,20 @@ describe('BackendUpdater — media engine', () => {
     vi.clearAllMocks()
     resetImageGenerationForTests()
     useUpdateBannerSlots.setState({
-      claimed: { download: false, app: false, engine: false },
+      claimed: { app: false, engine: false },
     })
   })
 
-  it('shows the media engine download in the corner while it runs', () => {
+  // The download panel lists the build under the engine's name
+  // (`DownloadManagement`); a second card for it only covered the panel.
+  it('leaves the media engine download to the download panel', () => {
     updating(50, 200)
-    render(<BackendUpdater />)
+    const { baseElement } = render(<BackendUpdater />)
 
     expect(
-      screen.getByText('settings:media.backgroundUpdateTitle')
-    ).toBeInTheDocument()
-    expect(screen.getByText(/25%/)).toBeInTheDocument()
+      screen.queryByText('settings:media.backgroundUpdateTitle')
+    ).not.toBeInTheDocument()
+    expect(baseElement.querySelector('[data-corner-stack]')).toBeNull()
   })
 
   it('says the update landed once the new build is installed', () => {
