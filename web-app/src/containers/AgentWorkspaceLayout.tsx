@@ -272,7 +272,7 @@ export function AgentWorkspaceLayout({
         {children}
         <ArtifactPanel />
         {narrowSettings && !settingsOpen && (
-          <div className="absolute top-3.5 right-3 z-30 flex items-center gap-2">
+          <div className="absolute top-[calc((var(--page-header-height)-2rem)/2)] right-3 z-30 flex items-center gap-2">
             <button
               type="button"
               className={CORNER_BUTTON_CLASS}
@@ -301,10 +301,10 @@ export function AgentWorkspaceLayout({
       className="relative flex h-full w-full min-w-0 overflow-hidden"
     >
       {rightPanel === null && (
-        // top-3.5 centres these 32px buttons on the h-15 (60px) page header,
+        // The top offset centres these 32px buttons on the page header,
         // so they line up with the header's own controls — the context gauge
         // sits right beside them.
-        <div className="absolute top-3.5 right-3 z-30 flex items-center gap-2">
+        <div className="absolute top-[calc((var(--page-header-height)-2rem)/2)] right-3 z-30 flex items-center gap-2">
           <button
             type="button"
             className={CORNER_BUTTON_CLASS}

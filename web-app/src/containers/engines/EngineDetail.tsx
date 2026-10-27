@@ -1915,7 +1915,7 @@ export function EngineDetail({
           </div>
         </HeaderPage>
       )}
-      <div className={cn('flex', !embedded && 'h-[calc(100%-60px)]')}>
+      <div className={cn('flex', !embedded && 'h-[calc(100%-var(--page-header-height))]')}>
         <div className={cn('w-full', !embedded && 'p-4 pt-0 overflow-y-auto')}>
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             {embedded ? (

@@ -45,7 +45,7 @@
    when a narrow window wraps them. */
 .hub-toolbar-header {
   height: auto;
-  min-height: 60px;
+  min-height: var(--page-header-height);
   container: hub-toolbar / inline-size;
 }
 @container hub-toolbar (max-width: 63em) {

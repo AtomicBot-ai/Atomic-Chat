@@ -247,7 +247,7 @@ export const ImageGenerationPlaceholder = memo(
     // does not move when the result replaces it.
     return (
       <div
-        className="flex min-w-0 justify-center px-6 pt-4 pb-[calc(var(--control-height,2.25rem)+1rem)] [container-type:inline-size]"
+        className="flex min-w-0 justify-center px-6 pt-4 pb-[calc(var(--control-height,1.75rem)+1rem)] [container-type:inline-size]"
         data-testid="image-generation-preview"
         role="status"
         aria-live="polite"

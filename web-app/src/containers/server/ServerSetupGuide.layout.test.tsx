@@ -107,7 +107,7 @@ describe('Overview setup guide and agents', () => {
       const configure = screen.getByRole('button', {
         name: /Configure & start/,
       })
-      expect(configure.getBoundingClientRect().height).toBeCloseTo(36, 0)
+      expect(configure.getBoundingClientRect().height).toBeCloseTo(28, 0)
       expectFits(configure, page)
     }
   )

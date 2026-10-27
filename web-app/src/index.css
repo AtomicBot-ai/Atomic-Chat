@@ -7,6 +7,17 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* A control drawn at its icon's own size, with no padding of its own, also
+ * takes clicks 15% of its size beyond each edge (at most 4px, so it never
+ * reaches over a neighbour). The control must be positioned. */
+@utility hit-area-15 {
+  &::after {
+    content: '';
+    position: absolute;
+    inset: max(-15%, -0.25rem);
+  }
+}
+
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -180,6 +191,32 @@
     opacity: 0.8;
   }
 
+  /* Tailwind 4 leaves buttons on the arrow cursor. Everything that takes a
+     click shows the pointer; a `cursor-*` utility still wins. */
+  :where(
+    button,
+    [role='button'],
+    [role='tab'],
+    [role='menuitem'],
+    [role='menuitemcheckbox'],
+    [role='menuitemradio'],
+    [role='option'],
+    [role='switch'],
+    [role='checkbox'],
+    [role='radio'],
+    select,
+    summary,
+    input:is(
+      [type='checkbox'],
+      [type='radio'],
+      [type='file'],
+      [type='range'],
+      [type='color']
+    )
+  ):not(:disabled, [aria-disabled='true'], [data-disabled]) {
+    cursor: pointer;
+  }
+
   code,
   pre,
   kbd,
@@ -327,14 +364,16 @@
 }
 
 /* One control scale across the shell: regular actions, fields and selects are
- * 36px, compact icon actions 24px, large actions 40px. These rules sit outside
+ * 28px, compact icon actions 24px, large actions 32px. These rules sit outside
  * any layer on purpose, so they win over a call site's own `h-*`/`size-*` and
  * every screen lines up. Icon buttons stay square. Overlays render in portals
  * outside `.app-shell` and only get the Button variants' own heights. */
 :root {
-  --control-height: 2.25rem;
+  --control-height: 1.75rem;
   --control-height-compact: 1.5rem;
-  --control-height-large: 2.5rem;
+  --control-height-large: 2rem;
+  /* The row a page's title and actions sit in (containers/HeaderPage). */
+  --page-header-height: 3rem;
 }
 .app-shell :is(button, a)[data-size='default'],
 .app-shell :is(button, a)[data-size='sm'],

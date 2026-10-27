@@ -3,7 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import { localStorageKey } from '@/constants/localStorage'
 import { useTheme } from './useTheme'
 
-export type FontSize = '14px' | '15px' | '16px' | '18px' | '20px'
+export type FontSize = '12px' | '13px' | '16px' | '20px'
 
 //* Single preset: neutral sidebar without the purple/brand accent (--primary from index.css)
 const ACCENT_THUMB = '#737373'
@@ -43,14 +43,36 @@ type InterfaceSettingsPersistedSlice = Omit<
 >
 
 export const fontSizeOptions = [
-  { label: 'Small', value: '14px' as FontSize },
-  { label: 'Medium', value: '16px' as FontSize },
-  { label: 'Large', value: '18px' as FontSize },
+  { label: 'Small', value: '12px' as FontSize },
+  { label: 'Medium', value: '13px' as FontSize },
+  { label: 'Large', value: '16px' as FontSize },
   { label: 'Extra Large', value: '20px' as FontSize },
 ]
 
 // Default interface settings
-const defaultFontSize: FontSize = '16px'
+const defaultFontSize: FontSize = '13px'
+
+/**
+ * Version 1 of the stored settings made the default type a fifth smaller.
+ * A size saved before it moves to the option that now carries its label;
+ * `15px` was Medium before that.
+ */
+const VERSION_0_FONT_SIZES: Record<string, FontSize> = {
+  '14px': '12px',
+  '15px': '13px',
+  '16px': '13px',
+  '18px': '16px',
+  '20px': '20px',
+}
+
+/** The stored font size, read under the current option scale. */
+export function migrateFontSize(saved: unknown, version: number): FontSize {
+  if (typeof saved !== 'string') return defaultFontSize
+  if (version < 1) return VERSION_0_FONT_SIZES[saved] ?? defaultFontSize
+  return fontSizeOptions.some((option) => option.value === saved)
+    ? (saved as FontSize)
+    : defaultFontSize
+}
 
 const createDefaultInterfaceValues = (): InterfaceSettingsPersistedSlice => {
   return {
@@ -108,13 +130,19 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
     {
       name: localStorageKey.settingInterface,
       storage: interfaceStorage,
+      version: 1,
+      migrate: (persisted, version) => {
+        const state = (persisted ??
+          {}) as Partial<InterfaceSettingsPersistedSlice>
+        return {
+          ...state,
+          fontSize: migrateFontSize(state.fontSize, version),
+        } as InterfaceSettingsState
+      },
       // Apply settings when hydrating from storage
       onRehydrateStorage: () => (state) => {
         if (state) {
-          // Migrate old font size value '15px' to '16px'
-          if ((state.fontSize as FontSize) === '15px') {
-            state.fontSize = '16px'
-          }
+          state.fontSize = migrateFontSize(state.fontSize, 1)
 
           // Migrate accent: if the saved preset no longer exists — apply the only one
           const colorExists = ACCENT_COLORS.some((c) => c.value === state.accentColor)

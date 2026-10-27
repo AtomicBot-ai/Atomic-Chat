@@ -262,7 +262,9 @@ export function LeftSidebar() {
             </div>
           </SidebarHeader>
           <SidebarContent
-            className="mask-b-from-95%"
+            // Rows measure the sidebar's width (`@…/sidebar`) to decide what
+            // fits beside a name.
+            className="@container/sidebar mask-b-from-95%"
             aria-label={t(SECTION_TITLES[section])}
           >
             {section === 'chat' && (
