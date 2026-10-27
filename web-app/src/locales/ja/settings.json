@@ -581,5 +581,17 @@
     "documentSearchNote": "チャットのドキュメント検索は専用のモデル sentence-transformer-mini を使い、「開始」なしで必要なときに読み込みます。",
     "documentSearchModel": "ドキュメント検索用モデル · llama.cpp モデルから",
     "engineUpdateCheckFailed": "{{engine}} の更新を確認できませんでした"
+  },
+  "mlxEngine": {
+    "notInstalled": "未インストール",
+    "installingEngine": "MLX エンジンをインストールしています…",
+    "installFailed": "MLX エンジンをインストールできませんでした",
+    "setup": {
+      "description": "MLX は Apple シリコンで MLX モデルを実行します。エンジンはアプリに含まれておらず、一度だけダウンロードします。",
+      "size": "ダウンロードサイズ: {{size}}",
+      "install": "インストール",
+      "progress": "エンジンをダウンロード中… {{percent}}%",
+      "failed": "MLX エンジンをインストールできませんでした: {{error}}"
+    }
   }
 }

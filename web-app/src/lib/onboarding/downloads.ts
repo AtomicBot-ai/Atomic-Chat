@@ -10,6 +10,7 @@ import {
   wasDownloadCancellationRequested,
 } from '@/lib/downloadCancellation'
 import { sanitizeMlxId } from '@/lib/hub-installed'
+import { downloadWithMlxEngine } from '@/lib/mlx-engine'
 import { extractModelErrorMessage } from '@/lib/modelErrorMessage'
 import { LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
 import type { ServiceHub } from '@/services'
@@ -78,10 +79,14 @@ export function startGgufCatalogDownload(
  * Downloads an MLX catalog model through the MLX engine: the first
  * `.safetensors` file of the repository as the model, everything else beside
  * it. The same steps as `MlxModelDownloadAction`, for the setup surfaces.
+ * When MLX has no engine yet, the engine installs beside the model
+ * (`downloadWithMlxEngine`).
  *
- * Resolves when the download is over: `true` once the engine has the model,
- * `false` when it failed or was cancelled. A failure that is not a
- * cancellation is reported in a toast. Callers that only start it `void` it.
+ * Resolves when both are over: `true` once the model is in and the engine
+ * install, if one ran, has finished; `false` when either failed or was
+ * cancelled. A failure that is not a cancellation is reported in a toast; an
+ * engine that failed leaves the model downloaded, not resumable. Callers that
+ * only start it `void` it.
  */
 export async function startMlxCatalogDownload(
   catalog: CatalogModel,
@@ -104,6 +109,24 @@ export async function startMlxCatalogDownload(
   store.addLocalDownloadingModel(mlxId)
   store.setDownloadOrigin(mlxId, catalog.model_name, requestOrigin)
 
+  return downloadWithMlxEngine(() =>
+    importMlxRepository(mlxId, modelPath, resume, {
+      serviceHub,
+      huggingfaceToken,
+    })
+  )
+}
+
+/** The model half of `startMlxCatalogDownload`: `true` once the model is in. */
+async function importMlxRepository(
+  mlxId: string,
+  modelPath: string,
+  resume: boolean,
+  {
+    serviceHub,
+    huggingfaceToken,
+  }: { serviceHub: ServiceHub; huggingfaceToken?: string }
+): Promise<boolean> {
   try {
     const repoInfo = await serviceHub
       .models()

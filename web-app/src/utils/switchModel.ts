@@ -43,6 +43,11 @@ import {
 import { queuedCapture } from '@/lib/telemetry-queue'
 import { ExtensionManager } from '@/lib/extension'
 import { captureHandledError } from '@/lib/sentry'
+import { reportMlxEngineInstallFailure } from '@/lib/mlx-engine'
+import {
+  installMlxEngine,
+  isMlxEngineInstallCancelled,
+} from '@/services/engine-builds/mlx'
 import {
   getProviderTitle,
   MODEL_LOAD_WATCHDOG_MS,
@@ -1122,7 +1127,7 @@ async function doSwitchToModel(params: {
         )
       }
     }
-    reportModelLoadError(error, providerName, isAutoStart, modelId)
+    reportModelLoadError(error, providerName, isAutoStart, modelId, serviceHub)
     throw error
   } finally {
     if (currentLocalLoad === load) currentLocalLoad = null
@@ -1506,12 +1511,19 @@ function unsupportedDescription(
  * Pure, and separate from the toast, because the compact picker status and the
  * standard failure toast must classify the same engine error the same way.
  */
+/** A fix a load failure offers; the toast and the status strip run it. */
+export type ModelLoadFailureAction = {
+  kind: 'install-mlx-engine'
+  label: string
+}
+
 export type ModelLoadFailure = {
   title: string
   description: string
   details?: string
   /** The user has to act before this can succeed, so the toast never expires. */
   persistent: boolean
+  action?: ModelLoadFailureAction
 }
 
 /** The core's compatibility verdict, carried as JSON in the refusal's `details`. */
@@ -1601,6 +1613,18 @@ export function describeModelLoadFailure(
   if (err.code === LOCAL_API_SERVER_START_TIMEOUT_CODE) {
     return simple('startupTimedOut')
   }
+  // The installer does not carry MLX: a Mac that never installed its engine
+  // (one updated from a release that bundled it included) gets it on the
+  // first load, one download, then the same load again.
+  if (err.code === 'BINARY_NOT_FOUND' && providerName === 'mlx') {
+    return {
+      ...simple('mlxEngineMissing', true),
+      action: {
+        kind: 'install-mlx-engine',
+        label: t('model-errors:mlxEngineMissingAction'),
+      },
+    }
+  }
   if (isOutOfMemoryError(err)) {
     // The copy is generic; the engine's own words — which allocation failed
     // and how much was free, or a KV cache shorter than the context — stay one
@@ -1688,6 +1712,42 @@ export function describeModelLoadFailure(
 }
 
 /**
+ * A load's "Install" when MLX has no engine: the core installs it (one
+ * download however often it is asked), then the same model loads again. A
+ * failed install says so with a "Retry" that does both again; a cancelled one
+ * says nothing.
+ */
+export async function installMlxEngineAndLoad(params: {
+  modelId: string
+  providerName: string
+  serviceHub: ServiceHub
+}): Promise<void> {
+  try {
+    await installMlxEngine()
+  } catch (error) {
+    if (!isMlxEngineInstallCancelled(error)) {
+      reportMlxEngineInstallFailure(error, () =>
+        installMlxEngineAndLoad(params)
+      )
+    }
+    return
+  }
+  // The switch reports its own failure.
+  await switchToModel(params).catch(() => {})
+}
+
+/** Run the fix a load failure offers for `params`' model. */
+export function runModelLoadFailureAction(
+  action: ModelLoadFailureAction,
+  params: { modelId: string; providerName: string; serviceHub: ServiceHub }
+): Promise<void> {
+  switch (action.kind) {
+    case 'install-mlx-engine':
+      return installMlxEngineAndLoad(params)
+  }
+}
+
+/**
  * Surface a user-visible banner when a model fails to load.
  * OOM errors get a persistent toast so the user cannot miss them.
  */
@@ -1695,17 +1755,31 @@ function reportModelLoadError(
   rawError: unknown,
   providerName?: string,
   _isAutoStart?: boolean,
-  modelId?: string
+  modelId?: string,
+  serviceHub?: ServiceHub
 ): void {
   const err = toErrorObject(rawError)
   useModelLoad.getState().setModelLoadError(err, modelId)
 
   const failure = describeModelLoadFailure(err, providerName)
+  const { action } = failure
 
   showModelLoadErrorToast({
     title: failure.title,
     description: failure.description,
     details: failure.details,
     duration: failure.persistent ? Infinity : 10000,
+    action:
+      action && providerName && modelId && serviceHub
+        ? {
+            label: action.label,
+            onClick: () =>
+              void runModelLoadFailureAction(action, {
+                modelId,
+                providerName,
+                serviceHub,
+              }),
+          }
+        : undefined,
   })
 }

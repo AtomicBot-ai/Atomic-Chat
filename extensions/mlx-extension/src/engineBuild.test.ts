@@ -127,7 +127,10 @@ function core(answer: () => unknown) {
   return calls
 }
 
-async function versionShown(ext: InstanceType<typeof mlx_extension>) {
+async function versionShown(
+  ext: InstanceType<typeof mlx_extension>,
+  previous = 'detecting...'
+) {
   const updateSettings = vi.fn()
   const target = ext as unknown as {
     getSettings: () => Promise<unknown[]>
@@ -135,7 +138,7 @@ async function versionShown(ext: InstanceType<typeof mlx_extension>) {
     detectBackendVersion: () => Promise<void>
   }
   target.getSettings = async () => [
-    { key: 'version_backend', controllerProps: { value: 'detecting...' } },
+    { key: 'version_backend', controllerProps: { value: previous } },
   ]
   target.updateSettings = updateSettings
   await target.detectBackendVersion()
@@ -166,6 +169,24 @@ describe('the MLX version on the provider page', () => {
   it('says none when no build is installed', async () => {
     core(() => catalog(null))
     expect(await versionShown(new mlx_extension())).toBe('none')
+  })
+
+  // The installer does not carry MLX: a build installed while the provider
+  // page is open has to reach it without a restart.
+  it('tells the provider page when the build changed, and only then', async () => {
+    core(() => catalog(ACTIVE))
+    await versionShown(new mlx_extension(), 'none')
+    expect(eventsEmitMock).toHaveBeenCalledWith('settingsChanged', {
+      key: 'version_backend',
+      value: 'mlxvlm-macos-arm64-abc1234/downloaded',
+    })
+
+    eventsEmitMock.mockClear()
+    await versionShown(
+      new mlx_extension(),
+      'mlxvlm-macos-arm64-abc1234/downloaded'
+    )
+    expect(eventsEmitMock).not.toHaveBeenCalled()
   })
 })
 

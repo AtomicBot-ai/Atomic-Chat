@@ -10,6 +10,7 @@ import { registerRemoteProvider } from '@/utils/registerRemoteProvider'
 import {
   cancelModelLoad,
   describeModelLoadFailure,
+  installMlxEngineAndLoad,
   isExplicitSwitchPending,
   planOomRetry,
   selectThreadModelIfNone,
@@ -158,6 +159,12 @@ vi.mock('@/i18n/setup', () => ({
   default: { t: (key: string) => key },
 }))
 
+const mlxEngine = vi.hoisted(() => ({ installMlxEngine: vi.fn() }))
+vi.mock('@/services/engine-builds/mlx', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/engine-builds/mlx')>()),
+  ...mlxEngine,
+}))
+
 // In-memory stand-in for the local engines: which model ids each provider has
 // loaded. The stop/start methods mirror `DefaultModelsService` so a test can
 // assert which copies were unloaded and what is still loaded after a switch,
@@ -242,6 +249,80 @@ describe('switchToModel', () => {
       'model-errors:modelLoadFailedTitle',
       expect.any(Object)
     )
+  })
+
+  it('offers a missing MLX engine in the toast, then loads the same model once it is in', async () => {
+    const startModel = vi
+      .fn()
+      .mockRejectedValueOnce(
+        Object.assign(new Error('MLX is not installed.'), {
+          code: 'BINARY_NOT_FOUND',
+        })
+      )
+      .mockResolvedValue(undefined)
+    const serviceHub = {
+      app: () => ({ getServerStatus: vi.fn().mockResolvedValue(false) }),
+      models: () => ({
+        getActiveModels: vi.fn().mockResolvedValue([]),
+        stopAllModels: vi.fn().mockResolvedValue(undefined),
+        stopAllModelsExcept: vi.fn().mockResolvedValue(undefined),
+        startModel,
+      }),
+    } as unknown as ServiceHub
+    mlxEngine.installMlxEngine.mockResolvedValue({ installed: true })
+
+    await expect(
+      switchToModel({
+        modelId: 'broken-model',
+        providerName: 'mlx',
+        serviceHub,
+      })
+    ).rejects.toMatchObject({ code: 'BINARY_NOT_FOUND' })
+
+    const [title, options] = vi.mocked(toast.error).mock.calls.at(-1) as [
+      string,
+      { duration: number; action: { label: string; onClick: () => void } },
+    ]
+    expect(title).toBe('model-errors:mlxEngineMissingTitle')
+    expect(options.duration).toBe(Infinity)
+    expect(options.action.label).toBe('model-errors:mlxEngineMissingAction')
+    expect(mlxEngine.installMlxEngine).not.toHaveBeenCalled()
+
+    options.action.onClick()
+    await vi.waitFor(() => expect(startModel).toHaveBeenCalledTimes(2))
+    expect(mlxEngine.installMlxEngine).toHaveBeenCalledTimes(1)
+    expect(mlxEngine.installMlxEngine.mock.invocationCallOrder[0]).toBeLessThan(
+      startModel.mock.invocationCallOrder[1]
+    )
+  })
+
+  it('says a failed MLX engine install with a Retry, and stays quiet about a cancelled one', async () => {
+    const startModel = vi.fn()
+    const serviceHub = {
+      models: () => ({ startModel }),
+    } as unknown as ServiceHub
+    const params = { modelId: 'broken-model', providerName: 'mlx', serviceHub }
+
+    mlxEngine.installMlxEngine.mockRejectedValue({
+      code: 'CANCELLED',
+      message: 'Download cancelled',
+    })
+    await installMlxEngineAndLoad(params)
+    expect(toast.error).not.toHaveBeenCalled()
+
+    mlxEngine.installMlxEngine.mockRejectedValue({
+      code: 'UNSUPPORTED_BACKEND',
+      message: 'MLX needs Apple silicon.',
+    })
+    await installMlxEngineAndLoad(params)
+    expect(toast.error).toHaveBeenCalledWith(
+      'settings:mlxEngine.installFailed',
+      expect.objectContaining({
+        description: 'MLX needs Apple silicon.',
+        action: expect.objectContaining({ label: 'common:retry' }),
+      })
+    )
+    expect(startModel).not.toHaveBeenCalled()
   })
 
   it('leaves a local engine failure to the core and reports a cloud one', async () => {
@@ -1004,6 +1085,32 @@ describe('describeModelLoadFailure', () => {
 
     expect(failure.title).toBe('model-errors:archNotSupportedTitle')
     expect(failure.details).toBe('load_hparams: unknown model architecture')
+  })
+
+  it('offers to install a missing MLX engine, and keeps the toast up', () => {
+    expect(
+      describeModelLoadFailure(
+        {
+          code: 'BINARY_NOT_FOUND',
+          message:
+            'MLX is not installed. Install the MLX engine, then load the model again.',
+        },
+        'mlx'
+      )
+    ).toEqual({
+      title: 'model-errors:mlxEngineMissingTitle',
+      description: 'model-errors:mlxEngineMissingDescription',
+      persistent: true,
+      action: {
+        kind: 'install-mlx-engine',
+        label: 'model-errors:mlxEngineMissingAction',
+      },
+    })
+    // Another engine without its binary has nothing to install from here.
+    expect(
+      describeModelLoadFailure({ code: 'BINARY_NOT_FOUND' }, 'llamacpp-upstream')
+        .action
+    ).toBeUndefined()
   })
 
   it('falls back to the engine reason for an unclassified failure', () => {

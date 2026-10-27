@@ -795,6 +795,16 @@
     "origin": {
       "bundled": "Shipped with the app",
       "downloaded": "Downloaded update"
+    },
+    "notInstalled": "Not installed",
+    "installingEngine": "Installing the MLX engine…",
+    "installFailed": "The MLX engine could not be installed",
+    "setup": {
+      "description": "MLX runs MLX models on Apple silicon. Its engine is not part of the app: it is a one-time download.",
+      "size": "Download size: {{size}}",
+      "install": "Install",
+      "progress": "Downloading the engine… {{percent}}%",
+      "failed": "Could not install the MLX engine: {{error}}"
     }
   },
   "serverConfig": {

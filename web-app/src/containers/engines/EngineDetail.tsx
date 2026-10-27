@@ -19,6 +19,8 @@ import {
   PrismEngineSetupCard,
 } from '@/containers/atomic-prism/PrismEngineSetupCard'
 import { usePrismEngine } from '@/hooks/usePrismEngine'
+import { MlxEngineSetupCard } from '@/containers/engines/MlxEngineSetupCard'
+import { mlxEngineActiveIn } from '@/services/engine-builds/mlx'
 import {
   selectInstallation,
   useManagedEnvironmentStore,
@@ -323,12 +325,20 @@ export function EngineDetail({
     const active = state.engines['litert-lm']?.active
     return active ? `${active.version}/${active.variant}` : null
   })
+  /// The installer does not carry MLX: until the core reports a build, the
+  /// page offers the install instead of a version.
+  const mlxEngineMissing = useEngineVersionsStore(
+    (state) =>
+      providerName === 'mlx' && mlxEngineActiveIn(state.engines.mlx) === false
+  )
   const managedInstalled = useManagedEnvironmentStore(
     (state) =>
       managed !== undefined &&
       selectInstallation(state, managed.id)?.status === 'ready'
   )
   const provider = getProviderByName(providerName)
+  // Without a build there is nothing to compare: the core offers no update.
+  const mlxEngineCheckShown = provider?.provider === 'mlx' && !mlxEngineMissing
   const providerSettingsWriteRef = useRef<Promise<void>>(Promise.resolve())
   const debouncedRestartLlamacppModel = useMemo(
     () =>
@@ -1987,6 +1997,8 @@ export function EngineDetail({
                 versionBackend={prismVersionBackend}
               />
             )}
+            {/* MLX: the installer does not carry the engine; install it here until it is in. */}
+            {providerName === 'mlx' && provider && <MlxEngineSetupCard />}
 
             {/* Local engines, managed ones included, show their models above the engine settings. */}
             <div
@@ -2091,6 +2103,15 @@ export function EngineDetail({
                         // No build is bundled: until one is installed the row
                         // installs the one the core recommends.
                         <PrismEngineInstallButton engine={prismEngine} />
+                      ) : mlxEngineMissing &&
+                        setting.key === 'version_backend' ? (
+                        // The setup card above installs it.
+                        <span
+                          className="text-sm text-muted-foreground"
+                          data-testid="mlx-engine-not-installed"
+                        >
+                          {t('settings:mlxEngine.notInstalled')}
+                        </span>
                       ) : needsBackendConfig &&
                         setting.key === 'version_backend' ? (
                         <div className="flex items-center gap-1 text-sm">
@@ -2566,7 +2587,7 @@ export function EngineDetail({
                                 {/* MLX: the core compares the active
                                     build with conf's manifest; a newer one
                                     becomes the banner's offer (design D10). */}
-                                {provider?.provider === 'mlx' && (
+                                {mlxEngineCheckShown && (
                                   <Button
                                     variant="outline"
                                     size="sm"

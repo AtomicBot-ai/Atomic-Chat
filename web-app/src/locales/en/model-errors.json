@@ -37,5 +37,8 @@
   "generationCrashTitle": "Model crashed during generation",
   "generationCrashDescription": "The model's backend process exited unexpectedly while generating a response. This can happen with Vulkan backends on some GPU drivers. Try reloading the model, or switch to a CPU backend in Settings → Providers.",
   "startupTimedOutTitle": "Failed to start server: timed out",
-  "startupTimedOutDescription": "Starting the Local API Server took too long and was aborted. This can happen if the model backend gets stuck preparing or downloading files. Please try again, or check your network connection."
+  "startupTimedOutDescription": "Starting the Local API Server took too long and was aborted. This can happen if the model backend gets stuck preparing or downloading files. Please try again, or check your network connection.",
+  "mlxEngineMissingTitle": "MLX engine is not installed",
+  "mlxEngineMissingDescription": "It is a one-time download. The model loads as soon as the engine is in.",
+  "mlxEngineMissingAction": "Install"
 }
