@@ -120,6 +120,14 @@ type ImageGenerationState = {
   /** The backend id the host qualifies for, or null when this machine cannot run the engine. */
   hostBackendId: string | null
   hostBackendReason: string | null
+  /**
+   * Why the host check gave no answer, so a retry can help: the core could
+   * not read the sd.cpp manifest (`manifest`), or the call to the core failed
+   * (`core`). Null when the check answered, a "no build" answer included.
+   */
+  hostBackendCheckFailed: 'manifest' | 'core' | null
+  /** The host check's attempt in progress, or the last one made (of `HOST_CHECK_ATTEMPTS`). */
+  hostBackendAttempt: number
   /** True once host compatibility has been checked; null is otherwise ambiguous. */
   hostBackendResolved: boolean
 
@@ -164,6 +172,11 @@ type ImageGenerationState = {
   refreshStatus: () => Promise<void>
   refreshCatalog: () => Promise<void>
   refreshModelFiles: () => Promise<void>
+  /**
+   * Ask the core which engine build fits this host, trying a failed check
+   * again up to `HOST_CHECK_ATTEMPTS` times; `force` re-reads the manifest (Retry).
+   */
+  refreshHostBackend: (opts?: { force?: boolean }) => Promise<void>
   /**
    * Configure the core again with every setting it keeps in memory: the idle
    * interval and the chosen output folder. After a residency setting changes,
@@ -228,6 +241,13 @@ function hardwareProfile(): HardwareProfile | null {
   })
 }
 
+/**
+ * Pauses between the host check's attempts: a manifest read that failed is
+ * tried again on its own before the card shows the failure (3 attempts).
+ */
+export const HOST_CHECK_RETRY_DELAYS_MS = [2_000, 5_000]
+export const HOST_CHECK_ATTEMPTS = HOST_CHECK_RETRY_DELAYS_MS.length + 1
+
 const emptyInstall: EngineInstallProgress = {
   inFlight: false,
   transferred: 0,
@@ -254,6 +274,9 @@ const initial = {
   paths: null as DiffusionPaths | null,
   hostBackendId: null as string | null,
   hostBackendReason: null as string | null,
+  hostBackendCheckFailed:
+    null as ImageGenerationState['hostBackendCheckFailed'],
+  hostBackendAttempt: 0,
   hostBackendResolved: false,
   currentJob: null as ImageJob | null,
   runsTotal: 0,
@@ -279,6 +302,45 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
 ) => {
   const diffusion = () => getServiceHub().diffusion()
   let updatingEngine = false
+  /** Bumped by each host check and by `reset`: a superseded check stops writing. */
+  let hostCheckRun = 0
+
+  /** One ask of the core: the host check's fields, `hostBackendCheckFailed` set when it may be retried. */
+  const readHostBackend = async (
+    force: boolean | undefined
+  ): Promise<
+    Pick<
+      ImageGenerationState,
+      'hostBackendId' | 'hostBackendReason' | 'hostBackendCheckFailed'
+    >
+  > => {
+    try {
+      const catalog = await diffusion().engineCatalog({
+        ...proxyRequest(),
+        ...(force ? { force: true } : {}),
+      })
+      // Without a manifest the core's `host_reason` only says so; the
+      // read's own error (timeout, HTTP status, DNS) is in `manifest_error`.
+      const manifestMissing = catalog.manifest === null
+      return {
+        hostBackendId: catalog.host_backend_id,
+        hostBackendReason: catalog.host_backend_id
+          ? null
+          : manifestMissing
+            ? (catalog.manifest_error ?? catalog.host_reason)
+            : catalog.host_reason,
+        hostBackendCheckFailed:
+          !catalog.host_backend_id && manifestMissing ? 'manifest' : null,
+      }
+    } catch (error) {
+      console.error('[images] engine catalog unavailable:', error)
+      return {
+        hostBackendId: null,
+        hostBackendReason: toDiffusionError(error).message,
+        hostBackendCheckFailed: 'core',
+      }
+    }
+  }
 
   /** The job as it ends when its core is gone or no longer knows it. */
   const lostJob = (jobId: string, error: DiffusionError): ImageJob => ({
@@ -470,6 +532,9 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
         set({ lastError: toDiffusionError(error) })
       }
 
+      // Outside the Promise.all: a failed check is tried again for a few
+      // seconds, which must not hold up adopting a running job.
+      const hostCheck = get().refreshHostBackend()
       await Promise.all([
         instanceRead,
         get().refreshStatus(),
@@ -480,31 +545,13 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
           .catch((error) =>
             console.error('[images] paths unavailable:', error)
           ),
-        service
-          .engineCatalog(proxyRequest())
-          .then((catalog) =>
-            set({
-              hostBackendId: catalog.host_backend_id,
-              hostBackendReason: catalog.host_backend_id
-                ? null
-                : (catalog.host_reason ?? catalog.manifest_error),
-              hostBackendResolved: true,
-            })
-          )
-          .catch((error) => {
-            console.error('[images] engine catalog unavailable:', error)
-            set({
-              hostBackendId: null,
-              hostBackendReason: toDiffusionError(error).message,
-              hostBackendResolved: true,
-            })
-          }),
       ])
 
       // Once per launch, as the llama.cpp providers do: what the manifest
       // says goes to the engine-update banner. Not awaited — the round trip
-      // must not hold up adopting a running job.
-      void get().checkEngineUpdate()
+      // must not hold up adopting a running job. It needs the host's build,
+      // so it follows the host check.
+      void hostCheck.then(() => get().checkEngineUpdate())
 
       // Adopt a job that was running before this page (or this window)
       // existed, so a reload mid-generation shows progress instead of a
@@ -548,6 +595,7 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
       if (get().status?.model.state === 'loaded') {
         await refreshCapabilities()
       }
+      await hostCheck
     },
 
     unbind: () => {
@@ -703,6 +751,28 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
         recomputeInstalled()
       } catch (error) {
         console.error('[images] model files unavailable:', error)
+      }
+    },
+
+    refreshHostBackend: async ({ force } = {}) => {
+      const run = ++hostCheckRun
+      set({ hostBackendResolved: false })
+      for (let attempt = 1; ; attempt++) {
+        set({ hostBackendAttempt: attempt })
+        const answer = await readHostBackend(force)
+        if (run !== hostCheckRun) return
+        if (!answer.hostBackendCheckFailed || attempt >= HOST_CHECK_ATTEMPTS) {
+          set({ ...answer, hostBackendResolved: true })
+          return
+        }
+        console.warn(
+          `[images] engine check failed (attempt ${attempt} of ${HOST_CHECK_ATTEMPTS}), retrying:`,
+          answer.hostBackendReason
+        )
+        await new Promise((resolve) =>
+          setTimeout(resolve, HOST_CHECK_RETRY_DELAYS_MS[attempt - 1])
+        )
+        if (run !== hostCheckRun) return
       }
     },
 
@@ -1173,6 +1243,7 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
     reset: () => {
       waiters.clear()
       instances.clear()
+      hostCheckRun++
       set({ ...initial })
     },
   }

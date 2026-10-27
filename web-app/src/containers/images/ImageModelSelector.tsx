@@ -36,6 +36,10 @@ import { fitForQuant, recommendedQuant } from '@/lib/diffusion/fit'
 import { artifactId } from '@/lib/diffusion/models'
 import { familySupportsWorkflow } from '@/lib/diffusion/workflows'
 import { formatBytes } from '@/lib/downloadFormat'
+import {
+  engineFetchFailureText,
+  hostCheckHeadlineKey,
+} from '@/lib/engine-fetch-failure'
 import { DIFFUSION_FAMILY_ICON_KEYS } from '@/lib/model-logo'
 import { cn } from '@/lib/utils'
 import type {
@@ -363,6 +367,16 @@ function LocalEngineRow({ modality }: { modality: DiffusionModality }) {
   const ns = modality === 'video' ? 'videos' : 'images'
   const unsupported =
     engine.hostBackendId === null && !engine.resolvingHostBackend
+  // The row has room for the headline only; the reason is on hover.
+  const reason =
+    unsupported && engine.hostBackendReason
+      ? [
+          engineFetchFailureText(engine.hostBackendReason, t),
+          engine.hostBackendReason,
+        ]
+          .filter(Boolean)
+          .join(' — ')
+      : undefined
   const { transferred, total } = engine.progress
   const percent = total > 0 ? Math.round((transferred / total) * 100) : 0
   return (
@@ -370,11 +384,25 @@ function LocalEngineRow({ modality }: { modality: DiffusionModality }) {
       className="flex items-center gap-2.5 rounded-lg px-2.5 py-2"
       data-testid="image-models-engine-missing"
     >
-      <p className="min-w-0 flex-1 text-xs text-muted-foreground">
+      <p
+        className="min-w-0 flex-1 text-xs text-muted-foreground"
+        title={reason}
+      >
         {unsupported
-          ? t('images:setup.engine.unsupported')
+          ? t(hostCheckHeadlineKey(engine.hostBackendCheckFailed))
           : t('images:remote.localNeedsEngine')}
       </p>
+      {unsupported && engine.hostBackendCheckFailed && (
+        <Button
+          size="sm"
+          variant="secondary"
+          className="shrink-0"
+          onClick={() => void engine.retryHostBackend()}
+          data-testid="image-models-engine-retry"
+        >
+          {t('images:errors.actions.retry')}
+        </Button>
+      )}
       {!unsupported && (
         <Button
           size="sm"
