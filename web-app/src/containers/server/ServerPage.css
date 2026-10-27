@@ -587,6 +587,11 @@
     min-width: 0;
     flex: 1;
   }
+  .sp-connection-actions {
+    display: flex;
+    flex-shrink: 0;
+    gap: 8px;
+  }
 
   /* Overview: the setup guide. */
   .sp-guide {

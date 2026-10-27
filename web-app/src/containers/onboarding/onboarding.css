@@ -352,6 +352,8 @@
     filter: var(--ob-logo-filter) var(--ob-logo-glow);
   }
 
+  /* The strip opens instead of pushing the step down at once, and the
+     ready line slides in when the download lands. */
   .ob-download {
     flex-shrink: 0;
     width: 100%;
@@ -360,12 +362,16 @@
     border: 1px solid var(--ob-download-line);
     border-radius: 12px;
     background: var(--ob-download);
+    animation: ob-strip-open 0.42s cubic-bezier(0.2, 0.7, 0.2, 1);
   }
   .ob-download-row {
     display: flex;
     align-items: center;
     gap: 12px;
     padding: 12px 16px;
+  }
+  .ob-download-row.is-ready {
+    animation: ob-ready-in 0.4s cubic-bezier(0.2, 0.7, 0.2, 1);
   }
   .ob-download-row > div {
     flex: 1;
@@ -620,6 +626,31 @@
   }
 }
 
+@keyframes ob-strip-open {
+  from {
+    max-height: 0;
+    margin-bottom: 0;
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    max-height: 120px;
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes ob-ready-in {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
 @keyframes ob-enter {
   from {
     opacity: 0;
@@ -663,7 +694,9 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .ob-content {
+  .ob-content,
+  .ob-download,
+  .ob-download-row.is-ready {
     animation: none;
   }
   .ob-progress i,

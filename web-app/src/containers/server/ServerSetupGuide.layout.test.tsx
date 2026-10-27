@@ -30,6 +30,7 @@ vi.mock('@/hooks/useServiceHub', async (importOriginal) => ({
 }))
 vi.mock('@/lib/integration-agent-detection', () => ({
   detectIntegrationAgentsOnce: vi.fn(),
+  detectIntegrationAgent: vi.fn(),
 }))
 vi.mock('@tanstack/react-router', () => ({
   Link: ({

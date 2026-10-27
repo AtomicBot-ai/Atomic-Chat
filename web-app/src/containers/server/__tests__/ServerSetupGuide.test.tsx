@@ -1,22 +1,25 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { control, hub, settle, restart, writeConfig } = vi.hoisted(() => ({
-  control: {
-    status: 'stopped' as 'running' | 'stopped' | 'pending',
-    isRunning: false,
-    isModelLoading: false,
-    isBusy: false,
-    start: vi.fn(),
-    stop: vi.fn(),
-    toggle: vi.fn(),
-    refreshStatus: vi.fn(),
-  },
-  hub: { tag: 'hub' },
-  settle: vi.fn(),
-  restart: vi.fn(),
-  writeConfig: vi.fn(),
-}))
+const { control, hub, settle, restart, writeConfig, openAgent } = vi.hoisted(
+  () => ({
+    control: {
+      status: 'stopped' as 'running' | 'stopped' | 'pending',
+      isRunning: false,
+      isModelLoading: false,
+      isBusy: false,
+      start: vi.fn(),
+      stop: vi.fn(),
+      toggle: vi.fn(),
+      refreshStatus: vi.fn(),
+    },
+    hub: { tag: 'hub' },
+    settle: vi.fn(),
+    restart: vi.fn(),
+    writeConfig: vi.fn(),
+    openAgent: vi.fn(),
+  })
+)
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({
@@ -55,6 +58,9 @@ vi.mock('@/hooks/useRemoteAccess', () => ({
 vi.mock('@/lib/integration-agent-setup', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/integration-agent-setup')>()),
   writeAgentConfig: writeConfig,
+}))
+vi.mock('@/lib/integration-agent-run', () => ({
+  openIntegrationAgent: openAgent,
 }))
 
 import { useAppState } from '@/hooks/useAppState'
@@ -147,6 +153,25 @@ describe('Server setup guide', () => {
       setupDone: true,
       configuredAgents: [expect.objectContaining({ id: 'codex' })],
     })
+    // Configured, the agent opens on the model it was set up for.
+    expect(openAgent).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'codex' }),
+      expect.objectContaining({
+        model: 'qwen3.5-4b',
+        server: expect.objectContaining({ serverPort: 1337 }),
+      })
+    )
+  })
+
+  it('does not open an agent known to be missing once its config is written', async () => {
+    useLaunchStore.setState({ installed: { codex: false } })
+    render(<ServerSetupGuide entry={{ path: 'agent', agentId: 'codex' }} />)
+
+    await configure()
+
+    await screen.findByText(/api:guide\.doneAgentTitle/)
+    expect(writeConfig).toHaveBeenCalledTimes(1)
+    expect(openAgent).not.toHaveBeenCalled()
   })
 
   it('leaves a running server alone when it already serves the chosen model', async () => {
@@ -232,6 +257,7 @@ describe('Server setup guide', () => {
     expect(useLocalApiServer.getState().serverPort).toBe(8080)
     expect(useServerSetup.getState().endpointConfigured).toBe(true)
     expect(writeConfig).not.toHaveBeenCalled()
+    expect(openAgent).not.toHaveBeenCalled()
   })
 
   it('says when the chosen agent is not installed yet, with the way to install it', () => {

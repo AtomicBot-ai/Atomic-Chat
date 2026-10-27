@@ -17,8 +17,15 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigate }))
 
+// Connect is measured by its own tests; here it is the call it makes.
+const connect = vi.hoisted(() => vi.fn())
+vi.mock('@/hooks/useAgentActions', () => ({
+  useAgentActions: () => ({ install: vi.fn(), connect }),
+}))
+
 import { useAppState } from '@/hooks/useAppState'
 import { useServerSetup } from '@/hooks/useServerSetup'
+import { useLaunchStore } from '@/stores/launch-store'
 
 import { ConnectedTools } from '../ConnectedTools'
 
@@ -32,7 +39,14 @@ describe('Connections, connected tools', () => {
       guide: null,
       guideActive: false,
     })
+    useLaunchStore.setState({ launched: {}, phase: {} })
   })
+
+  /** Disconnect asks first; this answers it. */
+  const confirmDisconnect = () =>
+    fireEvent.click(
+      screen.getByRole('button', { name: 'api:connected.disconnectAction' })
+    )
 
   it('says when nothing is connected, and adds a connection through the guide', () => {
     render(<ConnectedTools />)
@@ -56,6 +70,58 @@ describe('Connections, connected tools', () => {
     expect(screen.getAllByText('api:connected.ready')).toHaveLength(2)
   })
 
+  it('connects a tool again, and says it is connected once Atomic Chat opened it', () => {
+    useServerSetup.setState({ configuredAgents: [{ id: 'codex', at: 1 }] })
+    const { rerender } = render(<ConnectedTools />)
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'api:connected.connectAgent:{"name":"Codex CLI"}',
+      })
+    )
+    expect(connect).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'codex' })
+    )
+
+    useLaunchStore.setState({ launched: { codex: true } })
+    rerender(<ConnectedTools />)
+    expect(screen.getByText('api:connected.connected')).toBeInTheDocument()
+
+    // While it connects, the button waits.
+    useLaunchStore.setState({ phase: { codex: 'connecting' } })
+    rerender(<ConnectedTools />)
+    expect(
+      screen.getByRole('button', {
+        name: 'api:connected.connectAgent:{"name":"Codex CLI"}',
+      })
+    ).toBeDisabled()
+  })
+
+  it('asks before disconnecting, and Cancel leaves the tool set up', () => {
+    useServerSetup.setState({ configuredAgents: [{ id: 'opencode', at: 1 }] })
+    render(<ConnectedTools />)
+
+    const disconnect = screen.getByRole('button', {
+      name: 'api:connected.forget:{"name":"OpenCode"}',
+    })
+    // A word, not an icon.
+    expect(disconnect).toHaveTextContent('api:connected.disconnectAction')
+    fireEvent.click(disconnect)
+
+    expect(
+      screen.getByText('api:connected.disconnectTitle:{"name":"OpenCode"}')
+    ).toBeInTheDocument()
+    expect(screen.getByText('api:connected.forgetHint')).toBeInTheDocument()
+    fireEvent.click(
+      screen.getByRole('button', { name: 'api:connected.cancel' })
+    )
+
+    expect(useServerSetup.getState().configuredAgents).toEqual([
+      { id: 'opencode', at: 1 },
+    ])
+    expect(invoke).not.toHaveBeenCalled()
+  })
+
   it('only forgets a tool it cannot undo: its own settings are not touched', () => {
     useServerSetup.setState({
       configuredAgents: [{ id: 'opencode', at: 1 }],
@@ -70,11 +136,13 @@ describe('Connections, connected tools', () => {
         name: 'api:connected.forget:{"name":"OpenCode"}',
       })
     )
+    confirmDisconnect()
     fireEvent.click(
       screen.getByRole('button', {
         name: 'api:connected.forget:{"name":"api:connected.endpoint"}',
       })
     )
+    confirmDisconnect()
 
     expect(invoke).not.toHaveBeenCalled()
     expect(useServerSetup.getState()).toMatchObject({
@@ -89,11 +157,15 @@ describe('Connections, connected tools', () => {
     useServerSetup.setState({ configuredAgents: [{ id: 'codex', at: 1 }] })
     render(<ConnectedTools />)
 
-    const button = screen.getByRole('button', {
-      name: 'api:connected.disconnect:{"name":"Codex CLI"}',
-    })
-    expect(button).toHaveAttribute('title', 'api:connected.disconnectHint')
-    fireEvent.click(button)
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'api:connected.disconnect:{"name":"Codex CLI"}',
+      })
+    )
+    // The question says what Disconnect does to Codex.
+    expect(screen.getByText('api:connected.disconnectHint')).toBeInTheDocument()
+    expect(invoke).not.toHaveBeenCalled()
+    confirmDisconnect()
 
     expect(invoke).toHaveBeenCalledWith('disconnect_codex')
     await waitFor(() =>
@@ -111,6 +183,7 @@ describe('Connections, connected tools', () => {
         name: 'api:connected.disconnect:{"name":"Codex CLI"}',
       })
     )
+    confirmDisconnect()
 
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith(
