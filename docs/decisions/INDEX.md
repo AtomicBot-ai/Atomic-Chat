@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-471 records, 2026-05-19 → 2026-10-26.
+472 records, 2026-05-19 → 2026-10-27.
 
 ---
 
@@ -33,7 +33,9 @@ decision is reversed, add a new one that says which record it supersedes.
 
 ---
 
-## Local image & video generation (28)
+## Local image & video generation (29)
+
+- **2026-10-27** — [Dispose image job observers on local store reset](2026-10-27-dispose-image-job-observers-on-reset.md)
 
 - **2026-10-22** — [Size the media viewer to its preview and give the gallery the rest](2026-10-22-size-the-media-viewer-to-its-preview-and-give-the-gallery-the-rest.md)
 - **2026-10-22** — [Show only the generation settings a recipe can vouch for](2026-10-22-show-only-the-generation-settings-a-recipe-can-vouch-for.md)

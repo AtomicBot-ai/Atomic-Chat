@@ -202,7 +202,8 @@ const isTerminal = (job: ImageJob | null | undefined): boolean =>
  * Resolvers for jobs the loop is waiting on, keyed by job id. Module state
  * rather than store state: a promise is not something to render.
  */
-const waiters = new Map<string, (job: ImageJob) => void>()
+// A null result means the local observer was reset, not that the core job failed.
+const waiters = new Map<string, (job: ImageJob | null) => void>()
 
 let unsubscribe: (() => void) | null = null
 
@@ -267,13 +268,15 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
 ) => {
   const diffusion = () => getServiceHub().diffusion()
   let updatingEngine = false
+  // Reset invalidates local continuations without cancelling a job owned by the core.
+  let generationEpoch = 0
 
   /** Resolve when the job reaches a terminal state, by event or by polling. */
-  const waitForTerminal = (jobId: string): Promise<ImageJob> =>
+  const waitForTerminal = (jobId: string): Promise<ImageJob | null> =>
     new Promise((resolve) => {
       let settled = false
       let timer: ReturnType<typeof setInterval> | null = null
-      const finish = (job: ImageJob) => {
+      const finish = (job: ImageJob | null) => {
         if (settled) return
         settled = true
         waiters.delete(jobId)
@@ -284,9 +287,13 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
       // The event stream is the fast path; the poll is insurance against a
       // dropped event (the page reloaded, the listener re-bound mid-job).
       timer = setInterval(() => {
-        void diffusion()
-          .getJob(jobId)
+        // The service lookup may throw synchronously during teardown. Keep it
+        // inside the promise too, so a transient failure follows the retry path.
+        void Promise.resolve()
+          .then(() => (settled ? null : diffusion().getJob(jobId)))
           .then((job) => {
+            // A poll already in flight must not revive a reset observer.
+            if (settled) return
             if (job === null) {
               // The plugin forgot the job — nothing more will arrive for it.
               finish({
@@ -483,7 +490,9 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
           runsDone: 0,
           stopRequested: false,
         })
+        const epoch = generationEpoch
         void waitForTerminal(active.id).then((job) => {
+          if (job === null || epoch !== generationEpoch) return
           if (job.state === 'completed') {
             useImageGalleryStore.getState().prepend(job.outputs)
             set({ runsDone: 1 })
@@ -1012,6 +1021,7 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
           return
         }
       }
+      const epoch = generationEpoch
       const runsTotal = Math.max(1, Math.floor(runs))
       useImageGalleryStore.getState().selectLive()
       set({
@@ -1033,13 +1043,16 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
           let jobId: string
           try {
             const submitted = await diffusion().generate({ ...request, seed })
+            if (epoch !== generationEpoch) return
             jobId = submitted.jobId
           } catch (error) {
+            if (epoch !== generationEpoch) return
             set({ lastError: toDiffusionError(error) })
             break
           }
           set({ currentJob: placeholderJob(jobId) })
           const job = await waitForTerminal(jobId)
+          if (job === null || epoch !== generationEpoch) return
           reportJob(job, runsTotal)
           if (job.state === 'completed') {
             useImageGalleryStore.getState().prepend(job.outputs)
@@ -1066,12 +1079,15 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
           }
         }
       } finally {
-        set({
-          currentJob: null,
-          generating: false,
-          generationStartedAtMs: null,
-        })
-        notifyReady(produced)
+        // An abandoned run must not clear a newer run or announce old outputs.
+        if (epoch === generationEpoch) {
+          set({
+            currentJob: null,
+            generating: false,
+            generationStartedAtMs: null,
+          })
+          notifyReady(produced)
+        }
       }
     },
 
@@ -1093,6 +1109,10 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
     closeSetup: () => set({ setupOpen: false }),
 
     reset: () => {
+      generationEpoch += 1
+      // Settling through finish releases each interval and its pending caller.
+      // Do not cancel core jobs: bind can adopt one again after a page reload.
+      for (const finish of waiters.values()) finish(null)
       waiters.clear()
       set({ ...initial })
     },

@@ -1,6 +1,14 @@
 import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest'
 
 import {
   makeCapabilities,
@@ -126,6 +134,11 @@ describe('ImagePromptForm per workflow', () => {
     fake.generate.mockImplementation(async () => ({ jobId: 'job-1' }))
     seedServiceHub({ diffusion: fake })
     fake.subscribe(useImageGenerationStore.getState().handleEvent)
+  })
+
+  afterEach(() => {
+    // Form assertions may stop before the fake job emits a terminal event.
+    useImageGenerationStore.getState().reset()
   })
 
   const generate = async () => {

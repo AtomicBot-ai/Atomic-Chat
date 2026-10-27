@@ -26,6 +26,7 @@ import type { EngineVersionsResponse } from '@/services/engines/types'
 import { useEngineVersionsStore } from '@/stores/engine-versions-store'
 import { seedServiceHub } from '@/test/service-hub'
 import { useHardware } from '@/hooks/useHardware'
+import { useServiceStore } from '@/hooks/useServiceHub'
 import { useImageForm } from '@/hooks/useImageForm'
 import { useImageSetting } from '@/hooks/useImageSetting'
 import { useVideoForm } from '@/hooks/useVideoForm'
@@ -193,6 +194,7 @@ describe('image-generation-store', () => {
   })
 
   afterEach(() => {
+    resetImageGenerationForTests()
     vi.useRealTimers()
   })
 
@@ -513,6 +515,155 @@ describe('image-generation-store', () => {
       expect(useImageGenerationStore.getState().generating).toBe(false)
     })
 
+    it('reset disposes polling and settles an abandoned batch before service teardown', async () => {
+      vi.useFakeTimers()
+      notify.mockClear()
+      fake.generate.mockResolvedValue({ jobId: 'abandoned' })
+      fake.getJob.mockResolvedValue(
+        makeJob({ id: 'abandoned', state: 'generating' })
+      )
+      const done = useImageGenerationStore.getState().startGeneration({
+        request: makeRequest(),
+        runs: 3,
+        baseSeed: null,
+      })
+      await vi.advanceTimersByTimeAsync(0)
+      expect(vi.getTimerCount()).toBe(1)
+      useImageGenerationStore.getState().reset()
+      expect(vi.getTimerCount()).toBe(0)
+      await done
+      useServiceStore.setState({ serviceHub: null })
+      await vi.advanceTimersByTimeAsync(6_000)
+      expect(fake.getJob).not.toHaveBeenCalled()
+      expect(fake.generate).toHaveBeenCalledTimes(1)
+      expect(notify).not.toHaveBeenCalled()
+      expect(useImageGenerationStore.getState()).toMatchObject({
+        currentJob: null,
+        generating: false,
+        runsDone: 0,
+        lastError: null,
+      })
+    })
+
+    it('ignores an old poll completion after reset while a new run is active', async () => {
+      vi.useFakeTimers()
+      let resolvePoll!: (job: ReturnType<typeof makeJob>) => void
+      fake.generate
+        .mockResolvedValueOnce({ jobId: 'old' })
+        .mockResolvedValueOnce({ jobId: 'new' })
+      fake.getJob.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolvePoll = resolve
+          })
+      )
+      const old = useImageGenerationStore
+        .getState()
+        .startGeneration({ request: makeRequest(), runs: 2, baseSeed: null })
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(fake.getJob).toHaveBeenCalledWith('old')
+      useImageGenerationStore.getState().reset()
+      const next = useImageGenerationStore
+        .getState()
+        .startGeneration({ request: makeRequest(), runs: 1, baseSeed: null })
+      await vi.advanceTimersByTimeAsync(0)
+      resolvePoll(
+        makeJob({
+          id: 'old',
+          state: 'completed',
+          outputs: [makeItem({ id: 'stale' })],
+        })
+      )
+      await vi.advanceTimersByTimeAsync(0)
+      await old
+      expect(useImageGenerationStore.getState()).toMatchObject({
+        currentJob: { id: 'new' },
+        generating: true,
+        runsDone: 0,
+      })
+      expect(useImageGalleryStore.getState().items).toEqual([])
+      expect(fake.generate).toHaveBeenCalledTimes(2)
+      fake.emit({
+        type: 'job',
+        job: makeJob({
+          id: 'new',
+          state: 'completed',
+          outputs: [makeItem({ id: 'fresh' })],
+        }),
+      })
+      await next
+      expect(
+        useImageGalleryStore.getState().items.map((item) => item.id)
+      ).toEqual(['fresh'])
+      expect(vi.getTimerCount()).toBe(0)
+    })
+
+    it.each(['resolves', 'rejects'] as const)(
+      'ignores a submission that %s after reset without replacing a newer run',
+      async (outcome) => {
+        vi.useFakeTimers()
+        let settleSubmit!: () => void
+        fake.generate
+          .mockImplementationOnce(
+            () =>
+              new Promise((resolve, reject) => {
+                settleSubmit = () =>
+                  outcome === 'resolves'
+                    ? resolve({ jobId: 'old' })
+                    : reject(new Error('old submission failed'))
+              })
+          )
+          .mockResolvedValueOnce({ jobId: 'new' })
+        const old = useImageGenerationStore
+          .getState()
+          .startGeneration({ request: makeRequest(), runs: 1, baseSeed: null })
+        useImageGenerationStore.getState().reset()
+        const next = useImageGenerationStore
+          .getState()
+          .startGeneration({ request: makeRequest(), runs: 1, baseSeed: null })
+        await vi.advanceTimersByTimeAsync(0)
+        settleSubmit()
+        await old
+        expect(useImageGenerationStore.getState()).toMatchObject({
+          currentJob: { id: 'new' },
+          generating: true,
+          lastError: null,
+        })
+        expect(vi.getTimerCount()).toBe(1)
+        fake.emit({
+          type: 'job',
+          job: makeJob({ id: 'new', state: 'completed' }),
+        })
+        await next
+        expect(vi.getTimerCount()).toBe(0)
+      }
+    )
+
+    it('retries a synchronous poll failure and still completes normally', async () => {
+      vi.useFakeTimers()
+      fake.getJob
+        .mockImplementationOnce(() => {
+          throw new Error('service temporarily unavailable')
+        })
+        .mockResolvedValueOnce(
+          makeJob({
+            id: 'job-1',
+            state: 'completed',
+            outputs: [makeItem({ id: 'recovered' })],
+          })
+        )
+      const done = useImageGenerationStore
+        .getState()
+        .startGeneration({ request: makeRequest(), runs: 1, baseSeed: null })
+      await vi.advanceTimersByTimeAsync(4_000)
+      await done
+      expect(fake.getJob).toHaveBeenCalledTimes(2)
+      expect(
+        useImageGalleryStore.getState().items.map((item) => item.id)
+      ).toEqual(['recovered'])
+      expect(vi.getTimerCount()).toBe(0)
+    })
+
     it('tracks final sampling, decode, post-process and save events through completion', async () => {
       fake.generate.mockImplementation(async () => ({ jobId: 'job-1' }))
       const done = useImageGenerationStore.getState().startGeneration({
@@ -598,6 +749,45 @@ describe('image-generation-store', () => {
         'Images ready',
         expect.any(String)
       )
+    })
+
+    it('reset releases an adopted observer and ignores its late poll without cancelling the core job', async () => {
+      vi.useFakeTimers()
+      resetImageGenerationForTests()
+      notify.mockClear()
+      fake.getStatus.mockResolvedValue({
+        ...makeLoadedStatus(),
+        activeJob: makeJob({ id: 'adopted', state: 'generating' }),
+      })
+      let resolvePoll!: (job: ReturnType<typeof makeJob>) => void
+      fake.getJob.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolvePoll = resolve
+          })
+      )
+      await useImageGenerationStore.getState().bind()
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(fake.getJob).toHaveBeenCalledWith('adopted')
+      useImageGenerationStore.getState().reset()
+      expect(vi.getTimerCount()).toBe(0)
+      resolvePoll(
+        makeJob({
+          id: 'adopted',
+          state: 'completed',
+          outputs: [makeItem({ id: 'stale-adopted' })],
+        })
+      )
+      await vi.advanceTimersByTimeAsync(0)
+      expect(useImageGenerationStore.getState()).toMatchObject({
+        currentJob: null,
+        generating: false,
+        runsDone: 0,
+        lastError: null,
+      })
+      expect(useImageGalleryStore.getState().items).toEqual([])
+      expect(fake.cancelJob).not.toHaveBeenCalled()
+      expect(notify).not.toHaveBeenCalled()
     })
 
     it('reads the capabilities of a model that is already resident', async () => {
