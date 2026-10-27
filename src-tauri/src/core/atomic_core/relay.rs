@@ -790,9 +790,14 @@ mod tests {
         core.set_sessions(json!([{ "model_id": "rebuilt" }]));
         core.drop_streams().await;
 
+        // Reattachment publishes its registration snapshot before opening SSE.
+        // That snapshot alone is not proof that the reconnect request reached
+        // the core, nor that the forced resync response was handled. Wait for
+        // both checkpoints rather than racing open_events after the first one.
+        wait_for(|| async { core.event_cursors().len() >= 2 }).await;
         wait_for(|| {
             let sink = Arc::clone(&sink);
-            async move { count(&sink, SNAPSHOT_EVENT) > snapshots_before }
+            async move { count(&sink, SNAPSHOT_EVENT) >= snapshots_before + 2 }
         })
         .await;
 
