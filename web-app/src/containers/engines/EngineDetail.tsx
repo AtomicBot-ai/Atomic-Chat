@@ -2769,7 +2769,8 @@ export function EngineDetail({
                             provider.provider !== 'atomic-prism' &&
                             provider.provider !== 'mlx' &&
                             provider.provider !== 'foundry-local' &&
-                            provider.provider !== 'litert-lm' && (
+                            provider.provider !== 'litert-lm' &&
+                            provider.provider !== 'geniex' && (
                               <>
                                 <Button
                                   variant="secondary"
@@ -2798,7 +2799,8 @@ export function EngineDetail({
                               provider.provider === 'atomic-prism' ||
                               provider.provider === 'mlx' ||
                               provider.provider === 'foundry-local' ||
-                              provider.provider === 'litert-lm') &&
+                              provider.provider === 'litert-lm' ||
+                              provider.provider === 'geniex') &&
                             !hasDownloadedModels && (
                               <Button
                                 variant="default"

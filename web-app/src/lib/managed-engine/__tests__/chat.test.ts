@@ -58,6 +58,24 @@ describe('LiteRT-LM models in chat (change add-litert-lm-runtime)', () => {
   })
 })
 
+describe('GenieX models in chat (change add-geniex-runtime)', () => {
+  it('keeps a model without tool calling out of Agent mode, and lets one with it in', () => {
+    // spec geniex-desktop: "Для модели без tool calling приложение MUST отключать Agent-режим".
+    expect(agentModelBlockReason('geniex', model([]))).toBe('model-without-tools')
+    expect(agentModelBlockReason('geniex', model(['tools', 'vision']))).toBeNull()
+  })
+
+  it('attaches images exactly for a model whose model.yml reads them (a GGUF with its mmproj)', () => {
+    // spec geniex-desktop "Картинка в чате с VLM".
+    expect(imageAttachmentsAllowed('geniex', model(['vision']))).toBe(true)
+    expect(imageAttachmentsAllowed('geniex', model(['tools']))).toBe(false)
+  })
+
+  it('never grows the context: the host cuts it to the model at load', () => {
+    expect(canGrowContext('geniex')).toBe(false)
+  })
+})
+
 describe('canGrowContext', () => {
   it('never grows a TensorRT-LLM context: it is fixed when the container starts', () => {
     expect(canGrowContext('tensorrt-llm')).toBe(false)

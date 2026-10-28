@@ -118,6 +118,7 @@ const ENGINE_FACTS: Record<string, { detail: string; format?: string }> = {
   'tensorrt-llm': { detail: 'api:model.engineDetail.tensorrt' },
   'foundry-local': { detail: 'api:model.engineDetail.foundry', format: 'ONNX' },
   'litert-lm': { detail: 'api:model.engineDetail.litert', format: 'LiteRT-LM' },
+  'geniex': { detail: 'api:model.engineDetail.geniex', format: 'GGUF · AI Hub' },
 }
 
 const joinFacts = (facts: (string | undefined | false)[]) =>

@@ -200,6 +200,20 @@ describe('Server → Engine & model', () => {
     )
   })
 
+  it('describes the GenieX engine as it does the others', async () => {
+    useModelProvider.setState({
+      providers: [engine('geniex', [{ id: 'qwen3-4b', name: 'Qwen3 4B' }])],
+    })
+    render(<ServerModelPicker />)
+
+    await user.click(dropdown('api:model.engine'))
+
+    const geniex = row(getProviderTitle('geniex'))
+    expect(geniex.querySelector('img')).toHaveAttribute('src', '/images/model-provider/geniex.svg')
+    expect(geniex).toHaveTextContent('api:model.engineDetail.geniex')
+    expect(geniex).toHaveTextContent('GGUF · AI Hub · api:model.engineModels:{"count":1}')
+  })
+
   it('shows each model with its family’s mark, the quantization its name leaves out and its size on disk', async () => {
     useModelProvider.setState({
       providers: [
