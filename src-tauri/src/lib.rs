@@ -267,6 +267,8 @@ pub fn run() {
         core::downloads::commands::cancel_download_task,
         core::downloads::commands::test_proxy_connection,
         core::downloads::commands::get_download_free_space,
+        // An AI Hub bundle's zip, unpacked under its download's task id (change add-geniex-runtime).
+        core::downloads::archive::extract_zip,
         // Custom updater commands (desktop only)
         core::updater::commands::check_for_app_updates,
         core::updater::commands::is_update_available,
