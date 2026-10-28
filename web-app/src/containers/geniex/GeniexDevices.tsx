@@ -85,7 +85,7 @@ export function GeniexDevices() {
       {answer.accelerators.length === 0 && (
         <p className="text-sm text-muted-foreground">{t('providers:geniex.devices.none')}</p>
       )}
-      {!found('npu') && (
+      {!found('npu') && answer.accelerators.length > 0 && (
         <p className="mt-3 text-sm text-muted-foreground">{t('providers:geniex.devices.npuDriverHint')}</p>
       )}
     </Card>

@@ -226,8 +226,8 @@ function readRepository(
  */
 export async function fetchHfGeniexModels(options: HfGeniexOptions): Promise<HfGeniexResult> {
   const fetchJson = options.fetchJson ?? defaultFetchJson
-  // conf closed every device for Hugging Face models on this platform: nothing to offer, no reads.
-  if (options.allowed.length === 0) return { models: [], unavailable: false }
+  // conf closed every device, or every quantization, for Hugging Face models: nothing to offer, no reads.
+  if (options.allowed.length === 0 || options.quantizations.length === 0) return { models: [], unavailable: false }
   const curatedRepos = new Set(options.curated.flatMap((model) => (model.repo ? [model.repo.toLowerCase()] : [])))
   const taken = new Set(options.curated.map((model) => model.id))
   const shown = [...new Set(options.candidates)]

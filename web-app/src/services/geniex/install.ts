@@ -244,7 +244,7 @@ async function installGguf(
  * `model.yml` for a GGUF: the file (and its projector as `mmproj_path`, which the core reads before
  * the block's name), the name, the bytes, and the block the core loads the model by. A curated
  * model's abilities are conf's; a Hugging Face model's come from the core's reading of the header —
- * the context and whether a projector sits beside it. The header names no tool calling or thinking
+ * the context — and from the projector downloaded beside it. The header names no tool calling or thinking
  * mode, so neither is claimed for a Hugging Face model (rulings/app.md): the core would refuse tools
  * to it and the app keeps Agent mode off.
  */
@@ -262,7 +262,9 @@ function ggufModelYml(
           context_length: metadata?.max_context_tokens ?? model.context_length ?? DEFAULT_CONTEXT_LENGTH,
           tools: false,
           reasoning: false,
-          vision: metadata?.vision ?? !!gguf.mmproj,
+          // The projector downloaded beside the file is what the host reads images with; the core's
+          // header reading only looks for an `mmproj*.gguf` name, which Google's QAT files do not use.
+          vision: !!gguf.mmproj || (metadata?.vision ?? false),
         }
       : {
           context_length: model.context_length ?? metadata?.max_context_tokens ?? DEFAULT_CONTEXT_LENGTH,
@@ -314,8 +316,11 @@ async function installBundle(
   const root = underRoot(await deps.dataFolder(), 'geniex', 'models', variant.id)
   const archive = underRoot(root, BUNDLE_ARCHIVE)
   const downloadId = geniexDownloadId(variant.id)
-  const unpacked = await deps.isUnpacked(root)
-  const pending = !unpacked && (await deps.existingSize(archive)) !== variant.bundle.size
+  // Unpacked means the archive is gone: `extract_zip` deletes it only after the last entry, so a
+  // cancelled or failed unpack, which may have written `geniex.json` already, is done again.
+  const archiveSize = await deps.existingSize(archive)
+  const unpacked = archiveSize === null && (await deps.isUnpacked(root))
+  const pending = !unpacked && archiveSize !== variant.bundle.size
   if (pending && !(await deps.hasPartial(archive))) {
     // The zip and what it unpacks to: the archive is deleted only once everything is out.
     await ensureRoom(deps, root, variant.bundle.size * 2)

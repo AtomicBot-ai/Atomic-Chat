@@ -232,6 +232,20 @@ describe('installGeniexModel — a GGUF model', () => {
     expect(yaml[0].data).not.toHaveProperty('mmproj_path')
   })
 
+  it('claims vision for a Hugging Face model by the projector it downloaded, whatever the header reading says', async () => {
+    // Google's QAT repositories name the projector `…-mmproj.gguf`, which the core's `mmproj*.gguf`
+    // reading misses; the host still gets `--mmproj` from model.yml.
+    const { deps, yaml } = fakeDeps()
+    const gemmaFromHf: GeniexHubModel = { ...hfQwen, model_id: 'gemma-4-e2b-it-qat-q4_0-gguf', gguf: gemma.gguf }
+
+    await installGeniexModel({ model: gemmaFromHf, device: 'npu' }, deps)
+
+    expect(yaml[0].data).toMatchObject({
+      mmproj_path: 'geniex/models/gemma-4-e2b-it-qat-q4_0-gguf/gemma-4-E4B-it-mmproj.gguf',
+      geniex: { vision: true, mmproj: 'gemma-4-E4B-it-mmproj.gguf', source: 'huggingface' },
+    })
+  })
+
   it('does not start a gated model’s download without a token, and links its repository', async () => {
     const { deps, steps } = fakeDeps()
     const gated = { ...hfQwen, gguf: { ...hfQwen.gguf!, gated: true } }
@@ -427,5 +441,16 @@ describe('installGeniexModel — an AI Hub bundle', () => {
     await installGeniexModel({ model: bundleModel, variant: xElite }, deps)
 
     expect(steps).toEqual(['check variant', 'check on disk', 'model.yml'])
+  })
+
+  it('unpacks again a bundle whose archive is still there: a cancelled unpack may have written geniex.json', async () => {
+    const { deps, steps } = fakeDeps(
+      { isUnpacked: async () => true, existingSize: async () => 2_500_000_000 },
+      () => BUNDLE_OK
+    )
+
+    await installGeniexModel({ model: bundleModel, variant: xElite }, deps)
+
+    expect(steps).toEqual(['check variant', 'extract', 'check on disk', 'model.yml'])
   })
 })

@@ -135,6 +135,13 @@ import { restartLocalModel } from '@/utils/restartLocalModel'
 const MODEL_ACTION_BUTTON_CLASS = 'w-28'
 
 /**
+ * Engines whose `device` setting is the GPU chosen on the Hardware page, so their settings list
+ * leaves it out. GenieX's `device` (NPU, GPU, CPU, hybrid; change add-geniex-runtime) is a choice
+ * made here, so it stays.
+ */
+const DEVICE_CHOSEN_ON_HARDWARE_PAGE = new Set(['llamacpp', 'llamacpp-upstream', 'atomic-prism'])
+
+/**
  * The models an engine has, named under its settings where they unfold in
  * the engine's card, with the way to its page, where they are managed.
  */
@@ -2286,7 +2293,9 @@ export function EngineDetail({
                           controllerType={setting.controller_type}
                           controllerProps={setting.controller_props}
                           className={cn(
-                            setting.key === 'device' && providerName !== 'geniex' && 'hidden',
+                            setting.key === 'device' &&
+                              DEVICE_CHOSEN_ON_HARDWARE_PAGE.has(providerName) &&
+                              'hidden',
                             isHiddenConcurrentMode && 'hidden',
                             isHiddenByDflash && 'hidden',
                             isHiddenForManaged && 'hidden'
@@ -2471,7 +2480,9 @@ export function EngineDetail({
                       key={settingIndex}
                       title={setting.title}
                       className={cn(
-                        setting.key === 'device' && providerName !== 'geniex' && 'hidden',
+                        setting.key === 'device' &&
+                          DEVICE_CHOSEN_ON_HARDWARE_PAGE.has(providerName) &&
+                          'hidden',
                         isHiddenConcurrentMode && 'hidden',
                         isHiddenByDflash && 'hidden',
                         isHiddenForManaged && 'hidden'

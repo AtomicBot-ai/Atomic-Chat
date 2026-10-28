@@ -154,6 +154,11 @@ describe('fetchHfGeniexModels', () => {
     const none = await fetchHfGeniexModels({ ...base, allowed: [], fetchJson: hub().fetchJson })
     expect(none.models).toEqual([])
     expect(none.unavailable).toBe(false)
+
+    const noQuant = hub()
+    const nothing = await fetchHfGeniexModels({ ...base, quantizations: [], fetchJson: noQuant.fetchJson })
+    expect(nothing.models).toEqual([])
+    expect(noQuant.asked).toEqual([])
   })
 
   it('says Hugging Face is unavailable when no repository could be read, and leaves out one it could not', async () => {

@@ -41,8 +41,6 @@ pub fn extract_zip_into(
 ) -> Result<ExtractReport, String> {
     let file = fs::File::open(archive).map_err(|e| format!("cannot open {}: {e}", archive.display()))?;
     let mut zip = zip::ZipArchive::new(file).map_err(|e| format!("not a zip archive: {e}"))?;
-    fs::create_dir_all(output_dir)
-        .map_err(|e| format!("cannot create {}: {e}", output_dir.display()))?;
     let root = jan_utils::normalize_path(output_dir);
 
     // Every target is decided before a byte is written: a bad entry anywhere fails the whole unpack
@@ -66,6 +64,7 @@ pub fn extract_zip_into(
         targets.push((index, target, is_dir));
     }
 
+    fs::create_dir_all(&root).map_err(|e| format!("cannot create {}: {e}", root.display()))?;
     let mut done: u64 = 0;
     let mut files: u64 = 0;
     progress(0, total);
@@ -236,7 +235,7 @@ mod tests {
 
         assert!(error.contains("outside the folder"), "{error}");
         assert!(!dir.path().join("evil.txt").exists());
-        assert!(!out.join("geniex.json").exists());
+        assert!(!out.exists(), "a refused archive leaves no folder");
     }
 
     #[test]

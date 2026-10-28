@@ -499,7 +499,7 @@
       "gpu": "Adreno GPU",
       "detail": "Found by GenieX {{version}}",
       "ready": "Ready",
-      "none": "GenieX found neither the NPU nor the GPU here. Models still run on the CPU.",
+      "none": "GenieX found neither the NPU nor the GPU here. Models still run on the CPU; for the NPU, install or update the Qualcomm NPU driver (from Windows Update or your laptop maker), then install the SDK again.",
       "npuDriverHint": "GenieX found no Hexagon NPU. Models still run on the GPU and the CPU; for the NPU, install or update the Qualcomm NPU driver (from Windows Update or your laptop maker), then install the SDK again.",
       "checkAgain": "Check again"
     }

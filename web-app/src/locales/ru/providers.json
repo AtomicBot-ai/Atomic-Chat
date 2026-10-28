@@ -498,7 +498,7 @@
       "gpu": "GPU Adreno",
       "detail": "Найдено GenieX {{version}}",
       "ready": "Готов",
-      "none": "GenieX не нашёл здесь ни NPU, ни GPU. Модели всё равно работают на CPU.",
+      "none": "GenieX не нашёл здесь ни NPU, ни GPU. Модели всё равно работают на CPU; для NPU установите или обновите драйвер Qualcomm NPU (через Windows Update или у производителя ноутбука), затем установите SDK заново.",
       "npuDriverHint": "GenieX не нашёл NPU Hexagon. Модели работают на GPU и CPU; для NPU установите или обновите драйвер Qualcomm NPU (через Windows Update или у производителя ноутбука), затем установите SDK заново.",
       "checkAgain": "Проверить снова"
     }
