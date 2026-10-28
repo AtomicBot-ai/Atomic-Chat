@@ -12,6 +12,12 @@ import { configureDiffusion, getDiffusionPaths } from '@/lib/diffusion/config'
 import { toDiffusionError } from '@/lib/diffusion/errors'
 import { autoOffload, fitForQuant } from '@/lib/diffusion/fit'
 import {
+  CoreInstanceTracker,
+  ENGINE_STOPPED_MESSAGE,
+  lostJobError,
+  noCoreWillReturn,
+} from '@/lib/diffusion/lost-job'
+import {
   shouldContinueGenerating,
   shouldReportGenerateError,
 } from '@/lib/diffusion/generation-stop'
@@ -114,6 +120,14 @@ type ImageGenerationState = {
   /** The backend id the host qualifies for, or null when this machine cannot run the engine. */
   hostBackendId: string | null
   hostBackendReason: string | null
+  /**
+   * Why the host check gave no answer, so a retry can help: the core could
+   * not read the sd.cpp manifest (`manifest`), or the call to the core failed
+   * (`core`). Null when the check answered, a "no build" answer included.
+   */
+  hostBackendCheckFailed: 'manifest' | 'core' | null
+  /** The host check's attempt in progress, or the last one made (of `HOST_CHECK_ATTEMPTS`). */
+  hostBackendAttempt: number
   /** True once host compatibility has been checked; null is otherwise ambiguous. */
   hostBackendResolved: boolean
 
@@ -158,6 +172,11 @@ type ImageGenerationState = {
   refreshStatus: () => Promise<void>
   refreshCatalog: () => Promise<void>
   refreshModelFiles: () => Promise<void>
+  /**
+   * Ask the core which engine build fits this host, trying a failed check
+   * again up to `HOST_CHECK_ATTEMPTS` times; `force` re-reads the manifest (Retry).
+   */
+  refreshHostBackend: (opts?: { force?: boolean }) => Promise<void>
   /**
    * Configure the core again with every setting it keeps in memory: the idle
    * interval and the chosen output folder. After a residency setting changes,
@@ -206,6 +225,12 @@ const waiters = new Map<string, (job: ImageJob) => void>()
 
 let unsubscribe: (() => void) | null = null
 
+/**
+ * Which core instance each local job runs in: a re-attach to the same core
+ * keeps the job, a new instance has lost it (`lib/diffusion/lost-job.ts`).
+ */
+const instances = new CoreInstanceTracker()
+
 function hardwareProfile(): HardwareProfile | null {
   const hw = useHardware.getState().hardwareData
   return describeHardware({
@@ -215,6 +240,13 @@ function hardwareProfile(): HardwareProfile | null {
     gpus: hw.gpus,
   })
 }
+
+/**
+ * Pauses between the host check's attempts: a manifest read that failed is
+ * tried again on its own before the card shows the failure (3 attempts).
+ */
+export const HOST_CHECK_RETRY_DELAYS_MS = [2_000, 5_000]
+export const HOST_CHECK_ATTEMPTS = HOST_CHECK_RETRY_DELAYS_MS.length + 1
 
 const emptyInstall: EngineInstallProgress = {
   inFlight: false,
@@ -242,6 +274,9 @@ const initial = {
   paths: null as DiffusionPaths | null,
   hostBackendId: null as string | null,
   hostBackendReason: null as string | null,
+  hostBackendCheckFailed:
+    null as ImageGenerationState['hostBackendCheckFailed'],
+  hostBackendAttempt: 0,
   hostBackendResolved: false,
   currentJob: null as ImageJob | null,
   runsTotal: 0,
@@ -267,6 +302,53 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
 ) => {
   const diffusion = () => getServiceHub().diffusion()
   let updatingEngine = false
+  /** Bumped by each host check and by `reset`: a superseded check stops writing. */
+  let hostCheckRun = 0
+
+  /** One ask of the core: the host check's fields, `hostBackendCheckFailed` set when it may be retried. */
+  const readHostBackend = async (
+    force: boolean | undefined
+  ): Promise<
+    Pick<
+      ImageGenerationState,
+      'hostBackendId' | 'hostBackendReason' | 'hostBackendCheckFailed'
+    >
+  > => {
+    try {
+      const catalog = await diffusion().engineCatalog({
+        ...proxyRequest(),
+        ...(force ? { force: true } : {}),
+      })
+      // Without a manifest the core's `host_reason` only says so; the
+      // read's own error (timeout, HTTP status, DNS) is in `manifest_error`.
+      const manifestMissing = catalog.manifest === null
+      return {
+        hostBackendId: catalog.host_backend_id,
+        hostBackendReason: catalog.host_backend_id
+          ? null
+          : manifestMissing
+            ? (catalog.manifest_error ?? catalog.host_reason)
+            : catalog.host_reason,
+        hostBackendCheckFailed:
+          !catalog.host_backend_id && manifestMissing ? 'manifest' : null,
+      }
+    } catch (error) {
+      console.error('[images] engine catalog unavailable:', error)
+      return {
+        hostBackendId: null,
+        hostBackendReason: toDiffusionError(error).message,
+        hostBackendCheckFailed: 'core',
+      }
+    }
+  }
+
+  /** The job as it ends when its core is gone or no longer knows it. */
+  const lostJob = (jobId: string, error: DiffusionError): ImageJob => ({
+    ...(get().currentJob ?? placeholderJob(jobId)),
+    id: jobId,
+    state: 'failed',
+    error,
+  })
 
   /** Resolve when the job reaches a terminal state, by event or by polling. */
   const waitForTerminal = (jobId: string): Promise<ImageJob> =>
@@ -277,6 +359,7 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
         if (settled) return
         settled = true
         waiters.delete(jobId)
+        instances.forget(jobId)
         if (timer) clearInterval(timer)
         resolve(job)
       }
@@ -286,25 +369,35 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
       timer = setInterval(() => {
         void diffusion()
           .getJob(jobId)
-          .then((job) => {
+          .then(async (job) => {
             if (job === null) {
-              // The plugin forgot the job — nothing more will arrive for it.
-              finish({
-                ...(get().currentJob ?? placeholderJob(jobId)),
-                id: jobId,
-                state: 'failed',
-                error: {
-                  code: 'JOB_NOT_FOUND',
-                  message: 'The job disappeared before it finished.',
-                },
-              })
+              // The core forgot the job — nothing more will arrive for it.
+              // Which core answered says why: a new one means the engine
+              // stopped under the job, the same one that it vanished.
+              instances.note(await diffusion().coreInstance?.())
+              finish(
+                lostJob(
+                  jobId,
+                  lostJobError(instances.instanceOf(jobId), instances.current)
+                )
+              )
               return
             }
             if (isTerminal(job)) finish(job)
             else if (get().currentJob?.id === jobId) set({ currentJob: job })
           })
-          .catch(() => {
-            // A transient IPC failure: the next tick tries again.
+          .catch((error) => {
+            // The app gave up starting a core: the job cannot come back.
+            if (noCoreWillReturn(error) && instances.instanceOf(jobId)) {
+              finish(
+                lostJob(jobId, {
+                  code: 'ENGINE_STOPPED',
+                  message: ENGINE_STOPPED_MESSAGE,
+                })
+              )
+            }
+            // Otherwise a transient failure, or a core too busy to answer in
+            // time: the next tick tries again.
           })
       }, FALLBACK_POLL_MS)
     })
@@ -425,6 +518,11 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
 
       unsubscribe?.()
       unsubscribe = service.subscribe((event) => get().handleEvent(event))
+      // The instance a running job is adopted into, and later jobs submitted to.
+      const instanceRead = service
+        .coreInstance?.()
+        .then((id) => instances.note(id))
+        .catch(() => {})
 
       try {
         const status = await configureCore()
@@ -434,7 +532,11 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
         set({ lastError: toDiffusionError(error) })
       }
 
+      // Outside the Promise.all: a failed check is tried again for a few
+      // seconds, which must not hold up adopting a running job.
+      const hostCheck = get().refreshHostBackend()
       await Promise.all([
+        instanceRead,
         get().refreshStatus(),
         get().refreshCatalog(),
         get().refreshModelFiles(),
@@ -443,37 +545,20 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
           .catch((error) =>
             console.error('[images] paths unavailable:', error)
           ),
-        service
-          .engineCatalog(proxyRequest())
-          .then((catalog) =>
-            set({
-              hostBackendId: catalog.host_backend_id,
-              hostBackendReason: catalog.host_backend_id
-                ? null
-                : (catalog.host_reason ?? catalog.manifest_error),
-              hostBackendResolved: true,
-            })
-          )
-          .catch((error) => {
-            console.error('[images] engine catalog unavailable:', error)
-            set({
-              hostBackendId: null,
-              hostBackendReason: toDiffusionError(error).message,
-              hostBackendResolved: true,
-            })
-          }),
       ])
 
       // Once per launch, as the llama.cpp providers do: what the manifest
       // says goes to the engine-update banner. Not awaited — the round trip
-      // must not hold up adopting a running job.
-      void get().checkEngineUpdate()
+      // must not hold up adopting a running job. It needs the host's build,
+      // so it follows the host check.
+      void hostCheck.then(() => get().checkEngineUpdate())
 
       // Adopt a job that was running before this page (or this window)
       // existed, so a reload mid-generation shows progress instead of a
       // blank form that lets the user submit a second job on top.
       const active = get().status?.activeJob
       if (active && !isTerminal(active) && !get().generating) {
+        if (!active.request.target) instances.track(active.id)
         useImageGalleryStore.getState().selectLive()
         set({
           currentJob: active,
@@ -510,6 +595,7 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
       if (get().status?.model.state === 'loaded') {
         await refreshCapabilities()
       }
+      await hostCheck
     },
 
     unbind: () => {
@@ -600,6 +686,35 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
           // which still holds its configuration; the configure below sends
           // every setting the app keeps, so it restores a new core and
           // changes nothing on the old one. Take its status as the truth.
+          instances.note(event.instanceId)
+          const running = get().currentJob
+          if (running && !isTerminal(running)) {
+            if (instances.replaced(running.id)) {
+              // Another core answers now: the one rendering this job is gone.
+              waiters.get(running.id)?.(
+                lostJob(
+                  running.id,
+                  lostJobError(
+                    instances.instanceOf(running.id),
+                    instances.current
+                  )
+                )
+              )
+            } else {
+              // The same core, attached again: the job goes on; read where it is.
+              void diffusion()
+                .getJob(running.id)
+                .then((job) => {
+                  if (
+                    job &&
+                    !isTerminal(job) &&
+                    get().currentJob?.id === job.id
+                  )
+                    set({ currentJob: job })
+                })
+                .catch(() => {})
+            }
+          }
           void get()
             .applyIdleSettings()
             .then(() => {
@@ -636,6 +751,28 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
         recomputeInstalled()
       } catch (error) {
         console.error('[images] model files unavailable:', error)
+      }
+    },
+
+    refreshHostBackend: async ({ force } = {}) => {
+      const run = ++hostCheckRun
+      set({ hostBackendResolved: false })
+      for (let attempt = 1; ; attempt++) {
+        set({ hostBackendAttempt: attempt })
+        const answer = await readHostBackend(force)
+        if (run !== hostCheckRun) return
+        if (!answer.hostBackendCheckFailed || attempt >= HOST_CHECK_ATTEMPTS) {
+          set({ ...answer, hostBackendResolved: true })
+          return
+        }
+        console.warn(
+          `[images] engine check failed (attempt ${attempt} of ${HOST_CHECK_ATTEMPTS}), retrying:`,
+          answer.hostBackendReason
+        )
+        await new Promise((resolve) =>
+          setTimeout(resolve, HOST_CHECK_RETRY_DELAYS_MS[attempt - 1])
+        )
+        if (run !== hostCheckRun) return
       }
     },
 
@@ -857,10 +994,12 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
         (file) =>
           file.field !== 'llm_vision' || workflowNeedsLlmVision(workflow)
       )
+      // A text encoder on the CPU is off a discrete GPU, but on unified
+      // memory it takes the same RAM a chat model would keep.
       const sideBytes =
         (family.vae?.bytes ?? 0) +
         (family.audio_vae?.bytes ?? 0) +
-        (teOnCpu
+        (teOnCpu && profile?.memoryKind !== 'unified'
           ? 0
           : requiredTextEncoders.reduce((sum, file) => sum + file.bytes, 0))
 
@@ -1024,6 +1163,14 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
       })
       let produced = 0
       try {
+        // A local job is tied to the core it is submitted to (`lost-job.ts`).
+        if (!request.target && instances.current === null) {
+          instances.note(
+            await diffusion()
+              .coreInstance?.()
+              .catch(() => null)
+          )
+        }
         for (let run = 0; run < runsTotal; run += 1) {
           if (get().stopRequested) break
           // Each run gets its own seed range so the batches do not repeat:
@@ -1038,6 +1185,7 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
             set({ lastError: toDiffusionError(error) })
             break
           }
+          if (!request.target) instances.track(jobId)
           set({ currentJob: placeholderJob(jobId) })
           const job = await waitForTerminal(jobId)
           reportJob(job, runsTotal)
@@ -1094,6 +1242,8 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
 
     reset: () => {
       waiters.clear()
+      instances.clear()
+      hostCheckRun++
       set({ ...initial })
     },
   }

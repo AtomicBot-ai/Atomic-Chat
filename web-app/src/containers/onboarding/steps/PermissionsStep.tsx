@@ -20,10 +20,7 @@ import {
 } from '@/components/ui/dialog'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import {
-  notificationPermissionGranted,
-  requestNotificationPermission,
-} from '@/lib/notifications'
+import { requestNotificationPermission } from '@/lib/notifications'
 import { captureOnboardingEvent } from '@/lib/onboarding-telemetry'
 import {
   useOnboardingStore,
@@ -78,7 +75,10 @@ export function PermissionsStep({
   const voice = useServiceHub().voice()
   const availability = usePermissionAvailability()
 
-  // An answer given earlier in this run stands until the OS says otherwise.
+  // An answer given earlier in this run stands. Notifications have no OS
+  // answer to read: Tauri's desktop plugin reports "granted" before anything
+  // was asked, which showed the row as allowed and let Continue leave without
+  // the warning, so the row shows only what the user answered here.
   const [states, setStates] = useState<Record<AskablePermission, RowState>>(
     () => {
       const answers = useOnboardingStore.getState().permissions
@@ -90,25 +90,6 @@ export function PermissionsStep({
   )
   const setRow = (permission: AskablePermission, state: RowState) =>
     setStates((current) => ({ ...current, [permission]: state }))
-
-  // Notifications already allowed show as such on arrival; one revoked since
-  // it was allowed in this run can be asked for again.
-  useEffect(() => {
-    if (!availability.notifications) return
-    let cancelled = false
-    void notificationPermissionGranted().then((granted) => {
-      if (cancelled) return
-      setStates((current) => {
-        if (granted) return { ...current, notifications: 'granted' }
-        return current.notifications === 'granted'
-          ? { ...current, notifications: 'idle' }
-          : current
-      })
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [availability.notifications])
 
   // The microphone's own answer, read without a prompt, is the row's.
   useEffect(() => {

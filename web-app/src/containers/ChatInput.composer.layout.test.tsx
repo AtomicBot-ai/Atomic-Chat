@@ -136,10 +136,10 @@ describe('Composer toolbar and Send reveal (Chromium)', () => {
       // An empty composer has no Send, and nothing spills sideways.
       expect(screen.queryByTestId('send-control')).toBeNull()
       expectNoHorizontalOverflow(composer)
-      // The paperclip is the regular round 36px action.
+      // The paperclip is the regular round 28px action.
       const a = attach.getBoundingClientRect()
-      expect(a.width).toBeCloseTo(36, 0)
-      expect(a.height).toBeCloseTo(36, 0)
+      expect(a.width).toBeCloseTo(28, 0)
+      expect(a.height).toBeCloseTo(28, 0)
       // The access label reads in full on one line, compact composer too.
       expectOneLine(access.querySelector('span')!)
       expect(access.getBoundingClientRect().right).toBeLessThanOrEqual(
@@ -157,8 +157,8 @@ describe('Composer toolbar and Send reveal (Chromium)', () => {
       const send = control.querySelector('button')!
       const s = send.getBoundingClientRect()
       const c = composer.getBoundingClientRect()
-      expect(s.width).toBeCloseTo(36, 0)
-      expect(s.height).toBeCloseTo(36, 0)
+      expect(s.width).toBeCloseTo(28, 0)
+      expect(s.height).toBeCloseTo(28, 0)
       expect(s.right).toBeLessThanOrEqual(c.right)
       expect(s.left).toBeGreaterThanOrEqual(pill.getBoundingClientRect().right)
       const slot =
@@ -277,11 +277,11 @@ describe('Composer toolbar and Send reveal (Chromium)', () => {
     await nextFrames()
     const control = screen.getByTestId('send-control')
     const early = control.getBoundingClientRect().width
-    expect(early).toBeLessThan(40)
+    expect(early).toBeLessThan(32)
     expect(getComputedStyle(control).overflow).toBe('hidden')
 
     await wait(400)
-    expect(control.getBoundingClientRect().width).toBeCloseTo(40, 0)
+    expect(control.getBoundingClientRect().width).toBeCloseTo(32, 0)
     expect(getComputedStyle(control).overflow).toBe('visible')
   })
 
@@ -294,6 +294,6 @@ describe('Composer toolbar and Send reveal (Chromium)', () => {
     await nextFrames()
     expect(
       screen.getByTestId('send-control').getBoundingClientRect().width
-    ).toBeCloseTo(40, 0)
+    ).toBeCloseTo(32, 0)
   })
 })

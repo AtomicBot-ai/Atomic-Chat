@@ -73,3 +73,36 @@ describe('TauriUpdaterService on a package-managed install', () => {
     expect(mockPluginCheck).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('TauriUpdaterService when the update server cannot be reached', () => {
+  let ipc: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    ipc = vi.fn()
+  })
+
+  it('rejects when neither the signed check nor the plugin got an answer', async () => {
+    ipc.mockImplementation((command: string) => {
+      if (command === 'check_for_app_updates') {
+        throw new Error('error sending request')
+      }
+    })
+    mockPluginCheck.mockRejectedValue(new Error('error sending request'))
+    const service = await loadService(false, ipc)
+
+    await expect(service.check()).rejects.toThrow('error sending request')
+  })
+
+  it('keeps the signed "no update" when only the plugin check fails', async () => {
+    ipc.mockImplementation((command: string) =>
+      command === 'check_for_app_updates' ? null : undefined
+    )
+    mockPluginCheck.mockRejectedValue(new Error('error sending request'))
+    const service = await loadService(false, ipc)
+
+    await expect(service.check()).resolves.toBeNull()
+  })
+})

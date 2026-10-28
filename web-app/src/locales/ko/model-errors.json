@@ -23,5 +23,8 @@
   "engineUnsupportedDescription": "이 파일은 아직 어떤 엔진도 지원하지 않는 형식을 사용합니다. 같은 모델의 다른 파일을 사용하거나 앱을 업데이트하세요.",
   "formatLegacyTitle": "이 파일은 이전 Bonsai 형식을 사용합니다",
   "formatLegacyDescription": "이 패킹은 대체되었습니다. 대신 같은 저장소에서 {{replacement}}을(를) 다운로드하세요.",
-  "formatLegacyDescriptionNoReplacement": "이 패킹은 대체되었습니다. 같은 모델의 최신 파일을 다운로드하세요."
+  "formatLegacyDescriptionNoReplacement": "이 패킹은 대체되었습니다. 같은 모델의 최신 파일을 다운로드하세요.",
+  "mlxEngineMissingTitle": "MLX 엔진이 설치되어 있지 않습니다",
+  "mlxEngineMissingDescription": "한 번만 다운로드하면 됩니다. 엔진이 설치되면 바로 모델을 불러옵니다.",
+  "mlxEngineMissingAction": "설치"
 }

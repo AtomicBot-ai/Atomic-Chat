@@ -3,6 +3,7 @@ import { AppEvent, events } from '@janhq/core'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useHardware } from '@/hooks/useHardware'
+import { useApiServerLogLive } from '@/hooks/useApiServerLogFeed'
 import { isPlatformTauri } from '@/lib/platform/utils'
 import {
   useBackendMismatch,
@@ -18,6 +19,8 @@ export function GlobalEventHandler() {
   const serviceHub = useServiceHub()
   const setHardwareData = useHardware((state) => state.setHardwareData)
   const { report: reportBackendMismatch } = useBackendMismatch()
+  // The Server pages' request log stays current while none of them is open.
+  useApiServerLogLive()
 
   useEffect(() => {
     if (!isPlatformTauri()) return

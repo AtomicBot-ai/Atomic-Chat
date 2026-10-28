@@ -9,7 +9,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useToolApproval } from '@/hooks/useToolApproval'
 import { useThreadNotifications } from '@/hooks/useThreadNotifications'
-import { useAppUpdater } from '@/hooks/useAppUpdater'
+import { useAppUpdater, type UpdateCheckOutcome } from '@/hooks/useAppUpdater'
 import { useEffect, useState, useCallback } from 'react'
 import ChangeDataFolderLocation from '@/containers/dialogs/ChangeDataFolderLocation'
 import LocalModelLocationsCard from '@/containers/LocalModelLocationsCard'
@@ -27,7 +27,7 @@ import {
   IconCopyCheck,
 } from '@tabler/icons-react'
 import { toast } from 'sonner'
-import { isDev } from '@/lib/utils'
+import { cn, isDev } from '@/lib/utils'
 import { SystemEvent } from '@/types/events'
 import { Input } from '@/components/ui/input'
 import { useHardware } from '@/hooks/useHardware'
@@ -44,6 +44,48 @@ const TOKEN_VALIDATION_TIMEOUT_MS = 10_000
 export const Route = createFileRoute(route.settings.general as any)({
   component: General,
 })
+
+/** The Check for Updates row: nothing asked yet, asking, or what was found. */
+type UpdateCheckState =
+  | { phase: 'idle' }
+  | { phase: 'checking' }
+  | { phase: 'done'; outcome: UpdateCheckOutcome; checkedAt: Date }
+
+/** The line the row shows, and announces, for each state. */
+function describeUpdateCheck(
+  check: UpdateCheckState,
+  t: (key: string, options?: Record<string, unknown>) => string
+): string {
+  if (check.phase === 'idle') return t('settings:general.checkForUpdatesDesc')
+  if (check.phase === 'checking') {
+    return t('settings:general.checkingForUpdates')
+  }
+  const time = check.checkedAt.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+  const { outcome } = check
+  switch (outcome.status) {
+    case 'available':
+      return t('settings:general.updateCheckAvailable', {
+        version: outcome.update.version,
+      })
+    case 'up-to-date':
+      return t('settings:general.updateCheckUpToDate', {
+        version: VERSION,
+        time,
+      })
+    case 'failed':
+      return t('settings:general.updateCheckFailed', { time })
+    case 'not-checked':
+      if (outcome.reason === 'development') {
+        return t('settings:general.updateCheckDevelopment')
+      }
+      return outcome.reason === 'package-managed'
+        ? t('settings:general.updatesByPackageManager')
+        : t('settings:general.updatesDisabled')
+  }
+}
 
 function General() {
   const { t } = useTranslation()
@@ -84,13 +126,20 @@ function General() {
       return t('settings:general.openContainingFolder')
     }
   }
-  const { checkForUpdate, packageManaged } = useAppUpdater()
+  const { checkForUpdateNow, packageManaged } = useAppUpdater()
   const { pausePolling } = useHardware()
   const [janDataFolder, setJanDataFolder] = useState<string | undefined>()
   const [isCopied, setIsCopied] = useState(false)
   const [selectedNewPath, setSelectedNewPath] = useState<string | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false)
+  // The result stays on the row until the next check: a toast was easy to
+  // miss, and a check that failed read the same as one that found nothing.
+  const [updateCheck, setUpdateCheck] = useState<UpdateCheckState>({
+    phase: 'idle',
+  })
+  const isCheckingUpdate = updateCheck.phase === 'checking'
+  const updateCheckFailed =
+    updateCheck.phase === 'done' && updateCheck.outcome.status === 'failed'
   const [isValidatingToken, setIsValidatingToken] = useState(false)
   const [autostartEnabled, setAutostartEnabled] = useState<boolean | null>(null)
   const [coreVersion, setCoreVersion] = useState<string | undefined>()
@@ -224,20 +273,16 @@ function General() {
   }
 
   const handleCheckForUpdate = useCallback(async () => {
-    setIsCheckingUpdate(true)
+    setUpdateCheck({ phase: 'checking' })
+    let outcome: UpdateCheckOutcome
     try {
-      if (isDev()) return toast.info(t('settings:general.devVersion'))
-      const update = await checkForUpdate(true)
-      if (!update) {
-        toast.info(t('settings:general.noUpdateAvailable'))
-      }
+      outcome = await checkForUpdateNow()
     } catch (error) {
       console.error('Failed to check for updates:', error)
-      toast.error(t('settings:general.updateError'))
-    } finally {
-      setIsCheckingUpdate(false)
+      outcome = { status: 'failed' }
     }
-  }, [t, checkForUpdate])
+    setUpdateCheck({ phase: 'done', outcome, checkedAt: new Date() })
+  }, [checkForUpdateNow])
 
   const handleOpenContactLink = useCallback(
     async (target: string) => {
@@ -260,7 +305,7 @@ function General() {
           </span>
         </div>
       </HeaderPage>
-      <div className="flex h-[calc(100%-60px)]">
+      <div className="flex h-[calc(100%-var(--page-header-height))]">
         <div className="p-4 pt-0 w-full overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             {/* General */}
@@ -289,10 +334,28 @@ function General() {
                   description={t('settings:general.updatesByPackageManager')}
                 />
               )}
+              {AUTO_UPDATER_DISABLED && !packageManaged && (
+                <CardItem
+                  title={t('settings:general.updates')}
+                  description={t('settings:general.updatesDisabled')}
+                />
+              )}
               {!AUTO_UPDATER_DISABLED && !packageManaged && (
                 <CardItem
                   title={t('settings:general.checkForUpdates')}
-                  description={t('settings:general.checkForUpdatesDesc')}
+                  description={
+                    // Always mounted, so the result is announced when it
+                    // replaces the description.
+                    <span
+                      role="status"
+                      className={cn(
+                        'block',
+                        updateCheckFailed && 'text-destructive'
+                      )}
+                    >
+                      {describeUpdateCheck(updateCheck, t)}
+                    </span>
+                  }
                   className="items-center flex-row gap-y-2"
                   actions={
                     <Button
@@ -301,8 +364,8 @@ function General() {
                       onClick={handleCheckForUpdate}
                       disabled={isCheckingUpdate}
                     >
-                      {isCheckingUpdate
-                        ? t('settings:general.checkingForUpdates')
+                      {updateCheckFailed
+                        ? t('settings:general.updateCheckRetry')
                         : t('settings:general.checkForUpdates')}
                     </Button>
                   }

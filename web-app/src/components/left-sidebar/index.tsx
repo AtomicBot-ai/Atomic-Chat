@@ -1,6 +1,7 @@
 import { useLocation, useNavigate } from '@tanstack/react-router'
 import {
   Activity,
+  AudioLines,
   Blocks,
   Clapperboard,
   Cloud,
@@ -55,6 +56,7 @@ function WorkspaceNavigation({
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const media = PlatformFeatures[PlatformFeature.MEDIA_GENERATION]
+  const audio = PlatformFeatures[PlatformFeature.AUDIO_GENERATION]
 
   return (
     <>
@@ -87,6 +89,15 @@ function WorkspaceNavigation({
             icon={<Clapperboard size={16} />}
             active={isPathActive(pathname, route.videos.index, true)}
             testId="videos-link"
+          />
+        )}
+        {audio && (
+          <NavRow
+            to={route.audios.index}
+            label={t('common:audios')}
+            icon={<AudioLines size={16} />}
+            active={isPathActive(pathname, route.audios.index, true)}
+            testId="audios-link"
           />
         )}
       </SidebarMenu>
@@ -262,7 +273,9 @@ export function LeftSidebar() {
             </div>
           </SidebarHeader>
           <SidebarContent
-            className="mask-b-from-95%"
+            // Rows measure the sidebar's width (`@…/sidebar`) to decide what
+            // fits beside a name.
+            className="@container/sidebar mask-b-from-95%"
             aria-label={t(SECTION_TITLES[section])}
           >
             {section === 'chat' && (

@@ -1284,6 +1284,9 @@ struct RangeServer {
     /// This many upcoming ranged responses send half of their bytes and then
     /// go quiet with the socket open.
     stall_next: Arc<AtomicUsize>,
+    /// This many upcoming ranged responses trickle: 256 bytes every 100 ms,
+    /// never quiet long enough for the idle watchdog.
+    trickle_next: Arc<AtomicUsize>,
     handle: tokio::task::JoinHandle<Result<(), hyper::Error>>,
 }
 
@@ -1302,12 +1305,19 @@ async fn spawn_range_server(body: Arc<Vec<u8>>, honour_ranges: bool) -> RangeSer
     let starts = Arc::new(std::sync::Mutex::new(Vec::new()));
     let served = Arc::new(AtomicU64::new(0));
     let stall_next = Arc::new(AtomicUsize::new(0));
-    let state = (starts.clone(), served.clone(), stall_next.clone(), body);
+    let trickle_next = Arc::new(AtomicUsize::new(0));
+    let state = (
+        starts.clone(),
+        served.clone(),
+        stall_next.clone(),
+        trickle_next.clone(),
+        body,
+    );
     let make_service = make_service_fn(move |_| {
         let state = state.clone();
         async move {
             Ok::<_, Infallible>(service_fn(move |request: Request<Body>| {
-                let (starts, served, stall_next, body) = state.clone();
+                let (starts, served, stall_next, trickle_next, body) = state.clone();
                 async move {
                     let size = body.len() as u64;
                     let range = request
@@ -1323,12 +1333,26 @@ async fn spawn_range_server(body: Arc<Vec<u8>>, honour_ranges: bool) -> RangeSer
                                 .status(StatusCode::PARTIAL_CONTENT)
                                 .header(CONTENT_RANGE, format!("bytes {start}-{end}/{size}"))
                                 .header(CONTENT_LENGTH, slice.len().to_string());
-                            let stall = stall_next
-                                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| {
-                                    n.checked_sub(1)
-                                })
-                                .is_ok();
-                            if stall {
+                            let take = |counter: &AtomicUsize| {
+                                counter
+                                    .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| {
+                                        n.checked_sub(1)
+                                    })
+                                    .is_ok()
+                            };
+                            if take(&trickle_next) {
+                                let (mut sender, body) = Body::channel();
+                                tokio::spawn(async move {
+                                    for piece in slice.chunks(256) {
+                                        let piece = Bytes::from(piece.to_vec());
+                                        if sender.send_data(piece).await.is_err() {
+                                            return;
+                                        }
+                                        tokio::time::sleep(Duration::from_millis(100)).await;
+                                    }
+                                });
+                                builder.body(body).unwrap()
+                            } else if take(&stall_next) {
                                 let half = slice.len() / 2;
                                 served.fetch_add(half as u64, Ordering::SeqCst);
                                 let (mut sender, body) = Body::channel();
@@ -1362,6 +1386,7 @@ async fn spawn_range_server(body: Arc<Vec<u8>>, honour_ranges: bool) -> RangeSer
         starts,
         served,
         stall_next,
+        trickle_next,
         handle: tokio::spawn(Server::from_tcp(listener).unwrap().serve(make_service)),
     }
 }
@@ -1387,6 +1412,8 @@ fn segmented_test_tuning() -> TransferTuning {
         min_segment_size: 16 * 1024,
         max_connections: 4,
         persist_interval: Duration::from_millis(20),
+        // Off here; the slow-connection floor has a test of its own.
+        slow_window_floor: 0,
     }
 }
 
@@ -2028,4 +2055,357 @@ async fn the_hugging_face_token_does_not_follow_a_redirect_to_another_host() {
     assert_eq!(*cdn_seen.lock().unwrap(), vec![false], "the CDN never does");
     hub_server.abort();
     cdn_server.abort();
+}
+
+// ===== QA 2.2.25 (NEW-04): what a resume keeps, and slow connections =====
+//
+// Voxtral is a model and a projector fetched as one task. The model finished
+// and passed its hash, the projector was 20 MB short and stuck, the user
+// paused and resumed: the model came again from byte 0 and the bar fell from
+// 99% to 26%.
+
+/// Serves `files` by path, honouring `bytes=a-` ranges, and records each
+/// request as its path and range start.
+async fn spawn_files_server(
+    files: Vec<(&'static str, Arc<Vec<u8>>)>,
+) -> (
+    String,
+    Arc<std::sync::Mutex<Vec<(String, Option<u64>)>>>,
+    tokio::task::JoinHandle<Result<(), hyper::Error>>,
+) {
+    let requests = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let files: Arc<HashMap<&'static str, Arc<Vec<u8>>>> = Arc::new(files.into_iter().collect());
+    let state = (requests.clone(), files);
+    let make_service = make_service_fn(move |_| {
+        let state = state.clone();
+        async move {
+            Ok::<_, Infallible>(service_fn(move |request: Request<Body>| {
+                let (requests, files) = state.clone();
+                async move {
+                    let path = request.uri().path().to_string();
+                    let Some(body) = files.get(path.as_str()).cloned() else {
+                        return Ok::<_, Infallible>(
+                            Response::builder()
+                                .status(StatusCode::NOT_FOUND)
+                                .body(Body::empty())
+                                .unwrap(),
+                        );
+                    };
+                    let size = body.len() as u64;
+                    let range = request
+                        .headers()
+                        .get(RANGE)
+                        .and_then(|value| value.to_str().ok())
+                        .and_then(|value| parse_range(value, size));
+                    requests
+                        .lock()
+                        .unwrap()
+                        .push((path, range.map(|(start, _)| start)));
+                    let response = match range {
+                        Some((start, end)) => Response::builder()
+                            .status(StatusCode::PARTIAL_CONTENT)
+                            .header(CONTENT_RANGE, format!("bytes {start}-{end}/{size}"))
+                            .body(Body::from(body[start as usize..=end as usize].to_vec()))
+                            .unwrap(),
+                        None => Response::builder()
+                            .status(StatusCode::OK)
+                            .header(CONTENT_LENGTH, size.to_string())
+                            .body(Body::from(body.to_vec()))
+                            .unwrap(),
+                    };
+                    Ok::<_, Infallible>(response)
+                }
+            }))
+        }
+    });
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let address = listener.local_addr().unwrap();
+    (
+        format!("http://{address}"),
+        requests,
+        tokio::spawn(Server::from_tcp(listener).unwrap().serve(make_service)),
+    )
+}
+
+/// `(transferred, total)` of every byte-count event on `event`; stage events
+/// carry no bytes and are left out, as the extensions leave them out.
+fn record_progress(
+    app: &tauri::App<tauri::test::MockRuntime>,
+    event: &str,
+) -> Arc<std::sync::Mutex<Vec<(u64, u64)>>> {
+    use tauri::Listener;
+    let progress = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let sink = progress.clone();
+    app.listen(event, move |event| {
+        let payload: serde_json::Value = serde_json::from_str(event.payload()).unwrap();
+        if payload.get("stage").is_none() {
+            sink.lock().unwrap().push((
+                payload["transferred"].as_u64().unwrap(),
+                payload["total"].as_u64().unwrap(),
+            ));
+        }
+    });
+    progress
+}
+
+fn sha256_hex(body: &[u8]) -> String {
+    use sha2::Digest;
+    hex::encode(sha2::Sha256::digest(body))
+}
+
+#[tokio::test]
+async fn a_resumed_task_keeps_a_file_it_had_finished_and_fetches_only_the_rest() {
+    let model: Arc<Vec<u8>> = Arc::new((0..48 * 1024).map(|i| (i % 253) as u8).collect());
+    let mmproj: Arc<Vec<u8>> = Arc::new((0..32 * 1024).map(|i| (i % 241) as u8).collect());
+    let (base, requests, server) = spawn_files_server(vec![
+        ("/model.gguf", model.clone()),
+        ("/mmproj.gguf", mmproj.clone()),
+    ])
+    .await;
+    let app = mock_app();
+    let model_dir = format!("llamacpp/models/test-new-04-{}", uuid::Uuid::new_v4());
+    let item = |name: &str, body: &[u8]| DownloadItem {
+        url: format!("{base}/{name}"),
+        save_path: format!("{model_dir}/{name}"),
+        proxy: None,
+        sha256: Some(sha256_hex(body)),
+        size: Some(body.len() as u64),
+        model_id: Some("test/voxtral".to_string()),
+        resume_key: None,
+    };
+    let items = vec![item("model.gguf", &model), item("mmproj.gguf", &mmproj)];
+
+    // As the pause left them: the model finished and renamed into place, the
+    // projector half done.
+    let dir = get_jan_data_folder_path(app.handle().clone()).join(&model_dir);
+    tokio::fs::create_dir_all(&dir).await.unwrap();
+    tokio::fs::write(dir.join("model.gguf"), &*model)
+        .await
+        .unwrap();
+    let mmproj_path = dir.join("mmproj.gguf");
+    let half = mmproj.len() / 2;
+    tokio::fs::write(sidecar_path(&mmproj_path, "tmp"), &mmproj[..half])
+        .await
+        .unwrap();
+    tokio::fs::write(sidecar_path(&mmproj_path, "url"), &items[1].url)
+        .await
+        .unwrap();
+
+    let task_id = "test-new-04-resume";
+    let progress = record_progress(&app, &format!("download-{task_id}"));
+    _download_files_internal(
+        app.handle().clone(),
+        &items,
+        &HashMap::new(),
+        task_id,
+        true,
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        tokio::fs::read(dir.join("model.gguf")).await.unwrap(),
+        *model
+    );
+    assert_eq!(tokio::fs::read(&mmproj_path).await.unwrap(), *mmproj);
+    assert_eq!(
+        *requests.lock().unwrap(),
+        vec![("/mmproj.gguf".to_string(), Some(half as u64))],
+        "the finished model was fetched again, or the projector from the start"
+    );
+    let progress = progress.lock().unwrap().clone();
+    let total = (model.len() + mmproj.len()) as u64;
+    assert_eq!(
+        progress.first().copied(),
+        Some(((model.len() + half) as u64, total)),
+        "the resume did not start from everything it kept: {progress:?}"
+    );
+    assert!(
+        progress.windows(2).all(|pair| pair[1].0 >= pair[0].0),
+        "progress went backwards: {progress:?}"
+    );
+    assert_eq!(progress.last().copied(), Some((total, total)));
+
+    server.abort();
+    let _ = tokio::fs::remove_dir_all(&dir).await;
+}
+
+#[tokio::test]
+async fn a_finished_copy_that_fails_its_hash_is_downloaded_again() {
+    let body = segmented_test_body();
+    let server = spawn_range_server(body.clone(), true).await;
+    let save_path = test_download_path("model.gguf");
+    tokio::fs::create_dir_all(save_path.parent().unwrap())
+        .await
+        .unwrap();
+    // The right size, the wrong bytes.
+    tokio::fs::write(&save_path, vec![0u8; body.len()])
+        .await
+        .unwrap();
+    let item = DownloadItem {
+        sha256: Some(sha256_hex(&body)),
+        ..test_item(server.url.clone(), &save_path, body.len() as u64)
+    };
+
+    download_single_file_with_token_for_test(
+        mock_app().handle().clone(),
+        &item,
+        &save_path,
+        body.len() as u64,
+        true,
+        CancellationToken::new(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(tokio::fs::read(&save_path).await.unwrap(), *body);
+    assert_eq!(*server.starts.lock().unwrap(), vec![None]);
+    assert_no_sidecars(&save_path);
+
+    server.handle.abort();
+    let _ = tokio::fs::remove_dir_all(save_path.parent().unwrap()).await;
+}
+
+#[tokio::test]
+async fn without_a_hash_a_finished_copy_counts_only_on_a_resume() {
+    let body = segmented_test_body();
+    let server = spawn_range_server(body.clone(), true).await;
+    let save_path = test_download_path("model.gguf");
+    tokio::fs::create_dir_all(save_path.parent().unwrap())
+        .await
+        .unwrap();
+    tokio::fs::write(&save_path, &*body).await.unwrap();
+    let item = test_item(server.url.clone(), &save_path, body.len() as u64);
+    let run = |resume: bool| {
+        download_single_file_with_token_for_test(
+            mock_app().handle().clone(),
+            &item,
+            &save_path,
+            body.len() as u64,
+            resume,
+            CancellationToken::new(),
+        )
+    };
+
+    run(true).await.unwrap();
+    assert!(
+        server.starts.lock().unwrap().is_empty(),
+        "a resume fetched a file that was already complete"
+    );
+
+    // A fresh download is asked to fetch, and does.
+    run(false).await.unwrap();
+    assert_eq!(*server.starts.lock().unwrap(), vec![None]);
+    assert_eq!(tokio::fs::read(&save_path).await.unwrap(), *body);
+
+    server.handle.abort();
+    let _ = tokio::fs::remove_dir_all(save_path.parent().unwrap()).await;
+}
+
+#[tokio::test]
+async fn a_range_whose_connection_trickles_is_reopened_where_it_stopped() {
+    let body = segmented_test_body();
+    let server = spawn_range_server(body.clone(), true).await;
+    // The probe, 0..64 KiB, trickles at 2.5 KB/s. After the split its
+    // connection still owns ~32 KiB: over twelve seconds at that rate.
+    server.trickle_next.store(1, Ordering::SeqCst);
+    let save_path = test_download_path("model.gguf");
+    let tuning = TransferTuning {
+        slow_window_floor: 32 * 1024,
+        ..segmented_test_tuning()
+    };
+
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        download_segmented_for_test(&server, &save_path, false, CancellationToken::new(), tuning),
+    )
+    .await
+    .expect("a trickling connection decided when the file ended")
+    .unwrap();
+
+    assert_eq!(tokio::fs::read(&save_path).await.unwrap(), *body);
+    let starts = server.starts.lock().unwrap().clone();
+    assert_eq!(starts[0], Some(0));
+    // Every other range starts at 32 KiB or later; this is the reopen, after
+    // the bytes the trickle had brought.
+    assert!(
+        starts[1..]
+            .iter()
+            .any(|start| start.is_some_and(|start| start > 0 && start < 32 * 1024)),
+        "the slow range was not reopened where it stopped: {starts:?}"
+    );
+    assert!(
+        !starts[1..].contains(&Some(0)),
+        "the slow range started over: {starts:?}"
+    );
+    assert_no_sidecars(&save_path);
+
+    server.handle.abort();
+    let _ = tokio::fs::remove_dir_all(save_path.parent().unwrap()).await;
+}
+
+#[tokio::test]
+async fn a_slow_connection_lands_its_bytes_before_its_range_ends() {
+    let body = segmented_test_body();
+    let server = spawn_range_server(body.clone(), true).await;
+    server.trickle_next.store(1, Ordering::SeqCst);
+    let save_path = test_download_path("model.gguf");
+
+    let cancel_token = CancellationToken::new();
+    let running = tokio::spawn({
+        let (server_url, save_path, token) =
+            (server.url.clone(), save_path.clone(), cancel_token.clone());
+        async move {
+            let item = test_item(server_url, &save_path, SEGMENTED_TEST_SIZE as u64);
+            download_single_file_with_tuning_for_test(
+                mock_app().handle().clone(),
+                &item,
+                &save_path,
+                SEGMENTED_TEST_SIZE as u64,
+                false,
+                token,
+                segmented_test_tuning(),
+            )
+            .await
+        }
+    });
+
+    // The map, and so the bar and the resume point, shows the trickling
+    // range's bytes while it is still far from its end. They used to wait
+    // for 1 MiB, or for the end of the range.
+    let landed = tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            let first_range = std::fs::read_to_string(sidecar_path(&save_path, "parts"))
+                .ok()
+                .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+                .and_then(|map| {
+                    map["segments"]
+                        .as_array()?
+                        .iter()
+                        .find(|range| range[0] == 0)
+                        .map(|range| (range[1].as_u64().unwrap(), range[2].as_u64().unwrap()))
+                });
+            if let Some((written, end)) = first_range {
+                if written > 0 && written < end {
+                    return written;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("a slow range landed nothing until it ended");
+
+    cancel_token.cancel();
+    let cancelled = tokio::time::timeout(Duration::from_secs(5), running)
+        .await
+        .expect("cancellation waited on the slow connection")
+        .unwrap();
+    assert_eq!(cancelled.unwrap_err(), "Download cancelled");
+    assert!(super::segmented::downloaded_bytes_on_disk(&save_path) >= landed);
+
+    server.handle.abort();
+    let _ = tokio::fs::remove_dir_all(save_path.parent().unwrap()).await;
 }

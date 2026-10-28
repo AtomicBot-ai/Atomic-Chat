@@ -445,8 +445,6 @@
     "checking": "Checking…",
     "upToDate": "The engine is up to date.",
     "updateCheckFailed": "Could not check for updates",
-    "backgroundUpdateTitle": "Updating the media engine",
-    "backgroundUpdateDesc": "Downloading stable-diffusion.cpp {{tag}} in the background. You can keep working.",
     "updateComplete": "Media engine updated to {{tag}}",
     "updateFailed": "The media engine could not be updated"
   },
@@ -540,5 +538,17 @@
     "documentSearchNote": "채팅의 문서 검색은 자체 모델인 sentence-transformer-mini를 사용하며, 시작 없이 필요할 때 불러옵니다.",
     "documentSearchModel": "문서 검색 모델 · 내 llama.cpp 모델에서",
     "engineUpdateCheckFailed": "{{engine}} 업데이트를 확인하지 못했습니다"
+  },
+  "mlxEngine": {
+    "notInstalled": "설치되지 않음",
+    "installingEngine": "MLX 엔진을 설치하는 중…",
+    "installFailed": "MLX 엔진을 설치하지 못했습니다",
+    "setup": {
+      "description": "MLX는 Apple 실리콘에서 MLX 모델을 실행합니다. 엔진은 앱에 포함되어 있지 않으며 한 번만 다운로드하면 됩니다.",
+      "size": "다운로드 크기: {{size}}",
+      "install": "설치",
+      "progress": "엔진 다운로드 중… {{percent}}%",
+      "failed": "MLX 엔진을 설치하지 못했습니다: {{error}}"
+    }
   }
 }

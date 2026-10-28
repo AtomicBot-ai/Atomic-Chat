@@ -36,7 +36,6 @@
       "resources/agent-skills/**/*",
       "resources/bin/sqlite-vec.so",
       "resources/llamacpp-backend-upstream/**/*",
-      "resources/llamacpp-backend/**/*",
       "licenses/cloudflared-LICENSE.txt"
     ],
     "externalBin": ["resources/bin/uv", "resources/bin/cloudflared"],

@@ -60,32 +60,32 @@ export function InputControl({
     onChange(newValue.toString())
   }
 
+  // − value +, all at the control height: the group rounds the outer
+  // corners and joins the borders between them.
   if (type === 'number') {
     return (
       <ButtonGroup className={className}>
-        <Input
-          value={stringValue || undefined}
-          placeholder={placeholder}
-          onChange={(e) => onChange(e.target.value)}
-          className="h-8 w-16 font-mono text-center text-xs!"
-        />
         <Button
           variant="outline"
           size="icon-sm"
           type="button"
           aria-label="Decrement"
-          className='rounded-none'
           onClick={() => handleNumberAdjustment(-step)}
           disabled={min !== undefined && numericValue <= min}
         >
           <IconMinus className='size-3! text-muted-foreground' />
         </Button>
+        <Input
+          value={stringValue}
+          placeholder={placeholder}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-16 font-mono text-center text-xs!"
+        />
         <Button
           variant="outline"
           size="icon-sm"
           type="button"
           aria-label="Increment"
-          className='rounded-r-md'
           onClick={() => handleNumberAdjustment(step)}
           disabled={max !== undefined && numericValue >= max}
         >

@@ -35,7 +35,6 @@ const platform = vi.hoisted(() => {
 
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
-  notificationsGranted: vi.fn(async () => false),
   requestNotifications: vi.fn(async () => true),
   voice: {
     supported: true,
@@ -66,7 +65,6 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
   }),
 }))
 vi.mock('@/lib/notifications', () => ({
-  notificationPermissionGranted: mocks.notificationsGranted,
   requestNotificationPermission: mocks.requestNotifications,
 }))
 // The shell's other steps are not on screen here; the step list is fixed.
@@ -127,7 +125,6 @@ describe('permissions step', () => {
     vi.clearAllMocks()
     localStorage.clear()
     useOnboardingStore.getState().reset()
-    mocks.notificationsGranted.mockResolvedValue(false)
     mocks.requestNotifications.mockResolvedValue(true)
     mocks.voice.supported = true
     mocks.voice.permission = 'undetermined'
@@ -294,19 +291,11 @@ describe('permissions step', () => {
     expect(mocks.voice.openSettings).toHaveBeenCalledTimes(1)
   })
 
-  it('shows what is allowed already on arrival, and continues without asking', async () => {
-    mocks.notificationsGranted.mockResolvedValue(true)
+  it('shows a microphone allowed before as allowed on arrival, and continues without asking', async () => {
     mocks.voice.permission = 'granted'
     const { next } = renderStep()
 
     const microphone = await microphoneRow()
-    await waitFor(() =>
-      expect(
-        within(row('onboarding-permissions:notifications.title')).getByText(
-          'onboarding-permissions:allowed'
-        )
-      ).toBeInTheDocument()
-    )
     expect(
       within(microphone).getByText('onboarding-permissions:allowed')
     ).toBeInTheDocument()
@@ -317,11 +306,50 @@ describe('permissions step', () => {
     expect(next).toHaveBeenCalledWith('continue')
   })
 
+  // Tauri's desktop notification plugin answers "granted" before anything was
+  // asked; trusting it showed the row as allowed and Continue left without the
+  // warning (2.2.26 feedback).
+  it('keeps notifications on Allow until they are allowed here, so leaving asks first', async () => {
+    mocks.voice.permission = 'unsupported'
+    const { next } = renderStep()
+    await act(async () => {})
+
+    expect(
+      within(row('onboarding-permissions:notifications.title')).getByRole(
+        'button',
+        { name: 'onboarding-permissions:allow' }
+      )
+    ).toBeEnabled()
+    fireEvent.click(
+      screen.getByRole('button', { name: 'onboarding-permissions:skip' })
+    )
+
+    expect(await screen.findByRole('dialog')).toHaveTextContent(
+      'onboarding-permissions:warning.title'
+    )
+    expect(next).not.toHaveBeenCalled()
+  })
+
+  it('shows notifications allowed earlier in this run as allowed', async () => {
+    useOnboardingStore.getState().setPermission('notifications', 'granted')
+    mocks.voice.permission = 'unsupported'
+    const { next } = renderStep()
+    await act(async () => {})
+
+    expect(
+      within(row('onboarding-permissions:notifications.title')).getByText(
+        'onboarding-permissions:allowed'
+      )
+    ).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'onboarding:continue' }))
+    expect(next).toHaveBeenCalledWith('continue')
+  })
+
   it('has no microphone row where the OS manages it', async () => {
     mocks.voice.permission = 'unsupported'
     renderStep()
+    await act(async () => {})
 
-    await waitFor(() => expect(mocks.notificationsGranted).toHaveBeenCalled())
     expect(
       screen.getByRole('heading', {
         name: 'onboarding-permissions:notifications.title',
@@ -411,7 +439,6 @@ describe('Skip setup on the permissions step', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     localStorage.clear()
-    mocks.notificationsGranted.mockResolvedValue(false)
     mocks.voice.supported = false
     seedVoice()
     useOnboardingStore.getState().reset()
@@ -447,7 +474,7 @@ describe('Skip setup on the permissions step', () => {
   })
 
   it('leaves at once once something is allowed', async () => {
-    mocks.notificationsGranted.mockResolvedValue(true)
+    useOnboardingStore.getState().setPermission('notifications', 'granted')
     render(<Onboarding />)
     await screen.findByText('onboarding-permissions:allowed')
 

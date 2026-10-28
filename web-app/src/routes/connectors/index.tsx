@@ -486,7 +486,7 @@ function ConnectorsPage() {
             </div>
           </div>
         </HeaderPage>
-        <div className="h-[calc(100%-60px)] overflow-y-auto p-4 pt-0">
+        <div className="h-[calc(100%-var(--page-header-height))] overflow-y-auto p-4 pt-0">
           <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 pt-4">
             <section className="flex flex-col gap-3">
               <div>

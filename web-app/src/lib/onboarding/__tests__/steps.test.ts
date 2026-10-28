@@ -39,6 +39,7 @@ describe('onboarding steps', () => {
       'media',
       'purpose',
       'server',
+      'wait',
     ])
   })
 
@@ -51,6 +52,7 @@ describe('onboarding steps', () => {
       'media',
       'purpose',
       'server',
+      'wait',
     ])
     expect(ids({ ...windows, backendStepDone: true })).not.toContain('backend')
   })
@@ -77,20 +79,23 @@ describe('onboarding steps', () => {
     ).toBeNull()
   })
 
-  it('never reaches the server step by Continue, and goes back from it to purpose', () => {
+  it('never reaches the server or wait step by Continue, and goes back from them to purpose', () => {
     const steps = resolveSteps('full', mac)
     expect(nextStep(steps, 'server')).toBeNull()
     expect(prevStep(steps, 'server')).toBe('purpose')
+    expect(nextStep(steps, 'wait')).toBeNull()
+    expect(prevStep(steps, 'wait')).toBe('purpose')
     expect(prevStep(steps, 'purpose')).toBe('media')
     expect(prevStep(steps, 'welcome')).toBeNull()
   })
 
-  it('counts the steps of the design, with the server step on the purpose number', () => {
+  it('counts the steps of the design, with the server and wait steps on the purpose number', () => {
     const steps = resolveSteps('full', mac)
     expect(progressOf(steps, 'welcome')).toEqual({ index: 1, count: 6 })
     expect(progressOf(steps, 'model')).toEqual({ index: 2, count: 6 })
     expect(progressOf(steps, 'purpose')).toEqual({ index: 6, count: 6 })
     expect(progressOf(steps, 'server')).toEqual({ index: 6, count: 6 })
+    expect(progressOf(steps, 'wait')).toEqual({ index: 6, count: 6 })
   })
 
   it('shows no counter on the backend step, and counts only what is shown', () => {

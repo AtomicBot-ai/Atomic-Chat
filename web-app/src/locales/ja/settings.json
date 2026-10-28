@@ -337,9 +337,7 @@
     "hotSwapping": "バックエンドを切り替え中",
     "hotSwappingDesc": "再起動なしで {{backend}} を有効化しています…",
     "hotSwapSuccess": "バックエンドを切り替えました",
-    "hotSwapSuccessDesc": "{{backend}} が有効になりました。再起動は不要です。",
-    "backgroundUpdateTitle": "llama.cpp バックエンドを更新中",
-    "backgroundUpdateDesc": "バックグラウンドで {{backend}} をダウンロードしています。そのまま作業を続けられます。"
+    "hotSwapSuccessDesc": "{{backend}} が有効になりました。再起動は不要です。"
   },
   "backendInstallSuccess": "バックエンドは正常にインストールされました",
   "backendInstallError": "バックエンドのインストールに失敗しました",
@@ -490,8 +488,6 @@
     "checking": "Checking…",
     "upToDate": "The engine is up to date.",
     "updateCheckFailed": "Could not check for updates",
-    "backgroundUpdateTitle": "Updating the media engine",
-    "backgroundUpdateDesc": "Downloading stable-diffusion.cpp {{tag}} in the background. You can keep working.",
     "updateComplete": "Media engine updated to {{tag}}",
     "updateFailed": "The media engine could not be updated"
   },
@@ -585,5 +581,17 @@
     "documentSearchNote": "チャットのドキュメント検索は専用のモデル sentence-transformer-mini を使い、「開始」なしで必要なときに読み込みます。",
     "documentSearchModel": "ドキュメント検索用モデル · llama.cpp モデルから",
     "engineUpdateCheckFailed": "{{engine}} の更新を確認できませんでした"
+  },
+  "mlxEngine": {
+    "notInstalled": "未インストール",
+    "installingEngine": "MLX エンジンをインストールしています…",
+    "installFailed": "MLX エンジンをインストールできませんでした",
+    "setup": {
+      "description": "MLX は Apple シリコンで MLX モデルを実行します。エンジンはアプリに含まれておらず、一度だけダウンロードします。",
+      "size": "ダウンロードサイズ: {{size}}",
+      "install": "インストール",
+      "progress": "エンジンをダウンロード中… {{percent}}%",
+      "failed": "MLX エンジンをインストールできませんでした: {{error}}"
+    }
   }
 }

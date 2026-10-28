@@ -245,7 +245,7 @@ export const UNIFIED_TIER_BOUNDS: ReadonlyArray<
   [128.5 * GIB, 'unified_128'],
 ] as const
 
-/** Matches `arm64`, `aarch64`. Mirrors the check in `AnalyticProvider.tsx`. */
+/** Matches `arm64`, `aarch64`. Mirrors `normalizeArch` in `hardware-summary.ts`. */
 export const isArmArch = (arch?: string): boolean => {
   const a = (arch ?? '').toLowerCase()
   return a.includes('arm') || a.includes('aarch')

@@ -95,7 +95,7 @@ describe('EngineUpdateBanner', () => {
     localStorage.clear()
     useEngineVersionsStore.getState().reset()
     useUpdateBannerSlots.setState({
-      claimed: { download: false, app: false, engine: false },
+      claimed: { app: false, engine: false },
     })
     open.mockResolvedValue(undefined)
     updateEngineWithProgress.mockResolvedValue({
@@ -261,7 +261,7 @@ describe('EngineUpdateBanner', () => {
   it('stands down while the app-update banner holds the corner', async () => {
     hold(UPSTREAM)
     useUpdateBannerSlots.setState({
-      claimed: { download: false, app: true, engine: false },
+      claimed: { app: true, engine: false },
     })
     render(<EngineUpdateBanner />)
 

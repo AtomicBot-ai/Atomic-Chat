@@ -1,8 +1,9 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useShallow } from 'zustand/shallow'
 
 import { readFileBytes } from '@/lib/readFileBytes'
 import { drawOutpaint, loadImage } from '@/containers/images/canvas'
+import { useHardwareTier } from '@/hooks/useHardwareTier'
 import { parseSeedText, useImageForm } from '@/hooks/useImageForm'
 import { useMediaTarget } from '@/hooks/useMediaTarget'
 import {
@@ -17,6 +18,7 @@ import {
 } from '@/lib/media-capabilities'
 import type { ImageModelDescriptor } from '@/services/media/types'
 import { previewImageCapabilities } from '@/lib/diffusion/capabilities'
+import { fitForQuant, type DiffusionFitEstimate } from '@/lib/diffusion/fit'
 import { workflowNeedsLlmVision } from '@/lib/diffusion/models'
 import { anySide, outpaintGeometry } from '@/lib/diffusion/outpaint'
 import { fitWithin, scaleWithin, type DimConstraints } from '@/lib/diffusion/size'
@@ -39,6 +41,20 @@ export type GenerateDisabledReason =
   | 'noSides'
   | 'unsupportedWorkflow'
   | 'busy'
+
+/**
+ * "This image likely won't fit in memory", asked when Generate is pressed on
+ * a local model whose estimate at the requested size is a "no" (the Video
+ * page's `confirmExceeds`, for images): Cancel starts nothing, "Generate
+ * anyway" starts it as it is.
+ */
+export type ImageExceedsConfirmation = {
+  open: boolean
+  /** What the target needs at the requested size, and what there is. */
+  estimate: DiffusionFitEstimate | null
+  onCancel: () => void
+  onConfirm: () => void
+}
 
 export type ImageGenerationHandle = {
   generating: boolean
@@ -69,6 +85,7 @@ export type ImageGenerationHandle = {
   remote: ResolvedRemoteTarget<ImageModelDescriptor> | null
   generate: () => Promise<void>
   stop: () => Promise<void>
+  confirmation: ImageExceedsConfirmation
 }
 
 /** Until a model reports its ranges: sd.cpp's own limits. */
@@ -154,9 +171,13 @@ export function useImageGeneration(): ImageGenerationHandle {
     }))
   )
 
+  const { profile } = useHardwareTier()
+  const [confirmOpen, setConfirmOpen] = useState(false)
+
   const engineInstalled = status?.install.state === 'installed'
   const targetArtifactId = target.artifactId
   const targetFamily = targetArtifactId ? target.artifact.family : null
+  const targetQuant = targetArtifactId ? target.artifact.quant : null
   const modelReady =
     targetArtifactId !== null &&
     status?.model.state === 'loaded' &&
@@ -369,12 +390,22 @@ export function useImageGeneration(): ImageGenerationHandle {
                       ? 'emptyPrompt'
                       : null
 
-  const generate = useCallback(async () => {
-    if (disabledReason) return
-    if (remote) {
-      await startGeneration({ request, runs: form.runs, baseSeed })
-      return
-    }
+  // The local target at the size this request asks for: the same estimate
+  // the model picker shows at the family's default size.
+  const memory = useMemo(
+    () =>
+      remote || !targetFamily || !targetQuant
+        ? null
+        : fitForQuant(targetFamily, targetQuant, profile, {
+            teOnCpu: IS_MACOS,
+            width: outputSize.width,
+            height: outputSize.height,
+          }),
+    [remote, targetFamily, targetQuant, profile, outputSize]
+  )
+
+  /** Start the local target (loading it first when needed) and submit. */
+  const runLocal = useCallback(async () => {
     if (targetArtifactId === null) return
     if (!modelReady) {
       // Start the picked model first. A failed start leaves its error on
@@ -418,8 +449,6 @@ export function useImageGeneration(): ImageGenerationHandle {
     }
     await startGeneration({ request: submitted, runs: form.runs, baseSeed })
   }, [
-    disabledReason,
-    remote,
     targetArtifactId,
     modelReady,
     loadModel,
@@ -429,6 +458,42 @@ export function useImageGeneration(): ImageGenerationHandle {
     baseSeed,
     constraints,
   ])
+
+  const generate = useCallback(async () => {
+    if (disabledReason) return
+    if (remote) {
+      await startGeneration({ request, runs: form.runs, baseSeed })
+      return
+    }
+    if (targetArtifactId === null) return
+    // On a machine it will not fit, the render swaps for many minutes and
+    // can take the engine down with it: ask before starting it.
+    if (memory?.fit === 'no') {
+      setConfirmOpen(true)
+      return
+    }
+    await runLocal()
+  }, [
+    disabledReason,
+    remote,
+    targetArtifactId,
+    memory,
+    runLocal,
+    startGeneration,
+    request,
+    form.runs,
+    baseSeed,
+  ])
+
+  const onCancel = useCallback(() => setConfirmOpen(false), [])
+  const onConfirm = useCallback(() => {
+    setConfirmOpen(false)
+    void runLocal()
+  }, [runLocal])
+  const confirmation = useMemo<ImageExceedsConfirmation>(
+    () => ({ open: confirmOpen, estimate: memory, onCancel, onConfirm }),
+    [confirmOpen, memory, onCancel, onConfirm]
+  )
 
   return {
     generating,
@@ -451,5 +516,6 @@ export function useImageGeneration(): ImageGenerationHandle {
     remote,
     generate,
     stop,
+    confirmation,
   }
 }

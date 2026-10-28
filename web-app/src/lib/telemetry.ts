@@ -10,6 +10,7 @@ import {
   AUDIO_EXTENSIONS,
   DOCUMENT_EXTENSIONS,
   IMAGE_EXTENSIONS,
+  VIDEO_EXTENSIONS,
 } from '@/containers/chatInput/classifyDroppedPaths'
 import {
   isContextLimitError,
@@ -957,6 +958,7 @@ export function attachmentExt(nameOrPath?: string | null): string {
   if (
     IMAGE_EXTENSIONS.has(ext) ||
     AUDIO_EXTENSIONS.has(ext) ||
+    VIDEO_EXTENSIONS.has(ext) ||
     DOCUMENT_EXTENSIONS.has(ext)
   )
     return ext

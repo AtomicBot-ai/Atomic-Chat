@@ -3,6 +3,7 @@
 .desktop-server-control {
   --server-accent: #28786c;
   --server-soft: #28786c14;
+  --server-glint: var(--server-accent);
   margin: 0 10px 12px;
   padding: 12px;
   border: 1px solid #28786c30;
@@ -13,6 +14,7 @@
 .dark .desktop-server-control {
   --server-accent: #a0e7db;
   --server-soft: #8de0d21a;
+  --server-glint: white;
   border-color: #8de0d22b;
   background: linear-gradient(145deg, #29403d, #22302e);
 }
@@ -56,6 +58,7 @@
   outline-offset: 2px;
 }
 .dsc-power {
+  position: relative;
   flex: 1;
   min-width: 0;
   font-weight: 600;
@@ -197,5 +200,34 @@
   .desktop-server-control *::before {
     animation: none !important;
     transition: none !important;
+  }
+}
+
+/* A running server: a quiet highlight travels along Stop's rounded border.
+ * White on the dark panel; the accent on the light one, where white would
+ * vanish. The reduced-motion rule above holds it still. */
+.dsc-running-border {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+.dsc-running-border rect {
+  x: 0.75px;
+  y: 0.75px;
+  width: calc(100% - 1.5px);
+  height: calc(100% - 1.5px);
+  fill: none;
+  stroke: var(--server-glint);
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  stroke-dasharray: 12 88;
+  animation: dsc-border-travel 3.6s linear infinite;
+}
+@keyframes dsc-border-travel {
+  to {
+    stroke-dashoffset: -100;
   }
 }

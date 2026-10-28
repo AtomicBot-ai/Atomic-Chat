@@ -5,8 +5,8 @@
  * handoff to the chat (prototype `.ob-handoff`). It lives in the app, so it
  * follows the app's theme: the `--ob-*` colours come from `onboarding.css`
  * (`.ob-handoff` has them for both themes) and the panel's own are below.
- * Bottom-right, above the global download panel, which publishes its height
- * as `--download-panel-offset`, as `UpdateBanner` stacks itself. */
+ * Bottom-right, at the top of the corner column the download panel and the
+ * update banners share (`corner/cornerStack`), which places it. */
 .ob-handoff {
   --ob-handoff-bg: var(--background);
   --ob-handoff-line: color-mix(in oklab, #28786c 22%, var(--border));
@@ -22,10 +22,6 @@
 
 @layer components {
   .ob-handoff {
-    position: fixed;
-    right: 1rem;
-    bottom: calc(1rem + var(--download-panel-offset, 0px));
-    z-index: 50;
     width: min(calc(var(--font-size-base) * 24), calc(100vw - 2rem));
     overflow: hidden;
     border: 1px solid var(--ob-handoff-line);
@@ -35,7 +31,6 @@
     color: var(--ob-text);
     font-family: var(--font-sans);
     font-size: calc(var(--font-size-base) * 0.875);
-    transition: bottom 0.2s;
   }
   .ob-handoff .ob-download {
     margin: 0;

@@ -33,6 +33,12 @@ vi.mock('@/lib/integration-agent-detection', () => ({
   detectIntegrationAgentsOnce: vi.fn(),
 }))
 
+// Install and Connect are measured by their own tests; here they are calls.
+const actions = vi.hoisted(() => ({ install: vi.fn(), connect: vi.fn() }))
+vi.mock('@/hooks/useAgentActions', () => ({
+  useAgentActions: () => actions,
+}))
+
 import { useAppState } from '@/hooks/useAppState'
 import { useServerSetup } from '@/hooks/useServerSetup'
 import { useLaunchStore } from '@/stores/launch-store'
@@ -45,8 +51,13 @@ const card = (name: string) =>
 
 describe('Overview, agents and tools', () => {
   beforeEach(() => {
+    vi.clearAllMocks()
     useAppState.setState({ serverStatus: 'running' })
-    useLaunchStore.setState({ installed: { codex: true } })
+    useLaunchStore.setState({
+      installed: { codex: true },
+      launched: {},
+      phase: {},
+    })
     useServerSetup.setState({
       configuredAgents: [{ id: 'claude-code', at: 1 }],
       endpointConfigured: false,
@@ -57,17 +68,25 @@ describe('Overview, agents and tools', () => {
     useOnboardingStore.getState().reset()
   })
 
-  it('leads with the featured agents, marking the ones set up', () => {
+  it('leads with Claude Code, Codex and Atomic Agent, then OpenRouter usage, marking the ones set up', () => {
     render(<ServerAgents />)
 
     const names = screen
       .getAllByRole('heading', { level: 3 })
       .map((heading) => heading.textContent)
-    expect(names.slice(0, 3)).toEqual([
+    expect(names.slice(0, 9)).toEqual([
       'Claude Code',
       'Codex CLI',
       'Atomic Agent',
+      'Hermes Agent',
+      'Kilo Code',
+      'Cline CLI',
+      'pi',
+      'OpenClaw',
+      'DeepSeek Harness',
     ])
+    // Editors close the list.
+    expect(names.slice(-3)).toEqual(['VS Code', 'JetBrains', 'Xcode'])
     expect(card('Claude Code')).toHaveClass('is-connected')
     expect(card('Codex CLI')).not.toHaveClass('is-connected')
     // Only a set-up agent has a state on its card, and only on its action.
@@ -77,27 +96,69 @@ describe('Overview, agents and tools', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('shows a set-up agent’s state once, on the way to its connection details, idle once the server stops', () => {
-    render(<ServerAgents />)
+  it('offers Connect for a set-up agent, and its connection details once Atomic Chat opened it', () => {
+    const { rerender } = render(<ServerAgents />)
     const claude = card('Claude Code')
-    const dot = () =>
-      within(claude).getByText('api:agents.configured').firstElementChild
 
-    expect(within(claude).getAllByText('api:agents.configured')).toHaveLength(1)
+    fireEvent.click(
+      within(claude).getByRole('button', {
+        name: 'api:agents.connectAgent:{"name":"Claude Code"}',
+      })
+    )
+    expect(actions.connect).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'claude-code' })
+    )
+
+    act(() => useLaunchStore.setState({ launched: { 'claude-code': true } }))
+    rerender(<ServerAgents />)
     const action = within(claude).getByRole('link', {
-      name: 'api:agents.configured',
+      name: 'api:agents.connected',
     })
     expect(action).toHaveAttribute('href', '/api/connections')
     expect(action).toHaveAttribute('title', 'api:agents.connectionDetails')
-    expect(dot()).toHaveClass('bg-emerald-500')
-
-    act(() => useAppState.setState({ serverStatus: 'stopped' }))
-
-    // Still set up — Atomic Chat never says "connected" — just not served.
     expect(
-      within(claude).getByRole('link', { name: 'api:agents.configured' })
+      within(claude).getByText('api:agents.connected').firstElementChild
+    ).toHaveClass('bg-emerald-500')
+
+    // Nothing is served once the server stops: Connect again.
+    act(() => useAppState.setState({ serverStatus: 'stopped' }))
+    expect(
+      within(claude).getByRole('button', {
+        name: 'api:agents.connectAgent:{"name":"Claude Code"}',
+      })
     ).toBeInTheDocument()
-    expect(dot()).toHaveClass('bg-muted-foreground/50')
+  })
+
+  it('installs a missing agent first, and shows the work while it runs', () => {
+    useLaunchStore.setState({ installed: { codex: false } })
+    const { rerender } = render(<ServerAgents />)
+    const codex = card('Codex CLI')
+
+    fireEvent.click(
+      within(codex).getByRole('button', {
+        name: 'api:agents.installAgent:{"name":"Codex CLI"}',
+      })
+    )
+    expect(actions.install).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'codex' })
+    )
+
+    act(() => useLaunchStore.setState({ phase: { codex: 'installing' } }))
+    rerender(<ServerAgents />)
+    expect(
+      within(codex).getByRole('button', { name: /api:agents\.installing/ })
+    ).toBeDisabled()
+
+    // Installed, the next step is Configure.
+    act(() =>
+      useLaunchStore.setState({ installed: { codex: true }, phase: {} })
+    )
+    rerender(<ServerAgents />)
+    expect(
+      within(codex).getByRole('button', {
+        name: 'api:agents.configureAgent:{"name":"Codex CLI"}',
+      })
+    ).toBeInTheDocument()
   })
 
   it('opens the guide at the agent it can configure', () => {
@@ -193,13 +254,11 @@ describe('Overview, agents and tools', () => {
 
     it('ends the hints when the tool picked is already set up', () => {
       render(<ServerAgents />)
-      const details = within(card('Claude Code')).getByRole('link', {
-        name: 'api:agents.configured',
-      })
-      // The router would navigate; jsdom cannot.
-      details.addEventListener('click', (event) => event.preventDefault())
-
-      fireEvent.click(details)
+      fireEvent.click(
+        within(card('Claude Code')).getByRole('button', {
+          name: 'api:agents.connectAgent:{"name":"Claude Code"}',
+        })
+      )
 
       expect(useOnboardingStore.getState().guide).toBeNull()
       expect(guideHint()).toBeNull()

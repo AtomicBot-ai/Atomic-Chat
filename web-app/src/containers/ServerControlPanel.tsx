@@ -104,6 +104,11 @@ export function ServerControlPanel() {
           data-testid="server-panel-power"
           onClick={power}
         >
+          {control.status === 'running' && (
+            <svg className="dsc-running-border" aria-hidden="true">
+              <rect pathLength={100} rx={18} />
+            </svg>
+          )}
           <span key={powerLabel} className="dsc-power-label">
             {busy ? (
               <RotateCw size={14} />

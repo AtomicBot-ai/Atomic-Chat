@@ -83,8 +83,8 @@ describe('HubFilters layout', () => {
       const sort = screen.getByRole('button', { name: 'Sort by' })
       expect(filters).toHaveTextContent('3')
       for (const button of [filters, sort]) {
-        // 36px tall: the label and the count did not wrap.
-        expect(button.getBoundingClientRect().height).toBeCloseTo(36, 0)
+        // 28px tall: the label and the count did not wrap.
+        expect(button.getBoundingClientRect().height).toBeCloseTo(28, 0)
       }
       expectVerticallyCentered(within(filters).getByText('3'), filters)
       expect(filters.getBoundingClientRect().top).toBeCloseTo(

@@ -162,6 +162,10 @@ export class DefaultDiffusionService implements DiffusionService {
     return null
   }
 
+  async coreInstance(): Promise<string | null> {
+    return null
+  }
+
   async cancelJob(
     _jobId: string
   ): Promise<{ cancelled: boolean; serverStopped: boolean }> {

@@ -28,20 +28,46 @@ test('the sidecar entitlements allow Bun’s JIT and libraries signed by another
   }
 })
 
-test('make build-cli signs atomic-chat-app-core with the sidecar entitlements', () => {
+/** The macOS branch of `build-cli-core`, up to its `endif`. */
+function buildCliCore() {
   const makefile = read('Makefile')
   const target = makefile.slice(makefile.indexOf('build-cli-core:'))
-  const body = target.slice(0, target.indexOf('\nelse ifeq'))
+  return target.slice(0, target.indexOf('\nendif'))
+}
+
+/** The sidecar-entitlement case and the resources/bin loop of the pre-bundle signing pass. */
+function preBundleSigning() {
+  const script = read('src-tauri/scripts/sign-macos-resource-binaries.sh')
+  const sidecars = script.match(/^\s*([\w| -]+)\)\s*entitlements="\$SIDE_ENT"/m)
+  assert.ok(sidecars, 'no case gives the sidecar entitlements')
+  const signed = script.match(/for name in ([^;]+); do\s*\n\s*sign_if_macho "\$BIN\/\$name"/)
+  assert.ok(signed, 'no loop over resources/bin')
+  return {
+    sidecars: sidecars[1].split('|').map((name) => name.trim()),
+    signed: signed[1].split(/\s+/),
+  }
+}
+
+test('make build-cli signs atomic-chat-app-core with the sidecar entitlements', () => {
+  const body = buildCliCore()
   assert.match(body, /for binary in [^;]*\batomic-chat-app-core\b/)
   assert.match(body, /--entitlements src-tauri\/Entitlements\.sidecar\.plist/)
 })
 
 test('the pre-bundle signing pass signs atomic-chat-app-core with the sidecar entitlements', () => {
-  const script = read('src-tauri/scripts/sign-macos-resource-binaries.sh')
-  const sidecars = script.match(/^\s*([\w| -]+)\)\s*entitlements="\$SIDE_ENT"/m)
-  assert.ok(sidecars, 'no case gives the sidecar entitlements')
-  assert.ok(sidecars[1].split('|').map((name) => name.trim()).includes('atomic-chat-app-core'))
-  const signed = script.match(/for name in ([^;]+); do\s*\n\s*sign_if_macho "\$BIN\/\$name"/)
-  assert.ok(signed, 'no loop over resources/bin')
-  assert.ok(signed[1].split(/\s+/).includes('atomic-chat-app-core'))
+  const { sidecars, signed } = preBundleSigning()
+  assert.ok(sidecars.includes('atomic-chat-app-core'))
+  assert.ok(signed.includes('atomic-chat-app-core'))
+})
+
+// The installer ships only upstream llama.cpp and the core pair (ADR 2026-10-27): no `jan-cli` copy
+// of the core and no `mlx-server`, so nothing copies or signs them before bundling.
+test('the signing passes leave out the binaries the installer no longer ships', () => {
+  const body = buildCliCore()
+  assert.doesNotMatch(body, /jan-cli/)
+  const { sidecars, signed } = preBundleSigning()
+  for (const name of ['jan-cli', 'mlx-server']) {
+    assert.ok(!sidecars.includes(name), `${name} still gets the sidecar entitlements`)
+    assert.ok(!signed.includes(name), `${name} is still signed before bundling`)
+  }
 })

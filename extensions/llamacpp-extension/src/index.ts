@@ -411,6 +411,9 @@ export default class llamacpp_extension extends AIEngine {
   /// In-flight first-run download of the hardware-optimal backend, `null`
   /// once it settled.
   private firstRunAdoption: Promise<void> | null = null
+  /// Backend installs `ensureBackendReady` started, per `<version>/<backend>`,
+  /// while they run.
+  private backendInstalls = new Map<string, Promise<void>>()
   private loadingModels = new Map<string, Promise<SessionInfo>>() // Track loading promises
   /// The ctx_size a model was last known to run with (requested at load, grown
   /// by the core, or read back from `/props`), so `syncLoadedCtxSize` only
@@ -842,7 +845,10 @@ export default class llamacpp_extension extends AIEngine {
         this.config.version_backend = stripBom(this.config.version_backend)
       }
 
-      // Install bundled backend from app resources if no local backends exist
+      // Install bundled backend from app resources if no local backends exist.
+      // Release builds ship none on any platform (the fork is downloaded on
+      // first use); only a dev build with `src-tauri/resources/llamacpp-backend`
+      // or an older installer still carries one, so this is usually `null`.
       const bundledBackendString = await this.tryInstallBundledBackend()
 
       // Immediately apply a backend so the model can load without
@@ -853,17 +859,17 @@ export default class llamacpp_extension extends AIEngine {
       // `make dev-windows-cpu`, ran a factoryReset, or the WebView2 cache got
       // corrupted — `this.config.version_backend` arrives empty even though a
       // GPU backend may still be physically installed in the data folder.
-      // Without recovery the next branch would silently re-pin bundled CPU and
-      // the user would lose their previously selected backend on every restart.
+      // Without recovery the user would lose their previously selected backend
+      // on every restart.
       //
-      // Recovery: scan installed backends on disk and pick the best one. This
-      // is intentionally limited to non-macOS to keep the existing
-      // turboquant/MLX flow on macOS untouched (per design decision).
+      // Recovery: scan installed backends on disk and pick the best one. On
+      // every platform: macOS used to skip it because its bundled build filled
+      // the gap, and no build is bundled any more.
       const currentVB = this.config.version_backend || ''
       const persistedMissing =
         !currentVB || currentVB === 'none' || !currentVB.includes('/')
 
-      if (persistedMissing && !IS_MAC) {
+      if (persistedMissing) {
         try {
           const localInstalled = await getLocalInstalledBackends()
           if (localInstalled.length > 0) {
@@ -1044,19 +1050,13 @@ export default class llamacpp_extension extends AIEngine {
           logger.info(
             `Using stored backend preference: ${bestAvailableBackendString}`
           )
-        } else if (IS_MAC) {
-          // macOS turboquant flow expects stale storedType to be cleared so
-          // the bundled backend can take over via the force-switch block.
-          logger.warn(
-            `Stored backend type '${effectiveStoredBackendType}' not available, falling back to best backend`
-          )
-          this.clearStoredBackendType()
         } else {
-          // Windows/Linux: GitHub may be temporarily unreachable / rate-
-          // limited, so the user's preference may simply not be visible in
-          // version_backends right now. Keep the stored preference; the
-          // installed-on-disk guards below ensure we don't downgrade to
-          // bundled CPU when the saved backend is still on the filesystem.
+          // GitHub may be temporarily unreachable / rate-limited, so the
+          // user's preference may simply not be visible in version_backends
+          // right now. Keep the stored preference; the installed-on-disk
+          // guards below keep the saved backend while it is still on the
+          // filesystem. macOS once cleared it here so its bundled build could
+          // take over, but nothing is bundled to take over any more.
           logger.warn(
             `Stored backend type '${effectiveStoredBackendType}' not in remote/local list right now; keeping preference (network may be unstable)`
           )
@@ -1078,6 +1078,15 @@ export default class llamacpp_extension extends AIEngine {
         !!savedVbBack?.trim() &&
         savedVB.includes('/') &&
         (await isBackendInstalled(savedVbBack.trim(), savedVbVer.trim()))
+
+      // No TurboQuant pack on disk at all: a fresh install of an app that ships
+      // none, where the provider has never been used. The build picked below
+      // is then only a default for the first use to download — not a choice
+      // to remember, and nothing to fetch at startup.
+      const nothingInstalled =
+        !bundledBackendString &&
+        !savedVbIsInstalled &&
+        (catalog?.installed ?? []).length === 0
 
       // Release notes for the dropdown labels, from the release index the
       // core resolved into the catalog above; without it labels degrade to
@@ -1209,6 +1218,11 @@ export default class llamacpp_extension extends AIEngine {
         // 1. Saved setting (if valid and not original default)
         // 2. Best available for stored backend type or automatic best
         // 3. Original default
+        //
+        // With nothing installed the type is not recorded as a preference: a
+        // default nobody chose must not pin the type (CPU included, ADR
+        // 2026-06-15) before the first use has fetched anything. A real pick
+        // from the dropdown is recorded by `onSettingUpdate` either way.
         let initialUiDefault = originalDefaultBackendValue
 
         if (
@@ -1228,7 +1242,10 @@ export default class llamacpp_extension extends AIEngine {
               latestForType || `${savedVersion}/${normalizedBackend}`
 
             const currentStoredBackend = this.getStoredBackendType()
-            if (currentStoredBackend !== normalizedBackend) {
+            if (
+              !nothingInstalled &&
+              currentStoredBackend !== normalizedBackend
+            ) {
               this.setStoredBackendType(normalizedBackend)
               logger.info(
                 `Stored backend type preference from saved setting: ${normalizedBackend}`
@@ -1239,7 +1256,7 @@ export default class llamacpp_extension extends AIEngine {
           initialUiDefault = bestAvailableBackendString
           // Store the backend type from the best available only if different
           const [, backendType] = bestAvailableBackendString.split('/')
-          if (backendType) {
+          if (backendType && !nothingInstalled) {
             const currentStoredBackend = this.getStoredBackendType()
             if (currentStoredBackend !== backendType) {
               this.setStoredBackendType(backendType)
@@ -1344,6 +1361,10 @@ export default class llamacpp_extension extends AIEngine {
       // the app shipped is routinely newer than the bundled one and must not
       // be rolled back. A user's auto-downloaded GPU backend is never
       // overridden by the bundled CPU/Vulkan build either — the types differ.
+      //
+      // Release builds bundle nothing, so this only runs for a dev build or an
+      // older installer. A pack an older installer copied into the data folder
+      // stays there and stays selected: it is an ordinary installed build now.
       if (
         bundledBackendString &&
         effectiveBackendString &&
@@ -1384,11 +1405,17 @@ export default class llamacpp_extension extends AIEngine {
         !version_backends.some(
           (e) => `${e.version}/${e.backend}` === effectiveBackendString
         )
+      // With nothing installed and no type ever chosen, the saved value is a
+      // default from an earlier start: it follows the current recommendation
+      // (a newer release, other hardware) since there is nothing to keep.
       const savedBackendVanished =
         !effectiveBackendString ||
         effectiveBackendString === 'none' ||
         !effectiveBackendString.includes('/') ||
-        (savedNotInList && !savedVbIsInstalled)
+        (savedNotInList && !savedVbIsInstalled) ||
+        (nothingInstalled &&
+          !storedBackendType &&
+          effectiveBackendString !== bestAvailableBackendString)
 
       if (savedBackendVanished && bestAvailableBackendString) {
         effectiveBackendString = bestAvailableBackendString
@@ -1427,7 +1454,8 @@ export default class llamacpp_extension extends AIEngine {
         storedBackendType,
         effectiveBackendString,
         bundledBackendString,
-        latestByType
+        latestByType,
+        !nothingInstalled
       )
     } finally {
       this.isConfiguringBackends = false
@@ -1447,16 +1475,24 @@ export default class llamacpp_extension extends AIEngine {
    *
    * Runs only when the user has never chosen a backend. Anyone with a stored
    * preference keeps it, and detection does not run on every launch.
+   *
+   * Never with no TurboQuant pack on disk (`packInstalled` false): release
+   * builds bundle none, the provider is off on a fresh install, and the first
+   * build is fetched when the user first uses it (`firstInstallTarget`), not
+   * at app start. With nothing bundled the baseline is only "no build
+   * selected", so for packs already installed this keeps today's rules.
    */
   private async adoptOptimalBackendOnFirstRun(
     storedBackendTypeAtStart: string | null,
     activeBackendString: string,
     bundledBackendString: string | null,
-    latestByType: Record<string, string>
+    latestByType: Record<string, string>,
+    packInstalled: boolean
   ): Promise<void> {
     // macOS publishes a single variant — there is nothing to optimise, and the
     // release-tag reconciler already keeps it current.
     if (IS_MAC) return
+    if (!packInstalled) return
 
     const active = stripBom(activeBackendString || '')
     const bundled = stripBom(bundledBackendString || '')
@@ -2103,7 +2139,17 @@ export default class llamacpp_extension extends AIEngine {
     if (key === 'version_backend' && typeof value === 'string') {
       value = stripBom(value) as T
     }
+    const previousVersionBackend =
+      key === 'version_backend'
+        ? stripBom(this.config.version_backend || '')
+        : undefined
     this.config[key] = value
+
+    // `updateSettings` reports every setting on each save, changed or not. The
+    // same `version_backend` again is not a pick: toggling another setting
+    // must not start the download of a build nobody chose (with no build
+    // bundled, the configured one is often not on disk yet).
+    if (key === 'version_backend' && value === previousVersionBackend) return
 
     if (key === 'version_backend') {
       const valueStr = value as string
@@ -3357,6 +3403,92 @@ export default class llamacpp_extension extends AIEngine {
     return `${this.provider}/${modelId.replace(/[^A-Za-z0-9_/:-]/g, '_')}`
   }
 
+  /**
+   * No TurboQuant build ships with the app, so the provider's first use
+   * downloads one: the first model load, or the decision-model "Install
+   * engine" button. With no pack on disk this installs the configured build —
+   * or, when startup could not pick one, what the core recommends now — under
+   * the download panel's progress. Resolves the build installed, or `null`
+   * when a pack is already on disk and nothing was done. Rejects with a
+   * readable message when no build can be resolved or the download fails.
+   */
+  async installSelectedBackend(): Promise<string | null> {
+    const target = await this.firstInstallTarget()
+    if (target) await this.installFirstBackend(target)
+    return target
+  }
+
+  /**
+   * The build a first install has to fetch, or `null` when any TurboQuant
+   * pack is on disk: a configured build that is missing is then the core's to
+   * swap for an installed one at load, as it always was. A `none` left by a
+   * start that could not reach the release list is resolved from the catalog
+   * now, and an unreachable catalog is an error that says so — never a load
+   * that fails on an empty `version_backend`.
+   */
+  private async firstInstallTarget(): Promise<string | null> {
+    const selected = stripBom(this.config?.version_backend || '')
+    const concrete = isConcreteBackend(selected)
+    if (concrete) {
+      const [version, backend] = selected.split('/')
+      if (await isBackendInstalled(backend, version)) return null
+    }
+    try {
+      if ((await this.core.listInstalledBackends()).length > 0) return null
+    } catch (error) {
+      // The core decides at load, and says what is wrong if it cannot.
+      logger.warn(
+        `Could not list installed backends before the load: ${describeCoreError(error)}`
+      )
+      return null
+    }
+    if (concrete) return selected
+
+    let catalog: CoreBackendCatalog | null = null
+    try {
+      catalog = await loadCatalog({ refresh: true })
+    } catch (error) {
+      logger.warn('The backend catalog is unavailable:', error)
+    }
+    const storedType = this.getStoredBackendType()
+    const best = [...(catalog?.available ?? [])].sort(
+      (a, b) => (b.order ?? 0) - (a.order ?? 0)
+    )[0]
+    const target =
+      (storedType &&
+        catalog &&
+        latestVersionForBackend(catalog.latest_by_type ?? {}, storedType)) ||
+      catalog?.recommended ||
+      (best ? `${best.version}/${best.backend}` : null)
+    if (target) return stripBom(target)
+    throw new Error(
+      !catalog || catalog.source === 'none'
+        ? 'No TurboQuant engine is installed yet, and the list of builds to download could not be reached. Check your internet connection (Settings → Proxy) and try again, or switch this model to the "Llama.cpp" provider (Settings → Model Providers → Llama.cpp).'
+        : 'TurboQuant publishes no engine build for this computer. Switch this model to the "Llama.cpp" provider (Settings → Model Providers → Llama.cpp).'
+    )
+  }
+
+  /**
+   * Download `target` and make it the selected build when it was not: the
+   * value is written as a default, not as a pick, so it records no type
+   * preference and starts no second download through `onSettingUpdate`.
+   */
+  private async installFirstBackend(target: string): Promise<void> {
+    const [version, backend] = target.split('/')
+    await this.ensureBackendReady(backend, version)
+    if (stripBom(this.config.version_backend || '') === target) return
+    this.config.version_backend = target
+    await this.ensureBackendOption(target)
+    const settings = await this.getSettings()
+    await this.updateSettings(
+      settings.map((item) => {
+        if (item.key === 'version_backend') item.controllerProps.value = target
+        return item
+      })
+    )
+    events.emit('settingsChanged', { key: 'version_backend', value: target })
+  }
+
   private async ensureBackendReady(
     backend: string,
     version: string
@@ -3368,14 +3500,23 @@ export default class llamacpp_extension extends AIEngine {
     // omit them) is repaired by the core, before every load and after install.
     if (await isBackendInstalled(backend, version)) return
 
-    // Auto-download from the release stream. Every platform participates —
-    // macOS included, where the bundled build is the offline baseline rather
-    // than the only source.
+    // Download from the release stream, on every platform: no TurboQuant build
+    // ships inside the app, macOS included.
     logger.info(
       `Backend ${backendKey} not installed locally, attempting download...`
     )
+    // A load and a dropdown pick (or two loads) asking for the same build share
+    // one install: a second one under the same task id would abort the first
+    // in the core's downloader.
+    let install = this.backendInstalls.get(backendKey)
+    if (!install) {
+      install = this.downloadAndInstallBackend(backendKey).finally(() =>
+        this.backendInstalls.delete(backendKey)
+      )
+      this.backendInstalls.set(backendKey, install)
+    }
     try {
-      await this.downloadAndInstallBackend(backendKey)
+      await install
     } catch (err) {
       logger.error(`Failed to download backend ${backendKey}:`, err)
     }
@@ -3384,30 +3525,11 @@ export default class llamacpp_extension extends AIEngine {
       return
     }
 
-    // ATO-153 recovery: the upstream provider's auto-upgrade cleanup could
-    // have wrongly deleted this turboquant backend from disk (it previously
-    // targeted the shared `llamacpp/backends` tree). The turboquant macOS
-    // backend is bundled in app resources — not in any release stream — so
-    // re-install it from resources before giving up. When the bundled SHA
-    // matches the model's pinned `version_backend`, this fully restores it;
-    // otherwise it's a harmless no-op and we fall through to the error.
-    try {
-      const restored = await this.tryInstallBundledBackend()
-      if (restored && (await isBackendInstalled(backend, version))) {
-        logger.info(
-          `Recovered missing backend ${backendKey} from bundled resources`
-        )
-        return
-      }
-    } catch (recoveryErr) {
-      logger.warn(
-        `Bundled backend recovery for ${backendKey} failed:`,
-        recoveryErr
-      )
-    }
-
+    // No recovery from app resources (ATO-153) any more: release builds bundle
+    // nothing, and `configureBackends` already copies a dev build's bundled
+    // pack at every start.
     throw new Error(
-      `Backend ${backendKey} is not installed and could not be downloaded. Switch this model to the "Llama.cpp" provider (Settings → Model Providers → Llama.cpp) and start it there, or check your internet connection and try reinstalling the app.`
+      `Backend ${backendKey} is not installed and could not be downloaded. Switch this model to the "Llama.cpp" provider (Settings → Model Providers → Llama.cpp) and start it there, or check your internet connection (Settings → Proxy) and try again.`
     )
   }
 
@@ -3735,11 +3857,24 @@ export default class llamacpp_extension extends AIEngine {
     options?: ModelLoadOptions
   ): Promise<SessionInfo> {
     try {
+      // No TurboQuant build ships with the app: with none on disk, the first
+      // load downloads the selected one (progress in the download panel)
+      // before the settings go to the core, so they carry the build it runs.
+      const firstInstall = await this.firstInstallTarget()
+      if (firstInstall) {
+        options?.onStage?.({ kind: 'installingEngine' })
+        await this.installFirstBackend(firstInstall)
+      }
+      this.loadCancel.throwIfCancelled(modelId)
       await this.coreSettings.ensureReady()
       this.loadCancel.throwIfCancelled(modelId)
       // ATO-530: a missing engine build is downloaded by the core before
       // anything else can happen, and that wait is worth naming.
-      if (options?.onStage && !(await this.isConfiguredBackendInstalled())) {
+      if (
+        !firstInstall &&
+        options?.onStage &&
+        !(await this.isConfiguredBackendInstalled())
+      ) {
         options.onStage({ kind: 'installingEngine' })
       }
       this.loadCancel.throwIfCancelled(modelId)

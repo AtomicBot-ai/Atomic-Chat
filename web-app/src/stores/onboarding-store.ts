@@ -62,7 +62,10 @@ type OnboardingState = OnboardingData & {
   begin: (variant: OnboardingVariant, step: OnboardingStepId) => void
   goTo: (step: OnboardingStepId) => void
   choose: (choice: OnboardingChoice | null) => void
-  /** Adds a job, or replaces the one with the same key. */
+  /**
+   * Adds a job — a chat model at the front, anything else at the end — or
+   * replaces the one with the same key in its place.
+   */
   enqueue: (job: OnboardingJob) => void
   dequeue: (key: string) => void
   setJobPhase: (key: string, phase: OnboardingJobPhase) => void
@@ -109,7 +112,17 @@ export const useOnboardingStore = create<OnboardingState>()(
           const index = state.jobs.findIndex(
             (existing) => existing.key === job.key
           )
-          if (index < 0) return { jobs: [...state.jobs, job] }
+          // The chat model goes first, ahead of image and video jobs queued
+          // before it (`media-jobs` steps a running one back), as in the
+          // prototype; the rest keep their order.
+          if (index < 0) {
+            return {
+              jobs:
+                job.kind === 'chat'
+                  ? [job, ...state.jobs]
+                  : [...state.jobs, job],
+            }
+          }
           const jobs = [...state.jobs]
           jobs[index] = job
           return { jobs }

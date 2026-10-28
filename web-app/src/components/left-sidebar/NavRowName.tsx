@@ -74,7 +74,9 @@ export function NavRowTooltip({
 
 /**
  * The context a colliding row carries after its name: when it was last
- * active, short enough to keep the row on one line.
+ * active, short enough to keep the row on one line. It shows only in a
+ * sidebar widened past the default, where the name keeps its room; a
+ * narrower one leaves the date to the row's tooltip.
  */
 export function NavRowActivity({ at }: { at: number }) {
   const { i18n } = useTranslation()
@@ -82,7 +84,7 @@ export function NavRowActivity({ at }: { at: number }) {
   return (
     <time
       dateTime={iso}
-      className="shrink-0 text-xs font-normal tabular-nums text-muted-foreground"
+      className="hidden shrink-0 text-xs font-normal tabular-nums text-muted-foreground @min-[18rem]/sidebar:inline"
     >
       {short}
     </time>

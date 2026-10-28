@@ -82,7 +82,7 @@ function AssistantContent() {
           </Button>
         </div>
       </HeaderPage>
-      <div className="flex h-[calc(100%-60px)]">
+      <div className="flex h-[calc(100%-var(--page-header-height))]">
         <div className="flex size-full">
           <div className="flex flex-col gap-4 p-4 pt-4 w-full overflow-y-auto">
             {/* Default Assistant */}

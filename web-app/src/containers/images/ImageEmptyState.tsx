@@ -1,5 +1,10 @@
 import { memo } from 'react'
-import { IconDownload, IconMovie, IconPhoto } from '@tabler/icons-react'
+import {
+  IconDownload,
+  IconMovie,
+  IconPhoto,
+  IconWaveSine,
+} from '@tabler/icons-react'
 
 import { Button } from '@/components/ui/button'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -13,9 +18,12 @@ type ImageEmptyStateProps = {
   modelPicked?: boolean
   /** Set while no checkpoint is on disk: opens the form's model picker. */
   onDownloadModel?: () => void
-  /** The Video page shows the same state with its own words and mark. */
-  modality?: DiffusionModality
+  /** The Video and Audio pages show the same state with their own words and mark. */
+  modality?: DiffusionModality | 'audio'
 }
+
+const NAMESPACE = { image: 'images', video: 'videos', audio: 'audios' }
+const ICON = { image: IconPhoto, video: IconMovie, audio: IconWaveSine }
 
 /**
  * The canvas before the first image: what this page does, and — until a model
@@ -27,8 +35,8 @@ export const ImageEmptyState = memo(function ImageEmptyState({
   modality = 'image',
 }: ImageEmptyStateProps) {
   const { t } = useTranslation()
-  const ns = modality === 'video' ? 'videos' : 'images'
-  const Icon = modality === 'video' ? IconMovie : IconPhoto
+  const ns = NAMESPACE[modality]
+  const Icon = ICON[modality]
   return (
     <div
       className="flex h-full flex-col items-center justify-center gap-5 px-10 py-8 text-center"

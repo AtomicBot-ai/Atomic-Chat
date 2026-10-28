@@ -134,7 +134,10 @@ const PROJECTS: ThreadFolder[] = [
   { id: 'misc', name: 'Misc', updated_at: Date.now() },
 ]
 
-function Shell() {
+/** A sidebar widened past the default, where a colliding row shows its date. */
+const WIDE_SIDEBAR = '20rem'
+
+function Shell({ sidebarWidth }: { sidebarWidth?: string }) {
   return withTranslations(
     <SidebarProvider
       className="app-shell"
@@ -146,6 +149,7 @@ function Shell() {
       }
       insetOffset={RAIL}
       minInsetWidth={MIN_PAGE_WIDTH}
+      defaultWidth={sidebarWidth}
     >
       <LeftSidebar />
       <SidebarInset>
@@ -173,12 +177,12 @@ describe.each(['light', 'dark'] as const)(
         ['16px', XL_FONT_SIZE].map((fontSize) => ({ width, fontSize }))
       )
     )(
-      'tell colliding names apart at $width px / $fontSize',
+      'tell colliding names apart in a wide sidebar at $width px / $fontSize',
       async ({ width, fontSize }) => {
         await page.viewport(width, 800)
         setTheme(theme)
         setFontSize(fontSize)
-        render(<Shell />)
+        render(<Shell sidebarWidth={WIDE_SIDEBAR} />)
         await settle()
         if (width === 1024) {
           // No room to dock at 1024 px: open the sidebar over the page.
@@ -202,6 +206,7 @@ describe.each(['light', 'dark'] as const)(
           // The context is what tells the pair apart.
           expect(contextA!.textContent).not.toBe(contextB!.textContent)
           for (const context of [contextA!, contextB!]) {
+            expect(context.getBoundingClientRect().width).toBeGreaterThan(0)
             expectOneLine(context)
             // It sits before the row's action column (pin and "…").
             const row = context.closest('a')!.getBoundingClientRect()
@@ -250,6 +255,28 @@ describe.each(['light', 'dark'] as const)(
     )
   }
 )
+
+describe('a sidebar at its default width', () => {
+  it.each(['16px', XL_FONT_SIZE])(
+    'leaves a colliding row its whole width and the date to the tooltip (%s)',
+    async (fontSize) => {
+      await page.viewport(1280, 800)
+      setFontSize(fontSize)
+      render(<Shell />)
+      await settle()
+
+      const row = rowFor(THREADS.find((t) => t.id === 'blank-1')!.title)
+      const context = contextOf(row)
+      expect(context).not.toBeNull()
+      expect(getComputedStyle(context!).display).toBe('none')
+
+      await act(async () => row.focus())
+      expect(await screen.findByRole('tooltip')).toHaveTextContent(
+        'Last activity:'
+      )
+    }
+  )
+})
 
 describe('full names', () => {
   it.each(['16px', XL_FONT_SIZE])(

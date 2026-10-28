@@ -68,6 +68,11 @@ export async function installDiffusionEngine(
   const diffusion = getServiceHub().diffusion()
   const proxy = engineBuildProxy()
   const catalog = await diffusion.engineCatalog(proxy ? { proxy } : {})
+  // No manifest is a failed read, not a host without a build: the read's own
+  // error goes to the card, as the core's refusal would carry it.
+  if (!catalog.manifest && catalog.manifest_error) {
+    throw { code: 'UPSTREAM_ERROR', message: catalog.manifest_error }
+  }
   if (!catalog.host_backend_id) {
     throw {
       code: 'UNSUPPORTED_BACKEND',

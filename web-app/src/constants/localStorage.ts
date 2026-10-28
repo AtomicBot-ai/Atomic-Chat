@@ -127,6 +127,15 @@ export const localStorageKey = {
   // next launch lists them as paused with a Resume (`lib/interrupted-downloads`).
   // Never holds the Hugging Face token.
   interruptedDownloads: 'atomic-interrupted-downloads',
+  // The support chat (`stores/support-chat-store`): the relay conversation and
+  // its token, the last messages, the sync and read positions, and messages
+  // not yet delivered, so a crash or a relaunch does not lose their text.
+  supportChat: 'atomic-support-chat',
+  // Prefix of one item per composer with unsent text (`hooks/usePrompt`):
+  // `composer-draft:<thread id | project:<id>>` → `{text, at}`. One item per
+  // composer, so a chat window writes only the drafts it changed and never
+  // replaces another window's. Pruned at launch by age and count.
+  composerDraftPrefix: 'composer-draft:',
 }
 
 /**

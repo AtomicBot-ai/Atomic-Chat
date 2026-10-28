@@ -209,10 +209,19 @@ export function ApiRequestInspector({
         />
       </div>
 
+      {request.unwatched && (
+        <p className="text-xs text-muted-foreground">
+          {t('api:detail.notRecordedHint')}
+        </p>
+      )}
       <PreviewBlock
         label={t('api:detail.prompt')}
         text={request.promptPreview}
-        fallback={t('api:detail.noPrompt')}
+        fallback={
+          request.unwatched
+            ? t('api:detail.notRecorded')
+            : t('api:detail.noPrompt')
+        }
       />
       {request.hasNonTextParts && (
         <p className="-mt-2 text-[11px] text-muted-foreground">
@@ -222,7 +231,11 @@ export function ApiRequestInspector({
       <PreviewBlock
         label={t('api:detail.reply')}
         text={request.replyPreview}
-        fallback={t('api:detail.noReply')}
+        fallback={
+          request.unwatched
+            ? t('api:detail.notRecorded')
+            : t('api:detail.noReply')
+        }
       />
     </div>
   )

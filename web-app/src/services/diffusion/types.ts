@@ -216,6 +216,12 @@ export type NativeDiffusionErrorCode =
   | 'INVALID_OUTPUT'
   | 'JOB_BUSY'
   | 'JOB_NOT_FOUND'
+  /**
+   * Raised by the app, never by the core: the core that ran a local job is
+   * gone (a new instance answers now, or none can be started), so the engine
+   * stopped under the job — on a small machine, almost always for memory.
+   */
+  | 'ENGINE_STOPPED'
   | 'QUEUE_FULL'
   | 'CANCELLED'
   | 'DISK_FULL'
@@ -703,9 +709,11 @@ export type DiffusionEvent =
   /**
    * The core generation that held the configuration is gone and a new one
    * attached (the desktop seam raises this from the relay's snapshot): the
-   * output folder and idle interval have to be sent again.
+   * output folder and idle interval have to be sent again. `instanceId` is
+   * the core process behind it: the same one after a re-attach (its jobs go
+   * on), a new one after the core was restarted (its jobs are gone).
    */
-  | { type: 'reset'; generation: number | null }
+  | { type: 'reset'; generation: number | null; instanceId?: string | null }
 
 /**
  * The service surface. Every method maps 1:1 onto one core control route
@@ -792,4 +800,10 @@ export interface DiffusionService {
 
   /** Subscribe to plugin events. Returns an unsubscribe function. */
   subscribe(handler: (event: DiffusionEvent) => void): () => void
+
+  /**
+   * The core instance attached right now, the one a job submitted now runs
+   * in; null when there is no core or it cannot be asked.
+   */
+  coreInstance?(): Promise<string | null>
 }

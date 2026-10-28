@@ -69,7 +69,7 @@ vi.mock('@/hooks/useGeneralSetting', () => ({
 }))
 
 // Create a controllable mock
-const mockCheckForUpdate = vi.fn()
+const mockCheckForUpdateNow = vi.fn()
 const mockOpenerOpen = vi.fn()
 const mockRevealItemInDir = vi.fn()
 const mockExportLogs = vi.fn()
@@ -80,7 +80,7 @@ const updater = vi.hoisted(() => ({ packageManaged: false }))
 
 vi.mock('@/hooks/useAppUpdater', () => ({
   useAppUpdater: () => ({
-    checkForUpdate: mockCheckForUpdate,
+    checkForUpdateNow: mockCheckForUpdateNow,
     packageManaged: updater.packageManaged,
   }),
 }))
@@ -313,7 +313,7 @@ describe('General Settings Route', () => {
       } as ReturnType<ServiceHub['opener']>,
     })
     // Reset the mock to return a promise that resolves immediately by default
-    mockCheckForUpdate.mockResolvedValue(null)
+    mockCheckForUpdateNow.mockResolvedValue({ status: 'up-to-date' })
     mockOpenerOpen.mockResolvedValue(undefined)
     mockRevealItemInDir.mockResolvedValue(undefined)
     mockGetCoreVersion.mockResolvedValue('0.7.1')
@@ -474,6 +474,115 @@ describe('General Settings Route', () => {
       // Test that button is interactive
       expect(checkUpdateButton).toBeInTheDocument()
     }
+  })
+
+  // QA 2.2.25 NEW-01: the result of a check stays on the row and is
+  // announced, instead of a toast that was easy to miss.
+  describe('update check result', () => {
+    const clickCheckForUpdates = async () => {
+      const button = screen
+        .getAllByTestId('button')
+        .find((candidate) =>
+          candidate.textContent?.includes('settings:general.checkForUpdates')
+        )
+      expect(button).toBeDefined()
+      await act(async () => {
+        fireEvent.click(button!)
+      })
+    }
+
+    const renderPage = async () => {
+      const Component = GeneralRoute.component as React.ComponentType
+      await act(async () => {
+        render(<Component />)
+      })
+    }
+
+    it('describes the check until one has been made', async () => {
+      await renderPage()
+
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'settings:general.checkForUpdatesDesc'
+      )
+    })
+
+    it('says the app is up to date, and keeps saying it', async () => {
+      await renderPage()
+      await clickCheckForUpdates()
+
+      expect(mockCheckForUpdateNow).toHaveBeenCalledTimes(1)
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'settings:general.updateCheckUpToDate'
+      )
+    })
+
+    it('names an available update', async () => {
+      mockCheckForUpdateNow.mockResolvedValue({
+        status: 'available',
+        update: { version: '2.2.26' },
+      })
+      await renderPage()
+      await clickCheckForUpdates()
+
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'settings:general.updateCheckAvailable'
+      )
+    })
+
+    it('tells a failed check from an up-to-date app and offers to try again', async () => {
+      mockCheckForUpdateNow.mockResolvedValue({ status: 'failed' })
+      await renderPage()
+      await clickCheckForUpdates()
+
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'settings:general.updateCheckFailed'
+      )
+      const retry = screen
+        .getAllByTestId('button')
+        .find((button) =>
+          button.textContent?.includes('settings:general.updateCheckRetry')
+        )
+      expect(retry).toBeDefined()
+
+      mockCheckForUpdateNow.mockResolvedValue({ status: 'up-to-date' })
+      await act(async () => {
+        fireEvent.click(retry!)
+      })
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'settings:general.updateCheckUpToDate'
+      )
+    })
+
+    it('says a development build does not check', async () => {
+      mockCheckForUpdateNow.mockResolvedValue({
+        status: 'not-checked',
+        reason: 'development',
+      })
+      await renderPage()
+      await clickCheckForUpdates()
+
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'settings:general.updateCheckDevelopment'
+      )
+    })
+
+    it('says a build without the updater gets its updates elsewhere', async () => {
+      global.AUTO_UPDATER_DISABLED = true
+      try {
+        await renderPage()
+
+        expect(
+          screen.getByText('settings:general.updatesDisabled')
+        ).toBeInTheDocument()
+        expect(
+          screen
+            .getAllByTestId('button')
+            .some((button) => button.textContent?.includes('checkForUpdates'))
+        ).toBe(false)
+      } finally {
+        global.AUTO_UPDATER_DISABLED = false
+      }
+    })
   })
 
   it('points a package-managed install at its package manager instead of offering updates', async () => {
@@ -669,7 +778,7 @@ describe('General Settings Route', () => {
     const updatePromise = new Promise((resolve) => {
       resolveUpdate = resolve
     })
-    mockCheckForUpdate.mockReturnValue(updatePromise)
+    mockCheckForUpdateNow.mockReturnValue(updatePromise)
 
     const Component = GeneralRoute.component as React.ComponentType
     await act(async () => {
@@ -692,7 +801,7 @@ describe('General Settings Route', () => {
 
       // Resolve the promise to finish the update check
       await act(async () => {
-        resolveUpdate!(null)
+        resolveUpdate!({ status: 'up-to-date' })
         await updatePromise
       })
 

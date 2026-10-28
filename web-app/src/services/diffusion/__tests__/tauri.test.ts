@@ -37,6 +37,21 @@ const ESTIMATE = {
   basis: 'heuristic',
 }
 
+describe('TauriDiffusionService.coreInstance', () => {
+  it('reads the attached instance from the core snapshot, and null when it cannot', async () => {
+    mockIPC((command: string) => {
+      expect(command).toBe('atomic_core_snapshot')
+      return { generation: 2, snapshot: { instance_id: 'instance-a' } }
+    })
+    expect(await new TauriDiffusionService().coreInstance()).toBe('instance-a')
+
+    mockIPC(() => {
+      throw { code: 'CORE_UNREACHABLE', message: 'no core' }
+    })
+    expect(await new TauriDiffusionService().coreInstance()).toBeNull()
+  })
+})
+
 describe('TauriDiffusionService commands', () => {
   let calls: Call[]
   let service: InstanceType<typeof TauriDiffusionService>
@@ -330,9 +345,13 @@ describe('TauriDiffusionService.subscribe', () => {
     handlers.get('atomic-core://diffusion:error')!({
       payload: { code: 'OUT_OF_MEMORY', message: 'boom' },
     })
-    // A new core generation attached: the store has to configure it again.
+    // A new core generation attached: the store has to configure it again,
+    // and the instance behind it says whether running jobs survived.
     handlers.get(RESET_EVENT)!({ payload: { generation: 3, snapshot: {} } })
     handlers.get(RESET_EVENT)!({ payload: {} })
+    handlers.get(RESET_EVENT)!({
+      payload: { generation: 4, snapshot: { instance_id: 'instance-b' } },
+    })
     expect(received).toEqual([
       {
         type: 'progress',
@@ -340,8 +359,9 @@ describe('TauriDiffusionService.subscribe', () => {
         progress: { phase: 'sampling', step: 3, totalSteps: 8 },
       },
       { type: 'error', code: 'OUT_OF_MEMORY', message: 'boom' },
-      { type: 'reset', generation: 3 },
-      { type: 'reset', generation: null },
+      { type: 'reset', generation: 3, instanceId: null },
+      { type: 'reset', generation: null, instanceId: null },
+      { type: 'reset', generation: 4, instanceId: 'instance-b' },
     ])
   })
 

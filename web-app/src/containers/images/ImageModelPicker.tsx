@@ -17,6 +17,7 @@ import type { DiffusionModality } from '@/services/diffusion/types'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 import { ImageModelRuntimeAction } from './ImageModelRuntimeAction'
 import { ImageModelSelector } from './ImageModelSelector'
+import { MediaModelPickerButton } from './MediaStudio'
 import { RemoteModelLogo } from './RemoteModelSections'
 
 type ImageModelPickerProps = {
@@ -85,13 +86,11 @@ export const ImageModelPicker = memo(function ImageModelPicker({
     <div className="flex w-full min-w-0 items-center gap-1.5">
       <Popover open={open} onOpenChange={onOpenChange}>
         <PopoverTrigger asChild>
-          <button
-            type="button"
+          <MediaModelPickerButton
             title={stateLabel ?? undefined}
             aria-label={selectLabel}
             aria-expanded={open}
             data-testid="image-models-toggle"
-            className="inline-flex h-9 min-w-0 flex-1 items-center gap-2 rounded-xl border bg-background px-2.5 text-sm transition-colors duration-150 ease-out hover:bg-secondary/50 active:scale-[0.99]"
           >
             {remote ? (
               <RemoteModelLogo
@@ -129,7 +128,7 @@ export const ImageModelPicker = memo(function ImageModelPicker({
                 open && 'rotate-180'
               )}
             />
-          </button>
+          </MediaModelPickerButton>
         </PopoverTrigger>
         <PopoverContent
           align="start"

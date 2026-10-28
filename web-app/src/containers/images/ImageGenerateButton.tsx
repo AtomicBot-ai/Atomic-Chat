@@ -1,5 +1,10 @@
 import { memo } from 'react'
-import { IconLoader2, IconPlayerStopFilled, IconSparkles } from '@tabler/icons-react'
+import {
+  IconLoader2,
+  IconPlayerStopFilled,
+  IconSparkles,
+  IconWaveSine,
+} from '@tabler/icons-react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -10,14 +15,19 @@ import {
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import type { GenerateDisabledReason } from '@/hooks/useImageGeneration'
 import type { VideoGenerateDisabledReason } from '@/hooks/useVideoGeneration'
+import type { AudioGenerateDisabledReason } from '@/lib/audio/models'
 import type { DiffusionModality } from '@/services/diffusion/types'
 
 type ImageGenerateButtonProps = {
   generating: boolean
   stopRequested: boolean
-  disabledReason: GenerateDisabledReason | VideoGenerateDisabledReason | null
-  /** Whose reasons the tooltip reads: `images:` or `videos:form.disabled`. */
-  modality?: DiffusionModality
+  disabledReason:
+    | GenerateDisabledReason
+    | VideoGenerateDisabledReason
+    | AudioGenerateDisabledReason
+    | null
+  /** Whose reasons the tooltip reads: `images:`, `videos:` or `audios:form.disabled`. */
+  modality?: DiffusionModality | 'audio'
   /** Total images this click produces: batch × runs. */
   imageCount: number
   onGenerate: () => void
@@ -44,7 +54,9 @@ export const ImageGenerateButton = memo(function ImageGenerateButton({
   const { t } = useTranslation()
   const disabled = generating ? stopRequested : disabledReason !== null
   const starting = !generating && disabledReason === 'modelLoading'
-  const reasonNamespace = modality === 'video' ? 'videos' : 'images'
+  const reasonNamespace =
+    modality === 'video' ? 'videos' : modality === 'audio' ? 'audios' : 'images'
+  const GenerateIcon = modality === 'audio' ? IconWaveSine : IconSparkles
 
   const button = (
     <Button
@@ -65,7 +77,7 @@ export const ImageGenerateButton = memo(function ImageGenerateButton({
       ) : starting ? (
         <IconLoader2 size={16} className="animate-spin" />
       ) : (
-        <IconSparkles size={16} />
+        <GenerateIcon size={16} />
       )}
       {generating
         ? stopRequested

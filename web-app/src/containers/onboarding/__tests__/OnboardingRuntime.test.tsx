@@ -200,7 +200,7 @@ describe('OnboardingRuntime', () => {
     })
     useLocalApiServer.setState({ defaultModelLocalApiServer: null })
     useUpdateBannerSlots.setState({
-      claimed: { download: false, app: false, engine: false },
+      claimed: { app: false, engine: false },
     })
   })
 
@@ -653,6 +653,37 @@ describe('OnboardingRuntime', () => {
       // Handed off and never dismissed in an earlier session.
       startRun([done(chat)])
       landChatModel()
+      render(<OnboardingRuntime />)
+
+      expect(screen.queryByTestId('onboarding-handoff')).not.toBeInTheDocument()
+      expect(useOnboardingStore.getState().phase).toBe('finished')
+    })
+
+    // As in the prototype, after Skip setup or a cloud-only run too.
+    it('offers only the way back to setup with nothing to follow, until Dismiss', () => {
+      useOnboardingStore.getState().begin('full', 'welcome')
+      render(<OnboardingRuntime />)
+
+      act(() => useOnboardingStore.getState().handOff('chat'))
+
+      const panel = screen.getByTestId('onboarding-handoff')
+      expect(panel).toHaveTextContent('onboarding-handoff:panel.backToSetup')
+      expect(
+        screen.queryByRole('region', { name: 'onboarding:download.label' })
+      ).not.toBeInTheDocument()
+      expect(useOnboardingStore.getState().phase).toBe('handedOff')
+
+      fireEvent.click(
+        screen.getByRole('button', { name: 'onboarding-handoff:panel.dismiss' })
+      )
+
+      expect(screen.queryByTestId('onboarding-handoff')).not.toBeInTheDocument()
+      expect(useOnboardingStore.getState().phase).toBe('finished')
+    })
+
+    it('ends at the next launch a run handed off with nothing at all', () => {
+      useOnboardingStore.getState().begin('full', 'welcome')
+      useOnboardingStore.getState().handOff('chat')
       render(<OnboardingRuntime />)
 
       expect(screen.queryByTestId('onboarding-handoff')).not.toBeInTheDocument()

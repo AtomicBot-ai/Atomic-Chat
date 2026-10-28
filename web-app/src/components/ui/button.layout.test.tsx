@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { render } from '@testing-library/react'
 
+import { X } from 'lucide-react'
+
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { expectTextCentered, measureTextPlacement, settle } from '@/test/layout'
@@ -61,8 +63,8 @@ describe('Button text placement (real browser)', () => {
 
 /**
  * Real-browser layout: inside the app shell every control sits on one scale
- * (`index.css`) — regular actions, fields and selects 36px, compact icon
- * actions 24px, large actions 40px — whatever height a call site asked for,
+ * (`index.css`) — regular actions, fields and selects 28px, compact icon
+ * actions 24px, large actions 32px — whatever height a call site asked for,
  * and icon buttons stay square.
  */
 describe('Control scale inside the app shell (real browser)', () => {
@@ -71,7 +73,7 @@ describe('Control scale inside the app shell (real browser)', () => {
     return { width: Math.round(width), height: Math.round(height) }
   }
 
-  it('puts actions, fields and selects on 36/24/40 and keeps icons square', async () => {
+  it('puts actions, fields and selects on 28/24/32 and keeps icons square', async () => {
     const { container } = render(
       <div className="app-shell">
         <div className="flex flex-wrap items-start gap-3 p-4">
@@ -109,14 +111,14 @@ describe('Control scale inside the app shell (real browser)', () => {
       container.querySelector(`[data-testid="${id}"]`)!
 
     for (const id of ['default', 'sm', 'sm-h7', 'input', 'select']) {
-      expect(box(get(id)).height, id).toBe(36)
+      expect(box(get(id)).height, id).toBe(28)
     }
-    expect(box(get('icon'))).toEqual({ width: 36, height: 36 })
-    expect(box(get('icon-sm'))).toEqual({ width: 36, height: 36 })
+    expect(box(get('icon'))).toEqual({ width: 28, height: 28 })
+    expect(box(get('icon-sm'))).toEqual({ width: 28, height: 28 })
     expect(box(get('xs')).height).toBe(24)
     expect(box(get('icon-xs-size7'))).toEqual({ width: 24, height: 24 })
-    expect(box(get('lg')).height).toBe(40)
-    expect(box(get('icon-lg'))).toEqual({ width: 40, height: 40 })
+    expect(box(get('lg')).height).toBe(32)
+    expect(box(get('icon-lg'))).toEqual({ width: 32, height: 32 })
   })
 
   it('leaves the title bar sidebar toggle at 28px, like the control beside it', async () => {
@@ -137,5 +139,66 @@ describe('Control scale inside the app shell (real browser)', () => {
       width: 28,
       height: 28,
     })
+  })
+})
+
+/**
+ * Real-browser: whatever takes a click shows the pointer (Tailwind 4 leaves a
+ * bare `<button>` on the arrow, as the composer's model picker was), and a
+ * control drawn at its icon's own size takes clicks 15% of its size beyond
+ * each edge (`hit-area-15`).
+ */
+describe('Clickable affordances (real browser)', () => {
+  it('shows the pointer on anything clickable that is not disabled or opted out', async () => {
+    const { container } = render(
+      <div className="flex gap-3 p-4">
+        <button type="button" data-testid="bare">
+          Qwen3 8B
+        </button>
+        <div role="button" tabIndex={0} data-testid="role">
+          Restricted
+        </div>
+        <button type="button" disabled data-testid="disabled">
+          Off
+        </button>
+        <button type="button" className="cursor-default" data-testid="opt-out">
+          Plain
+        </button>
+      </div>
+    )
+    await settle(container)
+    const cursor = (id: string) =>
+      getComputedStyle(container.querySelector(`[data-testid="${id}"]`)!).cursor
+
+    expect(cursor('bare')).toBe('pointer')
+    expect(cursor('role')).toBe('pointer')
+    expect(cursor('disabled')).not.toBe('pointer')
+    expect(cursor('opt-out')).toBe('default')
+  })
+
+  it('lets an icon-only control take clicks 15% beyond its edges', async () => {
+    const { container } = render(
+      <div className="p-10">
+        <button
+          type="button"
+          data-testid="close"
+          className="hit-area-15 relative size-5"
+        >
+          <X className="size-5" />
+          <span className="sr-only">Close</span>
+        </button>
+      </div>
+    )
+    await settle(container)
+    const close = container.querySelector('[data-testid="close"]')!
+    // 20px wide: the reach is 3px on every side.
+    const { left, right, top, height, width } = close.getBoundingClientRect()
+    const hits = (x: number, y: number) =>
+      close.contains(document.elementFromPoint(x, y))
+
+    expect(hits(left - 2, top + height / 2)).toBe(true)
+    expect(hits(right + 2, top + height / 2)).toBe(true)
+    expect(hits(left + width / 2, top - 2)).toBe(true)
+    expect(hits(left - 4, top + height / 2)).toBe(false)
   })
 })

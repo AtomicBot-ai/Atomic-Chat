@@ -10,6 +10,13 @@ import { Attachment } from '@/types/attachment'
 import { injectFilesIntoPrompt } from './fileMetadata'
 
 /**
+ * What the model is told about an attached video in place of its contents:
+ * no chat model takes video input, so it must not pretend to have watched it.
+ */
+export const VIDEO_ATTACHMENT_NOTE =
+  'This is a video file. Its contents are not available to you: you cannot watch it or see its frames, only its name.'
+
+/**
  * @fileoverview Helper functions for creating thread content.
  * These functions are used to create thread content objects
  * for different types of content, such as text and image.
@@ -23,17 +30,19 @@ export const newUserThreadContent = (
   attachments?: Attachment[],
   id?: string
 ): ThreadMessage => {
-  // Separate images, audio and documents
+  // Separate images, audio, video and documents
   const images = attachments?.filter((a) => a.type === 'image') || []
   const audio = attachments?.filter((a) => a.type === 'audio') || []
+  const videos = attachments?.filter((a) => a.type === 'video') || []
   const documents = attachments?.filter((a) => a.type === 'document') || []
 
   const inlineDocuments = documents.filter(
     (doc) => doc.injectionMode === 'inline' && doc.inlineContent
   )
 
-  // Inject document metadata into the text content (id, name, fileType only - no path)
-  const docMetadata = documents.map((doc) => ({
+  // Inject document and video metadata into the text content (id, name,
+  // fileType only - no path)
+  const docMetadata = [...documents, ...videos].map((doc) => ({
     id: doc.id ?? doc.name,
     name: doc.name,
     type: doc.fileType,
@@ -84,20 +93,38 @@ export const newUserThreadContent = (
     }))
 
   const metadata: Record<string, unknown> = {}
-  if (inlineDocuments.length > 0) {
-    metadata.inline_file_contents = inlineDocuments.map((doc) => ({
-      name: doc.name,
-      content: doc.inlineContent,
-    }))
+  if (inlineDocuments.length > 0 || videos.length > 0) {
+    metadata.inline_file_contents = [
+      ...inlineDocuments.map((doc) => ({
+        name: doc.name,
+        content: doc.inlineContent,
+      })),
+      ...videos.map((clip) => ({
+        name: clip.name,
+        content: VIDEO_ATTACHMENT_NOTE,
+      })),
+    ]
   }
-  if (documents.length > 0) {
-    metadata.file_attachments = documents.map((doc) => ({
-      name: doc.name,
-      path: doc.path,
-      mediaType: doc.mimeType,
-      size: doc.size,
-      fileType: doc.fileType,
-    }))
+  if (documents.length > 0 || videos.length > 0) {
+    metadata.file_attachments = [
+      ...documents.map((doc) => ({
+        name: doc.name,
+        path: doc.path,
+        mediaType: doc.mimeType,
+        size: doc.size,
+        fileType: doc.fileType,
+      })),
+      // No `mediaType`: a typed entry is rebuilt into a `file` part on reload
+      // (convertThreadMessageToUIMessage), and a video part must never reach
+      // a model converter.
+      ...videos.map((clip) => ({
+        name: clip.name,
+        path: clip.path,
+        size: clip.size,
+        fileType: clip.fileType,
+        kind: 'video',
+      })),
+    ]
   }
   if (audioMeta.length > 0) {
     metadata.input_audio = audioMeta

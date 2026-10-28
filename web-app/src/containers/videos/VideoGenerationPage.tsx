@@ -7,6 +7,7 @@ import { route } from '@/constants/routes'
 import { ImageEmptyState } from '@/containers/images/ImageEmptyState'
 import { ImageErrorBanner } from '@/containers/images/ImageErrorBanner'
 import { ImageSetupCard } from '@/containers/images/ImageSetupCard'
+import { MediaStudioFrame } from '@/containers/images/MediaStudio'
 import { useImageEngine } from '@/hooks/useImageEngine'
 import { useMediaTarget } from '@/hooks/useMediaTarget'
 import { useHasRemoteMedia, useRemoteMediaTarget } from '@/hooks/useRemoteMedia'
@@ -288,10 +289,7 @@ export const VideoGenerationPage = memo(function VideoGenerationPage({
   }
 
   return (
-    <div
-      className="grid h-svh w-full grid-cols-[minmax(340px,400px)_1fr] grid-rows-[minmax(0,1fr)] overflow-hidden"
-      data-testid="video-generation-page"
-    >
+    <MediaStudioFrame testId="video-generation-page">
       <aside className="col-start-1 row-start-1 flex min-h-0 min-w-0 flex-col border-r border-border">
         {studioReady ? (
           <VideoPromptForm
@@ -411,7 +409,7 @@ export const VideoGenerationPage = memo(function VideoGenerationPage({
           </div>
         )}
       </section>
-    </div>
+    </MediaStudioFrame>
   )
 })
 

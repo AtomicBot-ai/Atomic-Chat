@@ -1,8 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useCallback, useEffect, useState } from 'react'
 import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
-import { type as osType } from '@tauri-apps/plugin-os'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { toast } from 'sonner'
 import {
@@ -28,6 +26,10 @@ import {
   agentConnectHost,
   writeAgentConfig,
 } from '@/lib/integration-agent-setup'
+import {
+  installIntegrationAgent,
+  openIntegrationAgent,
+} from '@/lib/integration-agent-run'
 import { useServerSetup } from '@/hooks/useServerSetup'
 import { LocalApiServerStatusRow } from '@/containers/LocalApiServerStatusRow'
 import { startLocalApiServer } from '@/utils/localApiServerControl'
@@ -35,14 +37,12 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
-import { useProxyConfig } from '@/hooks/useProxyConfig'
 import { useAppState } from '@/hooks/useAppState'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useLaunchStore } from '@/stores/launch-store'
 import { useLaunchSettings } from '@/stores/launch-settings-store'
 import { cn } from '@/lib/utils'
-import { createSafeUnlisten } from '@/lib/tauriEvent'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.launch.index as any)({
@@ -52,41 +52,6 @@ export const Route = createFileRoute(route.launch.index as any)({
 // Only reveal the in-button spinner once an action has been running longer
 // than this; near-instant config writes finish first and never flash it.
 const SPINNER_DELAY_MS = 350
-
-// The token that starts an agent in the terminal we open.
-//
-// Normally the bare binary name: short to read, and it resolves against the
-// login-shell PATH that terminal inherits. When detection found the launcher
-// *off* PATH — a user-set custom path, or the prefix install OpenClaw's desktop
-// app creates under `~/.openclaw/bin` — the bare name resolves to nothing, so
-// the absolute path is used instead, quoted for the shell that will run it.
-function launcherCommand(detectBin: string, path?: string): string {
-  if (!path) return detectBin
-  // cmd.exe has no escape for `"` inside a quoted token; POSIX shells take the
-  // close-escape-reopen dance. Neither appears in a real install path, but a
-  // username can contain a quote.
-  return osType() === 'windows'
-    ? `"${path.replace(/"/g, '')}"`
-    : `'${path.replace(/'/g, `'\\''`)}'`
-}
-
-// Snapshot the app proxy config (if enabled) into the payload the Rust
-// `install_agent` / `open_agent_terminal` commands expect, so spawned installers
-// and the launched agent can reach the network behind a region block. Returns
-// undefined when no proxy is configured, so the commands omit proxy env.
-function buildProxyPayload():
-  | { url: string; username?: string; password?: string; no_proxy?: string }
-  | undefined {
-  const { proxyEnabled, proxyUrl, proxyUsername, proxyPassword, noProxy } =
-    useProxyConfig.getState()
-  if (!proxyEnabled || !proxyUrl.trim()) return undefined
-  return {
-    url: proxyUrl.trim(),
-    username: proxyUsername.trim() || undefined,
-    password: proxyPassword || undefined,
-    no_proxy: noProxy.trim() || undefined,
-  }
-}
 
 // Installs are indeterminate (npm / curl script) with no progress %, so the
 // button cycles short status messages to make it clear work is ongoing.
@@ -195,7 +160,6 @@ function LaunchPage() {
   const phase = useLaunchStore((s) => s.phase)
   const setPhase = useLaunchStore((s) => s.setPhase)
   const logs = useLaunchStore((s) => s.logs)
-  const setLogs = useLaunchStore((s) => s.setLogs)
   const openLog = useLaunchStore((s) => s.openLog)
   const setOpenLog = useLaunchStore((s) => s.setOpenLog)
   const [runningModels, setRunningModels] = useState<string[]>([])
@@ -255,50 +219,9 @@ function LaunchPage() {
   // the install succeeded. Does NOT manage the shared busy/spinner state —
   // `handleRun` owns that so install + configure read as one action.
   const installAgent = useCallback(
-    async (agent: IntegrationAgent): Promise<boolean> => {
-      setLogs((prev) => ({ ...prev, [agent.id]: [] }))
-      setOpenLog((prev) => ({ ...prev, [agent.id]: true }))
-
-      let detachInstallLog: (() => Promise<void>) | undefined
-      try {
-        detachInstallLog = createSafeUnlisten(
-          await listen<string>(`agent_install_log:${agent.id}`, (event) => {
-            setLogs((prev) => ({
-              ...prev,
-              [agent.id]: [...(prev[agent.id] ?? []), event.payload],
-            }))
-          })
-        )
-        await invoke('install_agent', {
-          agentId: agent.id,
-          proxy: buildProxyPayload(),
-        })
-        toast.success(t('launch:toast.installSuccess', { name: agent.name }), {
-          description: t('launch:toast.installSuccessDesc', {
-            name: agent.name,
-          }),
-        })
-        await detect(agent)
-        return true
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        // Surface a localized, actionable hint for network/DNS failures
-        // (commonly a region block with no proxy); keep the raw detail otherwise.
-        const isNetworkFailure =
-          /dns|tunnel|proxy|os error 11001|wsahost_not_found|could not reach the network|resolve host|getaddrinfo|name resolution/i.test(
-            msg
-          )
-        toast.error(t('launch:toast.installFailed', { name: agent.name }), {
-          description: isNetworkFailure
-            ? t('launch:toast.installFailedNetworkDesc')
-            : msg,
-        })
-        return false
-      } finally {
-        await detachInstallLog?.()
-      }
-    },
-    [detect, t, setLogs, setOpenLog]
+    (agent: IntegrationAgent): Promise<boolean> =>
+      installIntegrationAgent(agent, { t, detect }),
+    [detect, t]
   )
 
   // Write the agent's config so it points at the local server. Throws on
@@ -373,131 +296,13 @@ function LaunchPage() {
         setPhase((prev) => ({ ...prev, [agent.id]: 'configuring' }))
         await configureAgent(agent, model)
 
-        // Config is written; open a terminal running the agent so the user can
-        // start immediately. A terminal failure must not fail the whole Run.
-        try {
-          // Zed is a desktop editor, not a terminal agent: its AI agent lives
-          // in its own window. Launch the app directly (no terminal) — the
-          // config we just wrote points its native Atomic Chat provider at the
-          // local server, and the user drives the Agent Panel from there.
-          if (agent.id === 'zed') {
-            await invoke('launch_zed')
-            return
-          }
-          // ZCode is a desktop app too, and it is never installed from here:
-          // the provider file is written either way and read on its next start,
-          // so a missing app is a pointer to the download, not a failure.
-          if (agent.id === 'zcode') {
-            const app = await invoke<{ installed: boolean; launched: boolean }>(
-              'launch_zcode',
-              { path: useLaunchStore.getState().binPath[agent.id] ?? null }
-            )
-            if (!app.installed) {
-              toast.info(t('launch:toast.zcodeNotInstalled'), {
-                description: t('launch:toast.zcodeNotInstalledDesc'),
-                duration: 10000,
-              })
-            }
-            return
-          }
-          // OpenClaw also ships a desktop app (macOS `OpenClaw.app`, Windows
-          // Hub), and it reads the very config we just wrote — its Gateway owns
-          // the file and hot-reloads it. So when the app is installed it *is*
-          // the destination, and dropping the user into a terminal TUI would
-          // land them in the wrong window.
-          if (agent.id === 'openclaw') {
-            const app = await invoke<{
-              installed: boolean
-              launched: boolean
-            }>('launch_openclaw_app')
-            if (app.launched) return
-            if (app.installed) {
-              // Windows Hub installs per-user with no documented path or AUMID
-              // to launch it by, so hand the user the one instruction we can
-              // give confidently instead of guessing at a shortcut.
-              toast.info(t('launch:toast.openclawAppReady'), {
-                description: t('launch:toast.openclawAppReadyDesc'),
-                duration: 10000,
-              })
-              return
-            }
-          }
-          // OpenClaw's bare `openclaw` entry is the Crestodian setup/repair
-          // helper (deterministic commands), not a chat. `openclaw chat` runs
-          // the embedded local agent runtime, so the user lands straight in a
-          // conversation with the configured model (no gateway needed).
-          // Goose's bare `goose` only prints help; `goose session` starts an
-          // interactive chat. OpenHands reads our env overrides only when
-          // launched with `--override-with-envs`. Everything else runs its
-          // bare detect binary.
-          let command: string
-          // Off-PATH installs (custom path, or OpenClaw's app-managed prefix)
-          // have to be spawned by absolute path; everything else keeps the bare
-          // binary name.
-          // Read through the store rather than a render-closure copy: this same
-          // callback may have just run `detect`, whose result is not in the
-          // closure it was invoked from.
-          const launcher = launcherCommand(
-            agent.detectBin,
-            useLaunchStore.getState().binPath[agent.id]
-          )
-          if (agent.id === 'openclaw') {
-            command = `${launcher} chat`
-          } else if (agent.id === 'goose') {
-            command = `${launcher} session`
-          } else if (agent.id === 'openhands') {
-            command = `${launcher} --override-with-envs`
-          } else if (agent.id === 'dsh') {
-            // DeepSeek Harness is a browser app, not a terminal chat: a bare
-            // `dsh` has no profile to hand its arguments to and only prints the
-            // launcher's own help. `dsh web` is the alias for `--profile web`,
-            // which serves the UI on http://127.0.0.1:3080. The first run of
-            // that profile initializes it from a shipped template, so the URL
-            // can take a while to appear.
-            command = `${launcher} web`
-          } else if (agent.id === 'muse') {
-            // Muse Code has no writable endpoint configuration: the provider,
-            // base URL and model are flags on every invocation, and META_API_KEY
-            // only has to be non-empty for its provider check -- the request
-            // itself goes to whatever --base-url points at. `apiUrl` already
-            // carries the /v1 prefix (endpointWithPrefix), which is the root
-            // Muse appends `/responses` to.
-            const apiUrl = `http://${agentConnectHost(serverHost)}:${serverPort}${apiPrefix}`
-            const key = apiKey || 'atomic'
-            if (osType() === 'windows') {
-              const modelArg = model ? ` --model ${model}` : ''
-              command = `set META_API_KEY=${key}&& ${launcher} --provider meta --base-url ${apiUrl}${modelArg}`
-            } else {
-              const modelArg = model ? ` --model '${model}'` : ''
-              command = `META_API_KEY='${key}' ${launcher} --provider meta --base-url '${apiUrl}'${modelArg}`
-            }
-          } else if (agent.id === 'poolside') {
-            const apiUrl = `http://${agentConnectHost(serverHost)}:${serverPort}${apiPrefix}`
-            const standaloneBase = apiUrl.replace(/\/v1\/?$/, '')
-            const key = apiKey || 'atomic'
-            const modelId = model ?? ''
-            if (osType() === 'windows') {
-              command = `set POOLSIDE_STANDALONE_BASE_URL=${standaloneBase}&& set POOLSIDE_API_KEY=${key}&& set POOLSIDE_STANDALONE_MODEL=${modelId}&& ${launcher}`
-            } else {
-              command = `POOLSIDE_STANDALONE_BASE_URL='${standaloneBase}' POOLSIDE_API_KEY='${key}' POOLSIDE_STANDALONE_MODEL='${modelId}' ${launcher}`
-            }
-          } else {
-            command = launcher
-          }
-          await invoke('open_agent_terminal', {
-            command,
-            proxy: buildProxyPayload(),
-          })
-        } catch (termErr) {
-          const tmsg =
-            termErr instanceof Error ? termErr.message : String(termErr)
-          toast.warning(
-            t('launch:toast.terminalFailed', { name: agent.name }),
-            {
-              description: tmsg,
-            }
-          )
-        }
+        // Config is written; open the agent so the user can start
+        // immediately. A launch failure must not fail the whole Run.
+        await openIntegrationAgent(agent, {
+          t,
+          model,
+          server: { serverHost, serverPort, apiPrefix, apiKey },
+        })
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         toast.error(t('launch:toast.configureFailed', { name: agent.name }), {
@@ -845,7 +650,7 @@ function LaunchPage() {
           </span>
         </div>
       </HeaderPage>
-      <div className="h-[calc(100%-60px)] overflow-y-auto p-4 pt-0">
+      <div className="h-[calc(100%-var(--page-header-height))] overflow-y-auto p-4 pt-0">
         <div className="mx-auto flex max-w-3xl flex-col gap-6">
           <section className="flex flex-col gap-3">
             <div>

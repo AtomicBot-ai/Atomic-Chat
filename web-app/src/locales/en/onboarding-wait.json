@@ -1,0 +1,34 @@
+{
+  "title": "Good things are downloading.",
+  "lead": "Your workspace is ready to explore. Your model will keep downloading while you’re here.",
+  "readyTitle": "Your model is ready.",
+  "readyLead": "Everything is in place for your first conversation.",
+  "readyOnDevice": "Ready on your device",
+  "explore": "Explore the app",
+  "startChatting": "Start chatting",
+  "playGame": "Play Atomic Mines",
+  "hideGame": "Hide game",
+  "email": {
+    "label": "Prefer to come back later?",
+    "hint": "Leave your email for a download-ready reminder.",
+    "placeholder": "you@example.com",
+    "submit": "Notify me",
+    "done": "Reminder set."
+  },
+  "mines": {
+    "title": "Atomic Mines",
+    "unmarked_one": "{{count}} atom unmarked",
+    "unmarked_other": "{{count}} atoms unmarked",
+    "newGame": "New game",
+    "board": "Minesweeper board",
+    "cellHidden": "Row {{row}}, column {{column}}, hidden",
+    "cellFlagged": "Row {{row}}, column {{column}}, flagged",
+    "cellOpen": "Row {{row}}, column {{column}}, {{count}} neighboring atoms",
+    "flagMode": "Flag mode",
+    "flagModeOn": "Flag mode on",
+    "goal": "Clear every safe square.",
+    "lost": "An atom! Try again.",
+    "won": "All clear. Nicely done!",
+    "help": "Numbers count nearby atoms. Right-click or use flag mode to mark them. Your first move is always safe."
+  }
+}

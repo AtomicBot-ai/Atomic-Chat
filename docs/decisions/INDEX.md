@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-471 records, 2026-05-19 → 2026-10-26.
+495 records, 2026-05-19 → 2026-10-27.
 
 ---
 
@@ -33,8 +33,10 @@ decision is reversed, add a new one that says which record it supersedes.
 
 ---
 
-## Local image & video generation (28)
+## Local image & video generation (30)
 
+- **2026-10-27** — [Lay out an Audios studio, in dev builds only until there is an audio engine](2026-10-27-lay-out-an-audios-studio-in-dev-builds-only.md) — `PlatformFeature.AUDIO_GENERATION`; candidate models, Download and Generate off until the audio engine lands.
+- **2026-10-26** — [Judge an image model against the RAM it shares on a Mac, and ask before a run that will not fit](2026-10-26-judge-an-image-model-against-the-ram-it-shares-on-a-mac.md)
 - **2026-10-22** — [Size the media viewer to its preview and give the gallery the rest](2026-10-22-size-the-media-viewer-to-its-preview-and-give-the-gallery-the-rest.md)
 - **2026-10-22** — [Show only the generation settings a recipe can vouch for](2026-10-22-show-only-the-generation-settings-a-recipe-can-vouch-for.md)
 - **2026-10-13** — [Offer providers' media models beside the local ones, through the core](2026-10-13-offer-providers-media-models-beside-the-local-ones.md)
@@ -65,8 +67,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-09-10** — [Pin the text encoder to CPU under Metal, and restart on the CPU backend after a ggml abort](2026-09-10-pin-the-text-encoder-to-cpu-under-metal-and-restart-on-cpu-after-a-ggml-abort.md)
 - **2026-09-10** — [Curate the diffusion model catalog in atomic-chat-conf](2026-09-10-curate-the-diffusion-model-catalog-in-atomic-chat-conf.md)
 
-## Launch page & external coding agents (19)
+## Launch page & external coding agents (20)
 
+- **2026-10-27** — [Run Codex on an Atomic Chat profile (`codex --profile atomic-chat`), never the shared `~/.codex/config.toml`; repair what earlier releases wrote there](2026-10-27-run-codex-on-its-own-profile-not-the-shared-config.md)
 - **2026-09-21** — [Add ZCode as a Launch-page coding agent, configured by merging an `atomic-chat` provider into `~/.zcode/v2/provider_config.json` — no install](2026-09-21-add-zcode-as-a-launch-page-coding-agent.md)
 - **2026-09-01** — [Track OpenClaw 2026.8: detect the app-installed CLI, widen an existing `modelPolicy.allow`, and gate the npm/Node prerequisites](2026-09-01-track-openclaw-2026-8-detect-the-app-installed-cli-widen.md)
 - **2026-08-25** — [Add Atomic Agent as a one-click Launch-page assistant, configured by merging an `openai-compatible` provider into `~/.atomic-agent/config.json`](2026-08-25-add-atomic-agent-as-a-one-click-launch-page-assistant.md)
@@ -174,8 +177,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-05** — [Port `gemma4_unified` (+ vision fixes) into the `mlx-vlm` fork so Gemma 4 12B loads under MLX (ATO-88, head 1)](2026-06-05-port-gemma4-unified-vision-fixes-into-the-mlx-vlm-fork-so-gemma.md)
 - **2026-06-02** — [Surface MLX KV-cache quantization (TurboQuant / uniform) as a provider setting](2026-06-02-surface-mlx-kv-cache-quantization-turboquant-uniform-as-a.md)
 
-## llama.cpp providers & backend selection (55)
+## llama.cpp providers & backend selection (56)
 
+- **2026-10-26** — [Show the context llama.cpp fitted, not the one the load asked for](2026-10-26-show-the-context-llama-cpp-fitted-not-the-one-asked-for.md)
 - **2026-10-13** — [Bundle the upstream llama.cpp release the pinned core would choose](2026-10-13-bundle-the-upstream-release-the-pinned-core-would-choose.md) — supersedes the bundled-tag rule of 2026-08-12 and the extension baseline of 2026-08-13.
 - **2026-10-08** — [Take engine versions from the core, and update and switch engine builds only through it](2026-10-08-take-engine-versions-from-the-core-and-update-through-it.md) — supersedes the 2026-07-01 hot-swap ordering record; refines 2026-09-14 (offers come from the core).
 - **2026-10-06** — [Show PrismML only where it has a build, and say what its engine is for until it is installed](2026-10-06-show-prismml-where-it-has-a-build-and-onboard-its-engine.md)
@@ -233,8 +237,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Ship `janhq/llama.cpp` cudart DLLs with every Windows CUDA backend](2026-05-22-ship-janhq-llama-cpp-cudart-dlls-with-every-windows-cuda-backend.md)
 - **2026-05-19** — [Windows uses upstream `ggml-org/llama.cpp`, not the TurboQuant fork](2026-05-19-windows-uses-upstream-ggml-org-llama-cpp-not-the-turboquant-fork.md)
 
-## Models, Hub & downloads (48)
+## Models, Hub & downloads (49)
 
+- **2026-10-26** — [Count a task's finished files on resume, and reopen a connection that only trickles](2026-10-26-count-finished-files-on-resume-and-reopen-trickling-connections.md)
 - **2026-10-22** — [Run LiteRT-LM through the core; download its models from Hugging Face in the app](2026-10-22-run-litert-lm-through-the-core-and-download-its-models-in-the-app.md)
 - **2026-10-22** — [Step the Hub toolbar down by its own width, search first](2026-10-22-step-the-hub-toolbar-down-by-its-own-width.md)
 - **2026-10-22** — [Name Downloads rows by their model, with the quant apart](2026-10-22-name-downloads-rows-by-model-with-the-quant-apart.md)
@@ -284,8 +289,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-04** — [Recover from unsupported multimodal projector (`gemma4a`) by falling back to text-only instead of crashing the load (issue #44)](2026-06-04-recover-from-unsupported-multimodal-projector-gemma4a-by.md)
 - **2026-05-27** — [Replace `janhq/model-catalog` + Fuse.js with curated `AtomicBot-ai/atomic-chat-model-catalog` and a pre-built MiniSearch index](2026-05-27-replace-janhq-model-catalog-fuse-js-with-curated-atomicbot-ai.md)
 
-## Local API server & OpenAI compatibility (15)
+## Local API server & OpenAI compatibility (16)
 
+- **2026-10-26** — [Keep the Activity log live while no Server page is open, and say why a request has no text](2026-10-26-keep-the-activity-log-live-and-say-why-a-request-has-no-text.md)
 - **2026-10-23** — [Stop an idle server at the first-run endpoint handoff](2026-10-23-stop-an-idle-server-at-the-first-run-endpoint-handoff.md) — supersedes in part 2026-10-21.
 - **2026-10-21** — [The Local API Server routes a model id to the provider selected for it](2026-10-21-the-server-routes-a-model-id-to-the-provider-selected-for-it.md) — supersedes "remote wins over local" for ids the server page shows.
 - **2026-10-21** — [Refuse the Local API Server as a custom endpoint](2026-10-21-refuse-the-local-api-server-as-a-custom-endpoint.md)
@@ -319,8 +325,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-10** — [Throttle crashloop `model_load` failure spam client-side; confirm `model_load.status` / api 404-noise are already-fixed-pending-rollout, not code bugs (ATO-130: ATO-133 + ATO-131 + ATO-132)](2026-06-10-throttle-crashloop-model-load-failure-spam-client-side-confirm.md)
 - **2026-06-09** — [Add zero-PII Sentry crash/error tracking to both the React frontend and the Rust/Tauri desktop, gated behind `productAnalytic` (ATO-113)](2026-06-09-add-zero-pii-sentry-crash-error-tracking-to-both-the-react.md)
 
-## Packaging, installers, autostart & platform policy (28)
+## Packaging, installers, autostart & platform policy (29)
 
+- **2026-10-27** — [Ship only upstream llama.cpp in the installer](2026-10-27-ship-only-upstream-llama-cpp-in-the-installer.md) — MLX and TurboQuant install through the core on demand; no `jan-cli` copy, Install CLI copies `atomic-chat-core`. Supersedes the file-name part of the 2026-09-15 jan-cli record and the installer parts of the 2026-10-07 MLX and 2026-06-23 TurboQuant records.
 - **2026-10-26** — [Ship deb, rpm and AUR packages from the AppImage build](2026-10-26-ship-deb-rpm-and-aur-packages-from-the-appimage-build.md) — nfpm packs Tauri's deb tree under `/opt/atomic-chat` with dependencies read from its ELF files; signed apt/dnf repository in its own bucket and `atomic-chat-bin` on the AUR follow a published release.
 - **2026-10-22** — [Sign every Windows PE file through Tauri's signCommand and ship a Microsoft Store installer](2026-10-22-sign-every-windows-pe-via-tauri-signcommand-and-ship-an-msstore-installer.md) — x64 installers fully signed; `*_x64_msstore.exe` embeds the offline WebView2 installer; ARM64 and the publisher name stay as they were.
 - **2026-10-21** — [Give the Linux window a stable app id](2026-10-21-give-the-linux-window-a-stable-app-id.md) — Wayland `app_id` / Hyprland class is `chat.atomic.app`, matched by the desktop entry's `StartupWMClass`.
@@ -350,14 +357,29 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Windows ships `atomic-chat-cli.exe` as a copy of `jan.exe`](2026-05-22-windows-ships-atomic-chat-cli-exe-as-a-copy-of-jan-exe.md)
 - **2026-05-22** — [Windows auto-updater uses NSIS as sole relauncher](2026-05-22-windows-auto-updater-uses-nsis-as-sole-relauncher.md)
 
-## UI / UX (2)
+## UI / UX (3)
+- **2026-10-27** — [Run an agent from its Server card: Install, Configure, Connect](2026-10-27-run-an-agent-from-its-server-card.md) — Configure opens the agent; Connect starts the server and opens it again; cards ordered Claude Code, Codex, Atomic Agent, then OpenRouter usage.
 
 - **2026-10-20** — [Set up the server from Overview with a guide that does the real work](2026-10-20-set-up-the-server-from-overview-with-a-guide.md)
 - **2026-10-20** — [List Hub models in a table whose rows open in place](2026-10-20-list-hub-models-in-a-table-whose-rows-open-in-place.md) — supersedes the split view of the 2026-08-06 staff-picks record.
 ## UI / UX (2)
 - **2026-10-20** — [Show hosted providers on Cloud and the user's own servers on Custom Endpoint](2026-10-20-show-hosted-providers-on-cloud-and-own-servers-on-custom-endpoint.md)
 - **2026-10-20** — [List everything downloaded on a Downloads page](2026-10-20-list-everything-downloaded-on-a-downloads-page.md)
-## UI / UX (116)
+## UI / UX (130)
+- **2026-10-27** — [Configure the server's engine from its picker, with the Hub's settings](2026-10-27-configure-the-servers-engine-from-its-picker.md) — a gear beside the engine opens the Hub's `EngineDetail` in a dialog; saved as changed, Done closes.
+- **2026-10-27** — [Stack the corner notifications in one column and fold them after three seconds](2026-10-27-stack-the-corner-notifications-and-fold-them-after-three-seconds.md) — supersedes the `download` slot of 2026-09-14; reverses ATO-462's panel that stays expanded.
+- **2026-10-27** — [Show the runtime in the macOS tray, and open the engine or model picker on click](2026-10-27-show-the-runtime-in-the-tray-and-open-its-picker-on-click.md)
+- **2026-10-27** — [Drop the auto-approve note from the access menu](2026-10-27-drop-the-auto-approve-note-from-the-access-menu.md) — supersedes the menu note of 2026-10-21.
+- **2026-10-27** — [Hide the wait screen's email reminder until it is delivered](2026-10-27-hide-the-email-reminder-until-it-is-delivered.md) — supersedes in part 2026-10-26.
+- **2026-10-27** — [Make the default interface denser, and show every clickable thing as one](2026-10-27-make-the-default-interface-denser.md) — supersedes the heights of the 2026-10-20 control scale (28 / 24 / 32 px, 13 px Medium type).
+- **2026-10-26** — [Keep unsent drafts across a relaunch](2026-10-26-keep-unsent-drafts-across-a-relaunch.md) — supersedes in part 2026-10-21.
+- **2026-10-26** — [Show the update check result on its Settings row](2026-10-26-show-the-update-check-result-on-its-settings-row.md)
+- **2026-10-26** — [Ask before removing a file from a project](2026-10-26-ask-before-removing-a-file-from-a-project.md)
+- **2026-10-26** — [Let Stop end a voice start while the voice model is still loading](2026-10-26-let-stop-end-a-voice-start-while-the-voice-model-loads.md)
+- **2026-10-26** — [Download the first-run chat model before image and video, even when chosen last](2026-10-26-download-the-chat-model-before-image-and-video.md)
+- **2026-10-26** — [Offer Back to setup after every chat handoff, in the session that handed off](2026-10-26-offer-back-to-setup-after-every-chat-handoff.md)
+- **2026-10-26** — [Show a wait screen while the first model downloads](2026-10-26-show-a-wait-screen-while-the-first-model-downloads.md) — supersedes in part 2026-10-22.
+- **2026-10-26** — [Show notifications as allowed only once the user allows them in setup](2026-10-26-show-notifications-allowed-only-once-allowed-in-setup.md)
 - **2026-10-23** — [Draw the download panel as the first-run strip](2026-10-23-draw-the-download-panel-as-the-first-run-strip.md)
 - **2026-10-23** — [Notify every completion unless it is on screen](2026-10-23-notify-every-completion-unless-it-is-on-screen.md) — supersedes in part 2026-09-29.
 - **2026-10-23** — [Offer three models, then Hugging Face, on the first-run model step](2026-10-23-offer-three-models-then-hugging-face-on-the-first-run-model-step.md) — supersedes in part 2026-09-11.
@@ -476,8 +498,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-11** — [Add a unified "Sampling — {assistant}" popover (assistant switcher + sampling params in one place) (ATO-155)](2026-06-11-add-a-unified-sampling-assistant-popover-assistant-switcher.md)
 - **2026-06-10** — [Render inline image (`file`) parts in the chat thread bubble (ATO-120)](2026-06-10-render-inline-image-file-parts-in-the-chat-thread-bubble-ato-120.md)
 
-## Inference core extraction — atomic-chat-core (26)
+## Inference core extraction — atomic-chat-core (27)
 
+- **2026-10-26** — [Keep a slow core that is still alive attached](2026-10-26-keep-a-slow-core-that-is-still-alive-attached.md)
 - **2026-09-28** — [The Logs window merges the app's and the core's logs from disk](2026-09-28-the-logs-window-merges-app-and-core-logs-from-disk.md)
 - **2026-09-27** — [The core is the only source of hardware facts and backend decisions](2026-09-27-the-core-is-the-only-source-of-hardware-facts-and-backend-decisions.md)
 - **2026-09-22** — [Desktop e2e brings its own image engine, tunnel and catalog, and expects what the app unpacks by itself](2026-09-22-desktop-e2e-brings-its-own-image-engine-tunnel-and-catalog.md)
@@ -520,8 +543,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-09-30** — [TensorRT-LLM is a Linux-only extension that decides its own visibility](2026-09-30-tensorrt-llm-is-a-linux-only-extension-that-decides-its-own-visibility.md)
 - **2026-09-30** — [Run Agent turns on TensorRT-LLM through its session gateway](2026-09-30-run-agent-turns-on-tensorrt-llm-through-its-session-gateway.md)
 
-## Other (19)
+## Other (20)
 
+- **2026-10-26** — [Chat with the team through a support relay, with diagnostics attached](2026-10-26-chat-with-the-team-through-a-support-relay.md)
 - **2026-09-30** — [Hide the Apple on-device provider](2026-09-30-hide-the-apple-on-device-provider.md)
 - **2026-09-22** — [Keep an unseen e2e window rendering](2026-09-22-keep-an-unseen-e2e-window-rendering.md)
 - **2026-09-21** — [Run desktop e2e scenarios side by side](2026-09-21-run-desktop-e2e-scenarios-side-by-side.md)

@@ -140,6 +140,23 @@ describe('ServerControlPanel', () => {
     expect(power).toBeDisabled()
   })
 
+  it('runs a highlight along Stop only once the server is up', () => {
+    const { rerender } = render(<ServerControlPanel />)
+    const power = screen.getByTestId('server-panel-power')
+    expect(power.querySelector('.dsc-running-border')).toBeNull()
+
+    setStatus('pending')
+    rerender(<ServerControlPanel />)
+    expect(power.querySelector('.dsc-running-border')).toBeNull()
+
+    setStatus('running')
+    rerender(<ServerControlPanel />)
+    expect(power.querySelector('.dsc-running-border')).toHaveAttribute(
+      'aria-hidden',
+      'true'
+    )
+  })
+
   it('shows the model the next start will load', () => {
     server.defaultModelLocalApiServer = {
       model: 'qwen3.5-4b',

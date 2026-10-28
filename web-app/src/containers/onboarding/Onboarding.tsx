@@ -32,6 +32,7 @@ import { ModelStep } from './steps/ModelStep'
 import { PermissionsStep } from './steps/PermissionsStep'
 import { PurposeStep } from './steps/PurposeStep'
 import { ServerStep } from './steps/ServerStep'
+import { WaitStep } from './steps/WaitStep'
 import { WelcomeStep } from './steps/WelcomeStep'
 import type { StepProps } from './steps/types'
 import { useStepContext } from './useStepContext'
@@ -60,6 +61,7 @@ const STEP_COMPONENTS: Record<
   media: MediaStep,
   purpose: PurposeStep,
   server: ServerStep,
+  wait: WaitStep,
 }
 
 const twoDigits = (value: number) => String(value).padStart(2, '0')
