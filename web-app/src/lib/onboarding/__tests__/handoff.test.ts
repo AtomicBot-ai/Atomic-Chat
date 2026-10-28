@@ -1,3 +1,4 @@
+import '@/test/telemetry-ready'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import posthog from 'posthog-js'
 
@@ -11,7 +12,7 @@ import { useOnboardingStore } from '@/stores/onboarding-store'
 import { cloudExitOf, exitPathOf, handOffOnboarding } from '../handoff'
 
 vi.mock('posthog-js', () => ({
-  default: { capture: vi.fn(), has_opted_in_capturing: () => true },
+  default: { capture: vi.fn() },
 }))
 
 const events = () =>

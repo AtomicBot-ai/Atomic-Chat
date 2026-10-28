@@ -10,10 +10,7 @@ import {
   SetupGuideHint,
   useGuideHint,
 } from '@/containers/onboarding/SetupGuideHint'
-import {
-  StatusDot,
-  type StatusTone,
-} from '@/containers/api/ApiStatusIndicators'
+import type { StatusTone } from '@/containers/api/ApiStatusIndicators'
 import { useAgentActions } from '@/hooks/useAgentActions'
 import { useAppState } from '@/hooks/useAppState'
 import { useServerSetup } from '@/hooks/useServerSetup'
@@ -24,32 +21,25 @@ import { useLaunchStore } from '@/stores/launch-store'
 
 /**
  * What Atomic Chat knows about an agent: set up through it (the guide or All
- * integrations), installed on this computer, or neither. "Connected" is an
- * agent Atomic Chat opened during this run while the server is still up:
- * nothing reports when the agent's own window closes.
+ * integrations), installed on this computer, or neither. Launching a window
+ * does not establish a live connection; keep reopening available at all times.
  */
 export function useAgentStatus(): (agent: IntegrationAgent) => {
   label: string
   tone: StatusTone
   configured: boolean
-  connected: boolean
 } {
   const { t } = useTranslation()
   const configured = useServerSetup((state) => state.configuredAgents)
   const installed = useLaunchStore((state) => state.installed)
-  const launched = useLaunchStore((state) => state.launched)
   const running = useAppState((state) => state.serverStatus === 'running')
 
   return (agent) => {
     if (configured.some((entry) => entry.id === agent.id)) {
-      const connected = running && launched[agent.id] === true
       return {
-        label: connected
-          ? t('api:agents.connected')
-          : t('api:agents.configured'),
+        label: t('api:agents.configured'),
         tone: running ? 'ready' : 'idle',
         configured: true,
-        connected,
       }
     }
     return {
@@ -58,7 +48,6 @@ export function useAgentStatus(): (agent: IntegrationAgent) => {
         : t('api:agents.notInstalled'),
       tone: 'idle',
       configured: false,
-      connected: false,
     }
   }
 }
@@ -67,8 +56,7 @@ export function useAgentStatus(): (agent: IntegrationAgent) => {
  * Overview's "Agents & tools": every integration as a card with its one next
  * step. An agent Atomic Chat configures goes Install (when it is missing) →
  * Configure (the setup guide, which opens the agent once done) → Connect
- * (opens it again, starting the server first) → Connected, on the way to its
- * connection details. Editors set up by hand go to All integrations. Then the
+ * (opens it again, starting the server first). Editors set up by hand go to All integrations. Then the
  * way in for the user's own application.
  */
 export function ServerAgents() {
@@ -188,20 +176,6 @@ export function ServerAgents() {
                   {t('api:agents.configure')}
                   <ArrowRight size={14} />
                 </button>
-              ) : status.connected ? (
-                // Connected: the state sits on the way to its connection details.
-                <Link
-                  to={route.api.connections}
-                  className="sp-button"
-                  title={t('api:agents.connectionDetails')}
-                  onClick={() => pickAgentHint('end')}
-                >
-                  <span className="sp-status">
-                    <StatusDot tone={status.tone} />
-                    {status.label}
-                  </span>
-                  <ArrowRight size={14} />
-                </Link>
               ) : (
                 <button
                   type="button"

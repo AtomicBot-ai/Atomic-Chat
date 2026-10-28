@@ -1,3 +1,4 @@
+import '@/test/telemetry-ready'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { toast } from 'sonner'
 
@@ -23,7 +24,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('posthog-js', () => ({
-  default: { capture: vi.fn(), has_opted_in_capturing: () => true },
+  default: { capture: vi.fn() },
 }))
 vi.mock('sonner', () => ({
   toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() },

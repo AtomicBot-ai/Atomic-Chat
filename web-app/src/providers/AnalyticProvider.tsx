@@ -18,9 +18,16 @@ import {
   reportAbandonedOnboarding,
   reportBackendRestartIntent,
 } from '@/lib/onboarding-telemetry'
-import { flushTelemetryQueue } from '@/lib/telemetry-queue'
+import {
+  bufferTelemetryUntilReady,
+  disableTelemetryQueue,
+  flushTelemetryQueue,
+} from '@/lib/telemetry-queue'
 import { restoreInstallDistinctId } from '@/lib/telemetry-identity'
-import { registerOnboardingCohort } from '@/lib/onboarding/experiment'
+import {
+  captureOnboardingCohort,
+  registerOnboardingCohort,
+} from '@/lib/onboarding/experiment'
 import {
   setSentryConsent,
   setSentryTags,
@@ -76,8 +83,9 @@ function toSentryTags(
  *
  * 2 — ATO-457/459/456/468: startup event buffering, normalized `model_id`,
  * split onboarding / backend-step reasons, subscription events.
+ * 3 — explicit startup readiness and recoverable cohort assignment capture.
  */
-const TELEMETRY_SCHEMA = 2
+const TELEMETRY_SCHEMA = 3
 
 /**
  * ATO-111: `device_parse_ok` reflects whether `llama-server --list-devices`
@@ -119,6 +127,7 @@ export function AnalyticProvider() {
 
   useEffect(() => {
     if (!POSTHOG_KEY || !POSTHOG_HOST) {
+      disableTelemetryQueue()
       console.warn(
         'PostHog not initialized: Missing POSTHOG_KEY or POSTHOG_HOST environment variables'
       )
@@ -132,6 +141,7 @@ export function AnalyticProvider() {
     const osPlatform = getAnalyticsPlatform()
 
     if (productAnalytic) {
+      bufferTelemetryUntilReady()
       posthog.init(POSTHOG_KEY, {
         api_host: POSTHOG_HOST,
         autocapture: false,
@@ -174,6 +184,7 @@ export function AnalyticProvider() {
           console.warn('Failed to restore the analytics distinct id:', err)
         })
         .finally(async () => {
+          if (cancelled) return
           posthog.opt_in_capturing()
           posthog.register({
             app_version: VERSION,
@@ -203,11 +214,18 @@ export function AnalyticProvider() {
             console.warn('Failed to collect hardware super-properties:', err)
           }
 
+          if (cancelled) return
+
+          // The assignment is persisted before React mounts. Send it under
+          // the restored identity, at its original time, including on upgrades
+          // from builds that lost it before PostHog was initialized.
+          captureOnboardingCohort(posthog)
+
           // Everything captured during startup was held back, because
           // `opt_out_capturing_by_default` makes posthog-js drop rather than
           // buffer. Replay it now: after the super-properties so replayed
-          // events carry them, and before the `cancelled` bail so a re-run of
-          // this effect cannot strand a whole first launch's worth of events.
+          // events carry them. A cancelled initialization leaves the queue for
+          // the active effect; it must not flush after consent was withdrawn.
           flushTelemetryQueue()
 
           // An onboarding run left on screen when the app closed. Reported
@@ -282,6 +300,7 @@ export function AnalyticProvider() {
           }
         })
     } else {
+      disableTelemetryQueue()
       posthog.opt_out_capturing()
     }
 

@@ -187,25 +187,28 @@ describe('support relay client', () => {
     expect(lastCall().body).toEqual({ seq: 9 })
   })
 
-  it('passes an abort straight through', async () => {
-    const controller = new AbortController()
-    fetchMock.mockImplementation(
-      (_url: string, init: RequestInit) =>
-        new Promise((_resolve, reject) => {
-          init.signal?.addEventListener('abort', () =>
-            reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))
-          )
-        })
-    )
+  it.each(['AbortError', 'TypeError'])(
+    'does not retry an aborted write reported as %s',
+    async (name) => {
+      const controller = new AbortController()
+      fetchMock.mockImplementation(
+        (_url: string, init: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init.signal?.addEventListener('abort', () =>
+              reject(Object.assign(new Error('aborted'), { name }))
+            )
+          })
+      )
 
-    const pending = pollMessages(
-      'tok',
-      { after: 0, wait: 25 },
-      { baseUrl: BASE, signal: controller.signal }
-    )
-    controller.abort()
+      const pending = sendMessage(
+        'tok',
+        { client_id: 'stable-id', text: 'retry safely' },
+        { baseUrl: BASE, signal: controller.signal }
+      )
+      controller.abort()
 
-    await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
-    expect(tauriFetch).not.toHaveBeenCalled()
-  })
+      await expect(pending).rejects.toMatchObject({ name })
+      expect(tauriFetch).not.toHaveBeenCalled()
+    }
+  )
 })

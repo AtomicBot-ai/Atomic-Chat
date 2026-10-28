@@ -1,3 +1,4 @@
+import '@/test/telemetry-ready'
 import { render, screen } from '@testing-library/react'
 import { page } from '@vitest/browser/context'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -10,12 +11,13 @@ import { settle, withTranslations } from '@/test/layout'
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => vi.fn(),
+  useRouter: () => ({ state: { location: { pathname: '/' } } }),
   // The server step reaches the Server pages' model picker, which links out.
   Link: ({ children }: { children?: React.ReactNode }) => <a>{children}</a>,
 }))
 
 vi.mock('posthog-js', () => ({
-  default: { capture: vi.fn(), has_opted_in_capturing: () => true },
+  default: { capture: vi.fn() },
 }))
 
 // Welcome and Model only: the steps that depend on the machine have nothing

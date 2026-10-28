@@ -1,3 +1,4 @@
+import '@/test/telemetry-ready'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { toast } from 'sonner'
 import type { ServiceHub } from '@/services'
@@ -152,7 +153,7 @@ vi.mock('@/lib/sentry', () => ({
 vi.mock('posthog-js', () => ({
   // `has_opted_in_capturing` is what `queuedCapture` checks before sending;
   // without it every event would sit in the startup queue instead.
-  default: { capture: vi.fn(), has_opted_in_capturing: () => true },
+  default: { capture: vi.fn() },
 }))
 
 vi.mock('@/i18n/setup', () => ({
@@ -200,7 +201,8 @@ const createLoadedEngines = (initial: Record<string, string[]>) => {
     },
     startModel: async (provider: { provider: string }, modelId: string) => {
       const ids = engines.get(provider.provider) ?? []
-      if (!ids.includes(modelId)) engines.set(provider.provider, [...ids, modelId])
+      if (!ids.includes(modelId))
+        engines.set(provider.provider, [...ids, modelId])
     },
     snapshot: () => Object.fromEntries(engines),
   }
@@ -667,12 +669,18 @@ describe('load progress and cancel', () => {
       getActiveModels: vi.fn().mockResolvedValue(['ready-model']),
     })
 
-    await switchToModel({ modelId: 'ready-model', providerName: 'mlx', serviceHub })
+    await switchToModel({
+      modelId: 'ready-model',
+      providerName: 'mlx',
+      serviceHub,
+    })
 
-    expect(appState.setLoadingModelProgress.mock.calls.map(([p]) => p)).toEqual([
-      { kind: 'loadingWeights', cachedFraction: 0.98, retry: undefined },
-      { kind: 'startingServer' },
-    ])
+    expect(appState.setLoadingModelProgress.mock.calls.map(([p]) => p)).toEqual(
+      [
+        { kind: 'loadingWeights', cachedFraction: 0.98, retry: undefined },
+        { kind: 'startingServer' },
+      ]
+    )
     localApiState.enableOnStartup = false
   })
 
@@ -801,7 +809,11 @@ describe('load progress and cancel', () => {
     const startModel = vi.fn().mockResolvedValue(undefined)
     const serviceHub = hubWith({ stopAllModelsExcept, startModel })
 
-    await switchToModel({ modelId: 'broken-model', providerName: 'mlx', serviceHub })
+    await switchToModel({
+      modelId: 'broken-model',
+      providerName: 'mlx',
+      serviceHub,
+    })
 
     expect(appState.setLoadingModelProgress).toHaveBeenCalledWith({
       kind: 'unloadingPrevious',
@@ -813,11 +825,13 @@ describe('load progress and cancel', () => {
     ])
     // The unload is the only step this load reports, and the status shows it
     // before the serving model goes down and before the next one loads.
-    expect(appState.setLoadingModelProgress.mock.calls.map(([p]) => p)).toEqual([
-      { kind: 'unloadingPrevious' },
-    ])
+    expect(appState.setLoadingModelProgress.mock.calls.map(([p]) => p)).toEqual(
+      [{ kind: 'unloadingPrevious' }]
+    )
     const [shownAt] = appState.setLoadingModelProgress.mock.invocationCallOrder
-    expect(shownAt).toBeLessThan(stopAllModelsExcept.mock.invocationCallOrder[0])
+    expect(shownAt).toBeLessThan(
+      stopAllModelsExcept.mock.invocationCallOrder[0]
+    )
     expect(shownAt).toBeLessThan(startModel.mock.invocationCallOrder[0])
     appState.activeModels = []
   })
@@ -893,6 +907,39 @@ describe('load progress and cancel', () => {
     expect(startServer).not.toHaveBeenCalled()
   })
 
+  it('unloads when Cancel arrives after engine readiness while the API server is starting', async () => {
+    localApiState.enableOnStartup = true
+    let finishServer!: () => void
+    startServer.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finishServer = resolve
+        })
+    )
+    const stopModel = vi.fn().mockResolvedValue(undefined)
+    const serviceHub = hubWith({
+      startModel: vi.fn().mockResolvedValue(undefined),
+      cancelModelLoad: vi.fn().mockResolvedValue(false),
+      stopModel,
+    })
+    const pending = switchToModel({
+      modelId: 'ready-model',
+      providerName: 'mlx',
+      serviceHub,
+    })
+    const outcome = pending.then(
+      () => 'loaded',
+      (error) => error.code
+    )
+    await vi.waitFor(() => expect(startServer).toHaveBeenCalledOnce())
+    await cancelModelLoad(serviceHub)
+    finishServer()
+    expect(await outcome).toBe('MODEL_LOAD_CANCELLED')
+    expect(stopModel).toHaveBeenCalledWith('ready-model', 'mlx')
+    expect(shouldAttemptAutoStart('mlx', 'ready-model')).toBe(false)
+    expect(toast.error).not.toHaveBeenCalled()
+  })
+
   it('has nothing to cancel when no local load is running', async () => {
     const cancelInEngine = vi.fn()
     await cancelModelLoad(hubWith({ cancelModelLoad: cancelInEngine }))
@@ -960,7 +1007,11 @@ describe('load progress and cancel', () => {
       })
 
       await expect(
-        switchToModel({ modelId: 'ready-model', providerName: 'mlx', serviceHub })
+        switchToModel({
+          modelId: 'ready-model',
+          providerName: 'mlx',
+          serviceHub,
+        })
       ).rejects.toThrow('engine crashed')
 
       expect(clearedSelection()).toHaveLength(0)
@@ -1188,7 +1239,8 @@ describe('describeModelLoadFailure', () => {
       describeModelLoadFailure({
         code: 'GPU_BUSY',
         message,
-        details: 'holder=diffusion/wan2.2:q4_k_m state=ready cards=all busy=true',
+        details:
+          'holder=diffusion/wan2.2:q4_k_m state=ready cards=all busy=true',
       })
     ).toEqual({
       title: 'model-errors:gpuBusyTitle',
@@ -1230,8 +1282,10 @@ describe('describeModelLoadFailure', () => {
     })
     // Another engine without its binary has nothing to install from here.
     expect(
-      describeModelLoadFailure({ code: 'BINARY_NOT_FOUND' }, 'llamacpp-upstream')
-        .action
+      describeModelLoadFailure(
+        { code: 'BINARY_NOT_FOUND' },
+        'llamacpp-upstream'
+      ).action
     ).toBeUndefined()
   })
 
@@ -1276,7 +1330,10 @@ describe('describeModelLoadFailure', () => {
         .description
     ).toBe('model-errors:formatLegacyDescription')
     expect(
-      describeModelLoadFailure({ code: 'MODEL_FORMAT_LEGACY', details: 'not json' })
+      describeModelLoadFailure({
+        code: 'MODEL_FORMAT_LEGACY',
+        details: 'not json',
+      })
     ).toMatchObject({
       description: 'model-errors:formatLegacyDescriptionNoReplacement',
       persistent: true,
@@ -1444,11 +1501,15 @@ describe('OOM retry ladder', () => {
       // `ctx_len` would only repeat the same load (spec sglang-desktop "Нехватка памяти при загрузке").
       const posthog = (await import('posthog-js')).default
       vi.mocked(posthog.capture).mockClear()
-      const list = modelProviderState.providers as Array<Record<string, unknown>>
+      const list = modelProviderState.providers as Array<
+        Record<string, unknown>
+      >
       upstreamWith({ ctx_len: 16384, ngl: 100 })
       list[1] = { ...(list[1] as Record<string, unknown>), provider: engine }
       const failure = Object.assign(
-        new Error('SGLang ran out of GPU memory loading the model: 7.1 GiB needed, 6.2 GiB free.'),
+        new Error(
+          'SGLang ran out of GPU memory loading the model: 7.1 GiB needed, 6.2 GiB free.'
+        ),
         { code: 'OUT_OF_MEMORY' }
       )
       const startModel = vi.fn().mockRejectedValue(failure)
@@ -1465,13 +1526,19 @@ describe('OOM retry ladder', () => {
       } as unknown as ServiceHub
 
       await expect(
-        switchToModel({ modelId: 'shared-model', providerName: engine, serviceHub })
+        switchToModel({
+          modelId: 'shared-model',
+          providerName: engine,
+          serviceHub,
+        })
       ).rejects.toThrow('7.1 GiB needed, 6.2 GiB free')
       expect(startModel).toHaveBeenCalledTimes(1)
       expect(modelSetting('ctx_len')).toBe(16384)
       expect(modelSetting('ngl')).toBe(100)
       expect(
-        vi.mocked(posthog.capture).mock.calls.filter(([event]) => event === 'model_load_retry')
+        vi
+          .mocked(posthog.capture)
+          .mock.calls.filter(([event]) => event === 'model_load_retry')
       ).toEqual([])
     }
   )
@@ -1495,7 +1562,11 @@ describe('OOM retry ladder', () => {
       stopAllModelsExcept: vi.fn().mockResolvedValue(undefined),
       stopModel: vi.fn().mockResolvedValue(undefined),
       cancelModelLoad: vi.fn(async () => {
-        rejectLoad(Object.assign(new Error('CUDA out of memory'), { code: 'OUT_OF_MEMORY' }))
+        rejectLoad(
+          Object.assign(new Error('CUDA out of memory'), {
+            code: 'OUT_OF_MEMORY',
+          })
+        )
         return true
       }),
       startModel,
@@ -1506,8 +1577,14 @@ describe('OOM retry ladder', () => {
       providers: () => ({ updateSettings: vi.fn() }),
     } as unknown as ServiceHub
 
-    const pending = switchToModel({ modelId: 'shared-model', providerName: 'sglang', serviceHub })
-    const outcome = expect(pending).rejects.toMatchObject({ code: 'MODEL_LOAD_CANCELLED' })
+    const pending = switchToModel({
+      modelId: 'shared-model',
+      providerName: 'sglang',
+      serviceHub,
+    })
+    const outcome = expect(pending).rejects.toMatchObject({
+      code: 'MODEL_LOAD_CANCELLED',
+    })
     await vi.waitFor(() => expect(startModel).toHaveBeenCalled())
     await cancelModelLoad(serviceHub)
     await outcome
@@ -1517,7 +1594,10 @@ describe('OOM retry ladder', () => {
 
   it('llama.cpp keeps its ladder: an out-of-memory failure still retries with a smaller context', async () => {
     upstreamWith({ ctx_len: 16384, ngl: 100 })
-    const startModel = vi.fn().mockRejectedValueOnce(oom()).mockResolvedValue(undefined)
+    const startModel = vi
+      .fn()
+      .mockRejectedValueOnce(oom())
+      .mockResolvedValue(undefined)
     const models = {
       getActiveModels: vi.fn().mockResolvedValue(['shared-model']),
       stopAllModels: vi.fn().mockResolvedValue(undefined),
@@ -1530,7 +1610,11 @@ describe('OOM retry ladder', () => {
       providers: () => ({ updateSettings: vi.fn() }),
     } as unknown as ServiceHub
 
-    await switchToModel({ modelId: 'shared-model', providerName: 'llamacpp-upstream', serviceHub })
+    await switchToModel({
+      modelId: 'shared-model',
+      providerName: 'llamacpp-upstream',
+      serviceHub,
+    })
 
     expect(startModel).toHaveBeenCalledTimes(2)
     expect(modelSetting('ctx_len')).toBe(8192)

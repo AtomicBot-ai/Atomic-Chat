@@ -1,3 +1,4 @@
+import '@/test/telemetry-ready'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -9,7 +10,7 @@ import { useOnboardingStore } from '@/stores/onboarding-store'
 const navigate = vi.hoisted(() => vi.fn())
 
 vi.mock('posthog-js', () => ({
-  default: { capture: vi.fn(), has_opted_in_capturing: () => true },
+  default: { capture: vi.fn() },
 }))
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigate }))
 vi.mock('@/i18n/react-i18next-compat', () => ({

@@ -96,37 +96,28 @@ describe('Overview, agents and tools', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('offers Connect for a set-up agent, and its connection details once Atomic Chat opened it', () => {
-    const { rerender } = render(<ServerAgents />)
-    const claude = card('Claude Code')
-
-    fireEvent.click(
-      within(claude).getByRole('button', {
+  it('keeps Connect available after launch, client exit, server restart and app restart', () => {
+    render(<ServerAgents />)
+    const connect = () =>
+      within(card('Claude Code')).getByRole('button', {
         name: 'api:agents.connectAgent:{"name":"Claude Code"}',
       })
-    )
+    fireEvent.click(connect())
     expect(actions.connect).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'claude-code' })
     )
 
     act(() => useLaunchStore.setState({ launched: { 'claude-code': true } }))
-    rerender(<ServerAgents />)
-    const action = within(claude).getByRole('link', {
-      name: 'api:agents.connected',
-    })
-    expect(action).toHaveAttribute('href', '/api/connections')
-    expect(action).toHaveAttribute('title', 'api:agents.connectionDetails')
-    expect(
-      within(claude).getByText('api:agents.connected').firstElementChild
-    ).toHaveClass('bg-emerald-500')
-
-    // Nothing is served once the server stops: Connect again.
+    // There is no client-exit signal. A historical launch must not hide reopening.
+    expect(connect()).toBeEnabled()
+    expect(screen.queryByText('api:agents.connected')).not.toBeInTheDocument()
     act(() => useAppState.setState({ serverStatus: 'stopped' }))
-    expect(
-      within(claude).getByRole('button', {
-        name: 'api:agents.connectAgent:{"name":"Claude Code"}',
-      })
-    ).toBeInTheDocument()
+    expect(connect()).toBeEnabled()
+    act(() => useAppState.setState({ serverStatus: 'running' }))
+    fireEvent.click(connect())
+    expect(actions.connect).toHaveBeenCalledTimes(2)
+    act(() => useLaunchStore.setState({ launched: {} }))
+    expect(connect()).toBeEnabled()
   })
 
   it('installs a missing agent first, and shows the work while it runs', () => {

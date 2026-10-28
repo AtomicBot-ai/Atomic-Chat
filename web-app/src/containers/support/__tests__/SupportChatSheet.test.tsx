@@ -114,7 +114,8 @@ describe('SupportChatSheet', () => {
     expect(screen.queryByText('common:support.sending')).not.toBeInTheDocument()
     expect(client.sendMessage).toHaveBeenCalledWith(
       'tok',
-      expect.objectContaining({ text: 'My model will not load' })
+      expect.objectContaining({ text: 'My model will not load' }),
+      { signal: expect.any(AbortSignal) }
     )
   })
 

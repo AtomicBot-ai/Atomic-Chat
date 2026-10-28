@@ -1,3 +1,4 @@
+import '@/test/telemetry-ready'
 import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -10,7 +11,7 @@ import {
 import { ServerControlPanel } from '../ServerControlPanel'
 
 vi.mock('posthog-js', () => ({
-  default: { capture: vi.fn(), has_opted_in_capturing: () => true },
+  default: { capture: vi.fn() },
 }))
 
 const navigate = vi.hoisted(() => vi.fn())

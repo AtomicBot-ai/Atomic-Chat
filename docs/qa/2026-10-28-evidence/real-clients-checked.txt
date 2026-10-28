@@ -1,0 +1,135 @@
+
+ RUN  v3.2.7 <QA_ROOT>/source/tests/e2e
+
+ ❯ desktop/qa-real-clients.spec.ts (8 tests | 4 failed) 115325ms
+   ✓ QA real installed CLI clients with API authentication > starts the API with the selected model  2778ms
+   ✓ QA real installed CLI clients with API authentication > claude_code answers using the configuration written by Atomic Chat  696ms
+   × QA real installed CLI clients with API authentication > opencode answers using the configuration written by Atomic Chat 1161ms
+     → expected 'Performing one time database migratio…' to contain 'QA_CLIENT_REPLY'
+   × QA real installed CLI clients with API authentication > openclaude answers using the configuration written by Atomic Chat 75018ms
+     → paction.
+[context] Warning: model "qa/client-model" not in context window table — using conservative 128k default. Add it to src/utils/model/openaiContextWindows.ts for accurate compaction.
+[context] Warning: model "qa/client-model" not in context window table — using conservative 128k default. Add it to src/utils/model/openaiContextWindows.ts for accurate compaction.
+[context] Warning: model "qa/client-model" not in context window table — using conservative 128k default. Add it to src/utils/model/openaiContextWindows.ts for accurate compaction.
+[context] Warning: model "qa/client-model" not in context window table — using conservative 128k default. Add it to src/utils/model/openaiContextWindows.ts for accurate compaction.
+[context] Warning: model "qa/client-model" not in context window table — using conservative 128k default. Add it to src/utils/model/openaiContextWindows.ts for accurate compaction.
+[context] Warning: model "qa/client-model" not in context window table — using conservative 128k default. Add it to src/utils/model/openaiContextWindows.ts for accurate compaction.
+[context] Warning: model "qa/client-model" not in context window table — using conservative 128k default. Add it to src/utils/model/openaiContextWindows.ts for accurate compaction.
+[context] Warning: model "qa/client-model" not in context window table — using conservative 128k default. Add it to src/utils/model/openaiContextWindows.ts for accurate compaction.
+[context] Warning: model "qa/client-model" not in context window table — using conservative 128k default. Add it to src/utils/model/openaiContextWindows.ts for accurate compaction.
+[context] Warning: model "qa/client-model" not in context window table — using conservative 128k default. Add it to src/utils/model/openaiContextWindows.ts for accurate compaction.
+[context] Warning: model "qa/client-model" not in context window table — using conservative 128k default. Add it to src/utils/model/openaiContextWindows.ts for accurate compaction.
+: expected null to be +0 // Object.is equality
+   × QA real installed CLI clients with API authentication > hermes_agent answers using the configuration written by Atomic Chat 2336ms
+     →   ⚠ tirith security scanner enabled but not available — command scanning will use pattern matching only
+Error: Invalid or missing authorization token
+
+session_id: 20261028_153821_802769
+: expected 1 to be +0 // Object.is equality
+   ✓ QA real installed CLI clients with API authentication > copilot answers using the configuration written by Atomic Chat  1590ms
+   ✓ QA real installed CLI clients with API authentication > droid answers using the configuration written by Atomic Chat  12722ms
+   × QA real installed CLI clients with API authentication > Zed launch receives the configured key rather than a placeholder 15059ms
+     → Matcher did not succeed in time.
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  desktop/qa-real-clients.spec.ts > QA real installed CLI clients with API authentication > opencode answers using the configuration written by Atomic Chat
+AssertionError: expected 'Performing one time database migratio…' to contain 'QA_CLIENT_REPLY'
+
+- Expected
++ Received
+
+- QA_CLIENT_REPLY
++ Performing one time database migration, may take a few minutes...
++ sqlite-migration:done
++ Database migration complete.
++ {"type":"step_start","timestamp":1793191025390,"sessionID":"ses_e7d7c65b7ffem4rRACL8oP75jc","part":{"id":"prt_182839aed001a6NmIoj1E2ij1o","messageID":"msg_182839abe001fN4zK5zdT6s42J","sessionID":"ses_e7d7c65b7ffem4rRACL8oP75jc","type":"step-start"}}
++
+
+ ❯ desktop/qa-real-clients.spec.ts:127:31
+    125|         )
+    126|         expect(result.code, result.output.slice(-2000)).toBe(0)
+    127|         expect(result.output).toContain('QA_CLIENT_REPLY')
+       |                               ^
+    128|       }
+    129|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  desktop/qa-real-clients.spec.ts > QA real installed CLI clients with API authentication > openclaude answers using the configuration written by Atomic Chat
+AssertionError: paction.
+[context] Warning: model "qa/client-model" not in context window table — using conservative 128k default. Add it to src/utils/model/openaiContextWindows.ts for accurate compaction.
+[context] Warning: model "qa/client-model" not in context window table — using conservative 128k default. Add it to src/utils/model/openaiContextWindows.ts for accurate compaction.
+[context] Warning: model "qa/client-model" not in context window table — using conservative 128k default. Add it to src/utils/model/openaiContextWindows.ts for accurate compaction.
+[context] Warning: model "qa/client-model" not in context window table — using conservative 128k default. Add it to src/utils/model/openaiContextWindows.ts for accurate compaction.
+[context] Warning: model "qa/client-model" not in context window table — using conservative 128k default. Add it to src/utils/model/openaiContextWindows.ts for accurate compaction.
+[context] Warning: model "qa/client-model" not in context window table — using conservative 128k default. Add it to src/utils/model/openaiContextWindows.ts for accurate compaction.
+[context] Warning: model "qa/client-model" not in context window table — using conservative 128k default. Add it to src/utils/model/openaiContextWindows.ts for accurate compaction.
+[context] Warning: model "qa/client-model" not in context window table — using conservative 128k default. Add it to src/utils/model/openaiContextWindows.ts for accurate compaction.
+[context] Warning: model "qa/client-model" not in context window table — using conservative 128k default. Add it to src/utils/model/openaiContextWindows.ts for accurate compaction.
+[context] Warning: model "qa/client-model" not in context window table — using conservative 128k default. Add it to src/utils/model/openaiContextWindows.ts for accurate compaction.
+[context] Warning: model "qa/client-model" not in context window table — using conservative 128k default. Add it to src/utils/model/openaiContextWindows.ts for accurate compaction.
+: expected null to be +0 // Object.is equality
+
+- Expected: 
+0
+
++ Received: 
+null
+
+ ❯ desktop/qa-real-clients.spec.ts:126:57
+    124|           JSON.stringify(result, null, 2)
+    125|         )
+    126|         expect(result.code, result.output.slice(-2000)).toBe(0)
+       |                                                         ^
+    127|         expect(result.output).toContain('QA_CLIENT_REPLY')
+    128|       }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  desktop/qa-real-clients.spec.ts > QA real installed CLI clients with API authentication > hermes_agent answers using the configuration written by Atomic Chat
+AssertionError:   ⚠ tirith security scanner enabled but not available — command scanning will use pattern matching only
+Error: Invalid or missing authorization token
+
+session_id: 20261028_153821_802769
+: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ desktop/qa-real-clients.spec.ts:126:57
+    124|           JSON.stringify(result, null, 2)
+    125|         )
+    126|         expect(result.code, result.output.slice(-2000)).toBe(0)
+       |                                                         ^
+    127|         expect(result.output).toContain('QA_CLIENT_REPLY')
+    128|       }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  desktop/qa-real-clients.spec.ts > QA real installed CLI clients with API authentication > Zed launch receives the configured key rather than a placeholder
+Error: Matcher did not succeed in time.
+ ❯ desktop/qa-real-clients.spec.ts:144:60
+    142|     })
+    143|     await invoke(session.app.browser, 'launch_zed')
+    144|     await expect.poll(() => readFile(destination, 'utf8')).toBe(key)
+       |                                                            ^
+    145|   })
+    146| })
+
+Caused by: AssertionError: expected 'atomic' to be 'qa-client-auth-key' // Object.is equality
+
+Expected: "qa-client-auth-key"
+Received: "atomic"
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 4 passed (8)
+   Start at  15:36:57
+   Duration  115.66s (transform 93ms, setup 0ms, collect 142ms, tests 115.33s, environment 0ms, prepare 24ms)
+

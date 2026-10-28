@@ -1,3 +1,4 @@
+import '@/test/telemetry-ready'
 import { act, render, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import posthog from 'posthog-js'
@@ -43,8 +44,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('posthog-js', () => ({
-  // `queuedCapture` sends straight away once capturing is opted in.
-  default: { capture: vi.fn(), has_opted_in_capturing: () => true },
+  default: { capture: vi.fn() },
 }))
 
 vi.mock('@tanstack/react-router', () => ({

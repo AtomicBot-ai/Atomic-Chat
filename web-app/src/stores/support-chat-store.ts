@@ -317,6 +317,29 @@ export const selectMaxTeamSeq = (state: SupportChatData): number =>
 // the order they were typed.
 let deliveryQueue: Promise<void> = Promise.resolve()
 
+export const SUPPORT_WRITE_TIMEOUT_MS = 30_000
+
+/** Also settle if a transport fails to honour abort, releasing the send queue. */
+async function withWriteDeadline<T>(
+  write: (signal: AbortSignal) => Promise<T>
+): Promise<T> {
+  const controller = new AbortController()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      write(controller.signal),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error('Support request timed out'))
+          controller.abort()
+        }, SUPPORT_WRITE_TIMEOUT_MS)
+      }),
+    ])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 const errorKind = (error: unknown): SupportSendError =>
   isSupportApiError(error, 'rate_limited')
     ? 'rate_limited'
@@ -331,13 +354,14 @@ const deliver = async (clientId: string, attempt = 0): Promise<void> => {
   )
   if (!message) return
 
-  const meta = await collectSupportMeta()
-  const hash = hashSupportMeta(meta)
-
   try {
+    const meta = await collectSupportMeta()
+    const hash = hashSupportMeta(meta)
     let { token, metaHash } = useSupportChatStore.getState()
     if (!token) {
-      const conversation = await createConversation(meta)
+      const conversation = await withWriteDeadline((signal) =>
+        createConversation(meta, { signal })
+      )
       useSupportChatStore
         .getState()
         .setConversation(conversation.conversation_id, conversation.token, hash)
@@ -345,11 +369,17 @@ const deliver = async (clientId: string, attempt = 0): Promise<void> => {
       metaHash = hash
     }
     const withMeta = metaHash !== hash
-    const result = await sendMessage(token, {
-      client_id: clientId,
-      text: message.text,
-      ...(withMeta ? { meta } : {}),
-    })
+    const result = await withWriteDeadline((signal) =>
+      sendMessage(
+        token,
+        {
+          client_id: clientId,
+          text: message.text,
+          ...(withMeta ? { meta } : {}),
+        },
+        { signal }
+      )
+    )
     const state = useSupportChatStore.getState()
     state.markSent(clientId, result.seq, result.created_at)
     if (withMeta) state.setMetaHash(hash)

@@ -916,6 +916,7 @@ async function doSwitchToModel(
   const { setLoadingModelProgress } = useAppState.getState()
   const load = isLocal ? { modelId, providerName, cancelRequested: false } : null
   currentLocalLoad = load
+  let localEngineStarted = false
   console.log(
     '[switchToModel] Switching to model:',
     modelId,
@@ -992,14 +993,11 @@ async function doSwitchToModel(
         modelId,
         onProgress: setLoadingModelProgress,
       })
+      localEngineStarted = true
       // The load came back before a Cancel could stop it — an engine that
       // cannot cancel, or one that became ready first. The user still asked
       // for the model to be gone.
       if (load?.cancelRequested) {
-        await serviceHub
-          .models()
-          .stopModel(modelId, providerName)
-          .catch(() => undefined)
         throw cancelledLoadError()
       }
       // Awaited rather than fired-and-forgotten: the event has to carry it,
@@ -1018,6 +1016,7 @@ async function doSwitchToModel(
       })
       console.log('[switchToModel] Local model started:', modelId)
       await settleAfterLocalStart(serviceHub, providerName, modelId)
+      throwIfLoadCancelled()
     } else {
       // 4b. Cloud branch — register the provider so the proxy can route
       //     requests for `modelId` to provider.base_url.
@@ -1061,6 +1060,7 @@ async function doSwitchToModel(
     if (shouldStartServer) {
       if (isLocal) setLoadingModelProgress({ kind: 'startingServer' })
       await startLocalApiServer()
+      throwIfLoadCancelled()
     } else {
       // Local model + auto-start disabled + server wasn't running: keep the
       // Local API Server down. The local engine already serves this chat on
@@ -1076,6 +1076,7 @@ async function doSwitchToModel(
     //    reflects it (engine query would return empty).
     if (isLocal) {
       const active = await serviceHub.models().getActiveModels()
+      throwIfLoadCancelled()
       setActiveModels(active || [])
     } else {
       setActiveModels([modelId])
@@ -1092,8 +1093,20 @@ async function doSwitchToModel(
     clearModelLoadError()
     console.log('[switchToModel] Global state synchronised')
   } catch (error) {
-    const cancelled = isModelLoadCancelled(error)
+    const cancelled =
+      isModelLoadCancelled(error) || Boolean(load?.cancelRequested)
     if (cancelled) {
+      // Cancel remains available during post-load bookkeeping and server
+      // startup, after the engine's own cancel tracker has already finished.
+      if (localEngineStarted) {
+        const stopped = await serviceHub.models().stopModel(modelId, providerName)
+        if (stopped && !stopped.success) {
+          throw new Error(stopped.error || `Failed to stop model '${modelId}'`)
+        }
+      }
+      if (!wasServerRunning && shouldStartServer) {
+        await window.core?.api?.stopServer()
+      }
       console.log('[switchToModel] Load cancelled by the user:', modelId)
     } else {
       console.error('[switchToModel] Failed to switch model:', error)
@@ -1123,7 +1136,7 @@ async function doSwitchToModel(
         .getActiveModels()
         .catch(() => null)
       if (active) syncActiveModelsFromEngines(active)
-      throw error
+      throw cancelledLoadError()
     }
     // WS2: record the failure so the auto-start effect doesn't re-loop on it —
     // terminal codes (missing model/binary) are never auto-retried; others back

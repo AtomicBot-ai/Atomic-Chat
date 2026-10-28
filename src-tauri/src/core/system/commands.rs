@@ -1249,7 +1249,22 @@ pub fn configure_hermes_agent(
     api_key: Option<String>,
     context_length: Option<u32>,
 ) -> Result<(), String> {
-    let hermes_dir = resolve_hermes_dir()?;
+    configure_hermes_at(
+        &resolve_hermes_dir()?,
+        api_url,
+        model,
+        api_key,
+        context_length,
+    )
+}
+
+fn configure_hermes_at(
+    hermes_dir: &Path,
+    api_url: String,
+    model: String,
+    api_key: Option<String>,
+    context_length: Option<u32>,
+) -> Result<(), String> {
     let config_path = hermes_dir.join("config.yaml");
     let env_path = hermes_dir.join(".env");
 
@@ -1257,7 +1272,7 @@ pub fn configure_hermes_agent(
     // Windows) no config.yaml exists yet. Seed a default skeleton so the patch
     // logic below has the anchors it expects, instead of failing outright.
     if !config_path.exists() {
-        std::fs::create_dir_all(&hermes_dir)
+        std::fs::create_dir_all(hermes_dir)
             .map_err(|e| format!("Failed to create Hermes home directory: {}", e))?;
         std::fs::write(&config_path, HERMES_DEFAULT_CONFIG)
             .map_err(|e| format!("Failed to create config.yaml: {}", e))?;
@@ -1281,7 +1296,7 @@ pub fn configure_hermes_agent(
             }
             if !did_provider && trimmed.starts_with("provider:") {
                 did_provider = true;
-                return replace_yaml_scalar_value(line, "custom");
+                return replace_yaml_scalar_value(line, "custom:atomic-chat");
             }
             if !did_base_url && trimmed.starts_with("base_url:") {
                 did_base_url = true;
@@ -1297,10 +1312,16 @@ pub fn configure_hermes_agent(
     // Hermes Agent rejects any model whose context window is below 64K, so the
     // fallback must satisfy that floor too (the UI passes 65536 explicitly).
     let ctx = context_length.unwrap_or(65536);
-    let after_cp = upsert_atomic_provider(&after_model_patch, &api_url, &model, ctx);
+    let after_cp = upsert_atomic_provider(
+        &after_model_patch,
+        &api_url,
+        &model,
+        ctx,
+        api_key.as_deref(),
+    );
 
-    // Seed a per-request timeout for the `custom` provider (the id our model
-    // section uses). Hermes reads `providers.<id>.request_timeout_seconds`
+    // Seed a per-request timeout for the underlying `custom` transport.
+    // Hermes reads `providers.<id>.request_timeout_seconds`
     // (run_agent.py::get_provider_request_timeout); without it the legacy
     // 1800s default applies. Any value the user already set is preserved.
     let after_timeout =
@@ -1336,8 +1357,6 @@ pub fn configure_hermes_agent(
                 .map_err(|e| format!("Failed to write .env: {}", e))?;
         }
     }
-
-    let _ = api_key; // reserved for future use
 
     log::info!(
         "Hermes Agent configured: model={}, base_url={}, context_length={}",
@@ -1650,6 +1669,7 @@ fn upsert_atomic_provider(
     api_url: &str,
     model: &str,
     context_length: u32,
+    api_key: Option<&str>,
 ) -> String {
     let (before, mut entries, after) = split_custom_providers(content);
 
@@ -1658,6 +1678,11 @@ fn upsert_atomic_provider(
     entries.push(vec![
         format!("- name: {}", ATOMIC_PROVIDER_NAME),
         format!("  base_url: {}", api_url),
+        // JSON strings are valid YAML scalars, including quotes and newlines.
+        format!(
+            "  api_key: {}",
+            serde_json::json!(api_key.filter(|key| !key.is_empty()).unwrap_or("atomic"))
+        ),
         format!("  model: {}", model),
         "  models:".to_string(),
         format!("    {}:", model),
@@ -3035,18 +3060,23 @@ pub(crate) fn openclaude_global_config_path(home: &str) -> PathBuf {
 /// (`~/.openclaude/.openclaude-profile.json`). OpenClaude explicitly does not
 /// read `~/.claude` / `~/.claude.json` (see its README's "OpenClaude config
 /// cutover" section), so there is no legacy path to fall back to. OpenClaude
-/// routes atomic-chat through its OpenAI-compatible shim; local Atomic Chat
-/// needs no API key.
+/// routes atomic-chat through its OpenAI-compatible shim, including bearer authentication.
 #[tauri::command]
 pub fn configure_openclaude(
     api_url: String,
     model: String,
     api_key: Option<String>,
 ) -> Result<(), String> {
-    let _ = api_key;
+    configure_openclaude_at(&agent_home_dir()?, api_url, model, api_key)
+}
 
-    let home = agent_home_dir()?;
-    let config_path = openclaude_global_config_path(&home);
+fn configure_openclaude_at(
+    home: &str,
+    api_url: String,
+    model: String,
+    api_key: Option<String>,
+) -> Result<(), String> {
+    let config_path = openclaude_global_config_path(home);
     let config_home = PathBuf::from(&home).join(".openclaude");
     std::fs::create_dir_all(&config_home)
         .map_err(|e| format!("Failed to create {}: {}", config_home.display(), e))?;
@@ -3076,6 +3106,7 @@ pub fn configure_openclaude(
         "id": OPENCLAUDE_ATOMIC_PROFILE_ID,
         "name": "Atomic Chat",
         "provider": "atomic-chat",
+        "apiKey": api_key.as_deref().filter(|key| !key.is_empty()).unwrap_or("atomic"),
         "baseUrl": api_url,
         "model": model,
     });
@@ -3111,6 +3142,7 @@ pub fn configure_openclaude(
         "env": {
             "OPENAI_BASE_URL": api_url,
             "OPENAI_MODEL": model,
+            "OPENAI_API_KEY": api_key.as_deref().filter(|key| !key.is_empty()).unwrap_or("atomic"),
         },
         "createdAt": chrono::Utc::now().to_rfc3339(),
     });
@@ -3425,24 +3457,27 @@ pub fn configure_zed(
 /// agent lives in its own window, so we start the app directly. Prefer the
 /// `zed` CLI (resolved against the user's login-shell PATH so GUI builds find
 /// the `~/.local/bin` shim the installer drops); on macOS fall back to
-/// `open -a Zed` when the CLI shim isn't present.
+/// the native app executable when the CLI shim isn't present.
 ///
 /// We seed `ATOMIC_CHAT_API_KEY` so the custom openai_compatible provider is
 /// authenticated without the user pasting a key: stock Zed reads the provider
 /// key from the `<PROVIDER_ID>_API_KEY` env var and treats any non-empty value
-/// as authenticated, which is all a keyless local server needs. This only takes
-/// effect on a cold start (the CLI inherits our env); if Zed is already
-/// running, the key entered once in its UI persists in the keychain anyway.
+/// as authenticated. A running editor cannot inherit a changed key; ask the
+/// user to quit it before reopening, preserving any unsaved work.
 #[tauri::command]
-pub fn launch_zed() -> Result<(), String> {
-    // Non-empty placeholder: the local server is keyless, but Zed needs *some*
-    // key present to consider the provider authenticated.
-    const KEY_ENV: &str = "ATOMIC_CHAT_API_KEY";
-    const KEY_PLACEHOLDER: &str = "atomic";
+pub fn launch_zed(api_key: Option<String>) -> Result<(), String> {
+    let processes = sysinfo::System::new_with_specifics(
+        sysinfo::RefreshKind::nothing().with_processes(sysinfo::ProcessRefreshKind::nothing()),
+    );
+    ensure_zed_stopped(processes.processes().values().any(|process| {
+        matches!(
+            process.name().to_string_lossy().to_lowercase().as_str(),
+            "zed" | "zed.exe"
+        )
+    }))?;
 
-    let mut cmd = std::process::Command::new("zed");
+    let mut cmd = zed_launch_command(Path::new("zed"), api_key.as_deref(), true);
     apply_login_path(&mut cmd);
-    cmd.env(KEY_ENV, KEY_PLACEHOLDER);
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -3455,17 +3490,45 @@ pub fn launch_zed() -> Result<(), String> {
 
     #[cfg(target_os = "macos")]
     {
-        std::process::Command::new("open")
-            .args(["-a", "Zed"])
-            .env(KEY_ENV, KEY_PLACEHOLDER)
-            .spawn()
-            .map_err(|e| format!("Failed to launch Zed: {}", e))?;
-        log::info!("Launched Zed via `open -a Zed`");
-        return Ok(());
+        for bundle in [
+            PathBuf::from("/Applications/Zed.app"),
+            PathBuf::from(agent_home_dir()?).join("Applications/Zed.app"),
+        ] {
+            let binary = bundle.join("Contents/MacOS/zed");
+            if binary.is_file() {
+                zed_launch_command(&binary, api_key.as_deref(), false)
+                    .spawn()
+                    .map_err(|e| format!("Failed to launch Zed: {}", e))?;
+                log::info!("Launched Zed via its native executable");
+                return Ok(());
+            }
+        }
     }
 
     #[allow(unreachable_code)]
     Err("Could not launch Zed. Is it installed and on your PATH?".to_string())
+}
+
+fn ensure_zed_stopped(running: bool) -> Result<(), String> {
+    if running {
+        Err("Quit Zed, then connect again to apply the current Atomic Chat API key. Save any unsaved work before quitting.".to_string())
+    } else {
+        Ok(())
+    }
+}
+
+fn zed_launch_command(binary: &Path, api_key: Option<&str>, cli: bool) -> std::process::Command {
+    let mut cmd = std::process::Command::new(binary);
+    // The ordinary macOS CLI delegates to LaunchServices, which need not
+    // inherit its environment. Foreground mode spawns the editor directly.
+    if cli {
+        cmd.arg("--foreground");
+    }
+    cmd.env(
+        "ATOMIC_CHAT_API_KEY",
+        api_key.filter(|key| !key.is_empty()).unwrap_or("atomic"),
+    );
+    cmd
 }
 
 // --- ZCode ------------------------------------------------------------------
@@ -7307,5 +7370,92 @@ mod factory_reset_tests {
         assert!(root.join("llamacpp-upstream/backends/b2/macos-arm64/llama-server").is_file());
         assert!(root.join("users-own-file.txt").is_file());
         assert_eq!(fs::read_dir(aside.path()).unwrap().count(), 0);
+    }
+}
+
+#[cfg(test)]
+mod integration_auth_tests {
+    use super::*;
+
+    #[test]
+    fn hermes_selects_its_keyed_provider_and_rotates_without_stale_credentials() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("config.yaml"), format!("{}custom_providers:\n- name: personal\n  base_url: https://example.com/v1\n  api_key: personal-key\n", HERMES_DEFAULT_CONFIG.replace("custom_providers: []\n", ""))).unwrap();
+        for key in [Some("first'key#quoted"), Some("rotated"), None, Some("")] {
+            configure_hermes_at(
+                dir.path(),
+                "http://localhost:1337/v1".into(),
+                "test/model".into(),
+                key.map(str::to_string),
+                None,
+            )
+            .unwrap();
+            let text = fs::read_to_string(dir.path().join("config.yaml")).unwrap();
+            let doc: serde_yaml::Value = serde_yaml::from_str(&text).unwrap();
+            assert_eq!(
+                doc["model"]["provider"].as_str(),
+                Some("custom:atomic-chat")
+            );
+            let providers = doc["custom_providers"].as_sequence().unwrap();
+            assert_eq!(providers.len(), 2);
+            assert_eq!(providers[0]["api_key"].as_str(), Some("personal-key"));
+            assert_eq!(
+                providers[1]["api_key"].as_str(),
+                Some(key.filter(|k| !k.is_empty()).unwrap_or("atomic"))
+            );
+        }
+    }
+
+    #[test]
+    fn openclaude_updates_both_startup_paths_and_preserves_other_profiles() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().to_str().unwrap();
+        let config = dir.path().join(".openclaude.json");
+        fs::write(
+            &config,
+            r#"{"providerProfiles":[{"id":"personal","apiKey":"personal-key"}],"theme":"dark"}"#,
+        )
+        .unwrap();
+        for key in [Some("first'key"), Some("rotated"), None, Some("")] {
+            configure_openclaude_at(
+                home,
+                "http://localhost:1337/v1".into(),
+                "test/model".into(),
+                key.map(str::to_string),
+            )
+            .unwrap();
+            let root: serde_json::Value =
+                serde_json::from_str(&fs::read_to_string(&config).unwrap()).unwrap();
+            let startup: serde_json::Value = serde_json::from_str(
+                &fs::read_to_string(dir.path().join(".openclaude/.openclaude-profile.json"))
+                    .unwrap(),
+            )
+            .unwrap();
+            let expected = key.filter(|k| !k.is_empty()).unwrap_or("atomic");
+            assert_eq!(root["providerProfiles"].as_array().unwrap().len(), 2);
+            assert_eq!(root["providerProfiles"][0]["apiKey"], "personal-key");
+            assert_eq!(root["providerProfiles"][1]["apiKey"], expected);
+            assert_eq!(root["theme"], "dark");
+            assert_eq!(startup["env"]["OPENAI_API_KEY"], expected);
+        }
+    }
+
+    #[test]
+    fn zed_launch_paths_inherit_current_key_and_refuse_reusing_a_running_editor() {
+        for cli in [true, false] {
+            for key in [None, Some(""), Some("current-key"), Some("rotated'key")] {
+                let command = zed_launch_command(Path::new("zed"), key, cli);
+                let value = command
+                    .get_envs()
+                    .find(|(name, _)| *name == "ATOMIC_CHAT_API_KEY")
+                    .unwrap()
+                    .1
+                    .unwrap();
+                assert_eq!(value, key.filter(|key| !key.is_empty()).unwrap_or("atomic"));
+                assert_eq!(command.get_args().count(), usize::from(cli));
+            }
+        }
+        assert!(ensure_zed_stopped(false).is_ok());
+        assert!(ensure_zed_stopped(true).unwrap_err().contains("Quit Zed"));
     }
 }

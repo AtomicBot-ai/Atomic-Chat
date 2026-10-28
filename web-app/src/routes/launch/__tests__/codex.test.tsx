@@ -56,7 +56,10 @@ vi.mock('@/hooks/useLocalApiServer', () => ({
   }),
 }))
 vi.mock('@/hooks/useAppState', () => ({
-  useAppState: () => ({ serverStatus: 'running', setServerStatus: vi.fn() }),
+  useAppState: Object.assign(
+    () => ({ serverStatus: 'running', setServerStatus: vi.fn() }),
+    { subscribe: vi.fn(() => vi.fn()) }
+  ),
 }))
 vi.mock('@/hooks/useProxyConfig', () => ({
   useProxyConfig: {
@@ -124,7 +127,7 @@ describe('Launch page: Codex CLI', () => {
 
   it('starts Codex on the Atomic Chat profile, not on its shared config', async () => {
     server.apiKey = ''
-    expect(await runCodex()).toBe('codex --profile atomic-chat')
+    expect(await runCodex()).toBe("'codex' '--profile' 'atomic-chat'")
     expect(invoke).toHaveBeenCalledWith('configure_codex', {
       apiUrl: 'http://127.0.0.1:1337/v1',
       model: 'qwen3-4b',
@@ -139,7 +142,7 @@ describe('Launch page: Codex CLI', () => {
   it('passes the server key in the variable the profile names, quoted for the shell', async () => {
     server.apiKey = "sk-it's"
     expect(await runCodex()).toBe(
-      "ATOMIC_CHAT_API_KEY='sk-it'\\''s' codex --profile atomic-chat"
+      "ATOMIC_CHAT_API_KEY='sk-it'\\''s' 'codex' '--profile' 'atomic-chat'"
     )
     expect(invoke).toHaveBeenCalledWith('configure_codex', {
       apiUrl: 'http://127.0.0.1:1337/v1',

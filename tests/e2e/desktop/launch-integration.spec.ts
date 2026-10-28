@@ -48,7 +48,7 @@ base_url = "http://127.0.0.1:1337/v1"
 # <<< Atomic Chat (managed) <<<
 `
 
-const runButton = `//*[normalize-space(text())="${AGENT}"]/ancestor::*[.//button[normalize-space(.)="Run"]][1]//button[normalize-space(.)="Run"]`
+const runButton = '//*[@id="codex"]//button[normalize-space(.)="Run"]'
 
 describe.skipIf(!CAN_RUN_FAKE_BACKEND)('running a coding agent from the Integrations page', () => {
   let session: Session
@@ -124,7 +124,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('running a coding agent from the Integrat
       // One terminal would have been opened, running the agent on our profile with the key.
       await expect.poll(openedTerminals, { timeout: 15_000 }).toHaveLength(1)
       expect((await openedTerminals())[0]).toMatch(
-        new RegExp(`^ATOMIC_CHAT_API_KEY='${LOCAL_API_KEY}' \\S*codex'? --profile atomic-chat$`)
+        new RegExp(`^ATOMIC_CHAT_API_KEY='${LOCAL_API_KEY}' \\S*codex' '--profile' 'atomic-chat'$`)
       )
 
       // A second run rewrites only our profile, to the same bytes.
@@ -144,7 +144,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('running a coding agent from the Integrat
 
 describe.skipIf(!CAN_RUN_FAKE_BACKEND)('running ZCode from the Integrations page', () => {
   const ZCODE = 'ZCode'
-  const zcodeRun = `//*[normalize-space(text())="${ZCODE}"]/ancestor::*[.//button[normalize-space(.)="Run"]][1]//button[normalize-space(.)="Run"]`
+  const zcodeRun = '//*[@id="zcode"]//button[normalize-space(.)="Run"]'
   /** The user's own provider, which must survive untouched. */
   const THEIRS = {
     schemaVersion: 1,

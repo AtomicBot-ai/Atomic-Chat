@@ -1,0 +1,35 @@
+Final visible page:
+
+
+Toggle Sidebar
+
+Workspace
+
+
+New Chat
+Images
+Videos
+Projects
+
+Recents
+
+
+
+How can I help you today?
+
+
+
+Restricted
+
+
+
+Fake Model
+
+
+
+Core load evidence:
+[2026-10-28][12:49:11][engine:llamacpp-upstream/e2e/fake-model][INFO] [stderr] 0.00.000.000 I srv  llama_server: initializing ...
+[2026-10-28][12:49:11][engine:llamacpp-upstream/e2e/fake-model][INFO] [stderr] 0.00.001.000 I cmn  common_param: common_params_print_info: verbosity = 3 (adjust with the `-lv N` CLI arg)
+[2026-10-28][12:49:11][engine:llamacpp-upstream/e2e/fake-model][INFO] [stderr] 0.00.001.000 I srv    load_model: loading model '/private/tmp/atomic-integration-regression-20261028/final-flow-temp/atomic-e2e-hPG4G5/data/llamacpp/models/e2e/fake-model/model.gguf'
+[2026-10-28][12:49:31][engine:llamacpp-upstream/e2e/fake-model][INFO] [stderr] 0.20.014.000 I srv  llama_server: model loaded
+[2026-10-28][12:49:31][engine:llamacpp-upstream/e2e/fake-model][INFO] [stderr] 0.20.016.000 I srv  llama_server: listening on http://127.0.0.1:3557

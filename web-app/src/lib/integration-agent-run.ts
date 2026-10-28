@@ -28,7 +28,7 @@ export function launcherCommand(detectBin: string, path?: string): string {
   // username can contain a quote.
   return osType() === 'windows'
     ? `"${path.replace(/"/g, '')}"`
-    : `'${path.replace(/'/g, `'\\''`)}'`
+    : quoteAgentArgument(path)
 }
 
 // Snapshot the app proxy config (if enabled) into the payload the Rust
@@ -138,42 +138,71 @@ function terminalCommand(
     // from a shipped template, so the URL can take a while to appear.
     return `${launcher} web`
   }
+  const binary = useLaunchStore.getState().binPath[agent.id] || agent.detectBin
   if (agent.id === 'muse') {
-    // Muse Code has no writable endpoint configuration: the provider, base URL
-    // and model are flags on every invocation, and META_API_KEY only has to be
-    // non-empty for its provider check -- the request itself goes to whatever
-    // --base-url points at. `apiUrl` already carries the /v1 prefix
-    // (endpointWithPrefix), which is the root Muse appends `/responses` to.
     const apiUrl = `http://${agentConnectHost(serverHost)}:${serverPort}${apiPrefix}`
-    const key = apiKey || 'atomic'
-    if (osType() === 'windows') {
-      const modelArg = model ? ` --model ${model}` : ''
-      return `set META_API_KEY=${key}&& ${launcher} --provider meta --base-url ${apiUrl}${modelArg}`
-    }
-    const modelArg = model ? ` --model '${model}'` : ''
-    return `META_API_KEY='${key}' ${launcher} --provider meta --base-url '${apiUrl}'${modelArg}`
+    return quotedAgentCommand(
+      binary,
+      [
+        '--provider',
+        'meta',
+        '--base-url',
+        apiUrl,
+        ...(model ? ['--model', model] : []),
+      ],
+      { META_API_KEY: apiKey || 'atomic' }
+    )
   }
   if (agent.id === 'codex') {
-    // Codex reads Atomic Chat's settings from their own profile only, so a
-    // plain `codex` and the ChatGPT app keep the user's config.toml. The
-    // profile names the key's variable, not the key.
-    const run = `${launcher} --profile atomic-chat`
-    if (!apiKey) return run
-    if (osType() === 'windows')
-      return `set ATOMIC_CHAT_API_KEY=${apiKey}&& ${run}`
-    return `ATOMIC_CHAT_API_KEY='${apiKey.replace(/'/g, `'\\''`)}' ${run}`
+    return quotedAgentCommand(
+      binary,
+      ['--profile', 'atomic-chat'],
+      apiKey ? { ATOMIC_CHAT_API_KEY: apiKey } : {}
+    )
   }
   if (agent.id === 'poolside') {
     const apiUrl = `http://${agentConnectHost(serverHost)}:${serverPort}${apiPrefix}`
-    const standaloneBase = apiUrl.replace(/\/v1\/?$/, '')
-    const key = apiKey || 'atomic'
-    const modelId = model ?? ''
-    if (osType() === 'windows') {
-      return `set POOLSIDE_STANDALONE_BASE_URL=${standaloneBase}&& set POOLSIDE_API_KEY=${key}&& set POOLSIDE_STANDALONE_MODEL=${modelId}&& ${launcher}`
-    }
-    return `POOLSIDE_STANDALONE_BASE_URL='${standaloneBase}' POOLSIDE_API_KEY='${key}' POOLSIDE_STANDALONE_MODEL='${modelId}' ${launcher}`
+    return quotedAgentCommand(binary, [], {
+      POOLSIDE_STANDALONE_BASE_URL: apiUrl.replace(/\/v1\/?$/, ''),
+      POOLSIDE_API_KEY: apiKey || 'atomic',
+      POOLSIDE_STANDALONE_MODEL: model ?? '',
+    })
   }
   return launcher
+}
+
+/** Quote data for POSIX shells or PowerShell without evaluating its contents. */
+function quoteAgentArgument(value: string, windows = false): string {
+  return windows
+    ? `'${value.replace(/'/g, "''")}'`
+    : `'${value.replace(/'/g, "'\\''")}'`
+}
+
+function quotedAgentCommand(
+  binary: string,
+  args: string[],
+  env: Record<string, string>
+): string {
+  const windows = osType() === 'windows'
+  const quote = (value: string) => quoteAgentArgument(value, windows)
+  const command = [binary, ...args].map(quote).join(' ')
+  if (!windows) {
+    return [
+      ...Object.entries(env).map(([key, value]) => `${key}=${quote(value)}`),
+      command,
+    ].join(' ')
+  }
+  // cmd.exe expands %, ! and metacharacters even inside many quoted forms.
+  // Only base64 crosses cmd; PowerShell receives UTF-16LE literal arguments.
+  const script = [
+    ...Object.entries(env).map(([key, value]) => `$env:${key}=${quote(value)}`),
+    `& ${command}`,
+  ].join('; ')
+  const bytes = Array.from({ length: script.length }, (_, i) => {
+    const code = script.charCodeAt(i)
+    return String.fromCharCode(code & 255, code >> 8)
+  }).join('')
+  return `powershell.exe -NoProfile -EncodedCommand ${btoa(bytes)}`
 }
 
 /** Opens the agent's own window or terminal; whether it did. */
@@ -186,7 +215,7 @@ async function openAgent(
   // before points its native Atomic Chat provider at the local server, and
   // the user drives the Agent Panel from there.
   if (agent.id === 'zed') {
-    await invoke('launch_zed')
+    await invoke('launch_zed', { apiKey: server.apiKey || null })
     return true
   }
   // ZCode is a desktop app too, and it is never installed from here: the

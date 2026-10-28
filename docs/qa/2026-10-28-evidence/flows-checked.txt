@@ -1,0 +1,308 @@
+
+ RUN  v3.2.7 <QA_ROOT>/source/tests/e2e
+
+swept 1 stale e2e profile(s)
+stderr | desktop/context-growth.spec.ts > a request that overflows the context window > grows the context, reloads the model and answers without being asked
+2026-10-28T12:37:38.344Z WARN webdriver: Request encountered a stale element - terminating request
+
+stderr | desktop/context-growth.spec.ts > a request that overflows the context window > grows the context, reloads the model and answers without being asked
+2026-10-28T12:37:38.354Z WARN webdriver: Request encountered a stale element - terminating request
+
+stderr | desktop/context-growth.spec.ts > an overflow the app cannot grow out of > explains that the context is fitted to the device
+2026-10-28T12:37:45.147Z WARN webdriver: Request encountered a stale element - terminating request
+
+stderr | desktop/context-growth.spec.ts > an overflow the app cannot grow out of > explains that the context is fitted to the device
+2026-10-28T12:37:45.151Z WARN webdriver: Request encountered a stale element - terminating request
+
+ ❯ desktop/context-growth.spec.ts (3 tests | 1 failed) 73018ms
+   ✓ a request that overflows the context window > grows the context, reloads the model and answers without being asked  3495ms
+   × an overflow the app cannot grow out of > explains that the context is fitted to the device 62101ms
+     → Error: the page never showed "Context window full" 1 time(s)
+artifacts: <QA_ROOT>/source/tests/e2e/.artifacts/context-overflow-fit
+   ✓ an overflow the app cannot grow out of > gives the conversation back to the user afterwards 18ms
+ ❯ desktop/launch-integration.spec.ts (4 tests | 3 failed) 135472ms
+   ✓ running a coding agent from the Integrations page > gives the user's config.toml back as they wrote it, with a backup of what was there 1ms
+   × running a coding agent from the Integrations page > points the agent at the local API through its own profile, and does the same thing twice 63634ms
+     → Error: the page never showed "Codex CLI configured" 1 time(s)
+artifacts: <QA_ROOT>/source/tests/e2e/.artifacts/launch-integration
+   × running a coding agent from the Integrations page > leaves the profile byte for byte as it was on a second run 1ms
+     → expected '' not to be '' // Object.is equality
+   × running ZCode from the Integrations page > writes ZCode's provider file for the running model, keeps the user's own provider, and does it the same way twice 63583ms
+     → Error: the page never showed "ZCode configured" 1 time(s)
+artifacts: <QA_ROOT>/source/tests/e2e/.artifacts/launch-zcode
+stderr | desktop/recovery.spec.ts > the backend process dies under a loaded model > tells the user, forgets the dead session, and answers the next message from a new backend
+2026-10-28T12:41:06.979Z WARN webdriver: Request encountered a stale element - terminating request
+
+stderr | desktop/recovery.spec.ts > the backend process dies under a loaded model > tells the user, forgets the dead session, and answers the next message from a new backend
+2026-10-28T12:41:06.983Z WARN webdriver: Request encountered a stale element - terminating request
+
+stderr | desktop/recovery.spec.ts > the core daemon dies under a running app > gets a new core from the supervisor, leaves no orphaned backend, and answers the next message
+2026-10-28T12:41:14.050Z WARN webdriver: Request encountered a stale element - terminating request
+
+stderr | desktop/recovery.spec.ts > the core daemon dies under a running app > gets a new core from the supervisor, leaves no orphaned backend, and answers the next message
+2026-10-28T12:41:14.055Z WARN webdriver: Request encountered a stale element - terminating request
+
+ ✓ desktop/recovery.spec.ts (2 tests) 17523ms
+   ✓ the backend process dies under a loaded model > tells the user, forgets the dead session, and answers the next message from a new backend  3291ms
+   ✓ the core daemon dies under a running app > gets a new core from the supervisor, leaves no orphaned backend, and answers the next message  4346ms
+stderr | desktop/local-chat.spec.ts > a chat with a local model > loads the model through the core, streams the reply and keeps the thread across a restart
+2026-10-28T12:41:24.813Z WARN webdriver: Request encountered a stale element - terminating request
+
+stderr | desktop/local-chat.spec.ts > a chat with a local model > loads the model through the core, streams the reply and keeps the thread across a restart
+2026-10-28T12:41:24.818Z WARN webdriver: Request encountered a stale element - terminating request
+
+stderr | desktop/local-chat.spec.ts > a local model whose backend dies while loading > tells the user why, offers a retry, and leaves no session or process behind
+2026-10-28T12:41:32.672Z WARN webdriver: Request encountered a stale element - terminating request
+
+stderr | desktop/local-chat.spec.ts > a local model whose backend dies while loading > tells the user why, offers a retry, and leaves no session or process behind
+2026-10-28T12:41:32.676Z WARN webdriver: Request encountered a stale element - terminating request
+
+ ❯ desktop/local-chat.spec.ts (2 tests | 1 failed) 16579ms
+   × a chat with a local model > loads the model through the core, streams the reply and keeps the thread across a restart 2293ms
+     → AssertionError: expected [ …(2) ] to deeply equal [ Array(1) ]
+artifacts: <QA_ROOT>/source/tests/e2e/.artifacts/local-chat
+   ✓ a local model whose backend dies while loading > tells the user why, offers a retry, and leaves no session or process behind  2335ms
+ ✓ desktop/server-setup-guide.spec.ts (1 test) 9423ms
+   ✓ the Server setup guide on a first visit > connects an agent: the model, the server and the agent config in one go  5460ms
+stderr | desktop/model-switch.spec.ts > switching between two local models > unloads the first model, ends its process, and answers from the second
+2026-10-28T12:41:51.263Z WARN webdriver: Request encountered a stale element - terminating request
+
+stderr | desktop/model-switch.spec.ts > switching between two local models > unloads the first model, ends its process, and answers from the second
+2026-10-28T12:41:51.267Z WARN webdriver: Request encountered a stale element - terminating request
+
+ ✓ desktop/model-switch.spec.ts (1 test) 8078ms
+   ✓ switching between two local models > unloads the first model, ends its process, and answers from the second  4370ms
+ ❯ desktop/model-load-cancel.spec.ts (1 test | 1 failed) 36672ms
+   × cancelling a model load > cancels a model that is still loading from the snackbar, leaves no process behind, and loads it on the next try 32641ms
+     → Error: Matcher did not succeed in time.
+artifacts: <QA_ROOT>/source/tests/e2e/.artifacts/model-load-cancel
+stderr | desktop/mcp-tool.spec.ts > an MCP tool in a chat > is offered to the model and its result reaches the model
+2026-10-28T12:42:38.039Z WARN webdriver: Request encountered a stale element - terminating request
+
+stderr | desktop/mcp-tool.spec.ts > an MCP tool in a chat > is offered to the model and its result reaches the model
+2026-10-28T12:42:38.051Z WARN webdriver: Request encountered a stale element - terminating request
+
+stderr | desktop/mcp-tool.spec.ts > an MCP tool in a chat > waits for the user once they have chosen to be asked, and a refusal keeps the call from the server
+2026-10-28T12:43:41.203Z WARN webdriver: Request encountered a stale element - terminating request
+
+stderr | desktop/mcp-tool.spec.ts > an MCP tool in a chat > waits for the user once they have chosen to be asked, and a refusal keeps the call from the server
+2026-10-28T12:43:41.209Z WARN webdriver: Request encountered a stale element - terminating request
+
+stderr | desktop/mcp-tool.spec.ts > an MCP tool in a chat > waits for the user once they have chosen to be asked, and a refusal keeps the call from the server
+2026-10-28T12:43:45.510Z WARN webdriver: Request encountered a stale element - terminating request
+
+stderr | desktop/mcp-tool.spec.ts > an MCP tool in a chat > waits for the user once they have chosen to be asked, and a refusal keeps the call from the server
+2026-10-28T12:43:45.515Z WARN webdriver: Request encountered a stale element - terminating request
+
+ ❯ desktop/mcp-tool.spec.ts (2 tests | 1 failed) 74587ms
+   × an MCP tool in a chat > is offered to the model and its result reaches the model 63443ms
+     → Error: the page never showed "MCP-RECORD 51ae for K-204" 1 time(s)
+artifacts: <QA_ROOT>/source/tests/e2e/.artifacts/mcp-tool
+   ✓ an MCP tool in a chat > waits for the user once they have chosen to be asked, and a refusal keeps the call from the server  7491ms
+stderr | desktop/relaunch.spec.ts > the app restarting itself > stops its core on the way out, and has a core of its own within fifteen seconds of coming back
+2026-10-28T12:43:52.492Z WARN webdriver: WebDriverError: Request failed with error code ECONNREFUSED when running "http://127.0.0.1:58611/session/8c18106a-7d1e-4248-bef0-685edc36d6d6" with method "DELETE"
+
+stderr | desktop/relaunch.spec.ts > the app restarting itself > stops its core on the way out, and has a core of its own within fifteen seconds of coming back
+2026-10-28T12:43:52.494Z ERROR webdriver: WebDriverError: Request failed with error code ECONNREFUSED when running "http://127.0.0.1:58611/session/8c18106a-7d1e-4248-bef0-685edc36d6d6" with method "DELETE"
+
+ ✓ desktop/relaunch.spec.ts (1 test) 12453ms
+   ✓ the app restarting itself > stops its core on the way out, and has a core of its own within fifteen seconds of coming back  7117ms
+ ✓ desktop/qa-integrations.spec.ts (23 tests) 22358ms
+   ✓ QA integration configuration and transport failures > codex: configure, repeat, model/key change, remove key  505ms
+   ✓ QA integration configuration and transport failures > client disconnect during stream leaves the next request usable  4501ms
+   ✓ QA integration configuration and transport failures > core crash in an active stream closes it and restores authenticated service  6033ms
+   ✓ QA integration configuration and transport failures > real Codex CLI reads the generated profile and completes against the local core  5722ms
+ ❯ desktop/local-api.spec.ts (2 tests | 1 failed) 71108ms
+   × the local API server > is closed until the user starts it, then serves authenticated clients, then closes again 60497ms
+     → Error: the Server sidebar never offered Stop
+artifacts: <QA_ROOT>/source/tests/e2e/.artifacts/local-api
+   ✓ the local API server when the core dies > is listening again, on the same address and key, without the user doing anything  2974ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 8 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  desktop/context-growth.spec.ts > an overflow the app cannot grow out of > explains that the context is fitted to the device
+Error: Error: the page never showed "Context window full" 1 time(s)
+artifacts: <QA_ROOT>/source/tests/e2e/.artifacts/context-overflow-fit
+ ❯ withArtifacts harness/session.ts:132:11
+    130|   } catch (error) {
+    131|     const dir = await captureFailure(session.name, session.app, sessio…
+    132|     throw new Error(`${String(error)}\nartifacts: ${dir}`, { cause: er…
+       |           ^
+    133|   }
+    134| }
+ ❯ desktop/context-growth.spec.ts:129:5
+
+Caused by: Error: the page never showed "Context window full" 1 time(s)
+ ❯ ../../../../../..<REPO>/tests/e2e/node_modules/webdriverio/build/node.js:6286:15
+ ❯ Browser.wrapCommandFn ../../../../../..<REPO>/tests/e2e/node_modules/@wdio/utils/build/index.js:1077:23
+ ❯ pageShows harness/chat.ts:43:3
+ ❯ desktop/context-growth.spec.ts:133:7
+ ❯ withArtifacts harness/session.ts:129:5
+ ❯ desktop/context-growth.spec.ts:129:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/8]⎯
+
+ FAIL  desktop/launch-integration.spec.ts > running a coding agent from the Integrations page > points the agent at the local API through its own profile, and does the same thing twice
+Error: Error: the page never showed "Codex CLI configured" 1 time(s)
+artifacts: <QA_ROOT>/source/tests/e2e/.artifacts/launch-integration
+ ❯ withArtifacts harness/session.ts:132:11
+    130|   } catch (error) {
+    131|     const dir = await captureFailure(session.name, session.app, sessio…
+    132|     throw new Error(`${String(error)}\nartifacts: ${dir}`, { cause: er…
+       |           ^
+    133|   }
+    134| }
+ ❯ desktop/launch-integration.spec.ts:98:5
+
+Caused by: Error: the page never showed "Codex CLI configured" 1 time(s)
+ ❯ ../../../../../..<REPO>/tests/e2e/node_modules/webdriverio/build/node.js:6286:15
+ ❯ Browser.wrapCommandFn ../../../../../..<REPO>/tests/e2e/node_modules/@wdio/utils/build/index.js:1077:23
+ ❯ pageShows harness/chat.ts:43:3
+ ❯ desktop/launch-integration.spec.ts:109:7
+ ❯ withArtifacts harness/session.ts:129:5
+ ❯ desktop/launch-integration.spec.ts:98:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/8]⎯
+
+ FAIL  desktop/launch-integration.spec.ts > running a coding agent from the Integrations page > leaves the profile byte for byte as it was on a second run
+AssertionError: expected '' not to be '' // Object.is equality
+ ❯ desktop/launch-integration.spec.ts:140:32
+    138| 
+    139|   it('leaves the profile byte for byte as it was on a second run', () …
+    140|     expect(afterSecondRun).not.toBe('')
+       |                                ^
+    141|     expect(afterSecondRun).toBe(afterFirstRun)
+    142|   })
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/8]⎯
+
+ FAIL  desktop/launch-integration.spec.ts > running ZCode from the Integrations page > writes ZCode's provider file for the running model, keeps the user's own provider, and does it the same way twice
+Error: Error: the page never showed "ZCode configured" 1 time(s)
+artifacts: <QA_ROOT>/source/tests/e2e/.artifacts/launch-zcode
+ ❯ withArtifacts harness/session.ts:132:11
+    130|   } catch (error) {
+    131|     const dir = await captureFailure(session.name, session.app, sessio…
+    132|     throw new Error(`${String(error)}\nartifacts: ${dir}`, { cause: er…
+       |           ^
+    133|   }
+    134| }
+ ❯ desktop/launch-integration.spec.ts:201:5
+
+Caused by: Error: the page never showed "ZCode configured" 1 time(s)
+ ❯ ../../../../../..<REPO>/tests/e2e/node_modules/webdriverio/build/node.js:6286:15
+ ❯ Browser.wrapCommandFn ../../../../../..<REPO>/tests/e2e/node_modules/@wdio/utils/build/index.js:1077:23
+ ❯ pageShows harness/chat.ts:43:3
+ ❯ desktop/launch-integration.spec.ts:210:7
+ ❯ withArtifacts harness/session.ts:129:5
+ ❯ desktop/launch-integration.spec.ts:201:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/8]⎯
+
+ FAIL  desktop/local-api.spec.ts > the local API server > is closed until the user starts it, then serves authenticated clients, then closes again
+Error: Error: the Server sidebar never offered Stop
+artifacts: <QA_ROOT>/source/tests/e2e/.artifacts/local-api
+ ❯ withArtifacts harness/session.ts:132:11
+    130|   } catch (error) {
+    131|     const dir = await captureFailure(session.name, session.app, sessio…
+    132|     throw new Error(`${String(error)}\nartifacts: ${dir}`, { cause: er…
+       |           ^
+    133|   }
+    134| }
+ ❯ desktop/local-api.spec.ts:64:5
+
+Caused by: Error: the Server sidebar never offered Stop
+ ❯ ../../../../../..<REPO>/tests/e2e/node_modules/webdriverio/build/node.js:6286:15
+ ❯ Browser.wrapCommandFn ../../../../../..<REPO>/tests/e2e/node_modules/@wdio/utils/build/index.js:1077:23
+ ❯ waitForServerPower harness/navigation.ts:47:3
+ ❯ startServerFromSidebar harness/navigation.ts:58:3
+ ❯ desktop/local-api.spec.ts:73:7
+ ❯ withArtifacts harness/session.ts:129:5
+ ❯ desktop/local-api.spec.ts:64:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/8]⎯
+
+ FAIL  desktop/local-chat.spec.ts > a chat with a local model > loads the model through the core, streams the reply and keeps the thread across a restart
+Error: AssertionError: expected [ …(2) ] to deeply equal [ Array(1) ]
+artifacts: <QA_ROOT>/source/tests/e2e/.artifacts/local-chat
+ ❯ withArtifacts harness/session.ts:132:11
+    130|   } catch (error) {
+    131|     const dir = await captureFailure(session.name, session.app, sessio…
+    132|     throw new Error(`${String(error)}\nartifacts: ${dir}`, { cause: er…
+       |           ^
+    133|   }
+    134| }
+ ❯ desktop/local-chat.spec.ts:55:5
+
+Caused by: AssertionError: expected [ …(2) ] to deeply equal [ Array(1) ]
+
+- Expected
++ Received
+
+  [
++   "llamacpp-upstream:b11463/macos-arm64",
+    "llamacpp-upstream:b99999/macos-arm64",
+  ]
+
+ ❯ desktop/local-chat.spec.ts:87:51
+ ❯ withArtifacts harness/session.ts:129:5
+ ❯ desktop/local-chat.spec.ts:55:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/8]⎯
+
+ FAIL  desktop/mcp-tool.spec.ts > an MCP tool in a chat > is offered to the model and its result reaches the model
+Error: Error: the page never showed "MCP-RECORD 51ae for K-204" 1 time(s)
+artifacts: <QA_ROOT>/source/tests/e2e/.artifacts/mcp-tool
+ ❯ withArtifacts harness/session.ts:132:11
+    130|   } catch (error) {
+    131|     const dir = await captureFailure(session.name, session.app, sessio…
+    132|     throw new Error(`${String(error)}\nartifacts: ${dir}`, { cause: er…
+       |           ^
+    133|   }
+    134| }
+ ❯ desktop/mcp-tool.spec.ts:49:5
+
+Caused by: Error: the page never showed "MCP-RECORD 51ae for K-204" 1 time(s)
+ ❯ ../../../../../..<REPO>/tests/e2e/node_modules/webdriverio/build/node.js:6286:15
+ ❯ Browser.wrapCommandFn ../../../../../..<REPO>/tests/e2e/node_modules/@wdio/utils/build/index.js:1077:23
+ ❯ pageShows harness/chat.ts:43:3
+ ❯ desktop/mcp-tool.spec.ts:57:7
+ ❯ withArtifacts harness/session.ts:129:5
+ ❯ desktop/mcp-tool.spec.ts:49:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/8]⎯
+
+ FAIL  desktop/model-load-cancel.spec.ts > cancelling a model load > cancels a model that is still loading from the snackbar, leaves no process behind, and loads it on the next try
+Error: Error: Matcher did not succeed in time.
+artifacts: <QA_ROOT>/source/tests/e2e/.artifacts/model-load-cancel
+ ❯ withArtifacts harness/session.ts:132:11
+    130|   } catch (error) {
+    131|     const dir = await captureFailure(session.name, session.app, sessio…
+    132|     throw new Error(`${String(error)}\nartifacts: ${dir}`, { cause: er…
+       |           ^
+    133|   }
+    134| }
+ ❯ desktop/model-load-cancel.spec.ts:42:5
+
+Caused by: Error: Matcher did not succeed in time.
+ ❯ desktop/model-load-cancel.spec.ts:60:82
+ ❯ withArtifacts harness/session.ts:129:5
+ ❯ desktop/model-load-cancel.spec.ts:42:5
+
+Caused by: AssertionError: expected [ 15367 ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   15367,
++ ]
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/8]⎯
+
+
+ Test Files  6 failed | 5 passed (11)
+      Tests  8 failed | 34 passed (42)
+   Start at  15:37:32
+   Duration  480.25s (transform 125ms, setup 0ms, collect 1.46s, tests 477.27s, environment 1ms, prepare 282ms)
+

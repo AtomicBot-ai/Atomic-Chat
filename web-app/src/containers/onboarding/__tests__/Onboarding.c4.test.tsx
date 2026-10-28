@@ -1,3 +1,4 @@
+import '@/test/telemetry-ready'
 /**
  * What the old first-run screen's suite proved about leaving setup that the
  * full-window flow still has to: nothing walks the user out on a timer, a
@@ -28,7 +29,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('posthog-js', () => ({
-  default: { capture: vi.fn(), has_opted_in_capturing: () => true },
+  default: { capture: vi.fn() },
 }))
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mocks.navigate,

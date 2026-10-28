@@ -15,7 +15,6 @@
 import type { PostHog } from 'posthog-js'
 
 import { localStorageKey } from '@/constants/localStorage'
-import { queuedCapture } from '@/lib/telemetry-queue'
 
 import {
   forcedOnboardingVariant,
@@ -32,6 +31,8 @@ export type OnboardingCohort = {
   variant: OnboardingVariant
   /** When the install was put in it, ms since the epoch. */
   assignedAt: number
+  /** The SDK accepted the assignment event; not a server delivery receipt. */
+  assignmentCaptured?: boolean
 }
 
 /** This install's cohort in the running experiment, or `null` (not in it). */
@@ -46,13 +47,17 @@ export function readOnboardingCohort(): OnboardingCohort | null {
     return null
   }
   if (!raw || typeof raw !== 'object') return null
-  const { experiment, variant, assignedAt } = raw as Record<string, unknown>
+  const { experiment, variant, assignedAt, assignmentCaptured } = raw as Record<
+    string,
+    unknown
+  >
   if (experiment !== ONBOARDING_EXPERIMENT || !isOnboardingVariant(variant))
     return null
   return {
     experiment,
     variant,
     assignedAt: typeof assignedAt === 'number' ? assignedAt : 0,
+    ...(assignmentCaptured === true ? { assignmentCaptured: true } : {}),
   }
 }
 
@@ -102,7 +107,6 @@ export function assignOnboardingCohort({
     // full flow), since the next launch could not tell which cohort it was in.
     return null
   }
-  queuedCapture('onboarding_cohort_assigned', cohortProperties(cohort))
   return cohort
 }
 
@@ -111,6 +115,13 @@ function cohortProperties(cohort: OnboardingCohort) {
     onboarding_experiment: cohort.experiment,
     onboarding_variant: cohort.variant,
   }
+}
+
+function assignmentTimestamp(cohort: OnboardingCohort): Date | null {
+  const timestamp = new Date(cohort.assignedAt)
+  return cohort.assignedAt > 0 && Number.isFinite(timestamp.getTime())
+    ? timestamp
+    : null
 }
 
 /**
@@ -126,9 +137,39 @@ export function registerOnboardingCohort(
   const cohort = readOnboardingCohort()
   if (!cohort) return
   const properties = cohortProperties(cohort)
+  const timestamp = assignmentTimestamp(cohort)
   client.register(properties)
   client.setPersonProperties(undefined, {
     ...properties,
-    onboarding_assigned_at: new Date(cohort.assignedAt).toISOString(),
+    ...(timestamp ? { onboarding_assigned_at: timestamp.toISOString() } : {}),
   })
+}
+
+/**
+ * Report the persisted assignment only after analytics is ready. Old builds
+ * lost this event before init; their stored timestamp lets a later launch
+ * recover the original entry time. A declined/failed capture stays pending.
+ */
+export function captureOnboardingCohort(
+  client: Pick<PostHog, 'capture'>
+): void {
+  const cohort = readOnboardingCohort()
+  if (!cohort || cohort.assignmentCaptured) return
+  const timestamp = assignmentTimestamp(cohort)
+  if (!timestamp) return
+
+  try {
+    const captured = client.capture(
+      'onboarding_cohort_assigned',
+      cohortProperties(cohort),
+      { timestamp, send_instantly: true }
+    )
+    if (!captured) return
+    localStorage.setItem(
+      localStorageKey.onboardingCohort,
+      JSON.stringify({ ...cohort, assignmentCaptured: true })
+    )
+  } catch (error) {
+    console.debug('Onboarding assignment capture failed:', error)
+  }
 }

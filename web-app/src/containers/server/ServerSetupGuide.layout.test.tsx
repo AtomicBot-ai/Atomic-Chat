@@ -41,6 +41,7 @@ vi.mock('@tanstack/react-router', () => ({
     className?: string
   }) => <a className={className}>{children}</a>,
   useNavigate: () => vi.fn(),
+  useRouter: () => ({ state: { location: { pathname: '/api' } } }),
 }))
 
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'

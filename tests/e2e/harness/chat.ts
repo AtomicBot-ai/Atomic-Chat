@@ -86,8 +86,14 @@ export async function waitForChat(session: Session): Promise<void> {
  * selected model's id as its own title, so it has to be excluded: otherwise the
  * row appears to still be there once the popover has closed over it.
  */
-export async function pickModel(session: Session, modelId: string, provider?: string): Promise<void> {
+export async function pickModel(session: Session, modelId: string, provider: string = 'llamacpp-upstream'): Promise<void> {
   const browser = session.app.browser
+  if (provider === 'llamacpp-upstream') {
+    await browser.waitUntil(async () => {
+      const settings = await browser.execute(() => localStorage.getItem('@janhq/llamacpp-upstream-extension') ?? '')
+      return settings.includes(session.backendVersion)
+    }, { timeout: 30_000, timeoutMsg: 'fixture backend selection did not settle' })
+  }
   const trigger = browser.$('[data-test-id="model-picker-trigger"]')
   const change = browser.$('button[aria-label="Change model"]')
   // Both llama.cpp providers list the same model folder, so with both enabled a

@@ -1,0 +1,39 @@
+
+ RUN  v3.2.7 <QA_ROOT>/source/tests/e2e
+
+ ❯ desktop/qa-opencode-real.spec.ts (2 tests | 1 failed) 131467ms
+   ✓ QA real installed CLI clients with API authentication > starts the API with the selected model  16155ms
+   × QA real installed CLI clients with API authentication > opencode answers using the configuration written by Atomic Chat 110763ms
+     → expected 'Performing one time database migratio…' to contain '"type":"text"'
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  desktop/qa-opencode-real.spec.ts > QA real installed CLI clients with API authentication > opencode answers using the configuration written by Atomic Chat
+AssertionError: expected 'Performing one time database migratio…' to contain '"type":"text"'
+
+- Expected
++ Received
+
+- "type":"text"
++ Performing one time database migration, may take a few minutes...
++ sqlite-migration:done
++ Database migration complete.
++ {"type":"step_start","timestamp":1793191860099,"sessionID":"ses_e7d715360ffeKz24JWeE6hlSRK","part":{"id":"prt_1829057720016KHIgrlk0nqFP3","messageID":"msg_1828ead12001lO5v6kgGK3nV4K","sessionID":"ses_e7d715360ffeKz24JWeE6hlSRK","type":"step-start"}}
++
+
+ ❯ desktop/qa-opencode-real.spec.ts:171:31
+    169|         )
+    170|         expect(result.code, result.output.slice(-2000)).toBe(0)
+    171|         expect(result.output).toContain('\"type\":\"text\"')
+       |                               ^
+    172|       }
+    173|     )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  15:48:49
+   Duration  131.80s (transform 134ms, setup 0ms, collect 147ms, tests 131.47s, environment 0ms, prepare 27ms)
+

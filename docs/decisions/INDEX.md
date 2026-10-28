@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-496 records, 2026-05-19 → 2026-10-28.
+499 records, 2026-05-19 → 2026-10-28.
 
 ---
 
@@ -67,7 +67,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-09-10** — [Pin the text encoder to CPU under Metal, and restart on the CPU backend after a ggml abort](2026-09-10-pin-the-text-encoder-to-cpu-under-metal-and-restart-on-cpu-after-a-ggml-abort.md)
 - **2026-09-10** — [Curate the diffusion model catalog in atomic-chat-conf](2026-09-10-curate-the-diffusion-model-catalog-in-atomic-chat-conf.md)
 
-## Launch page & external coding agents (20)
+## Launch page & external coding agents (21)
+
+- **2026-10-28** — [Propagate current credentials through each external agent's native configuration](2026-10-28-propagate-current-credentials-to-external-agents.md)
 
 - **2026-10-27** — [Run Codex on an Atomic Chat profile (`codex --profile atomic-chat`), never the shared `~/.codex/config.toml`; repair what earlier releases wrote there](2026-10-27-run-codex-on-its-own-profile-not-the-shared-config.md)
 - **2026-09-21** — [Add ZCode as a Launch-page coding agent, configured by merging an `atomic-chat` provider into `~/.zcode/v2/provider_config.json` — no install](2026-09-21-add-zcode-as-a-launch-page-coding-agent.md)
@@ -308,7 +310,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-07-15** — [Aggregate Local API Server request telemetry into three-minute summaries (ATO-297)](2026-07-15-aggregate-local-api-server-request-telemetry-into-three-minute.md)
 - **2026-06-09** — [Make the Local API Server "Invalid host header" rejection actionable + fix Trusted Hosts field copy (ATO-118, scope I+II)](2026-06-09-make-the-local-api-server-invalid-host-header-rejection.md)
 
-## Telemetry, crash reporting & error handling (14)
+## Telemetry, crash reporting & error handling (15)
+
+- **2026-10-28** — [Wait for analytics readiness and recover onboarding assignments](2026-10-28-wait-for-analytics-readiness-and-recover-onboarding-assignments.md)
 
 - **2026-10-23** — [Count Local API traffic as a first request in the onboarding experiment](2026-10-23-count-local-api-traffic-as-a-first-request-in-the-onboarding-experiment.md)
 - **2026-10-23** — [Split new installs into three onboarding cohorts, drawn on the device and recorded in PostHog](2026-10-23-split-new-installs-into-three-onboarding-cohorts.md)
@@ -544,7 +548,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-09-30** — [TensorRT-LLM is a Linux-only extension that decides its own visibility](2026-09-30-tensorrt-llm-is-a-linux-only-extension-that-decides-its-own-visibility.md)
 - **2026-09-30** — [Run Agent turns on TensorRT-LLM through its session gateway](2026-09-30-run-agent-turns-on-tensorrt-llm-through-its-session-gateway.md)
 
-## Other (20)
+## Other (21)
+
+- **2026-10-28** — [Bound support writes and preserve retry identity](2026-10-28-bound-support-writes-and-preserve-retry-identity.md)
 
 - **2026-10-26** — [Chat with the team through a support relay, with diagnostics attached](2026-10-26-chat-with-the-team-through-a-support-relay.md)
 - **2026-09-30** — [Hide the Apple on-device provider](2026-09-30-hide-the-apple-on-device-provider.md)

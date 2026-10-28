@@ -15,6 +15,7 @@ import {
 } from './fixtures.js'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 import { installedImageEngines } from './images.js'
 import { CAN_RUN_FAKE_BACKEND, listProcesses } from './platform.js'
 import { operatorStateChanges, snapshotOperatorState, type OperatorSnapshot } from './invariants.js'
@@ -33,6 +34,8 @@ export interface Session {
   dataFolders: string[]
   /** Stops every page watcher still running; safe to call twice. */
   watchers: (() => Promise<unknown>)[]
+  /** The fixture version that must settle before choosing an upstream model. */
+  backendVersion: string
   /** The backends (`provider:version/backend`) this run may leave installed. */
   allowedBackends: string[]
   /** The image engines (`tag/backendId`) this run may leave installed. */
@@ -98,6 +101,7 @@ export async function startSession(
       operatorBefore,
       dataFolders: [profile.dataFolder],
       watchers: [],
+      backendVersion,
       allowedBackends: [
         `${FAKE_PROVIDER}:${backendVersion}/${FAKE_BACKEND}`,
         ...bundledBackends(),
@@ -164,6 +168,13 @@ export async function endSession(session: Session | undefined): Promise<string[]
   for (const folder of session.dataFolders) await reapFakeBackends(folder)
   // The tunnel is in no journal at all; a scenario that started one asserts it is gone, this is the net.
   await reapFakeTunnels(session.profile.root)
+  // Startup capability probes are not model sessions. A --version child can
+  // be finishing as the core exits; allow it a bounded grace period, then
+  // retain the same leak assertion for any process that is still alive.
+  const probeDeadline = Date.now() + 3_000
+  while (Date.now() < probeDeadline && profileProcesses(session.profile.root).some((p) => p.command.endsWith(' --version'))) {
+    await delay(100)
+  }
   // A stopped core is supposed to have stopped its backends. One that has not
   // holds a model in memory for as long as the machine stays up.
   const leaked = profileProcesses(session.profile.root)

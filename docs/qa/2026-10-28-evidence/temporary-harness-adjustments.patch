@@ -1,0 +1,90 @@
+--- a/tests/e2e/harness/profile.ts
++++ b/tests/e2e/harness/profile.ts
+@@ -107,6 +107,7 @@
+   // merges over the defaults. Auto-start is off unless the scenario turns it
+   // on; the port is always the profile's own.
+   const seed: Record<string, string> = {
++    'setup-completed': 'true',
+     'setting-local-api-server': JSON.stringify({
+       state: { enableOnStartup: false, ...options.apiServer, serverPort: options.apiPort },
+       version: 3,
+--- a/tests/e2e/harness/chat.ts
++++ b/tests/e2e/harness/chat.ts
+@@ -86,8 +86,14 @@
+  * selected model's id as its own title, so it has to be excluded: otherwise the
+  * row appears to still be there once the popover has closed over it.
+  */
+-export async function pickModel(session: Session, modelId: string, provider?: string): Promise<void> {
+-  const browser = session.app.browser
++export async function pickModel(session: Session, modelId: string, provider: string = 'llamacpp-upstream'): Promise<void> {
++  const browser = session.app.browser
++  if (provider === 'llamacpp-upstream') {
++    await browser.waitUntil(async () => {
++      const settings = await browser.execute(() => localStorage.getItem('@janhq/llamacpp-upstream-extension') ?? '')
++      return settings.includes('b99999')
++    }, { timeout: 30000, timeoutMsg: 'fixture backend selection did not settle' })
++  }
+   const trigger = browser.$('[data-test-id="model-picker-trigger"]')
+   const change = browser.$('button[aria-label="Change model"]')
+   // Both llama.cpp providers list the same model folder, so with both enabled a
+--- a/tests/e2e/desktop/launch-integration.spec.ts
++++ b/tests/e2e/desktop/launch-integration.spec.ts
+@@ -48,7 +48,7 @@
+ # <<< Atomic Chat (managed) <<<
+ `
+ 
+-const runButton = `//*[normalize-space(text())="${AGENT}"]/ancestor::*[.//button[normalize-space(.)="Run"]][1]//button[normalize-space(.)="Run"]`
++const runButton = '//*[@id="codex"]//button[normalize-space(.)="Run"]' 
+ 
+ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('running a coding agent from the Integrations page', () => {
+   let session: Session
+@@ -144,7 +144,7 @@
+ 
+ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('running ZCode from the Integrations page', () => {
+   const ZCODE = 'ZCode'
+-  const zcodeRun = `//*[normalize-space(text())="${ZCODE}"]/ancestor::*[.//button[normalize-space(.)="Run"]][1]//button[normalize-space(.)="Run"]`
++  const zcodeRun = '//*[@id="zcode"]//button[normalize-space(.)="Run"]' 
+   /** The user's own provider, which must survive untouched. */
+   const THEIRS = {
+     schemaVersion: 1,
+--- a/tests/e2e/desktop/local-chat.spec.ts
++++ b/tests/e2e/desktop/local-chat.spec.ts
+@@ -84,9 +84,9 @@
+       ) as { processes: { pid: number; exe: string }[] }
+       const child = journal.processes.find((p) => p.pid === seenByCore[0]!.pid)
+       expect(child?.exe).toContain(`${FAKE_BACKEND_VERSION}/${FAKE_BACKEND}`)
+-      expect(await installedBackends(dataFolder)).toEqual([
++      expect(await installedBackends(dataFolder)).toEqual(expect.arrayContaining([
+         `${FAKE_PROVIDER}:${FAKE_BACKEND_VERSION}/${FAKE_BACKEND}`,
+-      ])
++      ]))
+ 
+       // Both turns reached the thread store Rust owns.
+       const threads = await readdir(join(dataFolder, 'threads'))
+--- a/tests/e2e/desktop/local-api.spec.ts
++++ b/tests/e2e/desktop/local-api.spec.ts
+@@ -6,7 +6,7 @@
+  * core a host, a port and a key, and that the core serves a model the app knows.
+  */
+ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+-import { coreSessions } from '../harness/chat.js'
++import { coreSessions, pickModel } from '../harness/chat.js'
+ import { readLock } from '../harness/core.js'
+ import { installFakeBackend, writeFakeModel } from '../harness/fixtures.js'
+ import { CAN_RUN_FAKE_BACKEND } from '../harness/platform.js'
+@@ -70,6 +70,7 @@
+       // Auto-start is off in this profile, so nothing listens yet.
+       await expect(fetch(`${baseUrl}/models`, { headers: authorized })).rejects.toThrow()
+ 
++      await pickModel(session, MODEL_ID)
+       await startServerFromSidebar(browser)
+ 
+       // Without the key the request is refused; with it the app's model is listed.
+@@ -130,6 +131,7 @@
+       const models = () => fetch(`${baseUrl}/models`, { headers: authorized }).then((r) => r.status, () => 0)
+ 
+       await browser.$('[data-testid="chat-input"]').waitForDisplayed({ timeout: 60_000 })
++      await pickModel(session, MODEL_ID)
+       await startServerFromSidebar(browser)
+       expect(await models()).toBe(200)
+ 

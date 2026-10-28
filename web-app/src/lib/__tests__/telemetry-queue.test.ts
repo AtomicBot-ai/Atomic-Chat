@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import posthog from 'posthog-js'
 import {
+  bufferTelemetryUntilReady,
+  disableTelemetryQueue,
   flushTelemetryQueue,
   queuedCapture,
   resetTelemetryQueueForTests,
@@ -22,8 +24,9 @@ beforeEach(() => {
 })
 
 describe('queuedCapture', () => {
-  it('sends straight through once consent has been applied', () => {
+  it('sends straight through once the provider declares readiness', () => {
     optedIn(true)
+    flushTelemetryQueue()
 
     queuedCapture('app_opened', { is_first_launch: true })
 
@@ -53,23 +56,47 @@ describe('queuedCapture', () => {
     expect(calls[0][1]).toMatchObject({ phase: 'detecting' })
   })
 
-  it('holds events when posthog has not been initialised at all', () => {
-    vi.mocked(posthog.has_opted_in_capturing).mockImplementation(() => {
-      throw new Error('You must initialize PostHog before calling this method')
-    })
-
-    queuedCapture('backend_step_shown', { phase: 'detecting' })
+  it('waits for provider readiness even when SDK consent already reads true', () => {
+    // This is the real SDK's pre-init result, not a signal that capture works.
     optedIn(true)
-    flushTelemetryQueue()
+    queuedCapture('onboarding_step_shown', { step: 'welcome' })
+    expect(capture()).not.toHaveBeenCalled()
 
+    flushTelemetryQueue()
     expect(capture()).toHaveBeenCalledTimes(1)
-    const [event, props] = capture().mock.calls[0]
-    expect(event).toBe('backend_step_shown')
-    expect(props).toMatchObject({ phase: 'detecting' })
+    expect(capture().mock.calls[0][0]).toBe('onboarding_step_shown')
   })
 })
 
 describe('flushTelemetryQueue', () => {
+  it('discards pending and opted-out activity before analytics is enabled again', () => {
+    queuedCapture('before_consent_loaded', {})
+    disableTelemetryQueue()
+    queuedCapture('while_disabled', {})
+    flushTelemetryQueue()
+    expect(capture().mock.calls).toEqual([])
+
+    bufferTelemetryUntilReady()
+    queuedCapture('after_opt_in', { step: 'model' })
+    expect(capture().mock.calls).toEqual([])
+    flushTelemetryQueue()
+    expect(capture().mock.calls.map(([event]) => event)).toEqual([
+      'after_opt_in',
+    ])
+  })
+
+  it('buffers again while a new initialization restores identity and properties', () => {
+    flushTelemetryQueue()
+    bufferTelemetryUntilReady()
+    queuedCapture('during_reinitialization', { step: 'model' })
+    expect(capture().mock.calls).toEqual([])
+
+    flushTelemetryQueue()
+    expect(capture().mock.calls.map(([event]) => event)).toEqual([
+      'during_reinitialization',
+    ])
+  })
+
   it('replays held events in order, with their original timestamps', () => {
     optedIn(false)
     vi.useFakeTimers()
@@ -118,8 +145,8 @@ describe('flushTelemetryQueue', () => {
     flushTelemetryQueue()
     capture().mockClear()
 
-    // Consent can never be withdrawn mid-session without a reload, so once the
-    // queue has drained it must not start holding events again.
+    // PostHog enforces later consent changes; do not retain opted-out activity
+    // for replay if the user opts back in.
     optedIn(false)
     queuedCapture('model_load', { load_status: 'success' })
 

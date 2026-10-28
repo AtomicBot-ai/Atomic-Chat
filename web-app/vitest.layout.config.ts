@@ -75,6 +75,9 @@ export default defineConfig({
   server: { port: undefined, strictPort: false, host: false, hmr: false },
   test: {
     name: 'layout',
+    // Layout files share the browser origin's storage. Concurrent files race
+    // persisted setup/language state and Vitest's module-mocking routes.
+    fileParallelism: false,
     include: ['src/**/*.layout.test.tsx'],
     setupFiles: ['./src/test/layout.setup.ts'],
     globals: true,

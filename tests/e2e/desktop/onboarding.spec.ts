@@ -21,7 +21,7 @@ describe('first launch on a clean profile', () => {
   let session: Session
 
   beforeAll(async () => {
-    session = await startSession('onboarding')
+    session = await startSession('onboarding', { webviewSeed: { 'setup-completed': 'false' } })
   })
 
   afterAll(async () => {
@@ -74,7 +74,7 @@ describe('a first run interrupted by a relaunch', () => {
     // Windows and Linux would offer the GPU backend between Welcome and the
     // model; this scenario is about the relaunch, not that step.
     session = await startSession('onboarding-resume', {
-      webviewSeed: { llama_cpp_onboarding_done: 'skipped' },
+      webviewSeed: { 'setup-completed': 'false', llama_cpp_onboarding_done: 'skipped' },
     })
   })
 

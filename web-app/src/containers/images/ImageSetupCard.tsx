@@ -135,7 +135,7 @@ export const ImageSetupCard = memo(function ImageSetupCard({
             // While installing the fill is the progress, so the button keeps
             // full strength instead of the dimmed disabled look.
             className={cn(
-              'relative flex min-w-56 overflow-hidden tabular-nums',
+              'relative flex h-auto min-h-[var(--control-height-large,2rem)] min-w-0 max-w-full w-56 overflow-hidden whitespace-normal tabular-nums',
               engine.installing && 'disabled:opacity-100'
             )}
             disabled={busy !== null}
@@ -151,19 +151,23 @@ export const ImageSetupCard = memo(function ImageSetupCard({
             )}
             {/* The idle label stays laid out underneath, so the button keeps
                 its width when the percentage takes its place. */}
-            <span className="relative grid place-items-center">
+            <span className="relative grid min-w-0 w-full place-items-center">
               <span
                 className={cn(
-                  'col-start-1 row-start-1 flex items-center gap-2',
+                  'col-start-1 row-start-1 flex min-w-0 items-center gap-2',
                   busy !== null && 'invisible'
                 )}
               >
-                <IconDownload size={17} aria-hidden />
+                <IconDownload size={17} className="shrink-0" aria-hidden />
                 {t(`${ns}:setup.card.engine`)}
               </span>
               {busy !== null && (
-                <span className="col-start-1 row-start-1 flex items-center gap-2">
-                  <IconLoader2 size={17} className="animate-spin" aria-hidden />
+                <span className="col-start-1 row-start-1 flex min-w-0 items-center gap-2">
+                  <IconLoader2
+                    size={17}
+                    className="shrink-0 animate-spin"
+                    aria-hidden
+                  />
                   {busy}
                 </span>
               )}
@@ -200,7 +204,7 @@ export const ImageSetupCard = memo(function ImageSetupCard({
           <Button
             variant="link"
             size="sm"
-            className="text-muted-foreground"
+            className="h-auto min-w-0 max-w-full whitespace-normal text-muted-foreground"
             onClick={() => void navigate({ to: route.cloud.index })}
             data-testid="image-setup-cloud"
           >

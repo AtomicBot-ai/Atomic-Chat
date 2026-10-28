@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const client = vi.hoisted(() => ({
   createConversation: vi.fn(),
@@ -23,6 +23,7 @@ import type { SupportWireMessage } from '@/services/support/client'
 import { localStorageKey } from '@/constants/localStorage'
 import { SUPPORT_MESSAGE_CACHE_LIMIT } from '@/constants/support'
 import {
+  SUPPORT_WRITE_TIMEOUT_MS,
   retrySupportMessage,
   selectMaxTeamSeq,
   sendSupportMessage,
@@ -55,6 +56,7 @@ const reset = () =>
   })
 
 describe('support chat store', () => {
+  afterEach(() => vi.useRealTimers())
   beforeEach(() => {
     reset()
     client.createConversation.mockReset()
@@ -148,6 +150,86 @@ describe('support chat store', () => {
   })
 
   describe('sending', () => {
+    it.each(['creation', 'send'] as const)(
+      'expires a blackholed %s, aborts it and releases the next message',
+      async (stage) => {
+        vi.useFakeTimers()
+        client.createConversation.mockResolvedValue({
+          conversation_id: 'fresh',
+          token: 'tok',
+        })
+        client.sendMessage.mockResolvedValue({
+          seq: 2,
+          created_at: '2026-10-28T12:00:00Z',
+        })
+        const stalled =
+          stage === 'creation' ? client.createConversation : client.sendMessage
+        let release!: (value: unknown) => void
+        stalled.mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              release = resolve
+            })
+        )
+        const first = sendSupportMessage('one')
+        const second = sendSupportMessage('two')
+        await vi.advanceTimersByTimeAsync(SUPPORT_WRITE_TIMEOUT_MS + 1)
+        await Promise.all([first, second])
+        expect(store().messages.map((m) => m.status)).toEqual([
+          'sent',
+          'failed',
+        ])
+        const failed = store().messages.find((m) => m.text === 'one')!
+        expect(failed.error).toBe('network')
+        const signal =
+          stalled.mock.calls[0][stage === 'creation' ? 1 : 2].signal
+        expect(signal.aborted).toBe(true)
+        // A late response must not overwrite the conversation or acknowledge a timed-out send.
+        release(
+          stage === 'creation'
+            ? { conversation_id: 'stale', token: 'stale' }
+            : { seq: 1, created_at: '' }
+        )
+        await vi.advanceTimersByTimeAsync(1)
+        expect(store().conversationId).toBe('fresh')
+        expect(store().messages.find((m) => m.text === 'one')?.status).toBe(
+          'failed'
+        )
+        client.sendMessage.mockResolvedValue({
+          seq: 1,
+          created_at: '2026-10-28T11:59:59Z',
+        })
+        await retrySupportMessage(failed.clientId!)
+        expect(client.sendMessage.mock.calls.at(-1)?.[1].client_id).toBe(
+          failed.clientId
+        )
+        expect(store().messages.map((m) => m.status)).toEqual(['sent', 'sent'])
+      }
+    )
+
+    it('reconciles a late server echo with a retry under the same client id', async () => {
+      vi.useFakeTimers()
+      client.createConversation.mockResolvedValue({
+        conversation_id: 'c',
+        token: 'tok',
+      })
+      client.sendMessage.mockImplementationOnce(() => new Promise(() => {}))
+      const sending = sendSupportMessage('delayed')
+      await vi.advanceTimersByTimeAsync(SUPPORT_WRITE_TIMEOUT_MS + 1)
+      await sending
+      const clientId = store().messages[0].clientId!
+      store().applyServerMessages([
+        wire({ id: 'server-copy', seq: 7, author: 'user', text: 'delayed' }),
+      ])
+      client.sendMessage.mockResolvedValue({ seq: 7, created_at: '' })
+      await retrySupportMessage(clientId)
+      expect(store().messages).toHaveLength(1)
+      expect(store().messages[0]).toMatchObject({
+        id: 'server-copy',
+        status: 'sent',
+      })
+    })
+
     it('creates the conversation on the first send with the diagnostics', async () => {
       client.createConversation.mockResolvedValue({
         conversation_id: 'c-1',
@@ -164,7 +246,9 @@ describe('support chat store', () => {
       ])
       await sending
 
-      expect(client.createConversation).toHaveBeenCalledWith(diagnostics.meta)
+      expect(client.createConversation).toHaveBeenCalledWith(diagnostics.meta, {
+        signal: expect.any(AbortSignal),
+      })
       const [token, body] = client.sendMessage.mock.calls[0]
       expect(token).toBe('tok')
       // The conversation already carries the diagnostics.

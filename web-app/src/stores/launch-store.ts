@@ -14,6 +14,7 @@
  */
 
 import { create } from 'zustand'
+import { useAppState } from '@/hooks/useAppState'
 
 export type RunPhase = 'installing' | 'configuring' | 'connecting' | undefined
 
@@ -42,8 +43,7 @@ type LaunchState = {
   openLog: Record<string, boolean>
   /**
    * Agents Atomic Chat opened (a terminal or their app) during this run of
-   * the app. Nothing reports when that window closes, so this is "connected"
-   * only while the server stays up.
+   * the server generation. This records launch history, never client liveness.
    */
   launched: Record<string, boolean>
   setInstalled: SetState<Record<string, boolean>>
@@ -82,3 +82,9 @@ export const useLaunchStore = create<LaunchState>((set) => ({
   markLaunched: (id) =>
     set((s) => ({ launched: { ...s.launched, [id]: true } })),
 }))
+
+useAppState.subscribe((state, previous) => {
+  if (previous.serverStatus === 'running' && state.serverStatus !== 'running') {
+    useLaunchStore.setState({ launched: {} })
+  }
+})

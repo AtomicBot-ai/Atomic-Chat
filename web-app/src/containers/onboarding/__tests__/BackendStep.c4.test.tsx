@@ -1,3 +1,4 @@
+import '@/test/telemetry-ready'
 /**
  * The GPU backend step with the real `SetupBackendStep` inside it. The old
  * first-run screen's suite only ever reached this card on a Windows run it
@@ -36,7 +37,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('posthog-js', () => ({
-  default: { capture: vi.fn(), has_opted_in_capturing: () => true },
+  default: { capture: vi.fn() },
 }))
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({

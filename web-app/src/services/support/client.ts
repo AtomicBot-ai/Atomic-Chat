@@ -141,7 +141,8 @@ const request = async <T>({
     try {
       response = await fetch(url, init)
     } catch (primaryError) {
-      if (isAbortError(primaryError) || !isTauriRuntime()) throw primaryError
+      if (signal?.aborted || isAbortError(primaryError) || !isTauriRuntime())
+        throw primaryError
       console.warn(
         '[support] fetch failed, retrying via Tauri HTTP plugin:',
         primaryError instanceof Error ? primaryError.message : primaryError

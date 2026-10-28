@@ -1,3 +1,4 @@
+import '@/test/telemetry-ready'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import {
@@ -29,7 +30,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('posthog-js', () => ({
-  default: { capture: vi.fn(), has_opted_in_capturing: () => true },
+  default: { capture: vi.fn() },
 }))
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mocks.navigate,
