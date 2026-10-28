@@ -293,5 +293,38 @@
     "setToken": "Задать токен",
     "gated": "Hugging Face отказал в доступе. Откройте страницу модели, примите её условия (и при необходимости задайте токен Hugging Face в настройках), затем попробуйте снова: {{url}}"
   },
-  "noLikedModels": "Нет избранных моделей, соответствующих фильтрам. Добавьте модель в избранное или отключите фильтр «Избранное»."
+  "noLikedModels": "Нет избранных моделей, соответствующих фильтрам. Добавьте модель в избранное или отключите фильтр «Избранное».",
+  "geniex": {
+    "shelfGguf": "GGUF",
+    "shelfAiHub": "Qualcomm AI Hub",
+    "curated": "Отобрано Atomic Chat",
+    "huggingFace": "Hugging Face, не проверено Atomic Chat",
+    "huggingFaceUnavailable": "Hugging Face сейчас недоступен. Показаны только модели, отобранные Atomic Chat.",
+    "notVerified": "Hugging Face, не проверено Atomic Chat",
+    "aiHub": "Бандл Qualcomm AI Hub",
+    "downloaded": "Скачано",
+    "checking": "Проверка…",
+    "runsHere": "Работает на этом компьютере",
+    "installEngine": "Установить GenieX",
+    "noDeviceHere": "Этой модели не на чем работать на этом компьютере.",
+    "noBundleHere": "У этой модели нет бандла для чипа этого компьютера.",
+    "gatedNoToken": "Это закрытая модель. Примите её условия на Hugging Face, затем задайте токен Hugging Face в настройках.",
+    "setToken": "Задать токен",
+    "gated": "Hugging Face отказал в доступе. Откройте страницу модели, примите её условия (и при необходимости задайте токен Hugging Face в настройках), затем попробуйте снова: {{url}}",
+    "device": {
+      "npu": "NPU",
+      "gpu": "GPU",
+      "cpu": "CPU",
+      "hybrid": "NPU + GPU"
+    },
+    "chipLabel": {
+      "x-elite": "X Elite",
+      "x2-elite": "X2 Elite"
+    },
+    "bundle": {
+      "chip": "Snapdragon {{chip}}",
+      "precision": "Точность {{precision}}",
+      "context": "Контекст {{context}} токенов"
+    }
+  }
 }

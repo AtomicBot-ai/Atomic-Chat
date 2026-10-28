@@ -374,6 +374,7 @@ export function useModelOptions() {
           !model.is_managed &&
           !model.is_foundry_local &&
           !model.is_litert_lm &&
+          !model.is_geniex &&
           isFirstRunChatRepo(model)
       )
       .sort((a, b) => (b.downloads ?? 0) - (a.downloads ?? 0))

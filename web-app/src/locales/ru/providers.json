@@ -477,6 +477,32 @@
       "checkAgain": "Проверить снова"
     }
   },
+  "geniex": {
+    "engine": {
+      "title": "Движок GenieX",
+      "notInstalled": "GenieX не установлен",
+      "installDescription": "SDK Qualcomm GenieX {{version}}, около {{size}} для скачивания. В нём же библиотеки NPU Hexagon и GPU Adreno; Atomic Chat проверяет его и запускает каждую модель в отдельном процессе. Права администратора не нужны.",
+      "install": "Установить {{version}}",
+      "installing": "Скачивание… {{percent}}%",
+      "noBuild": "Сборки GenieX для этого компьютера сейчас нет.",
+      "installed": "GenieX {{version}}",
+      "installedDescription": "SDK, из которого запускаются модели — на NPU Hexagon, GPU Adreno или CPU.",
+      "update": "Обновить до {{version}}",
+      "checking": "Проверяем, что установлено…",
+      "checkAgain": "Проверить снова"
+    },
+    "devices": {
+      "title": "Устройства",
+      "description": "Что GenieX нашёл на этом компьютере при установке SDK. Готовить ничего не нужно: библиотеки для каждого устройства идут вместе с SDK.",
+      "npu": "NPU Hexagon",
+      "gpu": "GPU Adreno",
+      "detail": "Найдено GenieX {{version}}",
+      "ready": "Готов",
+      "none": "GenieX не нашёл здесь ни NPU, ни GPU. Модели всё равно работают на CPU; для NPU установите или обновите драйвер Qualcomm NPU (через Windows Update или у производителя ноутбука), затем установите SDK заново.",
+      "npuDriverHint": "GenieX не нашёл NPU Hexagon. Модели работают на GPU и CPU; для NPU установите или обновите драйвер Qualcomm NPU (через Windows Update или у производителя ноутбука), затем установите SDK заново.",
+      "checkAgain": "Проверить снова"
+    }
+  },
   "tensorrt": {
     "checkAgain": "Проверить снова",
     "version": "Установленный релиз: {{version}}",

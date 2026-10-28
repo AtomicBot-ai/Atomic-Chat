@@ -1,3 +1,4 @@
+pub mod archive;
 pub mod commands;
 pub mod disk;
 pub mod helpers;

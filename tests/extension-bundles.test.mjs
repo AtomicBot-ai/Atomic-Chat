@@ -27,6 +27,7 @@ const EXTENSIONS = [
   'sglang-extension',
   'foundry-local-extension',
   'litert-lm-extension',
+  'geniex-extension',
 ]
 
 for (const extension of EXTENSIONS) {

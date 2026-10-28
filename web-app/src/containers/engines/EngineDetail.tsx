@@ -9,6 +9,8 @@ import { FoundryLocalEnginePanel } from '@/containers/foundry-local/FoundryLocal
 import { LiteRtLmAccelerators } from '@/containers/litert-lm/LiteRtLmAccelerators'
 import { hubEngine } from '@/lib/hub-model-engines'
 import { LiteRtLmEnginePanel } from '@/containers/litert-lm/LiteRtLmEnginePanel'
+import { GeniexDevices } from '@/containers/geniex/GeniexDevices'
+import { GeniexEnginePanel } from '@/containers/geniex/GeniexEnginePanel'
 import { useEngineVersionsStore } from '@/stores/engine-versions-store'
 import { ManagedEngineHubLink } from '@/containers/managed-engine/ManagedEngineHubLink'
 import { ManagedEngineSettingsCard } from '@/containers/managed-engine/ManagedEngineSettingsCard'
@@ -133,6 +135,13 @@ import { restartLocalModel } from '@/utils/restartLocalModel'
 /** Start, Stop and their spinner share one width, so a row does not jump between states; it fits
  *  the longest translation ("Остановить"). */
 const MODEL_ACTION_BUTTON_CLASS = 'w-28'
+
+/**
+ * Engines whose `device` setting is the GPU chosen on the Hardware page, so their settings list
+ * leaves it out. GenieX's `device` (NPU, GPU, CPU, hybrid; change add-geniex-runtime) is a choice
+ * made here, so it stays.
+ */
+const DEVICE_CHOSEN_ON_HARDWARE_PAGE = new Set(['llamacpp', 'llamacpp-upstream', 'atomic-prism'])
 
 /**
  * The models an engine has, named under its settings where they unfold in
@@ -328,6 +337,10 @@ export function EngineDetail({
   })
   const liteRtLmBuild = useEngineVersionsStore((state) => {
     const active = state.engines['litert-lm']?.active
+    return active ? `${active.version}/${active.variant}` : null
+  })
+  const geniexBuild = useEngineVersionsStore((state) => {
+    const active = state.engines['geniex']?.active
     return active ? `${active.version}/${active.variant}` : null
   })
   /// The installer does not carry MLX: until the core reports a build, the
@@ -1971,6 +1984,12 @@ export function EngineDetail({
               // Read again when the active build changes: OpenVINO's version follows the release.
               <LiteRtLmAccelerators key={liteRtLmBuild ?? 'none'} />
             )}
+            {/* GenieX: the SDK and the devices its library found come before its settings and models. */}
+            {providerName === 'geniex' && <GeniexEnginePanel />}
+            {providerName === 'geniex' && (
+              // Read again when the active build changes: a new build is probed afresh at its install.
+              <GeniexDevices key={geniexBuild ?? 'none'} />
+            )}
             {managed && provider && (
               <ManagedEngineSettingsCard
                 engine={managed}
@@ -2302,7 +2321,9 @@ export function EngineDetail({
                           controllerType={setting.controller_type}
                           controllerProps={setting.controller_props}
                           className={cn(
-                            setting.key === 'device' && 'hidden',
+                            setting.key === 'device' &&
+                              DEVICE_CHOSEN_ON_HARDWARE_PAGE.has(providerName) &&
+                              'hidden',
                             isHiddenConcurrentMode && 'hidden',
                             isHiddenByDflash && 'hidden',
                             isHiddenForManaged && 'hidden'
@@ -2487,7 +2508,9 @@ export function EngineDetail({
                       key={settingIndex}
                       title={setting.title}
                       className={cn(
-                        setting.key === 'device' && 'hidden',
+                        setting.key === 'device' &&
+                          DEVICE_CHOSEN_ON_HARDWARE_PAGE.has(providerName) &&
+                          'hidden',
                         isHiddenConcurrentMode && 'hidden',
                         isHiddenByDflash && 'hidden',
                         isHiddenForManaged && 'hidden'
@@ -2797,7 +2820,8 @@ export function EngineDetail({
                             provider.provider !== 'atomic-prism' &&
                             provider.provider !== 'mlx' &&
                             provider.provider !== 'foundry-local' &&
-                            provider.provider !== 'litert-lm' && (
+                            provider.provider !== 'litert-lm' &&
+                            provider.provider !== 'geniex' && (
                               <>
                                 <Button
                                   variant="secondary"
@@ -2826,7 +2850,8 @@ export function EngineDetail({
                               provider.provider === 'atomic-prism' ||
                               provider.provider === 'mlx' ||
                               provider.provider === 'foundry-local' ||
-                              provider.provider === 'litert-lm') &&
+                              provider.provider === 'litert-lm' ||
+                              provider.provider === 'geniex') &&
                             !hasDownloadedModels && (
                               <Button
                                 variant="default"

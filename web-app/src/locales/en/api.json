@@ -135,7 +135,8 @@
       "sglang": "Fast serving on NVIDIA GPUs",
       "tensorrt": "NVIDIA's optimized inference",
       "foundry": "Microsoft's on-device runtime",
-      "litert": "Google's on-device runtime"
+      "litert": "Google's on-device runtime",
+      "geniex": "Qualcomm's runtime for the Snapdragon NPU"
     },
     "engineModels_one": "{{count}} model",
     "engineModels_other": "{{count}} models",

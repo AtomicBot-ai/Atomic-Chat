@@ -108,7 +108,8 @@ const isTauriRuntime = (): boolean => {
 // unload. An engine missing here is invisible to the provider page's Stop, which
 // then shows its model stopped while it keeps running (task 3.14, F-9).
 // The managed engines (`lib/managed-engines.ts`: vLLM, SGLang, TensorRT-LLM), Foundry Local
-// (change add-foundry-local) and LiteRT-LM (change add-litert-lm-runtime) are local too.
+// (change add-foundry-local), LiteRT-LM (change add-litert-lm-runtime) and GenieX (change
+// add-geniex-runtime) are local too.
 const localProviders = (): string[] => [
   'llamacpp',
   'llamacpp-upstream',
@@ -116,6 +117,7 @@ const localProviders = (): string[] => [
   'mlx',
   'foundry-local',
   'litert-lm',
+  'geniex',
   ...managedEngines().map((engine) => engine.id),
 ]
 type LocalProviderName = string

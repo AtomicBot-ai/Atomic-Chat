@@ -24,16 +24,19 @@ export type AgentModelBlockReason = 'model-without-tools'
  * declare tool calling for, the variant's context is fixed, and it takes no images.
  *
  * LiteRT-LM (change `add-litert-lm-runtime`) too, except images: its host reads them for a file
- * that declares vision, and the variant's `vision` capability comes from its `model.yml`.
+ * that declares vision, and the variant's `vision` capability comes from its `model.yml`. GenieX
+ * (change `add-geniex-runtime`) is the same: its host reads images for a GGUF with its `mmproj`,
+ * and the model's `vision` comes from its `model.yml`.
  */
 const isGatewayChatProvider = (providerName: string | undefined): boolean =>
   isManagedProvider(providerName) ||
   providerName === 'foundry-local' ||
-  providerName === 'litert-lm'
+  providerName === 'litert-lm' ||
+  providerName === 'geniex'
 
 /** Gateway providers whose sessions never take images, whatever a model's capabilities say. */
 const isImagelessProvider = (providerName: string | undefined): boolean =>
-  isGatewayChatProvider(providerName) && providerName !== 'litert-lm'
+  isGatewayChatProvider(providerName) && providerName !== 'litert-lm' && providerName !== 'geniex'
 
 /** Why this model cannot serve an Agent turn, or `null` when its provider's rules apply. */
 export function agentModelBlockReason(

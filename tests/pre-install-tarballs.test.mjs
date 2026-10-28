@@ -97,6 +97,16 @@ test('every desktop OS builds the Foundry Local extension (change add-foundry-lo
   }
 })
 
+test('only Windows builds the GenieX extension (change add-geniex-runtime)', () => {
+  // GenieX runs on Snapdragon X laptops alone (spec geniex-runtime, "Провайдер регистрируется только
+  // на Snapdragon X"): the Windows build ships the extension, which hides itself where the core did
+  // not register the provider (Windows x64 included); macOS and Linux never ship it.
+  const names = (platform) => builtHere(platform).map((pkg) => pkg.name)
+  assert.ok(names('win32').includes('@janhq/geniex-extension'))
+  assert.ok(!names('darwin').includes('@janhq/geniex-extension'))
+  assert.ok(!names('linux').includes('@janhq/geniex-extension'))
+})
+
 test('every desktop OS builds the LiteRT-LM extension (change add-litert-lm-runtime)', () => {
   // The core registers the provider only where LiteRT-LM runs (spec litert-lm-runtime); the app
   // ships it everywhere and hides it elsewhere.

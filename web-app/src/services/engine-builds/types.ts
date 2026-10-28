@@ -1,8 +1,9 @@
 /**
  * The core's engine builds: stable-diffusion.cpp (`sd-server`), MLX
  * (`mlx-server`), the Foundry Local runtime (core with change
- * `add-foundry-local`) and the LiteRT-LM library (change
- * `add-litert-lm-runtime`), installed, checked and removed by the core from conf's
+ * `add-foundry-local`), the LiteRT-LM library (change
+ * `add-litert-lm-runtime`) and the Qualcomm GenieX SDK (change
+ * `add-geniex-runtime`), installed, checked and removed by the core from conf's
  * manifests. Vendored from `@atomic-chat/core/contracts` (`engine-builds.ts`,
  * core 0.12.0); snake_case on the wire, like `/backends`.
  *
@@ -10,7 +11,7 @@
  * `install` acts when the user asked for it.
  */
 
-export type EngineBuildId = 'sd-cpp' | 'mlx' | 'foundry-local' | 'litert-lm'
+export type EngineBuildId = 'sd-cpp' | 'mlx' | 'foundry-local' | 'litert-lm' | 'geniex'
 
 /**
  * `downloaded` — installed by the core under its data folder, removable;

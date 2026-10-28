@@ -303,5 +303,38 @@
     "setToken": "Set the token",
     "gated": "Hugging Face refused access. Open the model page, accept its terms (and set your Hugging Face token in Settings if needed), then try again: {{url}}"
   },
-  "noLikedModels": "No liked models match these filters. Like a model or turn off the Liked filter."
+  "noLikedModels": "No liked models match these filters. Like a model or turn off the Liked filter.",
+  "geniex": {
+    "shelfGguf": "GGUF",
+    "shelfAiHub": "Qualcomm AI Hub",
+    "curated": "Curated by Atomic Chat",
+    "huggingFace": "Hugging Face, not verified by Atomic Chat",
+    "huggingFaceUnavailable": "Hugging Face is unavailable right now. Only the models Atomic Chat curated are shown.",
+    "notVerified": "Hugging Face, not verified by Atomic Chat",
+    "aiHub": "Qualcomm AI Hub bundle",
+    "downloaded": "Downloaded",
+    "checking": "Checking…",
+    "runsHere": "Runs on this computer",
+    "installEngine": "Install GenieX",
+    "noDeviceHere": "This model has no device to run on here.",
+    "noBundleHere": "This model has no bundle for this computer's chip.",
+    "gatedNoToken": "This model is gated. Accept its terms on Hugging Face, then set your Hugging Face token in Settings.",
+    "setToken": "Set the token",
+    "gated": "Hugging Face refused access. Open the model page, accept its terms (and set your Hugging Face token in Settings if needed), then try again: {{url}}",
+    "device": {
+      "npu": "NPU",
+      "gpu": "GPU",
+      "cpu": "CPU",
+      "hybrid": "NPU + GPU"
+    },
+    "chipLabel": {
+      "x-elite": "X Elite",
+      "x2-elite": "X2 Elite"
+    },
+    "bundle": {
+      "chip": "Snapdragon {{chip}}",
+      "precision": "Precision {{precision}}",
+      "context": "Context {{context}} tokens"
+    }
+  }
 }

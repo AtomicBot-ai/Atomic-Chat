@@ -96,6 +96,7 @@ export type LoadBackend =
   | 'sglang'
   | 'foundry-local'
   | 'litert-lm'
+  | 'geniex'
   | 'unknown'
 
 const STDERR_TAIL_BYTES = 2048
@@ -380,7 +381,8 @@ export function loadBackendFromProvider(provider?: string | null): LoadBackend {
     provider === 'vllm' ||
     provider === 'sglang' ||
     provider === 'foundry-local' ||
-    provider === 'litert-lm'
+    provider === 'litert-lm' ||
+    provider === 'geniex'
   )
     return provider
   return 'unknown'

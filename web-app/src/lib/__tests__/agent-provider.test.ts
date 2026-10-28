@@ -31,6 +31,7 @@ describe('isAgentLocalProvider', () => {
     expect(isAgentLocalProvider('sglang')).toBe(true)
     expect(isAgentLocalProvider('foundry-local')).toBe(true)
     expect(isAgentLocalProvider('litert-lm')).toBe(true)
+    expect(isAgentLocalProvider('geniex')).toBe(true)
   })
 
   it('excludes foundation-models and unknown values', () => {

@@ -107,6 +107,9 @@ export function getProviderLogo(provider: string) {
     // A monogram, like SGLang's: LiteRT and its mark are Google's (change add-litert-lm-runtime).
     case 'litert-lm':
       return '/images/model-provider/litert-lm.svg'
+    // A monogram too: GenieX, Qualcomm and Snapdragon are Qualcomm's marks (change add-geniex-runtime).
+    case 'geniex':
+      return '/images/model-provider/geniex.svg'
     case 'anthropic':
       return '/images/model-provider/anthropic.svg'
     case 'huggingface':
@@ -241,6 +244,8 @@ export const getProviderTitle = (provider: string) => {
       return 'Foundry Local'
     case 'litert-lm':
       return 'LiteRT-LM'
+    case 'geniex':
+      return 'GenieX'
     // The media engine, named on the engine-update banner. Not a chat provider.
     case 'sd-cpp':
       return 'stable-diffusion.cpp'

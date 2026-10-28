@@ -774,6 +774,144 @@ describe('ModelFactory litert-lm provider (change add-litert-lm-runtime)', () =>
   })
 })
 
+describe('ModelFactory geniex provider (change add-geniex-runtime)', () => {
+  const geniexProvider = {
+    provider: 'geniex',
+    base_url: 'http://example.invalid/v1',
+    api_key: '',
+    settings: [],
+    models: [],
+    active: true,
+  } as unknown as ProviderObject
+
+  const session = {
+    pid: 7171,
+    port: 4303,
+    model_id: 'qwen3-4b',
+    api_key: 'geniex-key',
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockStartModel.mockResolvedValue(undefined)
+    seedServiceHub({
+      models: {
+        startModel: mockStartModel,
+      } as ModelsService,
+    })
+    ModelFactory.invalidateLocalSessionCache('geniex')
+  })
+
+  async function geniexModel(
+    route: (command: string, args: Record<string, unknown>) => unknown
+  ) {
+    mockedInvoke.mockImplementation(async (command, args) =>
+      route(command, (args ?? {}) as Record<string, unknown>)
+    )
+    const { OpenAICompatibleChatLanguageModel } = await import(
+      '@ai-sdk/openai-compatible'
+    )
+    await ModelFactory.createModel('qwen3-4b', geniexProvider, {
+      temperature: 0.7,
+      top_k: 20,
+      repeat_penalty: 1.1,
+      n_predict: -1,
+      cache_prompt: true,
+      reasoning_format: 'deepseek',
+    })
+    const [modelId, config] = vi.mocked(OpenAICompatibleChatLanguageModel).mock
+      .calls[0] as unknown as [
+      string,
+      {
+        provider: string
+        url: (options: { path: string }) => string
+        headers: () => Record<string, string>
+        fetch: typeof fetch
+      },
+    ]
+    return { modelId, config }
+  }
+
+  async function sentBodyFor(request: Record<string, unknown>) {
+    let sentBody = ''
+    const { config } = await geniexModel((command, args) => {
+      if (command === 'resolve_local_session') return session
+      if (command === 'stream_local_http') {
+        sentBody = args.body as string
+        return Promise.reject('HTTP 400: {"error":{"message":"stop here"}}')
+      }
+      return null
+    })
+    await config.fetch('http://localhost:4303/v1/chat/completions', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    })
+    return JSON.parse(sentBody)
+  }
+
+  it('starts the model through the core and talks to its session gateway with the session key', async () => {
+    // spec geniex-runtime "Сессия отдаётся через шлюз core".
+    const { modelId, config } = await geniexModel((command) =>
+      command === 'resolve_local_session' ? session : null
+    )
+
+    expect(mockStartModel).toHaveBeenCalledWith(geniexProvider, 'qwen3-4b')
+    expect(modelId).toBe('qwen3-4b')
+    expect(config.provider).toBe('geniex')
+    expect(config.url({ path: '/chat/completions' })).toBe(
+      'http://localhost:4303/v1/chat/completions'
+    )
+    expect(config.headers().Authorization).toBe('Bearer geniex-key')
+  })
+
+  it('sends the host what it reads: OpenAI fields, top_k, response_format and the thinking switch; no llama.cpp knobs', async () => {
+    // spec geniex-runtime "Сервер хоста отвечает как OpenAI chat completions".
+    const body = await sentBodyFor({
+      model: 'qwen3-4b',
+      messages: [{ role: 'user', content: 'hi' }],
+      stream: true,
+      stream_options: { include_usage: true },
+      response_format: { type: 'json_schema', json_schema: { name: 'a', schema: { type: 'object' } } },
+      tools: [{ type: 'function', function: { name: 'f', parameters: {} } }],
+      tool_choice: 'auto',
+      chat_template_kwargs: { enable_thinking: false },
+    })
+
+    expect(body).toEqual({
+      model: 'qwen3-4b',
+      messages: [{ role: 'user', content: 'hi' }],
+      stream: true,
+      stream_options: { include_usage: true },
+      response_format: { type: 'json_schema', json_schema: { name: 'a', schema: { type: 'object' } } },
+      tools: [{ type: 'function', function: { name: 'f', parameters: {} } }],
+      tool_choice: 'auto',
+      chat_template_kwargs: { enable_thinking: false },
+      temperature: 0.7,
+      top_k: 20,
+    })
+  })
+
+  it('leaves out a tool_choice the host answers 400 to (a named function); auto is its default', async () => {
+    const body = await sentBodyFor({
+      model: 'qwen3-4b',
+      messages: [{ role: 'user', content: 'hi' }],
+      tools: [{ type: 'function', function: { name: 'f', parameters: {} } }],
+      tool_choice: { type: 'function', function: { name: 'f' } },
+    })
+
+    expect(body.tools).toHaveLength(1)
+    expect(body).not.toHaveProperty('tool_choice')
+  })
+
+  it('fails with the provider named when the core serves no session after the start', async () => {
+    mockedInvoke.mockResolvedValue(null)
+
+    await expect(
+      ModelFactory.createModel('qwen3-4b', geniexProvider)
+    ).rejects.toThrow('No running GenieX session found for model: qwen3-4b')
+  })
+})
+
 describe('countLocalPromptTokens', () => {
   const session = { port: 4242, api_key: 'k', model_id: 'm' }
 

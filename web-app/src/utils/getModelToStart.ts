@@ -7,8 +7,8 @@ import type { ModelInfo } from '@janhq/core'
 // default vision model starts cleanly. TurboQuant (`llamacpp`) stays a
 // manual macOS choice. See ADR 2026-06-09 (ATO-116). PrismML lists only the
 // Bonsai files the core set up for it. Foundry Local (change add-foundry-local) and LiteRT-LM
-// (change add-litert-lm-runtime) are last: their variants are a separate download, never a copy
-// of a model another engine lists.
+// (change add-litert-lm-runtime) and GenieX (change add-geniex-runtime) are last: their models
+// are a separate download, never a copy of a model another engine lists.
 const localProviderNames = [
   'llamacpp-upstream',
   'llamacpp',
@@ -16,6 +16,7 @@ const localProviderNames = [
   'mlx',
   'foundry-local',
   'litert-lm',
+  'geniex',
 ] as const
 
 export const getLastUsedModel = (): {

@@ -241,6 +241,7 @@ const LOCAL_PROVIDERS = [
   'foundation-models',
   'foundry-local',
   'litert-lm',
+  'geniex',
 ] as const
 
 /** Every local engine provider, the managed engines last. */

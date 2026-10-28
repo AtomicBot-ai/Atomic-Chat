@@ -102,6 +102,10 @@ pub enum OpenAiTargetKind {
     /// host's own OpenAI server. Its context is clamped to the file at load, and it switches
     /// thinking by `chat_template_kwargs.enable_thinking`, which it reads before anything else.
     LocalLiteRtLm,
+    /// A GenieX session (change `add-geniex-runtime`): the core's gateway in front of the host's own
+    /// OpenAI server on a Snapdragon X laptop. Its context is cut to the model at load, and it
+    /// switches thinking by `chat_template_kwargs.enable_thinking` like LiteRT-LM's host.
+    LocalGeniex,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -529,7 +533,10 @@ fn insert_reasoning_fields(
     if target.kind == OpenAiTargetKind::LocalFoundryLocal {
         return;
     }
-    if target.kind == OpenAiTargetKind::LocalLiteRtLm {
+    if matches!(
+        target.kind,
+        OpenAiTargetKind::LocalLiteRtLm | OpenAiTargetKind::LocalGeniex
+    ) {
         // Unset keeps the model's own default (`reasoning` in its model.yml); the host splits the
         // thinking into `reasoning_content` itself.
         let enable = match reasoning {
@@ -1426,6 +1433,34 @@ mod tests {
                 "enable_thinking",
                 "chat_template_kwargs",
             ] {
+                assert!(payload.get(field).is_none(), "unexpected {field}");
+            }
+        }
+    }
+
+    #[test]
+    fn geniex_targets_switch_thinking_through_the_template_kwargs_only() {
+        // The GenieX host reads `chat_template_kwargs.enable_thinking` like LiteRT-LM's; unset keeps
+        // the model's own default (`reasoning` in its model.yml; change add-geniex-runtime).
+        let client =
+            OpenAiCompatibleClient::new(target(OpenAiTargetKind::LocalGeniex, false)).unwrap();
+        let on = CompletionReasoning::On {
+            tags: ReasoningTags {
+                open: "<think>",
+                close: "</think>",
+            },
+            budget_tokens: Some(1_024),
+            effort_value: Some("high".into()),
+        };
+        for (reasoning, expected) in [
+            (CompletionReasoning::Off, Some(json!({"enable_thinking": false}))),
+            (on, Some(json!({"enable_thinking": true}))),
+            (CompletionReasoning::Unset, None),
+        ] {
+            let payload =
+                client.chat_payload(&client.target(), &request_with_reasoning(reasoning), false);
+            assert_eq!(payload.get("chat_template_kwargs").cloned(), expected);
+            for field in ["reasoning_effort", "thinking_budget", "enable_thinking"] {
                 assert!(payload.get(field).is_none(), "unexpected {field}");
             }
         }

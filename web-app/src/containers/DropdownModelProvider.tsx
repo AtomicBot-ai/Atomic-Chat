@@ -601,7 +601,8 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
               p.provider === 'atomic-prism' ||
               p.provider === 'mlx' ||
               p.provider === 'foundry-local' ||
-              p.provider === 'litert-lm') &&
+              p.provider === 'litert-lm' ||
+              p.provider === 'geniex') &&
             isPickerSection(p) &&
             p.models.some((m) => !isEmbeddingOnlyModel(m))
         )

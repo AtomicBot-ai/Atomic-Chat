@@ -139,4 +139,20 @@ describe('TensorRT-LLM defaults', () => {
       withDefaultEngineSettings('litert-lm', settings).map((s) => s.controller_props.value)
     ).toEqual([0, true, 600])
   })
+
+  it('resets GenieX to its core schema defaults, keeping the chosen device (change add-geniex-runtime)', () => {
+    // `device` is a choice made for this computer, like llama.cpp's GPU, so a reset leaves it.
+    const settings = [
+      setting('device', 'gpu'),
+      setting('ctx_len', 8192),
+      setting('power_mode', 'balanced'),
+      setting('timeout', 600),
+    ]
+
+    expect(hasEngineSettingDefaults('geniex')).toBe(true)
+    expect(customEngineSettingKeys('geniex', settings)).toEqual(['ctx_len', 'power_mode'])
+    expect(
+      withDefaultEngineSettings('geniex', settings).map((s) => s.controller_props.value)
+    ).toEqual(['gpu', 0, 'burst', 600])
+  })
 })
