@@ -257,6 +257,8 @@ describe('GeniexDownloadOptions — an AI Hub bundle', () => {
 
     await user.click(await screen.findByRole('button', { name: 'hub:geniex.installEngine' }))
     expect(navigate).toHaveBeenCalledWith(expect.objectContaining({ params: { providerName: 'geniex' } }))
+    expect(screen.getByText('npu: engine-not-installed')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'hub:download' })).not.toBeInTheDocument()
     expect(installer.installGeniexModel).not.toHaveBeenCalled()
   })
 

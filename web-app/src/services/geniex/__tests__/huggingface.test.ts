@@ -173,10 +173,12 @@ describe('fetchHfGeniexModels', () => {
     expect(some.models.map((m) => m.repo)).toEqual([GEMMA])
   })
 
-  it('reads a repository once per Hub session', async () => {
-    const { fetchJson } = hub()
-    await fetchHfGeniexModels({ ...base, fetchJson })
-    await fetchHfGeniexModels({ ...base, fetchJson })
-    expect(fetchJson).toHaveBeenCalledTimes(2)
+  it('reads a repository once per Hub session, and answers the same models again', async () => {
+    const { fetchJson, asked } = hub()
+    const first = await fetchHfGeniexModels({ ...base, fetchJson })
+    const second = await fetchHfGeniexModels({ ...base, fetchJson })
+    expect(asked).toHaveLength(2)
+    expect(second.models).toEqual(first.models)
+    expect(second.models.map((m) => m.repo)).toEqual([QWEN, GEMMA])
   })
 })
