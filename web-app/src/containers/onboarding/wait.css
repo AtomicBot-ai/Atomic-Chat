@@ -73,6 +73,7 @@
   }
   .ob-email small {
     display: block;
+    min-height: 3em;
     color: var(--ob-tag-text);
     font-size: calc(var(--font-size-base) * 0.6875);
     line-height: 1.5;

@@ -370,6 +370,7 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-10-20** — [Show hosted providers on Cloud and the user's own servers on Custom Endpoint](2026-10-20-show-hosted-providers-on-cloud-and-own-servers-on-custom-endpoint.md)
 - **2026-10-20** — [List everything downloaded on a Downloads page](2026-10-20-list-everything-downloaded-on-a-downloads-page.md)
 ## UI / UX (131)
+- **2026-10-28** — [Deliver the wait screen's model-ready email reminder](2026-10-28-deliver-model-ready-email-reminders.md) — supersedes hiding the form on 2026-10-27.
 - **2026-10-28** — [Preserve a project’s first queued send across navigation](2026-10-28-preserve-project-first-send-across-navigation.md)
 - **2026-10-27** — [Configure the server's engine from its picker, with the Hub's settings](2026-10-27-configure-the-servers-engine-from-its-picker.md) — a gear beside the engine opens the Hub's `EngineDetail` in a dialog; saved as changed, Done closes.
 - **2026-10-27** — [Stack the corner notifications in one column and fold them after three seconds](2026-10-27-stack-the-corner-notifications-and-fold-them-after-three-seconds.md) — supersedes the `download` slot of 2026-09-14; reverses ATO-462's panel that stays expanded.

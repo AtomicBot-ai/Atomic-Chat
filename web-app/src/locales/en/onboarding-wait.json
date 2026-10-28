@@ -10,10 +10,14 @@
   "hideGame": "Hide game",
   "email": {
     "label": "Prefer to come back later?",
-    "hint": "Leave your email for a download-ready reminder.",
+    "hint": "By clicking Notify me, you agree to one email when this model is ready. Keep Atomic Chat running for the download to finish. Your address is used only for this reminder.",
     "placeholder": "you@example.com",
     "submit": "Notify me",
-    "done": "Reminder set."
+    "done": "Reminder set. We’ll email you when the model is ready.",
+    "saving": "Saving your reminder…",
+    "error": "Could not save the reminder. Check your connection and try again.",
+    "invalid": "Check your email address and try again.",
+    "rateLimited": "Too many requests. Please try again in an hour."
   },
   "mines": {
     "title": "Atomic Mines",

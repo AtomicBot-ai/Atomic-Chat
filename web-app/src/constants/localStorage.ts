@@ -83,6 +83,8 @@ export const localStorageKey = {
   // the run settles, so a relaunch — the Windows/Linux backend step forces
   // one — comes back to the same screen with the same queue.
   onboarding: 'atomic-onboarding',
+  // Install token and pending model-ready notification; never the email address.
+  emailReminder: 'atomic-email-reminder',
   // This install's cohort in the onboarding experiment
   // (`lib/onboarding/experiment`): `{experiment, variant, assignedAt}`, drawn
   // once on the first launch. Kept through a factory reset, as the analytics

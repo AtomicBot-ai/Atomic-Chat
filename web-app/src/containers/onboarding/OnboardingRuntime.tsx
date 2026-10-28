@@ -3,6 +3,7 @@ import { DownloadEvent, events, type DownloadState } from '@janhq/core'
 
 import { localStorageKey } from '@/constants/localStorage'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { useEmailReminderSync } from '@/hooks/useEmailReminderSync'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
@@ -60,6 +61,7 @@ const dropCancelledChatJob = (job: OnboardingJob) =>
  * open, the setup screen included.
  */
 export function OnboardingRuntime() {
+  useEmailReminderSync()
   const serviceHub = useServiceHub()
   const { t } = useTranslation()
   const phase = useOnboardingStore((state) => state.phase)

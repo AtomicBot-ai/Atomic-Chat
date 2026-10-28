@@ -1,8 +1,23 @@
 import '@/test/telemetry-ready'
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  within,
+  waitFor,
+} from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import posthog from 'posthog-js'
+import {
+  registerEmailReminder,
+  EmailReminderError,
+} from '@/services/email-reminders'
+import {
+  readEmailReminder,
+  useEmailReminderStore,
+} from '@/stores/email-reminder-store'
 
 import { localStorageKey } from '@/constants/localStorage'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -38,12 +53,14 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
   }),
 }))
 vi.mock('@/hooks/useServiceHub', () => ({ useServiceHub: () => ({}) }))
+vi.mock('@/services/email-reminders', async (original) => ({
+  ...(await original<typeof import('@/services/email-reminders')>()),
+  registerEmailReminder: vi.fn(),
+}))
 vi.mock('../useStepContext', () => ({
   useStepContext: () => mocks.context,
 }))
-// The email reminder ships switched off until it is delivered; the tests of
-// the form turn it on.
-const reminder = vi.hoisted(() => ({ offered: false }))
+const reminder = vi.hoisted(() => ({ offered: true }))
 vi.mock('../steps/waitAvailability', () => ({
   get EMAIL_REMINDER_OFFERED() {
     return reminder.offered
@@ -108,9 +125,11 @@ describe('the wait screen', () => {
     vi.mocked(posthog.capture).mockClear()
     mocks.navigate.mockClear()
     localStorage.clear()
+    useEmailReminderStore.setState(readEmailReminder())
+    vi.mocked(registerEmailReminder).mockReset().mockResolvedValue(undefined)
     useOnboardingStore.getState().reset()
     setInstalled(false)
-    reminder.offered = false
+    reminder.offered = true
   })
 
   it('follows everyday use while the model downloads, under the purpose counter', () => {
@@ -174,7 +193,8 @@ describe('the wait screen', () => {
     })
   })
 
-  it('leaves the email reminder out while nothing delivers it', () => {
+  it('leaves the email reminder out when the feature is disabled', () => {
+    reminder.offered = false
     startAt('wait', [QWEN_JOB])
     render(<Onboarding />)
 
@@ -189,7 +209,7 @@ describe('the wait screen', () => {
     ).toBeInTheDocument()
   })
 
-  it('takes an email for a reminder without keeping or reporting the address', () => {
+  it('registers the reminder before confirming, without keeping or reporting the address', async () => {
     reminder.offered = true
     startAt('wait', [QWEN_JOB])
     render(<Onboarding />)
@@ -198,8 +218,17 @@ describe('the wait screen', () => {
     fireEvent.change(field, { target: { value: 'me@example.com' } })
     fireEvent.submit(field.closest('form')!)
 
-    expect(screen.getByRole('status')).toHaveTextContent(
-      'onboarding-wait:email.done'
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'onboarding-wait:email.done'
+      )
+    )
+    expect(registerEmailReminder).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        email: 'me@example.com',
+        model_name: QWEN.title,
+      })
     )
     expect(field).toHaveValue('')
     expect(named('onboarding_reminder_requested')).toHaveLength(1)
@@ -210,8 +239,70 @@ describe('the wait screen', () => {
 
     // Typing again takes the confirmation back.
     fireEvent.change(field, { target: { value: 'm' } })
-    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).not.toHaveTextContent(
+      'onboarding-wait:email.done'
+    )
   })
+
+  it('blocks duplicate submissions until the API accepts the address', async () => {
+    let finish!: () => void
+    vi.mocked(registerEmailReminder).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve
+        })
+    )
+    startAt('wait', [QWEN_JOB])
+    render(<Onboarding />)
+    const field = screen.getByLabelText('onboarding-wait:email.label')
+    fireEvent.change(field, { target: { value: 'me@example.com' } })
+    fireEvent.submit(field.closest('form')!)
+    fireEvent.submit(field.closest('form')!)
+    expect(field).toBeDisabled()
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'onboarding-wait:email.saving'
+    )
+    expect(named('onboarding_reminder_requested')).toHaveLength(0)
+    await waitFor(() => expect(registerEmailReminder).toHaveBeenCalledTimes(1))
+    await act(async () => {
+      finish()
+    })
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'onboarding-wait:email.done'
+      )
+    )
+  })
+
+  it.each([
+    [new TypeError('offline'), 'error'],
+    [new EmailReminderError(422), 'invalid'],
+    [new EmailReminderError(429), 'rateLimited'],
+  ])(
+    'keeps the address and offers an explicit retry after %s',
+    async (error, key) => {
+      vi.mocked(registerEmailReminder).mockRejectedValueOnce(error)
+      startAt('wait', [QWEN_JOB])
+      render(<Onboarding />)
+      const field = screen.getByLabelText('onboarding-wait:email.label')
+      fireEvent.change(field, { target: { value: 'me@example.com' } })
+      fireEvent.submit(field.closest('form')!)
+      await waitFor(() =>
+        expect(screen.getByRole('status')).toHaveTextContent(
+          `onboarding-wait:email.${key}`
+        )
+      )
+      expect(field).toHaveValue('me@example.com')
+      expect(field).not.toBeDisabled()
+      expect(named('onboarding_reminder_requested')).toHaveLength(0)
+      fireEvent.submit(field.closest('form')!)
+      await waitFor(() =>
+        expect(screen.getByRole('status')).toHaveTextContent(
+          'onboarding-wait:email.done'
+        )
+      )
+    }
+  )
 
   it('shows and hides Atomic Mines', () => {
     startAt('wait', [QWEN_JOB])
