@@ -109,6 +109,7 @@ const SESSION_CACHED_PROVIDERS = [
   'mlx',
   'foundry-local',
   'litert-lm',
+  'geniex',
 ] as const
 
 /** Those, and every managed engine (`isManagedProvider`). */
