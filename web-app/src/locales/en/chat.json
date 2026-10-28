@@ -78,7 +78,8 @@
     "reasoned": "Reasoned",
     "thinking": "Thinking...",
     "thinkingFor": "Thinking for {{count}}s…",
-    "thoughtFor": "Thought for {{count}}s"
+    "thoughtFor": "Thought for {{count}}s",
+    "loadingModel": "Loading model…"
   },
   "docCitation": {
     "document": "Document",

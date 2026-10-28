@@ -55,6 +55,7 @@ import {
 } from '@/components/left-sidebar/NavRowName'
 import { collidingThreadIds } from '@/lib/sidebar-row-names'
 import { isPlatformTauri } from '@/lib/platform/utils'
+import { extractFilesFromPrompt } from '@/lib/fileMetadata'
 
 //* Welcome thread title: the new brand and the old string from previous versions
 const WELCOME_THREAD_TITLES = new Set([
@@ -155,7 +156,12 @@ export const ThreadItem = memo(
       const textContent = lastUserMessage.content?.find(
         (c) => c.type === 'text'
       )
-      return textContent?.text?.value
+      const rawText = textContent?.text?.value
+      if (!rawText) return undefined
+      const { cleanPrompt, files } = extractFilesFromPrompt(rawText)
+      return [cleanPrompt, ...files.map((file) => file.name)]
+        .filter(Boolean)
+        .join(' · ')
     }, [messages])
 
     const plainTitleForRename = useMemo(() => {

@@ -58,6 +58,7 @@ import {
 import { captureReplyGateReady } from '@/lib/reply-gate-telemetry'
 import { useReplyModelAutoStart } from '@/hooks/useReplyModelAutoStart'
 import { useDeferredFirstSend } from '@/stores/deferred-first-send-store'
+import { useThreadManagementStore } from '@/hooks/useThreadManagement'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
 import { generateId, type ChatStatus } from 'ai'
@@ -1368,7 +1369,6 @@ const ChatInput = memo(function ChatInput({
     (resolution: ReplyModelGateResolution) => {
       const canRunFromRoot =
         Boolean(initialMessage) &&
-        !projectId &&
         !onSubmit &&
         attachments.length === 0 &&
         (resolution.outcome === 'download' ||
@@ -1380,11 +1380,22 @@ const ChatInput = memo(function ChatInput({
         // thread created after the user may have left (and changed it).
         const agent = useAgentMode.getState()
         const queueId = generateId()
+        const project = projectId
+          ? useThreadManagementStore.getState().getFolderById(projectId)
+          : undefined
+        const assistant = project?.assistantId
+          ? assistants.find((entry) => entry.id === project.assistantId)
+          : (selectedAssistant ??
+            assistants.find((entry) => entry.id === defaultAssistantId) ??
+            assistants[0])
         useDeferredFirstSend.getState().enqueue({
           id: queueId,
           prompt: usePrompt.getState().getDraft(composerThreadKey),
           downloadModelIds: resolution.downloadModelIds!,
           createdAt: Date.now(),
+          composerKey: composerThreadKey,
+          project,
+          assistant,
           agentState: {
             approvalMode: agent.approvalModes[composerThreadKey],
             workspace: agent.workspaces[composerThreadKey],
@@ -1403,7 +1414,16 @@ const ChatInput = memo(function ChatInput({
       useDeferredFirstSend.getState().clear()
       setQueuedSend(resolution)
     },
-    [attachments.length, composerThreadKey, initialMessage, onSubmit, projectId]
+    [
+      attachments.length,
+      composerThreadKey,
+      initialMessage,
+      onSubmit,
+      projectId,
+      assistants,
+      defaultAssistantId,
+      selectedAssistant,
+    ]
   )
 
   const handleReplyGateDismissed = useCallback(() => {

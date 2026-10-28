@@ -147,7 +147,8 @@
     "resetCodeBlockStyle": "Reset Code Block Style",
     "resetCodeBlockStyleDesc": "Reset code block style to default.",
     "resetCodeBlockSuccess": "Code block style reset successfully",
-    "resetCodeBlockSuccessDesc": "Code block style has been restored to default."
+    "resetCodeBlockSuccessDesc": "Code block style has been restored to default.",
+    "resetInterfaceFailed": "Could not reset interface settings. Please try again."
   },
   "hardware": {
     "os": "Operating System",
@@ -415,7 +416,32 @@
     "launchAtStartupDesc": "Automatically start Atomic Chat when you log in to your computer.",
     "launchAtStartupError": "Failed to update the launch at startup setting.",
     "preloadModelOnStartup": "Preload last used model on startup",
-    "preloadModelOnStartupDesc": "Off by default so the app opens fast. Leave it off and Atomic Chat loads a model only after you pick one in the model selector."
+    "preloadModelOnStartupDesc": "Off by default so the app opens fast. Leave it off and Atomic Chat loads a model only after you pick one in the model selector.",
+    "contactTitle": "Contact Us",
+    "contactEmail": "Email",
+    "contactEmailDesc": "Reach Atomic Chat support by email.",
+    "contactXDesc": "Follow Atomic Chat on X.",
+    "contactGithubDesc": "View the Atomic Chat repository on GitHub.",
+    "advanced": "Advanced",
+    "thinkingEffort": "Thinking effort (local models)",
+    "thinkingEffortDesc": "Default effort for llama.cpp / MLX, also shown next to the chat input. Models with their own effort setting receive that; the rest get a thinking-token budget. Off disables thinking entirely.",
+    "thinkingOff": "Off",
+    "thinkingLow": "Low (256 tokens)",
+    "thinkingMedium": "Medium (1024 tokens)",
+    "thinkingHigh": "High (4096 tokens)",
+    "thinkingXhigh": "Extra High (8192 tokens)",
+    "thinkingMax": "Max (no limit)",
+    "verifyToken": "Verify",
+    "tokenRequired": "Please enter a Hugging Face token to validate",
+    "tokenValid": "Token is valid",
+    "tokenValidDesc": "Your Hugging Face token is valid.",
+    "tokenSignedIn": "Signed in as {{name}}",
+    "tokenInvalid": "Token invalid",
+    "tokenInvalidDesc": "The provided Hugging Face token is invalid. Please check your token and try again.",
+    "tokenTimeout": "Validation timed out",
+    "tokenTimeoutDesc": "The validation request timed out. Please check your network connection and try again.",
+    "tokenFailed": "Validation failed",
+    "tokenFailedDesc": "A network error occurred while validating the token. Please check your internet connection."
   },
   "extensions": {
     "title": "Extensions"

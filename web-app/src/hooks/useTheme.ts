@@ -14,7 +14,7 @@ export const checkOSDarkMode = (): boolean => {
 
 export type ThemeState = {
   activeTheme: AppTheme
-  setTheme: (theme: AppTheme) => void
+  setTheme: (theme: AppTheme) => Promise<void>
   isDark: boolean
   setIsDark: (isDark: boolean) => void
 }

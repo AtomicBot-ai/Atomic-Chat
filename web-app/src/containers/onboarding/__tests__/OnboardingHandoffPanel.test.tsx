@@ -2,7 +2,6 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { route } from '@/constants/routes'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import type { OnboardingJob } from '@/lib/onboarding/jobs'
@@ -105,25 +104,10 @@ describe('OnboardingHandoffPanel', () => {
     expect(within(panel).getByText('42%')).toBeInTheDocument()
     expect(panel).toHaveTextContent('onboarding:download.withQueued')
     expect(
-      within(panel).getByRole('button', {
+      within(panel).queryByRole('button', {
         name: 'onboarding-handoff:panel.backToSetup',
       })
-    ).toBeInTheDocument()
-  })
-
-  it('goes back to setup through the setup route', () => {
-    handOffWith([chat])
-    render(<OnboardingHandoffPanel />)
-
-    fireEvent.click(
-      screen.getByRole('button', {
-        name: 'onboarding-handoff:panel.backToSetup',
-      })
-    )
-
-    expect(mocks.navigate).toHaveBeenCalledWith({ to: route.onboarding })
-    // Re-opening the run is the route's; the panel only navigates.
-    expect(useOnboardingStore.getState().phase).toBe('handedOff')
+    ).not.toBeInTheDocument()
   })
 
   it('is put away with Dismiss', () => {

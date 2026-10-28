@@ -11,7 +11,7 @@ vi.mock('@/constants/localStorage', () => ({
 
 vi.mock('../useTheme', () => ({
   useTheme: {
-    getState: vi.fn(() => ({ isDark: false })),
+    getState: vi.fn(() => ({ isDark: false, setTheme: vi.fn(async () => {}) })),
     setState: vi.fn(),
     subscribe: vi.fn(),
     destroy: vi.fn(),
@@ -71,12 +71,12 @@ describe('useInterfaceSettings', () => {
       expect(result.current.accentColor).toBe('primary')
     })
 
-    it('should not update for invalid accent color', () => {
+    it('should not update for invalid accent color', async () => {
       const { result } = renderHook(() => useInterfaceSettings())
 
       // First reset to default state
-      act(() => {
-        result.current.resetInterface()
+      await act(async () => {
+        await result.current.resetInterface()
       })
 
       const currentColor = result.current.accentColor
@@ -90,7 +90,7 @@ describe('useInterfaceSettings', () => {
     })
   })
 
-  it('should reset interface settings to defaults', () => {
+  it('should reset interface settings to defaults', async () => {
     const { result } = renderHook(() => useInterfaceSettings())
 
     // Change some values first
@@ -100,8 +100,8 @@ describe('useInterfaceSettings', () => {
     })
 
     // Reset
-    act(() => {
-      result.current.resetInterface()
+    await act(async () => {
+      await result.current.resetInterface()
     })
 
     expect(result.current.fontSize).toBe('13px')
@@ -119,11 +119,11 @@ describe('useInterfaceSettings', () => {
       })
     })
 
-    it('should reset CSS variables when resetInterface is called', () => {
+    it('should reset CSS variables when resetInterface is called', async () => {
       const { result } = renderHook(() => useInterfaceSettings())
 
-      act(() => {
-        result.current.resetInterface()
+      await act(async () => {
+        await result.current.resetInterface()
       })
 
       expect(document.documentElement.style.setProperty).toHaveBeenCalledWith(

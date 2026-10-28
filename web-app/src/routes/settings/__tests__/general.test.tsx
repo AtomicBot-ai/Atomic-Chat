@@ -3,6 +3,9 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { Route as GeneralRoute } from '../general'
 import type { ServiceHub } from '@/services'
 import { seedServiceHub } from '@/test/service-hub'
+import i18n from '@/i18n/setup'
+
+const translation = vi.hoisted(() => ({ french: false }))
 
 // Mock all the dependencies
 vi.mock('@/containers/HeaderPage', () => ({
@@ -87,7 +90,7 @@ vi.mock('@/hooks/useAppUpdater', () => ({
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({
-    t: (key: string) => key,
+    t: (key: string) => (translation.french ? i18n.t(key) : key),
   }),
 }))
 
@@ -285,6 +288,7 @@ Object.assign(navigator, {
 describe('General Settings Route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    translation.french = false
     updater.packageManaged = false
     seedServiceHub({
       app: {
@@ -317,6 +321,29 @@ describe('General Settings Route', () => {
     mockOpenerOpen.mockResolvedValue(undefined)
     mockRevealItemInDir.mockResolvedValue(undefined)
     mockGetCoreVersion.mockResolvedValue('0.7.1')
+  })
+
+  it('renders the reported general settings labels and thinking options in French', async () => {
+    translation.french = true
+    const previousLanguage = i18n.language
+    i18n.language = 'fr'
+    const Component = GeneralRoute.component as React.ComponentType
+    await act(async () => {
+      render(<Component />)
+    })
+    for (const text of [
+      'Précharger le dernier modèle utilisé au démarrage',
+      'Nous contacter',
+      'Comportement du chat',
+      'Effort de réflexion (modèles locaux)',
+    ])
+      expect(screen.getByText(text)).toBeVisible()
+    expect(
+      screen.getByRole('option', { name: 'Faible (256 jetons)' })
+    ).toBeInTheDocument()
+    expect(screen.queryByText('Contact Us')).toBeNull()
+    expect(screen.queryByText('Thinking effort (local models)')).toBeNull()
+    i18n.language = previousLanguage
   })
 
   it('should render the general settings page', async () => {

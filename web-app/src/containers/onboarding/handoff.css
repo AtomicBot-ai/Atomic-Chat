@@ -47,7 +47,7 @@
   .ob-handoff-links {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: 16px;
     padding: 4px 16px;
   }

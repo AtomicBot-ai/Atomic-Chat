@@ -400,10 +400,10 @@ function General() {
               />
             </Card>
 
-            <Card title="Contact Us">
+            <Card title={t('settings:general.contactTitle')}>
               <CardItem
-                title="Email"
-                description="Reach Atomic Chat support by email."
+                title={t('settings:general.contactEmail')}
+                description={t('settings:general.contactEmailDesc')}
                 actions={
                   <a
                     href="mailto:support@atomic.chat"
@@ -419,7 +419,7 @@ function General() {
               />
               <CardItem
                 title="X"
-                description="Follow Atomic Chat on X."
+                description={t('settings:general.contactXDesc')}
                 actions={
                   <a
                     href="https://x.com/atomic_chat_hq"
@@ -437,7 +437,7 @@ function General() {
               />
               <CardItem
                 title="GitHub"
-                description="View the Atomic Chat repository on GitHub."
+                description={t('settings:general.contactGithubDesc')}
                 actions={
                   <a
                     href="https://github.com/AtomicBot-ai/Atomic-Chat"
@@ -674,7 +674,7 @@ function General() {
             {IS_TAURI && <LocalModelLocationsCard />}
 
             {/* Advanced - Desktop only */}
-            <Card title="Advanced">
+            <Card title={t('settings:general.advanced')}>
               <CardItem
                 title={t('settings:others.resetFactory', {
                   ns: 'settings',
@@ -709,8 +709,8 @@ function General() {
                 }
               />
               <CardItem
-                title="Thinking effort (local models)"
-                description="Default effort for llama.cpp / MLX, also shown next to the chat input. Models with their own effort setting receive that; the rest get a thinking-token budget. Off disables thinking entirely."
+                title={t('settings:general.thinkingEffort')}
+                description={t('settings:general.thinkingEffortDesc')}
                 actions={
                   <select
                     className="border-input bg-background rounded-md border px-2 py-1 text-sm"
@@ -721,12 +721,24 @@ function General() {
                       )
                     }
                   >
-                    <option value="off">Off</option>
-                    <option value="low">Low (256 tokens)</option>
-                    <option value="medium">Medium (1024 tokens)</option>
-                    <option value="high">High (4096 tokens)</option>
-                    <option value="xhigh">Extra High (8192 tokens)</option>
-                    <option value="max">Max (no limit)</option>
+                    <option value="off">
+                      {t('settings:general.thinkingOff')}
+                    </option>
+                    <option value="low">
+                      {t('settings:general.thinkingLow')}
+                    </option>
+                    <option value="medium">
+                      {t('settings:general.thinkingMedium')}
+                    </option>
+                    <option value="high">
+                      {t('settings:general.thinkingHigh')}
+                    </option>
+                    <option value="xhigh">
+                      {t('settings:general.thinkingXhigh')}
+                    </option>
+                    <option value="max">
+                      {t('settings:general.thinkingMax')}
+                    </option>
                   </select>
                 }
               />
@@ -753,9 +765,7 @@ function General() {
                       onClick={async () => {
                         const token = (huggingfaceToken || '').trim()
                         if (!token) {
-                          toast.error(
-                            'Please enter a Hugging Face token to validate'
-                          )
+                          toast.error(t('settings:general.tokenRequired'))
                           return
                         }
                         setIsValidatingToken(true)
@@ -774,28 +784,33 @@ function General() {
                           )
                           if (resp.ok) {
                             const data = await resp.json()
-                            toast.success('Token is valid', {
+                            toast.success(t('settings:general.tokenValid'), {
                               description: data?.name
-                                ? `Signed in as ${data.name}`
-                                : 'Your Hugging Face token is valid.',
+                                ? t('settings:general.tokenSignedIn', {
+                                    name: data.name,
+                                  })
+                                : t('settings:general.tokenValidDesc'),
                             })
                           } else {
-                            toast.error('Token invalid', {
-                              description:
-                                'The provided Hugging Face token is invalid. Please check your token and try again.',
+                            toast.error(t('settings:general.tokenInvalid'), {
+                              description: t(
+                                'settings:general.tokenInvalidDesc'
+                              ),
                             })
                           }
                         } catch (e) {
                           const name = (e as { name?: string })?.name
                           if (name === 'AbortError') {
-                            toast.error('Validation timed out', {
-                              description:
-                                'The validation request timed out. Please check your network connection and try again.',
+                            toast.error(t('settings:general.tokenTimeout'), {
+                              description: t(
+                                'settings:general.tokenTimeoutDesc'
+                              ),
                             })
                           } else {
-                            toast.error('Validation failed', {
-                              description:
-                                'A network error occurred while validating the token. Please check your internet connection.',
+                            toast.error(t('settings:general.tokenFailed'), {
+                              description: t(
+                                'settings:general.tokenFailedDesc'
+                              ),
                             })
                           }
                         } finally {
@@ -804,7 +819,7 @@ function General() {
                         }
                       }}
                     >
-                      Verify
+                      {t('settings:general.verifyToken')}
                     </Button>
                   </div>
                 }

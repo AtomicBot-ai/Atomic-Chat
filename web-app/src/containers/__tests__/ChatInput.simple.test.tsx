@@ -23,6 +23,7 @@ import { useAgentRun } from '@/hooks/useAgentRun'
 import { useThreads } from '@/hooks/useThreads'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useVoiceInput } from '@/hooks/useVoiceInput'
+import { useThreadManagementStore } from '@/hooks/useThreadManagement'
 import { useDeferredFirstSend } from '@/stores/deferred-first-send-store'
 import { seedServiceHub } from '@/test/service-hub'
 import type { ServiceHub } from '@/services'
@@ -856,6 +857,55 @@ describe('ChatInput', () => {
     })
 
     expect(useDeferredFirstSend.getState().queued).toMatchObject({
+      prompt: 'Keep working even if I leave this screen',
+      downloadModelIds: [modelId],
+    })
+    // New Chat sends it itself while mounted, so the root stands down for it…
+    const queueId = useDeferredFirstSend.getState().queued!.id
+    expect(useDeferredFirstSend.getState().claimedId).toBe(queueId)
+    expect(screen.getByTestId('chat-input')).toHaveValue(
+      'Keep working even if I leave this screen'
+    )
+    unmount()
+    // …and hands it back on leaving, still queued.
+    expect(useDeferredFirstSend.getState().claimedId).toBeNull()
+    expect(useDeferredFirstSend.getState().queued?.id).toBe(queueId)
+  })
+
+  it('hands a project first download to the root queue across navigation', async () => {
+    const modelId = 'LiquidAI/LFM2.5-2.6B-Q4_K_M'
+    useModelProvider.setState({
+      providers: [],
+      selectedProvider: '',
+      selectedModel: null,
+    })
+    const project = { id: 'qa-project', name: 'QA project', updated_at: 1 }
+    useThreadManagementStore.setState({ folders: [project] })
+    const { unmount } = render(
+      <ChatInput initialMessage projectId={project.id} />
+    )
+
+    fireEvent.change(screen.getByTestId('chat-input'), {
+      target: { value: 'Keep working even if I leave this screen' },
+    })
+    fireEvent.click(
+      document.querySelector('[data-test-id="send-message-button"]')!
+    )
+    await screen.findByTestId('reply-model-gate')
+
+    act(() => {
+      mocks.replyGateProps!.onResolved({
+        outcome: 'download_in_flight',
+        branch: 'none',
+        decidedInMs: 1,
+        openedAtMs: Date.now() - 1,
+        downloadModelIds: [modelId],
+      })
+    })
+
+    expect(useDeferredFirstSend.getState().queued).toMatchObject({
+      project,
+      composerKey: 'project:qa-project',
       prompt: 'Keep working even if I leave this screen',
       downloadModelIds: [modelId],
     })

@@ -23,7 +23,9 @@ function InterfaceSettings() {
     <div className="flex flex-col h-svh w-full">
       <HeaderPage>
         <div className="flex items-center gap-2 w-full">
-          <span className='font-medium text-base font-studio'>{t('common:settings')}</span>
+          <span className="font-medium text-base font-studio">
+            {t('common:settings')}
+          </span>
         </div>
       </HeaderPage>
       <div className="flex h-[calc(100%-var(--page-header-height))]">
@@ -57,8 +59,19 @@ function InterfaceSettings() {
                   <Button
                     variant="destructive"
                     size="sm"
-                    onClick={() => {
-                      resetInterface()
+                    onClick={async () => {
+                      try {
+                        await resetInterface()
+                      } catch (error) {
+                        console.error(
+                          'Failed to reset interface settings:',
+                          error
+                        )
+                        toast.error(
+                          t('settings:interface.resetInterfaceFailed')
+                        )
+                        return
+                      }
                       toast.success(
                         t('settings:interface.resetInterfaceSuccess'),
                         {

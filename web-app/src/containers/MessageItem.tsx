@@ -110,9 +110,7 @@ export const MessageItem = memo(
     const selectedModel = useModelProvider((state) => state.selectedModel)
     const [previewSource, setPreviewSource] =
       useState<AttachmentPreviewSource | null>(null)
-    // Editing state is deliberately local: the memo comparator below does not
-    // compare `onEdit` or any edit prop, so an `editingMessageId` lifted to the
-    // thread route would go stale for every non-last message.
+    // Keep an in-progress draft with its message across thread renders.
     const [isEditing, setIsEditing] = useState(false)
 
     const handleRegenerate = useCallback(() => {
@@ -740,6 +738,9 @@ export const MessageItem = memo(
       prevProps.requestActive === nextProps.requestActive &&
       prevProps.showAssistant === nextProps.showAssistant &&
       prevProps.hideActions === nextProps.hideActions &&
+      prevProps.onEdit === nextProps.onEdit &&
+      prevProps.onDelete === nextProps.onDelete &&
+      prevProps.onRegenerate === nextProps.onRegenerate &&
       prevProps.onReasoningScroll === nextProps.onReasoningScroll &&
       prevProps.agentAttachmentReferences ===
         nextProps.agentAttachmentReferences

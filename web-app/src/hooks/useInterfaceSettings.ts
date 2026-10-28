@@ -34,7 +34,7 @@ interface InterfaceSettingsState {
   accentColor: AccentColorValue
   setFontSize: (size: FontSize) => void
   setAccentColor: (color: AccentColorValue) => void
-  resetInterface: () => void
+  resetInterface: () => Promise<void>
 }
 
 type InterfaceSettingsPersistedSlice = Omit<
@@ -91,7 +91,8 @@ export const useInterfaceSettings = create<InterfaceSettingsState>()(
       const defaultState = createDefaultInterfaceValues()
       return {
         ...defaultState,
-        resetInterface: () => {
+        resetInterface: async () => {
+          await useTheme.getState().setTheme('auto')
           const { isDark } = useTheme.getState()
 
           // Reset font size

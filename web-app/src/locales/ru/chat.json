@@ -53,7 +53,8 @@
     "reasoned": "Обдумано",
     "thinking": "Думаю...",
     "thinkingFor": "Думаю {{count}} с…",
-    "thoughtFor": "Обдумано за {{count}} с"
+    "thoughtFor": "Обдумано за {{count}} с",
+    "loadingModel": "Модель загружается…"
   },
   "docCitation": {
     "document": "Документ",

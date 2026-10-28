@@ -143,7 +143,8 @@
     "resetCodeBlockStyle": "Сбросить стиль блока кода",
     "resetCodeBlockStyleDesc": "Сбросить стиль блока кода к значениям по умолчанию.",
     "resetCodeBlockSuccess": "Стиль блока кода успешно сброшен",
-    "resetCodeBlockSuccessDesc": "Стиль блока кода восстановлен по умолчанию."
+    "resetCodeBlockSuccessDesc": "Стиль блока кода восстановлен по умолчанию.",
+    "resetInterfaceFailed": "Не удалось сбросить настройки интерфейса. Попробуйте ещё раз."
   },
   "hardware": {
     "os": "Операционная система",

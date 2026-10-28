@@ -801,6 +801,17 @@ describe('/hub route', () => {
     ).toBeInTheDocument()
   })
 
+  it('explains the Liked filter after unliking its last model with device filtering enabled', async () => {
+    const user = userEvent.setup()
+    useModelLikes.setState({ liked: ['Qwen/Qwen3.5-4B-GGUF'], onlyLiked: true })
+    render(<HubPage />)
+    await user.click(
+      screen.getByRole('button', { name: /hub:table.unlike .*Qwen3.5 4B/ })
+    )
+    expect(screen.getByText('hub:noLikedModels')).toBeVisible()
+    expect(screen.queryByText('hub:noFittingPicks')).toBeNull()
+  })
+
   it('likes a row from its heart, and keeps it for the next launch', async () => {
     const user = userEvent.setup()
     render(<HubPage />)

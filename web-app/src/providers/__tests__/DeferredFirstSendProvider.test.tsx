@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import posthog from 'posthog-js'
 import type { ChatInit, UIMessage } from 'ai'
 
+import { defaultAssistant } from '@/hooks/useAssistant'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { captureChatResponse, currentChatTurn } from '@/lib/chat-telemetry'
@@ -162,6 +163,63 @@ describe('DeferredFirstSendProvider', () => {
       'chat:replyGate.backgroundStarted'
     )
     expect(usePrompt.getState().prompt).toBe('')
+  })
+
+  it('sends a released project queue while New Chat is open and preserves the project draft scope', async () => {
+    window.history.replaceState({}, '', '/')
+    const project = { id: 'qa-project', name: 'QA project', updated_at: 1 }
+    const assistant = {
+      ...defaultAssistant,
+      id: 'qa-assistant',
+      instructions: 'Answer with a number.',
+    }
+    usePrompt.getState().setDraft('project:qa-project', 'What is 19 times 7?')
+    usePrompt.getState().setDraft(TEMPORARY_CHAT_ID, 'Unrelated home draft')
+    useDeferredFirstSend.getState().enqueue({
+      id: 'project-queue',
+      prompt: 'What is 19 times 7?',
+      downloadModelIds: ['owner/model'],
+      createdAt: Date.now(),
+      project,
+      assistant,
+      composerKey: 'project:qa-project',
+    })
+    useDeferredFirstSend.getState().claim('project-queue')
+    useModelProvider.setState({
+      providers: [
+        {
+          provider: 'llamacpp-upstream',
+          active: true,
+          models: [
+            { id: 'owner/model', capabilities: [], settings: {} } as Model,
+          ],
+          settings: [],
+        } as ModelProvider,
+      ],
+    })
+    render(<DeferredFirstSendProvider />)
+    expect(mocks.switchToModel).not.toHaveBeenCalled()
+    act(() => useDeferredFirstSend.getState().release('project-queue'))
+    await waitFor(() => expect(mocks.switchToModel).toHaveBeenCalled())
+    act(() => useAppState.setState({ activeModels: ['owner/model'] }))
+    await waitFor(() => expect(mocks.sendMessage).toHaveBeenCalledTimes(1))
+    expect(mocks.createThread).toHaveBeenCalledWith(
+      { id: 'owner/model', provider: 'llamacpp-upstream' },
+      'What is 19 times 7?',
+      assistant,
+      project
+    )
+    expect(mocks.sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        parts: [{ type: 'text', text: 'What is 19 times 7?' }],
+      })
+    )
+    expect(usePrompt.getState().getDraft('project:qa-project')).toBe('')
+    expect(usePrompt.getState().getDraft(TEMPORARY_CHAT_ID)).toBe(
+      'Unrelated home draft'
+    )
+    expect(mocks.navigate).not.toHaveBeenCalled()
+    expect(useDeferredFirstSend.getState().queued).toBeNull()
   })
 
   it('stands down while New Chat is mounted so its full send flow owns the turn', async () => {

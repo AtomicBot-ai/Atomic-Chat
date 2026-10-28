@@ -1,6 +1,3 @@
-import { useNavigate } from '@tanstack/react-router'
-
-import { route } from '@/constants/routes'
 import { CORNER_ORDER, CornerSlot } from '@/containers/corner/cornerStack'
 import { useOnboardingModelReminder } from '@/hooks/useOnboardingModelReminder'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -18,9 +15,8 @@ import './onboarding.css'
 
 /**
  * The run's downloads after a handoff to the chat: the setup screen's strip,
- * floating bottom-right over the app, with the way back to setup and a way to
- * put it away. `OnboardingRuntime` decides when it shows; "Back to setup"
- * only navigates, the setup route re-opens the run itself.
+ * floating bottom-right over the app, with a way to dismiss it.
+ * `OnboardingRuntime` decides when it shows.
  *
  * With nothing left to download it only says the model is ready — or, with
  * no model ready either, shows only its links — and `yieldsCorner` gives the
@@ -33,7 +29,6 @@ export function OnboardingHandoffPanel({
   yieldsCorner?: boolean
 }) {
   const { t } = useTranslation()
-  const navigate = useNavigate()
   const updateBanner = useUpdateBannerSlots(
     (state) => activeUpdateBannerSlot(state.claimed) !== null
   )
@@ -52,13 +47,6 @@ export function OnboardingHandoffPanel({
       >
         <DownloadStrip />
         <div className="ob-handoff-links">
-          <button
-            type="button"
-            className="ob-text"
-            onClick={() => void navigate({ to: route.onboarding })}
-          >
-            {t('onboarding-handoff:panel.backToSetup')}
-          </button>
           <button
             type="button"
             className="ob-text"

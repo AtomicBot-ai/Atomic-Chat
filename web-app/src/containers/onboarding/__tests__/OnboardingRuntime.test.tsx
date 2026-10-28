@@ -660,14 +660,16 @@ describe('OnboardingRuntime', () => {
     })
 
     // As in the prototype, after Skip setup or a cloud-only run too.
-    it('offers only the way back to setup with nothing to follow, until Dismiss', () => {
+    it('can dismiss an empty handoff panel', () => {
       useOnboardingStore.getState().begin('full', 'welcome')
       render(<OnboardingRuntime />)
 
       act(() => useOnboardingStore.getState().handOff('chat'))
 
       const panel = screen.getByTestId('onboarding-handoff')
-      expect(panel).toHaveTextContent('onboarding-handoff:panel.backToSetup')
+      expect(panel).not.toHaveTextContent(
+        'onboarding-handoff:panel.backToSetup'
+      )
       expect(
         screen.queryByRole('region', { name: 'onboarding:download.label' })
       ).not.toBeInTheDocument()

@@ -1573,9 +1573,15 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
           ) : isEmpty ? (
             <HubNoResults
               message={
-                !isSearchMode && filters.onlyFitting && !managedFormat && !foundryFormat && !liteRtFormat
-                  ? t('hub:noFittingPicks')
-                  : t('hub:noModels')
+                onlyLiked
+                  ? t('hub:noLikedModels')
+                  : !isSearchMode &&
+                      filters.onlyFitting &&
+                      !managedFormat &&
+                      !foundryFormat &&
+                      !liteRtFormat
+                    ? t('hub:noFittingPicks')
+                    : t('hub:noModels')
               }
               onClearSearch={
                 searchValue.length > 0
