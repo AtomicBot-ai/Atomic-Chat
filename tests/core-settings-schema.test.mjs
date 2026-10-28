@@ -20,6 +20,7 @@ const SCHEMAS = [
   'sglang',
   'foundry-local',
   'litert-lm',
+  'geniex',
 ]
 // Each is also registered by its engine extension from that extension's own settings.json.
 const EXTENSION_SCHEMAS = SCHEMAS
