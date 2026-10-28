@@ -1,0 +1,72 @@
+{
+  "editServer": "MCP सर्वर एडिट करें",
+  "addServer": "MCP सर्वर जोड़ें",
+  "browserExtension": {
+    "connecting": {
+      "checking": "एक्सटेंशन का स्टेटस चेक हो रहा है..."
+    },
+    "notInstalled": {
+      "title": "Atomic Bot आपके ब्राउज़र में टास्क पूरे करता है",
+      "description": "Atomic Bot को ब्राउज़र एक्सेस देने के लिए एक्सटेंशन इंस्टॉल करें",
+      "getExtension": "एक्सटेंशन लें"
+    }
+  },
+  "serverName": "सर्वर का नाम",
+  "enterServerName": "सर्वर का नाम लिखें",
+  "command": "कमांड",
+  "enterCommand": "कमांड लिखें (uvx या npx)",
+  "arguments": "आर्ग्युमेंट्स",
+  "argument": "आर्ग्युमेंट {{index}}",
+  "envVars": "एनवायरनमेंट वेरिएबल्स",
+  "key": "Key",
+  "value": "Value",
+  "save": "सेव करें",
+  "status": "स्टेटस",
+  "connected": "कनेक्टेड",
+  "disconnected": "डिस्कनेक्टेड",
+  "deleteServer": {
+    "title": "MCP सर्वर डिलीट करें",
+    "description": "क्या आप वाकई MCP सर्वर {{serverName}} को डिलीट करना चाहते हैं? इसे बाद में वापस नहीं लाया जा सकेगा।",
+    "delete": "डिलीट करें",
+    "success": "MCP सर्वर {{serverName}} डिलीट हो गया"
+  },
+  "editJson": {
+    "title": "MCP सर्वर के लिए JSON एडिट करें: {{serverName}}",
+    "titleAll": "सभी MCP सर्वर JSON एडिट करें",
+    "placeholder": "JSON कॉन्फ़िगरेशन लिखें",
+    "errorParse": "शुरुआती डेटा पार्स नहीं हो सका",
+    "errorPaste": "पेस्ट किए गए कॉन्टेंट में गलत JSON फ़ॉर्मेट है",
+    "errorFormat": "JSON फ़ॉर्मेट गलत है",
+    "errorServerName": "सर्वर का नाम ज़रूरी है, इसे खाली नहीं छोड़ सकते",
+    "errorMissingServerNameKey": "JSON को {\"serverName\": {config}} जैसा स्ट्रक्चर करना होगा - सर्वर नाम की (key) मिसिंग है",
+    "errorInvalidType": "सर्वर '{{serverName}}' के लिए '{{type}}' टाइप गलत है। टाइप 'stdio', 'http', या 'sse' होना चाहिए",
+    "save": "सेव करें"
+  },
+  "checkParams": "ट्यूटोरियल के हिसाब से पैरामीटर्स चेक करें।",
+  "title": "MCP सर्वर",
+  "experimental": "एक्सपेरिमेंटल",
+  "editAllJson": "सभी सर्वर की JSON एडिट करें",
+  "findMore": "और MCP सर्वर यहां मिलेंगे",
+  "allowPermissions": "सभी MCP टूल परमिशन दें",
+  "allowPermissionsDesc": "ऑन करने पर, हर MCP टूल कॉल बिना परमिशन पॉपअप दिखाए अपने आप अप्रूव हो जाएगा। यह सेटिंग सभी चैट पर लागू होती है, नई चैट्स पर भी।",
+  "noServers": "कोई MCP सर्वर नहीं मिला",
+  "args": "आर्ग्स",
+  "env": "Env",
+  "serverStatusActive": "सर्वर {{serverKey}} एक्टिवेट हो गया",
+  "serverStatusInactive": "सर्वर {{serverKey}} डीएक्टिवेट हो गया",
+  "runtimeSettings": {
+    "title": "रनटाइम सेटिंग्स",
+    "description": "कॉन्फ़िगर करें कि Atomic Bot MCP सर्वर को कैसे मैनेज और रीट्राई करे।",
+    "toolCallTimeout": "टूल कॉल टाइमआउट (सेकंड)",
+    "toolCallTimeoutDesc": "MCP टूल के जवाब का टाइमआउट होने से पहले ज़्यादा से ज़्यादा कितना इंतज़ार करना है।"
+  },
+  "tabs": {
+    "servers": "सर्वर",
+    "logs": "लॉग"
+  },
+  "logs": {
+    "allServers": "सभी सर्वर",
+    "serverFilterLabel": "सर्वर के हिसाब से फ़िल्टर करें",
+    "noLogs": "अभी तक कोई MCP लॉग नहीं है"
+  }
+}
