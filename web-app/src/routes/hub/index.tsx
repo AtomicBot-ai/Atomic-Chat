@@ -41,6 +41,7 @@ import { useManagedHubStates } from '@/hooks/useManagedHubState'
 import { usePrismFamilies, usePrismHubVisible } from '@/hooks/useModelSetup'
 import { useFoundryLocalHub, useFoundryLocalHubVisible } from '@/hooks/useFoundryLocalHub'
 import { useLiteRtLmHub, useLiteRtLmHubVisible } from '@/hooks/useLiteRtLmHub'
+import { useGeniexHub, useGeniexHubVisible } from '@/hooks/useGeniexHub'
 import { UNKNOWN_HUB_STATE } from '@/lib/managed-engine/hub-state'
 import { hubKey, managedEngine } from '@/lib/managed-engines'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -76,6 +77,7 @@ import { getMemoryBudgetBytes, type ModelFormat } from '@/lib/model-card'
 import {
   foundryLocalRows,
   liteRtLmRows,
+  geniexRows,
   hubListSources,
   managedBrowseRows,
   managedSearchRows,
@@ -547,6 +549,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   const prismHubVisible = usePrismHubVisible()
   const foundryLocalHubVisible = useFoundryLocalHubVisible()
   const liteRtLmHubVisible = useLiteRtLmHubVisible()
+  const geniexHubVisible = useGeniexHubVisible()
   const availableFormats = useMemo(
     () =>
       hubFormats({
@@ -555,8 +558,9 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
         prism: prismHubVisible,
         foundryLocal: foundryLocalHubVisible,
         liteRtLm: liteRtLmHubVisible,
+        geniex: geniexHubVisible,
       }),
-    [visibleManaged, prismHubVisible, foundryLocalHubVisible, liteRtLmHubVisible]
+    [visibleManaged, prismHubVisible, foundryLocalHubVisible, liteRtLmHubVisible, geniexHubVisible]
   )
   const filters = useMemo(
     () => normalizeHubFilters(storedFilters, availableFormats),
@@ -678,8 +682,12 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   // its own client reads: the GGUF feed and search are not asked (change add-litert-lm-runtime).
   const liteRtFormat = filters.formats[0] === 'litert-lm'
   const liteRtLm = useLiteRtLmHub(liteRtFormat && !showOnlyDownloaded, debouncedSearchValue.trim())
+  // GenieX lists conf's curated GGUF models and AI Hub bundles, then the Hugging Face GGUF
+  // repositories the catalog search finds, read by its own client (change add-geniex-runtime).
+  const geniexFormat = filters.formats[0] === 'geniex'
+  const geniex = useGeniexHub(geniexFormat && !showOnlyDownloaded, debouncedSearchValue.trim())
   // Formats whose list is their own: nothing is asked of Hugging Face under them.
-  const ownListFormat = prismFormat || foundryFormat || liteRtFormat
+  const ownListFormat = prismFormat || foundryFormat || liteRtFormat || geniexFormat
 
   // Under a managed engine's format the engine's state comes first: what blocks
   // it, or nothing at all until the core has answered. "Downloaded" lists what
@@ -985,6 +993,23 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
       }))
     }
 
+    if (geniexFormat) {
+      // The GGUF shelf (curated, then Hugging Face) and the AI Hub shelf for this chip, each
+      // narrowed by name. Sizes are a model's own file or bundle, so the fit filter does not apply;
+      // the card shows the core's verdict per device.
+      const rows = geniexRows({
+        curated: geniex.curated,
+        huggingFace: geniex.huggingFace,
+        bundles: geniex.bundles,
+        chip: geniex.chip,
+        query: debouncedSearchValue,
+      })
+      return rows.map((row) => ({
+        model: row.model,
+        section: t(row.section === 'gguf' ? 'hub:geniex.shelfGguf' : 'hub:geniex.shelfAiHub'),
+      }))
+    }
+
     if (prismFormat) {
       // A search narrows the families by name; fit and Uncensored apply as
       // they do to any GGUF.
@@ -1157,6 +1182,11 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     liteRtFormat,
     liteRtLm.curated,
     liteRtLm.huggingFace,
+    geniexFormat,
+    geniex.curated,
+    geniex.huggingFace,
+    geniex.bundles,
+    geniex.chip,
     debouncedSearchValue,
     managedCurated.models,
     managedCurated.loading,
@@ -1515,7 +1545,9 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
         ? foundryLocal.loading
         : liteRtFormat
           ? liteRtLm.loading
-          : (loading && !isSearchMode) ||
+          : geniexFormat
+            ? geniex.loading
+            : (loading && !isSearchMode) ||
         hfSearching ||
         uncensoredLoading ||
         managedLoading)
@@ -1558,6 +1590,11 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
               {t('hub:liteRtLm.huggingFaceUnavailable')}
             </p>
           )}
+          {geniexFormat && !showOnlyDownloaded && geniex.huggingFaceUnavailable && (
+            <p className="px-2 pb-2 text-xs text-muted-foreground" role="status">
+              {t('hub:geniex.huggingFaceUnavailable')}
+            </p>
+          )}
           {managedPanel === 'blocked' ? (
             managedSelected && (
               <ManagedHubBlocked engine={managedSelected} blockers={managedHub.blockers} />
@@ -1573,7 +1610,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
           ) : isEmpty ? (
             <HubNoResults
               message={
-                !isSearchMode && filters.onlyFitting && !managedFormat && !foundryFormat && !liteRtFormat
+                !isSearchMode && filters.onlyFitting && !managedFormat && !foundryFormat && !liteRtFormat && !geniexFormat
                   ? t('hub:noFittingPicks')
                   : t('hub:noModels')
               }

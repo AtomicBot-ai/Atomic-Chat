@@ -231,6 +231,7 @@ export type ModelFormat =
   | 'atomic-prism'
   | 'foundry-local'
   | 'litert-lm'
+  | 'geniex'
 
 /**
  * The format a card is shown under. A managed engine's checkpoint is one for every managed engine
@@ -242,6 +243,7 @@ export function modelFormat(
 ): ModelFormat {
   if (model.is_foundry_local) return 'foundry-local'
   if (model.is_litert_lm) return 'litert-lm'
+  if (model.is_geniex) return 'geniex'
   if (model.is_managed) return managedFormat
   if (model.is_mlx || model.library_name?.toLowerCase() === 'mlx') return 'mlx'
   return 'gguf'
