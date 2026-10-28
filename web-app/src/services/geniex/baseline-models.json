@@ -1,0 +1,12 @@
+{
+  "$schema": "./schema.geniex-models.json",
+  "schema_version": 1,
+  "updated_at": "2026-10-27T00:00:00Z",
+  "huggingface": {
+    "quantizations": ["Q4_0"],
+    "backends": {
+      "win-arm64": ["npu", "gpu", "cpu", "hybrid"]
+    }
+  },
+  "models": []
+}
