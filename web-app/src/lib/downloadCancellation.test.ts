@@ -159,6 +159,16 @@ describe('cancelDownload', () => {
     expect(wasDownloadCancellationRequested(id)).toBe(true)
   })
 
+  it('stops a GenieX model’s transfer or unpacking by its task id (change add-geniex-runtime)', () => {
+    const id = 'geniex-qwen3-4b-aihub-x-elite'
+
+    cancelDownload({ id, name: id }, serviceHub)
+
+    expect(extensionCancel).toHaveBeenCalledWith(id)
+    expect(abortDownload).not.toHaveBeenCalled()
+    expect(wasDownloadCancellationRequested(id)).toBe(true)
+  })
+
   it('stops an engine update in the core by its task id', () => {
     const id = 'engine-update-llamacpp-upstream-b11500'
 

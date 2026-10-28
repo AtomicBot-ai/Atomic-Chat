@@ -2286,7 +2286,7 @@ export function EngineDetail({
                           controllerType={setting.controller_type}
                           controllerProps={setting.controller_props}
                           className={cn(
-                            setting.key === 'device' && 'hidden',
+                            setting.key === 'device' && providerName !== 'geniex' && 'hidden',
                             isHiddenConcurrentMode && 'hidden',
                             isHiddenByDflash && 'hidden',
                             isHiddenForManaged && 'hidden'
@@ -2471,7 +2471,7 @@ export function EngineDetail({
                       key={settingIndex}
                       title={setting.title}
                       className={cn(
-                        setting.key === 'device' && 'hidden',
+                        setting.key === 'device' && providerName !== 'geniex' && 'hidden',
                         isHiddenConcurrentMode && 'hidden',
                         isHiddenByDflash && 'hidden',
                         isHiddenForManaged && 'hidden'

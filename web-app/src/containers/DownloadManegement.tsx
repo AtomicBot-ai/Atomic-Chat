@@ -48,6 +48,7 @@ import {
 import { isManagedDownloadId } from '@/lib/managed-engine/download-id'
 import { isFoundryLocalDownloadId } from '@/lib/foundry-local/download-id'
 import { isLiteRtLmDownloadId } from '@/lib/litert-lm/download-id'
+import { isGeniexDownloadId } from '@/lib/geniex/download-id'
 import { useDecisionStore } from '@/stores/decision-store'
 import { useEmbeddingStore } from '@/stores/embedding-store'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
@@ -136,6 +137,7 @@ function downloadRowName(
     (isManagedDownloadId(id) && origins[id]) ||
     (isFoundryLocalDownloadId(id) && origins[id]) ||
     (isLiteRtLmDownloadId(id) && origins[id]) ||
+    (isGeniexDownloadId(id) && origins[id]) ||
     (isEmbeddingDownloadTaskId(id) &&
       embeddingCatalog.models.find(
         (model) => embeddingDownloadTaskId(model.id) === id
