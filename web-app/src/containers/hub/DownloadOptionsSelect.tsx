@@ -6,6 +6,7 @@ import { FitBadge } from '@/containers/hub/FitBadge'
 import { ManagedDownloadOptions } from '@/containers/hub/ManagedDownloadOptions'
 import { FoundryLocalDownloadOptions } from '@/containers/hub/FoundryLocalDownloadOptions'
 import { LiteRtLmDownloadOptions } from '@/containers/hub/LiteRtLmDownloadOptions'
+import { GeniexDownloadOptions } from '@/containers/hub/GeniexDownloadOptions'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
@@ -108,6 +109,10 @@ export function DownloadOptionsSelect({
   // LiteRT-LM: its variants for this platform, each with the core's verdict.
   if (model.is_litert_lm) {
     return <LiteRtLmDownloadOptions model={model} sectionRef={sectionRef} />
+  }
+  // GenieX: a GGUF's devices with the core's verdicts, or this chip's AI Hub bundle.
+  if (model.is_geniex) {
+    return <GeniexDownloadOptions model={model} sectionRef={sectionRef} />
   }
 
   // One checkpoint, judged by the core rather than by size against memory.
