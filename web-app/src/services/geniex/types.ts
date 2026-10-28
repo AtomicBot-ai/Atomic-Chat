@@ -3,7 +3,7 @@
  * `add-geniex-runtime`): the devices its library found (the Hexagon NPU, the Adreno GPU), the
  * verdict on a variant before it downloads or on a model on disk, and the facts the core reads from
  * a GGUF file or an AI Hub bundle. Vendored from `@atomic-chat/core/contracts` (`geniex.ts`,
- * `model-yml.ts`; core `change/add-geniex-runtime`, 0.20.0 once released); snake_case on the wire.
+ * `model-yml.ts`; core v0.20.2); snake_case on the wire.
  *
  * Nothing is ever downloaded for a device: the NPU and GPU libraries ship inside the SDK build, so
  * every device the core lists is prepared and `prepare` only says so.
@@ -65,7 +65,11 @@ export interface GeniexGgufMetadata {
   vision: boolean
 }
 
-/** What `geniex-host inspect` reads from an AI Hub bundle's `geniex.json`. */
+/**
+ * What `geniex-host inspect` reads from an AI Hub bundle folder: the context from `genie_config.json`,
+ * the precision from `metadata.json`, the chip from the Hexagon generation in
+ * `htp_backend_ext_config.json`. No bundle names a minimal GenieX, so the installer passes conf's.
+ */
 export interface GeniexBundleMetadata {
   kind: 'qairt'
   chip: GeniexChip | null
