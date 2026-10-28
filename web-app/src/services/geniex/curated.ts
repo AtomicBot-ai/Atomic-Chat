@@ -162,7 +162,7 @@ function parseCommon(raw: Json) {
   if (typeof tools !== 'boolean' || typeof reasoning !== 'boolean' || typeof vision !== 'boolean') {
     return null
   }
-  return { id, name, description, task, license, context_length, tools, reasoning, vision }
+  return { id, name, description, task: 'chat' as const, license, context_length, tools, reasoning, vision }
 }
 
 function parseGgufModel(raw: Json): GeniexGgufModel | null {
