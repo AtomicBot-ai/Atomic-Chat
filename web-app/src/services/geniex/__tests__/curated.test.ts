@@ -239,11 +239,16 @@ describe('fetchGeniexList', () => {
 
     expect(result.source).toBe('baseline')
     expect(result.error).toBe('offline')
-    // conf's first release: the Hugging Face rules alone, the curated models come after the spike.
+    // conf 2.3 after the Snapdragon spike: two quantizations, three GGUF models and one AI Hub bundle.
     expect(result.list?.huggingface).toEqual({
-      quantizations: ['Q4_0'],
+      quantizations: ['Q4_0', 'Q4_K_M'],
       backends: { 'win-arm64': ['npu', 'gpu', 'cpu', 'hybrid'] },
     })
-    expect(result.list?.models).toEqual([])
+    expect(result.list?.models.map((model) => `${model.id}:${model.kind}`)).toEqual([
+      'qwen3-4b:gguf',
+      'gemma-4-e2b:gguf',
+      'gemma-4-e4b:gguf',
+      'qwen3-4b-qairt:qairt',
+    ])
   })
 })

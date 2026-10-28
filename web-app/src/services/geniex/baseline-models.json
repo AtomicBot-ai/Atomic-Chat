@@ -1,12 +1,151 @@
 {
   "$schema": "./schema.geniex-models.json",
   "schema_version": 1,
-  "updated_at": "2026-10-27T00:00:00Z",
+  "updated_at": "2026-10-28T12:00:00Z",
   "huggingface": {
-    "quantizations": ["Q4_0"],
+    "quantizations": [
+      "Q4_0",
+      "Q4_K_M"
+    ],
     "backends": {
-      "win-arm64": ["npu", "gpu", "cpu", "hybrid"]
+      "win-arm64": [
+        "npu",
+        "gpu",
+        "cpu",
+        "hybrid"
+      ]
     }
   },
-  "models": []
+  "models": [
+    {
+      "id": "qwen3-4b",
+      "name": "Qwen3 4B",
+      "description": "Qwen3 4B instruct, Q4_0. Thinking on by default, reliable tool calls, JSON by schema. On the Hexagon NPU prefill runs 3-4x faster than on the CPU (spike: 1082 tok/s vs 306), decode about the same (21 vs 18 tok/s at 12 threads: 41).",
+      "task": "chat",
+      "license": "apache-2.0",
+      "context_length": 8192,
+      "tools": true,
+      "reasoning": true,
+      "vision": false,
+      "kind": "gguf",
+      "repo": "unsloth/Qwen3-4B-GGUF",
+      "revision": "22c9fc8a8c7700b76a1789366280a6a5a1ad1120",
+      "gated": false,
+      "file": {
+        "path": "Qwen3-4B-Q4_0.gguf",
+        "size": 2375773472,
+        "sha256": "92f4a83cdfe691b216a949f915e47f35f0ed85b833aa03490c719160ac5cdf7a"
+      },
+      "devices": [
+        "npu",
+        "gpu",
+        "cpu",
+        "hybrid"
+      ],
+      "platforms": [
+        "win-arm64"
+      ]
+    },
+    {
+      "id": "gemma-4-e2b",
+      "name": "Gemma 4 E2B",
+      "description": "Gemma 4 E2B instruct, QAT Q4_0, with its vision projector: images, tool calls in Gemma's own format, thinking. The small Gemma: 38 tok/s on the CPU, 31 on the NPU (spike).",
+      "task": "chat",
+      "license": "apache-2.0",
+      "context_length": 8192,
+      "tools": true,
+      "reasoning": true,
+      "vision": true,
+      "kind": "gguf",
+      "repo": "google/gemma-4-E2B-it-qat-q4_0-gguf",
+      "revision": "675cff42a74c774d6cb76f76d8eacb49b48c9b93",
+      "gated": false,
+      "file": {
+        "path": "gemma-4-E2B_q4_0-it.gguf",
+        "size": 3349516256,
+        "sha256": "fa401b55b07ee70a54c6dae3903c783a6e65064312529ea57175cb5f8dec6634"
+      },
+      "mmproj": {
+        "path": "gemma-4-E2B-it-mmproj.gguf",
+        "size": 986833664,
+        "sha256": "021059cce659fe7f9170d5599761d7bbaf644b798dab9503aca30dc43e6beb14"
+      },
+      "devices": [
+        "npu",
+        "gpu",
+        "cpu",
+        "hybrid"
+      ],
+      "platforms": [
+        "win-arm64"
+      ]
+    },
+    {
+      "id": "gemma-4-e4b",
+      "name": "Gemma 4 E4B",
+      "description": "Gemma 4 E4B instruct, QAT Q4_0, with its vision projector: images, tool calls in Gemma's own format, thinking. About 7-8 GB of memory in use; no hybrid device (it crashes GenieX 0.9.3's OpenCL backend).",
+      "task": "chat",
+      "license": "apache-2.0",
+      "context_length": 8192,
+      "tools": true,
+      "reasoning": true,
+      "vision": true,
+      "kind": "gguf",
+      "repo": "google/gemma-4-E4B-it-qat-q4_0-gguf",
+      "revision": "4b4a2c1d584be7264f87aac328a1bc739ce81b6c",
+      "gated": false,
+      "file": {
+        "path": "gemma-4-E4B_q4_0-it.gguf",
+        "size": 5154941280,
+        "sha256": "676c35070db6dbe52f93e9c864ee0fba4eddea94b9c875d9cb10daff453fbaee"
+      },
+      "mmproj": {
+        "path": "gemma-4-E4B-it-mmproj.gguf",
+        "size": 991552256,
+        "sha256": "7498a37cb619e55f2fcf87eb931f56e99389ed6d432e4c5c66110694c0d65578"
+      },
+      "devices": [
+        "npu",
+        "gpu",
+        "cpu"
+      ],
+      "platforms": [
+        "win-arm64"
+      ]
+    },
+    {
+      "id": "qwen3-4b-qairt",
+      "name": "Qwen3 4B (AI Hub)",
+      "description": "Qwen3 4B compiled by Qualcomm AI Hub for the Hexagon NPU (W4A16, 4096 context): the fastest Qwen3 here, 35 tok/s decode and 1270 tok/s prefill (spike). Thinking works; the qairt plugin passes no tools to the model and takes no JSON schema.",
+      "task": "chat",
+      "license": "apache-2.0",
+      "context_length": 4096,
+      "tools": false,
+      "reasoning": true,
+      "vision": false,
+      "kind": "qairt",
+      "variants": [
+        {
+          "id": "qwen3-4b-qairt-x-elite",
+          "chip": "x-elite",
+          "precision": "w4a16",
+          "bundle": {
+            "url": "https://qaihub-public-assets.s3.us-west-2.amazonaws.com/qai-hub-models/models/qwen3_4b/releases/v0.65.0/qwen3_4b-geniex_qairt-w4a16-qualcomm_snapdragon_x_elite.zip",
+            "size": 2532541480,
+            "sha256": "34dbef5d9f2f64cef87ad5ceebd4fd9a538ab7c537570bfa2049450be7a02e1f"
+          }
+        },
+        {
+          "id": "qwen3-4b-qairt-x2-elite",
+          "chip": "x2-elite",
+          "precision": "w4a16",
+          "bundle": {
+            "url": "https://qaihub-public-assets.s3.us-west-2.amazonaws.com/qai-hub-models/models/qwen3_4b/releases/v0.65.0/qwen3_4b-geniex_qairt-w4a16-qualcomm_snapdragon_x2_elite.zip",
+            "size": 2539003234,
+            "sha256": "0f65f257971369e781aaf8c93815ec864ba625995789e453b4a93eadc3faa4fb"
+          }
+        }
+      ]
+    }
+  ]
 }
