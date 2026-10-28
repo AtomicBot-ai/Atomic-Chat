@@ -3,7 +3,7 @@
  * `add-geniex-runtime`): the devices its library found (the Hexagon NPU, the Adreno GPU), the
  * verdict on a variant before it downloads or on a model on disk, and the facts the core reads from
  * a GGUF file or an AI Hub bundle. Vendored from `@atomic-chat/core/contracts` (`geniex.ts`,
- * `model-yml.ts`; core v0.20.2); snake_case on the wire.
+ * `model-yml.ts`; core v0.20.3); snake_case on the wire.
  *
  * Nothing is ever downloaded for a device: the NPU and GPU libraries ship inside the SDK build, so
  * every device the core lists is prepared and `prepare` only says so.
