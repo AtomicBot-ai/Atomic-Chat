@@ -218,7 +218,8 @@ yarn dev
 
 - **macOS**: 13.6+ (8GB RAM for 3B models, 16GB for 7B, 32GB for 13B)
 - **Windows**: 10/11 x64 (same RAM recommendations as macOS)
-- **Linux**: x86_64, glibc ≥ 2.35 (Ubuntu 22.04+, Debian 12+, Fedora 40+, Arch, Mint, Pop!_OS — same RAM recommendations as macOS). Optional: a Vulkan loader (`vulkan-1` package, or `mesa-vulkan-drivers` / proprietary NVIDIA driver) for GPU acceleration.
+- **Windows on Arm**: 11 arm64 on a Snapdragon X — the upstream llama.cpp engine (CPU, or the Adreno GPU through OpenCL), Foundry Local, and GenieX on the Hexagon NPU
+- **Linux**: x86_64 with glibc ≥ 2.35 (Ubuntu 22.04+, Debian 12+, Fedora 40+, Arch, Mint, Pop!_OS), or arm64 with glibc ≥ 2.38 (Ubuntu 24.04+, Debian 13+, Fedora 40+, Arch) — same RAM recommendations as macOS. Optional: a Vulkan loader (`vulkan-1` package, or `mesa-vulkan-drivers` / proprietary NVIDIA driver) for GPU acceleration.
 - **iOS**: download from App Store
 - **Android**: download from Google Play
 
