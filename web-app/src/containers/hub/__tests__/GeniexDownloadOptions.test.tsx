@@ -242,6 +242,24 @@ describe('GeniexDownloadOptions — an AI Hub bundle', () => {
     )
   })
 
+  it('shows the core’s words when the install is refused by the relay, not "[object Object]"', async () => {
+    // On the device the relay (`atomic_core_call`) rejects with `{code, message}`, not an Error:
+    // the card showed "[object Object]" under Download (acceptance 9.2, 28.10.2026).
+    verdicts({})
+    installer.installGeniexModel.mockRejectedValueOnce({
+      code: 'INVALID_ARGUMENT',
+      message: 'C:\\data\\geniex\\models\\x is not an AI Hub bundle: no genie_config.json in it',
+    } as never)
+    const user = userEvent.setup()
+
+    render(<GeniexDownloadOptions model={model(bundle())} chip="x-elite" />)
+
+    await waitFor(() => expect(screen.getByText('hub:geniex.runsHere')).toBeInTheDocument())
+    await user.click(screen.getByRole('button', { name: 'hub:download' }))
+    expect(await screen.findByText(/is not an AI Hub bundle: no genie_config.json/)).toBeInTheDocument()
+    expect(screen.queryByText(/object Object/)).not.toBeInTheDocument()
+  })
+
   it('says when no bundle fits this computer’s chip', () => {
     render(<GeniexDownloadOptions model={model(bundle({ variants: [variants[1]] }))} chip="x-elite" />)
 

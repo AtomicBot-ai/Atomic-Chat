@@ -443,7 +443,7 @@ describe('installGeniexModel — an AI Hub bundle', () => {
     expect(steps).toEqual(['check variant', 'check on disk', 'model.yml'])
   })
 
-  it('unpacks again a bundle whose archive is still there: a cancelled unpack may have written geniex.json', async () => {
+  it('unpacks again a bundle whose archive is still there: a cancelled unpack may have written genie_config.json', async () => {
     const { deps, steps } = fakeDeps(
       { isUnpacked: async () => true, existingSize: async () => 2_500_000_000 },
       () => BUNDLE_OK

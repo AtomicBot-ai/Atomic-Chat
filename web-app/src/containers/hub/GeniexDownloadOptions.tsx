@@ -416,13 +416,8 @@ function DownloadButton({
     } catch (error) {
       // A cancel is the person's own doing, not a failure to report.
       if (!wasDownloadCancellationRequested(downloadId) && !isDownloadCancellationError(error)) {
-        setFailure(
-          error instanceof GatedModelError
-            ? t('hub:geniex.gated', { url: error.url })
-            : error instanceof Error
-              ? error.message
-              : String(error)
-        )
+        // The relay (`atomic_core_call`) rejects with `{code, message}`, not an Error: its words, not "[object Object]".
+        setFailure(error instanceof GatedModelError ? t('hub:geniex.gated', { url: error.url }) : messageOf(error))
       }
     } finally {
       useDownloadStore.getState().removeLocalDownloadingModel(downloadId)

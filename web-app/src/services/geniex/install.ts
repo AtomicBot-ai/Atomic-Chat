@@ -89,7 +89,7 @@ export interface GeniexInstallDeps {
   existingSize: (savePath: string) => Promise<number | null>
   /** Whether a download of this file left a partial (`<file>.tmp`) behind. */
   hasPartial: (savePath: string) => Promise<boolean>
-  /** Whether a bundle's folder already holds an unpacked bundle (its `geniex.json`). */
+  /** Whether a bundle's folder already holds an unpacked bundle: its `genie_config.json`, what makes a folder a bundle for the core. */
   isUnpacked: (folder: string) => Promise<boolean>
   freeSpace: () => Promise<FreeSpaceReport | null>
   transfer: (items: TransferItem[], taskId: string, options: TransferOptions) => Promise<void>
@@ -317,7 +317,7 @@ async function installBundle(
   const archive = underRoot(root, BUNDLE_ARCHIVE)
   const downloadId = geniexDownloadId(variant.id)
   // Unpacked means the archive is gone: `extract_zip` deletes it only after the last entry, so a
-  // cancelled or failed unpack, which may have written `geniex.json` already, is done again.
+  // cancelled or failed unpack, which may have written `genie_config.json` already, is done again.
   const archiveSize = await deps.existingSize(archive)
   const unpacked = archiveSize === null && (await deps.isUnpacked(root))
   const pending = !unpacked && archiveSize !== variant.bundle.size
@@ -463,7 +463,7 @@ export function defaultGeniexInstallDeps(): GeniexInstallDeps {
     },
     isUnpacked: async (folder) => {
       try {
-        return (await fs.fileStat(`${folder}/geniex.json`)) != null
+        return (await fs.fileStat(`${folder}/genie_config.json`)) != null
       } catch {
         return false
       }

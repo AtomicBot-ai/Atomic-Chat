@@ -45,21 +45,35 @@ pub fn extract_zip_into(
 
     // Every target is decided before a byte is written: a bad entry anywhere fails the whole unpack
     // with nothing of it on disk.
-    let mut targets: Vec<(usize, PathBuf, bool)> = Vec::with_capacity(zip.len());
-    let mut total: u64 = 0;
+    let mut entries: Vec<(usize, PathBuf, bool, u64)> = Vec::with_capacity(zip.len());
     for index in 0..zip.len() {
         let entry = zip.by_index_raw(index).map_err(|e| e.to_string())?;
         let relative = entry
             .enclosed_name()
             .map(Path::to_path_buf)
             .ok_or_else(|| format!("zip entry \"{}\" would land outside the folder", entry.name()))?;
+        entries.push((index, relative, entry.is_dir(), entry.size()));
+    }
+    // AI Hub zips hold one top folder named after the bundle (spike S4); the bundle's folder is the
+    // model, so a top folder every entry shares is dropped and the files land at the root.
+    let shared_top = shared_top_folder(entries.iter().map(|(_, relative, _, _)| relative.as_path()));
+    let mut targets: Vec<(usize, PathBuf, bool)> = Vec::with_capacity(entries.len());
+    let mut total: u64 = 0;
+    for (index, relative, is_dir, size) in entries {
+        let relative = match &shared_top {
+            Some(top) => relative.strip_prefix(top).map(Path::to_path_buf).unwrap_or(relative),
+            None => relative,
+        };
+        if relative.as_os_str().is_empty() {
+            // The shared top folder itself: nothing to write.
+            continue;
+        }
         let target = jan_utils::normalize_path(&root.join(&relative));
         if !jan_utils::is_within(&target, &root) || target == root {
-            return Err(format!("zip entry \"{}\" would land outside the folder", entry.name()));
+            return Err(format!("zip entry \"{}\" would land outside the folder", relative.display()));
         }
-        let is_dir = entry.is_dir();
         if !is_dir {
-            total += entry.size();
+            total += size;
         }
         targets.push((index, target, is_dir));
     }
@@ -94,6 +108,27 @@ pub fn extract_zip_into(
         progress(done, total);
     }
     Ok(ExtractReport { files, bytes: done })
+}
+
+/// The first path component every entry shares, when there is one and no entry is that component
+/// alone as a file (`top/`, `top/a`, `top/b/c` → `top`; `a/x`, `b/y` → none; `x.bin` → none).
+fn shared_top_folder<'a>(entries: impl Iterator<Item = &'a Path>) -> Option<PathBuf> {
+    let mut top: Option<PathBuf> = None;
+    let mut any = false;
+    for relative in entries {
+        any = true;
+        let mut components = relative.components();
+        let first = components.next()?.as_os_str().to_os_string();
+        match &top {
+            Some(known) if known.as_os_str() != first => return None,
+            Some(_) => {}
+            None => top = Some(PathBuf::from(first)),
+        }
+    }
+    if !any {
+        return None;
+    }
+    top
 }
 
 /// Unpack a downloaded zip into a folder, both inside the data folder, under the download's task id
@@ -222,6 +257,38 @@ mod tests {
         assert_eq!(fs::read(out.join("weights/shard-0.bin")).unwrap(), b"0123456789");
         assert_eq!(seen.first(), Some(&(0, 30)));
         assert_eq!(seen.last(), Some(&(30, 30)));
+    }
+
+    #[test]
+    fn strips_the_top_folder_every_entry_shares() {
+        // AI Hub v0.65.0 zips hold one top folder named after the bundle (spike S4 on the device:
+        // `qwen3_4b-geniex_qairt-w4a16-qualcomm_snapdragon_x2_elite/genie_config.json`); the bundle's
+        // folder is the model, so that folder is dropped and the files land at the root.
+        let (dir, archive) = zip_with(&[
+            ("qwen3_4b-geniex_qairt-w4a16-qualcomm_snapdragon_x2_elite/", b""),
+            ("qwen3_4b-geniex_qairt-w4a16-qualcomm_snapdragon_x2_elite/genie_config.json", b"{}"),
+            ("qwen3_4b-geniex_qairt-w4a16-qualcomm_snapdragon_x2_elite/part1_of_4.bin", b"0123"),
+        ]);
+        let out = dir.path().join("qwen3-4b-qairt-x2-elite");
+
+        let report = extract_zip_into(&archive, &out, |_, _| {}, || false).unwrap();
+
+        assert_eq!(report, ExtractReport { files: 2, bytes: 6 });
+        assert!(out.join("genie_config.json").exists());
+        assert!(out.join("part1_of_4.bin").exists());
+        assert!(!out.join("qwen3_4b-geniex_qairt-w4a16-qualcomm_snapdragon_x2_elite").exists());
+    }
+
+    #[test]
+    fn keeps_folders_when_the_entries_share_no_top_folder() {
+        let (dir, archive) = zip_with(&[("a/x.bin", b"xx"), ("b/y.bin", b"yy"), ("z.txt", b"z")]);
+        let out = dir.path().join("bundle");
+
+        extract_zip_into(&archive, &out, |_, _| {}, || false).unwrap();
+
+        assert!(out.join("a/x.bin").exists());
+        assert!(out.join("b/y.bin").exists());
+        assert!(out.join("z.txt").exists());
     }
 
     #[test]
