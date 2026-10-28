@@ -1,4 +1,5 @@
 import {
+  FileDown,
   Folder,
   MoreHorizontal,
   Pencil,
@@ -54,7 +55,11 @@ import {
   NavRowTooltip,
 } from '@/components/left-sidebar/NavRowName'
 import { collidingThreadIds } from '@/lib/sidebar-row-names'
-import { isPlatformTauri } from '@/lib/platform/utils'
+import { getCurrentPlatform, isPlatformTauri } from '@/lib/platform/utils'
+import { invoke } from '@tauri-apps/api/core'
+import { convertThreadMessagesToUIMessages } from '@/lib/messages'
+import { threadToMarkdown } from '@/lib/thread-markdown'
+import { sanitizeFileName } from '@/lib/codeBlockFilename'
 
 //* Welcome thread title: the new brand and the old string from previous versions
 const WELCOME_THREAD_TITLES = new Set([
@@ -211,6 +216,30 @@ export const ThreadItem = memo(
         })
     }
 
+    // ATO-504: the whole chat, read from disk rather than the message cache,
+    // which only holds the chats opened since launch.
+    const exportAsMarkdown = async () => {
+      const title = plainTitleForRename || t('common:newThread')
+      try {
+        const stored = await serviceHub.messages().fetchMessages(thread.id)
+        const markdown = threadToMarkdown(
+          title,
+          convertThreadMessagesToUIMessages(stored ?? []),
+          new Date()
+        )
+        const targetPath = await serviceHub.dialog().save({
+          defaultPath: `${sanitizeFileName(title) ?? 'chat'}.md`,
+          filters: [{ name: 'Markdown', extensions: ['md'] }],
+        })
+        if (!targetPath) return
+        await invoke('write_file_sync', { args: [targetPath, markdown] })
+        toast.success(t('common:exportMarkdownDone'))
+      } catch (error) {
+        console.error('Failed to export the chat as Markdown:', error)
+        toast.error(t('common:exportMarkdownFailed'))
+      }
+    }
+
     const isBusy = useChatSessions((state) =>
       isSessionBusy(state.sessions[thread.id])
     )
@@ -347,6 +376,14 @@ export const ThreadItem = memo(
               <Pencil className="size-4" />
               <span>{t('common:rename')}</span>
             </DropdownMenuItem>
+            {/* Desktop only: saving goes through the native save dialog and
+                `write_file_sync`. */}
+            {getCurrentPlatform() === 'tauri' && (
+              <DropdownMenuItem onSelect={() => void exportAsMarkdown()}>
+                <FileDown className="size-4" />
+                <span>{t('common:exportMarkdown')}</span>
+              </DropdownMenuItem>
+            )}
             <DropdownMenuSub>
               <DropdownMenuSubTrigger className="gap-2">
                 <Folder className="size-4" />

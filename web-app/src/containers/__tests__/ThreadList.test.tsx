@@ -5,6 +5,8 @@ import ThreadList from '../ThreadList'
 import type { MessagesService } from '@/services/messages/types'
 import { seedServiceHub } from '@/test/service-hub'
 import { togglePinnedThread } from '@/hooks/useSidebarLists'
+import { invoke } from '@tauri-apps/api/core'
+import { toast } from 'sonner'
 
 // Render Link as a plain anchor, forwarding any extra props (e.g. the
 // data-active / className the sidebar button merges onto it).
@@ -83,8 +85,13 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }))
 
-// "Open in new window" only exists on the desktop build.
-vi.mock('@/lib/platform/utils', () => ({ isPlatformTauri: () => true }))
+// "Open in new window" and "Export as Markdown" only exist on the desktop build.
+vi.mock('@/lib/platform/utils', () => ({
+  isPlatformTauri: () => true,
+  getCurrentPlatform: () => 'tauri',
+}))
+
+vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))
 
 vi.mock('@/lib/utils', () => ({
   cn: (...args: any[]) => args.filter(Boolean).join(' '),
@@ -305,6 +312,80 @@ describe('ThreadList right-click menu', () => {
       label: 'thread-thread-1',
       title: 'First chat',
     })
+  })
+})
+
+// ATO-504: the whole chat, read from disk, saved where the user picks.
+describe('ThreadList export as Markdown', () => {
+  let fetchMessages: ReturnType<typeof vi.fn>
+  let save: ReturnType<typeof vi.fn>
+
+  const clickExport = async () => {
+    await act(async () => {
+      render(<ThreadList threads={threads} />)
+    })
+    const item = screen.getAllByText('common:exportMarkdown')[0].closest('div')!
+    await act(async () => {
+      item.click()
+    })
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(useParams).mockReturnValue({} as never)
+    fetchMessages = vi.fn().mockResolvedValue([
+      {
+        id: 'm1',
+        role: 'user',
+        created_at: 1,
+        completed_at: 1,
+        content: [{ type: 'text', text: { value: 'Hello there' } }],
+      },
+    ])
+    save = vi.fn().mockResolvedValue('/tmp/First chat.md')
+    seedServiceHub({
+      messages: { fetchMessages } as unknown as MessagesService,
+      dialog: { save } as never,
+    })
+  })
+
+  it('writes the chat it belongs to as a Markdown file', async () => {
+    await clickExport()
+
+    expect(fetchMessages.mock.calls).toEqual([['thread-1']])
+    expect(save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        defaultPath: 'First chat.md',
+        filters: [{ name: 'Markdown', extensions: ['md'] }],
+      })
+    )
+    expect(vi.mocked(invoke).mock.calls).toHaveLength(1)
+    const [command, payload] = vi.mocked(invoke).mock.calls[0] as [
+      string,
+      { args: [string, string] },
+    ]
+    expect(command).toBe('write_file_sync')
+    expect(payload.args[0]).toBe('/tmp/First chat.md')
+    expect(payload.args[1]).toMatch(/^# First chat\n/)
+    expect(payload.args[1]).toContain('## User\n\nHello there')
+    expect(toast.success).toHaveBeenCalledWith('common:exportMarkdownDone')
+  })
+
+  it('writes nothing when the save dialog is cancelled', async () => {
+    save.mockResolvedValue(null)
+    await clickExport()
+
+    expect(invoke).not.toHaveBeenCalled()
+    expect(toast.success).not.toHaveBeenCalled()
+    expect(toast.error).not.toHaveBeenCalled()
+  })
+
+  it('says so when the chat cannot be read', async () => {
+    fetchMessages.mockRejectedValue(new Error('disk'))
+    await clickExport()
+
+    expect(save).not.toHaveBeenCalled()
+    expect(toast.error).toHaveBeenCalledWith('common:exportMarkdownFailed')
   })
 })
 
