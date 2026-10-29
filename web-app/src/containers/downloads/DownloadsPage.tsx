@@ -27,6 +27,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   Tooltip,
   TooltipContent,
@@ -119,7 +120,8 @@ type Refusal = { code?: unknown; message?: unknown }
 export function DownloadsPage() {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
-  const { items, totalBytes, remove, cancel, resume } = useInstalledInventory()
+  const { items, loading, totalBytes, remove, cancel, resume } =
+    useInstalledInventory()
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<CategoryFilter>('all')
   const [confirming, setConfirming] = useState<InventoryItem | null>(null)
@@ -223,6 +225,8 @@ export function DownloadsPage() {
     }
   }
 
+  // The total and the count wait for the list's first read: a number
+  // that grows as the rest arrives reads as a wrong one until it stops.
   const tiles = [
     {
       icon: HardDrive,
@@ -230,18 +234,21 @@ export function DownloadsPage() {
       value: totalBytes > 0 ? formatBytes(totalBytes) : '0 MB',
       label: t('downloads:summary.totalStorage'),
       hint: hasEngineBuilds ? t('downloads:summary.enginesNotCounted') : null,
+      pending: loading,
     },
     {
       icon: Box,
       value: String(installedCount),
       label: t('downloads:summary.items'),
       hint: null,
+      pending: loading,
     },
     {
       icon: PieChart,
       value: sizeLabel(freeBytes),
       label: t('downloads:summary.freeSpace'),
       hint: null,
+      pending: false,
     },
   ]
 
@@ -263,7 +270,7 @@ export function DownloadsPage() {
           className="grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-3"
           data-testid="downloads-summary"
         >
-          {tiles.map(({ icon: Icon, value, label, hint }) => (
+          {tiles.map(({ icon: Icon, value, label, hint, pending }) => (
             <div
               key={label}
               className="min-w-0 rounded-xl border border-border bg-card p-4"
@@ -272,8 +279,15 @@ export function DownloadsPage() {
               <div
                 className="font-studio truncate text-xl font-semibold tabular-nums"
                 aria-label={label}
+                aria-busy={pending || undefined}
               >
-                {value}
+                {/* Inline and one em tall, inside the value's own line: the
+                    card keeps its height when the number takes its place. */}
+                {pending ? (
+                  <Skeleton className="inline-block h-[1em] w-16 align-middle" />
+                ) : (
+                  value
+                )}
               </div>
               <p className="mt-1 truncate text-xs text-muted-foreground">
                 {label}
@@ -316,7 +330,10 @@ export function DownloadsPage() {
           </select>
         </div>
         <div className="overflow-hidden rounded-xl border border-border">
-          <table className="w-full table-fixed text-left text-sm">
+          <table
+            className="w-full table-fixed text-left text-sm"
+            aria-busy={loading || undefined}
+          >
             <thead className="bg-secondary/30 text-xs text-muted-foreground">
               <tr>
                 <th className="p-3 font-medium">
@@ -447,14 +464,51 @@ export function DownloadsPage() {
                   </tr>
                 )
               })}
+              {/* Until the session's first read of the disk, and of the
+                  embedding and decision models, answers, what is listed may
+                  not be all there is: placeholder rows say more is coming, in
+                  place of an empty page that would read as nothing
+                  downloaded. A later visit starts from the last read. */}
+              {loading &&
+                Array.from(
+                  { length: visible.length === 0 ? 3 : 1 },
+                  (_, index) => (
+                    <tr
+                      key={`pending-${index}`}
+                      aria-hidden="true"
+                      data-testid="downloads-row-pending"
+                      className="border-t border-border"
+                    >
+                      <td className="p-3">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <Skeleton className="size-9 shrink-0 rounded-lg" />
+                          <div className="min-w-0 flex-1 space-y-1.5">
+                            <Skeleton className="h-3.5 w-2/5" />
+                            <Skeleton className="h-3 w-1/4" />
+                          </div>
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <Skeleton className="h-3.5 w-16" />
+                      </td>
+                      <td className="p-3" />
+                    </tr>
+                  )
+                )}
             </tbody>
           </table>
-          {visible.length === 0 && (
-            <p className="p-8 text-center text-sm text-muted-foreground">
-              {items.length === 0
-                ? t('downloads:empty')
-                : t('downloads:noMatch')}
+          {loading ? (
+            <p role="status" className="sr-only">
+              {t('common:loading')}
             </p>
+          ) : (
+            visible.length === 0 && (
+              <p className="p-8 text-center text-sm text-muted-foreground">
+                {items.length === 0
+                  ? t('downloads:empty')
+                  : t('downloads:noMatch')}
+              </p>
+            )
           )}
         </div>
       </div>

@@ -166,9 +166,37 @@ export async function removeInventoryItem(
   }
 }
 
+/**
+ * The last read of the download folders in this app session, kept outside the
+ * page: coming back to Downloads shows it at once, without placeholders, while
+ * the folders are read again behind it. `seq` numbers the reads, so the latest
+ * one started owns the result, also when the page that started an earlier one
+ * has closed since.
+ */
+const diskCache: { scan: DownloadsDiskScan; read: boolean; seq: number } = {
+  scan: EMPTY_DISK_SCAN,
+  read: false,
+  seq: 0,
+}
+
+/** Test hook: forget the session's last read and drop any read still running. */
+export function resetDownloadsDiskCache(): void {
+  diskCache.scan = EMPTY_DISK_SCAN
+  diskCache.read = false
+  diskCache.seq += 1
+}
+
 export type InstalledInventory = {
   /** Running downloads first, then everything installed. */
   items: InventoryItem[]
+  /**
+   * The first read of what this page asks for itself is still running: the
+   * session's first read of the download folders, and which embedding and
+   * decision models are on disk. Until it answers, `items` can lack what is
+   * already on this computer, so an empty list is not yet "nothing downloaded".
+   * A later visit starts from the last read and is not loading.
+   */
+  loading: boolean
   /** Bytes on disk across the installed items, shared files counted once. */
   totalBytes: number
   remove: (item: InventoryItem) => Promise<void>
@@ -200,6 +228,8 @@ export function useInstalledInventory(): InstalledInventory {
   const embeddingInstalled = useEmbeddingStore((state) => state.installed)
   const decisionModels = useDecisionStore((state) => state.catalog.models)
   const decisionInstalled = useDecisionStore((state) => state.installed)
+  const embeddingRead = useEmbeddingStore((state) => state.installedRead)
+  const decisionRead = useDecisionStore((state) => state.installedRead)
 
   const engines = useEngineVersionsStore((state) => state.engines)
 
@@ -233,9 +263,9 @@ export function useInstalledInventory(): InstalledInventory {
   // What the disk holds that no owner records: MLX folder sizes, MLX drafts and
   // partial downloads. Read again whenever the local models or the downloads
   // the app holds change (a download that finishes turns its partials into a
-  // model), and after a removal.
-  const [disk, setDisk] = useState<DownloadsDiskScan>(EMPTY_DISK_SCAN)
-  const diskRef = useRef(disk)
+  // model), and after a removal. A visit starts from the session's last read.
+  const [disk, setDisk] = useState<DownloadsDiskScan>(() => diskCache.scan)
+  const [diskRead, setDiskRead] = useState(() => diskCache.read)
   const unsizedMlxIds = useMemo(
     () =>
       (
@@ -256,27 +286,34 @@ export function useInstalledInventory(): InstalledInventory {
     [providers]
   )
   const scanKey = `${unsizedMlxIds.join('\n')}|${localModelsKey}|${[...activeIds].sort().join('\n')}`
-  const scanSeq = useRef(0)
   const unsizedRef = useRef(unsizedMlxIds)
   unsizedRef.current = unsizedMlxIds
   const rescan = useCallback(async () => {
-    const seq = ++scanSeq.current
+    const seq = ++diskCache.seq
     let next: DownloadsDiskScan
     try {
       next = await scanDownloadsDisk(unsizedRef.current)
     } catch (error) {
       console.warn('[downloads] reading the download folders failed:', error)
+      // A failed read is an answer too: the page stops waiting on it, and
+      // keeps the last read it had.
+      if (seq === diskCache.seq) {
+        diskCache.read = true
+        setDiskRead(true)
+      }
       return
     }
     // A later read owns the result; an empty one over nothing changes nothing.
-    if (seq !== scanSeq.current) return
+    if (seq !== diskCache.seq) return
+    diskCache.read = true
+    setDiskRead(true)
     const empty =
       next.partials.length === 0 &&
       next.drafts.length === 0 &&
       Object.keys(next.mlxModelBytes).length === 0
-    if (empty && diskRef.current === EMPTY_DISK_SCAN) return
-    diskRef.current = empty ? EMPTY_DISK_SCAN : next
-    setDisk(diskRef.current)
+    if (empty && diskCache.scan === EMPTY_DISK_SCAN) return
+    diskCache.scan = empty ? EMPTY_DISK_SCAN : next
+    setDisk(diskCache.scan)
   }, [])
   useEffect(() => {
     void rescan()
@@ -356,5 +393,7 @@ export function useInstalledInventory(): InstalledInventory {
     [serviceHub, t]
   )
 
-  return { items, totalBytes, remove, cancel, resume }
+  const loading = !diskRead || !embeddingRead || !decisionRead
+
+  return { items, loading, totalBytes, remove, cancel, resume }
 }

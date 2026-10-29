@@ -9,6 +9,7 @@ import {
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { resetDownloadsDiskCache } from '@/hooks/useInstalledInventory'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { EMPTY_DISK_SCAN, type DownloadsDiskScan } from '@/lib/downloads-disk'
 import type { ServiceHub } from '@/services'
@@ -112,6 +113,8 @@ const diskAvailable = vi.fn()
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // Each test opens the page for the first time in the session.
+  resetDownloadsDiskCache()
   disk.scanDownloadsDisk.mockResolvedValue(EMPTY_DISK_SCAN)
   disk.removeDiskPaths.mockResolvedValue(undefined)
   copyToClipboard.mockResolvedValue(true)
@@ -136,14 +139,17 @@ beforeEach(() => {
     installedArtifacts: [],
     modelFiles: [],
   })
+  // Read before, by this page or another; a test of the first read says not.
   useEmbeddingStore.setState({
     catalog: getBaselineEmbeddingCatalog(),
     installed: {},
+    installedRead: true,
     bind: () => () => {},
   })
   useDecisionStore.setState({
     catalog: getBaselineDecisionCatalog(),
     installed: {},
+    installedRead: true,
     bind: () => () => {},
   })
   useEngineVersionsStore.setState({
@@ -175,10 +181,29 @@ beforeEach(() => {
 const rows = () => screen.queryAllByTestId('downloads-row')
 const rowNamed = (name: string) =>
   rows().find((row) => within(row).queryByText(name)) as HTMLElement
+const pendingRows = () => screen.queryAllByTestId('downloads-row-pending')
+
+/** The page once its first read of the disk has answered. */
+const renderRead = async () => {
+  const view = render(<DownloadsPage />)
+  await waitFor(() => expect(pendingRows()).toHaveLength(0))
+  return view
+}
+
+/** A promise the test settles when it chooses. */
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason: unknown) => void
+  const promise = new Promise<T>((done, fail) => {
+    resolve = done
+    reject = fail
+  })
+  return { promise, resolve, reject }
+}
 
 describe('DownloadsPage', () => {
   it('sums what is on disk, counts it, and shows the free space', async () => {
-    render(<DownloadsPage />)
+    await renderRead()
 
     expect(
       screen.getByLabelText('downloads:summary.totalStorage')
@@ -211,8 +236,8 @@ describe('DownloadsPage', () => {
     ).toHaveTextContent('—')
   })
 
-  it('filters by category and by search', () => {
-    render(<DownloadsPage />)
+  it('filters by category and by search', async () => {
+    await renderRead()
     expect(rows()).toHaveLength(4)
 
     fireEvent.change(screen.getByLabelText('downloads:categoryLabel'), {
@@ -382,7 +407,7 @@ describe('DownloadsPage', () => {
     expect(rows().some((row) => within(row).queryByText(/v0\.3\.9/))).toBe(true)
   })
 
-  it('lists a running download first and cancels it like the panel does', () => {
+  it('lists a running download first and cancels it like the panel does', async () => {
     useDownloadStore.setState({
       downloads: {
         'unsloth/Big-Model-Q4_K_M': {
@@ -395,7 +420,7 @@ describe('DownloadsPage', () => {
         },
       },
     })
-    render(<DownloadsPage />)
+    await renderRead()
 
     const first = rows()[0]
     expect(within(first).getByText('Big Model')).toBeVisible()
@@ -549,13 +574,151 @@ describe('DownloadsPage', () => {
     expect(screen.queryByRole('region')).not.toBeInTheDocument()
   })
 
-  it('says when nothing is downloaded yet', () => {
+  it('says when nothing is downloaded yet', async () => {
     useModelProvider.setState({ providers: [] })
     useEngineVersionsStore.setState({ engines: {} })
-    render(<DownloadsPage />)
+    await renderRead()
 
     expect(rows()).toHaveLength(0)
     expect(screen.getByText('downloads:empty')).toBeInTheDocument()
+  })
+
+  describe('before the first read of the disk answers', () => {
+    it('shows placeholders, not "nothing downloaded", until the disk says so', async () => {
+      useModelProvider.setState({ providers: [] })
+      useEngineVersionsStore.setState({ engines: {} })
+      const scan = deferred<DownloadsDiskScan>()
+      disk.scanDownloadsDisk.mockReturnValue(scan.promise)
+      render(<DownloadsPage />)
+
+      expect(pendingRows()).toHaveLength(3)
+      expect(screen.getByRole('status')).toHaveTextContent('common:loading')
+      expect(screen.queryByText('downloads:empty')).not.toBeInTheDocument()
+      // The sums wait too: a zero now would be a wrong number.
+      for (const label of [
+        'downloads:summary.totalStorage',
+        'downloads:summary.items',
+      ]) {
+        expect(screen.getByLabelText(label)).toHaveAttribute(
+          'aria-busy',
+          'true'
+        )
+        expect(screen.getByLabelText(label)).toHaveTextContent('')
+      }
+
+      await act(async () => scan.resolve(EMPTY_DISK_SCAN))
+
+      expect(pendingRows()).toHaveLength(0)
+      expect(screen.queryByRole('status')).not.toBeInTheDocument()
+      expect(screen.getByText('downloads:empty')).toBeInTheDocument()
+      expect(
+        screen.getByLabelText('downloads:summary.items')
+      ).toHaveTextContent('0')
+    })
+
+    it('lists what it knows at once and the rest when it arrives', async () => {
+      const scan = deferred<DownloadsDiskScan>()
+      disk.scanDownloadsDisk.mockReturnValue(scan.promise)
+      render(<DownloadsPage />)
+
+      // The models the engines listed are there already; one placeholder
+      // under them says the list is not complete yet.
+      expect(rows()).toHaveLength(4)
+      expect(pendingRows()).toHaveLength(1)
+
+      await act(async () =>
+        scan.resolve({
+          ...EMPTY_DISK_SCAN,
+          partials: [
+            {
+              root: 'llamacpp/models',
+              id: 'Meta-Llama-3_1-8B-Instruct-IQ4_XS',
+              paths: [
+                '/data/llamacpp/models/Meta-Llama-3_1-8B-Instruct-IQ4_XS',
+              ],
+              bytes: 3 * GB,
+            },
+          ],
+        })
+      )
+
+      expect(rows()).toHaveLength(5)
+      expect(rowNamed('Meta Llama 3.1 8B')).toBeDefined()
+      expect(pendingRows()).toHaveLength(0)
+      expect(
+        screen.getByLabelText('downloads:summary.totalStorage')
+      ).toHaveTextContent('10.0 GB')
+    })
+
+    it('waits for the embedding models on disk, then lists them', async () => {
+      const [model] = getBaselineEmbeddingCatalog().models
+      useEmbeddingStore.setState({ installedRead: false })
+      await act(async () => {
+        render(<DownloadsPage />)
+      })
+      // The disk has answered; the embedding models have not.
+      expect(pendingRows()).toHaveLength(1)
+
+      act(() =>
+        useEmbeddingStore.setState({
+          installed: { [model.id]: true },
+          installedRead: true,
+        })
+      )
+
+      expect(pendingRows()).toHaveLength(0)
+      expect(rowNamed(model.name)).toBeDefined()
+    })
+
+    it('stops waiting when the disk cannot be read', async () => {
+      useModelProvider.setState({ providers: [] })
+      useEngineVersionsStore.setState({ engines: {} })
+      disk.scanDownloadsDisk.mockRejectedValue(new Error('EACCES'))
+      await renderRead()
+
+      expect(screen.getByText('downloads:empty')).toBeInTheDocument()
+    })
+  })
+
+  it('opens again on the last read, without placeholders, and reads the disk again behind it', async () => {
+    disk.scanDownloadsDisk.mockResolvedValue({
+      ...EMPTY_DISK_SCAN,
+      partials: [
+        {
+          root: 'llamacpp/models',
+          id: 'Meta-Llama-3_1-8B-Instruct-IQ4_XS',
+          paths: ['/data/llamacpp/models/Meta-Llama-3_1-8B-Instruct-IQ4_XS'],
+          bytes: 3 * GB,
+        },
+      ],
+    })
+    const first = await renderRead()
+    expect(rowNamed('Meta Llama 3.1 8B')).toBeDefined()
+    first.unmount()
+
+    // The download finished meanwhile: the next read finds no partial files.
+    const scan = deferred<DownloadsDiskScan>()
+    disk.scanDownloadsDisk.mockReturnValue(scan.promise)
+    render(<DownloadsPage />)
+
+    expect(pendingRows()).toHaveLength(0)
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    expect(rowNamed('Meta Llama 3.1 8B')).toBeDefined()
+    expect(
+      screen.getByLabelText('downloads:summary.totalStorage')
+    ).not.toHaveAttribute('aria-busy')
+    expect(
+      screen.getByLabelText('downloads:summary.totalStorage')
+    ).toHaveTextContent('10.0 GB')
+    expect(disk.scanDownloadsDisk).toHaveBeenCalledTimes(2)
+
+    await act(async () => scan.resolve(EMPTY_DISK_SCAN))
+
+    expect(rowNamed('Meta Llama 3.1 8B')).toBeUndefined()
+    expect(pendingRows()).toHaveLength(0)
+    expect(
+      screen.getByLabelText('downloads:summary.totalStorage')
+    ).toHaveTextContent('7.0 GB')
   })
 
   describe('what the disk holds without an owner', () => {

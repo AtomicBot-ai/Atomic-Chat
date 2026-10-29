@@ -22,6 +22,7 @@ vi.mock('@/services/embedding-catalog-registry', async (importOriginal) => {
   }
 })
 
+import { isEmbeddingModelInstalled } from '@/lib/embedding/models'
 import { seedServiceHub } from '@/test/service-hub'
 import type {
   EmbeddingEvent,
@@ -121,10 +122,23 @@ describe('useEmbeddingStore', () => {
   it('marks which catalog models are on disk', async () => {
     const [first] = useEmbeddingStore.getState().catalog.models
     installedIds.add(first.id)
+    expect(useEmbeddingStore.getState().installedRead).toBe(false)
     await useEmbeddingStore.getState().refreshInstalled()
-    const { installed } = useEmbeddingStore.getState()
+    const { installed, installedRead } = useEmbeddingStore.getState()
+    expect(installedRead).toBe(true)
     expect(installed[first.id]).toBe(true)
     expect(Object.values(installed).filter(Boolean)).toHaveLength(1)
+  })
+
+  it('counts a failed read of the disk as read, so nothing waits on it', async () => {
+    vi.mocked(isEmbeddingModelInstalled).mockRejectedValueOnce(
+      new Error('EACCES')
+    )
+    await expect(
+      useEmbeddingStore.getState().refreshInstalled()
+    ).rejects.toThrow('EACCES')
+    expect(useEmbeddingStore.getState().installedRead).toBe(true)
+    expect(useEmbeddingStore.getState().installed).toEqual({})
   })
 
   it('follows the core events once bound', async () => {
@@ -156,5 +170,7 @@ describe('useEmbeddingStore', () => {
     useEmbeddingStore.getState().bind()()
     expect(service.subscribe).not.toHaveBeenCalled()
     expect(useEmbeddingStore.getState().status).toBeNull()
+    // Nothing to read is an answer: the empty map is what is installed.
+    expect(useEmbeddingStore.getState().installedRead).toBe(true)
   })
 })

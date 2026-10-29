@@ -11,6 +11,7 @@ import { useDownloadStore } from '@/hooks/useDownloadStore'
 import {
   InventoryNotRemovableError,
   removeInventoryItem,
+  resetDownloadsDiskCache,
   useInstalledInventory,
 } from '@/hooks/useInstalledInventory'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -141,6 +142,8 @@ let serviceHub: ServiceHub
 
 beforeEach(() => {
   vi.clearAllMocks()
+  // Each test mounts the hook for the first time in the session.
+  resetDownloadsDiskCache()
   disk.scanDownloadsDisk.mockResolvedValue(EMPTY_DISK_SCAN)
   disk.removeDiskPaths.mockResolvedValue(undefined)
   serviceHub = seedServiceHub({
@@ -447,6 +450,43 @@ describe('useInstalledInventory', () => {
     expect(downloads.every((item) => item.removal === null)).toBe(true)
     // What is still downloading is not on disk yet.
     expect(totalBytes).toBe(GB)
+  })
+})
+
+describe('the first read', () => {
+  it('is loading until the disk and the embedding and decision models are read once', async () => {
+    let answer!: (scan: DownloadsDiskScan) => void
+    disk.scanDownloadsDisk.mockReturnValue(
+      new Promise<DownloadsDiskScan>((resolve) => (answer = resolve))
+    )
+    useEmbeddingStore.setState({ installedRead: false })
+    useDecisionStore.setState({ installedRead: false })
+
+    const result = inventory()
+    expect(result.current.loading).toBe(true)
+
+    await act(async () => answer(EMPTY_DISK_SCAN))
+    expect(result.current.loading).toBe(true)
+
+    act(() => useEmbeddingStore.setState({ installedRead: true }))
+    expect(result.current.loading).toBe(true)
+
+    act(() => useDecisionStore.setState({ installedRead: true }))
+    expect(result.current.loading).toBe(false)
+  })
+
+  it('stops waiting on a disk it cannot read', async () => {
+    disk.scanDownloadsDisk.mockRejectedValue(new Error('EACCES'))
+    useEmbeddingStore.setState({ installedRead: true })
+    useDecisionStore.setState({ installedRead: true })
+
+    let result!: ReturnType<typeof inventory>
+    await act(async () => {
+      result = inventory()
+    })
+
+    expect(result.current.loading).toBe(false)
+    expect(result.current.items).toEqual([])
   })
 })
 

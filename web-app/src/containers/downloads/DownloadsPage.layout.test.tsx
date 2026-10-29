@@ -1,8 +1,9 @@
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import { page, userEvent } from '@vitest/browser/context'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { resetDownloadsDiskCache } from '@/hooks/useInstalledInventory'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import i18n from '@/i18n/setup'
 import {
@@ -168,11 +169,13 @@ function seed() {
   useEmbeddingStore.setState({
     catalog: getBaselineEmbeddingCatalog(),
     installed: { [getBaselineEmbeddingCatalog().models[0].id]: true },
+    installedRead: true,
     bind: () => () => {},
   })
   useDecisionStore.setState({
     catalog: getBaselineDecisionCatalog(),
     installed: {},
+    installedRead: true,
     bind: () => () => {},
   })
   useEngineVersionsStore.setState({
@@ -228,6 +231,8 @@ function seed() {
 
 beforeEach(async () => {
   await i18n.changeLanguage('en')
+  // Each test opens the page for the first time in the session.
+  resetDownloadsDiskCache()
   seedServiceHub({
     decision: { isSupported: () => false } as never,
     modelSetup: {
@@ -238,6 +243,62 @@ beforeEach(async () => {
 })
 
 describe.each(['light', 'dark'] as const)('Downloads, %s theme', (theme) => {
+  it.each([DEFAULT_FONT_SIZE, XL_FONT_SIZE])(
+    'keeps the tiles and the table in place while the list is read, at %s',
+    async (fontSize) => {
+      await page.viewport(1024, 800)
+      setTheme(theme)
+      setFontSize(fontSize)
+      // The embedding models are not read yet, so the page keeps waiting.
+      useEmbeddingStore.setState({ installedRead: false })
+      const { container } = render(
+        withTranslations(
+          <div className="app-shell flex w-full">
+            <aside className="w-[316px] shrink-0">Sidebar</aside>
+            <main className="min-w-0 flex-1">
+              <DownloadsPage />
+            </main>
+          </div>
+        )
+      )
+      await screen.findByText('87.3 GB')
+      await settle(container)
+
+      const main = container.querySelector('main') as HTMLElement
+      expectNoHorizontalOverflow(main)
+      const tiles = [
+        ...container.querySelectorAll('[data-testid="downloads-summary"] > *'),
+      ] as HTMLElement[]
+      // A placeholder value is as tall as a real one, and shows on the card.
+      expectSameHeight(tiles)
+      for (const label of ['Total storage', 'Downloaded items']) {
+        const value = screen.getByLabelText(label)
+        const placeholder = value.querySelector(
+          '[data-slot="skeleton"]'
+        ) as HTMLElement
+        expect(placeholder.getBoundingClientRect().width).toBeGreaterThan(0)
+        expectFits(placeholder, value)
+        expect(getComputedStyle(placeholder).backgroundColor).not.toBe(
+          getComputedStyle(value.parentElement as HTMLElement).backgroundColor
+        )
+      }
+      const table = container.querySelector('table') as HTMLElement
+      const [pending] = screen.getAllByTestId('downloads-row-pending')
+      expectFits(pending, table)
+      const before = tiles.map((tile) => tile.getBoundingClientRect().height)
+
+      act(() => useEmbeddingStore.setState({ installedRead: true }))
+      await settle(container)
+
+      // The values take the placeholders' place without moving the cards.
+      expect(screen.queryAllByTestId('downloads-row-pending')).toHaveLength(0)
+      expect(tiles.map((tile) => tile.getBoundingClientRect().height)).toEqual(
+        before
+      )
+      expectOneLine(screen.getByLabelText('Total storage'))
+    }
+  )
+
   it.each(
     [1024, 1280].flatMap((width) =>
       [DEFAULT_FONT_SIZE, XL_FONT_SIZE].map((fontSize) => ({
