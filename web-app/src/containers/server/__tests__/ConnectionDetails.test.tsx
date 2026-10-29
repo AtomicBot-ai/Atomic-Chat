@@ -60,7 +60,10 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, options?: { count?: string }) =>
+      options?.count === undefined ? key : `${key} ${options.count}`,
+  }),
 }))
 
 vi.mock('@/hooks/useAppState', () => ({
@@ -71,8 +74,15 @@ vi.mock('@/hooks/useAppState', () => ({
   ),
 }))
 
-vi.mock('@/utils/apiServerCapacity', () => ({
-  getModelContextLength: () => 4096,
+const servedContext = vi.hoisted(() => ({
+  length: 4096 as number | undefined,
+  asked: [] as Array<string | null>,
+}))
+vi.mock('../useServedContextLength', () => ({
+  useServedContextLength: (modelId: string | null) => {
+    servedContext.asked.push(modelId)
+    return servedContext.length
+  },
 }))
 
 vi.mock('@/utils/localApiServerControl', () => ({
@@ -145,6 +155,8 @@ describe('Server → Connections, connection details', () => {
     vi.clearAllMocks()
     appState.serverStatus = 'running'
     appState.activeModels = ['gemma-4']
+    servedContext.length = 4096
+    servedContext.asked = []
     useRemoteAccessStore.getState().reset()
     useLocalApiServer.setState({ serverHost: '127.0.0.1' })
     useDecisionStore.setState(initialDecision, true)
@@ -310,6 +322,26 @@ describe('Server → Connections, connection details', () => {
     })
     render(<ConnectionDetails />)
     expect(screen.getByText('api:connections.accessRemote')).toBeInTheDocument()
+  })
+
+  it('gives the loaded model the window its running session has', async () => {
+    servedContext.length = 32768
+    render(<ConnectionDetails />)
+    expect(servedContext.asked).toContain('gemma-4')
+    expect(screen.getByText(/api:strip\.ctx 32 768/)).toBeInTheDocument()
+    await waitFor(() =>
+      expect(useDecisionStore.getState().status?.state).toBe('disabled')
+    )
+  })
+
+  it('names no window it does not know', async () => {
+    servedContext.length = undefined
+    render(<ConnectionDetails />)
+    expect(screen.getByText('gemma-4')).toBeInTheDocument()
+    expect(screen.queryByText(/api:strip\.ctx/)).not.toBeInTheDocument()
+    await waitFor(() =>
+      expect(useDecisionStore.getState().status?.state).toBe('disabled')
+    )
   })
 
   it('says the server is stopped', () => {
