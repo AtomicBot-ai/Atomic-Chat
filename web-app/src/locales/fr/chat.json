@@ -1,4 +1,17 @@
 {
+  "agentError": {
+    "budgetTitle": "La réponse était trop longue",
+    "budgetBody": "Le modèle a épuisé son budget de sortie avant de terminer l'action. Essayez un niveau de raisonnement plus bas ou demandez une étape plus petite.",
+    "authTitle": "Échec de l'authentification",
+    "authBody": "Vérifiez la clé API de ce fournisseur, puis réessayez.",
+    "timeoutTitle": "Le modèle a mis trop de temps",
+    "timeoutBody": "La requête a expiré avant la fin de l'action. Réessayez ou procédez par plus petites étapes.",
+    "loopTitle": "L'agent a arrêté une action répétée",
+    "loopBody": "La même action ne progressait plus : Atomic Chat l'a donc arrêtée au lieu de la laisser tourner en boucle. Réessayez ou décrivez une autre approche.",
+    "genericTitle": "L'action n'a pas pu être terminée",
+    "genericBody": "Le modèle s'est arrêté avant d'avoir terminé. Réessayez ; si cela se reproduit, changez de modèle ou réduisez la demande.",
+    "retry": "Réessayer"
+  },
   "welcome": "Bonjour, comment allez-vous ?",
   "description": "Comment puis-je vous aider aujourd'hui ?",
   "temporaryChat": "Discussion temporaire",
@@ -7,27 +20,67 @@
     "empty": "Aucune discussion trouvée"
   },
   "sendMessage": "Envoyer un message",
+  "replyGate": {
+    "sendHint": "Choisissez avec quoi répondre",
+    "startingTitle": "Démarrage de {{name}}…",
+    "startingDescription": "Votre message sera envoyé dès que le modèle sera prêt.",
+    "emptyTitle": "Choisissez un modèle pour commencer à discuter",
+    "emptyDescription": "Votre message est enregistré. Choisissez un modèle et il sera envoyé.",
+    "downloadingTitle": "Votre modèle est en cours de téléchargement",
+    "downloadingDescription": "Votre message est enregistré et sera envoyé automatiquement dès que le modèle aura fini de se télécharger et aura démarré.",
+    "downloadingSection": "Téléchargement du modèle",
+    "otherOptions": "Autres façons de commencer à discuter",
+    "gotIt": "Compris",
+    "backgroundStarted": "Modèle prêt. Votre discussion a démarré en arrière-plan.",
+    "backgroundFailed": "Le message en attente n'a pas pu être envoyé. Ouvrez la discussion et réessayez.",
+    "recommendedForDevice": "Le plus adapté à votre appareil",
+    "download": "Télécharger",
+    "downloadSize": "Télécharger {{size}}",
+    "downloadLabel": "Télécharger {{name}}",
+    "findingRecommendation": "Recherche du modèle le plus adapté à votre appareil…",
+    "queuedNotice": "Votre message sera envoyé dès que le modèle sera prêt.",
+    "startingNotice": "Démarrage",
+    "addFolder": "Ajouter un dossier de modèles",
+    "folderTitle": "Modèles sur cet ordinateur",
+    "folderHint": "Choisissez un dossier pour les ajouter",
+    "folderScanning": "Recherche…",
+    "folderEmpty": "Aucun modèle compatible trouvé dans ce dossier."
+  },
+  "visionGate": {
+    "title": "{{model}} ne peut pas voir les images",
+    "titleNoModel": "Ce modèle ne peut pas voir les images",
+    "description": "Le modèle avec lequel vous discutez ne gère que le texte : impossible d'y joindre des images. Téléchargez un modèle doté de la vision et l'application basculera dessus.",
+    "sectionLabel": "Modèles de vision pour votre appareil",
+    "visionCapable": "Vision",
+    "rowHint": "{{size}} · {{reason}}",
+    "installedHint": "Déjà sur cet appareil",
+    "download": "Télécharger",
+    "downloadLabel": "Télécharger {{name}}",
+    "downloading": "Téléchargement…",
+    "downloadingPercent": "Téléchargement… {{percent}} %",
+    "use": "Utiliser",
+    "useLabel": "Utiliser {{name}}",
+    "finding": "Recherche de modèles de vision pour votre appareil…",
+    "empty": "Aucun des modèles de vision que nous connaissons ne tient sur cet appareil. Cherchez-en un plus petit sur Hugging Face.",
+    "huggingFaceTitle": "N'importe quel modèle de vision de Hugging Face",
+    "huggingFaceHint": "Parcourez les versions GGUF dans Modèles",
+    "huggingFaceLabel": "Parcourir les modèles de vision sur Hugging Face",
+    "browse": "Parcourir"
+  },
   "newConversation": "Nouvelle conversation",
   "clearHistory": "Effacer l'historique",
   "activity": {
+    "working": "En cours...",
     "completedActions": "{{count}} actions terminées",
     "completedActions_one": "{{count}} action terminée",
     "completedActions_many": "{{count}} actions terminées",
     "completedActions_other": "{{count}} actions terminées",
+    "reading": "Lecture : {{count}} %",
+    "reasoned": "Raisonnement terminé",
+    "thinking": "Réflexion...",
+    "thinkingFor": "Réflexion depuis {{count}} s…",
+    "thoughtFor": "A réfléchi pendant {{count}} s",
     "loadingModel": "Chargement du modèle…"
-  },
-  "agentMode": {
-    "menuItem": "Mode agent",
-    "agent": "Agent",
-    "turnOff": "Désactiver le mode agent",
-    "providerUnavailable": "Le mode agent nécessite un modèle local ou un fournisseur cloud avec une clé API.",
-    "providerKeyMissing": "Ajoutez une clé API pour ce fournisseur dans les paramètres pour utiliser le mode agent."
-  },
-  "agentErrors": {
-    "localModelRequired": "Chargez ce modèle avant de lancer une exécution de l'agent.",
-    "providerUnavailableDescription": "Choisissez un modèle local ou un fournisseur cloud avec une clé API.",
-    "providerKeyMissing": "Ajoutez une clé API pour ce fournisseur dans les paramètres et réessayez.",
-    "localServerRequired": "Le mode agent avec un modèle cloud nécessite le serveur API local. Démarrez-le dans les paramètres."
   },
   "docCitation": {
     "document": "Document",
@@ -41,5 +94,230 @@
     "openFailed": "Impossible d'ouvrir {{name}}",
     "openFailedDescription": "Le fichier a peut-être été déplacé ou supprimé.",
     "chipLabel": "Source : {{name}}, passage {{passage}}"
+  },
+  "toolCall": {
+    "result": "{{count}} résultat",
+    "results": "{{count}} résultats",
+    "file": "fichier",
+    "action": "Action",
+    "locations": {
+      "home": "Dossier personnel",
+      "desktop": "Bureau",
+      "documents": "Documents",
+      "downloads": "Téléchargements"
+    },
+    "onDesktop": "{{name}} sur le {{folder}}",
+    "inFolder": "{{name}} dans {{folder}}",
+    "withContext": "{{label}} : {{context}}",
+    "fallback": {
+      "running": "{{title}} — en cours…",
+      "success": "{{title}} — terminé",
+      "error": "{{title}} — échec",
+      "denied": "{{title}} — refusé",
+      "skipped": "{{title}} — action répétée ignorée"
+    },
+    "actions": {
+      "write": {
+        "running": "Création de {{target}}…",
+        "success": "Créé : {{target}}",
+        "error": "Impossible de créer {{target}}",
+        "denied": "Création de {{target}} refusée",
+        "skipped": "Répétition de la même modification de fichier ignorée"
+      },
+      "read": {
+        "running": "Lecture de {{target}}…",
+        "success": "Lu : {{target}}",
+        "error": "Impossible de lire {{target}}",
+        "denied": "Lecture de {{target}} refusée",
+        "skipped": "Répétition de la même lecture de fichier ignorée"
+      },
+      "list": {
+        "running": "Parcours des fichiers…",
+        "success": "Fichiers parcourus",
+        "error": "Impossible de parcourir les fichiers",
+        "denied": "Parcours des fichiers refusé",
+        "skipped": "Répétition de la même recherche de fichiers ignorée"
+      },
+      "mkdir": {
+        "running": "Création du dossier…",
+        "success": "Dossier créé",
+        "error": "Impossible de créer le dossier",
+        "denied": "Création du dossier refusée",
+        "skipped": "Création de dossier répétée ignorée"
+      },
+      "shell": {
+        "running": "Exécution d'une commande…",
+        "success": "Commande exécutée",
+        "error": "Échec de la commande",
+        "denied": "Commande refusée",
+        "skipped": "Répétition de la même commande ignorée"
+      },
+      "search": {
+        "running": "Recherche sur le Web…",
+        "success": "Recherche sur le Web effectuée",
+        "error": "Échec de la recherche sur le Web",
+        "denied": "Recherche sur le Web refusée",
+        "skipped": "Répétition de la même recherche sur le Web ignorée"
+      },
+      "fetch": {
+        "running": "Lecture de la page Web…",
+        "success": "Page Web lue",
+        "error": "Impossible de lire la page Web",
+        "denied": "Lecture de la page Web refusée",
+        "skipped": "Lectures répétées de la même page ignorées"
+      },
+      "script": {
+        "running": "Exécution d'un script {{target}}…",
+        "success": "Script {{target}} exécuté",
+        "error": "Échec du script {{target}}",
+        "denied": "Exécution d'un script {{target}} refusée",
+        "skipped": "Répétition du même script ignorée"
+      }
+    },
+    "exec": {
+      "openFolder": "Ouvrir le dossier",
+      "sandboxed": "Exécuté dans le bac à sable Windows",
+      "exitCode": "Code de sortie {{code}}",
+      "timedOut": "Délai dépassé",
+      "cancelled": "Arrêté"
+    }
+  },
+  "workspacePreview": {
+    "generating": "L'aperçu sera disponible à la fin de la génération."
+  },
+  "agentMode": {
+    "menuItem": "Mode agent",
+    "agent": "Agent",
+    "turnOff": "Désactiver le mode agent",
+    "providerUnavailable": "Le mode agent nécessite un modèle local ou un fournisseur cloud avec une clé API.",
+    "providerKeyMissing": "Ajoutez une clé API pour ce fournisseur dans les paramètres pour utiliser le mode agent.",
+    "modelWithoutTools": "Ce modèle ne peut pas appeler d'outils : le mode agent est donc désactivé pour lui et vos messages passent par la discussion classique. Choisissez un modèle capable d'appeler des outils pour utiliser le mode agent."
+  },
+  "agentApprovals": {
+    "manualSelected": "Restreint",
+    "manual": "Restreint",
+    "manualDescription": "Toujours demander avant que les appels d'outils modifient des fichiers ou utilisent Internet",
+    "skipSelected": "Accès complet",
+    "skip": "Accès complet",
+    "skipDescription": "Exécute chaque appel d'outil sans demander, y compris l'accès aux fichiers et à Internet.",
+    "menuTitle": "Comment approuver les appels d'outils ?",
+    "skipConfirmTitle": "Activer l'accès complet ?",
+    "skipConfirmBody": "Aucune demande d'approbation : les appels d'outils peuvent modifier ou supprimer des fichiers, exécuter des commandes et utiliser Internet. Activez-le uniquement pour une tâche de confiance.",
+    "skipConfirmCancel": "Annuler",
+    "skipConfirmAccept": "J'ai compris"
+  },
+  "agentApproval": {
+    "title": "Approbation de l'agent requise",
+    "description": "{{tool}} attend votre décision.",
+    "tool": "Outil",
+    "reason": "Raison",
+    "preview": "Aperçu de l'action",
+    "resources": "Ressources concernées",
+    "timeoutNotice": "Sans réponse de votre part, cette demande sera automatiquement refusée à l'expiration du délai du serveur.",
+    "deny": "Refuser",
+    "alwaysAllow": "Toujours autoriser cette action",
+    "approveOnce": "Approuver une fois",
+    "resolveFailed": "Impossible d'envoyer la décision d'approbation.",
+    "showDetails": "Afficher les détails",
+    "hideDetails": "Masquer les détails",
+    "summary": {
+      "command": "Cette commande peut modifier des fichiers, des connexions réseau, des processus ou des paramètres système.",
+      "script": "Ce script peut apporter des modifications à votre ordinateur.",
+      "deleteFiles": "Cette action peut supprimer des fichiers ou des dossiers.",
+      "changeFiles": "Cette action peut créer ou modifier des fichiers.",
+      "internet": "Cette action accédera à Internet.",
+      "repository": "Cette action peut modifier le dépôt.",
+      "connectedTool": "Un outil connecté souhaite effectuer une action externe.",
+      "generic": "Cette action peut modifier des données ou l'état du système."
+    }
+  },
+  "agentFolderAccess": {
+    "title": "Autoriser l'accès au dossier",
+    "description": "{{tool}} a besoin d'accéder à ce dossier.",
+    "canEditNotice": "Autoriser donne l'accès pour cette exécution. Toujours autoriser ajoute le dossier à Externe en accès MODIFIABLE pour cette discussion Agent.",
+    "deny": "Refuser",
+    "allow": "Autoriser",
+    "alwaysAllow": "Toujours autoriser",
+    "resolveFailed": "Impossible d'envoyer la décision d'accès au dossier."
+  },
+  "agentWorkspace": {
+    "choose": "Choisir l'espace de travail",
+    "change": "Changer l'espace de travail de l'agent",
+    "default": "Par défaut",
+    "defaultDescription": "Utilise le dossier agent-workspace situé dans le dossier de données d'Atomic Chat.",
+    "projectFiles": "Fichiers du projet",
+    "external": "Externe",
+    "canEdit": "MODIFIABLE",
+    "viewOnly": "LECTURE SEULE",
+    "addFolder": "Ajouter un dossier externe",
+    "folderOptions": "Options du dossier",
+    "allowEditing": "Modifiable",
+    "makeViewOnly": "Lecture seule",
+    "removeFolder": "Retirer de l'agent"
+  },
+  "runSettings": {
+    "title": "Paramètres d'exécution",
+    "open": "Ouvrir les paramètres d'exécution",
+    "close": "Fermer les paramètres d'exécution",
+    "model": "Modèle",
+    "advancedSettings": "Paramètres avancés",
+    "advancedSettingsHint": "Options appliquées au chargement. Les modifier redémarre le modèle s'il est en cours d'exécution.",
+    "reset": "Réinitialiser",
+    "resetSampling": "Rétablir les valeurs par défaut",
+    "resetSuccess": "Paramètres du modèle réinitialisés",
+    "resetSuccessDescription": "Les paramètres d'échantillonnage ont été rétablis à leurs valeurs par défaut.",
+    "resetModel": "Rétablir les paramètres par défaut du modèle"
+  },
+  "agentErrors": {
+    "audioUnsupported": "Le mode agent ne prend pas en charge les pièces jointes audio.",
+    "invalidAttachment": "Un ou plusieurs fichiers n'ont pas pu être joints. Choisissez des fichiers locaux et réessayez.",
+    "visionModelRequired": "Sélectionnez un modèle doté de la vision avant d'envoyer des images.",
+    "providerUnavailableTitle": "Le mode agent n'est pas disponible pour ce fournisseur",
+    "providerUnavailableDescription": "Choisissez un modèle local ou un fournisseur cloud avec une clé API.",
+    "unsupportedTools": "Le mode agent ne prend pas encore en charge les outils MCP, RAG ni de navigateur.",
+    "runFailed": "Impossible de démarrer l'exécution de l'agent.",
+    "cancelFailed": "Impossible d'annuler l'exécution de l'agent.",
+    "saveFailed": "Impossible d'enregistrer la réponse de l'agent.",
+    "localModelRequired": "Chargez ce modèle avant de lancer une exécution de l'agent.",
+    "providerKeyMissing": "Ajoutez une clé API pour ce fournisseur dans les paramètres et réessayez.",
+    "localServerRequired": "Le mode agent avec un modèle cloud nécessite le serveur API local. Démarrez-le dans les paramètres."
+  },
+  "agentTasks": {
+    "title": "Idées pour vous",
+    "findLatestNews": {
+      "title": "Trouver les dernières actualités",
+      "prompt": "Trouvez les dernières actualités et résumez les faits récents les plus importants, avec des liens vers les sources."
+    },
+    "inspectFolder": {
+      "title": "Organiser mon Bureau",
+      "prompt": "Passez en revue les fichiers et dossiers de mon Bureau. Ne supprimez, n'écrasez, ne remplacez, ne renommez et ne modifiez aucun fichier ni dossier."
+    },
+    "findLargeFiles": {
+      "title": "Trouver les fichiers volumineux",
+      "prompt": "Trouvez les fichiers les plus volumineux de mon dossier Téléchargements et proposez ceux qui peuvent être supprimés sans risque. Ne supprimez rien."
+    }
+  },
+  "threadType": {
+    "chat": "Discussion classique",
+    "agent": "Discussion Agent"
+  },
+  "composer": {
+    "attachFiles": "Joindre des fichiers",
+    "supportedFiles": "Fichiers pris en charge",
+    "attachFailed": "Impossible de joindre les fichiers"
+  },
+  "attachmentPreview": {
+    "open": "Ouvrir",
+    "showInFolder": "Afficher dans le dossier",
+    "openPreview": "Aperçu de {{name}}",
+    "image": "Image",
+    "unsupported": "L'aperçu n'est pas disponible pour ce type de fichier.",
+    "failed": "Impossible d'afficher l'aperçu de ce fichier.",
+    "missing": "Ce fichier ne se trouve plus à l'emplacement {{path}}.",
+    "unplayable": "Ce format multimédia ne peut pas être lu ici.",
+    "truncated": "Affichage des premiers {{size}} du fichier.",
+    "extracted": "Texte extrait du document. Ouvrez le fichier pour voir sa mise en page d'origine.",
+    "noText": "Aucun texte n'a pu être extrait de ce document.",
+    "videoModelNote": "Le modèle ne peut pas regarder les vidéos : il ne voit que le nom du fichier."
   }
 }

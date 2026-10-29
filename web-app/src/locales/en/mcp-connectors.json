@@ -12,6 +12,7 @@
   "statusInactive": "Inactive",
   "statusConnecting": "Connecting…",
   "statusFailed": "Couldn't connect",
+  "statusErrorLabel": "MCP server error: {{error}}",
   "activation": {
     "failed": "Couldn't start {{name}}",
     "retry": "Retry",
@@ -19,6 +20,7 @@
   },
   "by": "By {{name}}",
   "featuredBadge": "Featured",
+  "officialBadge": "Official",
   "serverActions": "Server actions",
   "enableConnector": "Enable {{name}}",
   "editJson": "Edit JSON",

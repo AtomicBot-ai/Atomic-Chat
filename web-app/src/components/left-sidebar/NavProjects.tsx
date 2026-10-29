@@ -94,6 +94,7 @@ const ProjectItem = memo(function ProjectItem({
   onEdit: (project: ThreadFolder) => void
   onDelete: (project: ThreadFolder) => void
 }) {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const folderIconRef = useRef<FoldersIconHandle>(null)
   const {
@@ -129,7 +130,7 @@ const ProjectItem = memo(function ProjectItem({
               type="button"
               {...attributes}
               {...listeners}
-              aria-label="Drag to reorder project"
+              aria-label={t('common:projects.dragToReorder')}
               className="text-muted-foreground/50 flex h-6 w-4 shrink-0 cursor-grab touch-none items-center justify-center opacity-0 transition-opacity group-hover/project-row:opacity-100 active:cursor-grabbing"
             >
               <GripVertical className="size-3.5" />
@@ -141,7 +142,11 @@ const ProjectItem = memo(function ProjectItem({
                 <button
                   type="button"
                   className="hover:bg-sidebar-foreground/8 flex size-6 shrink-0 items-center justify-center rounded-md transition-colors"
-                  aria-label={isOpen ? 'Collapse project' : 'Expand project'}
+                  aria-label={
+                    isOpen
+                      ? t('common:projects.collapseProject')
+                      : t('common:projects.expandProject')
+                  }
                 >
                   <ChevronRight
                     className={cn(
@@ -186,7 +191,7 @@ const ProjectItem = memo(function ProjectItem({
               <DropdownMenuTrigger asChild>
                 <SidebarMenuAction className="hover:bg-sidebar-foreground/8 transition-opacity group-hover/project-row:opacity-100 group-focus-within/project-row:opacity-100 data-[state=open]:opacity-100 md:opacity-0">
                   <MoreHorizontal />
-                  <span className="sr-only">More</span>
+                  <span className="sr-only">{t('common:navigation.more')}</span>
                 </SidebarMenuAction>
               </DropdownMenuTrigger>
               <DropdownMenuContent
@@ -203,11 +208,11 @@ const ProjectItem = memo(function ProjectItem({
                   }}
                 >
                   <FolderOpenIcon className="text-muted-foreground" />
-                  <span>View Project</span>
+                  <span>{t('common:projects.viewProject')}</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => onEdit(item)}>
                   <FolderEditIcon className="text-muted-foreground" />
-                  <span>Edit Project</span>
+                  <span>{t('common:projects.editProject')}</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
@@ -215,7 +220,7 @@ const ProjectItem = memo(function ProjectItem({
                   onSelect={() => onDelete(item)}
                 >
                   <Trash2 />
-                  <span>Delete Project</span>
+                  <span>{t('common:projects.deleteProject')}</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

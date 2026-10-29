@@ -443,6 +443,27 @@
     "tokenFailed": "Validation failed",
     "tokenFailedDesc": "A network error occurred while validating the token. Please check your internet connection."
   },
+  "localModelLocations": {
+    "title": "Detected model locations",
+    "scanTitle": "Scan for local models",
+    "scanDesc": "Find models already downloaded by Ollama, LM Studio, the Hugging Face cache, Unsloth, GPT4All, Jan, Msty or llama.cpp, and import them without re-downloading.",
+    "foldersTitle": "Scan folders",
+    "foldersDesc": "Add extra folders to search for GGUF or MLX models. Default app locations are always checked.",
+    "removeFolder": "Remove folder",
+    "addFolder": "Add folder",
+    "scanNow": "Scan now",
+    "scanning": "Scanning…",
+    "scanFailed": "Scan failed",
+    "found_one": "Found {{count}} model",
+    "found_other": "Found {{count}} models",
+    "noneFound": "No new local models found",
+    "noneFoundDesc": "Everything detected is already imported, or no compatible models were found.",
+    "requiresBaseModel": "requires base model",
+    "import": "Import",
+    "importing": "Importing…",
+    "imported": "Model imported",
+    "importFailed": "Import failed"
+  },
   "extensions": {
     "title": "Extensions"
   },

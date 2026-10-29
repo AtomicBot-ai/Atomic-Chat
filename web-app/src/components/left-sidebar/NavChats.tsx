@@ -87,7 +87,7 @@ export function NavChats() {
           <DropdownMenuTrigger asChild>
             <SidebarGroupAction className="hover:bg-sidebar-foreground/8">
               <MoreHorizontal className="text-muted-foreground" />
-              <span className="sr-only">More</span>
+              <span className="sr-only">{t('common:navigation.more')}</span>
             </SidebarGroupAction>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="right" align="start">

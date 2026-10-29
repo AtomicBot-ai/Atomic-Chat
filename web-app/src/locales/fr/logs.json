@@ -1,7 +1,7 @@
 {
   "noLogs": "Aucun journal disponible",
   "filterAll": "Tous",
-  "sourceApp": "App",
+  "sourceApp": "Application",
   "sourceCore": "Cœur",
   "export": "Exporter les journaux",
   "exported": "Journaux exportés",

@@ -17,12 +17,18 @@
   "stop": "Arrêter",
   "activeGpus": "GPU actifs",
   "noGpus": "Aucun GPU détecté",
+  "liveStatsUnavailable": "GPU détecté via l'énumération du système. Les statistiques de VRAM en direct ne sont pas disponibles pour cette carte — le backend llama.cpp choisi n'a pas renvoyé de liste de périphériques, mais le GPU reste utilisable pour l'inférence.",
   "noActiveGpus": "Aucun GPU actif. Tous les GPU sont actuellement désactivés.",
   "vramUsage": "Utilisation de la VRAM",
   "driverVersion": "Version du pilote :",
   "computeCapability": "Capacité de calcul :",
   "active": "Actif",
-  "performance": "Performance",
+  "performance": "Performances",
   "resources": "Ressources",
-  "refresh": "Actualiser"
+  "refresh": "Actualiser",
+  "driverOutdated": {
+    "title": "Pilote NVIDIA trop ancien pour l'accélération GPU",
+    "description": "{{gpu}} détecté avec le pilote {{driver}}. Atomic Chat nécessite le pilote {{minDriver}}+ pour l'accélération CUDA ; tant que vous ne l'aurez pas mis à jour, les modèles s'exécuteront sur le CPU.",
+    "updateAction": "Mettre à jour le pilote NVIDIA"
+  }
 }

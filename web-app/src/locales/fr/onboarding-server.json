@@ -1,0 +1,59 @@
+{
+  "purpose": {
+    "title": "Comment allez-vous utiliser Atomic Chat ?",
+    "lead": "Commencez par ce dont vous avez besoin aujourd’hui. Vous pourrez faire les deux plus tard.",
+    "everyday": "Discutez, écrivez, explorez des idées et créez des images ou des vidéos.",
+    "everydayAction": "Ouvrir mon espace de travail",
+    "power": "Configurez un point de terminaison ou connectez un agent",
+    "powerAction": "Configurer un serveur"
+  },
+  "server": {
+    "title": "Connectez vos outils à votre façon.",
+    "lead": "Nous vous montrerons les réglages dans l’application.",
+    "incompatibleTitle": "Choisissez un modèle compatible avec le serveur",
+    "incompatibleNone": "Le serveur exécute un modèle sur cet appareil. Choisissez un modèle local pour exposer un point de terminaison ou connecter un agent.",
+    "incompatibleModel": "{{name}} fonctionne pour la discussion, mais le serveur API local ne peut pas l’exécuter. Choisissez un modèle local pour exposer un point de terminaison ou connecter un agent.",
+    "chooseModel": "Choisir un modèle local",
+    "endpoint": "Configurer un point de terminaison",
+    "endpointBody": "Choisissez un hôte et un port, définissez une clé API et démarrez votre serveur.",
+    "endpointAction": "Afficher les paramètres",
+    "agents": "Connecter un agent",
+    "agentsBody": "Choisissez Claude Code, Codex CLI ou un autre outil, puis testez sa connexion.",
+    "agentsAction": "Explorer les agents et outils"
+  },
+  "guide": {
+    "label": "Guide de configuration",
+    "skip": "Passer le guide",
+    "next": "Conseil suivant",
+    "done": "Terminé",
+    "viewConnection": "Voir les détails de connexion",
+    "downloading": "Votre modèle est en cours de téléchargement. Vous pouvez préparer ces paramètres en attendant.",
+    "stillDownloading": "Votre modèle est toujours en cours de téléchargement",
+    "waitingForModel": "En attente du téléchargement du modèle",
+    "settings": {
+      "title": "Définissez les paramètres de connexion",
+      "body": "Définissez l’hôte et le port, ajoutez une clé API, puis enregistrez vos modifications."
+    },
+    "model": {
+      "title": "Choisissez le modèle",
+      "body": "Sélectionnez le moteur et le modèle de votre point de terminaison, puis enregistrez vos modifications."
+    },
+    "start": {
+      "title": "Démarrez votre serveur",
+      "body": "Utilisez Démarrer ci-dessous quand votre modèle est prêt. Copiez ensuite l’adresse du point de terminaison dans votre client."
+    },
+    "running": {
+      "title": "Votre serveur est en cours d’exécution",
+      "body": "Copiez l’adresse du point de terminaison dans votre client. Vous la trouverez sous Connexions.",
+      "downloading": "Votre modèle est en cours de téléchargement. Une fois qu’il est prêt, utilisez Arrêter puis Démarrer pour le charger."
+    },
+    "pick": {
+      "title": "Choisissez votre outil",
+      "body": "Choisissez Configurer sur l’un des agents ci-dessous. Nous vous guiderons pour le connecter."
+    },
+    "connect": {
+      "title": "Connectez votre outil",
+      "body": "Choisissez le moteur et le modèle, puis sélectionnez Configurer et démarrer."
+    }
+  }
+}

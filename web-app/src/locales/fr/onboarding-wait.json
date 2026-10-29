@@ -1,0 +1,39 @@
+{
+  "title": "Le meilleur est en cours de téléchargement.",
+  "lead": "Votre espace de travail est prêt à être exploré. Votre modèle continuera à se télécharger pendant que vous êtes ici.",
+  "readyTitle": "Votre modèle est prêt.",
+  "readyLead": "Tout est en place pour votre première discussion.",
+  "readyOnDevice": "Prêt sur votre appareil",
+  "explore": "Explorer l’application",
+  "startChatting": "Commencer à discuter",
+  "playGame": "Jouer à Atomic Mines",
+  "hideGame": "Masquer le jeu",
+  "email": {
+    "label": "Vous préférez revenir plus tard ?",
+    "hint": "En cliquant sur M’avertir, vous acceptez de recevoir un e-mail lorsque ce modèle sera prêt. Laissez Atomic Chat ouvert pour que le téléchargement se termine. Votre adresse sert uniquement à ce rappel.",
+    "placeholder": "you@example.com",
+    "submit": "M’avertir",
+    "done": "Rappel enregistré. Nous vous enverrons un e-mail quand le modèle sera prêt.",
+    "saving": "Enregistrement de votre rappel…",
+    "error": "Impossible d’enregistrer le rappel. Vérifiez votre connexion et réessayez.",
+    "invalid": "Vérifiez votre adresse e-mail et réessayez.",
+    "rateLimited": "Trop de demandes. Veuillez réessayer dans une heure."
+  },
+  "mines": {
+    "title": "Atomic Mines",
+    "unmarked_one": "{{count}} atome non marqué",
+    "unmarked_many": "{{count}} atomes non marqués",
+    "unmarked_other": "{{count}} atomes non marqués",
+    "newGame": "Nouvelle partie",
+    "board": "Plateau du démineur",
+    "cellHidden": "Ligne {{row}}, colonne {{column}}, masquée",
+    "cellFlagged": "Ligne {{row}}, colonne {{column}}, marquée",
+    "cellOpen": "Ligne {{row}}, colonne {{column}}, {{count}} atomes voisins",
+    "flagMode": "Mode drapeau",
+    "flagModeOn": "Mode drapeau activé",
+    "goal": "Dégagez toutes les cases sûres.",
+    "lost": "Un atome ! Réessayez.",
+    "won": "Tout est dégagé. Bien joué !",
+    "help": "Les chiffres indiquent le nombre d’atomes voisins. Faites un clic droit ou utilisez le mode drapeau pour les marquer. Votre premier coup est toujours sûr."
+  }
+}

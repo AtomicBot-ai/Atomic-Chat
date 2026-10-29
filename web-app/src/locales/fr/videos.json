@@ -1,69 +1,71 @@
 {
   "page": {
     "title": "Video",
-    "subtitle": "Create video clips from a prompt, locally",
-    "loading": "Getting things ready…"
+    "subtitle": "Créez des clips vidéo à partir d'un prompt, en local",
+    "loading": "Préparation en cours…"
   },
   "model": {
-    "select": "Select video model",
-    "startingToast": "Starting video model…",
-    "stoppingToast": "Stopping video model…",
-    "noneInCatalog": "No video models are listed for this engine."
+    "select": "Sélectionner un modèle vidéo",
+    "startingToast": "Démarrage du modèle vidéo…",
+    "stoppingToast": "Arrêt du modèle vidéo…",
+    "noneInCatalog": "Aucun modèle vidéo n'est répertorié pour ce moteur."
   },
   "setup": {
     "model": {
-      "title": "Choose a video model",
-      "description": "We picked the best version of each model for this computer."
+      "title": "Choisissez un modèle vidéo",
+      "description": "Nous avons choisi la meilleure version de chaque modèle pour cet ordinateur."
     },
     "card": {
-      "title": "Create videos with Local AI",
-      "description": "Turn text or a picture into video right on your computer. To start, install the media engine, then download a model.",
-      "engine": "Install the media engine",
-      "downloadModel": "Download model"
+      "title": "Créez des vidéos avec l'IA locale",
+      "description": "Transformez un texte ou une image en vidéo directement sur votre ordinateur. Pour commencer, installez le moteur multimédia, puis téléchargez un modèle.",
+      "engine": "Installer le moteur multimédia",
+      "downloadModel": "Télécharger le modèle"
     }
   },
   "form": {
-    "title": "Create videos",
-    "hint": "Generate a short clip from a prompt",
+    "title": "Créer des vidéos",
+    "hint": "Générez un court clip à partir d'un prompt",
     "prompt": "Prompt",
-    "promptPlaceholder": "Describe the scene and how it moves…",
-    "negativePrompt": "Negative prompt",
-    "negativePlaceholder": "What to avoid…",
-    "negativeHint": "What to steer the clip away from. Only used when guidance is above 1.",
-    "resolution": "Resolution",
-    "resolutionHint": "The frame size. Each model offers the sizes it was trained at.",
+    "promptPlaceholder": "Décrivez la scène et son mouvement…",
+    "negativePrompt": "Prompt négatif",
+    "negativePlaceholder": "Ce qu'il faut éviter…",
+    "negativeHint": "Ce dont le clip doit s'éloigner. Utilisé uniquement lorsque le guidage est supérieur à 1.",
+    "resolution": "Résolution",
+    "resolutionHint": "La taille de l'image. Chaque modèle propose les tailles sur lesquelles il a été entraîné.",
     "portraitSuffix": " (portrait)",
-    "duration": "Duration",
-    "durationHint": "How long the clip plays. Frame counts follow the model's own grid.",
-    "durationSeconds": "{{seconds}}s",
-    "durationFrames": "{{frames}} frames",
-    "frameRate": "Frame rate",
-    "frameRateHint": "Fixed per model.",
+    "duration": "Durée",
+    "durationHint": "La durée de lecture du clip. Le nombre d'images suit la grille propre au modèle.",
+    "durationSeconds": "{{seconds}} s",
+    "durationFrames": "{{frames}} images",
+    "frameRate": "Fréquence d'images",
+    "frameRateHint": "Fixée par le modèle.",
     "fps": "{{fps}} fps",
-    "steps": "Steps",
-    "stepsHint": "Denoising passes. More is slower and rarely helps past the model default.",
-    "guidance": "Guidance",
-    "guidanceHint": "How strictly the prompt is followed. Higher is stricter and slower to converge.",
-    "distilledGuidance": "Distilled guidance",
-    "distilledGuidanceHint": "Distilled guidance strength for models that expose it.",
-    "reset": "Reset",
-    "resetHint": "Put the settings back to the model defaults. The prompt stays.",
-    "advanced": "Advanced settings",
+    "steps": "Étapes",
+    "stepsHint": "Passes de débruitage. Plus il y en a, plus c'est lent, et dépasser la valeur par défaut du modèle aide rarement.",
+    "guidance": "Guidage",
+    "guidanceHint": "Le degré de respect du prompt. Plus la valeur est élevée, plus il est strict et lent à converger.",
+    "distilledGuidance": "Guidage distillé",
+    "distilledGuidanceHint": "Intensité du guidage distillé pour les modèles qui le proposent.",
+    "reset": "Réinitialiser",
+    "resetHint": "Rétablit les paramètres par défaut du modèle. Le prompt est conservé.",
+    "advanced": "Paramètres avancés",
     "disabled": {
-      "noEngine": "Install the media engine first.",
-      "noModel": "Download a video model first.",
-      "modelLoading": "The model is still loading.",
-      "emptyPrompt": "Write a prompt first.",
-      "busy": "A generation is already running."
+      "noEngine": "Installez d'abord le moteur multimédia.",
+      "noModel": "Téléchargez d'abord un modèle vidéo.",
+      "modelLoading": "Le modèle est encore en cours de chargement.",
+      "emptyPrompt": "Écrivez d'abord un prompt.",
+      "busy": "Une génération est déjà en cours.",
+      "noSource": "Choisissez d'abord la première image.",
+      "unsupportedWorkflow": "Ce modèle ne prend pas en charge ce mode."
     }
   },
   "workflow": {
     "choose": "Mode",
     "imageToVideo": {
-      "title": "Image to video",
-      "hint": "Animate a still image"
+      "title": "Image vers vidéo",
+      "hint": "Animez une image fixe"
     },
-    "soon": "Soon"
+    "soon": "Bientôt"
   },
   "estimate": {
     "duration": "Durée : {{range}}",
@@ -84,21 +86,21 @@
     "confirm": "Générer quand même"
   },
   "progress": {
-    "generatingVideo": "Generating video",
-    "finalizingVideo": "Encoding video…",
-    "step": "Step {{step}}/{{total}}",
+    "generatingVideo": "Génération de la vidéo",
+    "finalizingVideo": "Encodage de la vidéo…",
+    "step": "Étape {{step}}/{{total}}",
     "elapsed": "{{seconds}} s",
     "phase": {
-      "queued": "Queued",
-      "encoding": "Encoding the prompt…",
-      "sampling": "Sampling…",
-      "decoding": "Decoding frames…",
-      "postprocessing": "Encoding video…",
-      "saving": "Saving to gallery…",
-      "generating": "Starting…",
-      "completed": "Done",
-      "failed": "Failed",
-      "cancelled": "Cancelled"
+      "queued": "En file d'attente",
+      "encoding": "Encodage du prompt…",
+      "sampling": "Échantillonnage…",
+      "decoding": "Décodage des images…",
+      "postprocessing": "Encodage de la vidéo…",
+      "saving": "Enregistrement dans la galerie…",
+      "generating": "Démarrage…",
+      "completed": "Terminé",
+      "failed": "Échec",
+      "cancelled": "Annulé"
     },
     "remaining": "encore {{duration}}",
     "slowdown": {
@@ -108,76 +110,85 @@
     }
   },
   "gallery": {
-    "title": "Gallery",
-    "selectedCount": "{{count}} selected",
-    "loadMore": "Load more",
-    "tileLabel": "Video {{size}}, {{seconds}} s",
+    "title": "Galerie",
+    "selectedCount": "Sélection : {{count}}",
+    "loadMore": "Charger plus",
+    "tileLabel": "Vidéo {{size}}, {{seconds}} s",
     "empty": {
-      "title": "No videos yet",
-      "description": "Your clips appear here with their settings."
+      "title": "Aucune vidéo pour le moment",
+      "description": "Vos clips apparaissent ici avec leurs paramètres."
     },
-    "emptyNoModel": "Select a video model to start."
+    "emptyNoModel": "Sélectionnez un modèle vidéo pour commencer."
   },
   "viewer": {
-    "empty": "Select a video to play it here.",
-    "recipe": "Details",
-    "saveAs": "Save as…",
-    "reveal": "Show in folder",
-    "delete": "Delete",
-    "deleteCount": "Delete {{count}}",
-    "previous": "Previous video",
-    "next": "Next video",
-    "restore": "Restore these settings",
-    "restoreAndLoad": "Restore settings and switch model",
-    "restored": "Settings restored to the form.",
-    "loadOffer": "This video used a different model. Load it now?",
-    "copyPrompt": "Copy prompt",
-    "promptCopied": "Prompt copied",
-    "saved": "Video saved.",
-    "saveFailed": "The video could not be saved",
-    "revealFailed": "The folder could not be opened",
-    "playbackUnsupported": "This clip cannot be played here.",
-    "openInPlayer": "Open in player",
-    "play": "Play",
-    "openFailed": "The video could not be opened",
+    "empty": "Sélectionnez une vidéo pour la lire ici.",
+    "recipe": "Détails",
+    "saveAs": "Enregistrer sous…",
+    "reveal": "Afficher dans le dossier",
+    "delete": "Supprimer",
+    "deleteCount": "Supprimer {{count}}",
+    "previous": "Vidéo précédente",
+    "next": "Vidéo suivante",
+    "restore": "Restaurer ces paramètres",
+    "restoreAndLoad": "Restaurer les paramètres et changer de modèle",
+    "restored": "Paramètres restaurés dans le formulaire.",
+    "loadOffer": "Cette vidéo a été créée avec un autre modèle. Le charger maintenant ?",
+    "copyPrompt": "Copier le prompt",
+    "promptCopied": "Prompt copié",
+    "saved": "Vidéo enregistrée.",
+    "saveFailed": "Impossible d'enregistrer la vidéo",
+    "revealFailed": "Impossible d'ouvrir le dossier",
+    "playbackUnsupported": "Ce clip ne peut pas être lu ici.",
+    "openInPlayer": "Ouvrir dans le lecteur",
+    "play": "Lire",
+    "openFailed": "Impossible d'ouvrir la vidéo",
     "details": {
-      "model": "Model",
-      "size": "Size",
-      "frames": "Frames",
+      "model": "Modèle",
+      "size": "Taille",
+      "frames": "Images",
       "framesValue": "{{frames}} @ {{fps}} fps",
-      "duration": "Duration",
+      "duration": "Durée",
       "seconds": "{{seconds}} s",
-      "steps": "Steps",
+      "steps": "Étapes",
       "cfg": "CFG",
-      "guidance": "Guidance",
-      "seed": "Seed",
-      "sampler": "Sampler",
-      "engine": "Engine",
-      "took": "Took"
+      "guidance": "Guidage",
+      "seed": "Graine",
+      "sampler": "Échantillonneur",
+      "engine": "Moteur",
+      "took": "Temps de génération"
     }
   },
   "delete": {
-    "title": "Delete {{count}} videos?",
-    "titleOne": "Delete this video?",
-    "description": "The files are removed from the video folder. This cannot be undone.",
-    "confirm": "Delete",
-    "failed": "The videos could not be deleted"
+    "title": "Supprimer {{count}} vidéos ?",
+    "titleOne": "Supprimer cette vidéo ?",
+    "description": "Les fichiers sont supprimés du dossier des vidéos. Cette action est irréversible.",
+    "confirm": "Supprimer",
+    "failed": "Impossible de supprimer les vidéos"
   },
   "errors": {
     "actions": {
-      "reduceSize": "Try the smallest size"
+      "reduceSize": "Essayer la plus petite taille"
     },
     "OUT_OF_MEMORY": {
-      "title": "Not enough memory for this clip",
-      "body": "{{frames}} frames at {{size}} ({{seconds}} s) did not fit in memory. A shorter duration or a smaller size usually fixes it."
+      "title": "Mémoire insuffisante pour ce clip",
+      "body": "{{frames}} images en {{size}} ({{seconds}} s) ne tiennent pas en mémoire. Une durée plus courte ou une taille plus petite résout généralement le problème."
     },
     "INTERNAL": {
-      "title": "The media engine failed",
-      "body": "The engine stopped without a clip. The details are in the app log."
+      "title": "Le moteur multimédia a échoué",
+      "body": "Le moteur s'est arrêté sans produire de clip. Les détails figurent dans le journal de l'application."
     }
   },
   "notifications": {
-    "readyTitle": "Video ready",
-    "readyBody": "Your clip is in the gallery."
+    "readyTitle": "Vidéo prête",
+    "readyBody": "Votre clip est dans la galerie."
+  },
+  "download": {
+    "finishingModel": "Vérification du modèle vidéo",
+    "modelReady": "Le modèle vidéo est prêt"
+  },
+  "remote": {
+    "seconds": "{{seconds}} s",
+    "audio": "Son",
+    "firstFrame": "Première image"
   }
 }

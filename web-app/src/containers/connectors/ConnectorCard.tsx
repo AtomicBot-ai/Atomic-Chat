@@ -184,7 +184,11 @@ export function ConnectorCard({
                 )}
                 title={isError ? status?.error : failure}
                 aria-label={
-                  isError ? `MCP server error: ${status?.error}` : statusLabel
+                  isError
+                    ? t('mcp-connectors:statusErrorLabel', {
+                        error: status?.error,
+                      })
+                    : statusLabel
                 }
                 data-testid="connector-status"
               >
@@ -217,7 +221,7 @@ export function ConnectorCard({
                   alt="Atomic Chat"
                   className="size-2.5 object-contain"
                 />
-                <span>Official</span>
+                <span>{t('mcp-connectors:officialBadge')}</span>
               </span>
             )}
           </div>

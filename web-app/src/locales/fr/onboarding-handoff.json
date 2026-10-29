@@ -1,0 +1,21 @@
+{
+  "retry": "Réessayer",
+  "retryLabel": "Relancer le téléchargement",
+  "panel": {
+    "label": "Téléchargements de la configuration",
+    "backToSetup": "Retour à la configuration",
+    "dismiss": "Fermer"
+  },
+  "picker": {
+    "downloading": "Téléchargement {{percent}} %",
+    "paused": "En pause {{percent}} %",
+    "interrupted": "Téléchargement interrompu",
+    "queued": "En file d'attente",
+    "trigger": "{{name}} · {{status}}",
+    "section": "Téléchargement du modèle",
+    "progress": "Téléchargement de {{name}}",
+    "pause": "Suspendre",
+    "resume": "Reprendre",
+    "retry": "Réessayer"
+  }
+}

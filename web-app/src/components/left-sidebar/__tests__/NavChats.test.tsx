@@ -58,7 +58,7 @@ describe('NavChats', () => {
 
     expect(screen.getByText('common:recents').tagName).toBe('SPAN')
     expect(screen.queryByRole('button', { name: 'common:recents' })).toBeNull()
-    expect(screen.queryByText('More')).toBeNull()
+    expect(screen.queryByText('common:navigation.more')).toBeNull()
     // "+" takes the corner the menu would otherwise hold.
     expect(
       screen.getByRole('button', { name: 'common:newChat' })
@@ -75,7 +75,7 @@ describe('NavChats', () => {
     expect(
       screen.getByRole('button', { name: 'common:recents' })
     ).toHaveAttribute('aria-expanded', 'true')
-    expect(screen.getByText('More')).toBeInTheDocument()
+    expect(screen.getByText('common:navigation.more')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'common:newChat' })).toHaveClass(
       'right-10'
     )

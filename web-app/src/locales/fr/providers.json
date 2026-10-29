@@ -3,13 +3,16 @@
   "refreshModelsSuccess": "{{count}} nouveau(x) modèle(s) de {{provider}} ajouté(s).",
   "noNewModels": "Aucun nouveau modèle trouvé. Tous les modèles disponibles sont déjà ajoutés.",
   "refreshModelsFailed": "Échec de la récupération des modèles de {{provider}}. Veuillez vérifier votre clé API et votre URL de base.",
+  "refreshModelsLiveFailed": "Impossible de joindre le point de terminaison des modèles en direct de {{provider}} : {{error}}. Seuls les modèles du catalogue sont affichés.",
   "models": "Modèles",
   "refreshing": "Actualisation...",
   "refresh": "Actualiser",
   "import": "Importer",
+  "findModel": "Trouver un modèle",
   "importModelSuccess": "Le modèle {{provider}} a été importé avec succès.",
   "importModelError": "Échec de l'importation du modèle :",
   "stop": "Arrêter",
+  "stopFailed": "Impossible d’arrêter le modèle",
   "start": "Démarrer",
   "noModelFound": "Aucun modèle trouvé",
   "noModelFoundDesc": "Les modèles disponibles seront listés ici. Si vous n'avez pas encore de modèles, visitez le Hub pour en télécharger.",
@@ -29,7 +32,9 @@
   "deleteModel": {
     "title": "Supprimer le modèle : {{modelId}}",
     "description": "Êtes-vous sûr de vouloir supprimer ce modèle ? Cette action ne peut pas être annulée.",
+    "managedShared": "Ce modèle se trouve dans le stockage partagé des moteurs GPU ({{engines}}) : le supprimer le retire, avec ses caches de moteur, de chacun d’eux.",
     "success": "Le modèle {{modelId}} a été supprimé définitivement.",
+    "successFreed": "Le modèle {{modelId}} a été supprimé définitivement ; {{size}} libérés.",
     "cancel": "Annuler",
     "delete": "Supprimer"
   },
@@ -41,6 +46,15 @@
     "confirmDescription": "Êtes-vous sûr de vouloir supprimer ce fournisseur ? Cette action ne peut pas être annulée.",
     "cancel": "Annuler",
     "delete": "Supprimer"
+  },
+  "engineSettings": "Paramètres du moteur",
+  "resetEngineSettings": {
+    "reset": "Réinitialiser les paramètres",
+    "confirmTitle": "Réinitialiser les paramètres du moteur ?",
+    "confirmDescription": "Tous les paramètres ci-dessous reviennent à leur valeur par défaut, y compris les variables d’environnement et les arguments supplémentaires. Le backend installé et la sélection du GPU restent inchangés. Un modèle en cours d’exécution redémarre pour les appliquer.",
+    "cancel": "Annuler",
+    "confirm": "Réinitialiser",
+    "success": "Paramètres du moteur réinitialisés à leurs valeurs par défaut"
   },
   "editModel": {
     "title": "Modifier le modèle : {{modelId}}",
@@ -67,25 +81,118 @@
     "successDescription": "Catalogue des fournisseurs mis à jour.",
     "errorDescription": "Impossible d'actualiser le catalogue. Utilisation du cache ou des fournisseurs intégrés."
   },
-  "tensorrt": {
+  "vllm": {
+    "title": "Moteur vLLM",
+    "description": "Le moteur d’inférence open source, exécuté par Atomic Chat dans un conteneur Docker sur votre GPU NVIDIA.",
+    "checking": "Vérification de cet ordinateur…",
     "checkAgain": "Vérifier à nouveau",
-    "notInstalledWindows": "TensorRT-LLM n’est pas installé. L’installation active WSL si nécessaire, crée la distribution WSL propre à Atomic Chat avec Docker et NVIDIA Container Toolkit, puis télécharge l’image du moteur.",
+    "blocked": "vLLM ne peut pas encore fonctionner sur cet ordinateur :",
+    "notInstalled": "vLLM n’est pas installé. L’installation télécharge l’image du moteur et, si nécessaire, configure Docker et NVIDIA Container Toolkit.",
+    "install": "Installer…",
+    "installed": "vLLM est installé.",
+    "version": "Version installée : {{version}}",
+    "update": {
+      "available": "Une version plus récente est disponible : {{version}}",
+      "button": "Mettre à jour…",
+      "title": "Mettre à jour vLLM ?",
+      "body": "Le moteur est supprimé puis réinstallé à partir de la nouvelle version. Vos modèles téléchargés sont conservés. La nouvelle image du moteur représente environ {{size}} à télécharger ; tant qu’elle n’est pas configurée, les modèles vLLM ne peuvent pas être chargés.",
+      "confirm": "Mettre à jour"
+    },
+    "failed": "L’installation s’est arrêtée :",
+    "retry": "Réessayer",
+    "newerPlan": "Le moteur peut maintenant être configuré avec un plan plus récent, par exemple issu d’une nouvelle version du moteur. « Installer » recommence avec ce plan ; « Réessayer » répète la tentative échouée à l’identique.",
+    "cancel": "Annuler",
+    "progress": "{{done}} sur {{total}}",
+    "blocker": {
+      "ampere": "Dans Atomic Chat, vLLM nécessite une carte NVIDIA de génération Ampere (RTX 30xx) ou plus récente : capacité de calcul {{required}} ou supérieure. Celle de cette carte est {{actual}}."
+    },
     "plan": {
+      "title": "Installer vLLM",
+      "intro": "Voici tout ce que l’installation va faire sur cet ordinateur.",
+      "noSystemChanges": "Docker et le runtime NVIDIA sont déjà configurés ; rien ne change sur le système.",
+      "relogin": "Vous devrez vous déconnecter puis vous reconnecter une fois les modifications du système effectuées ; l’installation reprendra ensuite d’elle-même.",
+      "download": "Téléchargement : {{size}}.",
+      "disk": "Disque : {{required}} dans {{path}} ; {{free}} libres à cet endroit.",
+      "diskNoFree": "Disque : {{required}} dans {{path}}.",
+      "diskNoPath": "Disque : {{required}} nécessaires dans le stockage de Docker ; {{free}} libres à cet endroit.",
+      "diskUnknown": "Disque : {{required}} dans le stockage de Docker. L’emplacement et l’espace libre n’ont pas été indiqués.",
+      "notices": "Licences et mentions",
+      "noticesMissing": "Les licences et mentions de ce moteur n’ont pas été indiquées.",
+      "warning": {
+        "addressPools": "Un VPN ou un autre réseau de cet ordinateur ({{routes}}) utilise les adresses dont Docker a besoin : Docker risque de ne pas démarrer après l’installation.",
+        "addressPoolsNoRoutes": "Un VPN ou un autre réseau de cet ordinateur utilise les adresses dont Docker a besoin : Docker risque de ne pas démarrer après l’installation.",
+        "addressPoolsFix": "Pour l’éviter, excluez du VPN les plages d’adresses de Docker, ou attribuez à Docker d’autres plages avec \"default-address-pools\" dans /etc/docker/daemon.json. Vous pouvez tout de même installer maintenant."
+      },
+      "cancel": "Annuler",
+      "agree": "Accepter et installer",
       "reboot": "Windows peut demander un redémarrage après l’activation de WSL. Après le redémarrage, ouvrez Atomic Chat : l’installation reprend d’elle-même.",
       "wslDisk": "Disque : {{required}} pour la distribution WSL d’Atomic Chat dans {{path}} ; {{free}} libres à cet endroit.",
       "wslDiskNoFree": "Disque : {{required}} pour la distribution WSL d’Atomic Chat dans {{path}}.",
       "wslDiskNoPath": "Disque : {{required}} nécessaires pour la distribution WSL d’Atomic Chat ; {{free}} libres à cet endroit.",
       "wslDiskUnknown": "Disque : {{required}} pour la distribution WSL d’Atomic Chat. L’emplacement et l’espace libre n’ont pas été indiqués."
     },
+    "consent": {
+      "review": "Consulter le plan"
+    },
     "hostStep": {
+      "waiting": "En attente de votre mot de passe système pour configurer Docker et NVIDIA Container Toolkit…",
+      "manual": "Cet environnement de bureau ne propose aucune invite de mot de passe utilisable par Atomic Chat. Exécutez cette commande dans un terminal ; l’installation reprend une fois la commande terminée :",
+      "retry": "Redemander le mot de passe",
       "uac": {
-        "waiting": "En attente de votre accord à l’invite administrateur de Windows (UAC) qui active WSL…",
+        "waiting": "Approuvez l’invite administrateur de Windows (UAC) qui active WSL. Une fois votre accord donné, Windows télécharge et installe WSL ; cela prend plusieurs minutes, sans fenêtre dédiée.",
         "manual": "Windows ne peut pas afficher ici d’invite administrateur pour Atomic Chat. Ouvrez un terminal en tant qu’administrateur, exécutez cette commande, redémarrez l’ordinateur s’il le demande, puis cliquez sur « Vérifier à nouveau » :",
         "retry": "Redemander l’autorisation",
-        "running": "Windows is installing WSL. This takes several minutes and shows no window of its own; Atomic Chat continues by itself when it finishes."
+        "running": "Windows installe WSL. Cela prend plusieurs minutes, sans fenêtre dédiée ; Atomic Chat reprend de lui-même une fois l’opération terminée."
       },
-      "running": "Installing Docker and the NVIDIA Container Toolkit; this takes a few minutes, and the installation continues by itself."
+      "running": "Installation de Docker et de NVIDIA Container Toolkit ; cela prend quelques minutes et l’installation se poursuit d’elle-même."
     },
+    "relogin": {
+      "title": "Déconnectez-vous puis reconnectez-vous",
+      "body": "Vous avez été ajouté au groupe docker, ce qui prendra effet à votre prochaine connexion. Une fois reconnecté, ouvrez Atomic Chat : l’installation reprend d’elle-même.",
+      "stillWaiting": "Vous vous êtes déjà déconnecté puis reconnecté, et l’attente continue ? Redémarrez l’ordinateur : une session restée active en arrière-plan (une connexion à distance, ou des services maintenus après la déconnexion) peut conserver vos anciens groupes."
+    },
+    "phase": {
+      "checking": "Vérification de cet ordinateur…",
+      "awaiting-consent": "En attente de votre accord",
+      "preparing-host": "Configuration de Docker et de NVIDIA Container Toolkit",
+      "relogin-required": "En attente de votre reconnexion",
+      "reboot-required": "En attente d’un redémarrage",
+      "preparing-environment": "Vérification que Docker voit votre GPU",
+      "pulling-image": "Téléchargement de l’image du moteur",
+      "verifying": "Vérification de l’image du moteur",
+      "activating": "Finalisation de l’installation",
+      "removing": "Suppression du moteur",
+      "cancelling": "Annulation en cours",
+      "ready": "Installé",
+      "removed": "Supprimé",
+      "cancelled": "Annulé",
+      "failed": "Échec"
+    },
+    "remove": {
+      "space": "L’image du moteur occupe environ {{size}} dans le stockage de Docker. La désinstallation d’Atomic Chat ne libère pas cet espace ; supprimez d’abord le moteur ici.",
+      "button": "Supprimer le moteur",
+      "title": "Supprimer vLLM ?",
+      "body": "L’image du moteur, ses caches et l’installation sont supprimés. Docker, NVIDIA Container Toolkit et le groupe docker restent sur cet ordinateur.",
+      "keepModels": "Conserver les modèles téléchargés",
+      "modelsStay": "Les modèles téléchargés sont conservés : {{engines}} les utilise. Ils ne sont supprimés qu’avec le dernier moteur.",
+      "confirm": "Supprimer",
+      "spaceWindows": "L’image du moteur occupe environ {{size}} dans la distribution WSL d’Atomic Chat. La désinstallation d’Atomic Chat ne supprime ni l’image ni la distribution ; supprimez d’abord ici le moteur, puis l’environnement.",
+      "bodyWindows": "L’image du moteur, ses caches et l’installation sont supprimés. La distribution WSL d’Atomic Chat, avec Docker et NVIDIA Container Toolkit, est conservée ; vous pourrez la supprimer ensuite en tant qu’environnement."
+    },
+    "settings": {
+      "title": "Paramètres de vLLM",
+      "gpu": "GPU",
+      "gpuDefault": "La carte ayant le plus de mémoire libre au moment du chargement",
+      "gpuMissing": "La carte enregistrée {{gpu}} n’est plus présente dans cet ordinateur ; le prochain chargement utilisera la carte ayant le plus de mémoire libre et vous le signalera.",
+      "outputTooLong": "Le nombre maximal de jetons de sortie ({{output}}) doit être inférieur à la taille du contexte ({{context}}).",
+      "logs": "Journaux du modèle",
+      "viewLogs": "Afficher les journaux",
+      "noLogs": "Aucun journal pour l’instant : ce modèle n’a pas encore été chargé.",
+      "gpuDescription": "La carte sur laquelle le modèle est chargé. Les modifications s’appliquent au prochain chargement.",
+      "logsDescription": "Le journal du moteur pour la session en cours du modèle, ou pour son dernier chargement échoué.",
+      "logOf": "Journal de {{model}}"
+    },
+    "notInstalledWindows": "vLLM n’est pas installé. L’installation active WSL si nécessaire, crée la distribution WSL propre à Atomic Chat avec Docker et NVIDIA Container Toolkit, puis télécharge l’image du moteur.",
     "reboot": {
       "title": "Redémarrez l’ordinateur",
       "body": "WSL est activé et Windows doit redémarrer pour terminer. Après le redémarrage, ouvrez Atomic Chat : l’installation reprend d’elle-même, sans nouvelle demande d’accord."
@@ -94,21 +201,520 @@
       "preparing-host": "Activation de WSL",
       "preparing-environment": "Configuration de la distribution WSL d’Atomic Chat et vérification qu’elle voit votre GPU"
     },
+    "removeEnvironment": {
+      "hint": "La distribution WSL d’Atomic Chat \"{{name}}\" occupe {{size}}. La désinstallation d’Atomic Chat ne la supprime pas.",
+      "button": "Supprimer l’environnement",
+      "title": "Supprimer la distribution WSL d’Atomic Chat ?",
+      "body": "L’inscription de la distribution \"{{name}}\" dans {{path}} est annulée et tout son contenu est supprimé, ce qui libère {{size}}. Vos autres distributions WSL ne sont pas modifiées.",
+      "models": "Ces modèles sont supprimés avec elle :",
+      "noModels": "Elle ne contient aucun modèle.",
+      "uninstall": "La désinstallation d’Atomic Chat ne l’aurait pas supprimée : c’est ainsi que vous récupérez cet espace.",
+      "confirm": "Supprimer l’environnement",
+      "removing": "Suppression de la distribution WSL d’Atomic Chat"
+    },
     "bar": {
-      "hostStep": "Approve the system password prompt. After that, Docker and the NVIDIA Container Toolkit are installed; this can take a few minutes, and the installation continues by itself.",
-      "hostStepWindows": "Approve the Windows administrator prompt (UAC). After that, Windows downloads and installs WSL; this takes several minutes with no window of its own, and the installation continues by itself.",
-      "reboot": "WSL is turned on. Restart Windows to finish; after the restart, open Atomic Chat and the installation continues by itself.",
-      "relogin": "You were added to the docker group. Sign out and sign back in for it to take effect; then open Atomic Chat and the installation continues by itself.",
-      "restartNow": "Restart now",
-      "signOutNow": "Sign out now",
-      "later": "Later",
-      "details": "Details",
-      "actionFailed": "Could not do it from here ({{error}}). Do it yourself; the installation continues afterwards."
+      "hostStep": "Validez l’invite de mot de passe système. Docker et NVIDIA Container Toolkit seront ensuite installés ; cela peut prendre quelques minutes et l’installation se poursuit d’elle-même.",
+      "hostStepWindows": "Approuvez l’invite administrateur de Windows (UAC). Windows télécharge et installe ensuite WSL ; cela prend plusieurs minutes, sans fenêtre dédiée, et l’installation se poursuit d’elle-même.",
+      "reboot": "WSL est activé. Redémarrez Windows pour terminer ; après le redémarrage, ouvrez Atomic Chat : l’installation reprend d’elle-même.",
+      "relogin": "Vous avez été ajouté au groupe docker. Déconnectez-vous puis reconnectez-vous pour que cela prenne effet ; ouvrez ensuite Atomic Chat : l’installation reprend d’elle-même.",
+      "restartNow": "Redémarrer maintenant",
+      "signOutNow": "Se déconnecter maintenant",
+      "later": "Plus tard",
+      "details": "Détails",
+      "actionFailed": "Impossible de le faire d’ici ({{error}}). Faites-le vous-même ; l’installation reprendra ensuite."
+    },
+    "hub": {
+      "body": "Les modèles vLLM se choisissent et se téléchargent dans le Hub, qui vérifie que chacun fonctionne sur cet ordinateur.",
+      "action": "Choisir un modèle dans le Hub"
+    },
+    "troubleshooting": {
+      "title": "Dépannage",
+      "description": "Si la configuration est bloquée, copiez les diagnostics pour l’assistance, ou réinitialisez l’état de la configuration et recommencez. La réinitialisation conserve tout ce qui est déjà installé.",
+      "overridesTitle": "Cet ordinateur lit les paramètres de vLLM depuis une source autre que celle par défaut :",
+      "overridesHint": "Ces variables d’environnement sont généralement des restes de tests. Tant qu’elles sont définies, Atomic Chat ne voit pas les mises à jour publiées pour vLLM. Supprimez-les des variables d’environnement, déconnectez-vous et reconnectez-vous, puis réinitialisez l’état de la configuration.",
+      "afterFailure": "La dernière configuration a échoué. Recommencez à zéro pour configurer avec ce qui est disponible maintenant, plutôt que de réessayer la tentative échouée.",
+      "copy": "Copier les diagnostics",
+      "copied": "Diagnostics copiés dans le presse-papiers",
+      "copyFailed": "Impossible d’écrire dans le presse-papiers",
+      "unavailable": "Les diagnostics ne sont pas disponibles : {{reason}}",
+      "reset": "Réinitialiser l’état de la configuration",
+      "startOver": "Recommencer à zéro",
+      "running": "Une configuration ou une suppression est en cours ; terminez-la ou annulez-la d’abord.",
+      "confirmTitle": "Réinitialiser l’état de la configuration de vLLM ?",
+      "confirmBody": "Les tentatives de configuration terminées et échouées sont archivées, et la prochaine configuration repart d’une nouvelle vérification de cet ordinateur. La distribution WSL, l’image du moteur et vos modèles restent inchangés.",
+      "confirm": "Réinitialiser",
+      "cancel": "Annuler",
+      "resetDone": "État de la configuration réinitialisé (tentatives archivées : {{count}})",
+      "resetFailed": "Impossible de réinitialiser l’état de la configuration : {{reason}}"
+    },
+    "otherOperation": "{{engine}} est en cours de configuration ou de suppression ({{phase}}). L’installation de vLLM pourra commencer une fois l’opération terminée."
+  },
+  "sglang": {
+    "title": "Moteur SGLang",
+    "description": "Le moteur d’inférence open source, exécuté par Atomic Chat dans un conteneur Docker sur votre GPU NVIDIA.",
+    "checking": "Vérification de cet ordinateur…",
+    "checkAgain": "Vérifier à nouveau",
+    "blocked": "SGLang ne peut pas encore fonctionner sur cet ordinateur :",
+    "notInstalled": "SGLang n’est pas installé. L’installation télécharge l’image du moteur et, si nécessaire, configure Docker et NVIDIA Container Toolkit.",
+    "install": "Installer…",
+    "installed": "SGLang est installé.",
+    "version": "Version installée : {{version}}",
+    "update": {
+      "available": "Une version plus récente est disponible : {{version}}",
+      "button": "Mettre à jour…",
+      "title": "Mettre à jour SGLang ?",
+      "body": "Le moteur est supprimé puis réinstallé à partir de la nouvelle version. Vos modèles téléchargés sont conservés. La nouvelle image du moteur représente environ {{size}} à télécharger ; tant qu’elle n’est pas configurée, les modèles SGLang ne peuvent pas être chargés.",
+      "confirm": "Mettre à jour"
+    },
+    "failed": "L’installation s’est arrêtée :",
+    "retry": "Réessayer",
+    "newerPlan": "Le moteur peut maintenant être configuré avec un plan plus récent, par exemple issu d’une nouvelle version du moteur. « Installer » recommence avec ce plan ; « Réessayer » répète la tentative échouée à l’identique.",
+    "cancel": "Annuler",
+    "progress": "{{done}} sur {{total}}",
+    "blocker": {
+      "ampere": "Dans Atomic Chat, SGLang nécessite une carte NVIDIA de génération Ampere (RTX 30xx) ou plus récente : capacité de calcul {{required}} ou supérieure. Celle de cette carte est {{actual}}."
+    },
+    "plan": {
+      "title": "Installer SGLang",
+      "intro": "Voici tout ce que l’installation va faire sur cet ordinateur.",
+      "noSystemChanges": "Docker et le runtime NVIDIA sont déjà configurés ; rien ne change sur le système.",
+      "relogin": "Vous devrez vous déconnecter puis vous reconnecter une fois les modifications du système effectuées ; l’installation reprendra ensuite d’elle-même.",
+      "download": "Téléchargement : {{size}}.",
+      "disk": "Disque : {{required}} dans {{path}} ; {{free}} libres à cet endroit.",
+      "diskNoFree": "Disque : {{required}} dans {{path}}.",
+      "diskNoPath": "Disque : {{required}} nécessaires dans le stockage de Docker ; {{free}} libres à cet endroit.",
+      "diskUnknown": "Disque : {{required}} dans le stockage de Docker. L’emplacement et l’espace libre n’ont pas été indiqués.",
+      "notices": "Licences et mentions",
+      "noticesMissing": "Les licences et mentions de ce moteur n’ont pas été indiquées.",
+      "warning": {
+        "addressPools": "Un VPN ou un autre réseau de cet ordinateur ({{routes}}) utilise les adresses dont Docker a besoin : Docker risque de ne pas démarrer après l’installation.",
+        "addressPoolsNoRoutes": "Un VPN ou un autre réseau de cet ordinateur utilise les adresses dont Docker a besoin : Docker risque de ne pas démarrer après l’installation.",
+        "addressPoolsFix": "Pour l’éviter, excluez du VPN les plages d’adresses de Docker, ou attribuez à Docker d’autres plages avec \"default-address-pools\" dans /etc/docker/daemon.json. Vous pouvez tout de même installer maintenant."
+      },
+      "cancel": "Annuler",
+      "agree": "Accepter et installer",
+      "reboot": "Windows peut demander un redémarrage après l’activation de WSL. Après le redémarrage, ouvrez Atomic Chat : l’installation reprend d’elle-même.",
+      "wslDisk": "Disque : {{required}} pour la distribution WSL d’Atomic Chat dans {{path}} ; {{free}} libres à cet endroit.",
+      "wslDiskNoFree": "Disque : {{required}} pour la distribution WSL d’Atomic Chat dans {{path}}.",
+      "wslDiskNoPath": "Disque : {{required}} nécessaires pour la distribution WSL d’Atomic Chat ; {{free}} libres à cet endroit.",
+      "wslDiskUnknown": "Disque : {{required}} pour la distribution WSL d’Atomic Chat. L’emplacement et l’espace libre n’ont pas été indiqués."
+    },
+    "consent": {
+      "review": "Consulter le plan"
+    },
+    "hostStep": {
+      "waiting": "En attente de votre mot de passe système pour configurer Docker et NVIDIA Container Toolkit…",
+      "manual": "Cet environnement de bureau ne propose aucune invite de mot de passe utilisable par Atomic Chat. Exécutez cette commande dans un terminal ; l’installation reprend une fois la commande terminée :",
+      "retry": "Redemander le mot de passe",
+      "uac": {
+        "waiting": "Approuvez l’invite administrateur de Windows (UAC) qui active WSL. Une fois votre accord donné, Windows télécharge et installe WSL ; cela prend plusieurs minutes, sans fenêtre dédiée.",
+        "manual": "Windows ne peut pas afficher ici d’invite administrateur pour Atomic Chat. Ouvrez un terminal en tant qu’administrateur, exécutez cette commande, redémarrez l’ordinateur s’il le demande, puis cliquez sur « Vérifier à nouveau » :",
+        "retry": "Redemander l’autorisation",
+        "running": "Windows installe WSL. Cela prend plusieurs minutes, sans fenêtre dédiée ; Atomic Chat reprend de lui-même une fois l’opération terminée."
+      },
+      "running": "Installation de Docker et de NVIDIA Container Toolkit ; cela prend quelques minutes et l’installation se poursuit d’elle-même."
+    },
+    "relogin": {
+      "title": "Déconnectez-vous puis reconnectez-vous",
+      "body": "Vous avez été ajouté au groupe docker, ce qui prendra effet à votre prochaine connexion. Une fois reconnecté, ouvrez Atomic Chat : l’installation reprend d’elle-même.",
+      "stillWaiting": "Vous vous êtes déjà déconnecté puis reconnecté, et l’attente continue ? Redémarrez l’ordinateur : une session restée active en arrière-plan (une connexion à distance, ou des services maintenus après la déconnexion) peut conserver vos anciens groupes."
+    },
+    "phase": {
+      "checking": "Vérification de cet ordinateur…",
+      "awaiting-consent": "En attente de votre accord",
+      "preparing-host": "Configuration de Docker et de NVIDIA Container Toolkit",
+      "relogin-required": "En attente de votre reconnexion",
+      "reboot-required": "En attente d’un redémarrage",
+      "preparing-environment": "Vérification que Docker voit votre GPU",
+      "pulling-image": "Téléchargement de l’image du moteur",
+      "verifying": "Vérification de l’image du moteur",
+      "activating": "Finalisation de l’installation",
+      "removing": "Suppression du moteur",
+      "cancelling": "Annulation en cours",
+      "ready": "Installé",
+      "removed": "Supprimé",
+      "cancelled": "Annulé",
+      "failed": "Échec"
+    },
+    "remove": {
+      "space": "L’image du moteur occupe environ {{size}} dans le stockage de Docker. La désinstallation d’Atomic Chat ne libère pas cet espace ; supprimez d’abord le moteur ici.",
+      "button": "Supprimer le moteur",
+      "title": "Supprimer SGLang ?",
+      "body": "L’image du moteur, ses caches et l’installation sont supprimés. Docker, NVIDIA Container Toolkit et le groupe docker restent sur cet ordinateur.",
+      "keepModels": "Conserver les modèles téléchargés",
+      "modelsStay": "Les modèles téléchargés sont conservés : {{engines}} les utilise. Ils ne sont supprimés qu’avec le dernier moteur.",
+      "confirm": "Supprimer",
+      "spaceWindows": "L’image du moteur occupe environ {{size}} dans la distribution WSL d’Atomic Chat. La désinstallation d’Atomic Chat ne supprime ni l’image ni la distribution ; supprimez d’abord ici le moteur, puis l’environnement.",
+      "bodyWindows": "L’image du moteur, ses caches et l’installation sont supprimés. La distribution WSL d’Atomic Chat, avec Docker et NVIDIA Container Toolkit, est conservée ; vous pourrez la supprimer ensuite en tant qu’environnement."
+    },
+    "settings": {
+      "title": "Paramètres de SGLang",
+      "gpu": "GPU",
+      "gpuDefault": "La carte ayant le plus de mémoire libre au moment du chargement",
+      "gpuMissing": "La carte enregistrée {{gpu}} n’est plus présente dans cet ordinateur ; le prochain chargement utilisera la carte ayant le plus de mémoire libre et vous le signalera.",
+      "outputTooLong": "Le nombre maximal de jetons de sortie ({{output}}) doit être inférieur à la taille du contexte ({{context}}).",
+      "logs": "Journaux du modèle",
+      "viewLogs": "Afficher les journaux",
+      "noLogs": "Aucun journal pour l’instant : ce modèle n’a pas encore été chargé.",
+      "gpuDescription": "La carte sur laquelle le modèle est chargé. Les modifications s’appliquent au prochain chargement.",
+      "logsDescription": "Le journal du moteur pour la session en cours du modèle, ou pour son dernier chargement échoué.",
+      "logOf": "Journal de {{model}}"
+    },
+    "notInstalledWindows": "SGLang n’est pas installé. L’installation active WSL si nécessaire, crée la distribution WSL propre à Atomic Chat avec Docker et NVIDIA Container Toolkit, puis télécharge l’image du moteur.",
+    "reboot": {
+      "title": "Redémarrez l’ordinateur",
+      "body": "WSL est activé et Windows doit redémarrer pour terminer. Après le redémarrage, ouvrez Atomic Chat : l’installation reprend d’elle-même, sans nouvelle demande d’accord."
+    },
+    "phaseWindows": {
+      "preparing-host": "Activation de WSL",
+      "preparing-environment": "Configuration de la distribution WSL d’Atomic Chat et vérification qu’elle voit votre GPU"
+    },
+    "removeEnvironment": {
+      "hint": "La distribution WSL d’Atomic Chat \"{{name}}\" occupe {{size}}. La désinstallation d’Atomic Chat ne la supprime pas.",
+      "button": "Supprimer l’environnement",
+      "title": "Supprimer la distribution WSL d’Atomic Chat ?",
+      "body": "L’inscription de la distribution \"{{name}}\" dans {{path}} est annulée et tout son contenu est supprimé, ce qui libère {{size}}. Vos autres distributions WSL ne sont pas modifiées.",
+      "models": "Ces modèles sont supprimés avec elle :",
+      "noModels": "Elle ne contient aucun modèle.",
+      "uninstall": "La désinstallation d’Atomic Chat ne l’aurait pas supprimée : c’est ainsi que vous récupérez cet espace.",
+      "confirm": "Supprimer l’environnement",
+      "removing": "Suppression de la distribution WSL d’Atomic Chat"
+    },
+    "bar": {
+      "hostStep": "Validez l’invite de mot de passe système. Docker et NVIDIA Container Toolkit seront ensuite installés ; cela peut prendre quelques minutes et l’installation se poursuit d’elle-même.",
+      "hostStepWindows": "Approuvez l’invite administrateur de Windows (UAC). Windows télécharge et installe ensuite WSL ; cela prend plusieurs minutes, sans fenêtre dédiée, et l’installation se poursuit d’elle-même.",
+      "reboot": "WSL est activé. Redémarrez Windows pour terminer ; après le redémarrage, ouvrez Atomic Chat : l’installation reprend d’elle-même.",
+      "relogin": "Vous avez été ajouté au groupe docker. Déconnectez-vous puis reconnectez-vous pour que cela prenne effet ; ouvrez ensuite Atomic Chat : l’installation reprend d’elle-même.",
+      "restartNow": "Redémarrer maintenant",
+      "signOutNow": "Se déconnecter maintenant",
+      "later": "Plus tard",
+      "details": "Détails",
+      "actionFailed": "Impossible de le faire d’ici ({{error}}). Faites-le vous-même ; l’installation reprendra ensuite."
+    },
+    "hub": {
+      "body": "Les modèles SGLang se choisissent et se téléchargent dans le Hub, qui vérifie que chacun fonctionne sur cet ordinateur.",
+      "action": "Choisir un modèle dans le Hub"
+    },
+    "troubleshooting": {
+      "title": "Dépannage",
+      "description": "Si la configuration est bloquée, copiez les diagnostics pour l’assistance, ou réinitialisez l’état de la configuration et recommencez. La réinitialisation conserve tout ce qui est déjà installé.",
+      "overridesTitle": "Cet ordinateur lit les paramètres de SGLang depuis une source autre que celle par défaut :",
+      "overridesHint": "Ces variables d’environnement sont généralement des restes de tests. Tant qu’elles sont définies, Atomic Chat ne voit pas les mises à jour publiées pour SGLang. Supprimez-les des variables d’environnement, déconnectez-vous et reconnectez-vous, puis réinitialisez l’état de la configuration.",
+      "afterFailure": "La dernière configuration a échoué. Recommencez à zéro pour configurer avec ce qui est disponible maintenant, plutôt que de réessayer la tentative échouée.",
+      "copy": "Copier les diagnostics",
+      "copied": "Diagnostics copiés dans le presse-papiers",
+      "copyFailed": "Impossible d’écrire dans le presse-papiers",
+      "unavailable": "Les diagnostics ne sont pas disponibles : {{reason}}",
+      "reset": "Réinitialiser l’état de la configuration",
+      "startOver": "Recommencer à zéro",
+      "running": "Une configuration ou une suppression est en cours ; terminez-la ou annulez-la d’abord.",
+      "confirmTitle": "Réinitialiser l’état de la configuration de SGLang ?",
+      "confirmBody": "Les tentatives de configuration terminées et échouées sont archivées, et la prochaine configuration repart d’une nouvelle vérification de cet ordinateur. La distribution WSL, l’image du moteur et vos modèles restent inchangés.",
+      "confirm": "Réinitialiser",
+      "cancel": "Annuler",
+      "resetDone": "État de la configuration réinitialisé (tentatives archivées : {{count}})",
+      "resetFailed": "Impossible de réinitialiser l’état de la configuration : {{reason}}"
+    },
+    "otherOperation": "{{engine}} est en cours de configuration ou de suppression ({{phase}}). L’installation de SGLang pourra commencer une fois l’opération terminée."
+  },
+  "foundryLocal": {
+    "engine": {
+      "title": "Moteur Foundry Local",
+      "notInstalled": "Foundry Local n’est pas installé",
+      "installDescription": "Le runtime Foundry Local {{version}} de Microsoft, environ {{size}} à télécharger. Son installation prépare aussi ses accélérateurs fournis par Microsoft (jusqu’à 2 GB pour CUDA ; les plugins NPU arrivent via Windows). Atomic Chat le vérifie et exécute chaque modèle dans son propre processus.",
+      "install": "Installer {{version}}",
+      "installing": "Téléchargement… {{percent}}%",
+      "noBuild": "Aucun build de Foundry Local n’est disponible pour cet ordinateur pour le moment.",
+      "installed": "Foundry Local {{version}}",
+      "installedDescription": "Le runtime à partir duquel les modèles démarrent. Les accélérateurs se préparent ci-dessous.",
+      "update": "Mettre à jour vers {{version}}",
+      "checking": "Vérification de ce qui est installé…"
+    },
+    "accelerators": {
+      "title": "Accélérateurs",
+      "description": "Ce sur quoi Foundry Local peut exécuter des modèles ici. Un accélérateur n’est téléchargé depuis Microsoft que lorsque vous le préparez.",
+      "ready": "Prêt",
+      "notPrepared": "Non préparé",
+      "preparing": "Préparation…",
+      "downloading": "Téléchargement… {{percent}}%",
+      "retry": "Réessayer",
+      "prepare": "Préparer",
+      "sizeWarning": "La préparation télécharge depuis Microsoft : jusqu’à 2 GB pour CUDA, environ 10 MB pour WebGPU ; les plugins NPU sont installés par Windows et peuvent prendre quelques minutes.",
+      "busy": "Les accélérateurs sont déjà en cours de préparation ; leur progression s’affiche ci-dessus.",
+      "prepareFailed": "Échec de la préparation des accélérateurs : {{message}}",
+      "checkAgain": "Vérifier à nouveau",
+      "none": "Foundry Local n’a trouvé aucun accélérateur ici. Les modèles CPU fonctionnent toujours.",
+      "device": "Périphérique : {{device}}"
+    },
+    "telemetry": "La bibliothèque Foundry Local de Microsoft envoie toujours un événement ProcessInfo (nom de l’application, système d’exploitation et architecture, nom du processus, exécution ou non dans une machine virtuelle ou un conteneur, nombre de CPU et taille de la mémoire ; aucun identifiant d’appareil). Atomic Chat désactive sa télémétrie facultative, mais ne peut pas désactiver cet événement."
+  },
+  "liteRtLm": {
+    "engine": {
+      "title": "Moteur LiteRT-LM",
+      "notInstalled": "LiteRT-LM n’est pas installé",
+      "installDescription": "La bibliothèque LiteRT-LM {{version}} de Google, environ {{size}} à télécharger. Atomic Chat la vérifie et exécute chaque modèle dans son propre processus.",
+      "install": "Installer {{version}}",
+      "installing": "Téléchargement… {{percent}}%",
+      "noBuild": "Aucun build de LiteRT-LM n’est disponible pour cet ordinateur pour le moment.",
+      "installed": "LiteRT-LM {{version}}",
+      "installedDescription": "La bibliothèque à partir de laquelle les modèles démarrent, sur le CPU, le GPU ou un NPU Intel.",
+      "update": "Mettre à jour vers {{version}}",
+      "checking": "Vérification de ce qui est installé…",
+      "checkAgain": "Vérifier à nouveau"
+    },
+    "accelerators": {
+      "title": "NPU Intel",
+      "description": "Les modèles conçus pour le NPU Intel de cet ordinateur nécessitent les bibliothèques OpenVINO d’Intel. Elles ne sont téléchargées que lorsque vous les préparez.",
+      "openvino": "Intel OpenVINO {{version}}",
+      "detail": "Pour le NPU {{npu}}, {{size}} à télécharger",
+      "ready": "Prêt",
+      "notPrepared": "Non préparé",
+      "preparing": "Préparation…",
+      "downloading": "Téléchargement… {{percent}}%",
+      "retry": "Réessayer",
+      "prepare": "Préparer ({{size}})",
+      "busy": "OpenVINO est déjà en cours de préparation ; sa progression s’affiche ci-dessus.",
+      "prepareFailed": "Échec de la préparation d’OpenVINO : {{message}}",
+      "checkAgain": "Vérifier à nouveau"
     }
   },
-  "overview": {
-    "updateStatus": {
-      "noActiveBuild": "Aucun build actif"
+  "geniex": {
+    "engine": {
+      "title": "Moteur GenieX",
+      "notInstalled": "GenieX n’est pas installé",
+      "installDescription": "Le SDK GenieX {{version}} de Qualcomm, environ {{size}} à télécharger. Il inclut les bibliothèques du NPU Hexagon et du GPU Adreno ; Atomic Chat le vérifie et exécute chaque modèle dans son propre processus. Aucun droit d’administrateur n’est nécessaire.",
+      "install": "Installer {{version}}",
+      "installing": "Téléchargement… {{percent}}%",
+      "noBuild": "Aucun build de GenieX n’est disponible pour cet ordinateur pour le moment.",
+      "installed": "GenieX {{version}}",
+      "installedDescription": "Le SDK à partir duquel les modèles démarrent, sur le NPU Hexagon, le GPU Adreno ou le CPU.",
+      "update": "Mettre à jour vers {{version}}",
+      "checking": "Vérification de ce qui est installé…",
+      "checkAgain": "Vérifier à nouveau"
+    },
+    "devices": {
+      "title": "Périphériques",
+      "description": "Ce que GenieX a trouvé sur cet ordinateur lors de l’installation du SDK. Rien n’est à préparer : les bibliothèques de chaque périphérique sont fournies avec le SDK.",
+      "npu": "NPU Hexagon",
+      "gpu": "GPU Adreno",
+      "detail": "Trouvé par GenieX {{version}}",
+      "ready": "Prêt",
+      "none": "GenieX n’a trouvé ni le NPU ni le GPU ici. Les modèles fonctionnent toujours sur le CPU ; pour le NPU, installez ou mettez à jour le pilote NPU Qualcomm (via Windows Update ou le fabricant de votre ordinateur portable), puis réinstallez le SDK.",
+      "npuDriverHint": "GenieX n’a trouvé aucun NPU Hexagon. Les modèles fonctionnent toujours sur le GPU et le CPU ; pour le NPU, installez ou mettez à jour le pilote NPU Qualcomm (via Windows Update ou le fabricant de votre ordinateur portable), puis réinstallez le SDK.",
+      "checkAgain": "Vérifier à nouveau"
     }
+  },
+  "tensorrt": {
+    "title": "Moteur TensorRT-LLM",
+    "description": "Le moteur d’inférence de NVIDIA, exécuté par Atomic Chat dans un conteneur Docker sur votre GPU NVIDIA.",
+    "checking": "Vérification de cet ordinateur…",
+    "checkAgain": "Vérifier à nouveau",
+    "blocked": "TensorRT-LLM ne peut pas encore fonctionner sur cet ordinateur :",
+    "notInstalled": "TensorRT-LLM n’est pas installé. L’installation télécharge l’image du moteur et, si nécessaire, configure Docker et NVIDIA Container Toolkit.",
+    "install": "Installer…",
+    "installed": "TensorRT-LLM est installé.",
+    "version": "Version installée : {{version}}",
+    "update": {
+      "available": "Une version plus récente est disponible : {{version}}",
+      "button": "Mettre à jour…",
+      "title": "Mettre à jour TensorRT-LLM ?",
+      "body": "Le moteur est supprimé puis réinstallé à partir de la nouvelle version. Vos modèles téléchargés sont conservés. La nouvelle image du moteur représente environ {{size}} à télécharger ; tant qu’elle n’est pas configurée, les modèles TensorRT-LLM ne peuvent pas être chargés.",
+      "confirm": "Mettre à jour"
+    },
+    "failed": "L’installation s’est arrêtée :",
+    "retry": "Réessayer",
+    "newerPlan": "Le moteur peut maintenant être configuré avec un plan plus récent, par exemple issu d’une nouvelle version du moteur. « Installer » recommence avec ce plan ; « Réessayer » répète la tentative échouée à l’identique.",
+    "cancel": "Annuler",
+    "progress": "{{done}} sur {{total}}",
+    "blocker": {
+      "ampere": "TensorRT-LLM nécessite une carte NVIDIA de génération Ampere (RTX 30xx) ou plus récente : capacité de calcul {{required}} ou supérieure. Celle de cette carte est {{actual}}."
+    },
+    "plan": {
+      "title": "Installer TensorRT-LLM",
+      "intro": "Voici tout ce que l’installation va faire sur cet ordinateur.",
+      "noSystemChanges": "Docker et le runtime NVIDIA sont déjà configurés ; rien ne change sur le système.",
+      "relogin": "Vous devrez vous déconnecter puis vous reconnecter une fois les modifications du système effectuées ; l’installation reprendra ensuite d’elle-même.",
+      "download": "Téléchargement : {{size}}.",
+      "disk": "Disque : {{required}} dans {{path}} ; {{free}} libres à cet endroit.",
+      "diskNoFree": "Disque : {{required}} dans {{path}}.",
+      "diskNoPath": "Disque : {{required}} nécessaires dans le stockage de Docker ; {{free}} libres à cet endroit.",
+      "diskUnknown": "Disque : {{required}} dans le stockage de Docker. L’emplacement et l’espace libre n’ont pas été indiqués.",
+      "notices": "Conditions et mentions NVIDIA",
+      "noticesMissing": "Les conditions et mentions NVIDIA de ce moteur n’ont pas été indiquées.",
+      "warning": {
+        "addressPools": "Un VPN ou un autre réseau de cet ordinateur ({{routes}}) utilise les adresses dont Docker a besoin : Docker risque de ne pas démarrer après l’installation.",
+        "addressPoolsNoRoutes": "Un VPN ou un autre réseau de cet ordinateur utilise les adresses dont Docker a besoin : Docker risque de ne pas démarrer après l’installation.",
+        "addressPoolsFix": "Pour l’éviter, excluez du VPN les plages d’adresses de Docker, ou attribuez à Docker d’autres plages avec \"default-address-pools\" dans /etc/docker/daemon.json. Vous pouvez tout de même installer maintenant."
+      },
+      "cancel": "Annuler",
+      "agree": "Accepter et installer",
+      "reboot": "Windows peut demander un redémarrage après l’activation de WSL. Après le redémarrage, ouvrez Atomic Chat : l’installation reprend d’elle-même.",
+      "wslDisk": "Disque : {{required}} pour la distribution WSL d’Atomic Chat dans {{path}} ; {{free}} libres à cet endroit.",
+      "wslDiskNoFree": "Disque : {{required}} pour la distribution WSL d’Atomic Chat dans {{path}}.",
+      "wslDiskNoPath": "Disque : {{required}} nécessaires pour la distribution WSL d’Atomic Chat ; {{free}} libres à cet endroit.",
+      "wslDiskUnknown": "Disque : {{required}} pour la distribution WSL d’Atomic Chat. L’emplacement et l’espace libre n’ont pas été indiqués."
+    },
+    "consent": {
+      "review": "Consulter le plan"
+    },
+    "hostStep": {
+      "waiting": "En attente de votre mot de passe système pour configurer Docker et NVIDIA Container Toolkit…",
+      "manual": "Cet environnement de bureau ne propose aucune invite de mot de passe utilisable par Atomic Chat. Exécutez cette commande dans un terminal ; l’installation reprend une fois la commande terminée :",
+      "retry": "Redemander le mot de passe",
+      "uac": {
+        "waiting": "En attente de votre accord à l’invite administrateur de Windows (UAC) qui active WSL…",
+        "manual": "Windows ne peut pas afficher ici d’invite administrateur pour Atomic Chat. Ouvrez un terminal en tant qu’administrateur, exécutez cette commande, redémarrez l’ordinateur s’il le demande, puis cliquez sur « Vérifier à nouveau » :",
+        "retry": "Redemander l’autorisation",
+        "running": "Windows installe WSL. Cela prend plusieurs minutes, sans fenêtre dédiée ; Atomic Chat reprend de lui-même une fois l’opération terminée."
+      },
+      "running": "Installation de Docker et de NVIDIA Container Toolkit ; cela prend quelques minutes et l’installation se poursuit d’elle-même."
+    },
+    "relogin": {
+      "title": "Déconnectez-vous puis reconnectez-vous",
+      "body": "Vous avez été ajouté au groupe docker, ce qui prendra effet à votre prochaine connexion. Une fois reconnecté, ouvrez Atomic Chat : l’installation reprend d’elle-même.",
+      "stillWaiting": "Vous vous êtes déjà déconnecté puis reconnecté, et l’attente continue ? Redémarrez l’ordinateur : une session restée active en arrière-plan (une connexion à distance, ou des services maintenus après la déconnexion) peut conserver vos anciens groupes."
+    },
+    "phase": {
+      "checking": "Vérification de cet ordinateur…",
+      "awaiting-consent": "En attente de votre accord",
+      "preparing-host": "Configuration de Docker et de NVIDIA Container Toolkit",
+      "relogin-required": "En attente de votre reconnexion",
+      "reboot-required": "En attente d’un redémarrage",
+      "preparing-environment": "Vérification que Docker voit votre GPU",
+      "pulling-image": "Téléchargement de l’image du moteur",
+      "verifying": "Vérification de l’image du moteur",
+      "activating": "Finalisation de l’installation",
+      "removing": "Suppression du moteur",
+      "cancelling": "Annulation en cours",
+      "ready": "Installé",
+      "removed": "Supprimé",
+      "cancelled": "Annulé",
+      "failed": "Échec"
+    },
+    "remove": {
+      "space": "L’image du moteur occupe environ {{size}} dans le stockage de Docker. La désinstallation d’Atomic Chat ne libère pas cet espace ; supprimez d’abord le moteur ici.",
+      "button": "Supprimer le moteur",
+      "title": "Supprimer TensorRT-LLM ?",
+      "body": "L’image du moteur, ses caches et l’installation sont supprimés. Docker, NVIDIA Container Toolkit et le groupe docker restent sur cet ordinateur.",
+      "keepModels": "Conserver les modèles TensorRT-LLM téléchargés",
+      "modelsStay": "Les modèles téléchargés sont conservés : {{engines}} les utilise. Ils ne sont supprimés qu’avec le dernier moteur.",
+      "confirm": "Supprimer",
+      "spaceWindows": "L’image du moteur occupe environ {{size}} dans la distribution WSL d’Atomic Chat. La désinstallation d’Atomic Chat ne supprime ni l’image ni la distribution ; supprimez d’abord ici le moteur, puis l’environnement.",
+      "bodyWindows": "L’image du moteur, ses caches et l’installation sont supprimés. La distribution WSL d’Atomic Chat, avec Docker et NVIDIA Container Toolkit, est conservée ; vous pourrez la supprimer ensuite en tant qu’environnement."
+    },
+    "settings": {
+      "title": "Paramètres de TensorRT-LLM",
+      "gpu": "GPU",
+      "gpuDefault": "La carte ayant le plus de mémoire libre au moment du chargement",
+      "gpuMissing": "La carte enregistrée {{gpu}} n’est plus présente dans cet ordinateur ; le prochain chargement utilisera la carte ayant le plus de mémoire libre et vous le signalera.",
+      "outputTooLong": "Le nombre maximal de jetons de sortie ({{output}}) doit être inférieur à la taille du contexte ({{context}}).",
+      "logs": "Journaux du modèle",
+      "viewLogs": "Afficher les journaux",
+      "noLogs": "Aucun journal pour l’instant : ce modèle n’a pas encore été chargé.",
+      "gpuDescription": "La carte sur laquelle le modèle est chargé. Les modifications s’appliquent au prochain chargement.",
+      "logsDescription": "Le journal du moteur pour la session en cours du modèle, ou pour son dernier chargement échoué.",
+      "logOf": "Journal de {{model}}"
+    },
+    "notInstalledWindows": "TensorRT-LLM n’est pas installé. L’installation active WSL si nécessaire, crée la distribution WSL propre à Atomic Chat avec Docker et NVIDIA Container Toolkit, puis télécharge l’image du moteur.",
+    "reboot": {
+      "title": "Redémarrez l’ordinateur",
+      "body": "WSL est activé et Windows doit redémarrer pour terminer. Après le redémarrage, ouvrez Atomic Chat : l’installation reprend d’elle-même, sans nouvelle demande d’accord."
+    },
+    "phaseWindows": {
+      "preparing-host": "Activation de WSL",
+      "preparing-environment": "Configuration de la distribution WSL d’Atomic Chat et vérification qu’elle voit votre GPU"
+    },
+    "removeEnvironment": {
+      "hint": "La distribution WSL d’Atomic Chat \"{{name}}\" occupe {{size}}. La désinstallation d’Atomic Chat ne la supprime pas.",
+      "button": "Supprimer l’environnement",
+      "title": "Supprimer la distribution WSL d’Atomic Chat ?",
+      "body": "L’inscription de la distribution \"{{name}}\" dans {{path}} est annulée et tout son contenu est supprimé, ce qui libère {{size}}. Vos autres distributions WSL ne sont pas modifiées.",
+      "models": "Ces modèles TensorRT-LLM sont supprimés avec elle :",
+      "noModels": "Elle ne contient aucun modèle TensorRT-LLM.",
+      "uninstall": "La désinstallation d’Atomic Chat ne l’aurait pas supprimée : c’est ainsi que vous récupérez cet espace.",
+      "confirm": "Supprimer l’environnement",
+      "removing": "Suppression de la distribution WSL d’Atomic Chat"
+    },
+    "bar": {
+      "hostStep": "Validez l’invite de mot de passe système. Docker et NVIDIA Container Toolkit seront ensuite installés ; cela peut prendre quelques minutes et l’installation se poursuit d’elle-même.",
+      "hostStepWindows": "Approuvez l’invite administrateur de Windows (UAC). Windows télécharge et installe ensuite WSL ; cela prend plusieurs minutes, sans fenêtre dédiée, et l’installation se poursuit d’elle-même.",
+      "reboot": "WSL est activé. Redémarrez Windows pour terminer ; après le redémarrage, ouvrez Atomic Chat : l’installation reprend d’elle-même.",
+      "relogin": "Vous avez été ajouté au groupe docker. Déconnectez-vous puis reconnectez-vous pour que cela prenne effet ; ouvrez ensuite Atomic Chat : l’installation reprend d’elle-même.",
+      "restartNow": "Redémarrer maintenant",
+      "signOutNow": "Se déconnecter maintenant",
+      "later": "Plus tard",
+      "details": "Détails",
+      "actionFailed": "Impossible de le faire d’ici ({{error}}). Faites-le vous-même ; l’installation reprendra ensuite."
+    },
+    "hub": {
+      "body": "Les modèles TensorRT-LLM se choisissent et se téléchargent dans le Hub, qui vérifie que chacun fonctionne sur cet ordinateur.",
+      "action": "Choisir un modèle dans le Hub"
+    },
+    "troubleshooting": {
+      "title": "Dépannage",
+      "description": "Si la configuration est bloquée, copiez les diagnostics pour l’assistance, ou réinitialisez l’état de la configuration et recommencez. La réinitialisation conserve tout ce qui est déjà installé.",
+      "overridesTitle": "Cet ordinateur lit les paramètres de TensorRT-LLM depuis une source autre que celle par défaut :",
+      "overridesHint": "Ces variables d’environnement sont généralement des restes de tests. Tant qu’elles sont définies, Atomic Chat ne voit pas les mises à jour publiées pour TensorRT-LLM. Supprimez-les des variables d’environnement Windows, déconnectez-vous et reconnectez-vous, puis réinitialisez l’état de la configuration.",
+      "afterFailure": "La dernière configuration a échoué. Recommencez à zéro pour configurer avec ce qui est disponible maintenant, plutôt que de réessayer la tentative échouée.",
+      "copy": "Copier les diagnostics",
+      "copied": "Diagnostics copiés dans le presse-papiers",
+      "copyFailed": "Impossible d’écrire dans le presse-papiers",
+      "unavailable": "Les diagnostics ne sont pas disponibles : {{reason}}",
+      "reset": "Réinitialiser l’état de la configuration",
+      "startOver": "Recommencer à zéro",
+      "running": "Une configuration ou une suppression est en cours ; terminez-la ou annulez-la d’abord.",
+      "confirmTitle": "Réinitialiser l’état de la configuration de TensorRT-LLM ?",
+      "confirmBody": "Les tentatives de configuration terminées et échouées sont archivées, et la prochaine configuration repart d’une nouvelle vérification de cet ordinateur. La distribution WSL, l’image du moteur et vos modèles restent inchangés.",
+      "confirm": "Réinitialiser",
+      "cancel": "Annuler",
+      "resetDone": "État de la configuration réinitialisé (tentatives archivées : {{count}})",
+      "resetFailed": "Impossible de réinitialiser l’état de la configuration : {{reason}}"
+    },
+    "otherOperation": "{{engine}} est en cours de configuration ou de suppression ({{phase}}). L’installation de TensorRT-LLM pourra commencer une fois l’opération terminée."
+  },
+  "prismEngine": {
+    "description": "Nécessaire pour exécuter les modèles Bonsai.",
+    "noBuild": "Aucun build vérifié pour cet ordinateur pour l’instant : activez “Allow unverified PrismML builds” ci-dessous.",
+    "checkFailed": "Impossible de vérifier les builds PrismML : {{error}}",
+    "checkAgain": "Vérifier à nouveau",
+    "install": "Installer le moteur",
+    "installing": "Installation…",
+    "installFailed": "Impossible d’installer le moteur : {{error}}",
+    "findModels": "Modèles Bonsai"
+  },
+  "overview": {
+    "language": "Modèles de langage",
+    "media": "Modèles multimédias",
+    "voice": "Modèles vocaux",
+    "modelCountOne": "1 modèle",
+    "modelCountOther": "{{count}} modèles",
+    "build": "Build {{version}}",
+    "mediaDescription": "Images et vidéos",
+    "voiceDescription": "{{model}} · reconnaissance vocale",
+    "enable": "Activer ou désactiver {{name}}",
+    "status": {
+      "disabled": "Désactivé"
+    },
+    "updateStatus": {
+      "updating": "Mise à jour…",
+      "available": "Mise à jour disponible",
+      "upToDate": "À jour",
+      "notInstalled": "Non installé",
+      "noActiveBuild": "Aucun build actif"
+    },
+    "update": "Mettre à jour",
+    "updateEngine": "Mettre à jour {{name}}",
+    "updateFailed": "Impossible de mettre à jour le moteur",
+    "checkForUpdates": "Rechercher des mises à jour",
+    "checkFailed": "Impossible de rechercher les mises à jour des moteurs",
+    "allUpToDate": "Tous les moteurs sont à jour",
+    "updatesFound": "Moteurs à mettre à jour : {{count}}",
+    "expandSettings": "Afficher les paramètres de {{name}}",
+    "collapseSettings": "Masquer les paramètres de {{name}}",
+    "settingsOf": "Paramètres de {{name}}",
+    "engineEnabled": "Moteur activé",
+    "installedModels": "Modèles installés : {{models}}",
+    "noModels": "aucun",
+    "openEnginePage": "Modèles et tous les paramètres"
   }
 }

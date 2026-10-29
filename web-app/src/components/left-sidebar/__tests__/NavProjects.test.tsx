@@ -136,7 +136,9 @@ describe('NavProjects', () => {
     expect(
       screen.getByRole('button', { name: 'common:projects.title' })
     ).toHaveAttribute('aria-expanded', 'true')
-    const expanders = screen.getAllByRole('button', { name: 'Expand project' })
+    const expanders = screen.getAllByRole('button', {
+      name: 'common:projects.expandProject',
+    })
     expect(expanders).toHaveLength(1)
     expect(expanders[0].closest('li')?.textContent?.includes('Research')).toBe(
       true
