@@ -9,7 +9,7 @@
  */
 import { spawn, type ChildProcess } from 'node:child_process'
 import { once } from 'node:events'
-import { readFileSync } from 'node:fs'
+import { readFileSync, realpathSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -20,13 +20,13 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
 
 /** `make build-app-e2e` writes here; a separate target dir keeps the app's
  *  orphan reaper, which scans the build's resource dir, away from a dev build. */
-export const APP_BINARY = resolve(
+export const APP_BINARY = realpathSync(resolve(
   // Normalised: an app that restarts itself shows up in the process list under
   // its canonical path, and one given here as `a/../b` would not be recognised
   // as this suite's — it would outlive the run and, holding the single-instance
   // socket, make the next launch exit at once.
   process.env.ATOMIC_E2E_APP_BIN ?? join(REPO_ROOT, 'src-tauri/target/e2e/debug', APP_BINARY_NAME)
-)
+))
 
 const DRIVER_READY_TIMEOUT_MS = 60_000
 /**
@@ -242,7 +242,7 @@ export async function launchApp(extraEnv: Record<string, string>): Promise<Runni
     return app
   } catch (error) {
     await stopProcess(child)
-    throw error
+    throw new Error(`${String(error)}\n${output()}`, { cause: error })
   }
 }
 

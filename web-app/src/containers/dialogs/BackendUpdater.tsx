@@ -28,13 +28,12 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { toast } from 'sonner'
 import { getProviderTitle, LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
-import { useUpdateBannerSlot } from '@/stores/update-banner-store'
 
-/// Progress-only view onto the turboquant provider. The recommendation modal
+/// Outcome-only view onto the turboquant provider. The recommendation modal
 /// stays upstream-owned so two providers can never argue over the same dialog,
 /// but `reconcileBackendReleaseTag()` starts a download on its own after an app
-/// update — sometimes several hundred megabytes — and that must not happen
-/// invisibly.
+/// update — sometimes several hundred megabytes. The download panel shows it
+/// while it runs; this view says how it ended.
 const TURBOQUANT_PROGRESS_CONFIG: UseBackendUpdaterConfig = {
   extensionName: '@janhq/llamacpp-extension',
   providerId: 'llamacpp',
@@ -67,11 +66,12 @@ const BackendUpdater = () => {
 
   /// The media engine updates through the image store, not an extension:
   /// from the engine-update banner, Settings → Media or the Images page.
+  ///
+  /// None of these transfers gets a card of its own: every engine build the
+  /// app fetches is a row of the download panel (`DownloadManagement`), named
+  /// after the engine. This component only reports how they ended.
   const mediaEngineUpdatingTo = useImageGenerationStore(
     (state) => state.engineUpdatingTo
-  )
-  const mediaEngineInstall = useImageGenerationStore(
-    (state) => state.engineInstall
   )
 
   const handleRestart = async () => {
@@ -138,7 +138,10 @@ const BackendUpdater = () => {
   /// The turboquant reconcile runs unattended, so its outcome only ever
   /// reaches the user through these toasts.
   useEffect(() => {
-    if (turboquantDownload.status === 'completed' && turboquantDownload.backendName) {
+    if (
+      turboquantDownload.status === 'completed' &&
+      turboquantDownload.backendName
+    ) {
       toast.success(
         t('settings:backendUpdater.downloadComplete', {
           backend: backendLabel(turboquantDownload.backendName),
@@ -188,55 +191,6 @@ const BackendUpdater = () => {
       trigger: 'dialog',
     })
   }, [recommendationPhase, recommendation])
-
-  /// Both providers download without being asked: each reconciles its release
-  /// tag after an app update, and upstream additionally applies the tier that
-  /// startup detection picked for this host. Anything the user started himself
-  /// is already on screen in the dialog above, so this banner is the only thing
-  /// that tells him the rest is moving.
-  const backgroundDownload = showRecommendationDialog
-    ? null
-    : downloadState.isDownloading
-      ? downloadState
-      : turboquantDownload.isDownloading
-        ? turboquantDownload
-        : null
-
-  /// One card for the corner: a llama.cpp transfer, else the media engine's.
-  const mediaEnginePercent =
-    mediaEngineInstall.total > 0
-      ? Math.round(
-          (mediaEngineInstall.transferred / mediaEngineInstall.total) * 100
-        )
-      : null
-  const backgroundCard = backgroundDownload
-    ? {
-        title: t('settings:backendUpdater.backgroundUpdateTitle'),
-        description: t('settings:backendUpdater.backgroundUpdateDesc', {
-          backend: backendLabel(backgroundDownload.backendName),
-        }),
-      }
-    : mediaEngineUpdatingTo
-      ? {
-          title: t('settings:media.backgroundUpdateTitle'),
-          description: [
-            t('settings:media.backgroundUpdateDesc', {
-              tag: mediaEngineUpdatingTo,
-            }),
-            mediaEnginePercent !== null ? `${mediaEnginePercent}%` : null,
-          ]
-            .filter(Boolean)
-            .join(' · '),
-        }
-      : null
-
-  /// ATO-533: this renders in the same bottom-right corner as the app and
-  /// engine update banners. Live transfer progress outranks both offers —
-  /// it is over in minutes, while an offer stays up until it is acted on.
-  const mayRenderBackgroundDownload = useUpdateBannerSlot(
-    'download',
-    !!backgroundCard
-  )
 
   return (
     <>
@@ -291,10 +245,7 @@ const BackendUpdater = () => {
                   <IconX size={16} className="mr-1" />
                   {t('settings:backendUpdater.notNow')}
                 </Button>
-                <Button
-                  onClick={handleDownloadRecommended}
-                  className="h-10"
-                >
+                <Button onClick={handleDownloadRecommended} className="h-10">
                   <IconDownload size={16} className="mr-1" />
                   {t('settings:backendUpdater.downloadNow')}
                 </Button>
@@ -359,23 +310,6 @@ const BackendUpdater = () => {
           )}
         </DialogContent>
       </Dialog>
-
-      {/* Unattended backend download — non-blocking progress */}
-      {backgroundCard && mayRenderBackgroundDownload && (
-        <div className="fixed z-50 bottom-3 right-3 bg-background flex items-start gap-2 border rounded-lg shadow-md px-4 py-3 max-w-[22rem]">
-          <IconLoader2
-            size={18}
-            className="shrink-0 text-blue-500 animate-spin mt-0.5"
-          />
-          <div>
-            <div className="text-sm font-medium">{backgroundCard.title}</div>
-            <div className="mt-0.5 text-xs text-muted-foreground">
-              {backgroundCard.description}
-            </div>
-          </div>
-        </div>
-      )}
-
     </>
   )
 }

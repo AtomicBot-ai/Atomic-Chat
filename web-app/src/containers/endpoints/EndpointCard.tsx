@@ -155,7 +155,7 @@ export function EndpointCard({
       aria-label={title}
       className="min-w-0 rounded-xl border border-border bg-card"
     >
-      <div className="flex flex-wrap items-center gap-4 p-4">
+      <div className="flex flex-wrap items-center gap-3 p-4">
         <span className="flex size-6 shrink-0 items-center justify-center text-foreground">
           {getProviderLogo(name) ? (
             <ProvidersAvatar provider={provider} className="size-6" />
@@ -259,7 +259,12 @@ export function EndpointCard({
         </div>
       </div>
       {expanded && children && (
-        <div id={bodyId} className="flex flex-col border-t border-border">
+        <div
+          id={bodyId}
+          // The model cards unfold on this card's surface, on its 16px inset,
+          // rather than as cards nested inside it.
+          className="flex flex-col border-t border-border [&_.content-card]:rounded-none [&_.content-card]:border-0 [&_.content-card]:bg-transparent [&_.content-card]:p-4 [&_.content-card+.content-card]:border-t"
+        >
           {!mediaServer && (
             <div className="px-4 pt-3 empty:hidden">
               <LocalModelCollisionNotice

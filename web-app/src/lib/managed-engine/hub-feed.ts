@@ -8,6 +8,8 @@
 
 import { foundryLocalMatches } from '@/lib/foundry-local/hub'
 import { liteRtLmMatches } from '@/lib/litert-lm/hub'
+import { geniexMatches, geniexOf, variantForChip } from '@/lib/geniex/hub'
+import type { GeniexChip } from '@/services/geniex/types'
 import { isManagedProvider } from '@/lib/managed-engines'
 import type { ModelFormat } from '@/lib/model-card'
 import type { GpuFacts } from '@/services/managed-environment/types'
@@ -119,6 +121,11 @@ export function hubListSources(format: ModelFormat): HubListSources {
   if (format === 'litert-lm') {
     return { staffPicks: false, catalog: false, curated: true, feedFormat: 'gguf', prefilter: false }
   }
+  // GenieX lists conf's curated GGUF models and bundles, then the Hugging Face GGUF repositories
+  // its own client reads trees for (`geniexRows`); nothing from the GGUF feed or search.
+  if (format === 'geniex') {
+    return { staffPicks: false, catalog: false, curated: true, feedFormat: 'gguf', prefilter: false }
+  }
   // PrismML lists the Bonsai families of the core's model rules, and nothing else.
   if (format === 'atomic-prism') {
     return { staffPicks: false, catalog: false, curated: true, feedFormat: 'gguf', prefilter: false }
@@ -197,6 +204,41 @@ export function foundryLocalRows(options: {
       .filter((model) => foundryLocalMatches(model, query))
       .map((model): FoundryLocalRow => ({ model, section }))
   return [...pick(options.curated, 'curated'), ...pick(options.catalog, 'microsoft')]
+}
+
+export interface GeniexRow {
+  model: CatalogModel
+  /** `gguf` — the GGUF shelf (curated, then Hugging Face); `aihub` — the Qualcomm AI Hub shelf. */
+  section: 'gguf' | 'aihub'
+}
+
+/**
+ * The GenieX list (change add-geniex-runtime, spec geniex-desktop "Model Hub предлагает модели
+ * GenieX на двух полках"): the GGUF shelf — conf's curated GGUF models first, then the Hugging Face
+ * ones — and the AI Hub shelf — conf's bundle models that have a bundle for this computer's chip,
+ * cut down to that one variant (spec geniex-models "Бандлы под два чипа"). Each shelf is narrowed
+ * by name when `query` is set. The Hugging Face part is empty while it cannot be read; the AI Hub
+ * shelf is empty while the chip is unknown.
+ */
+export function geniexRows(options: {
+  curated: readonly CatalogModel[]
+  huggingFace: readonly CatalogModel[]
+  bundles: readonly CatalogModel[]
+  chip: GeniexChip | null
+  query: string
+}): GeniexRow[] {
+  const query = options.query.trim()
+  const pick = (models: readonly CatalogModel[], section: GeniexRow['section']) =>
+    models
+      .filter((model) => geniexMatches(model, query))
+      .map((model): GeniexRow => ({ model, section }))
+  const bundles = options.bundles.flatMap((model): CatalogModel[] => {
+    const fields = geniexOf(model)
+    const variant = fields?.variants ? variantForChip(fields.variants, options.chip) : undefined
+    if (!fields || !variant) return []
+    return [{ ...model, geniex: { ...fields, variants: [variant] } }]
+  })
+  return [...pick(options.curated, 'gguf'), ...pick(options.huggingFace, 'gguf'), ...pick(bundles, 'aihub')]
 }
 
 export interface LiteRtLmRow {

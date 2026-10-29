@@ -118,7 +118,7 @@ describe('HubSearchToolbar layout', () => {
     ['Extra Large', XL_FONT_SIZE],
   ] as const) {
     for (const window of [1024, 1280]) {
-      it(`keeps type, search, Filters, Sort and Import on one 36px line (${window}px window with the sidebar, ${label})`, async () => {
+      it(`keeps type, search, Filters, Sort and Import on one 28px line (${window}px window with the sidebar, ${label})`, async () => {
         setFontSize(size)
         renderToolbar(toolbarWidth(window))
         await settle()
@@ -128,7 +128,7 @@ describe('HubSearchToolbar layout', () => {
         const [type, search, ...buttons] = controls()
         const field = search.closest('.hub-search-field') as HTMLElement
         for (const control of [type, field, ...buttons]) {
-          expect(control.getBoundingClientRect().height).toBeCloseTo(36, 0)
+          expect(control.getBoundingClientRect().height).toBeCloseTo(28, 0)
           expectVerticallyCentered(control, field)
           expectFits(control, page)
         }
@@ -179,7 +179,7 @@ describe('HubSearchToolbar layout', () => {
             }
             for (const button of actions()) {
               // No label wraps inside its button or spills out of it.
-              expect(button.getBoundingClientRect().height).toBeCloseTo(36, 0)
+              expect(button.getBoundingClientRect().height).toBeCloseTo(28, 0)
               expect(button.scrollWidth).toBeLessThanOrEqual(
                 button.clientWidth + 1
               )

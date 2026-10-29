@@ -96,6 +96,7 @@ const ONBOARDING_STEP_IDS: readonly OnboardingStep[] = [
   'media',
   'purpose',
   'server',
+  'wait',
 ]
 
 /** Shape of `describeProviderState`, kept structural so this module does not

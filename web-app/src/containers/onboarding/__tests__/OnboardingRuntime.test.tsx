@@ -1,3 +1,4 @@
+import '@/test/telemetry-ready'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import {
@@ -29,7 +30,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('posthog-js', () => ({
-  default: { capture: vi.fn(), has_opted_in_capturing: () => true },
+  default: { capture: vi.fn() },
 }))
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mocks.navigate,
@@ -200,7 +201,7 @@ describe('OnboardingRuntime', () => {
     })
     useLocalApiServer.setState({ defaultModelLocalApiServer: null })
     useUpdateBannerSlots.setState({
-      claimed: { download: false, app: false, engine: false },
+      claimed: { app: false, engine: false },
     })
   })
 
@@ -653,6 +654,39 @@ describe('OnboardingRuntime', () => {
       // Handed off and never dismissed in an earlier session.
       startRun([done(chat)])
       landChatModel()
+      render(<OnboardingRuntime />)
+
+      expect(screen.queryByTestId('onboarding-handoff')).not.toBeInTheDocument()
+      expect(useOnboardingStore.getState().phase).toBe('finished')
+    })
+
+    // As in the prototype, after Skip setup or a cloud-only run too.
+    it('can dismiss an empty handoff panel', () => {
+      useOnboardingStore.getState().begin('full', 'welcome')
+      render(<OnboardingRuntime />)
+
+      act(() => useOnboardingStore.getState().handOff('chat'))
+
+      const panel = screen.getByTestId('onboarding-handoff')
+      expect(panel).not.toHaveTextContent(
+        'onboarding-handoff:panel.backToSetup'
+      )
+      expect(
+        screen.queryByRole('region', { name: 'onboarding:download.label' })
+      ).not.toBeInTheDocument()
+      expect(useOnboardingStore.getState().phase).toBe('handedOff')
+
+      fireEvent.click(
+        screen.getByRole('button', { name: 'onboarding-handoff:panel.dismiss' })
+      )
+
+      expect(screen.queryByTestId('onboarding-handoff')).not.toBeInTheDocument()
+      expect(useOnboardingStore.getState().phase).toBe('finished')
+    })
+
+    it('ends at the next launch a run handed off with nothing at all', () => {
+      useOnboardingStore.getState().begin('full', 'welcome')
+      useOnboardingStore.getState().handOff('chat')
       render(<OnboardingRuntime />)
 
       expect(screen.queryByTestId('onboarding-handoff')).not.toBeInTheDocument()

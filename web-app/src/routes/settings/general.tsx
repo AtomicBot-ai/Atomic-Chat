@@ -9,7 +9,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useToolApproval } from '@/hooks/useToolApproval'
 import { useThreadNotifications } from '@/hooks/useThreadNotifications'
-import { useAppUpdater } from '@/hooks/useAppUpdater'
+import { useAppUpdater, type UpdateCheckOutcome } from '@/hooks/useAppUpdater'
 import { useEffect, useState, useCallback } from 'react'
 import ChangeDataFolderLocation from '@/containers/dialogs/ChangeDataFolderLocation'
 import LocalModelLocationsCard from '@/containers/LocalModelLocationsCard'
@@ -27,7 +27,7 @@ import {
   IconCopyCheck,
 } from '@tabler/icons-react'
 import { toast } from 'sonner'
-import { isDev } from '@/lib/utils'
+import { cn, isDev } from '@/lib/utils'
 import { SystemEvent } from '@/types/events'
 import { Input } from '@/components/ui/input'
 import { useHardware } from '@/hooks/useHardware'
@@ -44,6 +44,48 @@ const TOKEN_VALIDATION_TIMEOUT_MS = 10_000
 export const Route = createFileRoute(route.settings.general as any)({
   component: General,
 })
+
+/** The Check for Updates row: nothing asked yet, asking, or what was found. */
+type UpdateCheckState =
+  | { phase: 'idle' }
+  | { phase: 'checking' }
+  | { phase: 'done'; outcome: UpdateCheckOutcome; checkedAt: Date }
+
+/** The line the row shows, and announces, for each state. */
+function describeUpdateCheck(
+  check: UpdateCheckState,
+  t: (key: string, options?: Record<string, unknown>) => string
+): string {
+  if (check.phase === 'idle') return t('settings:general.checkForUpdatesDesc')
+  if (check.phase === 'checking') {
+    return t('settings:general.checkingForUpdates')
+  }
+  const time = check.checkedAt.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+  const { outcome } = check
+  switch (outcome.status) {
+    case 'available':
+      return t('settings:general.updateCheckAvailable', {
+        version: outcome.update.version,
+      })
+    case 'up-to-date':
+      return t('settings:general.updateCheckUpToDate', {
+        version: VERSION,
+        time,
+      })
+    case 'failed':
+      return t('settings:general.updateCheckFailed', { time })
+    case 'not-checked':
+      if (outcome.reason === 'development') {
+        return t('settings:general.updateCheckDevelopment')
+      }
+      return outcome.reason === 'package-managed'
+        ? t('settings:general.updatesByPackageManager')
+        : t('settings:general.updatesDisabled')
+  }
+}
 
 function General() {
   const { t } = useTranslation()
@@ -84,13 +126,20 @@ function General() {
       return t('settings:general.openContainingFolder')
     }
   }
-  const { checkForUpdate, packageManaged } = useAppUpdater()
+  const { checkForUpdateNow, packageManaged } = useAppUpdater()
   const { pausePolling } = useHardware()
   const [janDataFolder, setJanDataFolder] = useState<string | undefined>()
   const [isCopied, setIsCopied] = useState(false)
   const [selectedNewPath, setSelectedNewPath] = useState<string | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false)
+  // The result stays on the row until the next check: a toast was easy to
+  // miss, and a check that failed read the same as one that found nothing.
+  const [updateCheck, setUpdateCheck] = useState<UpdateCheckState>({
+    phase: 'idle',
+  })
+  const isCheckingUpdate = updateCheck.phase === 'checking'
+  const updateCheckFailed =
+    updateCheck.phase === 'done' && updateCheck.outcome.status === 'failed'
   const [isValidatingToken, setIsValidatingToken] = useState(false)
   const [autostartEnabled, setAutostartEnabled] = useState<boolean | null>(null)
   const [coreVersion, setCoreVersion] = useState<string | undefined>()
@@ -224,20 +273,16 @@ function General() {
   }
 
   const handleCheckForUpdate = useCallback(async () => {
-    setIsCheckingUpdate(true)
+    setUpdateCheck({ phase: 'checking' })
+    let outcome: UpdateCheckOutcome
     try {
-      if (isDev()) return toast.info(t('settings:general.devVersion'))
-      const update = await checkForUpdate(true)
-      if (!update) {
-        toast.info(t('settings:general.noUpdateAvailable'))
-      }
+      outcome = await checkForUpdateNow()
     } catch (error) {
       console.error('Failed to check for updates:', error)
-      toast.error(t('settings:general.updateError'))
-    } finally {
-      setIsCheckingUpdate(false)
+      outcome = { status: 'failed' }
     }
-  }, [t, checkForUpdate])
+    setUpdateCheck({ phase: 'done', outcome, checkedAt: new Date() })
+  }, [checkForUpdateNow])
 
   const handleOpenContactLink = useCallback(
     async (target: string) => {
@@ -260,7 +305,7 @@ function General() {
           </span>
         </div>
       </HeaderPage>
-      <div className="flex h-[calc(100%-60px)]">
+      <div className="flex h-[calc(100%-var(--page-header-height))]">
         <div className="p-4 pt-0 w-full overflow-y-auto">
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             {/* General */}
@@ -289,10 +334,28 @@ function General() {
                   description={t('settings:general.updatesByPackageManager')}
                 />
               )}
+              {AUTO_UPDATER_DISABLED && !packageManaged && (
+                <CardItem
+                  title={t('settings:general.updates')}
+                  description={t('settings:general.updatesDisabled')}
+                />
+              )}
               {!AUTO_UPDATER_DISABLED && !packageManaged && (
                 <CardItem
                   title={t('settings:general.checkForUpdates')}
-                  description={t('settings:general.checkForUpdatesDesc')}
+                  description={
+                    // Always mounted, so the result is announced when it
+                    // replaces the description.
+                    <span
+                      role="status"
+                      className={cn(
+                        'block',
+                        updateCheckFailed && 'text-destructive'
+                      )}
+                    >
+                      {describeUpdateCheck(updateCheck, t)}
+                    </span>
+                  }
                   className="items-center flex-row gap-y-2"
                   actions={
                     <Button
@@ -301,8 +364,8 @@ function General() {
                       onClick={handleCheckForUpdate}
                       disabled={isCheckingUpdate}
                     >
-                      {isCheckingUpdate
-                        ? t('settings:general.checkingForUpdates')
+                      {updateCheckFailed
+                        ? t('settings:general.updateCheckRetry')
                         : t('settings:general.checkForUpdates')}
                     </Button>
                   }
@@ -337,10 +400,10 @@ function General() {
               />
             </Card>
 
-            <Card title="Contact Us">
+            <Card title={t('settings:general.contactTitle')}>
               <CardItem
-                title="Email"
-                description="Reach Atomic Chat support by email."
+                title={t('settings:general.contactEmail')}
+                description={t('settings:general.contactEmailDesc')}
                 actions={
                   <a
                     href="mailto:support@atomic.chat"
@@ -356,7 +419,7 @@ function General() {
               />
               <CardItem
                 title="X"
-                description="Follow Atomic Chat on X."
+                description={t('settings:general.contactXDesc')}
                 actions={
                   <a
                     href="https://x.com/atomic_chat_hq"
@@ -374,7 +437,7 @@ function General() {
               />
               <CardItem
                 title="GitHub"
-                description="View the Atomic Chat repository on GitHub."
+                description={t('settings:general.contactGithubDesc')}
                 actions={
                   <a
                     href="https://github.com/AtomicBot-ai/Atomic-Chat"
@@ -611,7 +674,7 @@ function General() {
             {IS_TAURI && <LocalModelLocationsCard />}
 
             {/* Advanced - Desktop only */}
-            <Card title="Advanced">
+            <Card title={t('settings:general.advanced')}>
               <CardItem
                 title={t('settings:others.resetFactory', {
                   ns: 'settings',
@@ -646,8 +709,8 @@ function General() {
                 }
               />
               <CardItem
-                title="Thinking effort (local models)"
-                description="Default effort for llama.cpp / MLX, also shown next to the chat input. Models with their own effort setting receive that; the rest get a thinking-token budget. Off disables thinking entirely."
+                title={t('settings:general.thinkingEffort')}
+                description={t('settings:general.thinkingEffortDesc')}
                 actions={
                   <select
                     className="border-input bg-background rounded-md border px-2 py-1 text-sm"
@@ -658,12 +721,24 @@ function General() {
                       )
                     }
                   >
-                    <option value="off">Off</option>
-                    <option value="low">Low (256 tokens)</option>
-                    <option value="medium">Medium (1024 tokens)</option>
-                    <option value="high">High (4096 tokens)</option>
-                    <option value="xhigh">Extra High (8192 tokens)</option>
-                    <option value="max">Max (no limit)</option>
+                    <option value="off">
+                      {t('settings:general.thinkingOff')}
+                    </option>
+                    <option value="low">
+                      {t('settings:general.thinkingLow')}
+                    </option>
+                    <option value="medium">
+                      {t('settings:general.thinkingMedium')}
+                    </option>
+                    <option value="high">
+                      {t('settings:general.thinkingHigh')}
+                    </option>
+                    <option value="xhigh">
+                      {t('settings:general.thinkingXhigh')}
+                    </option>
+                    <option value="max">
+                      {t('settings:general.thinkingMax')}
+                    </option>
                   </select>
                 }
               />
@@ -690,9 +765,7 @@ function General() {
                       onClick={async () => {
                         const token = (huggingfaceToken || '').trim()
                         if (!token) {
-                          toast.error(
-                            'Please enter a Hugging Face token to validate'
-                          )
+                          toast.error(t('settings:general.tokenRequired'))
                           return
                         }
                         setIsValidatingToken(true)
@@ -711,28 +784,33 @@ function General() {
                           )
                           if (resp.ok) {
                             const data = await resp.json()
-                            toast.success('Token is valid', {
+                            toast.success(t('settings:general.tokenValid'), {
                               description: data?.name
-                                ? `Signed in as ${data.name}`
-                                : 'Your Hugging Face token is valid.',
+                                ? t('settings:general.tokenSignedIn', {
+                                    name: data.name,
+                                  })
+                                : t('settings:general.tokenValidDesc'),
                             })
                           } else {
-                            toast.error('Token invalid', {
-                              description:
-                                'The provided Hugging Face token is invalid. Please check your token and try again.',
+                            toast.error(t('settings:general.tokenInvalid'), {
+                              description: t(
+                                'settings:general.tokenInvalidDesc'
+                              ),
                             })
                           }
                         } catch (e) {
                           const name = (e as { name?: string })?.name
                           if (name === 'AbortError') {
-                            toast.error('Validation timed out', {
-                              description:
-                                'The validation request timed out. Please check your network connection and try again.',
+                            toast.error(t('settings:general.tokenTimeout'), {
+                              description: t(
+                                'settings:general.tokenTimeoutDesc'
+                              ),
                             })
                           } else {
-                            toast.error('Validation failed', {
-                              description:
-                                'A network error occurred while validating the token. Please check your internet connection.',
+                            toast.error(t('settings:general.tokenFailed'), {
+                              description: t(
+                                'settings:general.tokenFailedDesc'
+                              ),
                             })
                           }
                         } finally {
@@ -741,7 +819,7 @@ function General() {
                         }
                       }}
                     >
-                      Verify
+                      {t('settings:general.verifyToken')}
                     </Button>
                   </div>
                 }

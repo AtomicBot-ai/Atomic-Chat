@@ -4,6 +4,7 @@ import { getServiceHub } from '@/hooks/useServiceHub'
 import { Fzf } from 'fzf'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 import { useAgentMode } from '@/hooks/useAgentMode'
+import { usePrompt } from '@/hooks/usePrompt'
 import { ExtensionManager } from '@/lib/extension'
 import { ExtensionTypeEnum, VectorDBExtension } from '@janhq/core'
 import { useThreadReadStatus } from '@/stores/thread-read-store'
@@ -201,6 +202,8 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       useThreadReadStatus.getState().removeThread(threadId)
       // Clean up agent mode state
       useAgentMode.getState().removeThread(threadId)
+      // A deleted chat's unsent draft goes with it, from memory and disk.
+      usePrompt.getState().clearDraft(threadId)
       // Clean up vector DB collection
       cleanupVectorDB(threadId)
       getServiceHub().threads().deleteThread(threadId)
@@ -233,6 +236,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       threadsToDeleteIds.forEach((threadId) => {
         useAgentMode.getState().removeThread(threadId)
         useThreadReadStatus.getState().removeThread(threadId)
+        usePrompt.getState().clearDraft(threadId)
         cleanupVectorDB(threadId)
         getServiceHub().threads().deleteThread(threadId)
       })
@@ -260,6 +264,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       allThreadIds.forEach((threadId) => {
         useAgentMode.getState().removeThread(threadId)
         useThreadReadStatus.getState().removeThread(threadId)
+        usePrompt.getState().clearDraft(threadId)
         cleanupVectorDB(threadId)
         getServiceHub().threads().deleteThread(threadId)
       })
@@ -287,6 +292,7 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       toDeleteSet.forEach((threadId) => {
         useAgentMode.getState().removeThread(threadId)
         useThreadReadStatus.getState().removeThread(threadId)
+        usePrompt.getState().clearDraft(threadId)
         cleanupVectorDB(threadId)
         getServiceHub().threads().deleteThread(threadId)
       })

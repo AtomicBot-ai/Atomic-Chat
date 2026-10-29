@@ -1,5 +1,5 @@
 import { IconCheck, IconCopy } from '@tabler/icons-react'
-import { Check, ChevronDown } from 'lucide-react'
+import { Check, ChevronDown, Settings } from 'lucide-react'
 import { useEffect, useId, useRef, useState } from 'react'
 import type { ButtonHTMLAttributes, ReactNode } from 'react'
 
@@ -178,7 +178,16 @@ export type ServerDetailChoice = {
   metadata?: string
 }
 
-function DetailChoiceRow({ choice }: { choice: ServerDetailChoice }) {
+/** The selected row's gear, beside its name: what `onConfigure` opens. */
+type ConfigureAction = { label: string; onConfigure: () => void }
+
+function DetailChoiceRow({
+  choice,
+  configure,
+}: {
+  choice: ServerDetailChoice
+  configure?: ConfigureAction
+}) {
   return (
     <>
       {choice.logo ? (
@@ -189,7 +198,22 @@ function DetailChoiceRow({ choice }: { choice: ServerDetailChoice }) {
         </span>
       )}
       <span className="sp-picker-copy">
-        <strong>{choice.name}</strong>
+        {configure ? (
+          <span className="sp-picker-name">
+            <strong>{choice.name}</strong>
+            <button
+              type="button"
+              className="sp-picker-configure hit-area-15"
+              aria-label={configure.label}
+              title={configure.label}
+              onClick={configure.onConfigure}
+            >
+              <Settings aria-hidden size={16} />
+            </button>
+          </span>
+        ) : (
+          <strong>{choice.name}</strong>
+        )}
         {choice.detail && <span>{choice.detail}</span>}
         {choice.metadata && <small>{choice.metadata}</small>}
       </span>
@@ -201,39 +225,74 @@ function DetailChoiceRow({ choice }: { choice: ServerDetailChoice }) {
  * A labelled dropdown whose choices need more than a name: the field and
  * every row of its menu show the same logo, name, line on what it is and its
  * facts, so the choice reads the same before and after it is made. Opens
- * under the field, as wide as it, like `ServerSelect`.
+ * under the field, as wide as it, like `ServerSelect`. Opens and closes on
+ * its own unless `open` is given, for a page that opens it for the user (the
+ * tray's Model and Runtime rows).
+ *
+ * With `configure` the selected choice carries a gear beside its name. A
+ * button cannot hold another, so the field is then a box: the trigger fills
+ * it from behind and the row on top lets clicks through to it, all but the
+ * gear's.
  */
 export function ServerDetailPicker({
   label,
   value,
   choices,
   onChange,
+  open,
+  onOpenChange,
+  configure,
 }: {
   label: string
   value: string
   choices: ServerDetailChoice[]
   onChange: (value: string) => void
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+  configure?: ConfigureAction
 }) {
   const id = useId()
   const selected = choices.find((choice) => choice.value === value)
+  const row = selected ? (
+    <DetailChoiceRow choice={selected} configure={configure} />
+  ) : (
+    <span className="sp-picker-copy">{value}</span>
+  )
   return (
     <div className="sp-field">
       <span id={id}>{label}</span>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild disabled={choices.length === 0}>
-          <button
-            type="button"
-            className="sp-detail-picker"
-            aria-labelledby={id}
-          >
-            {selected ? (
-              <DetailChoiceRow choice={selected} />
-            ) : (
-              <span className="sp-picker-copy">{value}</span>
-            )}
+      <DropdownMenu open={open} onOpenChange={onOpenChange}>
+        {configure && selected ? (
+          <div className="sp-detail-picker sp-picker-with-configure">
+            <DropdownMenuTrigger asChild disabled={choices.length === 0}>
+              <button
+                type="button"
+                className="sp-picker-hit-area"
+                aria-labelledby={id}
+                aria-describedby={`${id}-selection`}
+              >
+                <span id={`${id}-selection`} className="sr-only">
+                  {[selected.name, selected.detail, selected.metadata]
+                    .filter(Boolean)
+                    .join('. ')}
+                </span>
+              </button>
+            </DropdownMenuTrigger>
+            {row}
             <ChevronDown aria-hidden size={18} />
-          </button>
-        </DropdownMenuTrigger>
+          </div>
+        ) : (
+          <DropdownMenuTrigger asChild disabled={choices.length === 0}>
+            <button
+              type="button"
+              className="sp-detail-picker"
+              aria-labelledby={id}
+            >
+              {row}
+              <ChevronDown aria-hidden size={18} />
+            </button>
+          </DropdownMenuTrigger>
+        )}
         <DropdownMenuContent
           side="bottom"
           align="start"

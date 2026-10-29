@@ -1,3 +1,4 @@
+import '@/test/telemetry-ready'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -21,7 +22,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('posthog-js', () => ({
-  default: { capture: vi.fn(), has_opted_in_capturing: () => true },
+  default: { capture: vi.fn() },
 }))
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mocks.navigate,
@@ -246,10 +247,11 @@ describe('first-run flow', () => {
       useOnboardingStore.getState().setJobPhase('chat', 'done')
     })
 
-    expect(
-      screen.getByText('onboarding:download.ready Qwen3.5 4B')
-    ).toBeInTheDocument()
+    const ready = screen.getByText('onboarding:download.ready Qwen3.5 4B')
+    expect(ready).toBeInTheDocument()
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+    // The ready line is a new element, so its slide-in plays.
+    expect(ready.closest('.ob-download-row')).toHaveClass('is-ready')
   })
 })
 

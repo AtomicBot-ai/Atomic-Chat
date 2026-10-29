@@ -12,6 +12,7 @@ import {
   isDownloadCancellationError,
   wasDownloadCancellationRequested,
 } from '@/lib/downloadCancellation'
+import { pauseDownload } from '@/lib/downloadControls'
 import type { OnboardingJob } from '@/lib/onboarding/jobs'
 import {
   DIFFUSION_ENGINE_TASK_PREFIX,
@@ -181,6 +182,74 @@ function watchRemoval(key: string, taskId: string) {
   }
 }
 
+/** The run's chat model is not over: queued, running, paused or interrupted. */
+const chatModelPending = (jobs: readonly OnboardingJob[]): boolean =>
+  jobs.some((job) => job.kind === 'chat' && job.phase !== 'done')
+
+/**
+ * The chat model goes first, as in the prototype. A chat download chosen
+ * while this job was under way — the user went back to the model step — is
+ * waited for, the job back in the queue meanwhile, before this job's model
+ * file starts. An engine install already running is not stopped: it cannot
+ * be paused.
+ */
+async function waitForChatModel(key: string): Promise<void> {
+  const waiting = ({ jobs }: { jobs: OnboardingJob[] }) =>
+    chatModelPending(jobs) && jobs.some((job) => job.key === key)
+  if (!waiting(useOnboardingStore.getState())) return
+  useOnboardingStore.getState().setJobPhase(key, 'queued')
+  await until(useOnboardingStore, (state) => !waiting(state))
+  if (queuedJob(key)?.phase === 'queued') {
+    useOnboardingStore.getState().setJobPhase(key, 'running')
+  }
+}
+
+/**
+ * The same for a model file already downloading: a chat download chosen now
+ * pauses it and puts the job back in the queue, and once the chat model is
+ * over the transfer picks up where it stopped, quietly. A pause of the
+ * user's own is theirs to resume. The pause is checked again at each
+ * progress frame, for a chat download chosen before this transfer's row
+ * existed.
+ */
+function yieldToChatModel(
+  key: string,
+  family: DiffusionCatalogFamily,
+  quantId: string,
+  taskId: string
+) {
+  let yielded = false
+  const check = () => {
+    const { jobs } = useOnboardingStore.getState()
+    if (!jobs.some((job) => job.key === key)) return
+    const pending = chatModelPending(jobs)
+    if (pending && !yielded) {
+      const { downloads, pausedDownloads } = useDownloadStore.getState()
+      if (!(taskId in downloads) || pausedDownloads.has(taskId)) return
+      yielded = true
+      useOnboardingStore.getState().setJobPhase(key, 'queued')
+      pauseDownload({ id: taskId, name: taskId }, getServiceHub())
+    } else if (!pending && yielded) {
+      yielded = false
+      useOnboardingStore.getState().setJobPhase(key, 'running')
+      const downloads = useDownloadStore.getState()
+      downloads.clearPausedDownload(taskId)
+      downloads.markResumableDownload(taskId)
+      // The row it reopens is followed to its end by `downloadModel`.
+      void downloadArtifact(family, quantId, {
+        resume: true,
+        hfToken: useGeneralSetting.getState().huggingfaceToken,
+      }).catch((error: unknown) =>
+        console.error('[onboarding] media download did not resume:', error)
+      )
+    }
+  }
+  return {
+    onProgress: check,
+    dispose: useOnboardingStore.subscribe(check),
+  }
+}
+
 /**
  * Downloads the job's model file — or follows the transfer of it already in
  * the download store — to its end, and re-lists the model files.
@@ -193,6 +262,7 @@ async function downloadModel(
 ): Promise<boolean> {
   const artifact = job.artifactId ?? ''
   const removal = watchRemoval(job.key, modelTaskId)
+  const chatFirst = yieldToChatModel(job.key, family, quantId, modelTaskId)
   try {
     try {
       // A row already here is this model's transfer driven from elsewhere —
@@ -203,7 +273,10 @@ async function downloadModel(
         await downloadArtifact(family, quantId, {
           resume: true,
           hfToken: useGeneralSetting.getState().huggingfaceToken,
-          onProgress: removal.onProgress,
+          onProgress: () => {
+            removal.onProgress()
+            chatFirst.onProgress()
+          },
         })
         await useImageGenerationStore.getState().refreshModelFiles()
         return true
@@ -238,6 +311,7 @@ async function downloadModel(
       )
   } finally {
     removal.dispose()
+    chatFirst.dispose()
   }
 }
 
@@ -276,6 +350,7 @@ export async function startMediaJob(job: OnboardingJob): Promise<boolean> {
     pointJob(job.key, { taskId: modelTaskId, title: family.name })
 
     if (!(await ensureEngine(job.key, family.name, modelTaskId))) return false
+    await waitForChatModel(job.key)
     if (!queuedJob(job.key)) return false
     return await downloadModel(job, family, target.quantId, modelTaskId)
   } catch (error) {

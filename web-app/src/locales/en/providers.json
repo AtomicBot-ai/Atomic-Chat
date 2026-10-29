@@ -478,6 +478,32 @@
       "checkAgain": "Check again"
     }
   },
+  "geniex": {
+    "engine": {
+      "title": "GenieX engine",
+      "notInstalled": "GenieX is not installed",
+      "installDescription": "Qualcomm's GenieX SDK {{version}}, about {{size}} to download. It brings the Hexagon NPU and Adreno GPU libraries with it; Atomic Chat checks it and runs each model in its own process. No administrator rights are needed.",
+      "install": "Install {{version}}",
+      "installing": "Downloading… {{percent}}%",
+      "noBuild": "No GenieX build for this computer is available right now.",
+      "installed": "GenieX {{version}}",
+      "installedDescription": "The SDK models start from, on the Hexagon NPU, the Adreno GPU or the CPU.",
+      "update": "Update to {{version}}",
+      "checking": "Checking what is installed…",
+      "checkAgain": "Check again"
+    },
+    "devices": {
+      "title": "Devices",
+      "description": "What GenieX found on this computer when the SDK was installed. Nothing has to be prepared: the libraries for each device come with the SDK.",
+      "npu": "Hexagon NPU",
+      "gpu": "Adreno GPU",
+      "detail": "Found by GenieX {{version}}",
+      "ready": "Ready",
+      "none": "GenieX found neither the NPU nor the GPU here. Models still run on the CPU; for the NPU, install or update the Qualcomm NPU driver (from Windows Update or your laptop maker), then install the SDK again.",
+      "npuDriverHint": "GenieX found no Hexagon NPU. Models still run on the GPU and the CPU; for the NPU, install or update the Qualcomm NPU driver (from Windows Update or your laptop maker), then install the SDK again.",
+      "checkAgain": "Check again"
+    }
+  },
   "tensorrt": {
     "title": "TensorRT-LLM engine",
     "description": "NVIDIA's inference engine, run by Atomic Chat in a Docker container on your NVIDIA GPU.",

@@ -305,7 +305,12 @@ async fn follow_once<S: EventSink>(supervisor: &Arc<Supervisor>, sink: &S, curso
     let mut parser = SseParser::new();
     let mut stream = response.bytes_stream();
     let mut heartbeat = tokio::time::interval(attached.heartbeat_interval);
+    // A heartbeat that waited out its deadline must not be followed by a burst of the ticks it
+    // missed: the next one goes a full interval later.
+    heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     heartbeat.tick().await;
+    // When the core stopped answering heartbeats in time while its process kept the folder.
+    let mut slow_since: Option<std::time::Instant> = None;
     loop {
         tokio::select! {
             chunk = stream.next() => {
@@ -367,7 +372,26 @@ async fn follow_once<S: EventSink>(supervisor: &Arc<Supervisor>, sink: &S, curso
             }
             _ = heartbeat.tick() => {
                 match attached.client.heartbeat(&attached.client_id).await {
-                    Ok(true) => {}
+                    Ok(true) => {
+                        if let Some(since) = slow_since.take() {
+                            log::info!(
+                                "[atomic-core] the core answers heartbeats again after {} s",
+                                since.elapsed().as_secs()
+                            );
+                        }
+                    }
+                    // A core that is swapping (an image model on a small Mac) answers late, but it
+                    // is the same process with the same registration and the same work in flight.
+                    // Keep the stream and keep heartbeating this registration: dropping it is what
+                    // lets the core's lease run out, and a new attachment would answer no sooner.
+                    Err(error) if supervisor.is_only_slow(&attached, &error) => {
+                        if slow_since.is_none() {
+                            log::info!(
+                                "[atomic-core] heartbeat timed out, but the core's process still owns the folder; staying attached: {error}"
+                            );
+                            slow_since = Some(std::time::Instant::now());
+                        }
+                    }
                     Ok(false) => {
                         log::info!("[atomic-core] client registration expired; reattaching");
                         break;
@@ -818,6 +842,54 @@ mod tests {
 
     fn count(sink: &Recorder, name: &str) -> usize {
         sink.names().iter().filter(|n| *n == name).count()
+    }
+
+    #[tokio::test]
+    async fn a_heartbeat_that_times_out_on_a_live_core_keeps_the_stream_and_the_registration() {
+        let core = FakeCore::start().await;
+        core.set_heartbeat_interval_ms(1_000);
+        let dir = tempfile::tempdir().unwrap();
+        core.publish_lock(dir.path());
+        let supervisor = Arc::new(
+            Supervisor::new(dir.path().to_path_buf(), dir.path().to_path_buf(), None)
+                .with_probe_timeout(Duration::from_millis(100)),
+        );
+        let sink = Arc::new(Recorder::default());
+        let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
+        let task = tokio::spawn(run(Arc::clone(&supervisor), Arc::clone(&sink), cancel_rx));
+        wait_for(|| async { core.open_stream_count().await == 1 }).await;
+        let generation = supervisor.current().await.unwrap().generation;
+
+        // Swapping: every control request now outlasts its deadline, for two heartbeats.
+        core.set_slow(Duration::from_millis(400));
+        tokio::time::sleep(Duration::from_millis(2_600)).await;
+        core.set_slow(Duration::ZERO);
+
+        assert!(
+            !sink.names().iter().any(|n| n == DETACHED_EVENT),
+            "a slow core is not a detached one"
+        );
+        assert_eq!(supervisor.current().await.unwrap().generation, generation);
+        assert_eq!(core.registered_clients(), 1, "nothing registered again");
+        assert_eq!(
+            core.event_cursors().len(),
+            1,
+            "the stream was never reopened"
+        );
+        core.emit("diffusion:progress", json!({ "jobId": "j" }))
+            .await;
+        wait_for(|| {
+            let sink = Arc::clone(&sink);
+            async move {
+                sink.names()
+                    .iter()
+                    .any(|n| n == "atomic-core://diffusion:progress")
+            }
+        })
+        .await;
+
+        let _ = cancel_tx.send(());
+        let _ = tokio::time::timeout(Duration::from_secs(2), task).await;
     }
 
     #[tokio::test]

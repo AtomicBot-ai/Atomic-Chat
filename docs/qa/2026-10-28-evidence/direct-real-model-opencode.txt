@@ -1,0 +1,5 @@
+{
+  "code": 0,
+  "signal": null,
+  "output": "Performing one time database migration, may take a few minutes...\nsqlite-migration:done\nDatabase migration complete.\n{\"type\":\"step_start\",\"timestamp\":1793192007069,\"sessionID\":\"ses_e7d6e9f25ffeX7L97qyFxIMvMl\",\"part\":{\"id\":\"prt_182929595001ALmlramECeYBvL\",\"messageID\":\"msg_18291618b001GsvmtOx7RLi2Ts\",\"sessionID\":\"ses_e7d6e9f25ffeX7L97qyFxIMvMl\",\"type\":\"step-start\"}}\n{\"type\":\"text\",\"timestamp\":1793192008225,\"sessionID\":\"ses_e7d6e9f25ffeX7L97qyFxIMvMl\",\"part\":{\"id\":\"prt_18292986e001rHO89LMdVfeP4Y\",\"messageID\":\"msg_18291618b001GsvmtOx7RLi2Ts\",\"sessionID\":\"ses_e7d6e9f25ffeX7L97qyFxIMvMl\",\"type\":\"text\",\"text\":\"Understood. I'll keep my responses brief and won't use tools unless necessary.\",\"time\":{\"start\":1793192007790,\"end\":1793192008224}}}\n"
+}

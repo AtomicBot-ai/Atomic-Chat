@@ -14,6 +14,9 @@ const mocks = vi.hoisted(() => ({
   downloadRecommendedBackend: vi.fn(),
   toastInfo: vi.fn(),
   toastError: vi.fn(),
+  extension: undefined as
+    | { installSelectedBackend: () => Promise<string | null> }
+    | undefined,
 }))
 
 vi.mock('sonner', () => ({
@@ -76,6 +79,12 @@ vi.mock('@/hooks/useDecisionEngineReadiness', () => ({
   useEngineVersionBackend: () => mocks.versionBackend,
 }))
 
+vi.mock('@/lib/extension', () => ({
+  ExtensionManager: {
+    getInstance: () => ({ getByName: () => mocks.extension }),
+  },
+}))
+
 vi.mock('@/containers/DecisionModelCard', () => ({
   default: ({
     model,
@@ -102,6 +111,7 @@ describe('DecisionModelsSection', () => {
     mocks.apiSupported = true
     mocks.arch = ''
     mocks.versionBackend = undefined
+    mocks.extension = undefined
     for (const fn of [
       mocks.load,
       mocks.getConfig,
@@ -289,6 +299,88 @@ describe('DecisionModelsSection', () => {
     expect(
       screen.getByRole('button', { name: 'settings:decision.installEngine' })
     ).toBeEnabled()
+  })
+
+  // The app ships no TurboQuant build: with none on disk the update check
+  // and the recheck have nothing to compare with, so the selected one is
+  // installed first.
+  it('installs the first TurboQuant build when none is on disk', async () => {
+    useDecisionStore.setState({
+      error: { code: 'DECISION_ENGINE_UNSUPPORTED', message: 'no build' },
+    })
+    const installSelectedBackend = vi
+      .fn()
+      .mockResolvedValue('b10298-2.0.0/macos-arm64')
+    mocks.extension = { installSelectedBackend }
+    render(<DecisionModelsSection provider="llamacpp" />)
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'settings:decision.installEngine' })
+    )
+    await waitFor(() => expect(installSelectedBackend).toHaveBeenCalledOnce())
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'settings:decision.installEngine' })
+      ).toBeEnabled()
+    )
+    expect(mocks.checkForEngineUpdate).not.toHaveBeenCalled()
+    expect(mocks.downloadRecommendedBackend).not.toHaveBeenCalled()
+    expect(mocks.toastInfo).not.toHaveBeenCalled()
+    expect(mocks.toastError).not.toHaveBeenCalled()
+  })
+
+  it('checks for an update as before once a TurboQuant build is on disk', async () => {
+    useDecisionStore.setState({
+      error: { code: 'DECISION_ENGINE_UNSUPPORTED', message: 'no --decision' },
+    })
+    mocks.extension = {
+      installSelectedBackend: vi.fn().mockResolvedValue(null),
+    }
+    mocks.checkForEngineUpdate.mockResolvedValue({
+      updateAvailable: true,
+      targetBackend: 'b10400-2.1.0/macos-arm64',
+    })
+    render(<DecisionModelsSection provider="llamacpp" />)
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'settings:decision.installEngine' })
+    )
+    await waitFor(() =>
+      expect(mocks.downloadRecommendedBackend).toHaveBeenCalledWith(
+        'b10400-2.1.0/macos-arm64'
+      )
+    )
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'settings:decision.installEngine' })
+      ).toBeEnabled()
+    )
+  })
+
+  it('says the install failed when the first build cannot be downloaded', async () => {
+    useDecisionStore.setState({
+      error: { code: 'DECISION_ENGINE_UNSUPPORTED', message: 'no build' },
+    })
+    mocks.extension = {
+      installSelectedBackend: vi.fn().mockRejectedValue(new Error('offline')),
+    }
+    render(<DecisionModelsSection provider="llamacpp" />)
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'settings:decision.installEngine' })
+    )
+    await waitFor(() =>
+      expect(mocks.toastError).toHaveBeenCalledWith(
+        'settings:decision.engineInstallFailed'
+      )
+    )
+    expect(mocks.checkForEngineUpdate).not.toHaveBeenCalled()
+    // The button comes back, so the install can be tried again.
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'settings:decision.installEngine' })
+      ).toBeEnabled()
+    )
   })
 
   it('renders nothing where decision models cannot run', () => {

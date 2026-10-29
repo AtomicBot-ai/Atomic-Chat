@@ -159,11 +159,12 @@ const CASES: {
   theme: 'light' | 'dark'
   layout: PageLayout
 }[] = [
+  // 58em of 13px Medium text fits beside the list at 1024 px.
   {
     width: 1024,
     fontSize: DEFAULT_FONT_SIZE,
     theme: 'light',
-    layout: 'list-detail',
+    layout: 'side-by-side',
   },
   { width: 1024, fontSize: XL_FONT_SIZE, theme: 'dark', layout: 'list-detail' },
   {

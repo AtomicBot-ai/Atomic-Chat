@@ -133,5 +133,6 @@
   "prismSetupPlanChanged": "Le plan a changé pendant que vous le consultiez. Vérifiez-le et recommencez.",
   "prismSetupStart": "Installer",
   "prismStage_installing_engine": "Installation du moteur PrismML",
-  "prismCurated": "Modèles Bonsai pour PrismML"
+  "prismCurated": "Modèles Bonsai pour PrismML",
+  "noLikedModels": "Aucun modèle favori ne correspond à ces filtres. Ajoutez un modèle aux favoris ou désactivez le filtre Favoris."
 }

@@ -5,6 +5,12 @@ import { getServiceHub } from '@/hooks/useServiceHub'
 import { i18n } from '@/i18n/react-i18next-compat'
 import { toDiffusionError } from '@/lib/diffusion/errors'
 import { shouldReportGenerateError } from '@/lib/diffusion/generation-stop'
+import {
+  CoreInstanceTracker,
+  ENGINE_STOPPED_MESSAGE,
+  lostJobError,
+  noCoreWillReturn,
+} from '@/lib/diffusion/lost-job'
 import { parseArtifactId } from '@/lib/diffusion/models'
 import {
   captureVideoGenerate,
@@ -73,6 +79,9 @@ const waiters = new Map<string, (job: VideoJob) => void>()
 
 let unsubscribe: (() => void) | null = null
 
+/** Which core instance each local clip runs in (`lib/diffusion/lost-job.ts`). */
+const instances = new CoreInstanceTracker()
+
 const initial = {
   bound: false,
   currentJob: null as VideoJob | null,
@@ -112,6 +121,14 @@ export const useVideoGenerationStore = create<VideoGenerationState>()((
 
   const requestPoster = (item: GalleryVideoItem) => posters.request(item)
 
+  /** The clip as it ends when its core is gone or no longer knows it. */
+  const lostJob = (jobId: string, error: DiffusionError): VideoJob => ({
+    ...(get().currentJob ?? placeholderJob(jobId)),
+    id: jobId,
+    state: 'failed',
+    error,
+  })
+
   /** Resolve when the job reaches a terminal state, by event or by polling. */
   const waitForTerminal = (jobId: string): Promise<VideoJob> =>
     new Promise((resolve) => {
@@ -121,6 +138,7 @@ export const useVideoGenerationStore = create<VideoGenerationState>()((
         if (settled) return
         settled = true
         waiters.delete(jobId)
+        instances.forget(jobId)
         if (timer) clearInterval(timer)
         resolve(job)
       }
@@ -130,24 +148,31 @@ export const useVideoGenerationStore = create<VideoGenerationState>()((
       timer = setInterval(() => {
         void diffusion()
           .getVideoJob(jobId)
-          .then((job) => {
+          .then(async (job) => {
             if (job === null) {
-              finish({
-                ...(get().currentJob ?? placeholderJob(jobId)),
-                id: jobId,
-                state: 'failed',
-                error: {
-                  code: 'JOB_NOT_FOUND',
-                  message: 'The job disappeared before it finished.',
-                },
-              })
+              // A new core answering means the engine stopped under the clip.
+              instances.note(await diffusion().coreInstance?.())
+              finish(
+                lostJob(
+                  jobId,
+                  lostJobError(instances.instanceOf(jobId), instances.current)
+                )
+              )
               return
             }
             if (isTerminal(job)) finish(job)
             else if (get().currentJob?.id === jobId) set({ currentJob: job })
           })
-          .catch(() => {
-            // A transient IPC failure: the next tick tries again.
+          .catch((error) => {
+            if (noCoreWillReturn(error) && instances.instanceOf(jobId)) {
+              finish(
+                lostJob(jobId, {
+                  code: 'ENGINE_STOPPED',
+                  message: ENGINE_STOPPED_MESSAGE,
+                })
+              )
+            }
+            // Otherwise transient, or a core too busy to answer: try again.
           })
       }, FALLBACK_POLL_MS)
     })
@@ -239,6 +264,7 @@ export const useVideoGenerationStore = create<VideoGenerationState>()((
   /** Take over a job that is already running in the core. */
   const adopt = (active: VideoJob) => {
     if (isTerminal(active) || get().generating) return
+    if (!active.request.target) instances.track(active.id)
     useVideoGalleryStore.getState().selectLive()
     set({
       currentJob: active,
@@ -266,7 +292,10 @@ export const useVideoGenerationStore = create<VideoGenerationState>()((
       // user submit a second job on top.
       try {
         const status = await service.getStatus()
-        if (status.activeVideoJob) adopt(status.activeVideoJob)
+        if (status.activeVideoJob) {
+          instances.note(await service.coreInstance?.().catch(() => null))
+          adopt(status.activeVideoJob)
+        }
       } catch (error) {
         console.error('[videos] status unavailable:', error)
       }
@@ -334,9 +363,19 @@ export const useVideoGenerationStore = create<VideoGenerationState>()((
           return
         }
         case 'reset': {
-          // A new core generation knows nothing of a job that was running;
-          // the image store re-configures it. Drop what this page was waiting
-          // for: the poll notices the job is gone and fails it.
+          // The image store re-configures the core. A clip survives a
+          // re-attach to the same core; a new instance has lost it, and the
+          // page says the engine stopped instead of waiting for the poll.
+          instances.note(event.instanceId)
+          const running = get().currentJob
+          if (running && !isTerminal(running) && instances.replaced(running.id)) {
+            waiters.get(running.id)?.(
+              lostJob(
+                running.id,
+                lostJobError(instances.instanceOf(running.id), instances.current)
+              )
+            )
+          }
           return
         }
         default:
@@ -366,6 +405,10 @@ export const useVideoGenerationStore = create<VideoGenerationState>()((
       })
       let jobId: string
       try {
+        // A local clip is tied to the core it is submitted to (`lost-job.ts`).
+        if (!request.target && instances.current === null) {
+          instances.note(await diffusion().coreInstance?.().catch(() => null))
+        }
         const submitted = await diffusion().generateVideo({
           ...request,
           ...(seed === null ? {} : { seed }),
@@ -379,6 +422,7 @@ export const useVideoGenerationStore = create<VideoGenerationState>()((
         })
         return
       }
+      if (!request.target) instances.track(jobId)
       set({ currentJob: placeholderJob(jobId) })
       const job = await waitForTerminal(jobId)
       settle(job)
@@ -401,6 +445,7 @@ export const useVideoGenerationStore = create<VideoGenerationState>()((
 
     reset: () => {
       waiters.clear()
+      instances.clear()
       posters.clear()
       set({ ...initial })
     },

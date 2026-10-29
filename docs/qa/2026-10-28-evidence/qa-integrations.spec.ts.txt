@@ -1,0 +1,235 @@
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { mkdir, writeFile, chmod } from 'node:fs/promises'
+import { join } from 'node:path'
+import { spawn } from 'node:child_process'
+import { waitForChat } from '../harness/chat.js'
+import { readLock } from '../harness/core.js'
+import { installFakeBackend, writeFakeModel } from '../harness/fixtures.js'
+import {
+  endSession,
+  startSession,
+  withArtifacts,
+  type Session,
+} from '../harness/session.js'
+import { startServerFromSidebar } from '../harness/navigation.js'
+
+const agents = [
+  'kilo',
+  'claude_code',
+  'pi',
+  'codex',
+  'opencode',
+  'openclaude',
+  'cline',
+  'dsh',
+  'zed',
+  'zcode',
+  'mimo',
+  'droid',
+  'copilot',
+  'openhands',
+  'poolside',
+  'goose',
+  'muse',
+  'atomic_agent',
+  'hermes_agent',
+  'openclaw',
+]
+const model = 'qa/model-a'
+const key = 'qa-regression-key'
+let session: Session
+let base = ''
+
+async function configure(name: string, selected: string, apiKey: string) {
+  return session.app.browser.executeAsync(
+    (
+      command: string,
+      args: Record<string, unknown>,
+      done: (result: unknown) => void
+    ) => {
+      ;(window as any).__TAURI_INTERNALS__.invoke(command, args).then(
+        () => done({ ok: true }),
+        (error: unknown) => done({ error: String(error) })
+      )
+    },
+    `configure_${name}`,
+    {
+      apiUrl: ['claude_code', 'goose'].includes(name)
+        ? base.replace(/\/v1$/, '')
+        : base,
+      model: selected,
+      apiKey,
+      contextLength: 65536,
+    }
+  )
+}
+
+describe('QA integration configuration and transport failures', () => {
+  beforeAll(async () => {
+    session = await startSession('qa-integrations', {
+      apiServer: { apiKey: key },
+      webviewSeed: { 'setup-completed': 'true' },
+      prepare: async (profile) => {
+        await installFakeBackend(profile, {
+          reply: 'QA_REPLY ' + Array(800).fill('token').join(' '),
+        })
+        await writeFakeModel(profile, model)
+        await writeFakeModel(profile, 'qa/model-b')
+        await writeFile(join(profile.binDir, 'cline'), '#!/bin/sh\nexit 0\n')
+        await chmod(join(profile.binDir, 'cline'), 0o755)
+      },
+    })
+    base = `http://127.0.0.1:${session.apiPort}/v1`
+    await waitForChat(session)
+    await startServerFromSidebar(session.app.browser)
+  })
+  afterAll(async () => {
+    expect(await endSession(session)).toEqual([])
+  })
+
+  for (const name of agents) {
+    it(`${name}: configure, repeat, model/key change, remove key`, async () => {
+      await withArtifacts(session, async () => {
+        for (const [selected, apiKey] of [
+          [model, key],
+          [model, key],
+          ['qa/model-b', 'qa-new-key'],
+          ['qa/model-b', ''],
+        ]) {
+          expect(await configure(name, selected!, apiKey!)).toEqual({
+            ok: true,
+          })
+        }
+      })
+    })
+  }
+
+  function request(signal?: AbortSignal) {
+    return fetch(`${base}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'authorization': `Bearer ${key}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        stream: true,
+        messages: [{ role: 'user', content: 'Reply briefly.' }],
+      }),
+      signal: signal ?? AbortSignal.timeout(60_000),
+    })
+  }
+
+  it('client disconnect during stream leaves the next request usable', async () => {
+    const controller = new AbortController()
+    const response = await request(controller.signal)
+    expect(response.status).toBe(200)
+    const reader = response.body!.getReader()
+    expect((await reader.read()).done).toBe(false)
+    controller.abort()
+    await reader.cancel().catch(() => undefined)
+    const retried = await request()
+    expect(retried.status).toBe(200)
+    expect(await retried.text()).toContain('[DONE]')
+  })
+
+  it(
+    'core crash in an active stream closes it and restores authenticated service',
+    { timeout: 180_000 },
+    async () => {
+      await withArtifacts(session, async () => {
+        const response = await request()
+        const reader = response.body!.getReader()
+        expect((await reader.read()).done).toBe(false)
+        const old = (await readLock(session.profile.dataFolder))!
+        process.kill(old.pid, 'SIGKILL')
+        let tail = ''
+        try {
+          for (;;) {
+            const chunk = await reader.read()
+            if (chunk.done) break
+            tail += new TextDecoder().decode(chunk.value)
+          }
+        } catch {
+          /* A failed stream is expected. */
+        }
+        expect(tail).not.toContain('[DONE]')
+        await expect
+          .poll(
+            () =>
+              fetch(`${base}/models`, {
+                headers: { authorization: `Bearer ${key}` },
+                signal: AbortSignal.timeout(2000),
+              }).then(
+                (r) => r.status,
+                () => 0
+              ),
+            { timeout: 90_000, interval: 500 }
+          )
+          .toBe(200)
+        expect(
+          (await readLock(session.profile.dataFolder))!.instance_id
+        ).not.toBe(old.instance_id)
+        expect((await fetch(`${base}/models`)).status).toBe(401)
+        const retry = await request()
+        expect(retry.status).toBe(200)
+        expect(await retry.text()).toContain('[DONE]')
+      })
+    }
+  )
+
+  it(
+    'real Codex CLI reads the generated profile and completes against the local core',
+    { timeout: 150_000 },
+    async () => {
+      expect(await configure('codex', model, key)).toEqual({ ok: true })
+      const cwd = join(session.profile.root, 'cli-workspace')
+      await mkdir(cwd, { recursive: true })
+      const result = await new Promise<{ code: number | null; output: string }>(
+        (resolve) => {
+          const child = spawn(
+            '/Users/misha/.nvm/versions/node/v22.22.0/bin/codex',
+            [
+              'exec',
+              '--skip-git-repo-check',
+              '--sandbox',
+              'read-only',
+              '--ephemeral',
+              '--profile',
+              'atomic-chat',
+              'Reply with QA_OK. Do not use tools.',
+            ],
+            {
+              cwd,
+              env: {
+                PATH: process.env.PATH!,
+                ...session.profile.env,
+                ATOMIC_CHAT_API_KEY: key,
+                NO_PROXY: '127.0.0.1,localhost',
+              },
+              stdio: ['ignore', 'pipe', 'pipe'],
+            }
+          )
+          let output = ''
+          child.stdout.on('data', (data) => {
+            output += data
+          })
+          child.stderr.on('data', (data) => {
+            output += data
+          })
+          const timer = setTimeout(() => child.kill('SIGKILL'), 120_000)
+          child.on('exit', (code) => {
+            clearTimeout(timer)
+            resolve({ code, output })
+          })
+        }
+      )
+      await writeFile(
+        '/tmp/atomic-integration-regression-20261028/codex-client.log',
+        result.output
+      )
+      expect(result.code, result.output.slice(-2000)).toBe(0)
+      expect(result.output).toContain('QA_REPLY')
+    }
+  )
+})

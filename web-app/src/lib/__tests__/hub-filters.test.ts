@@ -308,6 +308,28 @@ describe('hubFormats', () => {
     expect(normalizeHubFilters({ formats: ['litert-lm'] }, ['gguf', 'mlx']).formats).toEqual(['gguf'])
   })
 
+  it('offers GenieX exactly where its provider is shown, after LiteRT-LM (change add-geniex-runtime)', () => {
+    // spec geniex-desktop: the format "тогда и только тогда, когда провайдер виден".
+    expect(hubFormats({ mlx: false, managed: [], foundryLocal: true, liteRtLm: true, geniex: true })).toEqual([
+      'gguf',
+      'foundry-local',
+      'litert-lm',
+      'geniex',
+    ])
+    expect(hubFormats({ mlx: false, managed: [], geniex: true })).toEqual(['gguf', 'geniex'])
+    expect(hubFormats({ mlx: false, managed: [], geniex: false })).not.toContain('geniex')
+    expect(HUB_FORMAT_LABELS['geniex']).toBe('GenieX')
+    expect(parseHubEngine('geniex')).toBe('geniex')
+  })
+
+  it('keeps GGUF the format the Hub opens on where GenieX is offered', () => {
+    // spec geniex-desktop: "формат по умолчанию MUST оставаться прежним".
+    const offered = hubFormats({ mlx: false, managed: [], geniex: true })
+    expect(normalizeHubFilters({}, offered).formats).toEqual(['gguf'])
+    expect(normalizeHubFilters({ formats: ['geniex'] }, offered).formats).toEqual(['geniex'])
+    expect(normalizeHubFilters({ formats: ['geniex'] }, ['gguf']).formats).toEqual(['gguf'])
+  })
+
   it('lists PrismML after the managed engines', () => {
     expect(
       hubFormats({ mlx: false, managed: ['tensorrt-llm', 'vllm'], prism: true })

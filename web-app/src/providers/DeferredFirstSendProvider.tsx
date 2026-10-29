@@ -60,6 +60,8 @@ type Worker = {
   threadId: string
   title: string
   prompt: string
+  composerKey: string
+  projectId?: string
   navigateWhenStarted: boolean
   systemMessage?: string
 }
@@ -75,7 +77,7 @@ const selectedCtxLen = (): number | null =>
   (useModelProvider.getState().selectedModel?.settings?.ctx_len
     ?.controller_props?.value as number) ?? null
 
-// Only the home composer queues a first send (ChatInput's `canRunFromRoot`).
+// Older home queue entries have no explicit composer key.
 const HOME_COMPOSER_KEY = composerThreadKey({ isComposer: true })
 
 const matchesModelId = (candidate: string, expected: string) =>
@@ -255,7 +257,7 @@ export function DeferredFirstSendProvider() {
         callMcpTool: (args) => serviceHub.mcp().callTool(args),
         callExecTool: (args) =>
           runChatExecToolCall({ service: serviceHub.chatExec(), ...args }),
-        getProjectId: () => undefined,
+        getProjectId: () => current.projectId,
         processOutput: (content) =>
           downscaleToolResultContent(
             content,
@@ -286,7 +288,8 @@ export function DeferredFirstSendProvider() {
     // The home composer owns the fast path and can hand the turn to the full
     // ThreadDetail flow. This provider is the fallback once navigation unmounts
     // that composer; standing down here also avoids two simultaneous starts.
-    if (window.location.pathname === route.home) return
+    if (claimedId === queued.id) return
+    if (!queued.project && window.location.pathname === route.home) return
 
     for (const expectedId of queued.downloadModelIds) {
       const provider = providers.find((entry) =>
@@ -311,7 +314,7 @@ export function DeferredFirstSendProvider() {
       })
       return
     }
-  }, [providers, queued, serviceHub, worker])
+  }, [claimedId, providers, queued, serviceHub, worker])
 
   // Once the selected local model is actually serving, create the chat and
   // hand it to the background session. Route movement is decided at this
@@ -333,18 +336,24 @@ export function DeferredFirstSendProvider() {
     const createBackgroundThread = async () => {
       const assistantState = useAssistant.getState()
       const assistant =
+        queued.assistant ??
         assistantState.pendingAssistant ??
         assistantState.assistants.find(
           (item) => item.id === assistantState.defaultAssistantId
         ) ??
         assistantState.assistants[0]
       const previousThreadId = useThreads.getState().currentThreadId
-      const navigateWhenStarted = window.location.pathname === route.home
-      const thread = await useThreads.getState().createThread(
-        { id: selectedModel.id, provider: selectedProvider },
-        queued.prompt,
-        assistant
-      )
+      const navigateWhenStarted = queued.project
+        ? window.location.pathname === `/project/${queued.project.id}`
+        : window.location.pathname === route.home
+      const thread = await useThreads
+        .getState()
+        .createThread(
+          { id: selectedModel.id, provider: selectedProvider },
+          queued.prompt,
+          assistant,
+          queued.project
+        )
       if (cancelled) return
       if (!navigateWhenStarted) {
         useThreads.setState({ currentThreadId: previousThreadId })
@@ -353,13 +362,19 @@ export function DeferredFirstSendProvider() {
       if (queued.agentState) {
         useAgentMode
           .getState()
-          .handOffThreadState(HOME_COMPOSER_KEY, thread.id, queued.agentState)
+          .handOffThreadState(
+            queued.composerKey ?? HOME_COMPOSER_KEY,
+            thread.id,
+            queued.agentState
+          )
       }
       setWorker({
         queueId: queued.id,
         threadId: thread.id,
         title: thread.title ?? queued.prompt,
         prompt: queued.prompt,
+        composerKey: queued.composerKey ?? HOME_COMPOSER_KEY,
+        projectId: queued.project?.id,
         navigateWhenStarted,
         systemMessage: assistant?.instructions
           ? renderInstructions(assistant.instructions)
@@ -446,13 +461,14 @@ export function DeferredFirstSendProvider() {
       tools_heavy_servers: toolCost?.heavyServers.length ?? 0,
     })
 
-    // The queued text is the home composer's draft. Clear it there, not in
+    // Clear the draft in its original composer, not in
     // whichever chat the user has opened since.
     const prompts = usePrompt.getState()
-    if (prompts.getDraft(HOME_COMPOSER_KEY) === worker.prompt) {
-      prompts.setDraft(HOME_COMPOSER_KEY, '')
+    if (prompts.getDraft(worker.composerKey) === worker.prompt) {
+      prompts.setDraft(worker.composerKey, '')
     }
-    useAssistant.getState().setPendingAssistant(undefined)
+    if (!worker.projectId)
+      useAssistant.getState().setPendingAssistant(undefined)
 
     if (worker.navigateWhenStarted) {
       void navigate({

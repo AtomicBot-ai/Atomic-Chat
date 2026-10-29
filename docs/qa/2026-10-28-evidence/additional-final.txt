@@ -1,0 +1,13 @@
+
+ RUN  v3.2.7 <QA_ROOT>/source/tests/e2e
+
+ ✓ desktop/qa-additional-clients.spec.ts (3 tests) 13732ms
+   ✓ QA real installed CLI clients with API authentication > starts the API with the selected model  2583ms
+   ✓ QA real installed CLI clients with API authentication > muse answers using the configuration written by Atomic Chat  2855ms
+   ✓ QA real installed CLI clients with API authentication > openclaw answers using the configuration written by Atomic Chat  4022ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  15:51:00
+   Duration  14.15s (transform 97ms, setup 0ms, collect 219ms, tests 13.73s, environment 0ms, prepare 29ms)
+

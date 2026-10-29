@@ -406,7 +406,7 @@ export function InferenceEnginesOverview() {
           </Button>
         </div>
       </HeaderPage>
-      <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 pb-6">
+      <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-4 pb-6">
         <Group
           title={t('providers:overview.language')}
           icon={<Cpu size={16} aria-hidden />}

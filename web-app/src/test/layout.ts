@@ -32,7 +32,7 @@ export function withTranslations(children: ReactNode): ReactElement {
 }
 
 /** The app's default `--font-size-base`: `fontSizeOptions` "Medium". */
-export const DEFAULT_FONT_SIZE = '16px'
+export const DEFAULT_FONT_SIZE = '13px'
 /** Settings → Interface → Font size "Extra Large". */
 export const XL_FONT_SIZE = '20px'
 
@@ -117,10 +117,17 @@ export function expectNoHorizontalOverflow(
     // `scrollWidth` is only meaningful on a box that lays out content; an
     // SVG's is 0. Its box is still held inside the root below.
     const clips = style.overflowX === 'hidden' || style.overflowX === 'clip'
+    // A hit area (`hit-area-15`, `after:-inset-*`) reaches past its control's
+    // box on purpose and draws nothing; the root's own edges still hold it.
+    const after = getComputedStyle(el, '::after')
+    const reach =
+      after.position === 'absolute' && after.display !== 'none'
+        ? Math.max(0, -parseFloat(after.right) || 0)
+        : 0
     if (
       el instanceof HTMLElement &&
       !clips &&
-      el.scrollWidth > el.clientWidth + tolerance
+      el.scrollWidth > el.clientWidth + tolerance + reach
     ) {
       expect.fail(
         `${describe(el)} is ${px(el.scrollWidth - el.clientWidth)} wider inside than out ` +

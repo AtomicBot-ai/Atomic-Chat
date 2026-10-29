@@ -529,20 +529,12 @@ jobs:
           key: yarn-v1-${{ runner.os }}-${{ runner.arch }}-4.5.3-${{ hashFiles('.yarnrc.yml', 'yarn.lock', 'extensions/yarn.lock', 'src-tauri/plugins/yarn.lock') }}
           restore-keys: yarn-v1-${{ runner.os }}-${{ runner.arch }}-4.5.3-
 
-      - name: Download llamacpp backend
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: make download-llamacpp-backend
-
+      # The installer ships only upstream llama.cpp. The core installs MLX and
+      # the TurboQuant fork on demand (ADR 2026-10-27).
       - name: Download upstream llama.cpp backend
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: make download-llamacpp-upstream-backend
-
-      - name: Download MLX server (mlx-vlm)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: make build-mlx-server
 
       - name: Install dependencies and build core
         run: |
@@ -562,7 +554,7 @@ jobs:
           file src-tauri/icons/dmg/background.png
           ls -la src-tauri/icons/dmg/background.png
 
-      - name: Prepare bundled binaries (sidecars, atomic-chat-core, CLI)
+      - name: Prepare bundled binaries (sidecars, atomic-chat-core)
         run: |
           yarn copy:assets:tauri
 
@@ -581,8 +573,8 @@ jobs:
           case " ${cloudflared_archs} " in *" x86_64 "*) ;; *) echo "::error::cloudflared sidecar lacks the x86_64 slice"; exit 1 ;; esac
           case " ${cloudflared_archs} " in *" arm64 "*) ;; *) echo "::error::cloudflared sidecar lacks the arm64 slice"; exit 1 ;; esac
           yarn build:foundation-models-server
-          # Copies atomic-chat-core to jan-cli and signs the core pair with the
-          # imported Developer ID (hardened runtime + sidecar entitlements).
+          # Signs the core pair with the imported Developer ID (hardened
+          # runtime + sidecar entitlements).
           yarn build:cli
 
       # The atomic-core lock identity gate runs beside this job: gate-macos.
@@ -878,8 +870,7 @@ jobs:
       # The core pair ships as bundle resources, and "Sign Windows binaries
       # with DigiCert" below runs after `tauri build`, when they are already
       # packed inside the installers — so they are signed here, before
-      # bundling. Build CLI copies the signed atomic-chat-core.exe to
-      # jan-cli.exe. Bun keeps the payload in a `.bun` PE section, which the
+      # bundling. Bun keeps the payload in a `.bun` PE section, which the
       # appended Authenticode signature leaves intact; --verify-only runs both
       # signed binaries to prove it.
       - name: Sign the atomic-chat-core binaries with DigiCert
@@ -1004,46 +995,6 @@ jobs:
           fi
           echo "CPU backend ($BACKEND) downloaded successfully. App will auto-download GPU backend at runtime."
 
-      - name: Download TurboQuant llamacpp backend (manifest resolver)
-        shell: bash
-        run: |
-          set -euo pipefail
-          # TurboQuant ships on Windows as the SECOND provider alongside
-          # llamacpp-upstream. Bundle the offline-fallback `windows-x64-cpu`
-          # build into the turboquant resource dir; the app auto-downloads the
-          # optimal CUDA/Vulkan backend at runtime via the llamacpp-extension.
-          # No tag is pinned: scripts/resolve-turboquant-release.sh asks the
-          # fork's own releases/latest which stable release is current, so a
-          # new fork release ships without a commit here. Set TURBOQUANT_TAG to
-          # pin one for a reproducible build. The archive itself comes from the
-          # AtomicBot-ai releases CDN. Inline bash (not `make ...-win-cpu`)
-          # because that make target is a PowerShell one-liner whose `$(...)`
-          # is mangled by make's /usr/bin/sh.
-          DIR="src-tauri/resources/llamacpp-backend"
-          BACKEND="windows-x64-cpu"
-          rm -rf "$DIR"
-          mkdir -p "$DIR"
-          RESOLVED="$(./scripts/resolve-turboquant-release.sh "$BACKEND" "${TURBOQUANT_TAG:-}")"
-          TAG="${RESOLVED%% *}"
-          ASSET="${RESOLVED#* }"
-          URL="https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/download/${TAG}/${ASSET}"
-          echo "$TAG" > "$DIR/version.txt"
-          echo "$BACKEND" > "$DIR/backend.txt"
-          echo "Release: $TAG  Backend: $BACKEND"
-          echo "Downloading: $URL"
-          curl -fSL --retry 5 --retry-delay 3 "$URL" -o /tmp/llamacpp-turboquant-backend.zip
-          unzip -o /tmp/llamacpp-turboquant-backend.zip -d "$DIR"
-          rm -f /tmp/llamacpp-turboquant-backend.zip
-          if [ ! -f "$DIR/build/bin/llama-server.exe" ] && [ -f "$DIR/llama-server.exe" ]; then
-            echo "Relocating flat-extracted binaries into build/bin/..."
-            mkdir -p "$DIR/build/bin"
-            # Move ALL top-level files (exe + DLLs incl. llama-server-impl.dll),
-            # not just *.exe; keep the meta files (version.txt/backend.txt) at
-            # the resource root where install_bundled_backend expects them.
-            find "$DIR" -maxdepth 1 -type f ! -name version.txt ! -name backend.txt -exec mv {} "$DIR/build/bin/" \;
-          fi
-          echo "TurboQuant CPU backend ($BACKEND) downloaded successfully. App will auto-download GPU backend at runtime."
-
       # The web bundle is built once, by `tauri build` itself
       # (`beforeBuildCommand`) — see "Build app" below.
       - name: Generate icons
@@ -1051,12 +1002,6 @@ jobs:
 
       - name: Copy assets to Tauri
         run: yarn copy:assets:tauri
-
-      - name: Build CLI
-        shell: bash
-        run: |
-          mkdir -p src-tauri/resources/bin
-          cp src-tauri/resources/bin/atomic-chat-core.exe src-tauri/resources/bin/jan-cli.exe
 
       # The Agent and TensorRT-LLM gates run beside this job: gate-windows.
       #
@@ -1509,12 +1454,6 @@ jobs:
       - name: Copy assets to Tauri
         run: yarn copy:assets:tauri
 
-      - name: Build CLI
-        shell: bash
-        run: |
-          mkdir -p src-tauri/resources/bin
-          cp src-tauri/resources/bin/atomic-chat-core.exe src-tauri/resources/bin/jan-cli.exe
-
       - name: Build app (unsigned)
         env:
           # ATO-113: source-map generation + @sentry/vite-plugin push peak heap
@@ -1641,8 +1580,8 @@ jobs:
     if: github.event_name == 'push' || inputs.build_linux
     # Pinned to ubuntu-22.04 (glibc 2.35) so the produced AppImage stays
     # compatible with Ubuntu 22.04 / 24.04 / Debian 12 / Fedora 40 /
-    # Mint / Pop!_OS / Arch. Upstream remains the Linux default while the
-    # TurboQuant Vulkan build ships as the optional second provider.
+    # Mint / Pop!_OS / Arch. Only upstream ships in the AppImage; the core
+    # installs the optional TurboQuant provider on first use.
     runs-on: ubuntu-22.04
     timeout-minutes: 75
     needs: create-draft-release
@@ -1686,9 +1625,9 @@ jobs:
         # the AppImage: without them on this machine it ships the Ubuntu
         # libgstreamer alone, which looks for plugins under Ubuntu's path and
         # finds none on Arch/Fedora, so <video> hangs (tauri-apps/tauri#4642).
-        # libvulkan1 and libgomp1: the TurboQuant Vulkan and the llama.cpp CPU
-        # backends link them, and the package stage looks up which package
-        # owns every library the payload links.
+        # libgomp1: the bundled llama.cpp CPU backend links it, and the
+        # package stage looks up which package owns every library the payload
+        # links. (libvulkan1 went with the TurboQuant Vulkan bundle.)
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -1707,7 +1646,6 @@ jobs:
             libasound2-dev \
             gstreamer1.0-plugins-base \
             gstreamer1.0-plugins-good \
-            libvulkan1 \
             libgomp1 \
             pkg-config \
             patchelf \
@@ -1809,16 +1747,6 @@ jobs:
         # working Vulkan loader.
         run: make download-llamacpp-upstream-backend
 
-      - name: Download TurboQuant llamacpp backend (linux-x64-vulkan)
-        # TurboQuant ships on Linux as the SECOND provider alongside
-        # llamacpp-upstream. The single linux-x64-vulkan build serves both CPU
-        # and GPU via GGML_BACKEND_DL, so it is the offline-fallback bundle.
-        # The make target resolves the backend index from the static turboquant
-        # manifest in atomic-chat-conf (raw.githubusercontent.com — no
-        # api.github.com rate limit); the archive comes from the AtomicBot-ai
-        # releases CDN.
-        run: make download-llamacpp-backend
-
       # The web bundle is built once, by `tauri build` itself
       # (`beforeBuildCommand`) — see "Build app" below.
       - name: Generate icons
@@ -1828,13 +1756,9 @@ jobs:
         run: yarn copy:assets:tauri
 
       # What `make build-cli` does on Linux, which `yarn build:tauri:linux*`
-      # ran again before: check the downloaded core pair runs, then copy it.
-      - name: Build CLI (Linux)
-        run: |
-          node scripts/download-core.mjs --verify-only
-          mkdir -p src-tauri/resources/bin
-          cp src-tauri/resources/bin/atomic-chat-core src-tauri/resources/bin/jan-cli
-          chmod +x src-tauri/resources/bin/jan-cli
+      # ran again before: check the downloaded core pair runs.
+      - name: Check the core pair runs (Linux)
+        run: node scripts/download-core.mjs --verify-only
 
       # The Agent gate runs beside this job: gate-linux.
       - name: Build app (AppImage)
@@ -1993,11 +1917,11 @@ jobs:
   # ──────────────────────────────────────────────────────────────
   # Linux  (ARM64 — AppImage, upstream ggml-org/llama.cpp, CPU-only bundled)
   # ──────────────────────────────────────────────────────────────
-  # Same pipeline as build-linux-x64 on a native arm64 runner, minus the
-  # TurboQuant bundle: the fork publishes no portable Linux arm64 build, so
-  # this AppImage ships llamacpp-upstream only (tauri.linux-arm64.conf.json)
-  # and the app hides TurboQuant there. Vulkan and CUDA 13 arm64 are runtime
-  # downloads. The agent gate checks run in the x64 job only.
+  # Same pipeline as build-linux-x64 on a native arm64 runner. Like every
+  # installer, this AppImage ships llamacpp-upstream only
+  # (tauri.linux-arm64.conf.json); the fork publishes no portable Linux arm64
+  # build, so the app hides TurboQuant there. Vulkan and CUDA 13 arm64 are
+  # runtime downloads. The agent gate checks run in the x64 job only.
   build-linux-arm64:
     if: github.event_name == 'push' || inputs.build_linux_arm64
     # ubuntu-22.04 (glibc 2.35) for the same distro coverage as the x64 AppImage.
@@ -2147,13 +2071,9 @@ jobs:
         run: yarn copy:assets:tauri
 
       # What `make build-cli` does on Linux, which `yarn build:tauri:linux*`
-      # ran again before: check the downloaded core pair runs, then copy it.
-      - name: Build CLI (Linux)
-        run: |
-          node scripts/download-core.mjs --verify-only
-          mkdir -p src-tauri/resources/bin
-          cp src-tauri/resources/bin/atomic-chat-core src-tauri/resources/bin/jan-cli
-          chmod +x src-tauri/resources/bin/jan-cli
+      # ran again before: check the downloaded core pair runs.
+      - name: Check the core pair runs (Linux)
+        run: node scripts/download-core.mjs --verify-only
 
       - name: Build app (AppImage)
         env:

@@ -219,6 +219,31 @@ describe('ThreadList active highlight', () => {
     expect(fetchMessages.mock.calls).toEqual([])
   })
 
+  it('shows readable attachment names instead of serialized metadata in project previews', async () => {
+    vi.mocked(useParams).mockReturnValue({} as never)
+    fetchMessages.mockResolvedValue([
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: {
+              value:
+                'Read this file.\n\n[ATTACHED_FILES]\n- file_id: internal-42, name: qa-fixture.txt, type: txt\n[/ATTACHED_FILES]',
+            },
+          },
+        ],
+      },
+    ])
+    await act(async () => {
+      render(<ThreadList threads={threads} currentProjectId="project-1" />)
+    })
+    expect(
+      screen.getAllByText('Read this file. · qa-fixture.txt')
+    ).toHaveLength(threads.length)
+    expect(screen.queryByText(/ATTACHED_FILES|internal-42/)).toBeNull()
+  })
+
   it('hydrates messages for project cards, which render a preview', async () => {
     vi.mocked(useParams).mockReturnValue({} as never)
 

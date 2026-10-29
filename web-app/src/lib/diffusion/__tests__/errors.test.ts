@@ -28,6 +28,7 @@ const CONTRACT_CODES: NativeDiffusionErrorCode[] = [
   'INVALID_OUTPUT',
   'JOB_BUSY',
   'JOB_NOT_FOUND',
+  'ENGINE_STOPPED',
   'QUEUE_FULL',
   'CANCELLED',
   'DISK_FULL',
@@ -70,6 +71,13 @@ describe('describeDiffusionError', () => {
       'openSettings'
     )
     expect(describeDiffusionError('DISK_FULL').action).toBe('openOutputFolder')
+  })
+
+  it('offers to try again when the engine stopped under a job', () => {
+    expect(describeDiffusionError('ENGINE_STOPPED')).toMatchObject({
+      action: 'retry',
+      secondaryAction: 'pickSmallerQuant',
+    })
   })
 
   it('sends a provider’s key and account problems to the Cloud page', () => {

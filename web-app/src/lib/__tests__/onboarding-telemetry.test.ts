@@ -1,3 +1,4 @@
+import '@/test/telemetry-ready'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import posthog from 'posthog-js'
@@ -25,9 +26,7 @@ import {
 } from '@/lib/onboarding-telemetry'
 
 vi.mock('posthog-js', () => ({
-  // `has_opted_in_capturing` is what `queuedCapture` checks before sending;
-  // without it every event would sit in the startup queue instead.
-  default: { capture: vi.fn(), has_opted_in_capturing: () => true },
+  default: { capture: vi.fn() },
 }))
 
 const lastCall = () => {

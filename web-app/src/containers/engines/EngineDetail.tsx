@@ -9,6 +9,8 @@ import { FoundryLocalEnginePanel } from '@/containers/foundry-local/FoundryLocal
 import { LiteRtLmAccelerators } from '@/containers/litert-lm/LiteRtLmAccelerators'
 import { hubEngine } from '@/lib/hub-model-engines'
 import { LiteRtLmEnginePanel } from '@/containers/litert-lm/LiteRtLmEnginePanel'
+import { GeniexDevices } from '@/containers/geniex/GeniexDevices'
+import { GeniexEnginePanel } from '@/containers/geniex/GeniexEnginePanel'
 import { useEngineVersionsStore } from '@/stores/engine-versions-store'
 import { ManagedEngineHubLink } from '@/containers/managed-engine/ManagedEngineHubLink'
 import { ManagedEngineSettingsCard } from '@/containers/managed-engine/ManagedEngineSettingsCard'
@@ -19,6 +21,8 @@ import {
   PrismEngineSetupCard,
 } from '@/containers/atomic-prism/PrismEngineSetupCard'
 import { usePrismEngine } from '@/hooks/usePrismEngine'
+import { MlxEngineSetupCard } from '@/containers/engines/MlxEngineSetupCard'
+import { mlxEngineActiveIn } from '@/services/engine-builds/mlx'
 import {
   selectInstallation,
   useManagedEnvironmentStore,
@@ -133,6 +137,13 @@ import { restartLocalModel } from '@/utils/restartLocalModel'
 const MODEL_ACTION_BUTTON_CLASS = 'w-28'
 
 /**
+ * Engines whose `device` setting is the GPU chosen on the Hardware page, so their settings list
+ * leaves it out. GenieX's `device` (NPU, GPU, CPU, hybrid; change add-geniex-runtime) is a choice
+ * made here, so it stays.
+ */
+const DEVICE_CHOSEN_ON_HARDWARE_PAGE = new Set(['llamacpp', 'llamacpp-upstream', 'atomic-prism'])
+
+/**
  * The models an engine has, named under its settings where they unfold in
  * the engine's card, with the way to its page, where they are managed.
  */
@@ -170,17 +181,22 @@ function EngineModelsSummary({
  * One local engine: its settings with the build controls, and on its own page
  * (`/settings/providers/$providerName`) also its models and helper models.
  * `embedded` is the settings alone, unfolded inside the engine's card on
- * Models Hub → Inference engines; the models stay on the page.
+ * Models Hub → Inference engines; the models stay on the page. The Server's
+ * engine configuration shows them too, without the on/off switch: the engine
+ * it opens on is the one the server runs.
  */
 export function EngineDetail({
   providerName,
   engineUpdate,
   embedded = false,
+  engineSwitch = true,
 }: {
   providerName: string
   /** The engine update banner's "Update" for a managed engine lands here. */
   engineUpdate?: boolean
   embedded?: boolean
+  /** Embedded only: whether the "Engine enabled" row is shown. */
+  engineSwitch?: boolean
 }) {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
@@ -323,12 +339,24 @@ export function EngineDetail({
     const active = state.engines['litert-lm']?.active
     return active ? `${active.version}/${active.variant}` : null
   })
+  const geniexBuild = useEngineVersionsStore((state) => {
+    const active = state.engines['geniex']?.active
+    return active ? `${active.version}/${active.variant}` : null
+  })
+  /// The installer does not carry MLX: until the core reports a build, the
+  /// page offers the install instead of a version.
+  const mlxEngineMissing = useEngineVersionsStore(
+    (state) =>
+      providerName === 'mlx' && mlxEngineActiveIn(state.engines.mlx) === false
+  )
   const managedInstalled = useManagedEnvironmentStore(
     (state) =>
       managed !== undefined &&
       selectInstallation(state, managed.id)?.status === 'ready'
   )
   const provider = getProviderByName(providerName)
+  // Without a build there is nothing to compare: the core offers no update.
+  const mlxEngineCheckShown = provider?.provider === 'mlx' && !mlxEngineMissing
   const providerSettingsWriteRef = useRef<Promise<void>>(Promise.resolve())
   const debouncedRestartLlamacppModel = useMemo(
     () =>
@@ -1894,7 +1922,7 @@ export function EngineDetail({
     }
     updateProvider(providerName, { active })
   }
-  const engineSwitch = (
+  const engineSwitchControl = (
     <Switch
       aria-label={t('providers:overview.enable', {
         name: getProviderTitle(providerName),
@@ -1915,22 +1943,24 @@ export function EngineDetail({
           </div>
         </HeaderPage>
       )}
-      <div className={cn('flex', !embedded && 'h-[calc(100%-60px)]')}>
+      <div className={cn('flex', !embedded && 'h-[calc(100%-var(--page-header-height))]')}>
         <div className={cn('w-full', !embedded && 'p-4 pt-0 overflow-y-auto')}>
           <div className="flex flex-col justify-between gap-4 gap-y-3 w-full">
             {embedded ? (
-              <div className="flex items-center justify-between gap-4">
-                <span className="text-sm font-medium">
-                  {t('providers:overview.engineEnabled')}
-                </span>
-                {engineSwitch}
-              </div>
+              engineSwitch && (
+                <div className="flex items-center justify-between gap-4">
+                  <span className="text-sm font-medium">
+                    {t('providers:overview.engineEnabled')}
+                  </span>
+                  {engineSwitchControl}
+                </div>
+              )
             ) : (
               <div className="flex items-center justify-between">
                 <h1 className="font-medium text-base">
                   {getProviderTitle(providerName)}
                 </h1>
-                {engineSwitch}
+                {engineSwitchControl}
               </div>
             )}
 
@@ -1953,6 +1983,12 @@ export function EngineDetail({
             {providerName === 'litert-lm' && (
               // Read again when the active build changes: OpenVINO's version follows the release.
               <LiteRtLmAccelerators key={liteRtLmBuild ?? 'none'} />
+            )}
+            {/* GenieX: the SDK and the devices its library found come before its settings and models. */}
+            {providerName === 'geniex' && <GeniexEnginePanel />}
+            {providerName === 'geniex' && (
+              // Read again when the active build changes: a new build is probed afresh at its install.
+              <GeniexDevices key={geniexBuild ?? 'none'} />
             )}
             {managed && provider && (
               <ManagedEngineSettingsCard
@@ -1987,6 +2023,8 @@ export function EngineDetail({
                 versionBackend={prismVersionBackend}
               />
             )}
+            {/* MLX: the installer does not carry the engine; install it here until it is in. */}
+            {providerName === 'mlx' && provider && <MlxEngineSetupCard />}
 
             {/* Local engines, managed ones included, show their models above the engine settings. */}
             <div
@@ -2091,6 +2129,15 @@ export function EngineDetail({
                         // No build is bundled: until one is installed the row
                         // installs the one the core recommends.
                         <PrismEngineInstallButton engine={prismEngine} />
+                      ) : mlxEngineMissing &&
+                        setting.key === 'version_backend' ? (
+                        // The setup card above installs it.
+                        <span
+                          className="text-sm text-muted-foreground"
+                          data-testid="mlx-engine-not-installed"
+                        >
+                          {t('settings:mlxEngine.notInstalled')}
+                        </span>
                       ) : needsBackendConfig &&
                         setting.key === 'version_backend' ? (
                         <div className="flex items-center gap-1 text-sm">
@@ -2274,7 +2321,9 @@ export function EngineDetail({
                           controllerType={setting.controller_type}
                           controllerProps={setting.controller_props}
                           className={cn(
-                            setting.key === 'device' && 'hidden',
+                            setting.key === 'device' &&
+                              DEVICE_CHOSEN_ON_HARDWARE_PAGE.has(providerName) &&
+                              'hidden',
                             isHiddenConcurrentMode && 'hidden',
                             isHiddenByDflash && 'hidden',
                             isHiddenForManaged && 'hidden'
@@ -2459,7 +2508,9 @@ export function EngineDetail({
                       key={settingIndex}
                       title={setting.title}
                       className={cn(
-                        setting.key === 'device' && 'hidden',
+                        setting.key === 'device' &&
+                          DEVICE_CHOSEN_ON_HARDWARE_PAGE.has(providerName) &&
+                          'hidden',
                         isHiddenConcurrentMode && 'hidden',
                         isHiddenByDflash && 'hidden',
                         isHiddenForManaged && 'hidden'
@@ -2566,7 +2617,7 @@ export function EngineDetail({
                                 {/* MLX: the core compares the active
                                     build with conf's manifest; a newer one
                                     becomes the banner's offer (design D10). */}
-                                {provider?.provider === 'mlx' && (
+                                {mlxEngineCheckShown && (
                                   <Button
                                     variant="outline"
                                     size="sm"
@@ -2769,7 +2820,8 @@ export function EngineDetail({
                             provider.provider !== 'atomic-prism' &&
                             provider.provider !== 'mlx' &&
                             provider.provider !== 'foundry-local' &&
-                            provider.provider !== 'litert-lm' && (
+                            provider.provider !== 'litert-lm' &&
+                            provider.provider !== 'geniex' && (
                               <>
                                 <Button
                                   variant="secondary"
@@ -2798,7 +2850,8 @@ export function EngineDetail({
                               provider.provider === 'atomic-prism' ||
                               provider.provider === 'mlx' ||
                               provider.provider === 'foundry-local' ||
-                              provider.provider === 'litert-lm') &&
+                              provider.provider === 'litert-lm' ||
+                              provider.provider === 'geniex') &&
                             !hasDownloadedModels && (
                               <Button
                                 variant="default"

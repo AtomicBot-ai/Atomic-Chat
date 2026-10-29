@@ -1,3 +1,4 @@
+import '@/test/telemetry-ready'
 /**
  * What the old first-run screen's suite proved about the model choice that the
  * model step still has to: impressions as the funnel counts them, a pick
@@ -25,7 +26,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('posthog-js', () => ({
-  default: { capture: vi.fn(), has_opted_in_capturing: () => true },
+  default: { capture: vi.fn() },
 }))
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 vi.mock('@janhq/core', async (importOriginal) => ({

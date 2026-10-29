@@ -19,6 +19,7 @@ import { ExtensionTypeEnum, FileStat, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { formatAttachmentError } from '@/lib/attachmentProcessing'
 import { IconLoader2, IconPaperclip } from '@tabler/icons-react'
+import { RemoveProjectFileDialog } from '@/containers/dialogs/RemoveProjectFileDialog'
 
 type ProjectFilesProps = {
   projectId: string
@@ -33,6 +34,10 @@ type ProjectFile = {
   size?: number
   chunk_count: number
 }
+
+/** What the row, its action and the confirmation call the file. */
+const displayNameOf = (file: ProjectFile): string =>
+  file.name || file.path?.split(/[\\/]/).pop() || file.id
 
 function formatBytes(bytes?: number): string {
   if (!bytes || bytes <= 0) return ''
@@ -205,6 +210,9 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
+  // The file whose removal waits for the user's confirmation (AC-14): one
+  // click on the row action used to drop the indexed copy at once.
+  const [pendingRemoval, setPendingRemoval] = useState<ProjectFile | null>(null)
   // ATO — #289: ingesting a file downloads the embedding model on first use,
   // which takes a while. Two ingests of the same file derive the same download
   // task id, so the second one *supersedes* (cancels) the first — and with an
@@ -507,15 +515,20 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
     }
   }
 
-  const handleDeleteFile = async (fileId: string) => {
+  const handleDeleteFile = async (file: ProjectFile) => {
     try {
       const ext = ExtensionManager.getInstance().get<VectorDBExtension>(
         ExtensionTypeEnum.VectorDB
       )
       if (ext?.deleteFileForProject) {
-        await ext.deleteFileForProject(projectId, fileId)
+        await ext.deleteFileForProject(projectId, file.id)
         toast.success(
-          t('common:toast.fileDeleted.title') ?? 'File deleted successfully'
+          t('common:toast.fileDeleted.title') ?? 'File deleted successfully',
+          {
+            description: t('common:toast.fileDeleted.description', {
+              fileName: displayNameOf(file),
+            }),
+          }
         )
         await loadProjectFiles()
       }
@@ -656,14 +669,29 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
                     ` · ${t('common:files.chunksCount', { count: file.chunk_count })}`}
                 </p>
               </div>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                className="opacity-0 group-hover:opacity-100 transition-opacity"
-                onClick={() => handleDeleteFile(file.id)}
-              >
-                <Trash2 className="size-3.5 text-muted-foreground hover:text-destructive" />
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    // Shown on hover, and whenever it has keyboard focus.
+                    className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+                    aria-label={t('common:files.removeFromProject', {
+                      fileName: displayNameOf(file),
+                    })}
+                    onClick={() => setPendingRemoval(file)}
+                  >
+                    <Trash2 className="size-3.5 text-muted-foreground hover:text-destructive" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className="text-xs">
+                    {t('common:files.removeFromProject', {
+                      fileName: displayNameOf(file),
+                    })}
+                  </p>
+                </TooltipContent>
+              </Tooltip>
             </div>
           ))}
 
@@ -691,6 +719,18 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
           </div>
         </div>
       )}
+
+      <RemoveProjectFileDialog
+        fileName={pendingRemoval ? displayNameOf(pendingRemoval) : null}
+        onOpenChange={(open) => {
+          if (!open) setPendingRemoval(null)
+        }}
+        onConfirm={() => {
+          const file = pendingRemoval
+          setPendingRemoval(null)
+          if (file) void handleDeleteFile(file)
+        }}
+      />
     </div>
   )
 }

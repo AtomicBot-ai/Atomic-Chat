@@ -11,19 +11,23 @@ import {
   type ApiServerSessionSummaryEvent,
 } from '@/types/analytics'
 import type { ServiceHub } from '@/services'
-import {
-  cpuAvxLevel,
-  getAnalyticsPlatform,
-  mapGpuVendor,
-} from '@/lib/telemetry'
+import { getAnalyticsPlatform } from '@/lib/telemetry'
+import { collectHardwareSuperProps, withTimeout } from '@/lib/hardware-summary'
 import {
   isFirstLaunch,
   reportAbandonedOnboarding,
   reportBackendRestartIntent,
 } from '@/lib/onboarding-telemetry'
-import { flushTelemetryQueue } from '@/lib/telemetry-queue'
+import {
+  bufferTelemetryUntilReady,
+  disableTelemetryQueue,
+  flushTelemetryQueue,
+} from '@/lib/telemetry-queue'
 import { restoreInstallDistinctId } from '@/lib/telemetry-identity'
-import { registerOnboardingCohort } from '@/lib/onboarding/experiment'
+import {
+  captureOnboardingCohort,
+  registerOnboardingCohort,
+} from '@/lib/onboarding/experiment'
 import {
   setSentryConsent,
   setSentryTags,
@@ -69,23 +73,6 @@ function toSentryTags(
   return tags
 }
 
-/** Resolve a promise but reject after `ms` so a slow IPC never blocks startup. */
-function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const id = setTimeout(() => reject(new Error('timeout')), ms)
-    promise.then(
-      (value) => {
-        clearTimeout(id)
-        resolve(value)
-      },
-      (error) => {
-        clearTimeout(id)
-        reject(error)
-      }
-    )
-  })
-}
-
 /**
  * Version of the event schema this build emits.
  *
@@ -96,128 +83,9 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
  *
  * 2 — ATO-457/459/456/468: startup event buffering, normalized `model_id`,
  * split onboarding / backend-step reasons, subscription events.
+ * 3 — explicit startup readiness and recoverable cohort assignment capture.
  */
-const TELEMETRY_SCHEMA = 2
-
-/** First of `keys` that holds a value. Tolerates localStorage being unavailable. */
-function firstStoredValue(keys: string[]): string | null {
-  for (const key of keys) {
-    try {
-      const value = localStorage.getItem(key)
-      if (value) return value
-    } catch {
-      return null
-    }
-  }
-  return null
-}
-
-/**
- * ATO-111: build the hardware / OS / backend super-properties registered once
- * per launch. PII contract: never include GPU UUID/serial or the machine name;
- * RAM/VRAM are plain MiB integers. Slow IPC calls are time-boxed so `app_opened`
- * is not delayed.
- */
-async function collectHardwareSuperProps(
-  serviceHub: ServiceHub
-): Promise<Record<string, unknown>> {
-  const props: Record<string, unknown> = {}
-
-  // Backend ids come from extension-owned localStorage (no IPC, no side effects).
-  //
-  // ATO-468: `llama_cpp_backend_type` is dead. Both engines moved to their own
-  // keys and now read the shared one only to migrate off it, so nothing writes
-  // it any more and `active_backend` had been reporting whatever an old build
-  // happened to leave behind. Read the live keys, most specific first.
-  const backendPref = firstStoredValue([
-    'atomic_llamacpp_upstream_backend_type',
-    'atomic_llamacpp_turboquant_backend_type',
-    'llama_cpp_backend_type',
-  ])
-  if (backendPref) {
-    // The honest name: this is which build the device downloaded, not what
-    // executed a given response — `model_load.exec_backend` answers that.
-    props.device_backend_pref = backendPref
-    // Kept until the dashboards reading it have moved over.
-    props.active_backend = backendPref
-  }
-  // Same drift: only the upstream extension writes the unprefixed key.
-  const recommendation = firstStoredValue([
-    'llama_cpp_better_backend_recommendation',
-    'turboquant_better_backend_recommendation',
-  ])
-  if (recommendation) {
-    try {
-      const parsed = JSON.parse(recommendation) as {
-        recommendedBackend?: string
-      }
-      if (parsed?.recommendedBackend)
-        props.recommended_backend = parsed.recommendedBackend
-    } catch {
-      // malformed cache — ignore
-    }
-  }
-
-  if (typeof IS_TAURI === 'undefined' || !IS_TAURI) return props
-
-  try {
-    const installerType = await withTimeout(
-      serviceHub.app().getInstallerType(),
-      1500
-    )
-    if (installerType) props.installer_type = installerType
-  } catch {
-    // best-effort — installer type unavailable
-  }
-
-  const hw = await withTimeout(
-    serviceHub.hardware().getHardwareInfo(),
-    3000
-  ).catch(() => null)
-  if (!hw) return props
-
-  props.os = hw.os_type || 'unknown'
-  props.os_build = hw.os_name || ''
-  const arch = (hw.cpu?.arch || '').toLowerCase()
-  props.arch = arch.includes('arm') || arch.includes('aarch') ? 'arm64' : 'x64'
-  props.cpu_avx = cpuAvxLevel(hw.cpu?.extensions)
-  props.system_ram_mb = hw.total_memory ?? null
-
-  const gpus = hw.gpus || []
-  const primary = gpus[0]
-  props.gpu_detected = gpus.length > 0
-  props.gpu_vendor = mapGpuVendor(primary?.vendor, IS_MACOS)
-  props.gpu_model = primary?.name || null
-  props.vram_mb = primary?.total_memory ?? null
-
-  const nvidia = gpus.find((g) =>
-    (g.vendor || '').toLowerCase().includes('nvidia')
-  )
-  if (nvidia) {
-    props.nvidia_driver_version = nvidia.driver_version || null
-    // Exact CUDA runtime string is not exposed by tauri-plugin-hardware;
-    // surface compute capability as a best-effort proxy (see ATO-111).
-    props.cuda_runtime_version = nvidia.nvidia_info?.compute_capability || null
-  }
-  const vk = gpus.find((g) => g.vulkan_info?.api_version)
-  if (vk) props.vulkan_version = vk.vulkan_info.api_version
-
-  const usage = await withTimeout(
-    serviceHub.hardware().getSystemUsage(),
-    1500
-  ).catch(() => null)
-  if (usage && primary) {
-    const u =
-      usage.gpus?.find((g) => g.uuid === primary.uuid) ?? usage.gpus?.[0]
-    if (u)
-      props.vram_free_mb = Math.max(
-        0,
-        (u.total_memory ?? 0) - (u.used_memory ?? 0)
-      )
-  }
-
-  return props
-}
+const TELEMETRY_SCHEMA = 3
 
 /**
  * ATO-111: `device_parse_ok` reflects whether `llama-server --list-devices`
@@ -259,6 +127,7 @@ export function AnalyticProvider() {
 
   useEffect(() => {
     if (!POSTHOG_KEY || !POSTHOG_HOST) {
+      disableTelemetryQueue()
       console.warn(
         'PostHog not initialized: Missing POSTHOG_KEY or POSTHOG_HOST environment variables'
       )
@@ -272,6 +141,7 @@ export function AnalyticProvider() {
     const osPlatform = getAnalyticsPlatform()
 
     if (productAnalytic) {
+      bufferTelemetryUntilReady()
       posthog.init(POSTHOG_KEY, {
         api_host: POSTHOG_HOST,
         autocapture: false,
@@ -314,12 +184,13 @@ export function AnalyticProvider() {
           console.warn('Failed to restore the analytics distinct id:', err)
         })
         .finally(async () => {
+          if (cancelled) return
           posthog.opt_in_capturing()
           posthog.register({
-        app_version: VERSION,
-        platform: osPlatform,
-        telemetry_schema: TELEMETRY_SCHEMA,
-      })
+            app_version: VERSION,
+            platform: osPlatform,
+            telemetry_schema: TELEMETRY_SCHEMA,
+          })
           // The onboarding experiment's cohort, on the person and on every
           // event from here on, the replayed startup events included.
           registerOnboardingCohort(posthog)
@@ -343,11 +214,18 @@ export function AnalyticProvider() {
             console.warn('Failed to collect hardware super-properties:', err)
           }
 
+          if (cancelled) return
+
+          // The assignment is persisted before React mounts. Send it under
+          // the restored identity, at its original time, including on upgrades
+          // from builds that lost it before PostHog was initialized.
+          captureOnboardingCohort(posthog)
+
           // Everything captured during startup was held back, because
           // `opt_out_capturing_by_default` makes posthog-js drop rather than
           // buffer. Replay it now: after the super-properties so replayed
-          // events carry them, and before the `cancelled` bail so a re-run of
-          // this effect cannot strand a whole first launch's worth of events.
+          // events carry them. A cancelled initialization leaves the queue for
+          // the active effect; it must not flush after consent was withdrawn.
           flushTelemetryQueue()
 
           // An onboarding run left on screen when the app closed. Reported
@@ -422,6 +300,7 @@ export function AnalyticProvider() {
           }
         })
     } else {
+      disableTelemetryQueue()
       posthog.opt_out_capturing()
     }
 

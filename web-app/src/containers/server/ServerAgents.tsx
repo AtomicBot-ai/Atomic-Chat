@@ -1,22 +1,17 @@
 import { Link } from '@tanstack/react-router'
-import { ArrowRight, Network, Search } from 'lucide-react'
+import { ArrowRight, LoaderCircle, Network, Search } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { route } from '@/constants/routes'
-import {
-  INTEGRATION_AGENTS,
-  type IntegrationAgent,
-} from '@/constants/integrations'
+import { SERVER_AGENTS, type IntegrationAgent } from '@/constants/integrations'
 import { AgentIcon } from '@/containers/AgentIcon'
 import {
   pickAgentHint,
   SetupGuideHint,
   useGuideHint,
 } from '@/containers/onboarding/SetupGuideHint'
-import {
-  StatusDot,
-  type StatusTone,
-} from '@/containers/api/ApiStatusIndicators'
+import type { StatusTone } from '@/containers/api/ApiStatusIndicators'
+import { useAgentActions } from '@/hooks/useAgentActions'
 import { useAppState } from '@/hooks/useAppState'
 import { useServerSetup } from '@/hooks/useServerSetup'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -24,23 +19,10 @@ import { detectIntegrationAgentsOnce } from '@/lib/integration-agent-detection'
 import { isGuidedAgent } from '@/lib/integration-agent-setup'
 import { useLaunchStore } from '@/stores/launch-store'
 
-import { FEATURED_AGENT_IDS } from './ServerSetupGuide'
-
-/** Every integration, the guide's featured ones first. */
-const OVERVIEW_AGENTS = [
-  ...FEATURED_AGENT_IDS.flatMap((id) =>
-    INTEGRATION_AGENTS.filter((agent) => agent.id === id)
-  ),
-  ...INTEGRATION_AGENTS.filter(
-    (agent) => !FEATURED_AGENT_IDS.includes(agent.id)
-  ),
-]
-
 /**
  * What Atomic Chat knows about an agent: set up through it (the guide or All
- * integrations), installed on this computer, or neither. Nothing tells it
- * whether a tool is talking to the server right now, so it never says
- * "connected".
+ * integrations), installed on this computer, or neither. Launching a window
+ * does not establish a live connection; keep reopening available at all times.
  */
 export function useAgentStatus(): (agent: IntegrationAgent) => {
   label: string
@@ -53,12 +35,13 @@ export function useAgentStatus(): (agent: IntegrationAgent) => {
   const running = useAppState((state) => state.serverStatus === 'running')
 
   return (agent) => {
-    if (configured.some((entry) => entry.id === agent.id))
+    if (configured.some((entry) => entry.id === agent.id)) {
       return {
         label: t('api:agents.configured'),
         tone: running ? 'ready' : 'idle',
         configured: true,
       }
+    }
     return {
       label: installed[agent.id]
         ? t('api:agents.installed')
@@ -71,14 +54,18 @@ export function useAgentStatus(): (agent: IntegrationAgent) => {
 
 /**
  * Overview's "Agents & tools": every integration as a card with its one next
- * step — the setup guide for the agents it configures, All integrations for
- * the editors set up by hand — or, once set up, its state on the way to its
- * connection details; then the way in for the user's own application.
+ * step. An agent Atomic Chat configures goes Install (when it is missing) →
+ * Configure (the setup guide, which opens the agent once done) → Connect
+ * (opens it again, starting the server first). Editors set up by hand go to All integrations. Then the
+ * way in for the user's own application.
  */
 export function ServerAgents() {
   const { t } = useTranslation()
   const openGuide = useServerSetup((state) => state.openGuide)
   const statusOf = useAgentStatus()
+  const { install, connect } = useAgentActions()
+  const installed = useLaunchStore((state) => state.installed)
+  const phase = useLaunchStore((state) => state.phase)
   const [query, setQuery] = useState('')
   // First-run setup's "Pick your tool" points at the cards.
   const picking = useGuideHint('agents', 0)
@@ -88,7 +75,7 @@ export function ServerAgents() {
   }, [])
 
   const needle = query.trim().toLowerCase()
-  const visible = OVERVIEW_AGENTS.filter((agent) =>
+  const visible = SERVER_AGENTS.filter((agent) =>
     `${agent.name} ${agent.description}`.toLowerCase().includes(needle)
   )
 
@@ -137,21 +124,44 @@ export function ServerAgents() {
                 <h3>{agent.name}</h3>
               </div>
               <p>{agent.description}</p>
-              {status.configured ? (
-                // Set up: the state sits on the way to its connection details.
+              {!isGuidedAgent(agent) ? (
+                // Set up by hand on All integrations, where no hint follows.
                 <Link
-                  to={route.api.connections}
+                  to={route.launch.index}
+                  hash={agent.id}
                   className="sp-button"
-                  title={t('api:agents.connectionDetails')}
                   onClick={() => pickAgentHint('end')}
                 >
-                  <span className="sp-status">
-                    <StatusDot tone={status.tone} />
-                    {status.label}
-                  </span>
+                  {t('api:agents.setUp')}
                   <ArrowRight size={14} />
                 </Link>
-              ) : isGuidedAgent(agent) ? (
+              ) : phase[agent.id] ? (
+                // Installing, or All integrations' Run / this Connect.
+                <button type="button" className="sp-button" disabled>
+                  <span className="sp-status">
+                    <LoaderCircle
+                      size={14}
+                      className="animate-spin motion-reduce:animate-none"
+                      aria-hidden="true"
+                    />
+                    {phase[agent.id] === 'installing'
+                      ? t('api:agents.installing')
+                      : t('api:agents.connecting')}
+                  </span>
+                </button>
+              ) : agent.installable && installed[agent.id] === false ? (
+                <button
+                  type="button"
+                  className="sp-button"
+                  aria-label={t('api:agents.installAgent', {
+                    name: agent.name,
+                  })}
+                  onClick={() => void install(agent)}
+                >
+                  {t('api:agents.install')}
+                  <ArrowRight size={14} />
+                </button>
+              ) : !status.configured ? (
                 <button
                   type="button"
                   className="sp-button"
@@ -167,16 +177,20 @@ export function ServerAgents() {
                   <ArrowRight size={14} />
                 </button>
               ) : (
-                // Set up by hand on All integrations, where no hint follows.
-                <Link
-                  to={route.launch.index}
-                  hash={agent.id}
+                <button
+                  type="button"
                   className="sp-button"
-                  onClick={() => pickAgentHint('end')}
+                  aria-label={t('api:agents.connectAgent', {
+                    name: agent.name,
+                  })}
+                  onClick={() => {
+                    pickAgentHint('end')
+                    void connect(agent)
+                  }}
                 >
-                  {t('api:agents.setUp')}
+                  {t('api:agents.connect')}
                   <ArrowRight size={14} />
-                </Link>
+                </button>
               )}
             </article>
           )

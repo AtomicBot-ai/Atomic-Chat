@@ -384,6 +384,18 @@ describe('resolveReplyModel', () => {
     })
   })
 
+  it('starts a GenieX model when no other default engine holds one, before the fork', () => {
+    // change add-geniex-runtime: a Snapdragon X laptop may hold only GenieX models.
+    const options = collectReplyModels([
+      provider('llamacpp', [model('LFM2.5-1.2B-Q4_K_M')]),
+      provider('geniex', [model('qwen3-4b')]),
+    ])
+
+    expect(resolveReplyModel(options)).toMatchObject({
+      option: { providerName: 'geniex', modelId: 'qwen3-4b' },
+    })
+  })
+
   it('uses the fork when it is the only engine holding a model', () => {
     const options = collectReplyModels([
       provider('llamacpp', [

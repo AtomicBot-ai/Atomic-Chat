@@ -4,26 +4,15 @@
 
 /* The media step (`steps/MediaStep.tsx`), ported from the prototype's
  * `.ob-media-*` and `.ob-caution` rules. The cards sit on the shell's surface
- * colours; only the art tiles and the caution have colours of their own,
- * defined here for both themes the way `onboarding.css` defines the rest: the
- * dark values are the prototype's, the light ones the same hues on a light
- * ground. */
+ * colours; only the caution has a colour of its own, defined here for both
+ * themes the way `onboarding.css` defines the rest: the dark value is the
+ * prototype's, the light one the same hue on a light ground. The preview
+ * (`steps/MediaPreview.tsx`) is a dark studio shot in either theme, so what
+ * sits on it keeps the prototype's light-on-dark colours. */
 .ob-shell {
-  --ob-media-image: #dcefe8;
-  --ob-media-image-glow: #9fd3c6;
-  --ob-media-image-text: #1d5e54;
-  --ob-media-video: #e8e7f3;
-  --ob-media-video-glow: #bfbde0;
-  --ob-media-video-text: #3e3c66;
   --ob-caution: #8a6420;
 }
 .dark .ob-shell {
-  --ob-media-image: #1e3429;
-  --ob-media-image-glow: #56876c;
-  --ob-media-image-text: #d0e9d8;
-  --ob-media-video: #292936;
-  --ob-media-video-glow: #686784;
-  --ob-media-video-text: #d5d5ea;
   --ob-caution: #cab68b;
 }
 
@@ -46,36 +35,56 @@
   .ob-media-grid > article.is-queued {
     border-color: var(--ob-selected-line);
   }
+  .ob-media-scene {
+    position: relative;
+    isolation: isolate;
+    height: 240px;
+    margin: 0 -20px 22px;
+    overflow: hidden;
+    border-bottom: 1px solid var(--ob-surface-line);
+    background: #172022;
+  }
   .ob-media-art {
-    display: flex;
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .ob-media-kind {
+    position: absolute;
+    top: 16px;
+    right: 18px;
+    z-index: 2;
+    display: inline-flex;
     align-items: center;
-    justify-content: space-between;
-    height: 126px;
-    margin: 0 -20px 23px;
-    padding: 24px;
-    background:
-      radial-gradient(
-        ellipse at 10% 20%,
-        var(--ob-media-image-glow),
-        transparent 80%
-      ),
-      var(--ob-media-image);
-    color: var(--ob-media-image-text);
+    gap: 7px;
+    color: #e0e5eb;
+    font-size: calc(var(--font-size-base) * 0.75);
   }
-  .ob-media-art.is-video {
-    background:
-      radial-gradient(
-        ellipse at 90% 10%,
-        var(--ob-media-video-glow),
-        transparent 80%
-      ),
-      var(--ob-media-video);
-    color: var(--ob-media-video-text);
+  /* Over the clip, like the prototype's: a frosted dark disc in both themes. */
+  .ob-media-grid .ob-animation-toggle {
+    position: absolute;
+    right: 14px;
+    bottom: 14px;
+    z-index: 3;
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    margin: 0;
+    padding: 0;
+    border: 1px solid #ffffff30;
+    border-radius: 50%;
+    background: #151b24bb;
+    color: #edf3f5;
+    backdrop-filter: blur(12px);
   }
-  .ob-media-art span {
-    font-size: calc(var(--font-size-base) * 0.625);
-    letter-spacing: 2px;
-    text-transform: uppercase;
+  .ob-media-grid .ob-animation-toggle:hover {
+    background: #3b4556;
+  }
+  .ob-media-grid .ob-animation-toggle:focus-visible {
+    outline: 2px solid #bee8df;
+    outline-offset: 3px;
   }
   .ob-media-title {
     display: flex;
@@ -142,7 +151,7 @@
   .ob-media-grid {
     grid-template-columns: 1fr;
   }
-  .ob-media-art {
-    height: 100px;
+  .ob-media-scene {
+    height: 230px;
   }
 }

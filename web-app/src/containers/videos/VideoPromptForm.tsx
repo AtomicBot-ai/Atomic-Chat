@@ -32,6 +32,7 @@ import { ImageGenerateButton } from '@/containers/images/ImageGenerateButton'
 import { ImageModelPicker } from '@/containers/images/ImageModelPicker'
 import { ImageParamSlider } from '@/containers/images/ImageParamSlider'
 import { AdvancedSelect } from '@/containers/images/AdvancedSelect'
+import { MediaPromptCard } from '@/containers/images/MediaStudio'
 import { ImageSeedField } from '@/containers/images/ImageSeedField'
 import { ImageSourceDropzone } from '@/containers/images/ImageSourceDropzone'
 import {
@@ -313,10 +314,7 @@ export const VideoPromptForm = memo(function VideoPromptForm({
           </ImageField>
         )}
 
-        <div
-          className="space-y-2.5 rounded-2xl border bg-secondary/20 p-2.5"
-          data-testid="video-prompt-card"
-        >
+        <MediaPromptCard testId="video-prompt-card">
           <ImageModelPicker
             open={modelsOpen}
             onOpenChange={setModelsOpen}
@@ -345,7 +343,7 @@ export const VideoPromptForm = memo(function VideoPromptForm({
           <VideoEstimateLine estimate={generation.estimate} />
           {/* Portalled out of the form: its buttons never submit it. */}
           <ConfirmVideoExceedsMemory {...generation.confirmation} />
-        </div>
+        </MediaPromptCard>
 
         {showNegative && (
           <Collapsible

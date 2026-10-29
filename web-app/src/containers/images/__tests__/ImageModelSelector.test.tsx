@@ -507,6 +507,30 @@ describe('ImageModelSelector', () => {
     expect(useImageSetting.getState().selectedArtifactId).toBe(Q4_ID)
   })
 
+  it('offers a retry on the engine row when the build list could not be loaded', async () => {
+    useImageGenerationStore.setState({
+      status: makeStatus({ install: { state: 'not-installed' } }),
+      hostBackendId: null,
+      hostBackendReason: 'sd.cpp manifest from https://x: fetch failed',
+      hostBackendCheckFailed: 'manifest',
+      hostBackendResolved: true,
+    })
+    const retry = vi
+      .spyOn(useImageGenerationStore.getState(), 'refreshHostBackend')
+      .mockResolvedValue()
+    render(<ImageModelSelector variant="page" />)
+
+    const row = screen.getByTestId('image-models-engine-missing')
+    expect(row).toHaveTextContent('images:setup.engine.offline')
+    expect(
+      within(row).getByTitle(
+        'images:setup.engine.reason.unreachable — sd.cpp manifest from https://x: fetch failed'
+      )
+    ).toBeInTheDocument()
+    await userEvent.click(screen.getByTestId('image-models-engine-retry'))
+    expect(retry).toHaveBeenCalledWith({ force: true })
+  })
+
   it('removes an installed quant after confirmation', async () => {
     fake.listModelFiles.mockResolvedValue([])
     render(<ImageModelSelector variant="page" />)

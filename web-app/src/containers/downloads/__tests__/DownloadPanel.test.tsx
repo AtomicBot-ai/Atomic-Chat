@@ -1,5 +1,22 @@
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
+
+import { AUTO_COLLAPSE_MS } from '@/containers/corner/useAutoCollapse'
 
 import { DownloadPanel } from '../DownloadPanel'
 import type { DownloadRowProps } from '../DownloadProgressRow'
@@ -100,38 +117,98 @@ describe('DownloadPanel width', () => {
     expect(screen.getByText('Qwen3-4B-GGUF')).toBeInTheDocument()
   })
 
-  it('collapses to a badge that still counts the downloads', () => {
+  it('collapses to a pill that still counts the downloads and shows how far they are', () => {
     render(<DownloadPanel items={three} />)
 
     fireEvent.click(screen.getByLabelText('common:downloadPanel.collapse'))
 
     expect(screen.queryByRole('region')).not.toBeInTheDocument()
-    const badge = screen.getByLabelText('common:downloadPanel.expand')
-    expect(badge).toHaveTextContent('3')
-    expect(badge.querySelector('span')).toHaveClass('bg-[var(--dl-progress)]')
+    const pill = screen.getByLabelText('common:downloadPanel.expand')
+    // (12.4 + 0.05 + 0.05) GB of (12.4 + 1 + 1) GB.
+    expect(within(pill).getByText('87%')).toBeInTheDocument()
+    expect(within(pill).getByText('3')).toHaveClass('bg-[var(--dl-progress)]')
+    expect(pill.querySelector('[data-slot="mini-progress"]')).not.toBeNull()
 
-    fireEvent.click(badge)
+    fireEvent.click(pill)
     expect(screen.getByRole('region')).toHaveClass(PANEL_WIDTH_CLASS)
   })
 
-  it('keeps an intentional collapse for the active run and expands the next run', () => {
+  it('opens again for a download that joins, and starts the next run in full', () => {
     const textDownload = row('text-model-q4_k_m')
     const imageDownload = row('diffusion-model-flux:q4')
     const { rerender } = render(<DownloadPanel items={[textDownload]} />)
 
     fireEvent.click(screen.getByLabelText('common:downloadPanel.collapse'))
-    rerender(<DownloadPanel items={[textDownload, imageDownload]} />)
+    expect(screen.queryByRole('region')).not.toBeInTheDocument()
 
-    expect(
-      screen.getByLabelText('common:downloadPanel.expand')
-    ).toHaveTextContent('2')
+    // Nothing starts unseen: the new download opens the panel.
+    rerender(<DownloadPanel items={[textDownload, imageDownload]} />)
+    expect(screen.getByRole('region')).toHaveClass(PANEL_WIDTH_CLASS)
+
+    // One finishing does not.
+    fireEvent.click(screen.getByLabelText('common:downloadPanel.collapse'))
+    rerender(<DownloadPanel items={[imageDownload]} />)
     expect(screen.queryByRole('region')).not.toBeInTheDocument()
 
     rerender(<DownloadPanel items={[]} />)
-    rerender(<DownloadPanel items={[imageDownload]} />)
+    rerender(<DownloadPanel items={[textDownload]} />)
 
     expect(screen.getByRole('region')).toHaveClass(PANEL_WIDTH_CLASS)
-    expect(screen.getByTitle('diffusion-model-flux:q4')).toBeInTheDocument()
+    expect(screen.getByTitle('text-model-q4_k_m')).toBeInTheDocument()
+  })
+})
+
+/**
+ * 2026-10-27 feedback: a download's card covered the corner for as long as it
+ * ran. It now shows in full when it starts and folds three seconds later.
+ */
+describe('DownloadPanel folding', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('folds into the pill three seconds after a download starts', () => {
+    render(<DownloadPanel items={[row('text-model-q4_k_m')]} />)
+
+    act(() => vi.advanceTimersByTime(AUTO_COLLAPSE_MS - 1))
+    expect(screen.getByRole('region')).toBeInTheDocument()
+
+    act(() => vi.advanceTimersByTime(1))
+    expect(screen.queryByRole('region')).not.toBeInTheDocument()
+    expect(
+      screen.getByLabelText('common:downloadPanel.expand')
+    ).toHaveTextContent('5%')
+  })
+
+  it('stays open while the pointer is over it, and folds once it leaves', () => {
+    render(<DownloadPanel items={[row('text-model-q4_k_m')]} />)
+    const panel = screen.getByRole('region')
+
+    fireEvent.pointerEnter(panel)
+    act(() => vi.advanceTimersByTime(AUTO_COLLAPSE_MS * 3))
+    expect(screen.getByRole('region')).toBeInTheDocument()
+
+    fireEvent.pointerLeave(panel)
+    act(() => vi.advanceTimersByTime(AUTO_COLLAPSE_MS))
+    expect(screen.queryByRole('region')).not.toBeInTheDocument()
+  })
+
+  it('keeps a panel opened by hand until the pointer leaves it', () => {
+    render(<DownloadPanel items={[row('text-model-q4_k_m')]} />)
+    act(() => vi.advanceTimersByTime(AUTO_COLLAPSE_MS))
+
+    fireEvent.click(screen.getByLabelText('common:downloadPanel.expand'))
+    act(() => vi.advanceTimersByTime(AUTO_COLLAPSE_MS * 3))
+    const panel = screen.getByRole('region')
+
+    fireEvent.pointerEnter(panel)
+    fireEvent.pointerLeave(panel)
+    act(() => vi.advanceTimersByTime(AUTO_COLLAPSE_MS))
+    expect(screen.queryByRole('region')).not.toBeInTheDocument()
   })
 })
 
@@ -142,6 +219,10 @@ describe('DownloadPanel width', () => {
  * had just left the page.
  */
 describe('DownloadPanel placement', () => {
+  /** The corner column the panel renders into; it carries the placement. */
+  const corner = () =>
+    screen.getByRole('region').closest<HTMLElement>('[data-corner-stack]')!
+
   /** A composer as wide as the content column, spanning the panel's corner. */
   function composer(top: number): HTMLElement {
     const element = document.createElement('div')
@@ -172,7 +253,7 @@ describe('DownloadPanel placement', () => {
     const home = composer(200)
     document.body.appendChild(home)
     render(<DownloadPanel items={[row('text-model-q4_k_m')]} />)
-    expect(screen.getByRole('region').style.bottom).toBe('16px')
+    expect(corner().style.bottom).toBe('16px')
 
     // The first message opens the thread: its composer is pinned to the bottom.
     home.remove()
@@ -180,7 +261,7 @@ describe('DownloadPanel placement', () => {
     document.body.appendChild(composer(threadTop))
 
     await waitFor(() =>
-      expect(screen.getByRole('region').style.bottom).toBe(
+      expect(corner().style.bottom).toBe(
         `${window.innerHeight - threadTop + 12}px`
       )
     )

@@ -1,6 +1,4 @@
-import { useNavigate } from '@tanstack/react-router'
-
-import { route } from '@/constants/routes'
+import { CORNER_ORDER, CornerSlot } from '@/containers/corner/cornerStack'
 import { useOnboardingModelReminder } from '@/hooks/useOnboardingModelReminder'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useOnboardingStore } from '@/stores/onboarding-store'
@@ -17,14 +15,13 @@ import './onboarding.css'
 
 /**
  * The run's downloads after a handoff to the chat: the setup screen's strip,
- * floating bottom-right over the app, with the way back to setup and a way to
- * put it away. `OnboardingRuntime` decides when it shows; "Back to setup"
- * only navigates, the setup route re-opens the run itself.
+ * floating bottom-right over the app, with a way to dismiss it.
+ * `OnboardingRuntime` decides when it shows.
  *
- * With nothing left to download it only says the model is ready, and
- * `yieldsCorner` gives the corner to an update banner or the model reminder
- * there: it comes back once they are gone, until it is dismissed. Live
- * progress never gives way.
+ * With nothing left to download it only says the model is ready — or, with
+ * no model ready either, shows only its links — and `yieldsCorner` gives the
+ * corner to an update banner or the model reminder there: it comes back once
+ * they are gone, until it is dismissed. Live progress never gives way.
  */
 export function OnboardingHandoffPanel({
   yieldsCorner = false,
@@ -32,7 +29,6 @@ export function OnboardingHandoffPanel({
   yieldsCorner?: boolean
 }) {
   const { t } = useTranslation()
-  const navigate = useNavigate()
   const updateBanner = useUpdateBannerSlots(
     (state) => activeUpdateBannerSlot(state.claimed) !== null
   )
@@ -43,28 +39,24 @@ export function OnboardingHandoffPanel({
   }
 
   return (
-    <section
-      className="ob-handoff"
-      aria-label={t('onboarding-handoff:panel.label')}
-      data-testid="onboarding-handoff"
-    >
-      <DownloadStrip />
-      <div className="ob-handoff-links">
-        <button
-          type="button"
-          className="ob-text"
-          onClick={() => void navigate({ to: route.onboarding })}
-        >
-          {t('onboarding-handoff:panel.backToSetup')}
-        </button>
-        <button
-          type="button"
-          className="ob-text"
-          onClick={() => useOnboardingStore.getState().dismissPanel()}
-        >
-          {t('onboarding-handoff:panel.dismiss')}
-        </button>
-      </div>
-    </section>
+    <CornerSlot order={CORNER_ORDER.handoff}>
+      <section
+        className="ob-handoff"
+        aria-label={t('onboarding-handoff:panel.label')}
+        data-testid="onboarding-handoff"
+      >
+        <DownloadStrip />
+        <div className="ob-handoff-links">
+          <button
+            type="button"
+            className="ob-text"
+            data-testid="onboarding-handoff-dismiss"
+            onClick={() => useOnboardingStore.getState().dismissPanel()}
+          >
+            {t('onboarding-handoff:panel.dismiss')}
+          </button>
+        </div>
+      </section>
+    </CornerSlot>
   )
 }

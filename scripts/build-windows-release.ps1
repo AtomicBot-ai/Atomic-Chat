@@ -282,16 +282,16 @@ Write-Step 'Copying assets for Tauri'
 yarn copy:assets:tauri
 if ($LASTEXITCODE -ne 0) { Write-Host 'copy:assets:tauri failed' -ForegroundColor Red; exit 1 }
 
-# ── Install pinned core as jan-cli ────────────────────────────
-Write-Step 'Build jan-cli (release)'
+# ── Download the pinned core ──────────────────────────────────
+# The installer ships atomic-chat-core.exe itself; Install CLI copies it onto
+# the PATH as atomic-chat-cli.exe, so no separate CLI binary is built.
+Write-Step 'Download the pinned atomic-chat-core'
 if (-not (Test-Path 'src-tauri/resources/bin')) {
     New-Item -ItemType Directory -Path 'src-tauri/resources/bin' -Force | Out-Null
 }
 
 node scripts/download-core.mjs
 if ($LASTEXITCODE -ne 0) { Write-Host 'download-core failed' -ForegroundColor Red; exit 1 }
-Copy-Item -Path 'src-tauri/resources/bin/atomic-chat-core.exe' -Destination 'src-tauri/resources/bin/jan-cli.exe' -Force
-Write-Host '  CLI built: src-tauri/resources/bin/jan-cli.exe'
 
 # ── Build Tauri app (NSIS + MSI, no code signing) ─────────────
 Write-Step 'Building Tauri app (release, unsigned)'

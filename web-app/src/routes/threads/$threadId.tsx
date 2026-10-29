@@ -243,10 +243,12 @@ const agentAttachmentsFromMessage = (
       mediaType?: string
       size?: number
       fileType?: string
+      kind?: string
     }
     return [
       {
-        type: 'document' as const,
+        type:
+          file.kind === 'video' ? ('video' as const) : ('document' as const),
         name: file.name,
         path: file.path,
         mimeType: file.mediaType,
@@ -970,7 +972,8 @@ function ThreadDetail() {
       const documentAttachments =
         documentsFromPayload ??
         getAttachments(attachmentsKey).filter(
-          (attachment) => attachment.type === 'document'
+          (attachment) =>
+            attachment.type === 'document' || attachment.type === 'video'
         )
       if (files?.some((file) => file.mediaType.startsWith('audio/'))) {
         toast.error(t('chat:agentErrors.audioUnsupported'))
@@ -1281,10 +1284,13 @@ function ThreadDetail() {
       // (home → new thread flow). In that case the store has already been
       // cleared synchronously on send to avoid the chip lingering in the
       // input. For in-thread sends no payload is provided and we read the
-      // attachments from the store as before.
+      // attachments from the store as before. Video rides with documents:
+      // both are local files referenced by path.
       const documentAttachments =
         documentsFromPayload ??
-        getAttachments(attachmentsKey).filter((a) => a.type === 'document')
+        getAttachments(attachmentsKey).filter(
+          (a) => a.type === 'document' || a.type === 'video'
+        )
       const executionRoute = resolveThreadExecutionRoute(threadId, {
         hasAudioAttachment: files?.some((file) =>
           file.mediaType?.startsWith('audio/')

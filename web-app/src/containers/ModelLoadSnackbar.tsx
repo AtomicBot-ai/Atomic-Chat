@@ -95,7 +95,12 @@ export function ModelLoadSnackbar() {
           ? null
           : {
               label: i18n.t('common:modelLoad.cancel'),
-              onClick: () => void cancelModelLoad(serviceHub),
+              onClick: (event) => {
+                // Sonner dismisses actions by default. Keep feedback until
+                // cancellation has actually settled and the load ends.
+                event.preventDefault()
+                void cancelModelLoad(serviceHub)
+              },
             },
       })
       shownRef.current = {

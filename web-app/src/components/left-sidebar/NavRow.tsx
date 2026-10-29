@@ -44,7 +44,7 @@ export function NavRow({
 /** A small heading between groups of rows ("Discover", "Workspace"). */
 export function NavGroupLabel({ children }: { children: ReactNode }) {
   return (
-    <div className="px-4 pb-2 pt-5 text-xs font-medium text-muted-foreground">
+    <div className="px-4 pb-1.5 pt-3.5 text-xs font-medium text-muted-foreground">
       {children}
     </div>
   )

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { useInterfaceSettings } from '../useInterfaceSettings'
+import { migrateFontSize, useInterfaceSettings } from '../useInterfaceSettings'
 
 // Mock constants
 vi.mock('@/constants/localStorage', () => ({
@@ -11,7 +11,7 @@ vi.mock('@/constants/localStorage', () => ({
 
 vi.mock('../useTheme', () => ({
   useTheme: {
-    getState: vi.fn(() => ({ isDark: false })),
+    getState: vi.fn(() => ({ isDark: false, setTheme: vi.fn(async () => {}) })),
     setState: vi.fn(),
     subscribe: vi.fn(),
     destroy: vi.fn(),
@@ -43,7 +43,7 @@ describe('useInterfaceSettings', () => {
   it('should initialize with default values', () => {
     const { result } = renderHook(() => useInterfaceSettings())
 
-    expect(result.current.fontSize).toBe('16px')
+    expect(result.current.fontSize).toBe('13px')
     expect(result.current.accentColor).toBe('primary')
     expect(typeof result.current.setFontSize).toBe('function')
     expect(typeof result.current.setAccentColor).toBe('function')
@@ -54,10 +54,10 @@ describe('useInterfaceSettings', () => {
     const { result } = renderHook(() => useInterfaceSettings())
 
     act(() => {
-      result.current.setFontSize('18px')
+      result.current.setFontSize('16px')
     })
 
-    expect(result.current.fontSize).toBe('18px')
+    expect(result.current.fontSize).toBe('16px')
   })
 
   describe('accent color', () => {
@@ -71,12 +71,12 @@ describe('useInterfaceSettings', () => {
       expect(result.current.accentColor).toBe('primary')
     })
 
-    it('should not update for invalid accent color', () => {
+    it('should not update for invalid accent color', async () => {
       const { result } = renderHook(() => useInterfaceSettings())
 
       // First reset to default state
-      act(() => {
-        result.current.resetInterface()
+      await act(async () => {
+        await result.current.resetInterface()
       })
 
       const currentColor = result.current.accentColor
@@ -90,21 +90,21 @@ describe('useInterfaceSettings', () => {
     })
   })
 
-  it('should reset interface settings to defaults', () => {
+  it('should reset interface settings to defaults', async () => {
     const { result } = renderHook(() => useInterfaceSettings())
 
     // Change some values first
     act(() => {
-      result.current.setFontSize('18px')
+      result.current.setFontSize('20px')
       result.current.setAccentColor('primary')
     })
 
     // Reset
-    act(() => {
-      result.current.resetInterface()
+    await act(async () => {
+      await result.current.resetInterface()
     })
 
-    expect(result.current.fontSize).toBe('16px')
+    expect(result.current.fontSize).toBe('13px')
     expect(result.current.accentColor).toBe('primary')
   })
 
@@ -119,16 +119,16 @@ describe('useInterfaceSettings', () => {
       })
     })
 
-    it('should reset CSS variables when resetInterface is called', () => {
+    it('should reset CSS variables when resetInterface is called', async () => {
       const { result } = renderHook(() => useInterfaceSettings())
 
-      act(() => {
-        result.current.resetInterface()
+      await act(async () => {
+        await result.current.resetInterface()
       })
 
       expect(document.documentElement.style.setProperty).toHaveBeenCalledWith(
         '--font-size-base',
-        '16px'
+        '13px'
       )
     })
   })
@@ -139,19 +139,35 @@ describe('useInterfaceSettings', () => {
 
       // These should work
       act(() => {
-        result.current.setFontSize('14px')
+        result.current.setFontSize('12px')
       })
-      expect(result.current.fontSize).toBe('14px')
+      expect(result.current.fontSize).toBe('12px')
+
+      act(() => {
+        result.current.setFontSize('13px')
+      })
+      expect(result.current.fontSize).toBe('13px')
 
       act(() => {
         result.current.setFontSize('16px')
       })
       expect(result.current.fontSize).toBe('16px')
+    })
+  })
 
-      act(() => {
-        result.current.setFontSize('18px')
-      })
-      expect(result.current.fontSize).toBe('18px')
+  describe('migrateFontSize', () => {
+    it('moves a size saved before version 1 to the option with its label', () => {
+      expect(migrateFontSize('14px', 0)).toBe('12px')
+      expect(migrateFontSize('15px', 0)).toBe('13px')
+      expect(migrateFontSize('16px', 0)).toBe('13px')
+      expect(migrateFontSize('18px', 0)).toBe('16px')
+      expect(migrateFontSize('20px', 0)).toBe('20px')
+    })
+
+    it('keeps a current size and falls back to Medium for anything else', () => {
+      expect(migrateFontSize('16px', 1)).toBe('16px')
+      expect(migrateFontSize('18px', 1)).toBe('13px')
+      expect(migrateFontSize(undefined, 0)).toBe('13px')
     })
   })
 })

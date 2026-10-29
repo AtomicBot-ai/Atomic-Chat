@@ -25,6 +25,7 @@ import {
   retryDecisionModel,
 } from '@/lib/decision/models'
 import { isDecisionHostSupported } from '@/lib/decision/platform'
+import { ExtensionManager } from '@/lib/extension'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import {
@@ -58,6 +59,23 @@ function gb(bytes: number): string {
 }
 
 /**
+ * The first build of an engine the app ships without (TurboQuant), when none
+ * is on disk: the update check and the recheck compare against a configured
+ * build that is not there, so neither offers it. Resolves the build the
+ * extension installed, or `null` when one was already installed or the
+ * engine has no such step.
+ */
+async function installFirstEngineBuild(
+  extensionName: string | undefined
+): Promise<string | null> {
+  if (!extensionName) return null
+  const extension = ExtensionManager.getInstance().getByName(extensionName) as
+    | { installSelectedBackend?: () => Promise<string | null> }
+    | undefined
+  return (await extension?.installSelectedBackend?.()) ?? null
+}
+
+/**
  * Brings the engine to a build that runs decision models: the newest release
  * when one is out, otherwise the build that fits this machine when none is
  * installed. Mounted next to `DECISION_ENGINE_UNSUPPORTED` (`reason`
@@ -85,6 +103,7 @@ function InstallEngineButton({
   const install = useCallback(async () => {
     setInstalling(true)
     try {
+      if (await installFirstEngineBuild(engine.updater.extensionName)) return
       let update: Awaited<ReturnType<typeof checkForEngineUpdate>>
       try {
         update = await checkForEngineUpdate()
@@ -126,6 +145,7 @@ function InstallEngineButton({
     recheckOptimalBackend,
     downloadRecommendedBackend,
     engine.name,
+    engine.updater.extensionName,
     reason,
     t,
   ])

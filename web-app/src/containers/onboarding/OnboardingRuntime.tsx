@@ -3,6 +3,7 @@ import { DownloadEvent, events, type DownloadState } from '@janhq/core'
 
 import { localStorageKey } from '@/constants/localStorage'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { useEmailReminderSync } from '@/hooks/useEmailReminderSync'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
@@ -60,6 +61,7 @@ const dropCancelledChatJob = (job: OnboardingJob) =>
  * open, the setup screen included.
  */
 export function OnboardingRuntime() {
+  useEmailReminderSync()
   const serviceHub = useServiceHub()
   const { t } = useTranslation()
   const phase = useOnboardingStore((state) => state.phase)
@@ -276,9 +278,10 @@ export function OnboardingRuntime() {
 
   // The panel follows the downloads after a handoff to the chat, and says the
   // model is ready once it is — also when it was before the handoff, as the
-  // prototype does — until it is dismissed. The ready note is this session's
-  // only if it saw the setup screen or a download: a relaunch with nothing
-  // left to follow ends the run instead.
+  // prototype does — or, with neither, offers only the way back to setup,
+  // until it is dismissed. That is this session's only if it saw the setup
+  // screen or a download: a relaunch with nothing left to follow ends the
+  // run instead.
   const [seenInApp, setSeenInApp] = useState(phase === 'active')
   const panel = handoffPanelContent(
     { phase, destination, panelDismissed, jobs },
@@ -305,6 +308,6 @@ export function OnboardingRuntime() {
   }, [phase, settled, guide, showPanel, choice, ready])
 
   return panel ? (
-    <OnboardingHandoffPanel yieldsCorner={panel === 'ready'} />
+    <OnboardingHandoffPanel yieldsCorner={panel !== 'downloads'} />
   ) : null
 }

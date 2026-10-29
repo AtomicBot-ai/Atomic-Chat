@@ -5,6 +5,12 @@
     "image": "Images",
     "video": "Video"
   },
+  "preview": {
+    "imageAlt": "A pearl robot with a mint-green face in a dark studio",
+    "videoAlt": "A pearl robot waves and smiles",
+    "play": "Play video",
+    "pause": "Pause video"
+  },
   "purpose": {
     "image": "Create images from a prompt",
     "video": "Create short videos · high memory use"

@@ -53,6 +53,19 @@
     "engine": {
       "checking": "Checking…",
       "unsupported": "There is no media engine build for this computer yet.",
+      "offline": "Couldn't load the list of engine builds.",
+      "checkFailed": "Couldn't check which engine build fits this computer.",
+      "retrying": "Trying again… {{attempt}} of {{total}}",
+      "attempts": "Tried {{count}} times.",
+      "reason": {
+        "server": "the server",
+        "timeout": "No answer from {{host}} in time. The connection is slow, or the site is blocked on this network.",
+        "timeoutSeconds": "No answer from {{host}} within {{seconds}} seconds. The connection is slow, or the site is blocked on this network.",
+        "http": "Error {{status}} from {{host}}. Try again in a few minutes.",
+        "certificate": "The secure connection to {{host}} failed: its certificate was not accepted. An antivirus, a corporate proxy or a wrong system clock usually causes this.",
+        "unreachable": "Could not connect to {{host}}. There is no internet connection, or a VPN, firewall, proxy or your provider blocks the site.",
+        "invalid": "The answer from {{host}} is not the list of builds. A Wi-Fi sign-in page or a proxy may be answering instead of the site."
+      },
       "failed": "The engine could not be installed.",
       "progress": "{{current}} / {{total}} GB",
       "backend": "{{backend}} · {{tag}}",
@@ -330,6 +343,13 @@
     "confirm": "Delete",
     "failed": "The images could not be deleted"
   },
+  "confirmExceeds": {
+    "title": "This image likely won't fit in memory",
+    "needs": "Needs about {{required}} GB of memory; about {{available}} GB is free for it.",
+    "body": "The computer will swap: it slows down, the image can take a very long time, and the media engine may stop before it finishes. You can stop it at any time.",
+    "advice": "A smaller size or a smaller quant fits better.",
+    "confirm": "Generate anyway"
+  },
   "errors": {
     "actions": {
       "install": "Install the engine",
@@ -410,6 +430,10 @@
     "JOB_NOT_FOUND": {
       "title": "The job disappeared",
       "body": "The renderer no longer knows this job. It may have restarted."
+    },
+    "ENGINE_STOPPED": {
+      "title": "The media engine stopped",
+      "body": "It stopped before this finished, most likely because the computer ran out of memory. Try again; a smaller model or a smaller size is less likely to run out."
     },
     "QUEUE_FULL": {
       "title": "Too many jobs queued",

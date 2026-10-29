@@ -18,11 +18,12 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { modelStopKey, useAppState } from '@/hooks/useAppState'
 import { usePrompt } from '@/hooks/usePrompt'
-import { useToolApproval } from '@/hooks/useToolApproval'
 import { useAgentMode } from '@/hooks/useAgentMode'
 import { useAgentRun } from '@/hooks/useAgentRun'
 import { useThreads } from '@/hooks/useThreads'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { useVoiceInput } from '@/hooks/useVoiceInput'
+import { useThreadManagementStore } from '@/hooks/useThreadManagement'
 import { useDeferredFirstSend } from '@/stores/deferred-first-send-store'
 import { seedServiceHub } from '@/test/service-hub'
 import type { ServiceHub } from '@/services'
@@ -231,7 +232,6 @@ vi.mock('@/containers/AgentApprovalModeSelect', () => ({
   // covers how the menu draws them.
   AgentApprovalModeSelect: ({
     toggles = [],
-    manualOverride,
   }: {
     toggles?: Array<{
       id: string
@@ -239,31 +239,18 @@ vi.mock('@/containers/AgentApprovalModeSelect', () => ({
       checked: boolean
       onCheckedChange: (checked: boolean) => void
     }>
-    manualOverride?: {
-      notice: string
-      actionLabel: string
-      onAction: () => void
-    }
   }) => (
-    <>
-      <span data-test-id="approval-mode-select">
-        {toggles.map((toggle) => (
-          <button
-            key={toggle.id}
-            aria-pressed={toggle.checked}
-            onClick={() => toggle.onCheckedChange(!toggle.checked)}
-          >
-            {toggle.label}
-          </button>
-        ))}
-      </span>
-      {manualOverride && (
-        <span data-test-id="approval-manual-override">
-          {manualOverride.notice}
-          <a onClick={manualOverride.onAction}>{manualOverride.actionLabel}</a>
-        </span>
-      )}
-    </>
+    <span data-test-id="approval-mode-select">
+      {toggles.map((toggle) => (
+        <button
+          key={toggle.id}
+          aria-pressed={toggle.checked}
+          onClick={() => toggle.onCheckedChange(!toggle.checked)}
+        >
+          {toggle.label}
+        </button>
+      ))}
+    </span>
   ),
 }))
 
@@ -356,6 +343,68 @@ describe('ChatInput', () => {
       document.querySelector('[data-test-id="send-message-button"]')
     ).not.toBeInTheDocument()
     unmount()
+  })
+
+  describe('while the voice model is starting', () => {
+    const KEY = 'voice-starting-thread'
+
+    /** Owns the microphone for this composer; `cancel` spies on the real one. */
+    function startVoiceHere() {
+      const previousThreadId = useThreads.getState().currentThreadId
+      const realCancel = useVoiceInput.getState().cancel
+      const cancel = vi.fn(() => realCancel())
+      useThreads.setState({ currentThreadId: KEY })
+      useVoiceInput.setState({ phase: 'starting', ownerKey: KEY, cancel })
+      return {
+        cancel,
+        restore: () => {
+          useVoiceInput.setState({ cancel: realCancel })
+          useVoiceInput.getState().reset()
+          useThreads.setState({ currentThreadId: previousThreadId })
+        },
+      }
+    }
+
+    it('does not tell the user to speak before the microphone is open', () => {
+      const voice = startVoiceHere()
+      try {
+        const { unmount } = render(<ChatInput />)
+        const input = screen.getByTestId('chat-input')
+        expect(input).toHaveAttribute(
+          'placeholder',
+          'common:voiceInput.startingPlaceholder'
+        )
+
+        act(() =>
+          useVoiceInput.setState({ phase: 'listening', sessionId: 'session-1' })
+        )
+        expect(input).toHaveAttribute(
+          'placeholder',
+          'common:voiceInput.placeholder'
+        )
+        unmount()
+      } finally {
+        voice.restore()
+      }
+    })
+
+    it('stops the start when the composer goes away', () => {
+      // Left running, the start opened the microphone once the model was up,
+      // for a composer that no longer existed.
+      const voice = startVoiceHere()
+      try {
+        const { unmount } = render(<ChatInput />)
+        expect(voice.cancel).not.toHaveBeenCalled()
+        unmount()
+        expect(voice.cancel).toHaveBeenCalledTimes(1)
+        const after = useVoiceInput.getState()
+        expect(after.phase).toBe('idle')
+        expect(after.ownerKey).toBeNull()
+        expect(after.lastOutcome).toBe('cancelled')
+      } finally {
+        voice.restore()
+      }
+    })
   })
 
   it('shows Send once there is text, and Stop while a reply streams', async () => {
@@ -808,6 +857,55 @@ describe('ChatInput', () => {
     })
 
     expect(useDeferredFirstSend.getState().queued).toMatchObject({
+      prompt: 'Keep working even if I leave this screen',
+      downloadModelIds: [modelId],
+    })
+    // New Chat sends it itself while mounted, so the root stands down for it…
+    const queueId = useDeferredFirstSend.getState().queued!.id
+    expect(useDeferredFirstSend.getState().claimedId).toBe(queueId)
+    expect(screen.getByTestId('chat-input')).toHaveValue(
+      'Keep working even if I leave this screen'
+    )
+    unmount()
+    // …and hands it back on leaving, still queued.
+    expect(useDeferredFirstSend.getState().claimedId).toBeNull()
+    expect(useDeferredFirstSend.getState().queued?.id).toBe(queueId)
+  })
+
+  it('hands a project first download to the root queue across navigation', async () => {
+    const modelId = 'LiquidAI/LFM2.5-2.6B-Q4_K_M'
+    useModelProvider.setState({
+      providers: [],
+      selectedProvider: '',
+      selectedModel: null,
+    })
+    const project = { id: 'qa-project', name: 'QA project', updated_at: 1 }
+    useThreadManagementStore.setState({ folders: [project] })
+    const { unmount } = render(
+      <ChatInput initialMessage projectId={project.id} />
+    )
+
+    fireEvent.change(screen.getByTestId('chat-input'), {
+      target: { value: 'Keep working even if I leave this screen' },
+    })
+    fireEvent.click(
+      document.querySelector('[data-test-id="send-message-button"]')!
+    )
+    await screen.findByTestId('reply-model-gate')
+
+    act(() => {
+      mocks.replyGateProps!.onResolved({
+        outcome: 'download_in_flight',
+        branch: 'none',
+        decidedInMs: 1,
+        openedAtMs: Date.now() - 1,
+        downloadModelIds: [modelId],
+      })
+    })
+
+    expect(useDeferredFirstSend.getState().queued).toMatchObject({
+      project,
+      composerKey: 'project:qa-project',
       prompt: 'Keep working even if I leave this screen',
       downloadModelIds: [modelId],
     })
@@ -1650,34 +1748,6 @@ describe('ChatInput', () => {
         .map((toggle) => toggle.textContent)
     ).toEqual(['chat:agentMode.menuItem'])
     unmount()
-  })
-
-  it('says in the access menu when global auto-approve overrides Restricted, linking to that setting', () => {
-    const allowAll = useToolApproval.getState().allowAllMCPPermissions
-    try {
-      // No mode picked on this composer, so it shows Restricted, while the
-      // global switch runs connector tools such as web search unasked.
-      useToolApproval.setState({ allowAllMCPPermissions: true })
-      const { unmount } = render(<ChatInput />)
-
-      const note = document.querySelector<HTMLElement>(
-        '[data-test-id="approval-manual-override"]'
-      )!
-      expect(note).toHaveTextContent('chat:agentApprovals.autoApproveOverride')
-      fireEvent.click(
-        within(note).getByText('chat:agentApprovals.openAutoApproveSetting')
-      )
-      expect(mocks.navigate).toHaveBeenCalledWith({ to: '/settings/general' })
-
-      // With the switch off, Restricted asks as it says: nothing to add.
-      act(() => useToolApproval.setState({ allowAllMCPPermissions: false }))
-      expect(
-        document.querySelector('[data-test-id="approval-manual-override"]')
-      ).not.toBeInTheDocument()
-      unmount()
-    } finally {
-      useToolApproval.setState({ allowAllMCPPermissions: allowAll })
-    }
   })
 
   it('renders the agent chip whose X turns the mode off everywhere', () => {

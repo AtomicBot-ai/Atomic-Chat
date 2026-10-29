@@ -1,3 +1,4 @@
+import '@/test/telemetry-ready'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { toast } from 'sonner'
 
@@ -19,10 +20,11 @@ const mocks = vi.hoisted(() => ({
   download: vi.fn(),
   installEngine: vi.fn(),
   cancelDownload: vi.fn(),
+  pauseDownload: vi.fn(),
 }))
 
 vi.mock('posthog-js', () => ({
-  default: { capture: vi.fn(), has_opted_in_capturing: () => true },
+  default: { capture: vi.fn() },
 }))
 vi.mock('sonner', () => ({
   toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() },
@@ -47,6 +49,10 @@ vi.mock('@/services/diffusion/engine', async (importOriginal) => ({
 vi.mock('@/lib/downloadCancellation', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/downloadCancellation')>()),
   cancelDownload: mocks.cancelDownload,
+}))
+vi.mock('@/lib/downloadControls', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/downloadControls')>()),
+  pauseDownload: mocks.pauseDownload,
 }))
 
 import { useDownloadStore } from '@/hooks/useDownloadStore'
@@ -283,6 +289,116 @@ describe('startMediaJob', () => {
 
     expect(outcome).toBe(false)
     expect(mocks.download).not.toHaveBeenCalled()
+  })
+
+  describe('a chat download chosen while it runs', () => {
+    const chat: OnboardingJob = {
+      key: 'chat',
+      kind: 'chat',
+      title: 'Qwen3.5 4B',
+      taskId: 'Qwen3.5-4B-Q4_K_M',
+      phase: 'running',
+    }
+    const chooseChat = () => useOnboardingStore.getState().enqueue(chat)
+    const finishChat = () =>
+      useOnboardingStore.getState().setJobPhase(chat.key, 'done')
+
+    it('pauses its model file for the chat model, then picks it up where it stopped', async () => {
+      let stopTransfer: (error: Error) => void = () => undefined
+      mocks.download.mockImplementationOnce(() => {
+        useDownloadStore
+          .getState()
+          .updateProgress(MODEL_TASK, 0.3, MODEL_TASK, 30 * MB, 100 * MB)
+        return new Promise((_resolve, reject) => {
+          stopTransfer = reject
+        })
+      })
+      // What Pause does to a model file: the row stays, the transfer stops.
+      mocks.pauseDownload.mockImplementation(({ id }: { id: string }) => {
+        useDownloadStore.getState().markPausedDownload(id)
+        stopTransfer(new Error('Download cancelled'))
+      })
+      let outcome: boolean | undefined
+      const running = startMediaJob(job).then((value) => (outcome = value))
+      await settle()
+
+      chooseChat()
+      await settle()
+
+      expect(mocks.pauseDownload).toHaveBeenCalledWith(
+        { id: MODEL_TASK, name: MODEL_TASK },
+        expect.anything()
+      )
+      expect(queuedJob()?.phase).toBe('queued')
+      expect(useOnboardingStore.getState().jobs[0].key).toBe(chat.key)
+      expect(outcome).toBeUndefined()
+
+      // The resumed transfer lands the files and closes the row.
+      mocks.download.mockImplementationOnce(async () => {
+        core.files = makeFilesFor(Z_IMAGE, 'q4_k_m')
+        useDownloadStore.getState().removeDownload(MODEL_TASK)
+      })
+      finishChat()
+      await running
+
+      expect(queuedJob()?.phase).toBe('running')
+      expect(useDownloadStore.getState().pausedDownloads.has(MODEL_TASK)).toBe(
+        false
+      )
+      expect(mocks.download).toHaveBeenCalledTimes(2)
+      expect(mocks.download).toHaveBeenLastCalledWith(
+        expect.objectContaining({ id: 'z-image' }),
+        'q4_k_m',
+        expect.objectContaining({ resume: true })
+      )
+      expect(outcome).toBe(true)
+      expect(vi.mocked(toast.success)).not.toHaveBeenCalled()
+    })
+
+    it("leaves a pause of the user's own to them", async () => {
+      mocks.download.mockImplementation(() => {
+        const store = useDownloadStore.getState()
+        store.updateProgress(MODEL_TASK, 0.3, MODEL_TASK, 30 * MB, 100 * MB)
+        store.markPausedDownload(MODEL_TASK)
+        return Promise.reject(new Error('Download cancelled'))
+      })
+      void startMediaJob(job)
+      await settle()
+
+      chooseChat()
+      finishChat()
+      await settle()
+
+      expect(mocks.pauseDownload).not.toHaveBeenCalled()
+      expect(mocks.download).toHaveBeenCalledTimes(1)
+      expect(useDownloadStore.getState().pausedDownloads.has(MODEL_TASK)).toBe(
+        true
+      )
+    })
+
+    it('waits for the chat model after the engine install before downloading its model', async () => {
+      core.status = notInstalled()
+      useImageGenerationStore.setState({ status: core.status })
+      mocks.installEngine.mockImplementation(async () => {
+        // Chosen while the engine, which cannot be paused, installs.
+        chooseChat()
+        core.status = makeStatus()
+        return { build: { backend_id: 'macos-arm64' } }
+      })
+      let outcome: boolean | undefined
+      const running = startMediaJob(job).then((value) => (outcome = value))
+      await settle()
+
+      expect(mocks.download).not.toHaveBeenCalled()
+      expect(queuedJob()?.phase).toBe('queued')
+
+      finishChat()
+      await running
+
+      expect(mocks.download).toHaveBeenCalledTimes(1)
+      expect(queuedJob()?.phase).toBe('running')
+      expect(outcome).toBe(true)
+    })
   })
 
   it('taking the job off the queue stops its download', async () => {

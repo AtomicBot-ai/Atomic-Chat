@@ -9,12 +9,24 @@
 export const GAP = 12
 /** Distance from the window edge when nothing is in the way. */
 export const EDGE = 16
-/** Matches the `w-[min(22rem,...)]` the panel renders at. */
+/** Matches the `w-[min(22rem,...)]` the corner's cards render at. */
 const PANEL_WIDTH = 352
 /** Header plus list padding — the part of the panel that is not rows. */
 const CHROME = 44
 /** Below this there is no point squeezing the panel in under the composer. */
 const MIN_USEFUL = 150
+
+/**
+ * What else the corner column holds besides the download panel's list: the
+ * other cards (update offers, a setup card, the folded pills) and the gaps
+ * between them, in px, and whether the expanded download panel is there.
+ */
+export type CornerContent = {
+  otherHeight: number
+  hasList: boolean
+}
+
+const PANEL_ONLY: CornerContent = { otherHeight: 0, hasList: true }
 
 export type PanelLayout = {
   /** Distance from the window bottom, in px. */
@@ -34,7 +46,10 @@ export type PanelLayout = {
  * gives up height, and where there is none it sits above it instead.
  *
  * `anchorRect` is the composer; `viewport` is the window. Both are passed in so
- * this stays a pure function and can be tested without a DOM.
+ * this stays a pure function and can be tested without a DOM. `panelWidth` is
+ * what the corner occupies now, narrower while its cards are collapsed, and
+ * `content` what sits in the column besides the list: every card has to clear
+ * the composer, not only the download panel.
  */
 export function panelLayout(
   anchorRect: {
@@ -44,7 +59,9 @@ export function panelLayout(
     right: number
     height: number
   } | null,
-  viewport: { width: number; height: number }
+  viewport: { width: number; height: number },
+  panelWidth: number = PANEL_WIDTH,
+  content: CornerContent = PANEL_ONLY
 ): PanelLayout {
   // 13rem, or 30% of a short window.
   const cap = Math.min(208, Math.round(viewport.height * 0.3))
@@ -52,7 +69,7 @@ export function panelLayout(
 
   if (!anchorRect || anchorRect.height === 0) return corner
 
-  const width = Math.min(PANEL_WIDTH, viewport.width - 2 * EDGE)
+  const width = Math.min(panelWidth, viewport.width - 2 * EDGE)
   const left = viewport.width - EDGE - width
   // A tiny visual overlap at the rounded composer edge does not cover any
   // control. Treat up to one normal gap as side-by-side; otherwise a five-pixel
@@ -61,14 +78,16 @@ export function panelLayout(
     anchorRect.right <= left + GAP || anchorRect.left >= left + width - GAP
   if (sideBySide) return corner
 
-  const spaceBelow = viewport.height - EDGE - (anchorRect.bottom + GAP)
-  if (spaceBelow >= MIN_USEFUL) {
+  const spaceBelow =
+    viewport.height - EDGE - (anchorRect.bottom + GAP) - content.otherHeight
+  if (content.hasList ? spaceBelow >= MIN_USEFUL : spaceBelow >= 0) {
     return { bottom: EDGE, listMax: Math.min(cap, spaceBelow - CHROME) }
   }
 
-  // The composer is at the bottom of the window: sit above it.
+  // The composer is at the bottom of the window, or the cards are too tall
+  // for the room beneath it: sit above it.
   const bottom = viewport.height - anchorRect.top + GAP
-  const spaceAbove = viewport.height - bottom - EDGE
+  const spaceAbove = viewport.height - bottom - EDGE - content.otherHeight
   return {
     bottom,
     listMax: Math.max(80, Math.min(cap, spaceAbove - CHROME)),

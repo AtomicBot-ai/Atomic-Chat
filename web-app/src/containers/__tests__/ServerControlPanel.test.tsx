@@ -1,3 +1,4 @@
+import '@/test/telemetry-ready'
 import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -10,7 +11,7 @@ import {
 import { ServerControlPanel } from '../ServerControlPanel'
 
 vi.mock('posthog-js', () => ({
-  default: { capture: vi.fn(), has_opted_in_capturing: () => true },
+  default: { capture: vi.fn() },
 }))
 
 const navigate = vi.hoisted(() => vi.fn())
@@ -138,6 +139,23 @@ describe('ServerControlPanel', () => {
     const power = screen.getByTestId('server-panel-power')
     expect(power).toHaveTextContent('common:navigation.serverStarting')
     expect(power).toBeDisabled()
+  })
+
+  it('runs a highlight along Stop only once the server is up', () => {
+    const { rerender } = render(<ServerControlPanel />)
+    const power = screen.getByTestId('server-panel-power')
+    expect(power.querySelector('.dsc-running-border')).toBeNull()
+
+    setStatus('pending')
+    rerender(<ServerControlPanel />)
+    expect(power.querySelector('.dsc-running-border')).toBeNull()
+
+    setStatus('running')
+    rerender(<ServerControlPanel />)
+    expect(power.querySelector('.dsc-running-border')).toHaveAttribute(
+      'aria-hidden',
+      'true'
+    )
   })
 
   it('shows the model the next start will load', () => {

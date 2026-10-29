@@ -9,7 +9,8 @@ describe('Card', () => {
     const card = screen.getByText('Engine settings').parentElement!
     expect(card).toHaveClass(
       'content-card',
-      'p-5',
+      'px-4',
+      'py-3.5',
       'border',
       'border-border',
       'bg-card',
@@ -41,7 +42,7 @@ describe('Card', () => {
 
     const card = screen.getByText('Embedded').parentElement!
     expect(card).toHaveClass('border-0', 'bg-transparent', 'p-0')
-    expect(card).not.toHaveClass('bg-card', 'rounded-xl', 'p-5', 'border')
+    expect(card).not.toHaveClass('bg-card', 'rounded-xl', 'px-4', 'border')
   })
 })
 
@@ -51,6 +52,6 @@ describe('CardItem', () => {
 
     const copy = screen.getByText('A very long setting name').parentElement!
     expect(copy).toHaveClass('min-w-0')
-    expect(copy.parentElement).toHaveClass('mt-4', 'pb-4', 'gap-5')
+    expect(copy.parentElement).toHaveClass('mt-3', 'pb-3', 'gap-5')
   })
 })

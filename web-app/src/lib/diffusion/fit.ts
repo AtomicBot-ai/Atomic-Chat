@@ -11,6 +11,15 @@
  * bytes once, up front. On macOS the measured {@link MACOS_LOAD_CEILING} is a
  * hard gate — Metal refuses the allocation past it — so the budget is scaled
  * down by it before the thresholds apply.
+ *
+ * On unified memory that gate is not the only one. A text encoder pinned to
+ * the CPU is outside Metal's allocation but inside the same RAM, next to the
+ * OS and the app: an 8 GB Mac passed Z-Image Q3_K_M as "might fit" on the
+ * GPU side while the whole model needed ~6.5 GB of its RAM, and the render
+ * swapped until the engine stopped (QA 2026-10-23). So the verdict is also
+ * checked against RAM less {@link UNIFIED_RESERVE_BYTES}, text encoder
+ * included, and the worse of the two is shown; the offload policy stays the
+ * GPU side's, since offloading on unified memory saves no RAM.
  */
 
 import type {
@@ -54,6 +63,12 @@ export const FIT_OK_SHARE = 0.7
 /** Up to this share it runs with group offload; past it, model offload. */
 export const FIT_MAYBE_SHARE = 0.9
 
+/**
+ * RAM a unified-memory machine keeps for the OS and the app: the reserve the
+ * core budgets every local model with (`RESERVE_BYTES`, ≈ 2.1 GiB).
+ */
+export const UNIFIED_RESERVE_BYTES = 2_288_490_189
+
 const gb = (bytes: number): string => (bytes / GIB).toFixed(1)
 
 export function estimateResidentBytes(input: DiffusionFitInput): number {
@@ -67,7 +82,43 @@ export function estimateResidentBytes(input: DiffusionFitInput): number {
   )
 }
 
+/** Every byte the checkpoint holds while sampling, the text encoder included wherever it runs. */
+export function estimateFootprintBytes(input: DiffusionFitInput): number {
+  return estimateResidentBytes({ ...input, teOnCpu: false })
+}
+
+const FIT_RANK: Record<DiffusionFit, number> = { ok: 0, maybe: 1, no: 2 }
+
+const fitOfShare = (share: number): DiffusionFit =>
+  share <= FIT_OK_SHARE ? 'ok' : share <= FIT_MAYBE_SHARE ? 'maybe' : 'no'
+
 export function estimateDiffusionFit(
+  input: DiffusionFitInput,
+  profile: HardwareProfile | null
+): DiffusionFitEstimate {
+  const gpu = estimateGpuFit(input, profile)
+  if (!profile || profile.memoryKind !== 'unified' || !input.teOnCpu) return gpu
+  // The CPU-side text encoder shares this RAM with everything else.
+  const ramBytes = profile.systemRamMib * MIB
+  if (ramBytes <= 0) return gpu
+  const budgetBytes = Math.max(0, ramBytes - UNIFIED_RESERVE_BYTES)
+  const footprint = estimateFootprintBytes(input)
+  const fit = budgetBytes > 0 ? fitOfShare(footprint / budgetBytes) : 'no'
+  if (FIT_RANK[fit] <= FIT_RANK[gpu.fit]) return gpu
+  return {
+    fit,
+    policy: gpu.policy,
+    reason:
+      fit === 'no'
+        ? `Needs about ${gb(footprint)} GB of memory with its text encoder, but only ${gb(budgetBytes)} GB is free for it; expect heavy swapping and a very slow image.`
+        : `Needs about ${gb(footprint)} GB of memory with its text encoder, of ${gb(budgetBytes)} GB free for it.`,
+    residentBytes: footprint,
+    budgetBytes,
+  }
+}
+
+/** The verdict against the pool the GPU allocates from: Metal's ceiling, VRAM, or RAM. */
+function estimateGpuFit(
   input: DiffusionFitInput,
   profile: HardwareProfile | null
 ): DiffusionFitEstimate {
@@ -159,12 +210,15 @@ export function autoOffload(
 const textEncoderBytes = (family: DiffusionCatalogFamily): number =>
   family.text_encoders.reduce((sum, encoder) => sum + encoder.bytes, 0)
 
-/** The fit of one quant at the family's default size. */
+/**
+ * The fit of one quant at the family's default size, or at the size a
+ * request asks for (what Generate checks before it starts).
+ */
 export function fitForQuant(
   family: DiffusionCatalogFamily,
   quant: DiffusionCatalogQuant,
   profile: HardwareProfile | null,
-  opts: { teOnCpu: boolean }
+  opts: { teOnCpu: boolean; width?: number; height?: number }
 ): DiffusionFitEstimate {
   return estimateDiffusionFit(
     {
@@ -172,8 +226,8 @@ export function fitForQuant(
       vaeBytes: (family.vae?.bytes ?? 0) + (family.audio_vae?.bytes ?? 0),
       teBytes: textEncoderBytes(family),
       teOnCpu: opts.teOnCpu,
-      width: family.defaults.width,
-      height: family.defaults.height,
+      width: opts.width ?? family.defaults.width,
+      height: opts.height ?? family.defaults.height,
     },
     profile
   )

@@ -40,6 +40,7 @@
   "modelHub": "Model Hub",
   "images": "Images",
   "video": "Videos",
+  "audios": "Audios",
   "media": "Media",
   "launch": "Integrations",
   "api": "API",
@@ -195,12 +196,15 @@
   "voiceInput": {
     "start": "Start voice input",
     "stop": "Stop and insert",
+    "stopStarting": "Stop voice input",
     "cancel": "Discard recording",
     "listening": "Listening…",
     "preparing": "Preparing voice input…",
     "starting": "Starting the voice model…",
     "transcribing": "Transcribing…",
     "placeholder": "Listening — start speaking",
+    "startingPlaceholder": "Starting the voice model — speak once it's listening",
+    "stoppedBeforeReady": "Voice input stopped before the voice model was ready. Nothing was recorded.",
     "level": "Microphone level",
     "elapsed": "Recording time",
     "unavailableWhileStreaming": "Voice input is unavailable while a reply is streaming",
@@ -642,8 +646,8 @@
       "title": "Unsupported file type"
     },
     "fileDeleted": {
-      "title": "File Deleted",
-      "description": "File has been removed from the project"
+      "title": "Removed from project",
+      "description": "Chats in this project no longer use {{fileName}}. The file on your computer wasn't changed."
     },
     "deleteFailed": {
       "title": "Delete Failed",
@@ -702,7 +706,11 @@
     "fileReadFailedDescription": "{{fileName}} could not be read from disk"
   },
   "files": {
-    "chunksCount": "{{count}} chunks"
+    "chunksCount": "{{count}} chunks",
+    "removeFromProject": "Remove {{fileName}} from project",
+    "removeTitle": "Remove this file from the project?",
+    "removeDescription": "Chats in this project will stop using {{fileName}}. The file on your computer isn't deleted, and you can upload it again at any time.",
+    "remove": "Remove"
   },
   "connectorsMenu": {
     "title": "Connectors",
@@ -753,6 +761,9 @@
     "body": "Connected connectors ({{servers}}) add their tool definitions to every request, so answers from a local model get slow. Turn the ones you do not need off for this chat.",
     "mute": "Turn off {{server}} for this chat",
     "dismiss": "Keep as is"
+  },
+  "cornerCard": {
+    "collapse": "Collapse"
   },
   "downloadPanel": {
     "collapse": "Collapse downloads",
@@ -816,6 +827,7 @@
     "modelsHub": "Models Hub",
     "help": "Help",
     "helpTitle": "How can we help?",
+    "chatWithUs": "Chat with us",
     "emailSupport": "Email support",
     "discord": "Discord",
     "newGithubIssue": "New GitHub issue",
@@ -851,5 +863,21 @@
     "connections": "Connections",
     "connectionsCount": "{{count}} set up",
     "configured": "Configured"
+  },
+  "support": {
+    "title": "Atomic Chat support",
+    "subtitle": "Chat with our team",
+    "close": "Close support chat",
+    "greeting": "Hi there. What can we help you with?",
+    "messages": "Messages",
+    "teamName": "Atomic Chat team",
+    "inputLabel": "Message to the Atomic Chat team",
+    "placeholder": "Write a message…",
+    "send": "Send message",
+    "sending": "Sending…",
+    "notSent": "Not sent.",
+    "rateLimited": "Too many messages. Wait a moment, then retry.",
+    "retry": "Retry",
+    "disclosure": "Your messages go to the Atomic Chat team. App version, OS and hardware info are attached to help us answer."
   }
 }

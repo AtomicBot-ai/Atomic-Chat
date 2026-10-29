@@ -169,6 +169,7 @@ pub fn run() {
         core::system::commands::detect_agent_installed,
         core::system::commands::install_agent,
         core::system::commands::configure_codex,
+        core::system::codex_config::disconnect_codex,
         core::system::commands::configure_opencode,
         core::system::commands::configure_openclaude,
         core::system::commands::configure_cline,
@@ -267,6 +268,8 @@ pub fn run() {
         core::downloads::commands::cancel_download_task,
         core::downloads::commands::test_proxy_connection,
         core::downloads::commands::get_download_free_space,
+        // An AI Hub bundle's zip, unpacked under its download's task id (change add-geniex-runtime).
+        core::downloads::archive::extract_zip,
         // Custom updater commands (desktop only)
         core::updater::commands::check_for_app_updates,
         core::updater::commands::is_update_available,
@@ -361,6 +364,7 @@ pub fn run() {
         core::system::commands::detect_agent_installed,
         core::system::commands::install_agent,
         core::system::commands::configure_codex,
+        core::system::codex_config::disconnect_codex,
         core::system::commands::configure_opencode,
         core::system::commands::configure_openclaude,
         core::system::commands::configure_cline,
@@ -710,6 +714,11 @@ pub fn run() {
             }
 
             setup_mcp(app);
+            // Earlier releases wrote Atomic's settings into the config.toml
+            // Codex shares with the ChatGPT app, where they could keep it from
+            // starting; take them out (backed up) and keep them as our profile.
+            #[cfg(desktop)]
+            tauri::async_runtime::spawn_blocking(core::system::codex_config::migrate_on_startup);
             // Not in an end-to-end build: a clean profile always counts as a
             // version change, so every run would overwrite the CLI on the
             // operator's real PATH — outside the isolated test root.

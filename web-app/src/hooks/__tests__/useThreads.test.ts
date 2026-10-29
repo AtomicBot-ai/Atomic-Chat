@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import { useThreads } from '../useThreads'
 import { useAgentMode } from '../useAgentMode'
+import { usePrompt } from '../usePrompt'
 import type { PathService } from '@/services/path/types'
 import type { ThreadsService } from '@/services/threads/types'
 import { seedServiceHub } from '@/test/service-hub'
@@ -289,6 +290,28 @@ describe('useThreads', () => {
     // Exactly one collection, under the bare id, and the thread is gone.
     expect(deleteCollectionSpy.mock.calls).toEqual([['thread1']])
     expect(result.current.threads).toEqual({})
+  })
+
+  it("drops a deleted chat's unsent draft, and only that one", () => {
+    localStorage.clear()
+    usePrompt.setState({ prompt: '', draftKey: null, drafts: {} })
+    usePrompt.getState().setDraft('thread1', 'Unsent in thread1')
+    usePrompt.getState().setDraft('thread2', 'Unsent in thread2')
+    const { result } = renderHook(() => useThreads())
+    act(() => {
+      result.current.setThreads([
+        { id: 'thread1', title: 'One', messages: [] },
+        { id: 'thread2', title: 'Two', messages: [] },
+      ])
+    })
+
+    act(() => {
+      result.current.deleteThread('thread1')
+    })
+
+    expect(usePrompt.getState().getDraft('thread1')).toBe('')
+    expect(localStorage.getItem('composer-draft:thread1')).toBeNull()
+    expect(usePrompt.getState().getDraft('thread2')).toBe('Unsent in thread2')
   })
 
   it('clears per-thread agent state on bulk deletes', () => {

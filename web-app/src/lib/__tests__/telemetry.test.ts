@@ -36,6 +36,7 @@ describe('loadBackendFromProvider', () => {
     expect(loadBackendFromProvider('mlx')).toBe('mlx')
     expect(loadBackendFromProvider('foundry-local')).toBe('foundry-local')
     expect(loadBackendFromProvider('litert-lm')).toBe('litert-lm')
+    expect(loadBackendFromProvider('geniex')).toBe('geniex')
     expect(loadBackendFromProvider('openai')).toBe('unknown')
     expect(loadBackendFromProvider(undefined)).toBe('unknown')
   })

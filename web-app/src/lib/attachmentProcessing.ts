@@ -151,6 +151,12 @@ export const processAttachmentsForSend = async (
     processedAttachments.push({ ...clip, processing: false, processed: true })
   }
 
+  // Video: nothing to ingest — the model only learns that a clip was attached.
+  const videos = attachments.filter((a) => a.type === 'video')
+  for (const clip of videos) {
+    processedAttachments.push({ ...clip, processing: false, processed: true })
+  }
+
   const documents = attachments.filter((a) => a.type === 'document')
   for (const doc of documents) {
     try {

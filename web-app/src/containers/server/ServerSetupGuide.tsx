@@ -43,6 +43,7 @@ import {
   isGuidedAgent,
   writeAgentConfig,
 } from '@/lib/integration-agent-setup'
+import { openIntegrationAgent } from '@/lib/integration-agent-run'
 import { useLaunchStore } from '@/stores/launch-store'
 
 import {
@@ -215,6 +216,21 @@ export function ServerSetupGuide({ entry }: { entry: SetupGuideEntry }) {
     // The endpoint hints too, when this set up the server they lead to.
     finishGuide()
     setStep('done')
+    // Configured, the agent opens — its app, or a terminal running it —
+    // unless it is known to be missing from this computer.
+    if (
+      path === 'agent' &&
+      !(
+        agent.installable &&
+        useLaunchStore.getState().installed[agent.id] === false
+      )
+    ) {
+      void openIntegrationAgent(agent, {
+        t,
+        model: choice.model,
+        server: useLocalApiServer.getState(),
+      })
+    }
   }
 
   const configure = () => {

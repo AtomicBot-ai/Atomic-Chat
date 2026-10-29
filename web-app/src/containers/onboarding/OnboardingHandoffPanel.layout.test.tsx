@@ -93,12 +93,18 @@ describe.each(['light', 'dark'] as const)(
       } as never)
     })
 
-    it.each(['en', 'ru'])(
-      'keeps every line on one line at Extra Large in %s',
-      async (language) => {
-        await page.viewport(1024, 768)
+    it.each(
+      ['en', 'ru'].flatMap((language) =>
+        [1024, 1280].flatMap((width) =>
+          ['13px', XL_FONT_SIZE].map((font) => ({ language, width, font }))
+        )
+      )
+    )(
+      'keeps the handoff readable at $width px / $font in $language',
+      async ({ language, width, font }) => {
+        await page.viewport(width, 768)
         setTheme(theme)
-        setFontSize(XL_FONT_SIZE)
+        setFontSize(font)
         await i18n.changeLanguage(language)
         render(withTranslations(<OnboardingHandoffPanel />))
 
@@ -117,10 +123,7 @@ describe.each(['light', 'dark'] as const)(
           .replace(/^\s*·\s*/, '')
         expect(readout.textContent).toContain(queuedNote)
         expectOneLine(readout)
-        for (const name of [
-          i18n.t('onboarding-handoff:panel.backToSetup'),
-          i18n.t('onboarding-handoff:panel.dismiss'),
-        ]) {
+        for (const name of [i18n.t('onboarding-handoff:panel.dismiss')]) {
           expectLabelOnOneLine(within(panel).getByRole('button', { name }))
         }
         expectNoHorizontalOverflow(panel)

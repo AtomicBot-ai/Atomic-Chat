@@ -43,7 +43,9 @@ export function DownloadStrip() {
         className="ob-download"
         aria-label={t('onboarding:download.label')}
       >
-        <div className="ob-download-row">
+        {/* Its own key: the line mounts afresh, and slides in, when the
+            download it replaces lands. */}
+        <div className="ob-download-row is-ready" key="ready">
           <span className="ob-download-icon">
             <Check size={18} aria-hidden="true" />
           </span>

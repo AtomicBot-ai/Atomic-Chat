@@ -381,6 +381,37 @@ describe('atomic_prism_extension', () => {
       })
     })
 
+    // ATO-465: under fit llama.cpp picks the window; the controls must show that one, not
+    // the `ctx_len` the load asked for.
+    it('puts the window the server got in the context controls when it differs', async () => {
+      extension['ensureCoreIsReady'] = vi.fn().mockResolvedValue(undefined)
+      const session = { model_id: 'org/bonsai', pid: 1, port: 3000, api_key: 'k' }
+      vi.mocked(invoke).mockImplementation(async (command) =>
+        command === 'atomic_core_call' ? { session, created: true } : undefined
+      )
+      const loadWithProps = async (nCtx: number, ctxSize: number) => {
+        vi.mocked(events.emit).mockClear()
+        global.fetch = vi.fn().mockResolvedValue({
+          ok: true,
+          json: async () => ({ default_generation_settings: { n_ctx: nCtx } }),
+        })
+        await extension.load('org/bonsai', { ctx_size: ctxSize } as any)
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        return vi
+          .mocked(events.emit)
+          .mock.calls.filter(([name]) => name === 'OnAutoIncreasedCtxLen')
+          .map(([, payload]) => payload)
+      }
+
+      expect(await loadWithProps(65536, 16384)).toEqual([
+        { provider: 'atomic-prism', modelId: 'org/bonsai', newCtxLen: 65536 },
+      ])
+      expect(fetch).toHaveBeenCalledWith('http://localhost:3000/props', {
+        headers: { Authorization: 'Bearer k' },
+      })
+      expect(await loadWithProps(8192, 8192)).toEqual([])
+    })
+
     it('imports the settings before the first load', async () => {
       const order: string[] = []
       extension['coreSettings'] = {

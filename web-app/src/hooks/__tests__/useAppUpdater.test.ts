@@ -305,6 +305,75 @@ describe('useAppUpdater', () => {
     })
   })
 
+  // QA 2.2.25 NEW-01: Settings has to say what a check found, and a check
+  // that failed must not read as "up to date".
+  describe('checkForUpdateNow', () => {
+    const checkNow = async () => {
+      const { result } = renderHook(() => useAppUpdater())
+      let outcome: unknown
+      await act(async () => {
+        outcome = await result.current.checkForUpdateNow()
+      })
+      return { result, outcome }
+    }
+
+    it('names the update it found', async () => {
+      mockUpdaterCheck.mockResolvedValue({ version: '2.2.26' })
+
+      const { result, outcome } = await checkNow()
+
+      expect(outcome).toEqual({
+        status: 'available',
+        update: { version: '2.2.26' },
+      })
+      expect(result.current.updateState.isUpdateAvailable).toBe(true)
+    })
+
+    it('says the app is up to date when the server has nothing newer', async () => {
+      mockUpdaterCheck.mockResolvedValue(null)
+
+      const { outcome } = await checkNow()
+
+      expect(outcome).toEqual({ status: 'up-to-date' })
+    })
+
+    it('reports a check that could not reach the server as failed', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      mockUpdaterCheck.mockRejectedValue(new Error('error sending request'))
+
+      const { result, outcome } = await checkNow()
+
+      expect(outcome).toEqual({ status: 'failed' })
+      expect(result.current.updateState.isUpdateAvailable).toBe(false)
+    })
+
+    it('says why nothing was checked', async () => {
+      mockIsDev.mockReturnValue(true)
+      expect((await checkNow()).outcome).toEqual({
+        status: 'not-checked',
+        reason: 'development',
+      })
+
+      mockIsDev.mockReturnValue(false)
+      mockIsPackageManaged.mockResolvedValue(true)
+      expect((await checkNow()).outcome).toEqual({
+        status: 'not-checked',
+        reason: 'package-managed',
+      })
+
+      Object.assign(global, { AUTO_UPDATER_DISABLED: true })
+      try {
+        expect((await checkNow()).outcome).toEqual({
+          status: 'not-checked',
+          reason: 'disabled',
+        })
+      } finally {
+        Object.assign(global, { AUTO_UPDATER_DISABLED: false })
+      }
+      expect(mockUpdaterCheck).not.toHaveBeenCalled()
+    })
+  })
+
   describe('setRemindMeLater', () => {
     it('should set remind me later state', () => {
       const { result } = renderHook(() => useAppUpdater())

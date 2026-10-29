@@ -47,6 +47,11 @@ export type ApiRequestEntry = {
   httpStatus?: number
   errorKind?: string
   aborted?: boolean
+  /**
+   * It arrived while no Server page watched, so no prompt or reply text was
+   * kept (ATO-113) — not that there was none.
+   */
+  unwatched?: boolean
 }
 
 /** A non-request row in the log, e.g. "Model loaded". */

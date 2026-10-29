@@ -2,11 +2,9 @@
   "purpose": {
     "title": "How will you use Atomic Chat?",
     "lead": "Start with what you need today. You can do both later.",
-    "everyday": "Everyday use",
-    "everydayBody": "Chat, write, explore ideas, and create images or video.",
+    "everyday": "Chat, write, explore ideas, and create images or video.",
     "everydayAction": "Open my workspace",
-    "power": "Power other tools",
-    "powerBody": "Run a local endpoint or connect your favorite coding agent.",
+    "power": "Configure an endpoint or connect an agent",
     "powerAction": "Set up a server"
   },
   "server": {

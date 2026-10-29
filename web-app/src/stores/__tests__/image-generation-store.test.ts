@@ -1067,6 +1067,104 @@ describe('image-generation-store', () => {
       )
     })
 
+    it('says the engine stopped when a new core no longer knows the job', async () => {
+      // QA 2026-10-23: the core that rendered the image was stopped and the
+      // app started another; "the job disappeared" told the user nothing.
+      vi.useFakeTimers()
+      let instance = 'instance-a'
+      fake.coreInstance = vi.fn(async () => instance)
+      fake.generate.mockImplementation(async () => ({ jobId: 'job-x' }))
+      fake.getJob.mockResolvedValue(null)
+      const done = useImageGenerationStore.getState().startGeneration({
+        request: makeRequest(),
+        runs: 1,
+        baseSeed: null,
+      })
+      await vi.advanceTimersByTimeAsync(0)
+      instance = 'instance-b'
+      await vi.advanceTimersByTimeAsync(2_100)
+      await done
+      expect(useImageGenerationStore.getState().lastError?.code).toBe(
+        'ENGINE_STOPPED'
+      )
+    })
+
+    it('fails the running job at once when a new core attaches', async () => {
+      fake.coreInstance = vi.fn(async () => 'instance-a')
+      fake.generate.mockImplementation(async () => ({ jobId: 'job-1' }))
+      const done = useImageGenerationStore.getState().startGeneration({
+        request: makeRequest(),
+        runs: 2,
+        baseSeed: null,
+      })
+      await waitFor(() =>
+        expect(useImageGenerationStore.getState().currentJob?.id).toBe('job-1')
+      )
+      fake.emit({ type: 'reset', generation: 3, instanceId: 'instance-b' })
+      await done
+      const state = useImageGenerationStore.getState()
+      expect(state.lastError?.code).toBe('ENGINE_STOPPED')
+      expect(state.generating).toBe(false)
+      expect(fake.generate).toHaveBeenCalledTimes(1)
+    })
+
+    it('keeps the running job when the app attaches to the same core again', async () => {
+      // A heartbeat timed out while the machine swapped; the core went on.
+      fake.coreInstance = vi.fn(async () => 'instance-a')
+      fake.generate.mockImplementation(async () => ({ jobId: 'job-1' }))
+      fake.getJob.mockResolvedValue(makeJob({ id: 'job-1', state: 'generating' }))
+      const done = useImageGenerationStore.getState().startGeneration({
+        request: makeRequest(),
+        runs: 1,
+        baseSeed: null,
+      })
+      await waitFor(() =>
+        expect(useImageGenerationStore.getState().currentJob?.id).toBe('job-1')
+      )
+      fake.emit({ type: 'reset', generation: 4, instanceId: 'instance-a' })
+      await waitFor(() =>
+        expect(useImageGenerationStore.getState().currentJob?.state).toBe(
+          'generating'
+        )
+      )
+      expect(useImageGenerationStore.getState().generating).toBe(true)
+      expect(useImageGenerationStore.getState().lastError).toBeNull()
+
+      fake.emit({
+        type: 'job',
+        job: makeJob({
+          id: 'job-1',
+          state: 'completed',
+          outputs: [makeItem({ id: 'job-1-00' })],
+        }),
+      })
+      await done
+      expect(useImageGenerationStore.getState().lastError).toBeNull()
+      expect(
+        useImageGalleryStore.getState().items.map((item) => item.id)
+      ).toEqual(['job-1-00'])
+    })
+
+    it('says the engine stopped once the app gives up starting a core', async () => {
+      vi.useFakeTimers()
+      fake.coreInstance = vi.fn(async () => 'instance-a')
+      fake.generate.mockImplementation(async () => ({ jobId: 'job-x' }))
+      fake.getJob.mockRejectedValue({
+        code: 'CORE_START_FAILED',
+        message: 'The Atomic Chat core keeps stopping.',
+      })
+      const done = useImageGenerationStore.getState().startGeneration({
+        request: makeRequest(),
+        runs: 1,
+        baseSeed: null,
+      })
+      await vi.advanceTimersByTimeAsync(2_100)
+      await done
+      expect(useImageGenerationStore.getState().lastError?.code).toBe(
+        'ENGINE_STOPPED'
+      )
+    })
+
     it('surfaces an error event for the running job, but not a cancel the user asked for', async () => {
       fake.generate.mockImplementation(async () => ({ jobId: 'job-1' }))
       const done = useImageGenerationStore.getState().startGeneration({
@@ -1401,6 +1499,7 @@ describe('image-generation-store', () => {
       expect(useImageGenerationStore.getState()).toMatchObject({
         hostBackendId: null,
         hostBackendReason: 'Intel Macs are not supported.',
+        hostBackendCheckFailed: null,
       })
 
       resetImageGenerationForTests()
@@ -1409,6 +1508,135 @@ describe('image-generation-store', () => {
       await useImageGenerationStore.getState().bind()
       expect(fake.subscribe).not.toHaveBeenCalled()
       expect(useImageGenerationStore.getState().bound).toBe(true)
+    })
+
+    const readError =
+      'sd.cpp manifest from https://raw.githubusercontent.com/x: timed out after 8000ms'
+    const noManifest = () =>
+      makeEngineCatalog({
+        tag: null,
+        manifest: null,
+        manifest_error: readError,
+        host_backend_id: null,
+        host_reason: 'The sd.cpp manifest is unavailable.',
+      })
+
+    it('tries a failed manifest read again on its own, and stops at the first answer', async () => {
+      resetImageGenerationForTests()
+      vi.useFakeTimers()
+      fake.engineCatalog.mockClear()
+      fake.engineCatalog
+        .mockResolvedValueOnce(noManifest())
+        .mockResolvedValueOnce(noManifest())
+        .mockResolvedValue(makeEngineCatalog())
+      const bound = useImageGenerationStore.getState().bind()
+      // Past the first pause (2 s): the second attempt failed too, the card still says "Checking".
+      await vi.advanceTimersByTimeAsync(2_500)
+      expect(useImageGenerationStore.getState()).toMatchObject({
+        hostBackendResolved: false,
+        hostBackendAttempt: 2,
+      })
+      await vi.advanceTimersByTimeAsync(10_000)
+      await bound
+      vi.useRealTimers()
+      expect(fake.engineCatalog).toHaveBeenCalledTimes(3)
+      expect(useImageGenerationStore.getState()).toMatchObject({
+        hostBackendId: 'macos-arm64',
+        hostBackendReason: null,
+        hostBackendCheckFailed: null,
+        hostBackendAttempt: 3,
+        hostBackendResolved: true,
+      })
+    })
+
+    it('shows why the manifest read failed after the last attempt, not just that it did', async () => {
+      resetImageGenerationForTests()
+      vi.useFakeTimers()
+      fake.engineCatalog.mockClear()
+      fake.engineCatalog.mockResolvedValue(noManifest())
+      const bound = useImageGenerationStore.getState().bind()
+      await vi.advanceTimersByTimeAsync(10_000)
+      await bound
+      vi.useRealTimers()
+      expect(fake.engineCatalog).toHaveBeenCalledTimes(3)
+      expect(useImageGenerationStore.getState()).toMatchObject({
+        hostBackendId: null,
+        hostBackendReason: readError,
+        hostBackendCheckFailed: 'manifest',
+        hostBackendAttempt: 3,
+        hostBackendResolved: true,
+      })
+    })
+
+    it('marks a failed core call as a failed check, after the same attempts', async () => {
+      resetImageGenerationForTests()
+      vi.useFakeTimers()
+      fake.engineCatalog.mockClear()
+      fake.engineCatalog.mockRejectedValue({
+        code: 'CORE_UNAVAILABLE',
+        message: 'The core did not answer.',
+      })
+      const bound = useImageGenerationStore.getState().bind()
+      await vi.advanceTimersByTimeAsync(10_000)
+      await bound
+      vi.useRealTimers()
+      expect(fake.engineCatalog).toHaveBeenCalledTimes(3)
+      expect(useImageGenerationStore.getState()).toMatchObject({
+        hostBackendId: null,
+        hostBackendReason: 'The core did not answer.',
+        hostBackendCheckFailed: 'core',
+      })
+    })
+
+    it('a reset stops a check that is waiting to try again', async () => {
+      vi.useFakeTimers()
+      fake.engineCatalog.mockClear()
+      fake.engineCatalog.mockResolvedValue(noManifest())
+      const check = useImageGenerationStore.getState().refreshHostBackend()
+      await vi.advanceTimersByTimeAsync(0)
+      resetImageGenerationForTests()
+      await vi.advanceTimersByTimeAsync(10_000)
+      await check
+      vi.useRealTimers()
+      expect(fake.engineCatalog).toHaveBeenCalledTimes(1)
+      expect(useImageGenerationStore.getState()).toMatchObject({
+        hostBackendReason: null,
+        hostBackendCheckFailed: null,
+        hostBackendResolved: false,
+      })
+    })
+
+    it('an install without a manifest shows the read error, not "no build for this computer"', async () => {
+      fake.engineCatalog.mockResolvedValue(noManifest())
+      await useImageGenerationStore.getState().installEngine()
+      expect(fake.installEngine).not.toHaveBeenCalled()
+      expect(useImageGenerationStore.getState().engineInstall.error).toEqual({
+        code: 'ENGINE_INSTALL_FAILED',
+        message: readError,
+      })
+    })
+
+    it('a retry re-reads the manifest and clears the failure', async () => {
+      useImageGenerationStore.setState({
+        hostBackendId: null,
+        hostBackendReason: 'timed out',
+        hostBackendCheckFailed: 'manifest',
+        hostBackendResolved: true,
+      })
+      fake.engineCatalog.mockResolvedValue(makeEngineCatalog())
+      const retry = useImageGenerationStore
+        .getState()
+        .refreshHostBackend({ force: true })
+      // While it runs the card is back to "Checking…".
+      expect(useImageGenerationStore.getState().hostBackendResolved).toBe(false)
+      await retry
+      expect(fake.engineCatalog).toHaveBeenLastCalledWith({ force: true })
+      expect(useImageGenerationStore.getState()).toMatchObject({
+        hostBackendId: 'macos-arm64',
+        hostBackendReason: null,
+        hostBackendCheckFailed: null,
+        hostBackendResolved: true,
+      })
     })
 
     it('unbind drops the subscription so events no longer reach the store', async () => {

@@ -33,8 +33,12 @@ type VoiceInputToggleProps = {
   disabled?: boolean
 }
 
-/** Phases where the button is busy but not yet listening. */
-const PENDING_PHASES = new Set(['checking', 'requesting-permission', 'starting'])
+/**
+ * Pre-flight phases, where a press has nothing to act on yet. Not `starting`:
+ * loading the voice model can take a minute or more, and a Stop pressed during
+ * it used to be dropped here while the button was labelled "Stop and insert".
+ */
+const PENDING_PHASES = new Set(['checking', 'requesting-permission'])
 
 const VoiceInputToggle = memo(function VoiceInputToggle({
   className,
@@ -47,12 +51,15 @@ const VoiceInputToggle = memo(function VoiceInputToggle({
   const phase = useVoiceInput((state) => state.phase)
   const ownerKey = useVoiceInput((state) => state.ownerKey)
   const error = useVoiceInput((state) => state.error)
+  const lastOutcome = useVoiceInput((state) => state.lastOutcome)
   const stop = useVoiceInput((state) => state.stop)
 
   const owned = ownerKey === threadKey
   const recording = owned && VOICE_ACTIVE_PHASES.has(phase)
   const pending = owned && PENDING_PHASES.has(phase)
   const failed = owned && phase === 'error'
+  const starting = owned && phase === 'starting'
+  const notRecorded = owned && lastOutcome === 'not-recorded'
 
   // Surface failures once, here, so every entry point into the state machine
   // gets the same toast without repeating it.
@@ -65,15 +72,25 @@ const VoiceInputToggle = memo(function VoiceInputToggle({
     return () => clearTimeout(id)
   }, [failed, error, t])
 
+  // Stopped before the voice model was up: the microphone never opened, so
+  // say plainly that nothing was recorded rather than just going quiet.
+  useEffect(() => {
+    if (!notRecorded) return
+    toast.info(t('common:voiceInput.stoppedBeforeReady'))
+    useVoiceInput.getState().reset()
+  }, [notRecorded, t])
+
   if (!PlatformFeatures[PlatformFeature.VOICE_INPUT]) return null
 
-  const label = recording
-    ? t('common:voiceInput.stop')
-    : disabled
-      ? t('common:voiceInput.unavailableWhileStreaming')
-      : pending
-        ? t('common:voiceInput.preparing')
-        : t('common:voiceInput.start')
+  const label = starting
+    ? t('common:voiceInput.stopStarting')
+    : recording
+      ? t('common:voiceInput.stop')
+      : disabled
+        ? t('common:voiceInput.unavailableWhileStreaming')
+        : pending
+          ? t('common:voiceInput.preparing')
+          : t('common:voiceInput.start')
 
   const handleClick = () => {
     if (pending) return

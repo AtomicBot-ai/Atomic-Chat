@@ -107,6 +107,7 @@ export async function createProfile(options: ProfileOptions): Promise<Profile> {
   // merges over the defaults. Auto-start is off unless the scenario turns it
   // on; the port is always the profile's own.
   const seed: Record<string, string> = {
+    'setup-completed': 'true',
     'setting-local-api-server': JSON.stringify({
       state: { enableOnStartup: false, ...options.apiServer, serverPort: options.apiPort },
       version: 3,

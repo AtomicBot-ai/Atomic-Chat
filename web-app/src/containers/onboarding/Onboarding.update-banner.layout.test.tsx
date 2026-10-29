@@ -1,3 +1,4 @@
+import '@/test/telemetry-ready'
 import { render, screen } from '@testing-library/react'
 import { page } from '@vitest/browser/context'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -10,12 +11,13 @@ import { settle, withTranslations } from '@/test/layout'
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => vi.fn(),
+  useRouter: () => ({ state: { location: { pathname: '/' } } }),
   // The server step reaches the Server pages' model picker, which links out.
   Link: ({ children }: { children?: React.ReactNode }) => <a>{children}</a>,
 }))
 
 vi.mock('posthog-js', () => ({
-  default: { capture: vi.fn(), has_opted_in_capturing: () => true },
+  default: { capture: vi.fn() },
 }))
 
 // Welcome and Model only: the steps that depend on the machine have nothing
@@ -59,6 +61,7 @@ describe('onboarding notification stacking', () => {
             onUpdate={vi.fn()}
             dismissLabel="Dismiss"
             onDismiss={vi.fn()}
+            collapseLabel="Collapse"
             testId="app-update-banner"
           />
           <Dialog open={dialogOpen}>
@@ -76,9 +79,12 @@ describe('onboarding notification stacking', () => {
     const primary = screen.getByRole('button', { name: /get set up/ })
     await settle(document.body)
 
-    // The flow covers the whole window at z-30; the banner is fixed at z-40.
+    // The flow covers the whole window at z-30; the banner sits in the corner
+    // column, fixed at z-40.
     expect(getComputedStyle(shell).zIndex).toBe('30')
-    expect(getComputedStyle(banner).zIndex).toBe('40')
+    const corner = banner.closest<HTMLElement>('[data-corner-stack]')
+    expect(corner).not.toBeNull()
+    expect(getComputedStyle(corner!).zIndex).toBe('40')
 
     const bannerBounds = banner.getBoundingClientRect()
     const x = bannerBounds.left + bannerBounds.width / 2

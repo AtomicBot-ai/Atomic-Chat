@@ -43,6 +43,12 @@ import {
 import { queuedCapture } from '@/lib/telemetry-queue'
 import { ExtensionManager } from '@/lib/extension'
 import { captureHandledError } from '@/lib/sentry'
+import { reportMlxEngineInstallFailure } from '@/lib/mlx-engine'
+import {
+  installMlxEngine,
+  isMlxEngineInstallCancelled,
+  pendingMlxEngineInstall,
+} from '@/services/engine-builds/mlx'
 import {
   getProviderTitle,
   MODEL_LOAD_WATCHDOG_MS,
@@ -235,6 +241,7 @@ const LOCAL_PROVIDERS = [
   'foundation-models',
   'foundry-local',
   'litert-lm',
+  'geniex',
 ] as const
 
 /** Every local engine provider, the managed engines last. */
@@ -725,7 +732,7 @@ export async function switchToModel(params: {
     }
 
     try {
-      await doSwitchToModel(params)
+      await doSwitchToModel(params, () => mySeq !== switchSeq)
     } catch (error) {
       // A failed load leaves nothing to chat with, so the composer goes back
       // to "Select Model" rather than showing the model that did not come
@@ -785,12 +792,48 @@ async function settleAfterLocalStart(
   }
 }
 
-async function doSwitchToModel(params: {
-  modelId: string
-  providerName: string
-  serviceHub: ServiceHub
-  isAutoStart?: boolean
-}): Promise<void> {
+/** How often a load waiting for the MLX engine install checks for a Cancel or a newer switch. */
+const MLX_INSTALL_WAIT_POLL_MS = 250
+
+/**
+ * Wait for the MLX engine install running now, if any, until it settles or
+ * `stop()` says the load is no longer wanted. Joins only an install already
+ * running; a failed or cancelled one ends the wait like a finished one.
+ */
+async function waitForRunningMlxEngineInstall(
+  stop: () => boolean
+): Promise<void> {
+  const install = pendingMlxEngineInstall()
+  if (!install) return
+  let timer: ReturnType<typeof setInterval> | undefined
+  const stopped = new Promise<void>((resolve) => {
+    timer = setInterval(() => {
+      if (stop()) resolve()
+    }, MLX_INSTALL_WAIT_POLL_MS)
+  })
+  try {
+    await Promise.race([
+      install.then(
+        () => undefined,
+        () => undefined
+      ),
+      stopped,
+    ])
+  } finally {
+    clearInterval(timer)
+  }
+}
+
+async function doSwitchToModel(
+  params: {
+    modelId: string
+    providerName: string
+    serviceHub: ServiceHub
+    isAutoStart?: boolean
+  },
+  /** A switch requested after this one is waiting behind it. */
+  isSuperseded: () => boolean = () => false
+): Promise<void> {
   const { modelId, providerName, serviceHub, isAutoStart } = params
 
   const { setServerStatus, setActiveModels, updateLoadingModel } =
@@ -874,6 +917,7 @@ async function doSwitchToModel(params: {
   const { setLoadingModelProgress } = useAppState.getState()
   const load = isLocal ? { modelId, providerName, cancelRequested: false } : null
   currentLocalLoad = load
+  let localEngineStarted = false
   console.log(
     '[switchToModel] Switching to model:',
     modelId,
@@ -883,6 +927,21 @@ async function doSwitchToModel(params: {
   )
 
   try {
+    // 0. MLX: a new model can land before the engine it runs on, which the
+    //    installer does not carry. A load that finds that install running
+    //    waits for it under the usual loading status rather than failing
+    //    with BINARY_NOT_FOUND, before anything is torn down. A failed or
+    //    cancelled install leaves the load to fail as before, with its
+    //    Install; a Cancel or a newer switch ends the wait.
+    if (providerName === 'mlx' && pendingMlxEngineInstall()) {
+      setLoadingModelProgress({ kind: 'installingEngine' })
+      await waitForRunningMlxEngineInstall(
+        () => Boolean(load?.cancelRequested) || isSuperseded()
+      )
+      if (isSuperseded()) throw cancelledLoadError()
+      throwIfLoadCancelled()
+    }
+
     // 1. Stop every other local model (llamacpp + mlx) so only one model is
     //    ever "active" globally. For a local target the target engine's own
     //    copy is left alone: `startModel` short-circuits on an already-loaded
@@ -935,14 +994,11 @@ async function doSwitchToModel(params: {
         modelId,
         onProgress: setLoadingModelProgress,
       })
+      localEngineStarted = true
       // The load came back before a Cancel could stop it — an engine that
       // cannot cancel, or one that became ready first. The user still asked
       // for the model to be gone.
       if (load?.cancelRequested) {
-        await serviceHub
-          .models()
-          .stopModel(modelId, providerName)
-          .catch(() => undefined)
         throw cancelledLoadError()
       }
       // Awaited rather than fired-and-forgotten: the event has to carry it,
@@ -961,6 +1017,7 @@ async function doSwitchToModel(params: {
       })
       console.log('[switchToModel] Local model started:', modelId)
       await settleAfterLocalStart(serviceHub, providerName, modelId)
+      throwIfLoadCancelled()
     } else {
       // 4b. Cloud branch — register the provider so the proxy can route
       //     requests for `modelId` to provider.base_url.
@@ -1004,6 +1061,7 @@ async function doSwitchToModel(params: {
     if (shouldStartServer) {
       if (isLocal) setLoadingModelProgress({ kind: 'startingServer' })
       await startLocalApiServer()
+      throwIfLoadCancelled()
     } else {
       // Local model + auto-start disabled + server wasn't running: keep the
       // Local API Server down. The local engine already serves this chat on
@@ -1019,6 +1077,7 @@ async function doSwitchToModel(params: {
     //    reflects it (engine query would return empty).
     if (isLocal) {
       const active = await serviceHub.models().getActiveModels()
+      throwIfLoadCancelled()
       setActiveModels(active || [])
     } else {
       setActiveModels([modelId])
@@ -1035,8 +1094,20 @@ async function doSwitchToModel(params: {
     clearModelLoadError()
     console.log('[switchToModel] Global state synchronised')
   } catch (error) {
-    const cancelled = isModelLoadCancelled(error)
+    const cancelled =
+      isModelLoadCancelled(error) || Boolean(load?.cancelRequested)
     if (cancelled) {
+      // Cancel remains available during post-load bookkeeping and server
+      // startup, after the engine's own cancel tracker has already finished.
+      if (localEngineStarted) {
+        const stopped = await serviceHub.models().stopModel(modelId, providerName)
+        if (stopped && !stopped.success) {
+          throw new Error(stopped.error || `Failed to stop model '${modelId}'`)
+        }
+      }
+      if (!wasServerRunning && shouldStartServer) {
+        await window.core?.api?.stopServer()
+      }
       console.log('[switchToModel] Load cancelled by the user:', modelId)
     } else {
       console.error('[switchToModel] Failed to switch model:', error)
@@ -1066,7 +1137,7 @@ async function doSwitchToModel(params: {
         .getActiveModels()
         .catch(() => null)
       if (active) syncActiveModelsFromEngines(active)
-      throw error
+      throw cancelledLoadError()
     }
     // WS2: record the failure so the auto-start effect doesn't re-loop on it —
     // terminal codes (missing model/binary) are never auto-retried; others back
@@ -1122,7 +1193,7 @@ async function doSwitchToModel(params: {
         )
       }
     }
-    reportModelLoadError(error, providerName, isAutoStart, modelId)
+    reportModelLoadError(error, providerName, isAutoStart, modelId, serviceHub)
     throw error
   } finally {
     if (currentLocalLoad === load) currentLocalLoad = null
@@ -1506,12 +1577,19 @@ function unsupportedDescription(
  * Pure, and separate from the toast, because the compact picker status and the
  * standard failure toast must classify the same engine error the same way.
  */
+/** A fix a load failure offers; the toast and the status strip run it. */
+export type ModelLoadFailureAction = {
+  kind: 'install-mlx-engine'
+  label: string
+}
+
 export type ModelLoadFailure = {
   title: string
   description: string
   details?: string
   /** The user has to act before this can succeed, so the toast never expires. */
   persistent: boolean
+  action?: ModelLoadFailureAction
 }
 
 /** The core's compatibility verdict, carried as JSON in the refusal's `details`. */
@@ -1601,6 +1679,18 @@ export function describeModelLoadFailure(
   if (err.code === LOCAL_API_SERVER_START_TIMEOUT_CODE) {
     return simple('startupTimedOut')
   }
+  // The installer does not carry MLX: a Mac that never installed its engine
+  // (one updated from a release that bundled it included) gets it on the
+  // first load, one download, then the same load again.
+  if (err.code === 'BINARY_NOT_FOUND' && providerName === 'mlx') {
+    return {
+      ...simple('mlxEngineMissing', true),
+      action: {
+        kind: 'install-mlx-engine',
+        label: t('model-errors:mlxEngineMissingAction'),
+      },
+    }
+  }
   if (isOutOfMemoryError(err)) {
     // The copy is generic; the engine's own words — which allocation failed
     // and how much was free, or a KV cache shorter than the context — stay one
@@ -1688,6 +1778,42 @@ export function describeModelLoadFailure(
 }
 
 /**
+ * A load's "Install" when MLX has no engine: the core installs it (one
+ * download however often it is asked), then the same model loads again. A
+ * failed install says so with a "Retry" that does both again; a cancelled one
+ * says nothing.
+ */
+export async function installMlxEngineAndLoad(params: {
+  modelId: string
+  providerName: string
+  serviceHub: ServiceHub
+}): Promise<void> {
+  try {
+    await installMlxEngine()
+  } catch (error) {
+    if (!isMlxEngineInstallCancelled(error)) {
+      reportMlxEngineInstallFailure(error, () =>
+        installMlxEngineAndLoad(params)
+      )
+    }
+    return
+  }
+  // The switch reports its own failure.
+  await switchToModel(params).catch(() => {})
+}
+
+/** Run the fix a load failure offers for `params`' model. */
+export function runModelLoadFailureAction(
+  action: ModelLoadFailureAction,
+  params: { modelId: string; providerName: string; serviceHub: ServiceHub }
+): Promise<void> {
+  switch (action.kind) {
+    case 'install-mlx-engine':
+      return installMlxEngineAndLoad(params)
+  }
+}
+
+/**
  * Surface a user-visible banner when a model fails to load.
  * OOM errors get a persistent toast so the user cannot miss them.
  */
@@ -1695,17 +1821,31 @@ function reportModelLoadError(
   rawError: unknown,
   providerName?: string,
   _isAutoStart?: boolean,
-  modelId?: string
+  modelId?: string,
+  serviceHub?: ServiceHub
 ): void {
   const err = toErrorObject(rawError)
   useModelLoad.getState().setModelLoadError(err, modelId)
 
   const failure = describeModelLoadFailure(err, providerName)
+  const { action } = failure
 
   showModelLoadErrorToast({
     title: failure.title,
     description: failure.description,
     details: failure.details,
     duration: failure.persistent ? Infinity : 10000,
+    action:
+      action && providerName && modelId && serviceHub
+        ? {
+            label: action.label,
+            onClick: () =>
+              void runModelLoadFailureAction(action, {
+                modelId,
+                providerName,
+                serviceHub,
+              }),
+          }
+        : undefined,
   })
 }

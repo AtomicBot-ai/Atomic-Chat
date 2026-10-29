@@ -81,6 +81,7 @@ import {
 } from '@/lib/managed-engine/request'
 import { foundryLocalRequestBody } from '@/lib/foundry-local/request'
 import { liteRtLmRequestBody } from '@/lib/litert-lm/request'
+import { geniexRequestBody } from '@/lib/geniex/request'
 import { textToolCallMiddleware } from '@/lib/text-tool-call-middleware'
 
 /**
@@ -365,6 +366,7 @@ type CachedLocalProvider =
   | 'mlx'
   | 'foundry-local'
   | 'litert-lm'
+  | 'geniex'
   | ManagedProviderId
 
 /** How an error about a missing session names the engine, e.g. "No running MLX session". */
@@ -372,6 +374,7 @@ function sessionEngineLabel(providerName: CachedLocalProvider): string {
   if (providerName === 'mlx') return 'MLX '
   if (providerName === 'foundry-local') return 'Foundry Local '
   if (providerName === 'litert-lm') return 'LiteRT-LM '
+  if (providerName === 'geniex') return 'GenieX '
   const managed = managedEngine(providerName)
   return managed ? `${managed.label} ` : ''
 }
@@ -1028,6 +1031,9 @@ export class ModelFactory {
       case 'litert-lm':
         return this.createLiteRtLmModel(modelId, provider, localInjected)
 
+      case 'geniex':
+        return this.createGeniexModel(modelId, provider, localInjected)
+
       case 'foundation-models':
         return this.createFoundationModelsModel(
           modelId,
@@ -1352,6 +1358,48 @@ export class ModelFactory {
 
     return new OpenAICompatibleChatLanguageModel(modelId, {
       provider: 'litert-lm',
+      headers: () => ({
+        Authorization: `Bearer ${sessionInfo.api_key}`,
+        Origin: 'tauri://localhost',
+      }),
+      url: ({ path }) =>
+        new URL(`http://localhost:${sessionInfo.port}/v1${path}`).toString(),
+      includeUsage: true,
+      fetch: liveFetch,
+      metadataExtractor: providerMetadataExtractor,
+    })
+  }
+
+  /**
+   * Create a GenieX model (change `add-geniex-runtime`). The core runs the model in its own host
+   * process on a Snapdragon X laptop (the NPU, the GPU or the CPU), whose OpenAI server sits behind
+   * the core's session gateway with the session's Bearer key: one more OpenAI-compatible local
+   * session, re-resolved on every request because each load gets a new gateway port and key. The
+   * host returns tool calls as `tool_calls` and the model's thinking as `reasoning_content`, which
+   * the OpenAI-compatible model reads as reasoning; the body is cut down to what the host reads
+   * (`geniexRequestBody`).
+   */
+  private static async createGeniexModel(
+    modelId: string,
+    provider?: ProviderObject,
+    parameters: Record<string, unknown> = {}
+  ): Promise<LanguageModel> {
+    const sessionInfo = await ModelFactory.resolveLocalSession(
+      'geniex',
+      modelId,
+      provider
+    )
+    const liveFetch = createLiveSessionFetch(
+      createEngineErrorFetch(
+        createLocalStreamingFetch(httpFetch, parameters, async (body) =>
+          geniexRequestBody(body)
+        )
+      ),
+      () => ModelFactory.resolveFreshLocalSession('geniex', modelId, provider)
+    )
+
+    return new OpenAICompatibleChatLanguageModel(modelId, {
+      provider: 'geniex',
       headers: () => ({
         Authorization: `Bearer ${sessionInfo.api_key}`,
         Origin: 'tauri://localhost',

@@ -22,6 +22,7 @@ import { Route as HubIndexRouteImport } from './routes/hub/index'
 import { Route as EndpointsIndexRouteImport } from './routes/endpoints/index'
 import { Route as ConnectorsIndexRouteImport } from './routes/connectors/index'
 import { Route as CloudIndexRouteImport } from './routes/cloud/index'
+import { Route as AudiosIndexRouteImport } from './routes/audios/index'
 import { Route as ApiIndexRouteImport } from './routes/api/index'
 import { Route as ThreadsThreadIdRouteImport } from './routes/threads/$threadId'
 import { Route as SettingsVoiceRouteImport } from './routes/settings/voice'
@@ -113,6 +114,11 @@ const ConnectorsIndexRoute = ConnectorsIndexRouteImport.update({
 const CloudIndexRoute = CloudIndexRouteImport.update({
   id: '/cloud/',
   path: '/cloud/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AudiosIndexRoute = AudiosIndexRouteImport.update({
+  id: '/audios/',
+  path: '/audios/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiIndexRoute = ApiIndexRouteImport.update({
@@ -283,6 +289,7 @@ export interface FileRoutesByFullPath {
   '/settings/voice': typeof SettingsVoiceRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/api/': typeof ApiIndexRoute
+  '/audios/': typeof AudiosIndexRoute
   '/cloud/': typeof CloudIndexRoute
   '/connectors/': typeof ConnectorsIndexRoute
   '/endpoints/': typeof EndpointsIndexRoute
@@ -325,6 +332,7 @@ export interface FileRoutesByTo {
   '/settings/voice': typeof SettingsVoiceRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/api': typeof ApiIndexRoute
+  '/audios': typeof AudiosIndexRoute
   '/cloud': typeof CloudIndexRoute
   '/connectors': typeof ConnectorsIndexRoute
   '/endpoints': typeof EndpointsIndexRoute
@@ -368,6 +376,7 @@ export interface FileRoutesById {
   '/settings/voice': typeof SettingsVoiceRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/api/': typeof ApiIndexRoute
+  '/audios/': typeof AudiosIndexRoute
   '/cloud/': typeof CloudIndexRoute
   '/connectors/': typeof ConnectorsIndexRoute
   '/endpoints/': typeof EndpointsIndexRoute
@@ -412,6 +421,7 @@ export interface FileRouteTypes {
     | '/settings/voice'
     | '/threads/$threadId'
     | '/api/'
+    | '/audios/'
     | '/cloud/'
     | '/connectors/'
     | '/endpoints/'
@@ -454,6 +464,7 @@ export interface FileRouteTypes {
     | '/settings/voice'
     | '/threads/$threadId'
     | '/api'
+    | '/audios'
     | '/cloud'
     | '/connectors'
     | '/endpoints'
@@ -496,6 +507,7 @@ export interface FileRouteTypes {
     | '/settings/voice'
     | '/threads/$threadId'
     | '/api/'
+    | '/audios/'
     | '/cloud/'
     | '/connectors/'
     | '/endpoints/'
@@ -539,6 +551,7 @@ export interface RootRouteChildren {
   SettingsVoiceRoute: typeof SettingsVoiceRoute
   ThreadsThreadIdRoute: typeof ThreadsThreadIdRoute
   ApiIndexRoute: typeof ApiIndexRoute
+  AudiosIndexRoute: typeof AudiosIndexRoute
   CloudIndexRoute: typeof CloudIndexRoute
   ConnectorsIndexRoute: typeof ConnectorsIndexRoute
   EndpointsIndexRoute: typeof EndpointsIndexRoute
@@ -642,6 +655,13 @@ declare module '@tanstack/react-router' {
       path: '/cloud'
       fullPath: '/cloud/'
       preLoaderRoute: typeof CloudIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/audios/': {
+      id: '/audios/'
+      path: '/audios'
+      fullPath: '/audios/'
+      preLoaderRoute: typeof AudiosIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/': {
@@ -867,6 +887,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsVoiceRoute: SettingsVoiceRoute,
   ThreadsThreadIdRoute: ThreadsThreadIdRoute,
   ApiIndexRoute: ApiIndexRoute,
+  AudiosIndexRoute: AudiosIndexRoute,
   CloudIndexRoute: CloudIndexRoute,
   ConnectorsIndexRoute: ConnectorsIndexRoute,
   EndpointsIndexRoute: EndpointsIndexRoute,

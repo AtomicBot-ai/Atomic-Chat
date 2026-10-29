@@ -49,11 +49,25 @@ export async function pageShows(
 /** The first-run flow's own way out, offered on every one of its screens. */
 export const SKIP_ONBOARDING = '[data-testid="onboarding-skip"]'
 
-/** Leaves the first-run flow for the chat, as a user pressing Skip setup. */
+/** The handoff panel's Dismiss, bottom-right over the app after Skip setup. */
+const DISMISS_HANDOFF = '[data-testid="onboarding-handoff-dismiss"]'
+
+/**
+ * Leaves the first-run flow for the chat, as a user pressing Skip setup, and
+ * puts away the "Back to setup" panel that follows, so it covers nothing the
+ * scenario clicks next.
+ */
 export async function skipOnboarding(session: Session): Promise<void> {
-  const skip = session.app.browser.$(SKIP_ONBOARDING)
+  const browser = session.app.browser
+  const skip = browser.$(SKIP_ONBOARDING)
   await skip.waitForDisplayed({ timeout: 60_000 })
   await skip.click()
+  const dismiss = browser.$(DISMISS_HANDOFF)
+  const shown = await dismiss.waitForDisplayed({ timeout: 10_000 }).then(
+    () => true,
+    () => false
+  )
+  if (shown) await dismiss.click()
 }
 
 export async function waitForChat(session: Session): Promise<void> {
@@ -72,8 +86,14 @@ export async function waitForChat(session: Session): Promise<void> {
  * selected model's id as its own title, so it has to be excluded: otherwise the
  * row appears to still be there once the popover has closed over it.
  */
-export async function pickModel(session: Session, modelId: string, provider?: string): Promise<void> {
+export async function pickModel(session: Session, modelId: string, provider: string = 'llamacpp-upstream'): Promise<void> {
   const browser = session.app.browser
+  if (provider === 'llamacpp-upstream') {
+    await browser.waitUntil(async () => {
+      const settings = await browser.execute(() => localStorage.getItem('@janhq/llamacpp-upstream-extension') ?? '')
+      return settings.includes(session.backendVersion)
+    }, { timeout: 30_000, timeoutMsg: 'fixture backend selection did not settle' })
+  }
   const trigger = browser.$('[data-test-id="model-picker-trigger"]')
   const change = browser.$('button[aria-label="Change model"]')
   // Both llama.cpp providers list the same model folder, so with both enabled a

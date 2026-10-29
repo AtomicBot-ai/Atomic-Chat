@@ -58,12 +58,12 @@ import {
 import { captureReplyGateReady } from '@/lib/reply-gate-telemetry'
 import { useReplyModelAutoStart } from '@/hooks/useReplyModelAutoStart'
 import { useDeferredFirstSend } from '@/stores/deferred-first-send-store'
+import { useThreadManagementStore } from '@/hooks/useThreadManagement'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
 import { generateId, type ChatStatus } from 'ai'
 import { useRouter } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
-import { useGlobalAutoApproveOverridesSelect } from '@/lib/mcp-approval'
 import { TEMPORARY_CHAT_ID, TEMPORARY_CHAT_QUERY_ID } from '@/constants/chat'
 import { composerThreadKey as buildComposerThreadKey } from '@/lib/composer-thread-key'
 import {
@@ -112,8 +112,14 @@ import {
   createImageAttachment,
   createDocumentAttachment,
   createAudioAttachment,
+  createVideoAttachment,
 } from '@/types/attachment'
 import { AttachmentChip } from '@/containers/AttachmentChip'
+import {
+  AttachmentPreviewDialog,
+  type AttachmentPreviewSource,
+} from '@/containers/AttachmentPreviewDialog'
+import { attachmentPreviewMediaType } from '@/lib/attachment-preview'
 import { FileTooLargeError } from '@/lib/readFileBytes'
 import { readImageAttachmentFromPath } from '@/containers/chatInput/imageFromPath'
 import {
@@ -127,6 +133,7 @@ import {
   DOCUMENT_EXTENSIONS,
   IMAGE_EXTENSIONS,
   AUDIO_EXTENSIONS,
+  VIDEO_EXTENSIONS,
   classifyDroppedPaths,
 } from '@/containers/chatInput/classifyDroppedPaths'
 import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionDialog'
@@ -173,6 +180,7 @@ import type { AgentSkill } from '@/services/agent/skills'
 const ATTACHABLE_EXTENSIONS = [
   ...IMAGE_EXTENSIONS,
   ...AUDIO_EXTENSIONS,
+  ...VIDEO_EXTENSIONS,
   ...DOCUMENT_EXTENSIONS,
 ]
 
@@ -365,10 +373,6 @@ const ChatInput = memo(function ChatInput({
     (state) => state.approvalModes[composerThreadKey] ?? 'manual'
   )
   const setApprovalMode = useAgentMode((state) => state.setApprovalMode)
-  // Restricted is shown, yet global auto-approve runs connector tools (web
-  // search) unasked: the menu says so and links to the setting.
-  const autoApproveOverridesRestricted =
-    useGlobalAutoApproveOverridesSelect(composerThreadKey)
 
   useLayoutEffect(() => {
     const caret = pendingAgentSkillCaretRef.current
@@ -496,6 +500,8 @@ const ChatInput = memo(function ChatInput({
   const [dropdownToolsAvailable, setDropdownToolsAvailable] = useState(false)
   const [tooltipToolsAvailable, setTooltipToolsAvailable] = useState(false)
   const [isDragOver, setIsDragOver] = useState(false)
+  const [previewSource, setPreviewSource] =
+    useState<AttachmentPreviewSource | null>(null)
   // The Send slot clips its button only while it grows or shrinks; settled,
   // the button's focus ring must show whole.
   const [sendControlMoving, setSendControlMoving] = useState(false)
@@ -991,11 +997,16 @@ const ChatInput = memo(function ChatInput({
   }, [voiceOutcome, voiceAnchor, composerThreadKey, setPrompt, t])
 
   // Stop dictation when this composer goes away, otherwise the microphone
-  // stays open with nowhere to put the text.
+  // stays open with nowhere to put the text. That includes a start still
+  // waiting for the voice model: left alone it opened the microphone once the
+  // model was up, for a composer that no longer existed.
   useEffect(() => {
     return () => {
       const state = useVoiceInput.getState()
-      if (state.ownerKey === composerThreadKey && state.sessionId) {
+      if (
+        state.ownerKey === composerThreadKey &&
+        (state.sessionId || state.phase === 'starting')
+      ) {
         void state.cancel()
       }
     }
@@ -1142,7 +1153,7 @@ const ChatInput = memo(function ChatInput({
       // store can be cleared immediately while we still know what to forward
       // to the new thread page.
       const docsSnapshot = attachments
-        .filter((att) => att.type === 'document')
+        .filter((att) => att.type === 'document' || att.type === 'video')
         .map((att) => ({ ...att }))
 
       const messagePayload = {
@@ -1358,7 +1369,6 @@ const ChatInput = memo(function ChatInput({
     (resolution: ReplyModelGateResolution) => {
       const canRunFromRoot =
         Boolean(initialMessage) &&
-        !projectId &&
         !onSubmit &&
         attachments.length === 0 &&
         (resolution.outcome === 'download' ||
@@ -1370,11 +1380,22 @@ const ChatInput = memo(function ChatInput({
         // thread created after the user may have left (and changed it).
         const agent = useAgentMode.getState()
         const queueId = generateId()
+        const project = projectId
+          ? useThreadManagementStore.getState().getFolderById(projectId)
+          : undefined
+        const assistant = project?.assistantId
+          ? assistants.find((entry) => entry.id === project.assistantId)
+          : (selectedAssistant ??
+            assistants.find((entry) => entry.id === defaultAssistantId) ??
+            assistants[0])
         useDeferredFirstSend.getState().enqueue({
           id: queueId,
           prompt: usePrompt.getState().getDraft(composerThreadKey),
           downloadModelIds: resolution.downloadModelIds!,
           createdAt: Date.now(),
+          composerKey: composerThreadKey,
+          project,
+          assistant,
           agentState: {
             approvalMode: agent.approvalModes[composerThreadKey],
             workspace: agent.workspaces[composerThreadKey],
@@ -1393,7 +1414,16 @@ const ChatInput = memo(function ChatInput({
       useDeferredFirstSend.getState().clear()
       setQueuedSend(resolution)
     },
-    [attachments.length, composerThreadKey, initialMessage, onSubmit, projectId]
+    [
+      attachments.length,
+      composerThreadKey,
+      initialMessage,
+      onSubmit,
+      projectId,
+      assistants,
+      defaultAssistantId,
+      selectedAssistant,
+    ]
   )
 
   const handleReplyGateDismissed = useCallback(() => {
@@ -2495,6 +2525,50 @@ const ChatInput = memo(function ChatInput({
     await commitAudioAttachments(outcome)
   }
 
+  // Video is only referenced by path: nothing is read, parsed or indexed, so
+  // the document size limit and model checks do not apply.
+  const ingestVideoPaths = async (paths: readonly string[]) => {
+    const prepared: Attachment[] = []
+    for (const p of paths) {
+      const name = p.split(/[\\/]/).pop() || p
+      const fileType = name.split('.').pop()?.toLowerCase()
+      let size: number | undefined
+      try {
+        const stat = await fs.fileStat(p)
+        size = stat?.size ? Number(stat.size) : undefined
+      } catch (e) {
+        console.warn('Failed to read file size for', p, e)
+      }
+      prepared.push(
+        createVideoAttachment({
+          name,
+          path: p,
+          fileType,
+          mimeType: attachmentPreviewMediaType(name, fileType),
+          size,
+        })
+      )
+    }
+
+    let duplicates: string[] = []
+    setAttachmentsForThread(attachmentsKey, (current) => {
+      const existingPaths = new Set(
+        current.filter((a) => a.type === 'video').map((a) => a.path)
+      )
+      duplicates = prepared
+        .filter((att) => existingPaths.has(att.path))
+        .map((att) => att.name)
+      const fresh = prepared.filter((att) => !existingPaths.has(att.path))
+      return fresh.length > 0 ? [...current, ...fresh] : current
+    })
+
+    if (duplicates.length > 0) {
+      toast.warning('Files already attached', {
+        description: `${duplicates.join(', ')} ${duplicates.length === 1 ? 'is' : 'are'} already in the list`,
+      })
+    }
+  }
+
   const handleVisionModelDownloadComplete = useCallback(
     (modelId: string) => {
       setShowVisionModelPrompt(false)
@@ -2559,7 +2633,8 @@ const ChatInput = memo(function ChatInput({
       toast.info('Attachments are disabled in Settings')
       return
     }
-    const { images, audio, docs, unsupported } = classifyDroppedPaths(paths)
+    const { images, audio, videos, docs, unsupported } =
+      classifyDroppedPaths(paths)
 
     if (unsupported.length > 0) {
       const names = unsupported.map((p) => p.split(/[\\/]/).pop() || p)
@@ -2590,6 +2665,10 @@ const ChatInput = memo(function ChatInput({
       } else {
         void ingestAudioPaths(audio)
       }
+    }
+
+    if (videos.length > 0) {
+      void ingestVideoPaths(videos)
     }
 
     if (docs.length > 0) {
@@ -2938,6 +3017,22 @@ const ChatInput = memo(function ChatInput({
                               size={att.size}
                               error={att.error}
                               isProcessing={showAttachmentLoader}
+                              note={
+                                att.type === 'video'
+                                  ? t('chat:attachmentPreview.videoModelNote')
+                                  : undefined
+                              }
+                              onOpen={() =>
+                                setPreviewSource({
+                                  name: att.name,
+                                  path: att.path,
+                                  url: att.dataUrl,
+                                  mimeType: att.mimeType,
+                                  fileType: att.fileType,
+                                  size: att.size,
+                                  inlineContent: att.inlineContent,
+                                })
+                              }
                               onRemove={() => handleRemoveAttachment(idx)}
                               onRetry={() => handleRetryAttachment(idx)}
                             />
@@ -2951,10 +3046,26 @@ const ChatInput = memo(function ChatInput({
                           >
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <div
+                                <button
+                                  type="button"
+                                  disabled={!att.dataUrl}
+                                  aria-label={t(
+                                    'chat:attachmentPreview.openPreview',
+                                    { name: att.name }
+                                  )}
+                                  onClick={() =>
+                                    setPreviewSource({
+                                      name: att.name,
+                                      url: att.dataUrl,
+                                      mimeType: att.mimeType,
+                                      size: att.size,
+                                    })
+                                  }
                                   className={cn(
                                     'relative border rounded-xl size-14 overflow-hidden',
                                     'flex items-center justify-center',
+                                    att.dataUrl &&
+                                      'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                                     showAttachmentLoader &&
                                       'ring-1 ring-primary/30 bg-muted/40'
                                   )}
@@ -2983,7 +3094,7 @@ const ChatInput = memo(function ChatInput({
                                       />
                                     </div>
                                   )}
-                                </div>
+                                </button>
                               </TooltipTrigger>
                               <TooltipContent>
                                 <div className="text-xs">
@@ -3160,7 +3271,11 @@ const ChatInput = memo(function ChatInput({
                   onPaste={handlePaste}
                   placeholder={
                     isVoiceActive && !prompt
-                      ? t('common:voiceInput.placeholder')
+                      ? // Nothing is captured until the voice model is up, so
+                        // "Listening — start speaking" would lose those words.
+                        voicePhase === 'starting'
+                        ? t('common:voiceInput.startingPlaceholder')
+                        : t('common:voiceInput.placeholder')
                       : t('common:placeholder.chatInput')
                   }
                   autoFocus
@@ -3313,20 +3428,6 @@ const ChatInput = memo(function ChatInput({
                       'chat:agentApprovals.skipConfirmAccept'
                     )}
                     toggles={accessToggles}
-                    manualOverride={
-                      autoApproveOverridesRestricted
-                        ? {
-                            notice: t(
-                              'chat:agentApprovals.autoApproveOverride'
-                            ),
-                            actionLabel: t(
-                              'chat:agentApprovals.openAutoApproveSetting'
-                            ),
-                            onAction: () =>
-                              router.navigate({ to: route.settings.general }),
-                          }
-                        : undefined
-                    }
                   />
                   {/* //! Browse (Chrome) button — temporarily hidden
                 {!agentRouteActive && hasJanBrowserMCPConfig && modelSupportsBrowser && (
@@ -3726,6 +3827,11 @@ const ChatInput = memo(function ChatInput({
         onOpenChange={setShowVisionModelPrompt}
         modelName={selectedModel ? getModelDisplayName(selectedModel) : ''}
         onModelReady={handleVisionModelDownloadComplete}
+      />
+
+      <AttachmentPreviewDialog
+        source={previewSource}
+        onClose={() => setPreviewSource(null)}
       />
     </div>
   )

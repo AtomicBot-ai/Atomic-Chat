@@ -78,7 +78,8 @@
     "reasoned": "Reasoned",
     "thinking": "Thinking...",
     "thinkingFor": "Thinking for {{count}}s…",
-    "thoughtFor": "Thought for {{count}}s"
+    "thoughtFor": "Thought for {{count}}s",
+    "loadingModel": "Loading model…"
   },
   "docCitation": {
     "document": "Document",
@@ -202,9 +203,7 @@
     "skipConfirmTitle": "Enable Full access?",
     "skipConfirmBody": "No approval prompts: tool calls can modify or delete files, run commands, and use the internet. Enable it only for a task you trust.",
     "skipConfirmCancel": "Cancel",
-    "skipConfirmAccept": "I understand",
-    "autoApproveOverride": "“Auto-approve tool calls” is on in Settings, so web search and other connector tools run without asking.",
-    "openAutoApproveSetting": "Open Settings"
+    "skipConfirmAccept": "I understand"
   },
   "agentApproval": {
     "title": "Agent approval required",
@@ -305,5 +304,19 @@
     "attachFiles": "Attach files",
     "supportedFiles": "Supported files",
     "attachFailed": "Failed to attach files"
+  },
+  "attachmentPreview": {
+    "open": "Open",
+    "showInFolder": "Show in folder",
+    "openPreview": "Preview {{name}}",
+    "image": "Image",
+    "unsupported": "Preview is not available for this file type.",
+    "failed": "Could not preview this file.",
+    "missing": "This file is no longer at {{path}}.",
+    "unplayable": "This media format cannot be played here.",
+    "truncated": "Showing the first {{size}} of the file.",
+    "extracted": "Text extracted from the document. Open the file to see its original layout.",
+    "noText": "No text could be extracted from this document.",
+    "videoModelNote": "The model can't watch videos: it only sees the file name."
   }
 }

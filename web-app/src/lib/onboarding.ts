@@ -29,6 +29,7 @@ const LOCAL_MODEL_PROVIDERS = new Set([
   'mlx',
   'foundry-local',
   'litert-lm',
+  'geniex',
   'jan',
 ])
 

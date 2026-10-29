@@ -773,6 +773,55 @@ describe('llamacpp_extension', () => {
       })
     })
 
+    // QA 2.2.25: fit on, the controls said 16K while llama.cpp fitted 128000. The mirror the
+    // TurboQuant extension has was lost here when the core took over the load.
+    describe('the window the server got', () => {
+      const session = { model_id: 'lfm', pid: 1, port: 3507, api_key: 'k' }
+      const loadWithProps = async (
+        nCtx: number,
+        settings: Record<string, unknown> | undefined,
+        isEmbedding = false
+      ) => {
+        extension['ensureCoreIsReady'] = vi.fn().mockResolvedValue(undefined)
+        vi.mocked(invoke).mockImplementation(async (command) =>
+          command === 'atomic_core_call' ? { session, created: true } : undefined
+        )
+        global.fetch = vi.fn().mockResolvedValue({
+          ok: true,
+          json: async () => ({ default_generation_settings: { n_ctx: nCtx } }),
+        })
+        await extension.load('lfm', settings as any, isEmbedding)
+        // The mirror runs behind the load; let it finish.
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      }
+      const ctxEvents = () =>
+        vi
+          .mocked(events.emit)
+          .mock.calls.filter(([name]) => name === 'OnAutoIncreasedCtxLen')
+          .map(([, payload]) => payload)
+
+      it('puts a window fit chose in the context controls', async () => {
+        await loadWithProps(128000, { ctx_size: 16384 })
+        expect(fetch).toHaveBeenCalledWith('http://localhost:3507/props', {
+          headers: { Authorization: 'Bearer k' },
+        })
+        expect(ctxEvents()).toEqual([
+          { provider: 'llamacpp-upstream', modelId: 'lfm', newCtxLen: 128000 },
+        ])
+      })
+
+      it('says nothing when the server runs the window the controls show', async () => {
+        await loadWithProps(4096, { ctx_size: 4096 })
+        expect(ctxEvents()).toEqual([])
+      })
+
+      it('does not ask an embedding server', async () => {
+        await loadWithProps(512, undefined, true)
+        expect(fetch).not.toHaveBeenCalled()
+        expect(ctxEvents()).toEqual([])
+      })
+    })
+
     it('reports a core refusal as a readable error that keeps its code', async () => {
       extension['ensureCoreIsReady'] = vi.fn().mockResolvedValue(undefined)
       vi.mocked(invoke).mockRejectedValue({

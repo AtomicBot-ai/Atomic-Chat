@@ -32,6 +32,7 @@ vi.mock('@/lib/clipboard', () => ({
 }))
 
 import { DEFAULT_IMAGE_FORM, useImageForm } from '@/hooks/useImageForm'
+import { useHardware } from '@/hooks/useHardware'
 import { useImageSetting } from '@/hooks/useImageSetting'
 import { copyToClipboard } from '@/lib/clipboard'
 import { previewImageCapabilities } from '@/lib/diffusion/capabilities'
@@ -407,6 +408,44 @@ describe('ImagePromptForm', () => {
         steps: 20,
         cfgScale: 2.5,
       })
+    })
+
+    it('asks before generating with a model that will not fit, and Cancel starts nothing', async () => {
+      // QA 2026-10-23: an 8 GB Mac swapped a ~6.5 GB model until the engine stopped.
+      const hardware = useHardware.getState().hardwareData
+      useHardware.setState({
+        hardwareData: { ...hardware, os_type: 'macos', total_memory: 8192, gpus: [] },
+      })
+      const loadModel = vi.fn(async () => {})
+      useImageGenerationStore.setState({ loadModel })
+      try {
+        render(<ImagePromptForm />)
+        await userEvent.click(screen.getByTestId('image-generate'))
+        const dialog = await screen.findByTestId('image-exceeds-dialog')
+        expect(dialog).toHaveTextContent('images:confirmExceeds.title')
+        expect(dialog).toHaveTextContent('images:confirmExceeds.needs')
+        await userEvent.click(
+          within(dialog).getByRole('button', { name: 'common:cancel' })
+        )
+        await waitFor(() =>
+          expect(
+            screen.queryByTestId('image-exceeds-dialog')
+          ).not.toBeInTheDocument()
+        )
+        expect(loadModel).not.toHaveBeenCalled()
+        expect(fake.generate).not.toHaveBeenCalled()
+
+        await userEvent.click(screen.getByTestId('image-generate'))
+        await userEvent.click(
+          within(await screen.findByTestId('image-exceeds-dialog')).getByRole(
+            'button',
+            { name: 'images:confirmExceeds.confirm' }
+          )
+        )
+        await waitFor(() => expect(loadModel).toHaveBeenCalledWith(QWEN_ID))
+      } finally {
+        useHardware.setState({ hardwareData: hardware })
+      }
     })
 
     it('starts the model on Generate and generates with what was set before', async () => {

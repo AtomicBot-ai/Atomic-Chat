@@ -15,6 +15,7 @@ import {
 } from './fixtures.js'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 import { installedImageEngines } from './images.js'
 import { CAN_RUN_FAKE_BACKEND, listProcesses } from './platform.js'
 import { operatorStateChanges, snapshotOperatorState, type OperatorSnapshot } from './invariants.js'
@@ -33,6 +34,8 @@ export interface Session {
   dataFolders: string[]
   /** Stops every page watcher still running; safe to call twice. */
   watchers: (() => Promise<unknown>)[]
+  /** The fixture version that must settle before choosing an upstream model. */
+  backendVersion: string
   /** The backends (`provider:version/backend`) this run may leave installed. */
   allowedBackends: string[]
   /** The image engines (`tag/backendId`) this run may leave installed. */
@@ -40,28 +43,24 @@ export interface Session {
 }
 
 /**
- * The backend pair the app bundles and unpacks into a fresh data folder on its
- * first launch (`install_bundled_backend` in each llama.cpp plugin): the tags
- * of `src-tauri/resources/llamacpp-backend{,-upstream}/{version,backend}.txt`
- * when a dev build fetched them. Their arrival is the app's own doing, not a
- * download the scenario missed, so the teardown expects them.
+ * The backend the app bundles and unpacks into a fresh data folder on its first
+ * launch (`install_bundled_backend` in the upstream llama.cpp plugin): the tag
+ * of `src-tauri/resources/llamacpp-backend-upstream/{version,backend}.txt` when
+ * a dev build fetched it. Its arrival is the app's own doing, not a download
+ * the scenario missed, so the teardown expects it. Upstream is the only
+ * llama.cpp the installer ships; a TurboQuant build left in
+ * `resources/llamacpp-backend` by hand is not bundled, so it is not expected.
  */
 export function bundledBackends(): string[] {
-  const root = join(REPO_ROOT, 'src-tauri', 'resources')
-  const found: string[] = []
-  for (const [provider, dir] of [
-    ['llamacpp-upstream', 'llamacpp-backend-upstream'],
-    ['llamacpp', 'llamacpp-backend'],
-  ] as const) {
-    try {
-      const version = readFileSync(join(root, dir, 'version.txt'), 'utf8').replace(/\uFEFF/g, '').trim()
-      const backend = readFileSync(join(root, dir, 'backend.txt'), 'utf8').replace(/\uFEFF/g, '').trim()
-      if (version && backend) found.push(`${provider}:${version}/${backend}`)
-    } catch {
-      // not fetched on this machine: nothing gets unpacked
-    }
+  const dir = join(REPO_ROOT, 'src-tauri', 'resources', 'llamacpp-backend-upstream')
+  try {
+    const version = readFileSync(join(dir, 'version.txt'), 'utf8').replace(/\uFEFF/g, '').trim()
+    const backend = readFileSync(join(dir, 'backend.txt'), 'utf8').replace(/\uFEFF/g, '').trim()
+    if (version && backend) return [`llamacpp-upstream:${version}/${backend}`]
+  } catch {
+    // not fetched on this machine: nothing gets unpacked
   }
-  return found
+  return []
 }
 
 export async function startSession(
@@ -102,6 +101,7 @@ export async function startSession(
       operatorBefore,
       dataFolders: [profile.dataFolder],
       watchers: [],
+      backendVersion,
       allowedBackends: [
         `${FAKE_PROVIDER}:${backendVersion}/${FAKE_BACKEND}`,
         ...bundledBackends(),
@@ -168,6 +168,13 @@ export async function endSession(session: Session | undefined): Promise<string[]
   for (const folder of session.dataFolders) await reapFakeBackends(folder)
   // The tunnel is in no journal at all; a scenario that started one asserts it is gone, this is the net.
   await reapFakeTunnels(session.profile.root)
+  // Startup capability probes are not model sessions. A --version child can
+  // be finishing as the core exits; allow it a bounded grace period, then
+  // retain the same leak assertion for any process that is still alive.
+  const probeDeadline = Date.now() + 3_000
+  while (Date.now() < probeDeadline && profileProcesses(session.profile.root).some((p) => p.command.endsWith(' --version'))) {
+    await delay(100)
+  }
   // A stopped core is supposed to have stopped its backends. One that has not
   // holds a model in memory for as long as the machine stays up.
   const leaked = profileProcesses(session.profile.root)

@@ -75,6 +75,10 @@ export enum PlatformFeature {
   // plugin that supervises `sd-server`, so desktop only.
   MEDIA_GENERATION = 'mediaGeneration',
 
+  // Audio generation (speech, music, sound effects). The page is laid out
+  // but there is no audio engine yet, so it shows in dev builds only.
+  AUDIO_GENERATION = 'audioGeneration',
+
   // Remote access over the internet via the bundled cloudflared tunnel. LAN
   // access to the local server is not part of it.
   REMOTE_ACCESS = 'remoteAccess',

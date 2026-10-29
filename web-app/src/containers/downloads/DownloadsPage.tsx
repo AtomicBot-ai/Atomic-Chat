@@ -258,7 +258,7 @@ export function DownloadsPage() {
           </h1>
         </div>
       </HeaderPage>
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
         <div
           className="grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-3"
           data-testid="downloads-summary"

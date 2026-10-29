@@ -14,8 +14,9 @@
  */
 
 import { create } from 'zustand'
+import { useAppState } from '@/hooks/useAppState'
 
-export type RunPhase = 'installing' | 'configuring' | undefined
+export type RunPhase = 'installing' | 'configuring' | 'connecting' | undefined
 
 type SetState<T> = (updater: T | ((prev: T) => T)) => void
 
@@ -40,6 +41,11 @@ type LaunchState = {
   phase: Record<string, RunPhase>
   logs: Record<string, string[]>
   openLog: Record<string, boolean>
+  /**
+   * Agents Atomic Chat opened (a terminal or their app) during this run of
+   * the server generation. This records launch history, never client liveness.
+   */
+  launched: Record<string, boolean>
   setInstalled: SetState<Record<string, boolean>>
   setViaWsl: SetState<Record<string, boolean>>
   setBinPath: SetState<Record<string, string | undefined>>
@@ -48,6 +54,7 @@ type LaunchState = {
   setPhase: SetState<Record<string, RunPhase>>
   setLogs: SetState<Record<string, string[]>>
   setOpenLog: SetState<Record<string, boolean>>
+  markLaunched: (id: string) => void
 }
 
 export const useLaunchStore = create<LaunchState>((set) => ({
@@ -59,6 +66,7 @@ export const useLaunchStore = create<LaunchState>((set) => ({
   phase: {},
   logs: {},
   openLog: {},
+  launched: {},
   setInstalled: (updater) =>
     set((s) => ({ installed: apply(updater, s.installed) })),
   setViaWsl: (updater) => set((s) => ({ viaWsl: apply(updater, s.viaWsl) })),
@@ -71,4 +79,12 @@ export const useLaunchStore = create<LaunchState>((set) => ({
   setLogs: (updater) => set((s) => ({ logs: apply(updater, s.logs) })),
   setOpenLog: (updater) =>
     set((s) => ({ openLog: apply(updater, s.openLog) })),
+  markLaunched: (id) =>
+    set((s) => ({ launched: { ...s.launched, [id]: true } })),
 }))
+
+useAppState.subscribe((state, previous) => {
+  if (previous.serverStatus === 'running' && state.serverStatus !== 'running') {
+    useLaunchStore.setState({ launched: {} })
+  }
+})

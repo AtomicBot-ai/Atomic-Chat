@@ -179,7 +179,7 @@ function HardwareContent() {
           </Button>
         </div>
       </HeaderPage>
-      <div className="flex h-[calc(100%-60px)]">
+      <div className="flex h-[calc(100%-var(--page-header-height))]">
         <div className="p-4 pt-0 w-full overflow-y-auto">
           {isLoading ? (
             <div className="flex items-center justify-center h-32">

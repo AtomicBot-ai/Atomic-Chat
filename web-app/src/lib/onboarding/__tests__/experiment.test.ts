@@ -4,6 +4,7 @@ import posthog from 'posthog-js'
 import { localStorageKey } from '@/constants/localStorage'
 import {
   assignOnboardingCohort,
+  captureOnboardingCohort,
   drawOnboardingVariant,
   ONBOARDING_EXPERIMENT,
   readOnboardingCohort,
@@ -12,8 +13,7 @@ import {
 import { getOnboardingVariant } from '../steps'
 
 vi.mock('posthog-js', () => ({
-  // `has_opted_in_capturing` is what `queuedCapture` checks before sending.
-  default: { capture: vi.fn(), has_opted_in_capturing: () => true },
+  default: { capture: vi.fn() },
 }))
 
 const stored = () =>
@@ -53,7 +53,7 @@ describe('drawing a variant', () => {
 })
 
 describe('joining the experiment', () => {
-  it('puts a new install in a cohort once, reports it and starts runs on it', () => {
+  it('persists the cohort before analytics is ready and starts runs on it', () => {
     const cohort = assignOnboardingCohort({
       firstLaunch: true,
       random: () => 0.5,
@@ -66,10 +66,7 @@ describe('joining the experiment', () => {
       assignedAt: 1_700_000_000_000,
     })
     expect(stored()).toEqual(cohort)
-    expect(posthog.capture).toHaveBeenCalledWith('onboarding_cohort_assigned', {
-      onboarding_experiment: ONBOARDING_EXPERIMENT,
-      onboarding_variant: 'model_only',
-    })
+    expect(posthog.capture).not.toHaveBeenCalled()
     expect(getOnboardingVariant()).toBe('model_only')
   })
 
@@ -200,5 +197,90 @@ describe('telling PostHog', () => {
 
     expect(client.state.superProperties).toEqual({})
     expect(client.state.personOnce).toEqual({})
+  })
+})
+
+describe('capturing the persisted assignment', () => {
+  const assignedAt = Date.UTC(2026, 9, 23, 12)
+  const accepted = () => ({
+    uuid: '00000000-0000-4000-8000-000000000001',
+    event: 'onboarding_cohort_assigned',
+    properties: {},
+    timestamp: new Date(assignedAt),
+  })
+
+  beforeEach(() => {
+    assignOnboardingCohort({
+      firstLaunch: true,
+      random: () => 0.5,
+      now: () => assignedAt,
+    })
+  })
+
+  it('recovers an old assignment at its original time and persists acceptance', () => {
+    const client = { capture: vi.fn(accepted) }
+    captureOnboardingCohort(client)
+
+    expect(client.capture).toHaveBeenCalledExactlyOnceWith(
+      'onboarding_cohort_assigned',
+      {
+        onboarding_experiment: ONBOARDING_EXPERIMENT,
+        onboarding_variant: 'model_only',
+      },
+      { timestamp: new Date(assignedAt), send_instantly: true }
+    )
+    expect(stored()).toMatchObject({ assignedAt, assignmentCaptured: true })
+
+    // A later launch restores the same stored cohort without another draw.
+    assignOnboardingCohort({ firstLaunch: false })
+    captureOnboardingCohort(client)
+    expect(client.capture).toHaveBeenCalledTimes(1)
+  })
+
+  it('retries a capture the SDK declined without changing the cohort or time', () => {
+    const client = {
+      capture: vi
+        .fn()
+        .mockReturnValueOnce(undefined)
+        .mockImplementation(accepted),
+    }
+    captureOnboardingCohort(client)
+    expect(stored().assignmentCaptured).toBeUndefined()
+
+    captureOnboardingCohort(client)
+    expect(client.capture).toHaveBeenCalledTimes(2)
+    expect(client.capture.mock.calls[0]).toEqual(client.capture.mock.calls[1])
+    expect(stored()).toMatchObject({
+      variant: 'model_only',
+      assignedAt,
+      assignmentCaptured: true,
+    })
+  })
+
+  it('keeps the assignment pending after a capture exception', () => {
+    const client = {
+      capture: vi.fn(() => {
+        throw new Error('not ready')
+      }),
+    }
+    expect(() => captureOnboardingCohort(client)).not.toThrow()
+    expect(stored().assignmentCaptured).toBeUndefined()
+  })
+
+  it('does not invent a timestamp for a damaged assignment', () => {
+    localStorage.setItem(
+      localStorageKey.onboardingCohort,
+      JSON.stringify({
+        experiment: ONBOARDING_EXPERIMENT,
+        variant: 'full',
+      })
+    )
+    const client = { capture: vi.fn(accepted) }
+    captureOnboardingCohort(client)
+    expect(client.capture).not.toHaveBeenCalled()
+    expect(stored()).toEqual({
+      experiment: ONBOARDING_EXPERIMENT,
+      variant: 'full',
+    })
   })
 })

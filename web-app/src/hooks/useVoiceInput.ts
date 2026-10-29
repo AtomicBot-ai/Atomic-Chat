@@ -44,7 +44,17 @@ export type VoicePhase =
   | 'finalizing'
   | 'error'
 
-export type VoiceOutcome = 'inserted' | 'cancelled' | 'error' | null
+/**
+ * `not-recorded` is a Stop pressed while the voice model was still starting:
+ * the microphone had not opened yet, so there was nothing to transcribe and
+ * the composer has to say so instead of quietly dropping the press.
+ */
+export type VoiceOutcome =
+  | 'inserted'
+  | 'cancelled'
+  | 'not-recorded'
+  | 'error'
+  | null
 
 export type VoiceSetupStep = 0 | 1 | 2
 
@@ -161,6 +171,20 @@ function detach() {
   unsubscribe = null
 }
 
+/**
+ * Which `begin` is current. Starting can take minutes — the microphone opens
+ * only once the voice model is up, and an 8 GB Mac took 85 s to load it — so a
+ * Stop, a Discard or a closed composer can land while `begin` is still awaiting.
+ * Each of those bumps this, and `begin` checks it after every await: otherwise
+ * it went on to open the microphone a minute after the user had stopped it,
+ * and the recording ran with no one watching it.
+ */
+let startAttempt = 0
+
+function abandonStart() {
+  startAttempt += 1
+}
+
 export const useVoiceInput = create<VoiceInputState>()((set, get) => ({
   ...IDLE,
   permission: 'unknown',
@@ -170,6 +194,9 @@ export const useVoiceInput = create<VoiceInputState>()((set, get) => ({
 
   begin: async (ownerKey, anchor) => {
     if (!RESTARTABLE_PHASES.has(get().phase)) return
+
+    const attempt = ++startAttempt
+    const abandoned = () => attempt !== startAttempt
 
     set({
       ...IDLE,
@@ -184,6 +211,9 @@ export const useVoiceInput = create<VoiceInputState>()((set, get) => ({
       const target = await ensureVoiceEngine({
         keepChatModelLoaded: !settings.unloadChatModelWhileDictating,
       })
+      // Stopped while the model was loading. It stays loaded (and unloads on
+      // its own when idle), so the next press starts at once.
+      if (abandoned()) return
 
       detach()
       unsubscribe = getServiceHub()
@@ -204,6 +234,15 @@ export const useVoiceInput = create<VoiceInputState>()((set, get) => ({
         ),
         deviceId: settings.inputDeviceId,
       })
+      if (abandoned()) {
+        // The microphone opened just as the user stopped: close it again and
+        // drop the instant it heard.
+        await getServiceHub()
+          .voice()
+          .cancelSession(session.sessionId)
+          .catch(() => {})
+        return
+      }
 
       set({
         sessionId: session.sessionId,
@@ -211,6 +250,8 @@ export const useVoiceInput = create<VoiceInputState>()((set, get) => ({
         startedAt: Date.now(),
       })
     } catch (error) {
+      // A start the user already walked away from has nothing left to report.
+      if (abandoned()) return
       detach()
       const code = errorCodeOf(error)
       if (code === VOICE_ENGINE_ERRORS.modelMissing) {
@@ -229,7 +270,17 @@ export const useVoiceInput = create<VoiceInputState>()((set, get) => ({
   },
 
   stop: async () => {
-    const { sessionId, phase } = get()
+    const { sessionId, phase, ownerKey } = get()
+    // The voice model is still loading and the microphone has not opened, so
+    // there is nothing to transcribe. Stop now rather than ignore the press —
+    // it used to do nothing here, and recording began once the model was up.
+    if (phase === 'starting' && !sessionId) {
+      abandonStart()
+      detach()
+      // Keep the owner so that composer can tell the user nothing was recorded.
+      set({ ...IDLE, ownerKey, lastOutcome: 'not-recorded' })
+      return
+    }
     // Not `VOICE_ACTIVE_PHASES`: the finalizing phases are already a stop in
     // progress, and starting a second one would strand the first caller's
     // `await` on a resolver nobody holds any more.
@@ -260,6 +311,7 @@ export const useVoiceInput = create<VoiceInputState>()((set, get) => ({
 
   cancel: async () => {
     const { sessionId } = get()
+    abandonStart()
     settle()
     detachOnIdle(set)
     if (!sessionId) {
@@ -301,6 +353,7 @@ export const useVoiceInput = create<VoiceInputState>()((set, get) => ({
   },
 
   reset: () => {
+    abandonStart()
     settle()
     detach()
     set({ ...IDLE, lastOutcome: null })

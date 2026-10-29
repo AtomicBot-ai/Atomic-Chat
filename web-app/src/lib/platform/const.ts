@@ -88,6 +88,14 @@ export const PlatformFeatures: Record<PlatformFeature, boolean> = {
   [PlatformFeature.MEDIA_GENERATION]:
     isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid(),
 
+  // The Audios page, desktop only like Images and Video. Dev builds only
+  // until the audio engine lands: the page has no model to run yet.
+  [PlatformFeature.AUDIO_GENERATION]:
+    import.meta.env.DEV &&
+    isPlatformTauri() &&
+    !isPlatformIOS() &&
+    !isPlatformAndroid(),
+
   // Public Remote access through the bundled cloudflared tunnel. Cloudflare
   // publishes no Windows arm64 build, so that bundle ships without it.
   [PlatformFeature.REMOTE_ACCESS]:
