@@ -1,7 +1,7 @@
+import { useServedContextLength } from '@/containers/server/useServedContextLength'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import type { ApiLogEntry, ApiRequestEntry } from '@/types/apiServerLog'
-import { getModelContextLength } from '@/utils/apiServerCapacity'
 import { endpointPath } from '@/utils/apiServerLogNormalize'
 import {
   formatCount,
@@ -78,6 +78,12 @@ export function ApiRequestInspector({
 }) {
   const { t } = useTranslation()
   const apiPrefix = useLocalApiServer((state) => state.apiPrefix)
+  // The window of the session serving this model now, from the engine that
+  // holds it: a model id alone names a copy in every llama.cpp provider, and
+  // the first one's setting is not what the request ran with (QA B09).
+  const contextLength = useServedContextLength(
+    entry?.kind === 'request' ? (entry.model ?? null) : null
+  )
 
   if (!entry) {
     return (
@@ -124,11 +130,8 @@ export function ApiRequestInspector({
       ? request.completionTokens / (Math.max(generationMs, 1) / 1000)
       : undefined)
 
-  const contextLength = getModelContextLength(request.model)
   const tokenValue = (value?: number, estimated?: boolean) =>
-    value === undefined
-      ? '–'
-      : `${estimated ? '~' : ''}${formatCount(value)}`
+    value === undefined ? '–' : `${estimated ? '~' : ''}${formatCount(value)}`
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto rounded-lg border border-border bg-card p-4">

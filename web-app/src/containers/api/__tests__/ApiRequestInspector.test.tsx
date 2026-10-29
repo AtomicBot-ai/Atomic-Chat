@@ -18,8 +18,8 @@ vi.mock('@/hooks/useLocalApiServer', () => ({
     selector({ apiPrefix: '/v1' }),
 }))
 
-vi.mock('@/utils/apiServerCapacity', () => ({
-  getModelContextLength: () => contextLength.value,
+vi.mock('@/containers/server/useServedContextLength', () => ({
+  useServedContextLength: () => contextLength.value,
 }))
 
 function request(overrides: Partial<ApiRequestEntry> = {}): ApiRequestEntry {

@@ -64,8 +64,8 @@ vi.mock('@/hooks/useStackedListDetail', () => ({
   }),
 }))
 
-vi.mock('@/utils/apiServerCapacity', () => ({
-  getModelContextLength: () => 4096,
+vi.mock('@/containers/server/useServedContextLength', () => ({
+  useServedContextLength: () => 4096,
 }))
 
 vi.mock('@/utils/localApiServerControl', () => ({
