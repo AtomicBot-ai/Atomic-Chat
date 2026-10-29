@@ -171,3 +171,6 @@ jobs:
           commit_message: Atomic Chat ${{ needs.release.outputs.version }}
           # Builds the package from the PKGBUILD (downloads, checksums, package()) before pushing.
           test: true
+          # The action stages every file when assets are supplied. Do not commit makepkg's
+          # downloaded deb or built package: AUR rejects large blobs.
+          post_process: rm -f -- atomic-chat-*.deb atomic-chat-bin-*.pkg.tar.*
