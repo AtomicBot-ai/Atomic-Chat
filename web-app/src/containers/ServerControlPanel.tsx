@@ -2,6 +2,7 @@ import { Link, useNavigate } from '@tanstack/react-router'
 import { Box, Cpu, Network, Play, RotateCw, Square } from 'lucide-react'
 import { route } from '@/constants/routes'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useLocalApiServerControl } from '@/hooks/useLocalApiServerControl'
 import { useServerSetup, useSetupDone } from '@/hooks/useServerSetup'
 import { useServedModel } from '@/containers/server/useServedModel'
@@ -32,6 +33,10 @@ export function ServerControlPanel() {
       state.configuredAgents.length + (state.endpointConfigured ? 1 : 0)
   )
 
+  const modelChosen = useLocalApiServer(
+    (state) => state.defaultModelLocalApiServer !== null
+  )
+
   // While running, show what the server actually loaded; otherwise what it
   // will load on the next start.
   const served = useServedModel(control.isRunning)
@@ -57,14 +62,16 @@ export function ServerControlPanel() {
 
   // Until the server is set up once, Start opens the setup guide: it picks
   // the model and what to connect, then starts the server itself. During the
-  // endpoint hints the pages were that setup, so Start starts it.
+  // endpoint hints the pages were that setup, so Start starts it. A model
+  // already chosen on Engine & model leaves the guide nothing to pick, so
+  // Start starts that one: opening the guide there read as a dead button.
   const power = () => {
     if (!control.isRunning && endpointGuide) {
       finishEndpointGuide()
       void control.toggle()
       return
     }
-    if (!control.isRunning && !setupDone) {
+    if (!control.isRunning && !setupDone && !modelChosen) {
       useServerSetup.getState().openGuide()
       void navigate({ to: route.api.index })
       return

@@ -260,6 +260,50 @@ describe('ServerControlPanel', () => {
     expect(navigate).toHaveBeenCalledWith({ to: '/api/' })
   })
 
+  it('starts a model chosen on Engine & model, even on a server never set up', async () => {
+    useServerSetup.setState({ setupDone: false, setupDismissed: false })
+    server.defaultModelLocalApiServer = {
+      model: 'gemma-4-e2b',
+      provider: 'llamacpp-upstream',
+    }
+    render(<ServerControlPanel />)
+
+    await userEvent.click(screen.getByTestId('server-panel-power'))
+
+    expect(control.toggle).toHaveBeenCalledTimes(1)
+    expect(useServerSetup.getState().guideActive).toBe(false)
+    expect(navigate).not.toHaveBeenCalled()
+  })
+
+  it('starts a chosen model while a chat run downloads another one', async () => {
+    // The report: a model on disk picked by hand, while onboarding still
+    // downloads its own for chat (not for the server, so Start is not held).
+    const store = useOnboardingStore.getState()
+    store.reset()
+    store.begin('model_only', 'model')
+    store.enqueue({
+      key: 'chat',
+      kind: 'chat',
+      title: 'Qwen3.5 4B',
+      taskId: 'Qwen3.5-4B-Q4_K_M',
+      phase: 'running',
+    })
+    store.handOff('chat')
+    useServerSetup.setState({ setupDone: false, setupDismissed: true })
+    server.defaultModelLocalApiServer = {
+      model: 'gemma-4-e2b',
+      provider: 'llamacpp-upstream',
+    }
+    render(<ServerControlPanel />)
+
+    const power = screen.getByTestId('server-panel-power')
+    expect(power).toBeEnabled()
+    await userEvent.click(power)
+
+    expect(control.toggle).toHaveBeenCalledTimes(1)
+    expect(navigate).not.toHaveBeenCalled()
+  })
+
   it('counts the tools set up to use the server', () => {
     useServerSetup.setState({
       configuredAgents: [
