@@ -16,7 +16,7 @@ import { localStorageKey } from '@/constants/localStorage'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import type { OnboardingJob } from '@/lib/onboarding/jobs'
+import { jobView, type OnboardingJob } from '@/lib/onboarding/jobs'
 import {
   useOnboardingStore,
   type OnboardingDestination,
@@ -287,15 +287,13 @@ describe('OnboardingRuntime', () => {
         useDownloadStore.setState({ pausedDownloads: new Set([image.taskId]) })
       })
 
-      // `startMediaJob` stays pending while the transfer is paused.
+      // `startMediaJob` stays pending while the transfer is paused, and the
+      // download panel's row is the one with Resume.
       expect(phaseOf(image.key)).toBe('running')
-      fireEvent.click(
-        screen.getByRole('button', { name: 'onboarding:download.resume' })
-      )
-      expect(mocks.resumeDownload).toHaveBeenCalledWith(
-        { id: image.taskId, name: image.taskId },
-        expect.anything()
-      )
+      expect(screen.queryByTestId('onboarding-handoff')).not.toBeInTheDocument()
+      act(() => {
+        useDownloadStore.setState({ pausedDownloads: new Set() })
+      })
       expect(mocks.startMediaJob).toHaveBeenCalledTimes(1)
 
       await settleMedia(true)
@@ -346,9 +344,8 @@ describe('OnboardingRuntime', () => {
           phase: 'running',
         })
       )
-      expect(screen.getByTestId('onboarding-handoff')).toHaveTextContent(
-        'Image engine'
-      )
+      expect(phaseOf(image.key)).toBe('running')
+      expect(mocks.startMediaJob).toHaveBeenCalledTimes(1)
 
       await settleMedia(true)
 
@@ -454,9 +451,13 @@ describe('OnboardingRuntime', () => {
         screen.getByRole('button', { name: 'onboarding-handoff:retryLabel' })
       )
 
-      // Resuming from the bytes on disk: no step back to 0%.
+      // Resuming from the bytes on disk: no step back to 0% in the picker.
+      // The running download is the download panel's again.
+      const percent = () =>
+        jobView(jobOf(chat.key)!, useDownloadStore.getState()).percent
       expect(phaseOf(chat.key)).toBe('running')
-      expect(panel).toHaveTextContent('41%')
+      expect(panel).not.toBeInTheDocument()
+      expect(percent()).toBe(41)
 
       act(() => {
         useDownloadStore.setState({
@@ -465,7 +466,7 @@ describe('OnboardingRuntime', () => {
       })
 
       expect(jobOf(chat.key)?.stoppedAt).toBeUndefined()
-      expect(panel).toHaveTextContent('45%')
+      expect(percent()).toBe(45)
     })
 
     it('is interrupted when the downloaded file fails its check', () => {
@@ -593,14 +594,12 @@ describe('OnboardingRuntime', () => {
   })
 
   describe('the handoff panel and the end of the run', () => {
-    it('follows the download, says the model is ready, and the run ends on Dismiss', () => {
+    it('leaves the download to the download panel, says the model is ready, and the run ends on Dismiss', () => {
       startRun([chat])
       downloadingChat()
       render(<OnboardingRuntime />)
 
-      expect(screen.getByTestId('onboarding-handoff')).toHaveTextContent(
-        chat.title
-      )
+      expect(screen.queryByTestId('onboarding-handoff')).not.toBeInTheDocument()
 
       landChatModel()
 
@@ -711,9 +710,8 @@ describe('OnboardingRuntime', () => {
       )
     })
 
-    it('keeps following the downloads under an update banner', () => {
-      startRun([chat])
-      downloadingChat()
+    it('keeps an interrupted download under an update banner', () => {
+      startRun([{ ...chat, phase: 'failed' }])
       claimUpdateCorner(true)
       render(<OnboardingRuntime />)
 
@@ -722,17 +720,22 @@ describe('OnboardingRuntime', () => {
       )
     })
 
-    it('waits for the downloads after the panel is dismissed', async () => {
+    it('waits for the downloads, then says the model is ready', async () => {
       startRun([done(chat), image])
       landChatModel()
       render(<OnboardingRuntime />)
 
-      fireEvent.click(
-        screen.getByRole('button', { name: 'onboarding-handoff:panel.dismiss' })
-      )
+      expect(screen.queryByTestId('onboarding-handoff')).not.toBeInTheDocument()
       expect(useOnboardingStore.getState().phase).toBe('handedOff')
 
       await settleMedia(true)
+
+      expect(screen.getByTestId('onboarding-handoff')).toHaveTextContent(
+        'onboarding:download.ready Qwen3.5 4B'
+      )
+      fireEvent.click(
+        screen.getByRole('button', { name: 'onboarding-handoff:panel.dismiss' })
+      )
 
       expect(useOnboardingStore.getState().phase).toBe('finished')
     })

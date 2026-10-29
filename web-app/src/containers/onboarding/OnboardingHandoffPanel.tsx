@@ -14,14 +14,16 @@ import './handoff.css'
 import './onboarding.css'
 
 /**
- * The run's downloads after a handoff to the chat: the setup screen's strip,
- * floating bottom-right over the app, with a way to dismiss it.
- * `OnboardingRuntime` decides when it shows.
+ * The run after a handoff to the chat: the setup screen's strip, floating
+ * bottom-right over the app, with a way to dismiss it. `OnboardingRuntime`
+ * decides when it shows: not while a download is under way, which the
+ * download panel lists, but for one that was interrupted, with Retry.
  *
  * With nothing left to download it only says the model is ready — or, with
  * no model ready either, shows only its links — and `yieldsCorner` gives the
  * corner to an update banner or the model reminder there: it comes back once
- * they are gone, until it is dismissed. Live progress never gives way.
+ * they are gone, until it is dismissed. An interrupted download never gives
+ * way.
  */
 export function OnboardingHandoffPanel({
   yieldsCorner = false,

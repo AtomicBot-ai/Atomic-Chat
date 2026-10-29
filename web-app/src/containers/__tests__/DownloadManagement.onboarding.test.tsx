@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -72,21 +72,14 @@ describe('DownloadManagement during a first run', () => {
     expect(rows()).toEqual([])
   })
 
-  it('leaves the run’s downloads to the handoff panel after a handoff to the chat', () => {
-    useOnboardingStore.getState().handOff('chat')
-    render(<DownloadManagement />)
+  // The handoff panel stays away meanwhile: one card per download.
+  it.each(['chat', 'endpoint'] as const)(
+    'lists the run’s downloads itself after a handoff to %s',
+    (destination) => {
+      useOnboardingStore.getState().handOff(destination)
+      render(<DownloadManagement />)
 
-    expect(rows()).toEqual([OTHER])
-
-    act(() => useOnboardingStore.getState().dismissPanel())
-
-    expect(rows()).toEqual([CHAT, OTHER])
-  })
-
-  it('lists them itself after a server handoff, which has no such panel', () => {
-    useOnboardingStore.getState().handOff('endpoint')
-    render(<DownloadManagement />)
-
-    expect(rows()).toEqual([CHAT, OTHER])
-  })
+      expect(rows()).toEqual([CHAT, OTHER])
+    }
+  )
 })

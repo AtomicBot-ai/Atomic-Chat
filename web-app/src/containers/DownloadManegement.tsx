@@ -61,8 +61,6 @@ import {
 import type { DecisionCatalog } from '@/services/decision-catalog-registry'
 import type { DiffusionCatalog } from '@/services/diffusion-catalog-registry'
 import type { EmbeddingCatalog } from '@/services/embedding-catalog-registry'
-import { handoffPanelTracksJobs } from '@/lib/onboarding/jobs'
-import { useOnboardingStore } from '@/stores/onboarding-store'
 
 /**
  * ATO-109: emit the terminal `model_download` event. Deduplicated so the two
@@ -891,20 +889,10 @@ export function DownloadManagement({
     handleCancelDownload,
   ])
 
-  // After a handoff to the chat the first run's downloads are in its own
-  // panel, stacked above this one; listing them here too would show each
-  // twice.
-  const handoffTaskIds = useOnboardingStore((state) =>
-    handoffPanelTracksJobs(state)
-      ? state.jobs.map((job) => job.taskId).join('\n')
-      : ''
+  const visibleItems = useMemo(
+    () => (hidePanel ? [] : panelItems),
+    [hidePanel, panelItems]
   )
-  const visibleItems = useMemo(() => {
-    if (hidePanel) return []
-    if (!handoffTaskIds) return panelItems
-    const handedOff = new Set(handoffTaskIds.split('\n'))
-    return panelItems.filter((item) => !handedOff.has(item.id))
-  }, [hidePanel, handoffTaskIds, panelItems])
 
   return (
     <DownloadPanel

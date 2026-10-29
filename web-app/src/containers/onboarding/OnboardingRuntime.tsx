@@ -19,6 +19,7 @@ import {
 import {
   findChatModel,
   handoffPanelContent,
+  handoffPanelTracksJobs,
   nextRunnable,
   queueSettled,
   type JobTransfer,
@@ -54,7 +55,8 @@ const dropCancelledChatJob = (job: OnboardingJob) =>
  * the chat model's download to the library, runs the image and video jobs
  * after it one at a time, and after the handoff puts the model where the user
  * will look for it — the composer, or the Local API Server — and shows the
- * handoff panel while the downloads finish and to say the model is ready.
+ * handoff panel to retry an interrupted download and to say the model is
+ * ready.
  * Once nothing is left on screen, the run is finished.
  *
  * Mounted once in `AppLayout`, so the queue keeps going whichever page is
@@ -276,21 +278,20 @@ export function OnboardingRuntime() {
     }
   }, [jobs])
 
-  // The panel follows the downloads after a handoff to the chat, and says the
-  // model is ready once it is — also when it was before the handoff, as the
-  // prototype does — or, with neither, offers only the way back to setup,
-  // until it is dismissed. That is this session's only if it saw the setup
-  // screen or a download: a relaunch with nothing left to follow ends the
-  // run instead.
+  // After a handoff to the chat the download panel shows the run's downloads;
+  // this panel offers Retry for one that was interrupted, says the model is
+  // ready once it is — also when it was before the handoff, as the prototype
+  // does — or, with neither, offers only the way back to setup, until it is
+  // dismissed. That is this session's only if it saw the setup screen or a
+  // download: a relaunch with nothing left to follow ends the run instead.
   const [seenInApp, setSeenInApp] = useState(phase === 'active')
-  const panel = handoffPanelContent(
-    { phase, destination, panelDismissed, jobs },
-    { ready: !!ready, seenInApp }
-  )
+  const run = { phase, destination, panelDismissed, jobs }
+  const panel = handoffPanelContent(run, { ready: !!ready, seenInApp })
   const showPanel = panel !== null
+  const downloadsLeft = handoffPanelTracksJobs(run)
   useEffect(() => {
-    if (phase === 'active' || panel === 'downloads') setSeenInApp(true)
-  }, [phase, panel])
+    if (phase === 'active' || downloadsLeft) setSeenInApp(true)
+  }, [phase, downloadsLeft])
 
   // Nothing of the run is left on screen: no download, no panel, no server
   // hint, and the chosen model (if any) can answer.
@@ -308,6 +309,6 @@ export function OnboardingRuntime() {
   }, [phase, settled, guide, showPanel, choice, ready])
 
   return panel ? (
-    <OnboardingHandoffPanel yieldsCorner={panel !== 'downloads'} />
+    <OnboardingHandoffPanel yieldsCorner={panel !== 'interrupted'} />
   ) : null
 }

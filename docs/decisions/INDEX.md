@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-501 records, 2026-05-19 → 2026-10-29.
+502 records, 2026-05-19 → 2026-10-29.
 
 ---
 
@@ -370,7 +370,8 @@ decision is reversed, add a new one that says which record it supersedes.
 ## UI / UX (2)
 - **2026-10-20** — [Show hosted providers on Cloud and the user's own servers on Custom Endpoint](2026-10-20-show-hosted-providers-on-cloud-and-own-servers-on-custom-endpoint.md)
 - **2026-10-20** — [List everything downloaded on a Downloads page](2026-10-20-list-everything-downloaded-on-a-downloads-page.md)
-## UI / UX (131)
+## UI / UX (132)
+- **2026-10-29** — [Leave the first run's downloads to the download panel after setup](2026-10-29-leave-the-first-runs-downloads-to-the-download-panel-after-setup.md) — the handoff panel shows only an interrupted download, the model ready or the way back; supersedes in part 2026-10-22.
 - **2026-10-28** — [Deliver the wait screen's model-ready email reminder](2026-10-28-deliver-model-ready-email-reminders.md) — supersedes hiding the form on 2026-10-27.
 - **2026-10-28** — [Preserve a project’s first queued send across navigation](2026-10-28-preserve-project-first-send-across-navigation.md)
 - **2026-10-27** — [Configure the server's engine from its picker, with the Hub's settings](2026-10-27-configure-the-servers-engine-from-its-picker.md) — a gear beside the engine opens the Hub's `EngineDetail` in a dialog; saved as changed, Done closes.

@@ -245,10 +245,37 @@ describe('the handoff panel', () => {
   })
 
   const settled = { ...run, jobs: [{ ...chat, phase: 'done' as const }] }
+  const interrupted = {
+    ...run,
+    jobs: [{ ...chat, phase: 'failed' as const }, image],
+  }
+
+  // The download panel lists them, as it does any other download.
+  it('stays away while a download is under way', () => {
+    const here = { ready: false, seenInApp: true }
+    expect(handoffPanelContent(run, here)).toBeNull()
+    expect(
+      handoffPanelContent(
+        { ...run, jobs: [{ ...chat, phase: 'done' }, image] },
+        { ready: true, seenInApp: true }
+      )
+    ).toBeNull()
+  })
+
+  it('offers Retry for an interrupted download, which the download panel drops', () => {
+    expect(
+      handoffPanelContent(interrupted, { ready: false, seenInApp: true })
+    ).toBe('interrupted')
+    expect(
+      handoffPanelContent(
+        { ...interrupted, panelDismissed: true },
+        { ready: false, seenInApp: true }
+      )
+    ).toBeNull()
+  })
 
   it('says the model is ready once the downloads are over, or were before the handoff', () => {
     const here = { ready: true, seenInApp: true }
-    expect(handoffPanelContent(run, here)).toBe('downloads')
     expect(handoffPanelContent(settled, here)).toBe('ready')
     expect(handoffPanelContent({ ...run, jobs: [] }, here)).toBe('ready')
   })
@@ -284,10 +311,10 @@ describe('the handoff panel', () => {
     expect(
       handoffPanelContent(settled, { ready: true, seenInApp: false })
     ).toBeNull()
-    // Downloads still running are followed at any launch.
-    expect(handoffPanelContent(run, { ready: false, seenInApp: false })).toBe(
-      'downloads'
-    )
+    // An interrupted download is offered again at any launch.
+    expect(
+      handoffPanelContent(interrupted, { ready: false, seenInApp: false })
+    ).toBe('interrupted')
   })
 })
 
