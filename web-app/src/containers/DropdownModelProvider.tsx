@@ -555,13 +555,35 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
           // it is "running" too — and it used to land in the composer as the
           // chat model (AC-01). Only a running model that can chat counts.
           for (const activeModelId of activeModelIds ?? []) {
-            const activeProvider = providers.find(
+            const listing = providers.filter(
               (p) =>
                 p.active &&
                 p.models.some(
                   (m) => m.id === activeModelId && !isEmbeddingOnlyModel(m)
                 )
             )
+            // The ids above merge every engine, and both llama.cpp providers
+            // list the same models folder: the first provider listing a
+            // running id need not be the one running it. Taking TurboQuant
+            // for a model upstream served loaded it again there (B12), so
+            // with more than one candidate each engine is asked.
+            let activeProvider: (typeof listing)[number] | undefined =
+              listing[0]
+            if (listing.length > 1) {
+              const serving = await Promise.all(
+                listing.map((p) =>
+                  serviceHub
+                    .models()
+                    .getActiveModels(p.provider)
+                    .then(
+                      (ids) => (ids ?? []).includes(activeModelId),
+                      () => false
+                    )
+                )
+              )
+              if (selectedModelRef.current) return
+              activeProvider = listing.find((_, index) => serving[index])
+            }
             if (activeProvider) {
               selectModelProvider(activeProvider.provider, activeModelId)
               setLastUsedModel(activeProvider.provider, activeModelId)

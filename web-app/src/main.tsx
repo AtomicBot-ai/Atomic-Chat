@@ -22,6 +22,7 @@ import { isFirstLaunch, rememberFirstLaunch } from './lib/onboarding-telemetry'
 import { assignOnboardingCohort } from './lib/onboarding/experiment'
 import { useGeneralSetting } from './hooks/useGeneralSetting'
 import { useModelProvider } from './hooks/useModelProvider'
+import { restoreThreadWindowModel } from './lib/thread-window-model'
 import { isLocalProvider } from '@/utils/registerRemoteProvider'
 import GlobalError from './containers/GlobalError'
 
@@ -205,6 +206,10 @@ if (!useGeneralSetting.getState().preloadModelOnStartup) {
     useModelProvider.setState({ selectedProvider: '', selectedModel: null })
   }
 }
+
+// A chat opened in its own window starts on the model of the window that
+// opened it, provider included, whatever the reset above cleared (B12).
+restoreThreadWindowModel()
 
 // Tauri webviews ignore the HTML5 `download` attribute, so streamdown's
 // code-block download button needs to go through Tauri's save dialog.

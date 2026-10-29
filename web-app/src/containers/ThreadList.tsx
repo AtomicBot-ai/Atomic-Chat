@@ -56,6 +56,7 @@ import {
 import { collidingThreadIds } from '@/lib/sidebar-row-names'
 import { isPlatformTauri } from '@/lib/platform/utils'
 import { extractFilesFromPrompt } from '@/lib/fileMetadata'
+import { threadWindowUrl } from '@/lib/thread-window-model'
 
 //* Welcome thread title: the new brand and the old string from previous versions
 const WELCOME_THREAD_TITLES = new Set([
@@ -199,11 +200,12 @@ export const ThreadItem = memo(
     }
 
     // Tauri window labels only accept alphanumerics, `-`, `_`, `/` and `:`.
+    // The URL carries this window's model with its provider (B12).
     const openInNewWindow = () => {
       serviceHub
         .window()
         .openWindow({
-          url: `/threads/${thread.id}`,
+          url: threadWindowUrl(thread.id),
           label: `thread-${thread.id.replace(/[^a-zA-Z0-9_-]/g, '-')}`,
           title: thread.title || 'Atomic Chat',
           width: 1000,

@@ -126,6 +126,15 @@ vi.mock('sonner', () => ({
 
 vi.mock('@janhq/core', () => ({}))
 
+// The selection "Open in new window" hands on; the real store pulls in core.
+const modelSelection = vi.hoisted(() => ({
+  selectedProvider: '',
+  selectedModel: null as { id: string } | null,
+}))
+vi.mock('@/hooks/useModelProvider', () => ({
+  useModelProvider: { getState: () => modelSelection },
+}))
+
 const threads: Thread[] = [
   { id: 'thread-1', title: 'First chat', updated: 2 },
   { id: 'thread-2', title: 'Second chat', updated: 1 },
@@ -278,6 +287,8 @@ describe('ThreadList right-click menu', () => {
     vi.clearAllMocks()
     vi.mocked(useParams).mockReturnValue({} as never)
     openWindow = vi.fn().mockResolvedValue(undefined)
+    modelSelection.selectedProvider = ''
+    modelSelection.selectedModel = null
     seedServiceHub({
       messages: { fetchMessages: vi.fn() } as unknown as MessagesService,
       window: { openWindow } as never,
@@ -329,6 +340,30 @@ describe('ThreadList right-click menu', () => {
       url: '/threads/thread-1',
       label: 'thread-thread-1',
       title: 'First chat',
+    })
+  })
+
+  // QA 2.2.29 B12: both llama.cpp providers list the same models, so the new
+  // window has to be told the provider along with the model.
+  it('hands the new window the selected provider with the model', async () => {
+    modelSelection.selectedProvider = 'llamacpp-upstream'
+    modelSelection.selectedModel = { id: 'qwen2.5-0.5b' }
+    await act(async () => {
+      render(<ThreadList threads={threads} />)
+    })
+
+    const item = screen
+      .getAllByText('common:openInNewWindow')[0]
+      .closest('div')!
+    await act(async () => {
+      item.click()
+    })
+
+    const url = new URL(openWindow.mock.calls[0][0].url, 'http://localhost')
+    expect(url.pathname).toBe('/threads/thread-1')
+    expect(JSON.parse(url.searchParams.get('threadModel') ?? '')).toEqual({
+      id: 'qwen2.5-0.5b',
+      provider: 'llamacpp-upstream',
     })
   })
 })
