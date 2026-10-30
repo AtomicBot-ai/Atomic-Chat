@@ -949,3 +949,19 @@ describe('video families', () => {
     ])
   })
 })
+
+describe('pinned diffusion downloads', () => {
+  it('uses each repository commit and leaves unpinned dependencies on main', () => {
+    const family = {
+      ...zImage,
+      transformer: { ...zImage.transformer, revision: 'a'.repeat(40) },
+      vae: { ...AE, revision: 'b'.repeat(40) },
+    }
+    const plan = planArtifactDownload(family, 'q4_k_m', [], ROOT)
+    expect(plan.entries.map((entry) => entry.url)).toEqual([
+      `https://huggingface.co/unsloth/Z-Image-Turbo-GGUF/resolve/${'a'.repeat(40)}/z-image-turbo-Q4_K_M.gguf`,
+      `https://huggingface.co/unsloth/Z-Image-Turbo-ComfyUI/resolve/${'b'.repeat(40)}/split_files/vae/ae.safetensors`,
+      'https://huggingface.co/unsloth/Z-Image-Turbo-ComfyUI/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors',
+    ])
+  })
+})

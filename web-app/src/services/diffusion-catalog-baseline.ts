@@ -8,7 +8,7 @@ import type { DiffusionCatalog } from './diffusion-catalog-registry'
 
 export const BASELINE_DIFFUSION_CATALOG: DiffusionCatalog = {
   "schema_version": 1,
-  "updated_at": "2026-09-23T12:00:00Z",
+  "updated_at": "2026-10-30T19:26:36Z",
   "families": [
     {
       "id": "z-image",
@@ -23,35 +23,36 @@ export const BASELINE_DIFFUSION_CATALOG: DiffusionCatalog = {
       ],
       "transformer": {
         "repo": "unsloth/Z-Image-Turbo-GGUF",
+        "revision": "b40f712c569ecfff42f2307dcc43399ae1d71318",
         "quants": [
           {
             "id": "q3_k_m",
             "label": "Q3_K_M",
             "filename": "z-image-turbo-Q3_K_M.gguf",
-            "bytes": 4186161216,
-            "sha256": "7070b605165c372833c21c6bd45e73b242cf0db261b4d5436039363f3dbd4e0e"
+            "bytes": 2696294976,
+            "sha256": "398853e879a1323759ccdf277790d7892680975f929f43f6d2fc852d3d8ab2ab"
           },
           {
             "id": "q4_k_m",
             "label": "Q4_K_M",
             "filename": "z-image-turbo-Q4_K_M.gguf",
-            "bytes": 5017613376,
-            "sha256": "e6494f87de6abaf6a561924f50317a5f271fc34bb4222aabbd801197df8f7daa",
+            "bytes": 3850130496,
+            "sha256": "4ab6bceb1f0b82c9e725f123848018eac662a6fc1d467c019e13e701afb7b55c",
             "recommended": true
           },
           {
             "id": "q5_k_m",
             "label": "Q5_K_M",
             "filename": "z-image-turbo-Q5_K_M.gguf",
-            "bytes": 5574444096,
-            "sha256": "847e33003ae6e85121c62785d7f7213958d58287c932d0c2189a1c9a2d1f093a"
+            "bytes": 4619474496,
+            "sha256": "53b6f401c922192403e362e342d84e80b39703a4debd93a45191b4dcee9a1bff"
           },
           {
             "id": "q6_k",
             "label": "Q6_K",
             "filename": "z-image-turbo-Q6_K.gguf",
-            "bytes": 5910505536,
-            "sha256": "fc137d87b49e06fdd5230d67d6c8cfa42a9e1fd38b65ccd355882450c3eb1c82"
+            "bytes": 5387973696,
+            "sha256": "6c52dea7308232c378d0d78c8970c0f72d258a4ccee3b81bbab4eb4508d01048"
           },
           {
             "id": "q8_0",

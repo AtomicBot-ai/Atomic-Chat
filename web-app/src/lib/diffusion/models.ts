@@ -162,8 +162,12 @@ export function sharedRepoDir(repo: string): string {
   return repo.replace(/\//g, '--')
 }
 
-export function hfResolveUrl(repo: string, filename: string): string {
-  return `https://huggingface.co/${repo}/resolve/main/${filename}`
+export function hfResolveUrl(
+  repo: string,
+  filename: string,
+  revision = 'main'
+): string {
+  return `https://huggingface.co/${repo}/resolve/${encodeURIComponent(revision)}/${filename}`
 }
 
 const basenameOf = (filename: string): string =>
@@ -221,7 +225,7 @@ export function planArtifactDownload(
       kind,
       repo: file.repo,
       filename: file.filename,
-      url: hfResolveUrl(file.repo, file.filename),
+      url: hfResolveUrl(file.repo, file.filename, file.revision),
       bytes: file.bytes,
       ...(file.sha256 ? { sha256: file.sha256 } : {}),
       ...(file.field ? { field: file.field } : {}),
@@ -237,6 +241,7 @@ export function planArtifactDownload(
     'transformer',
     {
       repo: family.transformer.repo,
+      revision: family.transformer.revision,
       filename: quant.filename,
       bytes: quant.bytes,
       ...(quant.sha256 ? { sha256: quant.sha256 } : {}),
