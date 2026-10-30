@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-503 records, 2026-05-19 → 2026-10-30.
+504 records, 2026-05-19 → 2026-10-30.
 
 ---
 
@@ -331,7 +331,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-10** — [Throttle crashloop `model_load` failure spam client-side; confirm `model_load.status` / api 404-noise are already-fixed-pending-rollout, not code bugs (ATO-130: ATO-133 + ATO-131 + ATO-132)](2026-06-10-throttle-crashloop-model-load-failure-spam-client-side-confirm.md)
 - **2026-06-09** — [Add zero-PII Sentry crash/error tracking to both the React frontend and the Rust/Tauri desktop, gated behind `productAnalytic` (ATO-113)](2026-06-09-add-zero-pii-sentry-crash-error-tracking-to-both-the-react.md)
 
-## Packaging, installers, autostart & platform policy (30)
+## Packaging, installers, autostart & platform policy (31)
+
+- **2026-10-30** — [Correct the Windows publisher without changing installation identity](2026-10-30-correct-windows-publisher-without-changing-install-identity.md)
 
 - **2026-10-29** — [Host the Microsoft Store installer in its own bucket](2026-10-29-host-the-microsoft-store-installer-in-its-own-bucket.md) — `msstore.yml` copies each published release's `*_x64_msstore.exe` to `atomic-chat-downloads` on Hetzner (immutable, versioned, no redirect) for the Partner Center package URL.
 - **2026-10-27** — [Ship only upstream llama.cpp in the installer](2026-10-27-ship-only-upstream-llama-cpp-in-the-installer.md) — MLX and TurboQuant install through the core on demand; no `jan-cli` copy, Install CLI copies `atomic-chat-core`. Supersedes the file-name part of the 2026-09-15 jan-cli record and the installer parts of the 2026-10-07 MLX and 2026-06-23 TurboQuant records.
