@@ -65,6 +65,8 @@ export type DiffusionCatalogFile = {
   filename: string
   bytes: number
   sha256?: string
+  /** Immutable Hugging Face commit containing this exact size and hash. */
+  revision?: string
   /** Text encoders only: the sd-cli flag the file is passed under. */
   field?: DiffusionTextEncoderField
 }
@@ -85,6 +87,7 @@ export type DiffusionCatalogQuant = {
   filename: string
   bytes: number
   sha256?: string
+  revision?: string
   recommended?: boolean
 }
 
@@ -202,6 +205,9 @@ const isOneOf = <T extends string>(
 const optionalString = (value: unknown): string | undefined =>
   typeof value === 'string' && value.length > 0 ? value : undefined
 
+const isImmutableRevision = (value: unknown): value is string =>
+  typeof value === 'string' && /^[0-9a-f]{40}$/.test(value)
+
 const optionalSha256 = (value: unknown): string | undefined =>
   typeof value === 'string' && SHA256_RE.test(value) ? value : undefined
 
@@ -230,12 +236,15 @@ const sanitizeQuant = (raw: unknown): DiffusionCatalogQuant | null => {
     return null
   if (!isPositiveInt(raw.bytes)) return null
   const sha256 = optionalSha256(raw.sha256)
+  if (raw.revision !== undefined && !isImmutableRevision(raw.revision))
+    return null
   return {
     id: raw.id,
     label: raw.label,
     filename: raw.filename,
     bytes: raw.bytes,
     ...(sha256 ? { sha256 } : {}),
+    ...(raw.revision ? { revision: raw.revision as string } : {}),
     ...(raw.recommended === true ? { recommended: true } : {}),
   }
 }
@@ -252,11 +261,14 @@ const sanitizeFile = (
   const field = isOneOf(raw.field, TEXT_ENCODER_FIELDS) ? raw.field : undefined
   if (requireField && !field) return null
   const sha256 = optionalSha256(raw.sha256)
+  if (raw.revision !== undefined && !isImmutableRevision(raw.revision))
+    return null
   return {
     repo: raw.repo,
     filename: raw.filename,
     bytes: raw.bytes,
     ...(sha256 ? { sha256 } : {}),
+    ...(raw.revision ? { revision: raw.revision as string } : {}),
     ...(field ? { field } : {}),
   }
 }

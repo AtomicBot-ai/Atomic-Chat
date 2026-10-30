@@ -28,7 +28,7 @@ import {
   startMlxCatalogDownload,
 } from '@/lib/onboarding/downloads'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { cn } from '@/lib/utils'
+import { cn, getProviderTitle } from '@/lib/utils'
 import { useOnboardingStore } from '@/stores/onboarding-store'
 
 import {
@@ -328,7 +328,7 @@ export function ModelStep({ next }: StepProps) {
                   modelSourceLabel(option.candidate.source) ??
                   option.candidate.source,
               })
-            : t('onboarding:model.downloaded')}
+            : `${t('onboarding:model.downloaded')} · ${getProviderTitle(option.provider)}`}
         </small>
       )
     return (

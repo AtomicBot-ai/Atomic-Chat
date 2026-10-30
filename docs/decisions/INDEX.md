@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-502 records, 2026-05-19 → 2026-10-29.
+503 records, 2026-05-19 → 2026-10-30.
 
 ---
 
@@ -33,7 +33,9 @@ decision is reversed, add a new one that says which record it supersedes.
 
 ---
 
-## Local image & video generation (30)
+## Local image & video generation (31)
+
+- **2026-10-30** — [Pin media artifacts and stop on remote size changes](2026-10-30-pin-media-artifacts-and-stop-on-remote-size-changes.md)
 
 - **2026-10-27** — [Lay out an Audios studio, in dev builds only until there is an audio engine](2026-10-27-lay-out-an-audios-studio-in-dev-builds-only.md) — `PlatformFeature.AUDIO_GENERATION`; candidate models, Download and Generate off until the audio engine lands.
 - **2026-10-26** — [Judge an image model against the RAM it shares on a Mac, and ask before a run that will not fit](2026-10-26-judge-an-image-model-against-the-ram-it-shares-on-a-mac.md)

@@ -103,6 +103,28 @@ const fetchFails = (error: unknown) => {
 }
 
 describe('fetchDiffusionCatalog', () => {
+  it('preserves immutable artifact revisions and rejects mutable or unsafe pins', () => {
+    const source = family()
+    const pinned = {
+      ...source,
+      transformer: {
+        ...source.transformer,
+        quants: source.transformer.quants.map((quant) => ({
+          ...quant,
+          revision: 'a'.repeat(40),
+        })),
+      },
+      vae: { ...source.vae, revision: 'b'.repeat(40) },
+    }
+    const parsed = sanitizeDiffusionFamily(pinned)!
+    expect(parsed.transformer.quants[0].revision).toBe('a'.repeat(40))
+    expect(parsed.vae?.revision).toBe('b'.repeat(40))
+    for (const revision of ['main', '../main', '', 42]) {
+      expect(
+        sanitizeDiffusionFamily({ ...pinned, vae: { ...pinned.vae, revision } })
+      ).toBeNull()
+    }
+  })
   beforeEach(() => clearDiffusionCatalogCache())
   afterEach(() => vi.restoreAllMocks())
 

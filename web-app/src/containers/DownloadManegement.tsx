@@ -480,6 +480,19 @@ export function DownloadManagement({
         return
       }
 
+      if (
+        err.includes('Remote file changed:') ||
+        err.includes('Server rejected the saved download offset')
+      ) {
+        markResumableDownload(state.modelId)
+        toast.error(t('common:toast.downloadArtifactChanged.title'), {
+          id: 'download-failed',
+          description: t('common:toast.downloadArtifactChanged.description'),
+          duration: 30000,
+        })
+        return
+      }
+
       // ATO-467: a filesystem failure now says which one it was. The generic
       // "download failed" toast told 647 devices nothing they could act on,
       // and disk faults are the single largest failure cause.

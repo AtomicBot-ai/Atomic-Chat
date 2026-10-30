@@ -29,7 +29,8 @@ export const BASELINE_DIFFUSION_CATALOG: DiffusionCatalog = {
             "label": "Q3_K_M",
             "filename": "z-image-turbo-Q3_K_M.gguf",
             "bytes": 4186161216,
-            "sha256": "7070b605165c372833c21c6bd45e73b242cf0db261b4d5436039363f3dbd4e0e"
+            "sha256": "7070b605165c372833c21c6bd45e73b242cf0db261b4d5436039363f3dbd4e0e",
+            "revision": "6c80814333b7b6a70a2e5b469a7c6437ce65de0f"
           },
           {
             "id": "q4_k_m",
@@ -37,28 +38,32 @@ export const BASELINE_DIFFUSION_CATALOG: DiffusionCatalog = {
             "filename": "z-image-turbo-Q4_K_M.gguf",
             "bytes": 5017613376,
             "sha256": "e6494f87de6abaf6a561924f50317a5f271fc34bb4222aabbd801197df8f7daa",
-            "recommended": true
+            "recommended": true,
+            "revision": "6c80814333b7b6a70a2e5b469a7c6437ce65de0f"
           },
           {
             "id": "q5_k_m",
             "label": "Q5_K_M",
             "filename": "z-image-turbo-Q5_K_M.gguf",
             "bytes": 5574444096,
-            "sha256": "847e33003ae6e85121c62785d7f7213958d58287c932d0c2189a1c9a2d1f093a"
+            "sha256": "847e33003ae6e85121c62785d7f7213958d58287c932d0c2189a1c9a2d1f093a",
+            "revision": "6c80814333b7b6a70a2e5b469a7c6437ce65de0f"
           },
           {
             "id": "q6_k",
             "label": "Q6_K",
             "filename": "z-image-turbo-Q6_K.gguf",
             "bytes": 5910505536,
-            "sha256": "fc137d87b49e06fdd5230d67d6c8cfa42a9e1fd38b65ccd355882450c3eb1c82"
+            "sha256": "fc137d87b49e06fdd5230d67d6c8cfa42a9e1fd38b65ccd355882450c3eb1c82",
+            "revision": "6c80814333b7b6a70a2e5b469a7c6437ce65de0f"
           },
           {
             "id": "q8_0",
             "label": "Q8_0",
             "filename": "z-image-turbo-Q8_0.gguf",
             "bytes": 7224707136,
-            "sha256": "f163d60b0eb427469510b8226243d196574a18139a2e40c017409cfbda95ecfe"
+            "sha256": "f163d60b0eb427469510b8226243d196574a18139a2e40c017409cfbda95ecfe",
+            "revision": "6c80814333b7b6a70a2e5b469a7c6437ce65de0f"
           }
         ]
       },

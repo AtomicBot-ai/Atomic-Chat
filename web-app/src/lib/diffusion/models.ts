@@ -14,6 +14,7 @@
  */
 
 import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { BASELINE_DIFFUSION_CATALOG } from '@/services/diffusion-catalog-baseline'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import {
   DIFFUSION_SHARED_DIR,
@@ -162,9 +163,34 @@ export function sharedRepoDir(repo: string): string {
   return repo.replace(/\//g, '--')
 }
 
-export function hfResolveUrl(repo: string, filename: string): string {
-  return `https://huggingface.co/${repo}/resolve/main/${filename}`
+export function hfResolveUrl(
+  repo: string,
+  filename: string,
+  revision = 'main'
+): string {
+  return `https://huggingface.co/${repo}/resolve/${revision}/${filename}`
 }
+
+const fileIdentity = (file: DiffusionCatalogFile) =>
+  `${file.repo}/${file.filename}:${file.bytes}:${file.sha256}`
+
+// Older remote catalogs and caches have hashes and sizes but no revision.
+// Use a bundled pin only for the exact same artifact; never apply an old
+// revision to a publisher's new size/hash pair.
+const bundledRevisions = new Map(
+  BASELINE_DIFFUSION_CATALOG.families
+    .flatMap((family) => [
+      ...family.transformer.quants.map((quant) => ({
+        ...quant,
+        repo: family.transformer.repo,
+      })),
+      ...(family.vae ? [family.vae] : []),
+      ...(family.audio_vae ? [family.audio_vae] : []),
+      ...family.text_encoders,
+    ])
+    .filter((file) => file.revision && file.sha256)
+    .map((file) => [fileIdentity(file), file.revision!] as const)
+)
 
 const basenameOf = (filename: string): string =>
   filename.split('/').filter((s) => s.length > 0).pop() ?? filename
@@ -221,14 +247,17 @@ export function planArtifactDownload(
       kind,
       repo: file.repo,
       filename: file.filename,
-      url: hfResolveUrl(file.repo, file.filename),
+      url: hfResolveUrl(
+        file.repo,
+        file.filename,
+        file.revision ?? bundledRevisions.get(fileIdentity(file))
+      ),
       bytes: file.bytes,
       ...(file.sha256 ? { sha256: file.sha256 } : {}),
       ...(file.field ? { field: file.field } : {}),
       relativePath,
       savePath,
-      required:
-        file.field !== 'llm_vision' || workflowNeedsLlmVision(workflow),
+      required: file.field !== 'llm_vision' || workflowNeedsLlmVision(workflow),
       present: isPresent(files, relativePath, savePath, file.bytes),
     })
   }
@@ -240,6 +269,7 @@ export function planArtifactDownload(
       filename: quant.filename,
       bytes: quant.bytes,
       ...(quant.sha256 ? { sha256: quant.sha256 } : {}),
+      ...(quant.revision ? { revision: quant.revision } : {}),
     },
     `${family.id}/${basenameOf(quant.filename)}`
   )
