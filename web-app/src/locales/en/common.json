@@ -588,6 +588,10 @@
     "downloadResumed": {
       "title": "Download resumed"
     },
+    "downloadArtifactChanged": {
+      "title": "The model file has changed",
+      "description": "The server file no longer matches this model. The download stopped and your partial file was kept. Update Atomic Chat or refresh the model catalog before retrying."
+    },
     "downloadFailed": {
       "title": "Download Failed",
       "description": "{{item}} download failed"

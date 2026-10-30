@@ -457,12 +457,29 @@ fn validate_content_range(
             )));
         }
         if expected_size > 0 && total != expected_size {
-            return Err(DownloadRequestError::RestartRequired(format!(
-                "Remote file size changed while resuming: expected {expected_size} bytes, server reports {total} bytes"
-            )));
+            return Err(remote_size_changed(expected_size, total));
         }
     }
 
+    Ok(())
+}
+
+fn remote_size_changed(expected: u64, actual: u64) -> DownloadRequestError {
+    DownloadRequestError::Fatal(format!(
+        "Remote file changed: expected {expected} bytes, server reports {actual} bytes. \
+         Partial download was kept. Refresh the model catalog and retry."
+    ))
+}
+
+fn validate_full_response_size(
+    response: &reqwest::Response,
+    expected_size: u64,
+) -> Result<(), DownloadRequestError> {
+    if let Some(actual) = response.content_length() {
+        if expected_size > 0 && actual != expected_size {
+            return Err(remote_size_changed(expected_size, actual));
+        }
+    }
     Ok(())
 }
 
@@ -1177,10 +1194,6 @@ async fn download_single_file(
             .map(|saved| saved == item.resume_identity()) // the same file, by key or URL
             .unwrap_or(false);
 
-    tokio::fs::write(&url_save_path, item.resume_identity())
-        .await
-        .map_err(|error| disk_err_to_string(&error))?;
-
     // Decode URL for better readability in logs
     let decoded_url = url::Url::parse(&item.url)
         .map(|u| u.to_string())
@@ -1353,6 +1366,11 @@ async fn download_single_file(
             .await
             .map_err(|error| disk_err_to_string(&error))?
     };
+    // Publish the identity only after accepting the response and opening
+    // its file. An early failure must not relabel another URL's partial.
+    tokio::fs::write(&url_save_path, item.resume_identity())
+        .await
+        .map_err(|error| disk_err_to_string(&error))?;
     let mut writer = tokio::io::BufWriter::new(file);
     let mut total_transferred = initial_progress;
     let mut retry_count = 0u32;
@@ -1726,10 +1744,20 @@ pub(super) async fn request_download_response(
                 validate_content_range(&resp, start_bytes, expected_size)?;
                 Ok(resp)
             }
-            reqwest::StatusCode::OK | reqwest::StatusCode::RANGE_NOT_SATISFIABLE => {
+            reqwest::StatusCode::OK => {
+                validate_full_response_size(&resp, expected_size)?;
                 let status = resp.status();
                 Err(DownloadRequestError::RestartRequired(format!(
                     "Server did not accept resume offset {start_bytes}: HTTP status {status}"
+                )))
+            }
+            reqwest::StatusCode::RANGE_NOT_SATISFIABLE => {
+                // A complete replacement file can end before the catalog's
+                // old size. Retrying from zero would discard it and repeat
+                // forever; leave the partial intact for an explicit retry.
+                Err(DownloadRequestError::Fatal(format!(
+                    "Server rejected the saved download offset {start_bytes}: HTTP 416. \
+                     Partial download was kept. Refresh the model catalog and retry."
                 )))
             }
             status
@@ -1768,6 +1796,11 @@ pub(super) async fn request_download_response(
                 return Err(DownloadRequestError::Retryable(message));
             }
             return Err(DownloadRequestError::Fatal(message));
+        }
+        if resp.status() == reqwest::StatusCode::PARTIAL_CONTENT {
+            validate_content_range(&resp, 0, expected_size)?;
+        } else {
+            validate_full_response_size(&resp, expected_size)?;
         }
         Ok(resp)
     }

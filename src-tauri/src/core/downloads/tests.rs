@@ -524,6 +524,151 @@ fn test_download_path(name: &str) -> std::path::PathBuf {
         .join(name)
 }
 
+// The catalog still says eight bytes; the publisher now serves six. No
+// response should cause a fallback to a new transfer or truncate a partial.
+#[tokio::test]
+async fn changed_remote_artifact_fails_once_and_keeps_partial_bytes() {
+    for (offset, segmented, same_identity) in [
+        (0, false, true),
+        (3, false, true),
+        (3, true, true),
+        (6, false, true),
+        (3, false, false),
+        (3, true, false),
+    ] {
+        let requests = Arc::new(AtomicUsize::new(0));
+        let count = requests.clone();
+        let service = make_service_fn(move |_| {
+            let count = count.clone();
+            async move {
+                Ok::<_, Infallible>(service_fn(move |request: Request<Body>| {
+                    count.fetch_add(1, Ordering::SeqCst);
+                    async move {
+                        let response = if let Some(range) = request.headers().get(RANGE) {
+                            let from: usize = range
+                                .to_str()
+                                .unwrap()
+                                .trim_start_matches("bytes=")
+                                .split('-')
+                                .next()
+                                .unwrap()
+                                .parse()
+                                .unwrap();
+                            if from >= 6 {
+                                Response::builder()
+                                    .status(StatusCode::RANGE_NOT_SATISFIABLE)
+                                    .header(CONTENT_RANGE, "bytes */6")
+                                    .body(Body::empty())
+                                    .unwrap()
+                            } else {
+                                Response::builder()
+                                    .status(StatusCode::PARTIAL_CONTENT)
+                                    .header(CONTENT_RANGE, format!("bytes {from}-5/6"))
+                                    .body(Body::from(&b"abcdef"[from..]))
+                                    .unwrap()
+                            }
+                        } else {
+                            Response::builder()
+                                .status(StatusCode::OK)
+                                .header(CONTENT_LENGTH, "6")
+                                .body(Body::from("abcdef"))
+                                .unwrap()
+                        };
+                        Ok::<_, Infallible>(response)
+                    }
+                }))
+            }
+        });
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(Server::from_tcp(listener).unwrap().serve(service));
+        let save_path = test_download_path("changed-model.gguf");
+        let item = DownloadItem {
+            url: format!("http://{address}/model.gguf"),
+            save_path: save_path.to_string_lossy().into_owned(),
+            proxy: None,
+            sha256: None,
+            size: Some(8),
+            model_id: None,
+            resume_key: None,
+        };
+        let partial = &b"abcdef"[..offset];
+        let saved_identity = if same_identity {
+            item.resume_identity()
+        } else {
+            "https://example.test/old.gguf"
+        };
+        if offset > 0 {
+            tokio::fs::create_dir_all(save_path.parent().unwrap())
+                .await
+                .unwrap();
+            tokio::fs::write(sidecar_path(&save_path, "tmp"), partial)
+                .await
+                .unwrap();
+            tokio::fs::write(sidecar_path(&save_path, "url"), saved_identity)
+                .await
+                .unwrap();
+            if !same_identity && segmented {
+                tokio::fs::write(sidecar_path(&save_path, "parts"), "old segment map")
+                    .await
+                    .unwrap();
+            }
+        }
+        let tuning = TransferTuning {
+            segmented_min_size: if segmented { 1 } else { u64::MAX },
+            min_segment_size: 1,
+            max_connections: 2,
+            ..TransferTuning::default()
+        };
+        let app = mock_app();
+        let error = download_single_file_with_tuning_for_test(
+            app.handle().clone(),
+            &item,
+            &save_path,
+            8,
+            offset > 0,
+            CancellationToken::new(),
+            tuning,
+        )
+        .await
+        .unwrap_err();
+        assert!(error.contains("Refresh the model catalog"), "{error}");
+        assert_eq!(
+            requests.load(Ordering::SeqCst),
+            1,
+            "offset={offset}, segmented={segmented}"
+        );
+        assert!(!save_path.exists());
+        if offset > 0 {
+            assert_eq!(
+                tokio::fs::read_to_string(sidecar_path(&save_path, "url"))
+                    .await
+                    .unwrap(),
+                saved_identity
+            );
+            if !same_identity && segmented {
+                assert_eq!(
+                    tokio::fs::read_to_string(sidecar_path(&save_path, "parts"))
+                        .await
+                        .unwrap(),
+                    "old segment map"
+                );
+            }
+            assert_eq!(
+                tokio::fs::read(sidecar_path(&save_path, "tmp"))
+                    .await
+                    .unwrap(),
+                partial
+            );
+        } else {
+            assert!(!sidecar_path(&save_path, "tmp").exists());
+        }
+        server.abort();
+        let _ = tokio::fs::remove_dir_all(save_path.parent().unwrap()).await;
+    }
+}
+
 async fn run_interrupted_download_test(
     range_behavior: TestRangeBehavior,
 ) -> (Vec<u8>, usize, std::path::PathBuf) {
@@ -2051,7 +2196,11 @@ async fn the_hugging_face_token_does_not_follow_a_redirect_to_another_host() {
     let response = client.get(&item.url).send().await.unwrap();
 
     assert_eq!(response.text().await.unwrap(), "model");
-    assert_eq!(*hub_seen.lock().unwrap(), vec![true], "the hub gets the token");
+    assert_eq!(
+        *hub_seen.lock().unwrap(),
+        vec![true],
+        "the hub gets the token"
+    );
     assert_eq!(*cdn_seen.lock().unwrap(), vec![false], "the CDN never does");
     hub_server.abort();
     cdn_server.abort();

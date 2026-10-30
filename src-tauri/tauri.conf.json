@@ -56,7 +56,7 @@
     }
   },
   "bundle": {
-    "publisher": "Spaceship Intelligence",
+    "publisher": "Atomic Mail Systems",
     "active": true,
     "createUpdaterArtifacts": false,
     "icon": [
@@ -72,6 +72,7 @@
     ],
     "windows": {
       "nsis": {
+        "template": "./tauri.bundle.windows.nsis.template",
         "installerHooks": "./windows/hooks.nsh"
       }
     }

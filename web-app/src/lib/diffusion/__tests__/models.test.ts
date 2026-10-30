@@ -205,6 +205,37 @@ describe('artifact ids', () => {
 })
 
 describe('planArtifactDownload', () => {
+  it('pins the shipped Z-Image files even when an older remote catalog has no revisions', () => {
+    const family = structuredClone(
+      getBaselineDiffusionCatalog().families.find((f) => f.id === 'z-image')!
+    )
+    for (const quant of family.transformer.quants) {
+      const revision = quant.revision
+      delete quant.revision
+      const entry = planArtifactDownload(family, quant.id, [], ROOT).entries[0]
+      expect(revision).toMatch(/^[0-9a-f]{40}$/)
+      expect(entry.url).toContain(`/resolve/${revision}/`)
+      expect(entry.bytes).toBe(quant.bytes)
+      expect(entry.sha256).toBe(quant.sha256)
+    }
+    const quant = family.transformer.quants[0]
+    quant.sha256 = 'c'.repeat(64)
+    expect(
+      planArtifactDownload(family, quant.id, [], ROOT).entries[0].url
+    ).toContain('/resolve/main/')
+  })
+
+  it('uses explicit immutable revisions for checkpoints and side files', () => {
+    const family = structuredClone(zImage)
+    family.transformer.quants[0].revision = 'a'.repeat(40)
+    family.vae!.revision = 'b'.repeat(40)
+    const plan = planArtifactDownload(family, 'q4_k_m', [], ROOT)
+    expect(plan.entries[0].url).toContain(`/resolve/${'a'.repeat(40)}/`)
+    expect(plan.entries.find((entry) => entry.kind === 'vae')?.url).toContain(
+      `/resolve/${'b'.repeat(40)}/`
+    )
+  })
+
   it('plans the exact verified Qwen-Image-2.1 artifact matrix', () => {
     const family = findFamily(
       getBaselineDiffusionCatalog(),

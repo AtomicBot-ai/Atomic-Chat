@@ -590,6 +590,10 @@
     "downloadResumed": {
       "title": "Téléchargement repris"
     },
+    "downloadArtifactChanged": {
+      "title": "Le fichier du modèle a changé",
+      "description": "Le fichier du serveur ne correspond plus à ce modèle. Le téléchargement a été arrêté et le fichier partiel a été conservé. Mettez à jour Atomic Chat ou actualisez le catalogue des modèles avant de réessayer."
+    },
     "downloadFailed": {
       "title": "Échec du téléchargement",
       "description": "Le téléchargement de {{item}} a échoué"

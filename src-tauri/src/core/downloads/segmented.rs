@@ -611,8 +611,8 @@ pub(super) async fn download<R: Runtime>(job: FileJob<'_, R>) -> Result<Segmente
     let (mut plan, keep_tmp) = match saved_plan {
         Some(plan) => (plan, true),
         None if map_path.exists() => {
-            // A map we cannot use: its `.tmp` is full-size noise.
-            retire_partial(&tmp_path, job.save_path).await;
+            // A map we cannot use: plan a new transfer, but keep the old
+            // bytes and identity until the server accepts the new one.
             (
                 Plan::fresh(job.size, 0, tuning.max_connections, tuning.min_segment_size),
                 false,
@@ -661,7 +661,7 @@ pub(super) async fn download<R: Runtime>(job: FileJob<'_, R>) -> Result<Segmente
             {
                 Ok(response) => Some(response),
                 Err(DownloadRequestError::RestartRequired(reason)) => {
-                    if keep_tmp && map_path.exists() {
+                    if map_path.exists() {
                         retire_partial(&tmp_path, job.save_path).await;
                     }
                     return Ok(SegmentedOutcome::Declined(reason));
@@ -686,6 +686,9 @@ pub(super) async fn download<R: Runtime>(job: FileJob<'_, R>) -> Result<Segmente
         .open(&tmp_path)
         .map_err(|error| disk_err_to_string(&error))?;
     file.set_len(job.size)
+        .map_err(|error| disk_err_to_string(&error))?;
+    tokio::fs::write(&url_path, item.resume_identity())
+        .await
         .map_err(|error| disk_err_to_string(&error))?;
 
     log::info!(

@@ -2,6 +2,7 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DownloadEvent } from '@janhq/core'
 import { Toaster, toast } from 'sonner'
+import { useDownloadStore } from '@/hooks/useDownloadStore'
 
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }))
 vi.mock('@/i18n/react-i18next-compat', () => ({
@@ -49,8 +50,9 @@ describe('DownloadManagement — the "verifying…" toast', () => {
 
   beforeEach(() => {
     handlers.clear()
-    const core = ((globalThis as unknown as { core?: Record<string, unknown> })
-      .core ??= {})
+    const core = ((
+      globalThis as unknown as { core?: Record<string, unknown> }
+    ).core ??= {})
     core.events = {
       on: (name: string, handler: (payload: unknown) => void) => {
         if (!handlers.has(name)) handlers.set(name, new Set())
@@ -87,6 +89,32 @@ describe('DownloadManagement — the "verifying…" toast', () => {
     act(() => vi.advanceTimersByTime(60_000))
     expect(screen.getByText(FINISHING)).toBeInTheDocument()
   })
+
+  it.each([
+    'Remote file changed: expected 8 bytes, server reports 6 bytes.',
+    'Server rejected the saved download offset 6: HTTP 416.',
+  ])(
+    'explains a changed artifact and keeps it resumable (%s)',
+    async (error) => {
+      renderWithToaster()
+      act(() =>
+        emit(DownloadEvent.onFileDownloadError, {
+          modelId: TASK,
+          downloadType: 'Model',
+          error,
+        })
+      )
+      expect(
+        await screen.findByText('common:toast.downloadArtifactChanged.title')
+      ).toBeVisible()
+      expect(
+        screen.getByText('common:toast.downloadArtifactChanged.description')
+      ).toBeVisible()
+      expect(useDownloadStore.getState().resumableDownloads.has(TASK)).toBe(
+        true
+      )
+    }
+  )
 
   it.each([
     [

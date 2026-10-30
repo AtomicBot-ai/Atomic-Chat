@@ -37,8 +37,8 @@ vi.mock('@/hooks/useApiServerLogFeed', () => ({
 vi.mock('@/hooks/useApiServerModelNotices', () => ({
   useApiServerModelNotices: () => {},
 }))
-vi.mock('@/utils/apiServerCapacity', () => ({
-  getModelContextLength: () => 131072,
+vi.mock('@/containers/server/useServedContextLength', () => ({
+  useServedContextLength: () => 131072,
 }))
 
 // A worst-case id and the previews a watched chat request carries.

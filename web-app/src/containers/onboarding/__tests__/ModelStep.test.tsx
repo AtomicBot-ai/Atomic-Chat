@@ -1,5 +1,5 @@
 import '@/test/telemetry-ready'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import posthog from 'posthog-js'
@@ -237,6 +237,36 @@ describe('model step', () => {
       trigger: 'manual',
       scan_source: 'lmstudio',
     })
+  })
+
+  it('distinguishes the same downloaded model offered by two engines', () => {
+    withOptions({
+      onDevice: ['llamacpp-upstream', 'llamacpp'].map((provider) => ({
+        kind: 'library',
+        key: `library:${provider}:gemma`,
+        title: 'Gemma 4 E2B',
+        detail: 'Everyday chat',
+        iconSrc: null,
+        provider,
+        modelId: 'gemma',
+        matchIds: ['gemma'],
+      })),
+    })
+    render(<ModelStep next={next} handOff={handOff} />)
+    const rows = screen.getAllByRole('radio', { name: /Gemma 4 E2B/ })
+    expect(
+      within(rows[0]).getByText('onboarding:model.downloaded · llama.cpp')
+    ).toBeVisible()
+    expect(
+      within(rows[1]).getByText(
+        'onboarding:model.downloaded · llama.cpp turboquant'
+      )
+    ).toBeVisible()
+    fireEvent.click(rows[1])
+    fireEvent.click(
+      screen.getByRole('button', { name: /onboarding:model.use Gemma/ })
+    )
+    expect(useOnboardingStore.getState().choice?.provider).toBe('llamacpp')
   })
 
   it('takes a model already in the library without downloading', () => {
