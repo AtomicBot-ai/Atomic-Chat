@@ -575,3 +575,4 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-07-28** — [Isolate the unstable Tauri IPC test API](2026-07-28-isolate-tauri-ipc-test-api.md)
 - **2026-07-23** — [Isolate the Windows Common Controls test manifest by feature](2026-07-23-isolate-the-windows-common-controls-test-manifest-by-feature.md)
 - **2026-07-20** — [Open Agent-referenced files from assistant summaries](2026-07-20-open-agent-referenced-files-from-assistant-summaries.md)
+- **2026-10-30** — [Pin diffusion downloads to each repository's commit](2026-10-30-pin-diffusion-catalog-downloads.md) — optional transformer and side-file revision pins, independent URL construction, and corrected Z-Image Turbo metadata.
