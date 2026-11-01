@@ -33,6 +33,10 @@ type AudioPlayerProps = {
   mediaType: string
   filename?: string
   className?: string
+  /** Start again at the end. */
+  loop?: boolean
+  /** Told whenever playback starts or stops. */
+  onPlayingChange?: (playing: boolean) => void
 }
 
 export function AudioPlayer({
@@ -40,6 +44,8 @@ export function AudioPlayer({
   mediaType,
   filename,
   className,
+  loop = false,
+  onPlayingChange,
 }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const isDraggingRef = useRef(false)
@@ -141,6 +147,10 @@ export function AudioPlayer({
       el.removeEventListener('error', onError)
     }
   }, [])
+
+  useEffect(() => {
+    onPlayingChange?.(isPlaying)
+  }, [isPlaying, onPlayingChange])
 
   useEffect(() => {
     const el = audioRef.current
@@ -266,7 +276,13 @@ export function AudioPlayer({
       </div>
       )}
 
-      <audio ref={audioRef} src={playbackSrc} preload="metadata" className="hidden">
+      <audio
+        ref={audioRef}
+        src={playbackSrc}
+        preload="metadata"
+        loop={loop}
+        className="hidden"
+      >
         {playbackSrc && <source src={playbackSrc} type={mediaType} />}
       </audio>
     </div>

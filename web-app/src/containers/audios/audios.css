@@ -1,0 +1,84 @@
+/*
+ * Loaded with the Audios route. Opens with the app's layer order: whichever
+ * stylesheet names a layer first fixes the order for the whole document.
+ */
+@layer theme, base, components, utilities;
+
+.audio-waveform {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 130px;
+  margin: 0;
+  width: 100%;
+  max-height: 40%;
+  overflow: hidden;
+}
+
+.audio-waveform i {
+  flex: 1;
+  min-width: 2px;
+  max-width: 7px;
+  border-radius: 9px;
+  background: var(--primary);
+  opacity: 0.7;
+  transform: scaleY(0.7);
+}
+
+.audio-waveform.is-playing i {
+  animation: audio-wave 0.8s ease-in-out infinite alternate;
+}
+
+@keyframes audio-wave {
+  to {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+/* A job has phases and no percentage: the bar moves, it never fills. */
+.audio-phase-bar {
+  position: relative;
+  height: 4px;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 9px;
+  background: var(--muted);
+}
+
+.audio-phase-bar i {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 35%;
+  border-radius: 9px;
+  background: var(--primary);
+  animation: audio-phase 1.4s ease-in-out infinite alternate;
+}
+
+.audio-phase-bar.is-stopping i {
+  background: var(--muted-foreground);
+}
+
+@keyframes audio-phase {
+  from {
+    transform: translateX(-10%);
+  }
+  to {
+    transform: translateX(195%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .audio-waveform.is-playing i {
+    animation: none;
+    transform: scaleY(1);
+  }
+
+  .audio-phase-bar i {
+    animation: none;
+    width: 100%;
+    opacity: 0.5;
+  }
+}

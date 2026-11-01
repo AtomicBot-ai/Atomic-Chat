@@ -12,6 +12,7 @@ import {
   CollapsibleTrigger,
   collapsiblePanelAnimation,
 } from '@/components/ui/collapsible'
+import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { AdvancedSelect } from '@/containers/images/AdvancedSelect'
@@ -26,19 +27,21 @@ import {
 import { MediaPageHeading } from '@/containers/images/MediaPageHeading'
 import { MediaSettingsHeading } from '@/containers/images/MediaSettingsHeading'
 import { MediaPromptCard } from '@/containers/images/MediaStudio'
+import { useAudioGeneration } from '@/hooks/useAudioGeneration'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
-  AUDIO_DEFAULTS,
-  AUDIO_DURATIONS,
   AUDIO_MODES,
-  AUDIO_SAMPLE_RATES,
-  audioGenerateDisabledReason,
-  resetAudioSettings,
+  SPEED_RANGE,
+  audioControlShown,
+  audioDurationRange,
+  audioVoiceLabel,
   type AudioMode,
-  type AudioSettings,
 } from '@/lib/audio/models'
 import { cn } from '@/lib/utils'
+import { useAudioGenerationStore } from '@/stores/audio-generation-store'
 
+import { AudioEngineNotice } from './AudioEngineNotice'
+import { AudioJobStatus } from './AudioJobStatus'
 import { AudioModelPicker } from './AudioModelPicker'
 
 const MODE_ICONS = {
@@ -52,29 +55,31 @@ type AudioPromptFormProps = {
   onModelsOpenChange: (open: boolean) => void
 }
 
+const digitsOnly = (text: string) => text.replace(/[^\d]/g, '')
+
 /**
  * The Audios form column, laid out as the Images and Video ones: heading and
- * mode, the prompt card, then the mode's settings and an Advanced fold. Each
- * mode keeps its own settings while the page is open. Generate stays off with
- * its reason until there is an audio engine to run the models.
+ * mode, the prompt card, then the model's settings and an Advanced fold. Which
+ * settings show is the catalog's `controls`, never the model's id; a loaded
+ * model then says which voices it has. Each mode keeps its own settings while
+ * the app runs. Pitch and sample rate have no engine parameter and are gone;
+ * loop is how the player treats the clip and is never sent.
  */
 export const AudioPromptForm = memo(function AudioPromptForm({
   modelsOpen,
   onModelsOpenChange,
 }: AudioPromptFormProps) {
   const { t } = useTranslation()
-  const [mode, setMode] = useState<AudioMode>('speech')
-  const [forms, setForms] = useState(AUDIO_DEFAULTS)
+  const { mode, form, model, capabilities, disabledReason } =
+    useAudioGeneration()
+  const generating = useAudioGenerationStore((state) => state.generating)
+  const stopRequested = useAudioGenerationStore((state) => state.stopRequested)
+  const setMode = useAudioGenerationStore((state) => state.setMode)
+  const change = useAudioGenerationStore((state) => state.changeForm)
+  const resetForm = useAudioGenerationStore((state) => state.resetForm)
+  const generate = useAudioGenerationStore((state) => state.generate)
+  const stop = useAudioGenerationStore((state) => state.stop)
   const [advancedOpen, setAdvancedOpen] = useState(false)
-  const form = forms[mode]
-  const change = (patch: Partial<AudioSettings>) =>
-    setForms((all) => ({ ...all, [mode]: { ...all[mode], ...patch } }))
-
-  // No audio engine yet: Generate is off and says why.
-  const disabledReason = audioGenerateDisabledReason(form, {
-    engineInstalled: false,
-    modelReady: false,
-  })
 
   const modes: MediaMode<AudioMode>[] = AUDIO_MODES.map((id) => ({
     id,
@@ -83,11 +88,30 @@ export const AudioPromptForm = memo(function AudioPromptForm({
     hint: t(`audios:mode.${id}.hint`),
   }))
   const speech = mode === 'speech'
+  const shows = (control: Parameters<typeof audioControlShown>[1]) =>
+    audioControlShown(model ?? undefined, control)
+  const start = () => {
+    if (!generating && disabledReason === null) void generate()
+  }
+
+  // Before the model runs only its default is known; a running model that
+  // lists no voice has nothing to choose from.
+  const voices = capabilities?.voices ?? []
+  const showVoice = shows('voice') && (!capabilities || voices.length > 0)
+  const defaultVoice = model?.default_voice
+    ? t('audios:form.voiceDefaultNamed', {
+        voice: audioVoiceLabel(model.default_voice),
+      })
+    : t('audios:form.voiceDefault')
+  const [durationMin, durationMax] = audioDurationRange(model ?? undefined)
 
   return (
     <form
       className="flex min-h-0 flex-1 flex-col"
-      onSubmit={(event) => event.preventDefault()}
+      onSubmit={(event) => {
+        event.preventDefault()
+        start()
+      }}
       data-testid="audio-prompt-form"
     >
       <div
@@ -107,13 +131,11 @@ export const AudioPromptForm = memo(function AudioPromptForm({
             label={t('audios:mode.choose')}
             testIdPrefix="audio"
           />
+          <AudioEngineNotice />
         </div>
 
         <MediaPromptCard testId="audio-prompt-card">
           <AudioModelPicker
-            mode={mode}
-            value={form.model}
-            onChange={(model) => change({ model })}
             open={modelsOpen}
             onOpenChange={onModelsOpenChange}
           />
@@ -131,76 +153,140 @@ export const AudioPromptForm = memo(function AudioPromptForm({
                   : 'audios:form.promptPlaceholder'
               )}
               onChange={(event) => change({ prompt: event.target.value })}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+                  event.preventDefault()
+                  start()
+                }
+              }}
               rows={3}
               className="min-h-20 resize-none rounded-xl bg-background px-3.5 py-2.5"
             />
           </ImageField>
           <ImageGenerateButton
             modality="audio"
-            generating={false}
-            stopRequested={false}
+            generating={generating}
+            stopRequested={stopRequested}
             disabledReason={disabledReason}
             imageCount={1}
-            onGenerate={() => {}}
-            onStop={() => {}}
+            onGenerate={start}
+            onStop={() => void stop()}
           />
+          <AudioJobStatus />
         </MediaPromptCard>
 
         <MediaSettingsHeading
           label={t('audios:form.settings')}
           resetLabel={t('audios:form.reset')}
           resetHint={t('audios:form.resetHint')}
-          onReset={() =>
-            setForms((all) => ({
-              ...all,
-              [mode]: resetAudioSettings(mode, all[mode]),
-            }))
-          }
+          onReset={resetForm}
+          disabled={generating}
           testIdPrefix="audio"
         />
-        {speech ? (
-          <div className="flex flex-col gap-3">
-            {/* The voices are the model's: until one runs, its default. */}
+        <div className="flex flex-col gap-3">
+          {showVoice && (
             <AdvancedSelect
               label={t('audios:form.voice')}
+              hint={capabilities ? undefined : t('audios:form.voiceHint')}
               value={form.voice}
-              options={[['', t('audios:form.voiceDefault')]]}
+              disabled={generating}
+              options={[
+                ['', defaultVoice],
+                ...voices.map(
+                  (voice) => [voice, audioVoiceLabel(voice)] as [string, string]
+                ),
+              ]}
               onChange={(voice) => change({ voice })}
             />
+          )}
+          {shows('speed') && (
             <ImageParamSlider
               id="audio-speed"
               label={t('audios:form.speed')}
               description={t('audios:form.speedHint')}
               value={form.speed}
-              min={0.5}
-              max={1.5}
+              min={SPEED_RANGE[0]}
+              max={SPEED_RANGE[1]}
               step={0.1}
+              disabled={generating}
               onChange={(speed) => change({ speed })}
             />
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3">
-            <AdvancedSelect
-              label={t('audios:form.duration')}
-              value={form.duration}
-              options={AUDIO_DURATIONS.map((seconds) => [
-                seconds,
-                t('audios:form.durationSeconds', { seconds }),
-              ])}
-              onChange={(duration) => change({ duration })}
-            />
-            {mode === 'music' && (
-              <ImageParamSlider
-                id="audio-tempo"
-                label={t('audios:form.tempo')}
-                description={t('audios:form.tempoHint')}
-                value={form.tempo}
-                min={60}
-                max={160}
-                step={5}
-                onChange={(tempo) => change({ tempo })}
+          )}
+          {shows('language') && (
+            <ImageField
+              htmlFor="audio-language"
+              label={t('audios:form.language')}
+            >
+              <Input
+                id="audio-language"
+                value={form.language}
+                disabled={generating}
+                placeholder={t('audios:form.languagePlaceholder')}
+                onChange={(event) => change({ language: event.target.value })}
               />
-            )}
+            </ImageField>
+          )}
+          {shows('instruct') && (
+            <ImageField
+              htmlFor="audio-instruct"
+              label={t('audios:form.instruct')}
+              hint={t('audios:form.instructHint')}
+            >
+              <Input
+                id="audio-instruct"
+                value={form.instruct}
+                disabled={generating}
+                placeholder={t('audios:form.instructPlaceholder')}
+                onChange={(event) => change({ instruct: event.target.value })}
+              />
+            </ImageField>
+          )}
+          {shows('lyrics') && (
+            <ImageField htmlFor="audio-lyrics" label={t('audios:form.lyrics')}>
+              <Textarea
+                id="audio-lyrics"
+                value={form.lyrics}
+                disabled={generating}
+                placeholder={t('audios:form.lyricsPlaceholder')}
+                onChange={(event) => change({ lyrics: event.target.value })}
+                rows={3}
+                className="min-h-16 resize-none rounded-xl bg-background px-3.5 py-2.5"
+              />
+            </ImageField>
+          )}
+          {shows('durationSec') && (
+            <ImageParamSlider
+              id="audio-duration"
+              label={t('audios:form.duration')}
+              description={t('audios:form.durationHint')}
+              value={form.durationSec}
+              min={durationMin}
+              max={durationMax}
+              step={1}
+              disabled={generating}
+              onChange={(durationSec) => change({ durationSec })}
+            />
+          )}
+          {shows('bpm') && (
+            <ImageField
+              htmlFor="audio-tempo"
+              label={t('audios:form.tempo')}
+              hint={t('audios:form.tempoHint')}
+            >
+              <Input
+                id="audio-tempo"
+                inputMode="numeric"
+                value={form.bpm}
+                disabled={generating}
+                placeholder={t('audios:form.auto')}
+                onChange={(event) =>
+                  change({ bpm: digitsOnly(event.target.value) })
+                }
+                className="tabular-nums"
+              />
+            </ImageField>
+          )}
+          {!speech && (
             <div className="flex min-h-8 items-center justify-between gap-3">
               <label
                 htmlFor="audio-loop"
@@ -214,15 +300,16 @@ export const AudioPromptForm = memo(function AudioPromptForm({
                 onCheckedChange={(loop) => change({ loop })}
               />
             </div>
-          </div>
-        )}
-        {!speech && (
-          <ImageSeedField
-            id="audio-seed"
-            value={form.seed}
-            onChange={(seed) => change({ seed })}
-          />
-        )}
+          )}
+          {shows('seed') && (
+            <ImageSeedField
+              id="audio-seed"
+              value={form.seed}
+              disabled={generating}
+              onChange={(seed) => change({ seed })}
+            />
+          )}
+        </div>
 
         <Collapsible
           open={advancedOpen}
@@ -255,36 +342,47 @@ export const AudioPromptForm = memo(function AudioPromptForm({
             data-testid="audio-advanced-panel"
           >
             <div className="flex flex-col gap-3 pt-3">
-              {speech ? (
-                <ImageParamSlider
-                  id="audio-pitch"
-                  label={t('audios:form.pitch')}
-                  description={t('audios:form.pitchHint')}
-                  value={form.pitch}
-                  min={0.5}
-                  max={1.5}
-                  step={0.1}
-                  onChange={(pitch) => change({ pitch })}
-                />
-              ) : (
-                <>
-                  <AdvancedSelect
-                    label={t('audios:form.sampleRate')}
-                    value={form.sampleRate}
-                    options={AUDIO_SAMPLE_RATES.map((rate) => [
-                      rate,
-                      t('audios:form.sampleRateKhz', { rate: rate / 1000 }),
-                    ])}
-                    onChange={(sampleRate) => change({ sampleRate })}
+              {shows('steps') && (
+                <ImageField
+                  htmlFor="audio-steps"
+                  label={t('audios:form.steps')}
+                  hint={t('audios:form.stepsHint')}
+                >
+                  <Input
+                    id="audio-steps"
+                    inputMode="numeric"
+                    value={form.steps}
+                    disabled={generating}
+                    placeholder={t('audios:form.auto')}
+                    onChange={(event) =>
+                      change({ steps: digitsOnly(event.target.value) })
+                    }
+                    className="tabular-nums"
                   />
-                  <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-                    <span className="font-medium">
-                      {t('audios:form.outputFormat')}
-                    </span>
-                    <span>{t('audios:form.outputFormatValue')}</span>
-                  </div>
-                </>
+                </ImageField>
               )}
+              {shows('negativePrompt') && (
+                <ImageField
+                  htmlFor="audio-negative"
+                  label={t('audios:form.negativePrompt')}
+                >
+                  <Input
+                    id="audio-negative"
+                    value={form.negativePrompt}
+                    disabled={generating}
+                    placeholder={t('audios:form.negativePromptPlaceholder')}
+                    onChange={(event) =>
+                      change({ negativePrompt: event.target.value })
+                    }
+                  />
+                </ImageField>
+              )}
+              <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                <span className="font-medium">
+                  {t('audios:form.outputFormat')}
+                </span>
+                <span>{t('audios:form.outputFormatValue')}</span>
+              </div>
             </div>
           </CollapsibleContent>
         </Collapsible>

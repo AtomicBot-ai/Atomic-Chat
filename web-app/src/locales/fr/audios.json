@@ -25,45 +25,211 @@
     "listTitle_effects": "Modèles d'effets sonores",
     "download": "Télécharger {{name}}",
     "downloadShort": "Télécharger",
-    "comingSoon": "Disponible avec le moteur audio."
+    "downloaded": "Téléchargé",
+    "remove": "Supprimer {{name}}",
+    "removeTitle": "Supprimer {{name}} ?",
+    "removeDescription": "Le fichier du modèle est supprimé de cet ordinateur et libère {{size}}. Vos clips restent.",
+    "removeConfirm": "Supprimer",
+    "downloadFailed": "Impossible de télécharger {{name}}",
+    "unavailable": "Les téléchargements s’ouvrent lorsque le moteur audio peut fonctionner sur cet ordinateur."
+  },
+  "engine": {
+    "groupTitle": "Audio",
+    "rowDescription": "Exécute les modèles de voix, de musique et d’effets sonores.",
+    "coreTooOld": {
+      "title": "L’audio nécessite une version plus récente d’Atomic Chat",
+      "body": "Le moteur de cette version de l’application ne peut pas encore générer d’audio. Mettez l’application à jour pour utiliser cette page."
+    },
+    "coreUnreachable": {
+      "title": "En attente du moteur",
+      "body": "Le moteur de l’application ne répond pas encore. Cette page reprend dès qu’il répond."
+    },
+    "noBuild": {
+      "title": "Aucun moteur audio pour cet ordinateur",
+      "body": "Aucune version d’audio.cpp n’est encore publiée pour cet ordinateur."
+    },
+    "install": {
+      "title": "Installer le moteur audio",
+      "body": "audio.cpp exécute les modèles sur cet ordinateur.",
+      "action": "Installer",
+      "actionSize": "Installer ({{size}})"
+    },
+    "installing": "Installation du moteur audio…",
+    "retry": "Vérifier à nouveau"
   },
   "form": {
     "text": "Texte",
     "textPlaceholder": "Saisissez le texte à lire à voix haute…",
     "prompt": "Prompt",
     "promptPlaceholder": "Décrivez l'audio souhaité…",
-    "generate": "Générer",
     "settings": "Paramètres",
     "reset": "Réinitialiser",
-    "resetHint": "Rétablit les paramètres audio. Votre prompt est conservé.",
+    "resetHint": "Rétablir les réglages audio. Votre texte reste.",
     "voice": "Voix",
     "voiceDefault": "Voix par défaut du modèle",
+    "voiceDefaultNamed": "{{voice}} (par défaut)",
+    "voiceHint": "Les autres voix du modèle apparaissent ici après son démarrage.",
     "speed": "Vitesse",
     "speedHint": "Débit de parole. 1 correspond à la vitesse normale.",
+    "language": "Langue",
+    "languagePlaceholder": "Détectée à partir du texte",
+    "instruct": "Style",
+    "instructHint": "Comment la voix doit sonner.",
+    "instructPlaceholder": "Calme et chaleureux",
+    "lyrics": "Paroles",
+    "lyricsPlaceholder": "Les mots à chanter. Laissez vide pour un instrumental.",
     "duration": "Durée",
-    "durationSeconds": "{{seconds}} secondes",
+    "durationHint": "Durée du clip en secondes.",
     "tempo": "Tempo",
-    "tempoHint": "Battements par minute.",
+    "tempoHint": "Battements par minute. Vide laisse le modèle choisir.",
+    "auto": "Auto",
     "loop": "Lecture en boucle",
     "advanced": "Avancé",
-    "pitch": "Hauteur",
-    "pitchHint": "Hauteur de la voix. 1 correspond à la hauteur naturelle.",
-    "sampleRate": "Fréquence d'échantillonnage",
-    "sampleRateKhz": "{{rate}} kHz",
+    "steps": "Étapes",
+    "stepsHint": "Plus d’étapes prennent plus de temps. Vide utilise la valeur du modèle.",
+    "negativePrompt": "À éviter",
+    "negativePromptPlaceholder": "Ce qu’il faut exclure…",
     "outputFormat": "Format de sortie",
-    "outputFormatValue": "WAV · Mono",
+    "outputFormatValue": "WAV",
     "disabled": {
-      "noEngine": "La génération audio nécessite le moteur audio, qui ne fait pas encore partie de cette version.",
-      "noModel": "Téléchargez d'abord un modèle audio.",
-      "emptyPrompt": "Écrivez d'abord un prompt."
+      "coreTooOld": "L’audio nécessite une version plus récente d’Atomic Chat.",
+      "coreUnavailable": "Le moteur ne répond pas encore.",
+      "noEngine": "Installez d’abord le moteur audio.",
+      "noModel": "Téléchargez d’abord un modèle audio.",
+      "modelLoading": "Le modèle démarre.",
+      "needsVoiceRef": "Ce modèle ne parle qu’avec une voix clonée, que cette page ne peut pas encore enregistrer. Choisissez un autre modèle.",
+      "emptyPrompt": "Écrivez d’abord un prompt."
+    }
+  },
+  "progress": {
+    "label": "État de la génération audio",
+    "modelLoading": "Chargement du modèle…",
+    "stopping": "Arrêt…",
+    "elapsed": "{{seconds}} s",
+    "phase": {
+      "queued": "En attente de démarrage…",
+      "loading": "Démarrage du moteur…",
+      "generating": "Génération…",
+      "saving": "Enregistrement…"
     }
   },
   "gallery": {
+    "title": "Galerie",
+    "open": "Ouvrir : {{prompt}}",
+    "loadMore": "Afficher plus",
     "empty": {
       "title": "Vos fichiers audio apparaissent ici",
       "description": "Saisissez un prompt et générez de l'audio."
     },
     "emptyNoModel": "Téléchargez un modèle audio pour commencer."
+  },
+  "viewer": {
+    "details": "Détails",
+    "showInFolder": "Afficher dans le dossier",
+    "showFailed": "Impossible d’ouvrir le dossier",
+    "delete": "Supprimer",
+    "deleteClip": "Supprimer : {{prompt}}",
+    "seconds": "{{seconds}} s",
+    "sampleRate": "{{rate}} kHz",
+    "mono": "Mono",
+    "stereo": "Stéréo",
+    "channels": "{{count}} canaux",
+    "voice": "Voix : {{voice}}",
+    "seed": "Graine : {{seed}}"
+  },
+  "delete": {
+    "title": "Supprimer ce clip ?",
+    "description": "Le fichier audio et sa recette sont supprimés de cet ordinateur.",
+    "confirm": "Supprimer",
+    "failed": "Impossible de supprimer le clip"
+  },
+  "notifications": {
+    "readyTitle": "Audio prêt",
+    "readyBody": "La génération audio est terminée.",
+    "engineReadyBody": "Le moteur audio est prêt."
+  },
+  "errors": {
+    "actions": {
+      "install": "Installer le moteur",
+      "chooseModel": "Choisir un modèle",
+      "retry": "Réessayer"
+    },
+    "ENGINE_MISSING": {
+      "title": "Le moteur audio n’est pas installé",
+      "body": "Installez-le pour générer de l’audio sur cet ordinateur."
+    },
+    "ENGINE_INSTALL_FAILED": {
+      "title": "Le moteur audio ne s’est pas installé",
+      "body": "Le téléchargement ou sa vérification a échoué. Réessayez l’installation."
+    },
+    "ENGINE_CRASHED": {
+      "title": "Le moteur audio s’est arrêté",
+      "body": "Il s’est arrêté pendant la tâche. Réessayez : le moteur redémarre tout seul."
+    },
+    "MODEL_MISSING": {
+      "title": "Le fichier du modèle est introuvable",
+      "body": "Téléchargez à nouveau le modèle depuis la liste."
+    },
+    "MODEL_LOAD_FAILED": {
+      "title": "Le modèle n’a pas démarré",
+      "body": "Le moteur n’a pas pu le charger. Réessayez ou choisissez un modèle plus petit."
+    },
+    "MODEL_INCOMPATIBLE": {
+      "title": "Ce moteur ne peut pas exécuter le modèle",
+      "body": "Choisissez un autre modèle ou mettez à jour le moteur audio."
+    },
+    "MODEL_NOT_LOADED": {
+      "title": "Le modèle ne tourne pas",
+      "body": "Il s’est arrêté avant le début de la tâche. Générer le relance."
+    },
+    "OUT_OF_MEMORY": {
+      "title": "Mémoire insuffisante pour ce modèle",
+      "body": "Fermez d’autres modèles ou applications, ou choisissez un modèle plus petit."
+    },
+    "UNSUPPORTED_BACKEND": {
+      "title": "Cet ordinateur ne peut pas exécuter le moteur audio",
+      "body": "Aucune version du moteur ne convient à ce matériel."
+    },
+    "UNSUPPORTED_MODE": {
+      "title": "Un autre modèle est en cours",
+      "body": "Le modèle en cours ne produit pas ce type d’audio. Réessayez pour lancer le bon."
+    },
+    "INVALID_REQUEST": {
+      "title": "Ces réglages ne sont pas utilisables",
+      "body": "Vérifiez le texte et les réglages, puis réessayez."
+    },
+    "REQUEST_REJECTED": {
+      "title": "Le modèle a refusé ces réglages",
+      "body": "Modifiez les réglages ou le texte, puis réessayez."
+    },
+    "INVALID_OUTPUT": {
+      "title": "Le moteur n’a renvoyé aucun audio",
+      "body": "Réessayez ou essayez une autre graine."
+    },
+    "JOB_BUSY": {
+      "title": "Le moteur est occupé",
+      "body": "Une autre tâche est en cours. Réessayez lorsqu’elle sera terminée."
+    },
+    "JOB_NOT_FOUND": {
+      "title": "La tâche a disparu",
+      "body": "Le moteur ne connaît plus cette tâche."
+    },
+    "CANCELLED": {
+      "title": "Arrêté",
+      "body": "La tâche a été arrêtée."
+    },
+    "DISK_FULL": {
+      "title": "Le disque est plein",
+      "body": "Libérez de l’espace, puis réessayez."
+    },
+    "BACKEND_IN_USE": {
+      "title": "Le modèle est utilisé",
+      "body": "Attendez la fin de la tâche, puis réessayez."
+    },
+    "INTERNAL": {
+      "title": "Une erreur est survenue",
+      "body": "Le moteur a signalé une erreur inattendue. Réessayez."
+    }
   },
   "setup": {
     "card": {

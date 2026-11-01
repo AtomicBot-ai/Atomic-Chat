@@ -25,45 +25,211 @@
     "listTitle_effects": "Sound effect models",
     "download": "Download {{name}}",
     "downloadShort": "Download",
-    "comingSoon": "Arrives with the audio engine."
+    "downloaded": "Downloaded",
+    "remove": "Remove {{name}}",
+    "removeTitle": "Remove {{name}}?",
+    "removeDescription": "The model file is removed from this computer and frees {{size}}. Your clips stay.",
+    "removeConfirm": "Remove",
+    "downloadFailed": "Could not download {{name}}",
+    "unavailable": "Downloads open once the audio engine can run on this computer."
+  },
+  "engine": {
+    "groupTitle": "Audio",
+    "rowDescription": "Runs speech, music and sound effect models.",
+    "coreTooOld": {
+      "title": "Audio needs a newer Atomic Chat",
+      "body": "The engine in this version of the app cannot generate audio yet. Update the app to use this page."
+    },
+    "coreUnreachable": {
+      "title": "Waiting for the engine",
+      "body": "The app’s engine is not answering yet. This page picks up as soon as it does."
+    },
+    "noBuild": {
+      "title": "No audio engine for this computer",
+      "body": "No audio.cpp build is published for this computer yet."
+    },
+    "install": {
+      "title": "Install the audio engine",
+      "body": "audio.cpp runs the models on this computer.",
+      "action": "Install",
+      "actionSize": "Install ({{size}})"
+    },
+    "installing": "Installing the audio engine…",
+    "retry": "Check again"
   },
   "form": {
     "text": "Text",
     "textPlaceholder": "Enter the text to read aloud…",
     "prompt": "Prompt",
     "promptPlaceholder": "Describe the audio you want…",
-    "generate": "Generate",
     "settings": "Settings",
     "reset": "Reset",
-    "resetHint": "Restore audio settings. Your prompt stays.",
+    "resetHint": "Restore audio settings. Your text stays.",
     "voice": "Voice",
     "voiceDefault": "Model default",
+    "voiceDefaultNamed": "{{voice}} (default)",
+    "voiceHint": "The model’s other voices appear here after it starts.",
     "speed": "Speed",
     "speedHint": "Speaking rate. 1 is the normal speed.",
+    "language": "Language",
+    "languagePlaceholder": "Detected from the text",
+    "instruct": "Style",
+    "instructHint": "How the voice should sound.",
+    "instructPlaceholder": "Calm and warm",
+    "lyrics": "Lyrics",
+    "lyricsPlaceholder": "Words to sing. Leave empty for an instrumental.",
     "duration": "Duration",
-    "durationSeconds": "{{seconds}} seconds",
+    "durationHint": "Length of the clip in seconds.",
     "tempo": "Tempo",
-    "tempoHint": "Beats per minute.",
+    "tempoHint": "Beats per minute. Empty lets the model choose.",
+    "auto": "Auto",
     "loop": "Loop playback",
     "advanced": "Advanced",
-    "pitch": "Pitch",
-    "pitchHint": "Voice pitch. 1 is the natural pitch.",
-    "sampleRate": "Sample rate",
-    "sampleRateKhz": "{{rate}} kHz",
+    "steps": "Steps",
+    "stepsHint": "More steps take longer. Empty uses the model’s own count.",
+    "negativePrompt": "Avoid",
+    "negativePromptPlaceholder": "What to leave out…",
     "outputFormat": "Output format",
-    "outputFormatValue": "WAV · Mono",
+    "outputFormatValue": "WAV",
     "disabled": {
-      "noEngine": "Audio generation needs the audio engine, which is not part of this build yet.",
+      "coreTooOld": "Audio needs a newer version of Atomic Chat.",
+      "coreUnavailable": "The engine is not answering yet.",
+      "noEngine": "Install the audio engine first.",
       "noModel": "Download an audio model first.",
+      "modelLoading": "The model is starting.",
+      "needsVoiceRef": "This model speaks only in a cloned voice, which this page cannot record yet. Pick another model.",
       "emptyPrompt": "Write a prompt first."
     }
   },
+  "progress": {
+    "label": "Audio generation status",
+    "modelLoading": "Loading the model…",
+    "stopping": "Stopping…",
+    "elapsed": "{{seconds}} s",
+    "phase": {
+      "queued": "Waiting to start…",
+      "loading": "Starting the engine…",
+      "generating": "Generating…",
+      "saving": "Saving…"
+    }
+  },
   "gallery": {
+    "title": "Gallery",
+    "open": "Open: {{prompt}}",
+    "loadMore": "Show more",
     "empty": {
       "title": "Your audio appears here",
       "description": "Enter a prompt and generate audio."
     },
     "emptyNoModel": "Download an audio model to get started."
+  },
+  "viewer": {
+    "details": "Details",
+    "showInFolder": "Show in folder",
+    "showFailed": "Could not open the folder",
+    "delete": "Delete",
+    "deleteClip": "Delete: {{prompt}}",
+    "seconds": "{{seconds}} s",
+    "sampleRate": "{{rate}} kHz",
+    "mono": "Mono",
+    "stereo": "Stereo",
+    "channels": "{{count}} channels",
+    "voice": "Voice: {{voice}}",
+    "seed": "Seed: {{seed}}"
+  },
+  "delete": {
+    "title": "Delete this clip?",
+    "description": "The audio file and its recipe are removed from this computer.",
+    "confirm": "Delete",
+    "failed": "Could not delete the clip"
+  },
+  "notifications": {
+    "readyTitle": "Audio ready",
+    "readyBody": "Your audio finished generating.",
+    "engineReadyBody": "The audio engine is ready."
+  },
+  "errors": {
+    "actions": {
+      "install": "Install the engine",
+      "chooseModel": "Choose a model",
+      "retry": "Try again"
+    },
+    "ENGINE_MISSING": {
+      "title": "The audio engine is not installed",
+      "body": "Install it to generate audio on this computer."
+    },
+    "ENGINE_INSTALL_FAILED": {
+      "title": "The audio engine did not install",
+      "body": "The download or its check failed. Try installing it again."
+    },
+    "ENGINE_CRASHED": {
+      "title": "The audio engine stopped",
+      "body": "It stopped during the job. Try again; the engine starts again by itself."
+    },
+    "MODEL_MISSING": {
+      "title": "The model file is missing",
+      "body": "Download the model again from the list."
+    },
+    "MODEL_LOAD_FAILED": {
+      "title": "The model did not start",
+      "body": "The engine could not load it. Try again, or choose a smaller model."
+    },
+    "MODEL_INCOMPATIBLE": {
+      "title": "This engine cannot run the model",
+      "body": "Choose another model, or update the audio engine."
+    },
+    "MODEL_NOT_LOADED": {
+      "title": "The model is not running",
+      "body": "It stopped before the job started. Generate starts it again."
+    },
+    "OUT_OF_MEMORY": {
+      "title": "Not enough memory for this model",
+      "body": "Close other models or apps, or choose a smaller model."
+    },
+    "UNSUPPORTED_BACKEND": {
+      "title": "This computer cannot run the audio engine",
+      "body": "No build of the engine fits this hardware."
+    },
+    "UNSUPPORTED_MODE": {
+      "title": "Another model is running",
+      "body": "The running model does not make this kind of audio. Try again to start the right one."
+    },
+    "INVALID_REQUEST": {
+      "title": "These settings cannot be used",
+      "body": "Check the text and settings, then try again."
+    },
+    "REQUEST_REJECTED": {
+      "title": "The model refused these settings",
+      "body": "Change the settings or the text, then try again."
+    },
+    "INVALID_OUTPUT": {
+      "title": "The engine returned no audio",
+      "body": "Try again, or try another seed."
+    },
+    "JOB_BUSY": {
+      "title": "The engine is busy",
+      "body": "Another job is running. Try again when it finishes."
+    },
+    "JOB_NOT_FOUND": {
+      "title": "The job is gone",
+      "body": "The engine no longer knows this job."
+    },
+    "CANCELLED": {
+      "title": "Stopped",
+      "body": "The job was stopped."
+    },
+    "DISK_FULL": {
+      "title": "The disk is full",
+      "body": "Free some space, then try again."
+    },
+    "BACKEND_IN_USE": {
+      "title": "The model is in use",
+      "body": "Wait for the job to finish, then try again."
+    },
+    "INTERNAL": {
+      "title": "Something went wrong",
+      "body": "The engine reported an unexpected error. Try again."
+    }
   },
   "setup": {
     "card": {

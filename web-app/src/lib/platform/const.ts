@@ -89,7 +89,7 @@ export const PlatformFeatures: Record<PlatformFeature, boolean> = {
     isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid(),
 
   // The Audios page, desktop only like Images and Video. Dev builds only
-  // until the audio engine lands: the page has no model to run yet.
+  // until a core with audio is pinned: 0.20.5 has no audio engine to run.
   [PlatformFeature.AUDIO_GENERATION]:
     import.meta.env.DEV &&
     isPlatformTauri() &&
