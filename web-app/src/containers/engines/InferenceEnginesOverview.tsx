@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import {
   ChevronDown,
+  AudioLines,
   Clapperboard,
   Cpu,
   Download,
@@ -40,6 +41,7 @@ import {
   engineUpdateOfferFrom,
   type EngineUpdateOffer,
 } from '@/lib/engineUpdateOffer'
+import { InstalledEngineBuilds } from '@/containers/engines/InstalledEngineBuilds'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import { sortProvidersForSettings } from '@/lib/providerOrder'
@@ -51,6 +53,7 @@ import { useEngineVersionsStore } from '@/stores/engine-versions-store'
 /** The media engine's name, as Settings → Media names it. */
 const MEDIA_ENGINE_NAME = 'stable-diffusion.cpp'
 const MEDIA_ENGINE: EngineId = 'sd-cpp'
+const AUDIO_ENGINE: EngineId = 'audio-cpp'
 
 /**
  * The local language engines this machine lists: MLX on macOS only, the
@@ -287,6 +290,11 @@ export function InferenceEnginesOverview() {
   const checking = useEngineVersionsStore((state) => state.loading)
   const showMedia = PlatformFeatures[PlatformFeature.MEDIA_GENERATION]
   const showVoice = PlatformFeatures[PlatformFeature.VOICE_INPUT]
+  // Only a core with the audio module reports this engine; an older one shows
+  // no row rather than a broken one.
+  const showAudio =
+    PlatformFeatures[PlatformFeature.AUDIO_GENERATION] &&
+    versions[AUDIO_ENGINE] !== undefined
   // Engines whose update is running: their offer stays until the core's
   // `engine:changed` refreshes the answer.
   const [updating, setUpdating] = useState<ReadonlySet<EngineId>>(new Set())
@@ -352,8 +360,9 @@ export function InferenceEnginesOverview() {
   const listed = useMemo(() => {
     const ids = engines.map((engine) => engine.provider as EngineId)
     if (showMedia) ids.push(MEDIA_ENGINE)
+    if (showAudio) ids.push(AUDIO_ENGINE)
     return new Set(ids)
-  }, [engines, showMedia])
+  }, [engines, showMedia, showAudio])
 
   const checkForUpdates = async () => {
     await useEngineVersionsStore.getState().refresh({ force: true })
@@ -378,6 +387,7 @@ export function InferenceEnginesOverview() {
   }
 
   const mediaBuild = versions[MEDIA_ENGINE]?.active?.version
+  const audioBuild = versions[AUDIO_ENGINE]?.active?.version
   const voiceInstalled = providers.some(
     (provider) =>
       provider.provider === VOICE_PROVIDER &&
@@ -462,6 +472,27 @@ export function InferenceEnginesOverview() {
               onUpdate={onUpdate(MEDIA_ENGINE)}
             >
               <MediaSettingsPanel />
+            </EngineRow>
+          </Group>
+        )}
+        {showAudio && (
+          <Group
+            title={t('audios:engine.groupTitle')}
+            icon={<AudioLines size={16} aria-hidden />}
+          >
+            <EngineRow
+              testId="engine-row-audio-cpp"
+              icon={<AudioLines size={18} />}
+              name={getProviderTitle(AUDIO_ENGINE)}
+              description={joinFacts([
+                t('audios:engine.rowDescription'),
+                audioBuild &&
+                  t('providers:overview.build', { version: audioBuild }),
+              ])}
+              status={statusOf(AUDIO_ENGINE)}
+              onUpdate={onUpdate(AUDIO_ENGINE)}
+            >
+              <InstalledEngineBuilds engine={AUDIO_ENGINE} />
             </EngineRow>
           </Group>
         )}

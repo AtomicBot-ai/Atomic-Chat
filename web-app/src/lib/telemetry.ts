@@ -39,6 +39,8 @@ export type DownloadKind =
   // A catalog embedding model (`embedding-<id>`, `lib/embedding/models.ts`):
   // served on /v1/embeddings, never a chat model.
   | 'embedding_model'
+  // A catalog audio model (`audio-model-<id>`, `lib/audio/models.ts`).
+  | 'audio_model'
 
 export type DownloadFailureReason =
   | 'http_404'
@@ -261,6 +263,7 @@ export function downloadKind(
   if (id.startsWith('diffusion-backend')) return 'gpu_backend'
   if (id.startsWith('diffusion')) return 'diffusion_model'
   if (id.startsWith('embedding-')) return 'embedding_model'
+  if (id.startsWith('audio-model-')) return 'audio_model'
   if (downloadType === 'Backend' || id.includes('llamacpp-backend'))
     return 'gpu_backend'
   return 'model'

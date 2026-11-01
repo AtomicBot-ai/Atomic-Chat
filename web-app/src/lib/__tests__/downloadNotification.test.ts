@@ -28,6 +28,32 @@ describe('describeFinishedDownload', () => {
     })
   })
 
+  it('says which engine landed: audio.cpp is no chat engine', () => {
+    expect(
+      describeFinishedDownload(
+        'engine-build-audio-cpp-v0_9_3',
+        'Backend',
+        null,
+        t
+      )?.body
+    ).toBe('The audio engine is ready.')
+  })
+
+  it('names an audio model by its download row', () => {
+    expect(
+      describeFinishedDownload(
+        'audio-model-moss-tts-nano-100m_q8_0',
+        'Model',
+        null,
+        t,
+        'MOSS-TTS-Nano 100M'
+      )
+    ).toEqual({
+      title: 'Model downloaded',
+      body: 'MOSS-TTS-Nano 100M is ready to use.',
+    })
+  })
+
   it('names a model by its download row when its id does not', () => {
     expect(
       describeFinishedDownload(

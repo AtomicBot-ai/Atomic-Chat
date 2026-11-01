@@ -576,6 +576,15 @@ describe('classifyDownloadFailure', () => {
 })
 
 describe('downloadKind', () => {
+  it('tells a catalog audio model from a chat model', () => {
+    expect(downloadKind('audio-model-moss-tts-nano-100m_q8_0', 'Model')).toBe(
+      'audio_model'
+    )
+    expect(downloadKind('engine-build-audio-cpp-v0_9_3', 'Backend')).toBe(
+      'gpu_backend'
+    )
+  })
+
   it('tells a catalog embedding model from a chat model, an engine and a diffusion file', () => {
     expect(downloadKind('embedding-embeddinggemma-2')).toBe('embedding_model')
     expect(downloadKind('embedding-bge-m3', 'Model')).toBe('embedding_model')

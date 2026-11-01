@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest'
 
+import {
+  MOSS,
+  SFX,
+  catalog,
+  makeFile,
+} from '@/lib/audio/__tests__/audio-fixtures'
 import type { PartialDownload } from '@/lib/downloads-disk'
 import {
   activeDownloadIds,
+  audioItems,
   downloadItems,
   draftItems,
   inventoryTotalBytes,
@@ -97,6 +104,50 @@ describe('running model downloads', () => {
       name: 'Qwen3.5 4B DFlash',
       owner: 'z-lab',
       modelId: id,
+    })
+  })
+})
+
+describe('audio models', () => {
+  it('lists what is on disk, with the notice a license asks for', () => {
+    const items = audioItems(catalog(), [makeFile(MOSS), makeFile(SFX)])
+
+    expect(items.map((item) => item.name)).toEqual([
+      'MOSS-TTS-Nano 100M',
+      'Stable Audio 3 Small SFX',
+    ])
+    expect(items[0]).toMatchObject({
+      category: 'audio',
+      details: ['Q8'],
+      bytes: 193343328,
+      removal: { type: 'audio', modelId: MOSS },
+    })
+    expect(items[1].details).toEqual(['Q8', 'Powered by Stability AI'])
+  })
+
+  it('ignores a file of another size: it is not the catalog’s', () => {
+    expect(audioItems(catalog(), [{ ...makeFile(MOSS), bytes: 10 }])).toEqual(
+      []
+    )
+  })
+
+  it('names a running download by its catalog model', () => {
+    const id = 'audio-model-moss-tts-nano-100m_q8_0'
+    const [item] = downloadItems({
+      downloads: {},
+      localDownloadingModels: new Set([id]),
+      pausedDownloads: new Set(),
+      downloadOriginByModelId: {},
+      diffusionCatalog: null,
+      embeddingModels: [],
+      decisionModels: [],
+      audioCatalog: catalog(),
+    })
+
+    expect(item).toMatchObject({
+      category: 'audio',
+      name: 'MOSS-TTS-Nano 100M',
+      details: ['Q8'],
     })
   })
 })

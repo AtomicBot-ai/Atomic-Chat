@@ -25,6 +25,7 @@ import { MLX_PROVIDER } from '@/lib/hub-installed'
 import {
   activeDownloadIds,
   artifactItems,
+  audioItems,
   decisionItems,
   downloadItems,
   draftItems,
@@ -41,8 +42,11 @@ import {
   type InventoryItem,
 } from '@/lib/installed-inventory'
 import { deleteLocalModel } from '@/lib/model-deletion'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
 import type { ServiceHub } from '@/services'
 import { deleteEngineBuild } from '@/services/engines/core'
+import { useAudioGenerationStore } from '@/stores/audio-generation-store'
 import { useDecisionStore } from '@/stores/decision-store'
 import { useEmbeddingStore } from '@/stores/embedding-store'
 import { useEngineVersionsStore } from '@/stores/engine-versions-store'
@@ -71,9 +75,10 @@ const refuse = (code: DiskRemovalRefusal, item: InventoryItem): Error =>
 /**
  * Remove one item through the owner that put it there, the way that owner's
  * own page removes it: the provider registry for model files, the
- * image-generation store for checkpoints, the embedding and decision helpers
- * (which first switch the core off a model it runs), the voice hook (which
- * releases the transcription engine first) and the core for engine builds.
+ * image-generation store for checkpoints, the audio store (which stops a model
+ * that is running), the embedding and decision helpers (which first switch the
+ * core off a model it runs), the voice hook (which releases the transcription
+ * engine first) and the core for engine builds.
  * Partial downloads and MLX drafts have no owner keeping a list: their files
  * are deleted, once the download store and the MLX drafter switches say again
  * that nothing uses them, and the disk is read again (`rescan`).
@@ -124,6 +129,9 @@ export async function removeInventoryItem(
       }
       return
     }
+    case 'audio':
+      await useAudioGenerationStore.getState().removeModel(removal.modelId)
+      return
     case 'voice':
       await deps.removeVoice()
       return
@@ -230,6 +238,8 @@ export function useInstalledInventory(): InstalledInventory {
   const decisionInstalled = useDecisionStore((state) => state.installed)
   const embeddingRead = useEmbeddingStore((state) => state.installedRead)
   const decisionRead = useDecisionStore((state) => state.installedRead)
+  const audioCatalog = useAudioGenerationStore((state) => state.catalog)
+  const audioFiles = useAudioGenerationStore((state) => state.modelFiles)
 
   const engines = useEngineVersionsStore((state) => state.engines)
 
@@ -248,6 +258,11 @@ export function useInstalledInventory(): InstalledInventory {
 
   useEffect(() => useEmbeddingStore.getState().bind(), [])
   useEffect(() => useDecisionStore.getState().bind(), [])
+  useEffect(() => {
+    if (PlatformFeatures[PlatformFeature.AUDIO_GENERATION]) {
+      void useAudioGenerationStore.getState().bind()
+    }
+  }, [])
 
   const activeIds = useMemo(
     () =>
@@ -332,11 +347,13 @@ export function useInstalledInventory(): InstalledInventory {
         diffusionCatalog,
         embeddingModels,
         decisionModels,
+        audioCatalog,
       }),
       ...withMeasuredSizes(providerModelItems(providers), disk.mlxModelBytes),
       ...partialDownloadItems(disk.partials, activeIds),
       ...draftItems(disk.drafts, draftersOn),
       ...artifactItems(diffusionCatalog, installedArtifacts, modelFiles),
+      ...audioItems(audioCatalog, audioFiles),
       ...embeddingItems(embeddingModels, embeddingInstalled),
       ...decisionItems(decisionModels, decisionInstalled),
       ...(voiceRow ? [voiceRow] : []),
@@ -355,6 +372,8 @@ export function useInstalledInventory(): InstalledInventory {
     diffusionCatalog,
     installedArtifacts,
     modelFiles,
+    audioCatalog,
+    audioFiles,
     embeddingModels,
     embeddingInstalled,
     decisionModels,

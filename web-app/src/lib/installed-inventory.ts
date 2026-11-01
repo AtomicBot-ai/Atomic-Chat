@@ -1,7 +1,7 @@
 /**
  * What the app has put on this computer, for the Downloads page: every local
- * model file, image and video checkpoint, embedding and decision model, the
- * voice model and the engine builds, plus the downloads still running.
+ * model file, image and video checkpoint, audio, embedding and decision model,
+ * the voice model and the engine builds, plus the downloads still running.
  *
  * Each source keeps its own list (the provider registry, the image-generation
  * store, the embedding and decision stores, the core's engine answer), so the
@@ -22,6 +22,13 @@ import {
   VOICE_PROVIDER,
 } from '@/constants/voice'
 import type { DownloadProgressProps } from '@/hooks/useDownloadStore'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
+import {
+  isAudioDownloadTaskId,
+  isAudioQuantOnDisk,
+  resolveAudioDownloadTaskId,
+} from '@/lib/audio/models'
 import {
   isDiffusionModelDownloadTaskId,
   planArtifactDownload,
@@ -74,6 +81,11 @@ import {
   embeddingQuantLabel,
   type EmbeddingCatalogModel,
 } from '@/services/embedding-catalog-registry'
+import {
+  recommendedAudioQuant,
+  type AudioCatalog,
+} from '@/services/audio-catalog-registry'
+import type { AudioModelFile } from '@/services/audio/types'
 import { isEngineBuildTaskId } from '@/services/engine-builds/install'
 import type {
   EngineId,
@@ -84,12 +96,22 @@ import { ENGINE_IDS } from '@/services/engines/types'
 import { isEngineUpdateTaskId } from '@/services/engines/update'
 
 /** The page's category filter; "All" is the absence of one. */
-export type InventoryCategory = 'local' | 'image' | 'video' | 'voice' | 'engine'
+export type InventoryCategory =
+  | 'local'
+  | 'image'
+  | 'video'
+  | 'audio'
+  | 'voice'
+  | 'engine'
 
+/** Audio has a filter only where the studio exists: dev builds, for now. */
 export const INVENTORY_CATEGORIES: readonly InventoryCategory[] = [
   'local',
   'image',
   'video',
+  ...(PlatformFeatures[PlatformFeature.AUDIO_GENERATION]
+    ? (['audio'] as const)
+    : []),
   'voice',
   'engine',
 ]
@@ -101,6 +123,7 @@ export type InventoryKind =
   | 'decision'
   | 'image'
   | 'video'
+  | 'audio'
   | 'voice'
   | 'engine'
   /** What a download that never finished left on disk. */
@@ -114,6 +137,7 @@ export type InventoryRemoval =
   | { type: 'artifact'; artifactId: string }
   | { type: 'embedding'; model: EmbeddingCatalogModel }
   | { type: 'decision'; model: DecisionCatalogModel }
+  | { type: 'audio'; modelId: string }
   | { type: 'voice' }
   | {
       type: 'engine-build'
@@ -441,6 +465,31 @@ export function artifactItems(
   return items
 }
 
+/**
+ * Catalog audio models whose file is on disk. A model whose license asks for a
+ * notice carries it here too: this list offers the model as much as the picker.
+ */
+export function audioItems(
+  catalog: AudioCatalog,
+  modelFiles: readonly AudioModelFile[]
+): InventoryItem[] {
+  const items: InventoryItem[] = []
+  for (const model of catalog.models) {
+    const quant = recommendedAudioQuant(model)
+    if (!isAudioQuantOnDisk(quant, modelFiles)) continue
+    items.push({
+      key: `audio:${model.id}`,
+      category: 'audio',
+      kind: 'audio',
+      name: model.name,
+      details: [quant.label, ...(model.attribution ? [model.attribution] : [])],
+      bytes: validBytes(quant.bytes),
+      removal: { type: 'audio', modelId: model.id },
+    })
+  }
+  return items
+}
+
 /** Catalog embedding models with every file on disk. */
 export function embeddingItems(
   models: readonly EmbeddingCatalogModel[],
@@ -526,6 +575,7 @@ type DownloadSources = {
   diffusionCatalog: DiffusionCatalog | null
   embeddingModels: readonly EmbeddingCatalogModel[]
   decisionModels: readonly DecisionCatalogModel[]
+  audioCatalog?: AudioCatalog | null
 }
 
 /** Where a running download lands once it finishes, and its name meanwhile. */
@@ -573,6 +623,15 @@ function describeDownload(
       kind: 'embedding',
       name: model?.name ?? id,
       details: [],
+    }
+  }
+  if (isAudioDownloadTaskId(id)) {
+    const audio = resolveAudioDownloadTaskId(sources.audioCatalog ?? null, id)
+    return {
+      category: 'audio',
+      kind: 'audio',
+      name: audio?.model.name ?? id,
+      details: audio ? [audio.quant.label] : [],
     }
   }
   if (isDecisionDownloadTaskId(id)) {

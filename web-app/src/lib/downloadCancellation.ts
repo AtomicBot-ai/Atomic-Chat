@@ -1,5 +1,6 @@
 import type { ServiceHub } from '@/services'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { isAudioDownloadTaskId } from '@/lib/audio/models'
 import { isDecisionDownloadTaskId } from '@/lib/decision/models'
 import { isEmbeddingDownloadTaskId } from '@/lib/embedding/models'
 import { isDiffusionModelDownloadTaskId } from '@/lib/diffusion/models'
@@ -55,8 +56,9 @@ export function clearDownloadCancellationRequested(id: string) {
  * go through the model service's abort; managed models (`managed-*`, TensorRT-LLM and vLLM),
  * Foundry Local variants (`foundry-local-*`), LiteRT-LM variants (`litert-lm-*`),
  * GenieX models (`geniex-*`, a bundle's unpacking under the same id included),
- * decision models (`decision-*`) and embedding models (`embedding-*`) are a
- * plain transfer of their files, stopped by task id. The media engine
+ * decision models (`decision-*`), embedding models (`embedding-*`) and audio
+ * models (`audio-model-*`) are a plain transfer of their files, stopped by task
+ * id. The media engine
  * (`diffusion-backend-*`) is downloaded by the core, which stops it by task id
  * too, as are the other engine builds it installs (`engine-build-*`, MLX) and
  * every engine update it applies (`engine-update-*`).
@@ -101,6 +103,7 @@ export function cancelDownload(
     isDiffusionModelDownloadTaskId(download.id) ||
     isDecisionDownloadTaskId(download.id) ||
     isEmbeddingDownloadTaskId(download.id) ||
+    isAudioDownloadTaskId(download.id) ||
     isManagedDownloadId(download.id) ||
     isFoundryLocalDownloadId(download.id) ||
     isLiteRtLmDownloadId(download.id) ||

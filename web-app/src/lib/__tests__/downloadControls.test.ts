@@ -37,6 +37,13 @@ describe('download controls', () => {
     expect(isPausableDownload('mlx-community/Qwen3-4B-4bit')).toBe(false)
   })
 
+  it('keeps audio models cancel-only: their row in the model list resumes them', () => {
+    expect(isPausableDownload('audio-model-moss-tts-nano-100m_q8_0')).toBe(
+      false
+    )
+    expect(isPausableDownload('engine-build-audio-cpp-v0_9_3')).toBe(false)
+  })
+
   it('keeps GenieX downloads cancel-only: Download again in the Hub resumes them (change add-geniex-runtime)', () => {
     expect(isPausableDownload('geniex-gemma-4-e4b')).toBe(false)
   })
