@@ -3,6 +3,7 @@ import {
   initializeServiceHubStore,
   useServiceStore,
 } from '@/hooks/useServiceHub'
+import { DefaultAudioService } from '@/services/audio/default'
 import { DefaultEmbeddingService } from '@/services/embedding/default'
 import { DefaultMediaService } from '@/services/media/default'
 import { DefaultModelSetupService } from '@/services/model-setup/default'
@@ -51,6 +52,8 @@ export function createMockServiceHub(
     voice: overrides.voice ?? (emptyService as ServiceInstances['voice']),
     diffusion:
       overrides.diffusion ?? (emptyService as ServiceInstances['diffusion']),
+    // Unsupported unless a test says otherwise, as on web and mobile.
+    audio: overrides.audio ?? new DefaultAudioService(),
     decision:
       overrides.decision ?? (emptyService as ServiceInstances['decision']),
     // Unsupported unless a test says otherwise: the API page and the server
@@ -86,6 +89,7 @@ export function createMockServiceHub(
     uploads: () => services.uploads,
     voice: () => services.voice,
     diffusion: () => services.diffusion,
+    audio: () => services.audio,
     decision: () => services.decision,
     embedding: () => services.embedding,
     media: () => services.media,
