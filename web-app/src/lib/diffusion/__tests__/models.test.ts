@@ -209,11 +209,11 @@ describe('planArtifactDownload', () => {
     const family = structuredClone(
       getBaselineDiffusionCatalog().families.find((f) => f.id === 'z-image')!
     )
+    const revision = family.transformer.revision
+    expect(revision).toMatch(/^[0-9a-f]{40}$/)
+    delete family.transformer.revision
     for (const quant of family.transformer.quants) {
-      const revision = quant.revision
-      delete quant.revision
       const entry = planArtifactDownload(family, quant.id, [], ROOT).entries[0]
-      expect(revision).toMatch(/^[0-9a-f]{40}$/)
       expect(entry.url).toContain(`/resolve/${revision}/`)
       expect(entry.bytes).toBe(quant.bytes)
       expect(entry.sha256).toBe(quant.sha256)
@@ -977,6 +977,22 @@ describe('video families', () => {
       `${ltxShared}/ltx-2.3-22b-distilled_audio_vae.safetensors`,
       `${gemmaShared}/gemma-3-12b-it-qat-UD-Q4_K_XL.gguf`,
       `${ltxShared}/ltx-2.3-22b-distilled_embeddings_connectors.safetensors`,
+    ])
+  })
+})
+
+describe('pinned diffusion downloads', () => {
+  it('uses each repository commit and leaves unpinned dependencies on main', () => {
+    const family = {
+      ...zImage,
+      transformer: { ...zImage.transformer, revision: 'a'.repeat(40) },
+      vae: { ...AE, revision: 'b'.repeat(40) },
+    }
+    const plan = planArtifactDownload(family, 'q4_k_m', [], ROOT)
+    expect(plan.entries.map((entry) => entry.url)).toEqual([
+      `https://huggingface.co/unsloth/Z-Image-Turbo-GGUF/resolve/${'a'.repeat(40)}/z-image-turbo-Q4_K_M.gguf`,
+      `https://huggingface.co/unsloth/Z-Image-Turbo-ComfyUI/resolve/${'b'.repeat(40)}/split_files/vae/ae.safetensors`,
+      'https://huggingface.co/unsloth/Z-Image-Turbo-ComfyUI/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors',
     ])
   })
 })

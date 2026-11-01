@@ -168,7 +168,7 @@ export function hfResolveUrl(
   filename: string,
   revision = 'main'
 ): string {
-  return `https://huggingface.co/${repo}/resolve/${revision}/${filename}`
+  return `https://huggingface.co/${repo}/resolve/${encodeURIComponent(revision)}/${filename}`
 }
 
 const fileIdentity = (file: DiffusionCatalogFile) =>
@@ -183,6 +183,7 @@ const bundledRevisions = new Map(
       ...family.transformer.quants.map((quant) => ({
         ...quant,
         repo: family.transformer.repo,
+        revision: quant.revision ?? family.transformer.revision,
       })),
       ...(family.vae ? [family.vae] : []),
       ...(family.audio_vae ? [family.audio_vae] : []),
@@ -266,6 +267,7 @@ export function planArtifactDownload(
     'transformer',
     {
       repo: family.transformer.repo,
+      revision: family.transformer.revision,
       filename: quant.filename,
       bytes: quant.bytes,
       ...(quant.sha256 ? { sha256: quant.sha256 } : {}),
