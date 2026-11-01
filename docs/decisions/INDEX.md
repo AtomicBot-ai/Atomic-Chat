@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-504 records, 2026-05-19 → 2026-10-30.
+505 records, 2026-05-19 → 2026-11-01.
 
 ---
 
@@ -33,8 +33,9 @@ decision is reversed, add a new one that says which record it supersedes.
 
 ---
 
-## Local image & video generation (31)
+## Local image & video generation (32)
 
+- **2026-11-01** — [Run the Audios studio on the core's audio.cpp and conf's audio catalog](2026-11-01-run-the-audios-studio-on-the-core-and-the-audio-catalog.md) — `services/audio/`, the catalog's `controls` decide the form, a core without audio is a quiet state; still dev-only.
 - **2026-10-30** — [Pin media artifacts and stop on remote size changes](2026-10-30-pin-media-artifacts-and-stop-on-remote-size-changes.md)
 
 - **2026-10-27** — [Lay out an Audios studio, in dev builds only until there is an audio engine](2026-10-27-lay-out-an-audios-studio-in-dev-builds-only.md) — `PlatformFeature.AUDIO_GENERATION`; candidate models, Download and Generate off until the audio engine lands.
