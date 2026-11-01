@@ -18,6 +18,8 @@ describe('engineDownloadLabel', () => {
     ],
     // The core's engine builds.
     ['engine-build-litert-lm-v0_9_1', 'LiteRT-LM', 'v0_9_1'],
+    ['engine-build-audio-cpp-v0_9_3', 'audio.cpp', 'v0_9_3'],
+    ['engine-update-audio-cpp-v0_9_4', 'audio.cpp', 'v0_9_4'],
     // The media engine.
     [
       'diffusion-backend-master-883-137f740-a36f1b1a-macos-arm64',

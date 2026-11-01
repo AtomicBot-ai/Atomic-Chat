@@ -249,6 +249,9 @@ export const getProviderTitle = (provider: string) => {
     // The media engine, named on the engine-update banner. Not a chat provider.
     case 'sd-cpp':
       return 'stable-diffusion.cpp'
+    // The audio engine, likewise.
+    case 'audio-cpp':
+      return 'audio.cpp'
     case 'openai':
       return 'OpenAI'
     case 'chatgpt':

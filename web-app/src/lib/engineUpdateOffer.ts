@@ -32,6 +32,7 @@ export const ENGINE_UPDATE_ORDER: readonly EngineId[] = [
   'atomic-prism',
   'mlx',
   'sd-cpp',
+  'audio-cpp',
   'foundry-local',
   'litert-lm',
   'geniex',
@@ -78,6 +79,8 @@ const TURBOQUANT_RELEASE_TAG_BASE =
   'https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant/releases/tag'
 const MLX_RELEASE_TAG_BASE =
   'https://github.com/AtomicBot-ai/mlx-vlm/releases/tag'
+const AUDIO_RELEASE_TAG_BASE =
+  'https://github.com/AtomicBot-ai/audio.cpp/releases/tag'
 const GENIEX_RELEASE_TAG_BASE = 'https://github.com/qualcomm/GenieX/releases/tag'
 const SD_UPSTREAM_REPO = 'leejet/stable-diffusion.cpp'
 /** sd.cpp builds with an `-a<rev>` tag come from the fork, which keeps upstream's tag for its releases. */
@@ -101,6 +104,9 @@ export function engineReleaseNotesUrl(
       return `${TURBOQUANT_RELEASE_TAG_BASE}/${encodeURIComponent(version)}`
     case 'mlx':
       return `${MLX_RELEASE_TAG_BASE}/${encodeURIComponent(version)}`
+    // The fork publishes under upstream's tag; an `-a<rev>` suffix names the patch series.
+    case 'audio-cpp':
+      return `${AUDIO_RELEASE_TAG_BASE}/${encodeURIComponent(version.replace(SD_ATOMIC_TAG_SUFFIX_RE, ''))}`
     // The SDK is a GitHub release of qualcomm/GenieX tagged `v<version>` (change add-geniex-runtime).
     case 'geniex':
       return `${GENIEX_RELEASE_TAG_BASE}/v${encodeURIComponent(version)}`
