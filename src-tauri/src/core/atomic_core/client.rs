@@ -373,14 +373,16 @@ impl ControlClient {
 /// all legitimately outlast `CALL_TIMEOUT`. The image-model load answers only once `sd-server`
 /// is ready; the core's own budget for that (600 s by default, `startupTimeoutSecs`) starts at the
 /// spawn, after it has cancelled a running job, torn the old session down and checked the files,
-/// so any client deadline of the same length would fire first and hide the core's own error.
+/// so any client deadline of the same length would fire first and hide the core's own error. An
+/// audio model's load answers likewise once `audiocpp_server` serves it, under the same budget.
 fn control_call_timeout(method: &reqwest::Method, path: &str) -> Option<Duration> {
     if method == reqwest::Method::POST
         && ((path.starts_with("/models/") && (path.ends_with("/load") || path.ends_with("/embed")))
             || ((path.starts_with("/backends/") || path.starts_with("/engine-builds/"))
                 && path.ends_with("/install"))
             || (path.starts_with("/engines/") && path.ends_with("/update"))
-            || path == "/diffusion/model/load")
+            || path == "/diffusion/model/load"
+            || path == "/audio/model/load")
     {
         None
     } else {
@@ -507,6 +509,14 @@ mod tests {
             control_call_timeout(&reqwest::Method::POST, "/diffusion/jobs"),
             Some(CALL_TIMEOUT)
         );
+        assert_eq!(
+            control_call_timeout(&reqwest::Method::POST, "/audio/model/load"),
+            None
+        );
+        assert_eq!(
+            control_call_timeout(&reqwest::Method::POST, "/audio/jobs"),
+            Some(CALL_TIMEOUT)
+        );
         // An engine build (sd.cpp with its CUDA runtime, ~900 MB) downloads inside the call.
         assert_eq!(
             control_call_timeout(&reqwest::Method::POST, "/engine-builds/sd-cpp/install"),
@@ -514,6 +524,10 @@ mod tests {
         );
         assert_eq!(
             control_call_timeout(&reqwest::Method::POST, "/engine-builds/mlx/install"),
+            None
+        );
+        assert_eq!(
+            control_call_timeout(&reqwest::Method::POST, "/engine-builds/audio-cpp/install"),
             None
         );
         assert_eq!(

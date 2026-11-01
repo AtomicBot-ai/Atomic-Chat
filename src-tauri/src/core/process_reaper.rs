@@ -35,7 +35,8 @@ use tauri::{Manager, Runtime};
 use crate::core::app::commands::get_jan_data_folder_path;
 
 /// Executable file-name prefixes for the backends we manage.
-const BACKEND_NAME_PREFIXES: [&str; 3] = ["llama-server", "mlx-server", "sd-server"];
+const BACKEND_NAME_PREFIXES: [&str; 4] =
+    ["llama-server", "mlx-server", "sd-server", "audiocpp_server"];
 
 /// How long to wait after `SIGTERM` before escalating survivors to `SIGKILL`.
 const GRACE_PERIOD: Duration = Duration::from_millis(1500);
@@ -252,6 +253,7 @@ mod tests {
     fn matches_exact_backend_names() {
         assert!(is_backend_name("llama-server"));
         assert!(is_backend_name("mlx-server"));
+        assert!(is_backend_name("audiocpp_server"));
     }
 
     #[test]
@@ -259,6 +261,7 @@ mod tests {
         // macOS/Windows may report a suffixed executable name.
         assert!(is_backend_name("llama-server-bin"));
         assert!(is_backend_name("mlx-server.exe"));
+        assert!(is_backend_name("audiocpp_server.exe"));
     }
 
     #[test]

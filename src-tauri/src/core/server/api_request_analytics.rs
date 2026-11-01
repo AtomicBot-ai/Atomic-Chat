@@ -236,6 +236,8 @@ pub fn endpoint_label(value: &str) -> &'static str {
         "images/generations" => "images/generations",
         // `/v1/videos*`, the core's video facade over the same sd.cpp runner.
         "videos" => "videos",
+        // `/v1/audio/speech`, served by the core's own audio.cpp runner.
+        "audio/speech" => "audio/speech",
         // The core's decision model routes.
         "systemone" => "systemone",
         "router/score" => "router/score",
@@ -252,6 +254,8 @@ pub fn backend_label(value: &str) -> &'static str {
         "remote" => "remote",
         // `/v1/images/generations`, served by the core's own sd.cpp runner.
         "atomic-diffusion" => "atomic-diffusion",
+        // `/v1/audio/speech`, served by the core's own audio.cpp runner.
+        "atomic-audio" => "atomic-audio",
         // `/v1/systemone` and `/v1/router/score`, served by the core's decision process.
         "atomic-decision" => "atomic-decision",
         _ => "unknown",
@@ -324,10 +328,21 @@ mod tests {
 
     #[test]
     fn every_local_engine_keeps_its_own_backend_label() {
-        for backend in ["llamacpp", "llamacpp-upstream", "atomic-prism", "mlx"] {
+        for backend in [
+            "llamacpp",
+            "llamacpp-upstream",
+            "atomic-prism",
+            "mlx",
+            "atomic-audio",
+        ] {
             assert_eq!(backend_label(backend), backend);
         }
         assert_eq!(backend_label("tensorrt"), "unknown");
+    }
+
+    #[test]
+    fn audio_speech_keeps_its_endpoint_label() {
+        assert_eq!(endpoint_label("audio/speech"), "audio/speech");
     }
 
     fn observation(status: u16, latency_ms: u64) -> ApiRequestObservation {
