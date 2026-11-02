@@ -1,7 +1,7 @@
 {
   "$schema": "./schema.catalog.json",
   "schema_version": 1,
-  "updated_at": "2026-11-02T11:48:52Z",
+  "updated_at": "2026-11-02T18:00:00Z",
   "models": {
     "chat:AtomicChat/Qwen3.8-27B-GGUF": {
       "kind": "chat",
@@ -18138,7 +18138,8 @@
         "id": "qwen3-tts-1.7b-customvoice",
         "name": "Qwen3-TTS 1.7B",
         "developer": "Alibaba Qwen",
-        "description": "Natural speech in nine built-in voices, with style instructions. Speaks Russian, English and other languages.",
+        "icon": "qwen",
+        "description": "Natural speech in nine voices with style hints; Russian, English and more.",
         "license": "Apache-2.0",
         "attribution": null,
         "mode": "speech",
@@ -18180,7 +18181,8 @@
         "id": "moss-tts-nano-100m",
         "name": "MOSS-TTS-Nano 100M",
         "developer": "OpenMOSS",
-        "description": "The small speech model: quick to download and fast on a CPU. An occasional sentence ends early, so try another seed.",
+        "icon": "openmoss",
+        "description": "Tiny, fast speech model for a CPU; re-roll the seed if a line ends early.",
         "license": "Apache-2.0",
         "attribution": null,
         "mode": "speech",
@@ -18222,6 +18224,7 @@
         "id": "ace-step-1.5-turbo",
         "name": "ACE-Step 1.5 Turbo",
         "developer": "ACE Studio and StepFun",
+        "icon": "acestep",
         "description": "Songs and instrumentals from a description, with optional lyrics.",
         "license": "MIT",
         "attribution": null,
@@ -18268,6 +18271,7 @@
         "id": "stable-audio-3-small-sfx",
         "name": "Stable Audio 3 Small SFX",
         "developer": "Stability AI",
+        "icon": "stability",
         "description": "Short sound effects from a description.",
         "license": "Stability AI Community License",
         "attribution": "Powered by Stability AI",
@@ -19219,7 +19223,7 @@
       "header": {
         "$schema": "./schema.audio.json",
         "schema_version": 1,
-        "updated_at": "2026-11-01T20:00:00Z"
+        "updated_at": "2026-11-02T18:00:00Z"
       },
       "entries": [
         {

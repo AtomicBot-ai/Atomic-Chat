@@ -102,6 +102,9 @@ export type AudioCatalogModel = {
   id: string
   name: string
   developer: string
+  /** The developer's logo key (`ModelLogo`); a catalog from before the field carries none. */
+  icon?: string
+  /** One line for a model picker. */
   description: string
   license: string
   /** Text to show with the model wherever it is offered or used, when its license asks for it. */
@@ -149,6 +152,7 @@ const REVISION_RE = /^[0-9a-f]{40}$/
 const SHA256_RE = /^[0-9a-f]{64}$/
 const PATH_RE = /^[A-Za-z0-9._/-]+\.gguf$/
 const FILENAME_RE = /^[A-Za-z0-9._-]+\.gguf$/
+const ICON_RE = /^[a-z0-9][a-z0-9-]*$/
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -318,10 +322,15 @@ export const sanitizeAudioModel = (raw: unknown): AudioCatalogModel | null => {
   const ranges = sanitizeRanges(raw.ranges)
   if (ranges === null) return null
 
+  // A malformed mark costs the model its logo, not its place in the list.
+  const icon =
+    typeof raw.icon === 'string' && ICON_RE.test(raw.icon) ? raw.icon : undefined
+
   return {
     id: raw.id,
     name: raw.name,
     developer: raw.developer,
+    ...(icon ? { icon } : {}),
     description: raw.description,
     license: raw.license,
     attribution: raw.attribution,

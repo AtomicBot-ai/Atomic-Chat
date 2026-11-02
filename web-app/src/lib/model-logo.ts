@@ -154,6 +154,12 @@ const ICON_KEY_LOGOS: Readonly<Record<string, string>> = {
   'lightricks': '/svg/lightricks.svg',
   'ltx': '/svg/lightricks.svg',
   'z-image': '/svg/z-image.svg',
+  // Audio model makers (atomic-chat-conf catalog.json audio `icon`): Stability
+  // from @lobehub/icons-static-svg 1.95.1, the others their Hugging Face
+  // organization avatars.
+  'stability': '/svg/stability-color.svg',
+  'openmoss': '/images/model-provider/openmoss.webp',
+  'acestep': '/images/model-provider/acestep.webp',
   'huggingface': '/images/model-provider/huggingface.svg',
 }
 

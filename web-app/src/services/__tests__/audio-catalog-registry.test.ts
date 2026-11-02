@@ -124,6 +124,15 @@ describe('sanitizeAudioModel', () => {
     expect(sanitized).toMatchObject({ attribution: null, default_voice: null })
   })
 
+  it('keeps a logo key, and drops a malformed one rather than the model', () => {
+    expect(sanitizeAudioModel(model({ icon: 'stability' }))?.icon).toBe(
+      'stability'
+    )
+    const odd = sanitizeAudioModel(model({ icon: '../logo.svg' }))
+    expect(odd).not.toBeNull()
+    expect(odd).not.toHaveProperty('icon')
+  })
+
   it('drops a control this build does not know, not the model', () => {
     expect(
       sanitizeAudioModel(model({ controls: ['seed', 'warp_factor'] }))?.controls
@@ -239,6 +248,12 @@ describe('the bundled baseline', () => {
       'stable-audio-3-small-sfx',
     ])
     expect(audioModelsOf(catalog, 'speech')[0].default_voice).toBe('vivian')
+    expect(catalog.models.map((entry) => entry.icon)).toEqual([
+      'qwen',
+      'openmoss',
+      'acestep',
+      'stability',
+    ])
   })
 
   it('carries the notice Stable Audio’s license asks for', () => {

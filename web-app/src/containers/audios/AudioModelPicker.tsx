@@ -23,6 +23,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { MediaModelPickerButton } from '@/containers/images/MediaStudio'
+import { ModelLogo } from '@/containers/ModelLogo'
 import { useAudioGeneration } from '@/hooks/useAudioGeneration'
 import { useAudioModel } from '@/hooks/useAudioModel'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -49,6 +50,24 @@ export function AudioAttribution({
     >
       {text}
     </p>
+  )
+}
+
+/** The developer's mark from the catalog's `icon`, else `ModelLogo`'s family mark or initial. */
+export function AudioModelLogo({
+  model,
+  className,
+}: {
+  model: Pick<AudioCatalogModel, 'icon' | 'name' | 'developer'>
+  className?: string
+}) {
+  return (
+    <ModelLogo
+      icon={model.icon}
+      name={model.name}
+      author={model.developer}
+      className={className}
+    />
   )
 }
 
@@ -79,20 +98,19 @@ function ModelRow({
         aria-pressed={selected}
         onClick={() => onPick(state.installed)}
       >
-        <AudioLines size={24} className="shrink-0 text-muted-foreground" />
+        <AudioModelLogo model={model} className="size-9 rounded-lg" />
         <span className="min-w-0 flex-1 space-y-0.5">
-          <strong className="block truncate text-sm font-medium">
+          <strong className="block truncate text-sm font-medium leading-4">
             {model.name}
           </strong>
-          <span className="block truncate text-xs text-muted-foreground">
-            {[
-              t(`audios:mode.${model.mode}.title`),
-              formatBytes(state.quant.bytes),
-              model.license,
-            ].join(' · ')}
-          </span>
-          <span className="block text-[11px] leading-snug text-muted-foreground">
+          <span
+            className="line-clamp-2 text-[11px] leading-3.5 text-muted-foreground"
+            title={model.description}
+          >
             {model.description}
+          </span>
+          <span className="block truncate text-[11px] leading-3.5 text-muted-foreground tabular-nums">
+            {[formatBytes(state.quant.bytes), model.license].join(' · ')}
           </span>
           <AudioAttribution text={model.attribution} className="pt-0.5" />
         </span>
@@ -231,7 +249,14 @@ export const AudioModelPicker = memo(function AudioModelPicker({
             aria-expanded={open}
             data-testid="audio-models-toggle"
           >
-            <AudioLines size={16} className="shrink-0 text-muted-foreground" />
+            {model ? (
+              <AudioModelLogo model={model} className="size-5 rounded-md" />
+            ) : (
+              <AudioLines
+                size={16}
+                className="shrink-0 text-muted-foreground"
+              />
+            )}
             <span className="min-w-0 flex-1 truncate text-left font-medium">
               {model?.name ?? t('audios:model.select')}
             </span>
@@ -247,7 +272,7 @@ export const AudioModelPicker = memo(function AudioModelPicker({
         <PopoverContent
           align="start"
           sideOffset={6}
-          className="max-h-[min(60vh,480px)] w-[400px] max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border bg-background/95 p-1.5 shadow-xl backdrop-blur-2xl"
+          className="max-h-[min(60vh,480px)] w-[460px] max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border bg-background/95 p-1.5 shadow-xl backdrop-blur-2xl"
           data-testid="audio-models-list"
         >
           <p className="px-2 py-2 text-xs font-medium text-muted-foreground">
