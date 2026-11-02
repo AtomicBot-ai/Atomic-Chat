@@ -1,4 +1,4 @@
-// Independent desktop feeds are deprecated. Legacy fixtures remain for mobile/custom adapters; managed desktop uses the unified catalog snapshot.
+// Managed recommendations use the conf catalog. Hub discovery keeps its generated catalog and bundled fallback.
 /**
  * Model-related constants
  */

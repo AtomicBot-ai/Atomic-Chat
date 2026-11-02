@@ -73,6 +73,39 @@ describe('immutable model plans', () => {
     ])
     expect(plan.files[0].sha256).toBe(HASH)
   })
+  it('does not substitute a recommendation pin for the same repository selected in discovery', async () => {
+    const managed = Object.values(atomicModelCatalogBaseline().models).find(
+      (model) => model.kind === 'chat'
+    )!
+    const repo = String(managed.definition.model_name)
+    const request = vi.fn(async () =>
+      Response.json({ sha: B, siblings: [{ rfilename: 'search.gguf', size: 4 }] })
+    )
+    const plan = await prepareAtomicDownload([item('search.gguf', repo)], { fetch: request })
+    expect(request).toHaveBeenCalledWith(
+      `https://huggingface.co/api/models/${repo}/revision/main?blobs=true&files_metadata=true`,
+      expect.anything()
+    )
+    expect(plan.files[0].source?.revision).toBe(B)
+    const pinnedRequest = vi.fn(async () =>
+      Response.json({ sha: A, siblings: [{ rfilename: 'search.gguf', size: 4 }] })
+    )
+    const pinned = await prepareAtomicDownload(
+      [
+        {
+          ...item('search.gguf', repo),
+          url: `https://huggingface.co/${repo}/resolve/${A}/search.gguf`,
+        },
+      ],
+      { fetch: pinnedRequest }
+    )
+    expect(pinned.files[0].source?.revision).toBe(A)
+    expect(pinnedRequest).toHaveBeenCalledWith(
+      `https://huggingface.co/api/models/${repo}/revision/${A}?blobs=true&files_metadata=true`,
+      expect.anything()
+    )
+  })
+
   it('executes the persisted plan after upstream and the current catalog change', async () => {
     const request = vi.fn(async () =>
       Response.json({ sha: A, siblings: [{ rfilename: 'm.gguf', lfs: { size: 4, sha256: HASH } }] })

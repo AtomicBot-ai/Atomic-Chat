@@ -4,8 +4,6 @@ import {
   prepareAtomicDownload,
   readAtomicDownloadPlan,
   saveAtomicDownloadPlan,
-  atomicModelRevision,
-  atomicModelCatalogSnapshot,
   atomicModelMetadataFetch,
 } from '@janhq/core'
 /**
@@ -295,10 +293,7 @@ export class DefaultModelsService implements ModelsService {
     revision?: string,
     signal?: AbortSignal
   ): Promise<HuggingFaceRepo | null> {
-    const ref =
-      revision ??
-      atomicModelRevision(atomicModelCatalogSnapshot(), cleanRepoId) ??
-      'main'
+    const ref = revision ?? 'main'
     const response = await atomicModelMetadataFetch()(
       `https://huggingface.co/api/models/${cleanRepoId}/revision/${encodeURIComponent(ref)}?blobs=true&files_metadata=true`,
       {

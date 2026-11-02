@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { RECOMMENDED_MODEL_FALLBACKS } from '@/constants/models'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { findCatalogModelForRecommendedRepo } from '@/lib/models'
+import { pinnedRecommendationModel } from '@/services/models/hf-catalog'
 import { findPinnedQuant, parseFileSizeToBytes } from '@/lib/model-card'
 import { sanitizeModelId } from '@/lib/utils'
 import {
@@ -32,6 +32,7 @@ const currentOs: RecommendationPlatform = IS_MACOS
 //* Keep the camelCase shape that Hub and SetupScreen depend on.
 type LegacyRecommendation = {
   modelName: string
+  revision?: string
   descriptionKey: string
   /** Pinned quant, if the manifest names one. See `findPinnedQuant`. */
   quant?: string
@@ -41,6 +42,7 @@ type LegacyRecommendation = {
 
 const toLegacy = (rec: Recommendation): LegacyRecommendation => ({
   modelName: rec.model_name,
+  ...(rec.revision ? { revision: rec.revision } : {}),
   descriptionKey: rec.description_key,
   ...(rec.quant ? { quant: rec.quant } : {}),
   ...(rec.mmproj_quant ? { mmprojQuant: rec.mmproj_quant } : {}),
@@ -51,6 +53,8 @@ const resolvedModels: Record<string, CatalogModel> = {
   ...RECOMMENDED_MODEL_FALLBACKS,
 }
 const pendingModels = new Map<string, Promise<CatalogModel | null>>()
+const modelKey = (repo: string, revision?: string) =>
+  revision ? `${repo}@${revision}` : repo
 
 /**
  * Recommendations for this machine, **primary first**.
@@ -101,8 +105,8 @@ export function useResolvedRecommendedModels(
       const lead = recs[0]
       if (!lead) return undefined
       const model =
-        findCatalogModelForRecommendedRepo(sources, lead.model_name) ??
-        fetched[lead.model_name]
+        pinnedRecommendationModel(sources, lead.model_name, lead.revision) ??
+        fetched[modelKey(lead.model_name, lead.revision)]
       if (!model || model.is_mlx) return undefined
       return parseFileSizeToBytes(
         findPinnedQuant(model.quants, lead.quant)?.file_size
@@ -134,8 +138,8 @@ export function useResolvedRecommendedModels(
       recommendations.map((rec) => ({
         rec,
         model:
-          findCatalogModelForRecommendedRepo(sources, rec.modelName) ??
-          fetched[rec.modelName] ??
+          pinnedRecommendationModel(sources, rec.modelName, rec.revision) ??
+          fetched[modelKey(rec.modelName, rec.revision)] ??
           null,
       })),
     [recommendations, sources, fetched]
@@ -145,15 +149,17 @@ export function useResolvedRecommendedModels(
     let active = true
 
     for (const rec of recommendations) {
-      if (findCatalogModelForRecommendedRepo(sources, rec.modelName)) continue
-      if (fetched[rec.modelName]) continue
+      if (pinnedRecommendationModel(sources, rec.modelName, rec.revision))
+        continue
+      if (fetched[modelKey(rec.modelName, rec.revision)]) continue
 
-      let pending = pendingModels.get(rec.modelName)
+      const key = modelKey(rec.modelName, rec.revision)
+      let pending = pendingModels.get(key)
       if (!pending) {
         pending = (async () => {
           const repo = await serviceHub
             .models()
-            .fetchHuggingFaceRepo(rec.modelName, huggingfaceToken)
+            .fetchHuggingFaceRepo(rec.modelName, huggingfaceToken, rec.revision)
           if (!repo) return null
           const catalog = serviceHub.models().convertHfRepoToCatalogModel(repo)
           const processed: CatalogModel = {
@@ -166,13 +172,13 @@ export function useResolvedRecommendedModels(
           }
           //! Same as in useModelSources: MLX only on macOS
           if (!IS_MACOS && processed.is_mlx) return null
-          resolvedModels[rec.modelName] = processed
+          resolvedModels[key] = processed
           return processed
         })()
-        pendingModels.set(rec.modelName, pending)
+        pendingModels.set(key, pending)
         const clearPending = () => {
-          if (pendingModels.get(rec.modelName) === pending) {
-            pendingModels.delete(rec.modelName)
+          if (pendingModels.get(key) === pending) {
+            pendingModels.delete(key)
           }
         }
         void pending.then(clearPending, clearPending)
@@ -182,7 +188,7 @@ export function useResolvedRecommendedModels(
         .then((processed) => {
           if (!active || !processed) return
           setFetched((prev) =>
-            prev[rec.modelName] ? prev : { ...prev, [rec.modelName]: processed }
+            prev[key] ? prev : { ...prev, [key]: processed }
           )
         })
         .catch((e) => {

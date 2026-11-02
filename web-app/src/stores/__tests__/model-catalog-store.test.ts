@@ -50,11 +50,25 @@ const flatEntry = (): CatalogModel =>
 const mocks = vi.hoisted(() => ({
   remoteModels: [] as CatalogModel[],
   cachedModels: null as CatalogModel[] | null,
+  seedModels: null as CatalogModel[] | null,
+  source: 'remote' as 'remote' | 'baseline',
+  index: { index_version: 1, minisearch: { discovery: true } },
 }))
 
 vi.mock('@/services/model-catalog-registry', () => ({
-  getBundledSeedCatalog: vi.fn(async () => null),
-  getBundledSeedIndex: vi.fn(async () => null),
+  getBundledSeedCatalog: vi.fn(async () =>
+    mocks.seedModels
+      ? {
+          manifest_version: 1,
+          schema_version: 1,
+          updated_at: '2026-08-01T00:00:00Z',
+          models: mocks.seedModels,
+        }
+      : null
+  ),
+  getBundledSeedIndex: vi.fn(async () =>
+    mocks.seedModels ? mocks.index : null
+  ),
   getCachedIndex: vi.fn(async () => null),
   getCachedCatalog: vi.fn(async () =>
     mocks.cachedModels
@@ -76,13 +90,13 @@ vi.mock('@/services/model-catalog-registry', () => ({
       updated_at: '2026-08-07T00:00:00Z',
       models: mocks.remoteModels,
     },
-    source: 'remote',
+    source: mocks.source,
     fetchedAt: 2,
     manifestUpdatedAt: '2026-08-07T00:00:00Z',
     error: null,
   })),
   getIndexOrFallback: vi.fn(async () => ({
-    payload: null,
+    payload: mocks.source === 'remote' ? mocks.index : null,
     source: 'remote',
     fetchedAt: 2,
     error: null,
@@ -101,9 +115,42 @@ const loadStore = async () => {
 beforeEach(() => {
   mocks.remoteModels = []
   mocks.cachedModels = null
+  mocks.seedModels = null
+  mocks.source = 'remote'
 })
 
 describe('model-catalog-store', () => {
+  it('keeps the full discovery list and its prebuilt index on the default desktop path', async () => {
+    mocks.remoteModels = Array.from({ length: 200 }, (_, i) => ({
+      ...flatEntry(),
+      model_name: `search-org/model-${i}`,
+    }))
+    const store = await loadStore()
+    expect(store.getState().catalog.map((model) => model.model_name)).toEqual(
+      mocks.remoteModels.map((model) => model.model_name)
+    )
+    expect(store.getState().index).toEqual(mocks.index)
+    const { getIndexOrFallback } = await import(
+      '@/services/model-catalog-registry'
+    )
+    expect(getIndexOrFallback).toHaveBeenCalled()
+  })
+
+  it('keeps the complete bundled discovery list and index when the network is unavailable', async () => {
+    mocks.seedModels = Array.from({ length: 200 }, (_, i) => ({
+      ...flatEntry(),
+      model_name: `offline-org/model-${i}`,
+    }))
+    mocks.source = 'baseline'
+    const store = await loadStore()
+    expect(store.getState().source).toBe('bundled')
+    expect(store.getState().catalog).toHaveLength(200)
+    expect(store.getState().catalog[199].model_name).toBe(
+      'offline-org/model-199'
+    )
+    expect(store.getState().index).toEqual(mocks.index)
+  })
+
   it('folds the shards of a fetched catalog into one variant per quant', async () => {
     mocks.remoteModels = [shardedEntry()]
 

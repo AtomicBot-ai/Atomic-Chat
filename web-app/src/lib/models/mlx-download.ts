@@ -12,7 +12,8 @@ export async function mlxDownloadOptions(
   modelId: string,
   repo: string,
   resume: boolean,
-  token?: string
+  token?: string,
+  revision?: string
 ) {
   const id = `request:mlx/${modelId}`
   let plan = resume ? readAtomicDownloadPlan(id) : undefined
@@ -21,6 +22,8 @@ export async function mlxDownloadOptions(
       'This download has no recorded model plan. Start a new download; partial files were kept.'
     )
   if (!plan) {
+    if (revision !== undefined && !/^[0-9a-f]{40}$/.test(revision))
+      throw new Error('Invalid MLX model commit')
     const preparation = beginAtomicModelPreparation(
       `mlx/${modelId.replace(/[^A-Za-z0-9_/:-]/g, '_')}`
     )
@@ -28,13 +31,15 @@ export async function mlxDownloadOptions(
       const meta = await service.fetchHuggingFaceRepo(
         repo,
         token,
-        undefined,
+        revision,
         preparation.signal
       )
       preparation.signal.throwIfAborted()
       if (!meta || !/^[0-9a-f]{40}$/.test(meta.sha) || !meta.siblings?.length)
         throw new Error('Hugging Face did not supply an immutable MLX tree')
-      const revision = meta.sha
+      if (revision && meta.sha !== revision)
+        throw new Error('Hugging Face returned another MLX model commit')
+      const selectedRevision = meta.sha
       plan = {
         version: 1,
         files: meta.siblings.map((file) => {
@@ -49,11 +54,11 @@ export async function mlxDownloadOptions(
           )
             throw new Error(`Invalid MLX file metadata: ${path}`)
           return {
-            url: `https://huggingface.co/${repo}/resolve/${revision}/${path.split('/').map(encodeURIComponent).join('/')}`,
+            url: `https://huggingface.co/${repo}/resolve/${selectedRevision}/${path.split('/').map(encodeURIComponent).join('/')}`,
             save_path: path,
             size: size!,
             ...(file.lfs?.sha256 ? { sha256: file.lfs.sha256 } : {}),
-            source: { repo, revision, path },
+            source: { repo, revision: selectedRevision, path },
             purpose: path.endsWith('.safetensors')
               ? 'weights'
               : 'configuration',

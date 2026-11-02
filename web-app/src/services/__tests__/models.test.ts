@@ -21,7 +21,7 @@ import {
 } from '../models/default'
 import type { HuggingFaceRepo, CatalogModel } from '../models/types'
 import { EngineManager, events, DownloadEvent } from '@janhq/core'
-import { atomicModelCatalogBaseline, clearAtomicModelCatalogCache } from '@janhq/core'
+import { BASELINE_MODEL_CATALOG } from '@/constants/models'
 import { clearCatalogCache } from '@/services/model-catalog-registry'
 
 const { mockEvents, mockDownloadEvent } = vi.hoisted(() => ({
@@ -35,7 +35,7 @@ const { mockEvents, mockDownloadEvent } = vi.hoisted(() => ({
 
 // Mock EngineManager and events
 vi.mock('@janhq/core', async (importOriginal) => ({
-  ...await importOriginal<typeof import('@janhq/core')>(),
+  ...(await importOriginal<typeof import('@janhq/core')>()),
   EngineManager: {
     instance: vi.fn(),
   },
@@ -111,21 +111,36 @@ describe('DefaultModelsService', () => {
 
     beforeEach(async () => {
       await clearCatalogCache()
-      await new Promise(resolve => setTimeout(resolve, 0))
-      clearAtomicModelCatalogCache()
     })
 
-    it('reads pinned chat variants from the complete unified catalog', async () => {
-      const catalog = structuredClone(atomicModelCatalogBaseline())
-      const entry = Object.values(catalog.models).find(entry => entry.kind === 'chat')!
-      entry.metadata = { ...entry.metadata, downloads: 123456 }
-      vi.mocked(fetch).mockResolvedValue(Response.json(catalog))
+    it('should fetch model catalog successfully', async () => {
+      const mockModels: CatalogModel[] = [
+        {
+          model_name: 'OpenAI/GPT-4',
+          description: 'Large language model',
+          developer: 'OpenAI',
+          downloads: 1000,
+          num_quants: 5,
+          quants: [],
+        },
+      ]
+      const mockManifest = {
+        manifest_version: 1,
+        schema_version: 1,
+        updated_at: '2026-05-27T00:00:00Z',
+        models: mockModels,
+      }
+
+      ;(fetch as any).mockResolvedValue({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: vi.fn().mockResolvedValue(mockManifest),
+      })
+
       const result = await modelsService.fetchModelCatalog()
-      const model = result.find(model => model.model_name === entry.definition.model_name)!
-      expect(model.downloads).toBe(123456)
-      expect(model.revision).toBe(entry.definition.revision)
-      expect(model.quants?.every(quant => quant.path.includes(`/resolve/${model.revision}/`))).toBe(true)
-      expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/models/catalog.json'), expect.anything())
+
+      expect(result).toEqual(mockModels)
     })
 
     it('should fall back to baseline on HTTP error', async () => {
@@ -137,9 +152,7 @@ describe('DefaultModelsService', () => {
 
       const result = await modelsService.fetchModelCatalog()
 
-      expect(result.length).toBeGreaterThan(50)
-      expect(result.some(model => model.model_name === 'AtomicChat/Qwen3.5-4B-GGUF')).toBe(true)
-      expect(result.every(model => /^[0-9a-f]{40}$/.test(model.revision ?? ''))).toBe(true)
+      expect(result).toEqual(BASELINE_MODEL_CATALOG)
     })
 
     it('should fall back to baseline on network error', async () => {
@@ -147,9 +160,7 @@ describe('DefaultModelsService', () => {
 
       const result = await modelsService.fetchModelCatalog()
 
-      expect(result.length).toBeGreaterThan(50)
-      expect(result.some(model => model.model_name === 'AtomicChat/Qwen3.5-4B-GGUF')).toBe(true)
-      expect(result.every(model => /^[0-9a-f]{40}$/.test(model.revision ?? ''))).toBe(true)
+      expect(result).toEqual(BASELINE_MODEL_CATALOG)
     })
   })
 
@@ -214,7 +225,10 @@ describe('DefaultModelsService', () => {
 
   describe('pullModelWithMetadata under another provider', () => {
     it('imports through that provider with the hashes and sizes it was given, and keeps them for a resume', async () => {
-      const prism = { ...mockEngine, import: vi.fn().mockResolvedValue(undefined) }
+      const prism = {
+        ...mockEngine,
+        import: vi.fn().mockResolvedValue(undefined),
+      }
       mockEngineManager.get.mockImplementation((provider?: string) =>
         provider === 'atomic-prism' ? prism : mockEngine
       )
@@ -227,10 +241,21 @@ describe('DefaultModelsService', () => {
         mmprojSize: 500,
       }
 
-      vi.mocked(fetch).mockResolvedValue(Response.json({ sha: 'a'.repeat(40), siblings: [
-        { rfilename: 'Bonsai-8B-PQ2_0.gguf', lfs: { size: 2000, sha256: 'a'.repeat(64) } },
-        { rfilename: 'mmproj-Q8_0.gguf', lfs: { size: 500, sha256: 'c'.repeat(64) } },
-      ] }))
+      vi.mocked(fetch).mockResolvedValue(
+        Response.json({
+          sha: 'a'.repeat(40),
+          siblings: [
+            {
+              rfilename: 'Bonsai-8B-PQ2_0.gguf',
+              lfs: { size: 2000, sha256: 'a'.repeat(64) },
+            },
+            {
+              rfilename: 'mmproj-Q8_0.gguf',
+              lfs: { size: 500, sha256: 'c'.repeat(64) },
+            },
+          ],
+        })
+      )
       await modelsService.pullModelWithMetadata(
         'prism-ml/Bonsai-8B-PQ2_0',
         'https://huggingface.co/prism-ml/Bonsai-8B-gguf/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/Bonsai-8B-PQ2_0.gguf',
@@ -299,7 +324,9 @@ describe('DefaultModelsService', () => {
     it('answers what an engine that measures its deletes freed (TensorRT-LLM, task 3.15)', async () => {
       const engine = {
         delete: vi.fn(),
-        deleteWithReport: vi.fn().mockResolvedValue({ freedBytes: 4_100_000_000 }),
+        deleteWithReport: vi
+          .fn()
+          .mockResolvedValue({ freedBytes: 4_100_000_000 }),
       }
       mockEngineManager.get.mockReturnValueOnce(engine)
 
@@ -506,7 +533,9 @@ describe('DefaultModelsService', () => {
         provider === 'foundry-local' ? foundry : idle
       )
 
-      expect(await modelsService.getActiveModels()).toEqual(['qwen3.5-0.8b-generic-gpu'])
+      expect(await modelsService.getActiveModels()).toEqual([
+        'qwen3.5-0.8b-generic-gpu',
+      ])
 
       await modelsService.stopAllModels()
 
@@ -696,7 +725,10 @@ describe('DefaultModelsService', () => {
     })
 
     it('should clean repository ID from various input formats', async () => {
-      const mockRepoData = { modelId: 'microsoft/DialoGPT-medium', sha: 'a'.repeat(40) }
+      const mockRepoData = {
+        modelId: 'microsoft/DialoGPT-medium',
+        sha: 'a'.repeat(40),
+      }
       ;(fetch as any).mockResolvedValue({
         ok: true,
         json: vi.fn().mockResolvedValue(mockRepoData),
@@ -1625,7 +1657,11 @@ describe('Hugging Face for the TensorRT-LLM format', () => {
         model_type: 'qwen3_5',
       },
       safetensors: {
-        parameters: { U8: 9_000_000_000, F8_E4M3: 1_100_000_000, BF16: 2_000_000_000 },
+        parameters: {
+          U8: 9_000_000_000,
+          F8_E4M3: 1_100_000_000,
+          BF16: 2_000_000_000,
+        },
         total: 12_100_000_000,
       },
     },
@@ -1676,7 +1712,11 @@ describe('Hugging Face for the TensorRT-LLM format', () => {
       last_modified: '2026-09-20T00:00:00.000Z',
       managed: {
         architectures: ['Qwen3_5ForConditionalGeneration'],
-        parameters: { U8: 9_000_000_000, F8_E4M3: 1_100_000_000, BF16: 2_000_000_000 },
+        parameters: {
+          U8: 9_000_000_000,
+          F8_E4M3: 1_100_000_000,
+          BF16: 2_000_000_000,
+        },
       },
     })
     expect(page.models[1]).toMatchObject({
@@ -1708,10 +1748,13 @@ describe('Hugging Face for the TensorRT-LLM format', () => {
       'nvidia/Qwen3.5-35B-A3B-NVFP4',
       'someone/raw-weights',
     ])
-    expect(result.every((model) => model.is_managed && !model.is_mlx)).toBe(true)
+    expect(result.every((model) => model.is_managed && !model.is_mlx)).toBe(
+      true
+    )
     expect(
-      result.find((model) => model.model_name === 'nvidia/Qwen3.5-35B-A3B-NVFP4')?.managed
-        ?.architectures
+      result.find(
+        (model) => model.model_name === 'nvidia/Qwen3.5-35B-A3B-NVFP4'
+      )?.managed?.architectures
     ).toEqual(['Qwen3_5ForConditionalGeneration'])
   })
 })
