@@ -4,9 +4,13 @@ import {
   ggufShardGroupKey,
   groupGgufShards,
   isNonWeightGgufFile,
+  findCatalogModelForRecommendedRepo,
 } from '@/lib/models'
 import type { CatalogModel, HuggingFaceRepo } from './types'
-import type { AtomicModelCatalog } from '@janhq/core'
+import {
+  atomicModelCatalogSnapshot,
+  type AtomicModelCatalog,
+} from '@janhq/core'
 
 export function hfRepoToCatalogModel(repo: HuggingFaceRepo): CatalogModel {
   // Format file size helper
@@ -107,41 +111,60 @@ export function hfRepoToCatalogModel(repo: HuggingFaceRepo): CatalogModel {
   }
 }
 
+function managedChatModel(
+  entry: AtomicModelCatalog['models'][string]
+): CatalogModel {
+  const definition = entry.definition
+  const repo = definition.model_name as string
+  const model = hfRepoToCatalogModel({
+    ...entry.metadata,
+    id: repo,
+    modelId: repo,
+    sha: definition.revision,
+    author: entry.metadata?.author ?? repo.split('/')[0],
+    tags: entry.metadata?.tags ?? [],
+    siblings: entry.files?.map((file) => ({
+      rfilename: file.path,
+      size: file.size,
+      ...(file.sha256 ? { lfs: { size: file.size, sha256: file.sha256 } } : {}),
+    })),
+  } as HuggingFaceRepo)
+  // Keep external quant IDs from the previously bundled discovery catalog.
+  for (const quant of [
+    ...(model.quants ?? []),
+    ...(model.mmproj_models ?? []),
+    ...(model.safetensors_files ?? []),
+  ]) {
+    const path = decodeURIComponent(
+      quant.path.split('/resolve/')[1]?.split('/').slice(1).join('/') ?? ''
+    )
+    const original = entry.files?.find((file) => file.path === path)?.model_id
+    if (original) quant.model_id = original
+  }
+  return model
+}
+
 export function unifiedChatModels(catalog: AtomicModelCatalog): CatalogModel[] {
   return Object.values(catalog.models)
     .filter((entry) => entry.kind === 'chat')
-    .map((entry) => {
-      const definition = entry.definition
-      const repo = definition.model_name as string
-      const model = hfRepoToCatalogModel({
-        ...entry.metadata,
-        id: repo,
-        modelId: repo,
-        sha: definition.revision,
-        author: entry.metadata?.author ?? repo.split('/')[0],
-        tags: entry.metadata?.tags ?? [],
-        siblings: entry.files?.map((file) => ({
-          rfilename: file.path,
-          size: file.size,
-          ...(file.sha256
-            ? { lfs: { size: file.size, sha256: file.sha256 } }
-            : {}),
-        })),
-      } as HuggingFaceRepo)
-      // Keep external quant IDs from the previously bundled discovery catalog.
-      for (const quant of [
-        ...(model.quants ?? []),
-        ...(model.mmproj_models ?? []),
-        ...(model.safetensors_files ?? []),
-      ]) {
-        const path = decodeURIComponent(
-          quant.path.split('/resolve/')[1]?.split('/').slice(1).join('/') ?? ''
-        )
-        const original = entry.files?.find(
-          (file) => file.path === path
-        )?.model_id
-        if (original) quant.model_id = original
-      }
-      return model
-    })
+    .map(managedChatModel)
+}
+
+/** Managed cards use their explicit pin without narrowing the independent discovery catalog. */
+export function pinnedRecommendationModel(
+  sources: readonly CatalogModel[],
+  repo: string,
+  revision?: string
+): CatalogModel | undefined {
+  if (revision) {
+    const entry = Object.values(atomicModelCatalogSnapshot().models).find(
+      (entry) =>
+        entry.kind === 'chat' &&
+        String(entry.definition.model_name).toLowerCase() ===
+          repo.toLowerCase() &&
+        entry.definition.revision === revision
+    )
+    if (entry) return managedChatModel(entry)
+  }
+  return findCatalogModelForRecommendedRepo(sources, repo, revision)
 }

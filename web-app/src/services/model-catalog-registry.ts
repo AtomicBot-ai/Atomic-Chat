@@ -1,7 +1,3 @@
-// Deprecated independent catalog/index feed: used only by explicit legacy overrides. Production desktop reads models/catalog.json through the unified adapter below.
-import { unifiedModelCatalog, usesUnifiedModelCatalog } from './unified-model-catalog'
-import { unifiedChatModels } from './models/hf-catalog'
-import { atomicModelCatalogStatus } from '@janhq/core'
 /**
  * Model catalog registry -- remote loader for the curated Atomic Chat
  * model catalog and its pre-built MiniSearch index.
@@ -550,11 +546,6 @@ export type FetchOptions = {
 export const getCatalogOrFallback = async (
   options: FetchOptions = {}
 ): Promise<CatalogFetchResult> => {
-  if (options.url === undefined && usesUnifiedModelCatalog()) {
-    const catalog = await unifiedModelCatalog(options.force)
-    const status = atomicModelCatalogStatus()
-    return { manifest: { manifest_version: 1, schema_version: 1, updated_at: catalog.updated_at, models: unifiedChatModels(catalog) }, ...status, manifestUpdatedAt: catalog.updated_at }
-  }
   const {
     force = false,
     url = CATALOG_URL,

@@ -113,3 +113,42 @@ it('does not persist a tree that has no model weights', async () => {
   expect(preflightDownloadDiskSpace).not.toHaveBeenCalled()
   expect(readAtomicDownloadPlan('request:mlx/invalid')).toBeUndefined()
 })
+
+it('uses the commit selected by the card even if the same repository has another managed pin', async () => {
+  const fetchHuggingFaceRepo = vi.fn().mockResolvedValue(metadata)
+  const service = { fetchHuggingFaceRepo } as unknown as ModelsService
+  const request = await mlxDownloadOptions(
+    service,
+    'selected',
+    'o/r',
+    false,
+    undefined,
+    revision
+  )
+  expect(fetchHuggingFaceRepo).toHaveBeenCalledWith(
+    'o/r',
+    undefined,
+    revision,
+    expect.any(AbortSignal)
+  )
+  expect(request.modelPath).toContain(`/resolve/${revision}/`)
+})
+
+it('does not persist an MLX plan if HF substitutes the selected commit', async () => {
+  const service = {
+    fetchHuggingFaceRepo: vi
+      .fn()
+      .mockResolvedValue({ ...metadata, sha: 'b'.repeat(40) }),
+  } as unknown as ModelsService
+  await expect(
+    mlxDownloadOptions(
+      service,
+      'substituted',
+      'o/r',
+      false,
+      undefined,
+      revision
+    )
+  ).rejects.toThrow('another MLX model commit')
+  expect(readAtomicDownloadPlan('request:mlx/substituted')).toBeUndefined()
+})

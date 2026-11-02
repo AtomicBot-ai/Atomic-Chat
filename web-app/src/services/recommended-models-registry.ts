@@ -28,6 +28,8 @@ export type RecommendationPlatform = 'macos' | 'windows' | 'linux'
 
 export type Recommendation = {
   model_name: string
+  /** Commit selected by the managed catalog; absent in legacy exports. */
+  revision?: string
   description_key: string
   platforms?: RecommendationPlatform[]
   active?: boolean
@@ -133,6 +135,11 @@ const sanitizeQuantToken = (value: unknown): string | undefined =>
 export const sanitizeRecommendation = (raw: unknown): Recommendation | null => {
   if (typeof raw !== 'object' || raw === null) return null
   const r = raw as Record<string, unknown>
+  if (
+    r.revision !== undefined &&
+    (typeof r.revision !== 'string' || !/^[0-9a-f]{40}$/.test(r.revision))
+  )
+    return null
   if (typeof r.model_name !== 'string' || r.model_name.length === 0) return null
   if (
     typeof r.description_key !== 'string' ||
@@ -152,6 +159,9 @@ export const sanitizeRecommendation = (raw: unknown): Recommendation | null => {
   const mmprojQuant = sanitizeQuantToken(r.mmproj_quant)
   return {
     model_name: r.model_name,
+    ...(typeof r.revision === 'string' && /^[0-9a-f]{40}$/.test(r.revision)
+      ? { revision: r.revision }
+      : {}),
     description_key: r.description_key,
     ...(platforms && platforms.length > 0 ? { platforms } : {}),
     ...(active === false ? { active: false } : {}),

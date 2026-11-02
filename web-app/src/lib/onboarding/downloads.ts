@@ -114,6 +114,7 @@ export async function startMlxCatalogDownload(
     importMlxRepository(mlxId, modelPath, resume, {
       serviceHub,
       huggingfaceToken,
+      revision: catalog.revision,
     })
   )
 }
@@ -126,12 +127,20 @@ async function importMlxRepository(
   {
     serviceHub,
     huggingfaceToken,
-  }: { serviceHub: ServiceHub; huggingfaceToken?: string }
+    revision,
+  }: { serviceHub: ServiceHub; huggingfaceToken?: string; revision?: string }
 ): Promise<boolean> {
   try {
     const engine = EngineManager.instance().get('mlx')
     if (!engine) throw new Error('MLX engine not found')
-    const request = await mlxDownloadOptions(serviceHub.models(), mlxId, modelPath, resume, huggingfaceToken)
+    const request = await mlxDownloadOptions(
+      serviceHub.models(),
+      mlxId,
+      modelPath,
+      resume,
+      huggingfaceToken,
+      revision
+    )
 
     // `await` is load-bearing: without it the rejection escapes the catch and
     // the download fails with no toast and a row stuck in "downloading".

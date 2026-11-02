@@ -46,6 +46,8 @@ export type StaffPickFormat = 'gguf' | 'mlx'
 
 export type StaffPick = {
   model_name: string
+  /** Commit selected by the managed catalog; absent in legacy exports. */
+  revision?: string
   title?: string
   summary?: string
   description_key?: string
@@ -128,6 +130,11 @@ const optionalString = (value: unknown): string | undefined =>
 export const sanitizePick = (raw: unknown): StaffPick | null => {
   if (typeof raw !== 'object' || raw === null) return null
   const r = raw as Record<string, unknown>
+  if (
+    r.revision !== undefined &&
+    (typeof r.revision !== 'string' || !/^[0-9a-f]{40}$/.test(r.revision))
+  )
+    return null
   if (typeof r.model_name !== 'string' || r.model_name.length === 0) return null
 
   const descriptionKey =
@@ -158,6 +165,9 @@ export const sanitizePick = (raw: unknown): StaffPick | null => {
 
   return {
     model_name: r.model_name,
+    ...(typeof r.revision === 'string' && /^[0-9a-f]{40}$/.test(r.revision)
+      ? { revision: r.revision }
+      : {}),
     ...(optionalString(r.title) ? { title: r.title as string } : {}),
     ...(optionalString(r.summary) ? { summary: r.summary as string } : {}),
     ...(descriptionKey ? { description_key: descriptionKey } : {}),

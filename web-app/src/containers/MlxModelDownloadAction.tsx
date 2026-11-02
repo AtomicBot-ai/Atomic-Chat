@@ -160,7 +160,14 @@ export const MlxModelDownloadAction = memo(
       try {
         const engine = EngineManager.instance().get('mlx')
         if (!engine) throw new Error('MLX engine not found')
-        const request = await mlxDownloadOptions(serviceHub.models(), modelId, modelPath, resumableDownloads.has(modelId), huggingfaceToken)
+        const request = await mlxDownloadOptions(
+          serviceHub.models(),
+          modelId,
+          modelPath,
+          resumableDownloads.has(modelId),
+          huggingfaceToken,
+          model.revision
+        )
 
         // `await` is load-bearing: a bare `return engine.import(...)` inside
         // try{} lets the rejection escape the catch — the download then fails

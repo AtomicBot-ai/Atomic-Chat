@@ -1,6 +1,6 @@
 # Remote Registries — Agent Notes
 
-Provider configuration and local model catalogs have separate contracts. Provider rules below are unchanged. Managed desktop models use one catalog; independent model feeds are deprecated compatibility surfaces.
+Provider configuration and local model catalogs have separate contracts. Provider rules below are unchanged. Managed desktop models use one catalog; generated Hub discovery remains a separate active search feed.
 
 # 1. Provider Registry
 
@@ -183,14 +183,14 @@ explicitly with an owner and a follow-up reference.
 - Edit only `atomic-chat-conf/models/catalog.json` for desktop model sources, full HF commits, file selection, recommendations, tiers and staff picks. Its schema is `models/schema.catalog.json`.
 - `unified-model-catalog.ts` and `core/src/browser/modelCatalog.ts` load one complete document with a one-hour TTL, one whole-document cache (`atomic_unified_model_catalog_v1`) and a generated bundled fallback. Collection services project the existing UI types from it.
 - The old `models/recommended.json`, `staff-picks.json`, `diffusion.json`, `embedding.json`, `decision.json`, `litert-lm-models.json`, `geniex-models.json`, `foundry-local-models.json` and `atomic-prism-models.json` and `audio.json` are **deprecated generated compatibility exports**. Never edit them independently or add them as new desktop sources.
-- The independent scraper catalog/index feed is deprecated for the production desktop default. Explicit legacy/custom overrides, their old caches and historical payload types remain for compatibility; do not combine them with the whole new-format catalog.
+- Preserve `atomic-chat-model-catalog` as the active wide Hub discovery feed, including its MiniSearch index, IndexedDB cache and bundled seed. It is generated search data, not a replacement for managed recommendation pins. Never narrow discovery to the managed subset.
 - Run `node .github/scripts/export-model-catalog.mjs` in conf after canonical edits. Its `--baseline` option generates client snapshots; `--check` verifies semantic equality offline. Run `make validate` in conf.
 - Keep legacy export URLs, fields and `schema_version` intact. Their schemas carry the deprecation annotation; adding a field to strict old data payloads can break released clients. Remove exports only through a separate decision explicitly ending support for every consumer.
 - The core's Prism compatibility reader still consumes its generated export. Mobile catalogs and immutable engine/runtime descriptors retain their supported contracts.
 - Do not edit the generated `core/src/browser/modelCatalogBaseline.json` by hand. Preserve external model and variant IDs, model paths and old caches.
 - HF loading resolves a commit, reads metadata for every selected file, checks compatibility/space, persists a complete versioned plan, then transfers. Resume uses that saved plan; it must not reselect files from main or a refreshed catalog. Persist no credentials. Refuse old unfinished jobs without a recorded commit/plan and keep their partials.
 - Use existing stores (`model-catalog-store`, `recommended-models-registry-store`, `staff-picks-store`, `useModelSources`) for UI projections. Do not introduce another source of model truth, another search library, or a second store that rewrites the whole catalog.
-- Search keeps the established MiniSearch ranking, platform boosts and long-tail HF fallback. Changing a legacy override's index contract still requires its version gate; preserve the nonthrowing `getCatalogOrFallback` / `getIndexOrFallback` interfaces.
+- Search keeps MiniSearch ranking, platform boosts and long-tail HF fallback. Preserve its index version gate and nonthrowing `getCatalogOrFallback` / `getIndexOrFallback` interfaces. Managed cards resolve their explicit revisions without overriding discovery by repository name.
 - Regression checks: `core/src/browser/modelDownloads.test.ts`, `services/__tests__/unified-model-catalog.test.ts`, collection registry suites and `services/__tests__/model-search.test.ts`. Run root `make verify` before finishing.
 
-Legacy cache, schema, wire and search details are retained in [legacy-model-registry-contracts.md](legacy-model-registry-contracts.md) as deprecated historical reference. They do not authorize direct edits of generated exports.
+Legacy export details and the established discovery/search contracts are retained in [legacy-model-registry-contracts.md](legacy-model-registry-contracts.md). They do not authorize direct edits of generated exports.

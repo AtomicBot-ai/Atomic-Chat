@@ -1,5 +1,5 @@
 /** Prepare and persist immutable HF file plans before any downloader opens a file. */
-import { ATOMIC_COMMIT_RE, atomicModelRevision, type AtomicModelCatalog } from './catalogProtocol'
+import { ATOMIC_COMMIT_RE, type AtomicModelCatalog } from './catalogProtocol'
 import { atomicModelCatalogSnapshot } from './modelCatalog'
 
 export interface AtomicTransferItem {
@@ -139,9 +139,7 @@ export async function prepareAtomicDownload<T extends AtomicTransferItem>(
       const ref = ATOMIC_COMMIT_RE.test(source.revision)
         ? source.revision
         : source.revision === 'main'
-          ? (options.revisionFor?.(source.repo) ??
-            (curated ? atomicModelRevision(curated, source.repo) : undefined) ??
-            'main')
+          ? (options.revisionFor?.(source.repo) ?? 'main')
           : source.revision
       const key = `${source.repo}@${ref}`
       let reading = revisions.get(key)

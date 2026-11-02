@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { RECOMMENDED_MODEL_FALLBACKS } from '@/constants/models'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { findCatalogModelForRecommendedRepo } from '@/lib/models'
+import { pinnedRecommendationModel } from '@/services/models/hf-catalog'
 import { sanitizeModelId } from '@/lib/utils'
 import {
   filterStaffPicksForPlatform,
@@ -29,6 +29,8 @@ const resolvedModels: Record<string, CatalogModel> = {
   ...RECOMMENDED_MODEL_FALLBACKS,
 }
 const pendingModels = new Map<string, Promise<CatalogModel | null>>()
+const modelKey = (repo: string, revision?: string) =>
+  revision ? `${repo}@${revision}` : repo
 
 /** Test seam: drop memoized resolutions between cases. */
 export const __resetStaffPickResolutionCache = () => {
@@ -78,8 +80,8 @@ export function useStaffPicks(
       picks.map((pick) => ({
         pick,
         model:
-          findCatalogModelForRecommendedRepo(sources, pick.model_name) ??
-          fetched[pick.model_name] ??
+          pinnedRecommendationModel(sources, pick.model_name, pick.revision) ??
+          fetched[modelKey(pick.model_name, pick.revision)] ??
           null,
       })),
     [picks, sources, fetched]
@@ -89,15 +91,21 @@ export function useStaffPicks(
     let active = true
 
     for (const pick of picks) {
-      if (findCatalogModelForRecommendedRepo(sources, pick.model_name)) continue
-      if (fetched[pick.model_name]) continue
+      if (pinnedRecommendationModel(sources, pick.model_name, pick.revision))
+        continue
+      if (fetched[modelKey(pick.model_name, pick.revision)]) continue
 
-      let pending = pendingModels.get(pick.model_name)
+      const key = modelKey(pick.model_name, pick.revision)
+      let pending = pendingModels.get(key)
       if (!pending) {
         pending = (async () => {
           const repo = await serviceHub
             .models()
-            .fetchHuggingFaceRepo(pick.model_name, huggingfaceToken)
+            .fetchHuggingFaceRepo(
+              pick.model_name,
+              huggingfaceToken,
+              pick.revision
+            )
           if (!repo) return null
           const catalog = serviceHub.models().convertHfRepoToCatalogModel(repo)
           const processed: CatalogModel = {
@@ -110,13 +118,13 @@ export function useStaffPicks(
           }
           //! Same as in useModelSources: MLX only on macOS
           if (!IS_MACOS && processed.is_mlx) return null
-          resolvedModels[pick.model_name] = processed
+          resolvedModels[key] = processed
           return processed
         })()
-        pendingModels.set(pick.model_name, pending)
+        pendingModels.set(key, pending)
         const clearPending = () => {
-          if (pendingModels.get(pick.model_name) === pending) {
-            pendingModels.delete(pick.model_name)
+          if (pendingModels.get(key) === pending) {
+            pendingModels.delete(key)
           }
         }
         void pending.then(clearPending, clearPending)
@@ -126,9 +134,7 @@ export function useStaffPicks(
         .then((processed) => {
           if (!active || !processed) return
           setFetched((prev) =>
-            prev[pick.model_name]
-              ? prev
-              : { ...prev, [pick.model_name]: processed }
+            prev[key] ? prev : { ...prev, [key]: processed }
           )
         })
         .catch((e) => {
