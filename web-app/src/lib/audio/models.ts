@@ -14,6 +14,8 @@
  * refuses an option the family does not declare.
  */
 
+import { readAtomicDownloadPlan } from '@janhq/core'
+
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { parseSeedText } from '@/hooks/useImageForm'
 import { hfResolveUrl } from '@/lib/diffusion/models'
@@ -318,9 +320,32 @@ export type AudioDownloadOptions = {
 }
 
 /**
+ * Whether the download plan saved under `taskId` is for this very file: the
+ * model's repository and commit, the quant's path and its sha256. The
+ * downloader replays a saved plan on resume and ignores the catalog, so a quant
+ * the catalog has moved to another commit must start a plan of its own.
+ */
+export function audioPlanMatches(
+  taskId: string,
+  model: AudioCatalogModel,
+  quant: AudioCatalogQuant
+): boolean {
+  const [file, ...rest] = readAtomicDownloadPlan<TransferItem>(taskId)?.files ?? []
+  return (
+    !!file &&
+    rest.length === 0 &&
+    file.sha256 === quant.sha256 &&
+    file.source?.repo === model.repo &&
+    file.source.revision === model.revision &&
+    file.source.path === quant.path
+  )
+}
+
+/**
  * Download a quant from the model's pinned revision under
  * `audioDownloadTaskId`, resolving once the file is on disk and its size and
- * sha256 have been checked. A partial left by an earlier try is picked up.
+ * sha256 have been checked. A partial left by an earlier try of the same
+ * saved plan is picked up; any other partial is fetched again.
  */
 export async function downloadAudioModel(
   model: AudioCatalogModel,
@@ -340,7 +365,7 @@ export async function downloadAudioModel(
   emitTransferProgress(taskId, 'Model', 0, quant.bytes)
   try {
     await transferFiles([item], taskId, {
-      resume: opts.resume ?? true,
+      resume: opts.resume ?? audioPlanMatches(taskId, model, quant),
       ...(opts.hfToken ? { hfToken: opts.hfToken } : {}),
       onProgress: (transferred, total) =>
         emitTransferProgress(taskId, 'Model', transferred, total),

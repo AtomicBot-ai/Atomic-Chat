@@ -18,6 +18,8 @@ vi.mock('@/services/diffusion/transfer', async (importOriginal) => ({
     transfer.emitted.push(['validation', ...args]),
 }))
 
+import { saveAtomicDownloadPlan } from '@janhq/core'
+
 import { findAudioModel } from '@/services/audio-catalog-registry'
 
 import {
@@ -25,6 +27,8 @@ import {
   adoptAudioModel,
   audioAttributionOf,
   audioDownloadTaskId,
+  audioPlanMatches,
+  audioWireId,
   audioGenerateDisabledReason,
   audioVoiceLabel,
   buildAudioLoadRequest,
@@ -277,12 +281,54 @@ describe('model files', () => {
         },
       ],
       taskId,
-      expect.objectContaining({ resume: true, hfToken: 'token' })
+      expect.objectContaining({ resume: false, hfToken: 'token' })
     )
     expect(transfer.emitted.map(([kind]) => kind)).toEqual([
       'progress',
       'success',
     ])
+  })
+
+  it('resumes only the saved plan of the same pinned file', async () => {
+    const moss = model(MOSS)
+    const [quant] = moss.quants
+    const taskId = audioDownloadTaskId(audioWireId(moss, quant))
+    const save = (revision: string, sha256: string) =>
+      saveAtomicDownloadPlan(taskId, {
+        version: 1,
+        files: [
+          {
+            url: `https://huggingface.co/${moss.repo}/resolve/${revision}/${quant.path}`,
+            save_path: `audio/models/${quant.filename}`,
+            size: quant.bytes,
+            sha256,
+            source: { repo: moss.repo, revision, path: quant.path },
+          },
+        ],
+      })
+
+    save(moss.revision, quant.sha256)
+    expect(audioPlanMatches(taskId, moss, quant)).toBe(true)
+    transfer.transferFiles.mockClear()
+    await downloadAudioModel(moss, quant)
+    expect(transfer.transferFiles).toHaveBeenLastCalledWith(
+      expect.anything(),
+      taskId,
+      expect.objectContaining({ resume: true })
+    )
+
+    // The catalog moved the quant: the old plan must not finish its bytes.
+    save('0'.repeat(40), quant.sha256)
+    expect(audioPlanMatches(taskId, moss, quant)).toBe(false)
+    save(moss.revision, 'f'.repeat(64))
+    expect(audioPlanMatches(taskId, moss, quant)).toBe(false)
+    await downloadAudioModel(moss, quant)
+    expect(transfer.transferFiles).toHaveBeenLastCalledWith(
+      expect.anything(),
+      taskId,
+      expect.objectContaining({ resume: false })
+    )
+    localStorage.clear()
   })
 
   it('reports a file that failed its check as a validation failure', async () => {
