@@ -401,11 +401,16 @@ export const useAudioGenerationStore = create<AudioGenerationState>()((
     },
 
     refreshCatalog: async () => {
-      const { catalog } = await fetchAudioCatalog()
-      set((state) => ({
-        catalog,
-        forms: formsForCatalog(state.forms, catalog),
-      }))
+      try {
+        const { catalog } = await fetchAudioCatalog()
+        set((state) => ({
+          catalog,
+          forms: formsForCatalog(state.forms, catalog),
+        }))
+      } catch (error) {
+        // A unified collection this build cannot read: keep the one it has.
+        console.warn('[audios] catalog unavailable:', error)
+      }
     },
 
     refreshModelFiles: async () => {

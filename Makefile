@@ -428,7 +428,6 @@ test-hardening-contracts:
 		tests/upstream-backend-resolver.test.mjs \
 		tests/mlx-server-fetch.test.mjs \
 		tests/core-contracts.test.mjs \
-		tests/audio-catalog-baseline.test.mjs \
 		tests/core-settings-schema.test.mjs \
 		tests/desktop-legacy-path.test.mjs \
 		tests/extension-bundles.test.mjs \

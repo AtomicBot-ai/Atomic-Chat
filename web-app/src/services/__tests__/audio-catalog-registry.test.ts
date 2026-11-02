@@ -1,6 +1,7 @@
 /**
- * Tests for the remote audio catalog loader: the remote → cache → baseline
- * chain, schema_version gating, and the strict parser that mirrors the conf
+ * Tests for the audio catalog loader: the unified catalog's `audio`
+ * collection, the remote → cache → baseline chain of a named file,
+ * schema_version gating, and the strict parser that mirrors the conf
  * repo's schema (every path becomes a download URL and a file under the audio
  * models folder).
  */
@@ -8,6 +9,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@tauri-apps/plugin-http', () => ({ fetch: vi.fn() }))
+
+const unified = vi.hoisted(() => ({ collection: vi.fn() }))
+vi.mock('../unified-model-catalog', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../unified-model-catalog')>()),
+  unifiedModelCollection: unified.collection,
+}))
 
 import {
   CACHE_TTL_MS,
@@ -276,6 +283,22 @@ describe('fetchAudioCatalog', () => {
   afterEach(() => {
     globalThis.fetch = realFetch
     vi.restoreAllMocks()
+  })
+
+  it('reads the unified catalog’s audio collection unless a file is named', async () => {
+    const fetchMock = fetchOk(manifest())
+    unified.collection.mockResolvedValue({
+      data: manifest(),
+      source: 'cache',
+      fetchedAt: 42,
+    })
+
+    const result = await fetchAudioCatalog({ force: true })
+
+    expect(unified.collection).toHaveBeenCalledWith('audio', true)
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(result).toMatchObject({ source: 'cache', fetchedAt: 42 })
+    expect(result.catalog.models).toHaveLength(1)
   })
 
   it('takes the network, caches it, and serves the cache within the TTL', async () => {

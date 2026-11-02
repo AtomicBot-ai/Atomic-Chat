@@ -1,19 +1,21 @@
 /**
  * Audio catalog registry — remote configuration loader.
  *
- * The speech, music and sound-effect models the Audios studio offers live in
- * `AtomicBot-ai/atomic-chat-conf/models/audio.json`. Fetched at runtime, cached
- * for an hour, backed by a generated snapshot ({@link BASELINE_AUDIO_CATALOG})
- * for the offline first launch and for as long as conf does not publish it.
+ * The speech, music and sound-effect models the Audios studio offers are the
+ * `audio` collection of `AtomicBot-ai/atomic-chat-conf/models/catalog.json`,
+ * the one model catalog every desktop collection projects from
+ * (`unified-model-catalog.ts`): it is fetched, cached and backed offline by
+ * the bundled unified snapshot there, not here. `models/audio.json` is only a
+ * generated export of that collection; {@link fetchAudioCatalog} reads such a
+ * file only when a caller names its URL.
  *
- * Same architecture as `embedding-catalog-registry.ts`, isolated from it (own
- * cache keys, URL and schema). The JSON keys stay snake_case so the in-memory
- * shape is the manifest verbatim; `lib/audio/models.ts` translates once, into
- * the core's load request.
+ * The JSON keys stay snake_case so the in-memory shape is the projected
+ * collection verbatim; `lib/audio/models.ts` translates once, into the core's
+ * load request.
  *
- * Parsing is strict and mirrors the conf repo's `schema.audio.json`: every
- * path becomes a download URL and a file under `<data>/audio/models`, so a
- * manifest must not be able to climb out of that folder, every quant carries
+ * Parsing is strict and mirrors the conf repo's `audio-catalog-check.mjs`:
+ * every path becomes a download URL and a file under `<data>/audio/models`, so
+ * a manifest must not be able to climb out of that folder, every quant carries
  * the size and sha256 the downloader verifies, and every model the immutable
  * revision they were measured at. `controls`, `defaults` and `ranges` are data:
  * nothing in the app knows them by model id. A control this build does not
@@ -22,7 +24,10 @@
 
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 
-import { BASELINE_AUDIO_CATALOG } from './audio-catalog-baseline'
+import {
+  unifiedModelBaseline,
+  unifiedModelCollection,
+} from './unified-model-catalog'
 import {
   AUDIO_MODES,
   type AudioMode,
@@ -30,6 +35,7 @@ import {
   type AudioTask,
 } from './audio/types'
 
+/** @deprecated The generated export's URL, for a caller that names it. The studio projects models/catalog.json. */
 export const DEFAULT_AUDIO_CATALOG_URL =
   'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/models/audio.json'
 
@@ -513,17 +519,30 @@ export type AudioCatalogFetchOptions = {
   timeoutMs?: number
 }
 
-/** The bundled snapshot, re-validated so a stale generator cannot ship junk. */
+/** The `audio` collection of the bundled unified snapshot, re-validated. */
 export const getBaselineAudioCatalog = (): AudioCatalog =>
-  parseAudioCatalog(BASELINE_AUDIO_CATALOG)
+  parseAudioCatalog(unifiedModelBaseline('audio'))
 
 /**
- * Resolve the catalog: fresh cache (unless forced), then the network (cached
- * on success), then a stale cache, then the bundled snapshot. Never throws.
+ * Resolve the catalog: the unified catalog's `audio` collection, which brings
+ * its own cache and offline snapshot. With `url`, that file instead: fresh
+ * cache (unless forced), then the network (cached on success), then a stale
+ * cache, then the bundled snapshot. Never throws for a file; a unified
+ * collection this build cannot parse throws.
  */
 export const fetchAudioCatalog = async (
   options: AudioCatalogFetchOptions = {}
 ): Promise<AudioCatalogFetchResult> => {
+  if (options.url === undefined) {
+    const result = await unifiedModelCollection('audio', options.force)
+    return {
+      catalog: parseAudioCatalog(result.data),
+      source: result.source,
+      fetchedAt: result.fetchedAt,
+      ...(result.error ? { error: result.error } : {}),
+    }
+  }
+
   const {
     force = false,
     url = AUDIO_CATALOG_URL,
@@ -554,7 +573,6 @@ export const fetchAudioCatalog = async (
   } catch (error) {
     controller.abort()
     const message = error instanceof Error ? error.message : String(error)
-    // Normal while conf does not publish the file: a line for whoever looks.
     console.info(`[audio-catalog-registry] Using a local copy: ${message}`)
     if (cached) {
       return {
