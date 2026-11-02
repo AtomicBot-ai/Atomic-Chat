@@ -2304,6 +2304,45 @@ fn sha256_hex(body: &[u8]) -> String {
 }
 
 #[tokio::test]
+async fn a_finished_hf_file_is_reused_only_after_content_verification() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.json");
+    let bytes = b"{\"version\":1}";
+    tokio::fs::write(&path, bytes).await.unwrap();
+    let mut item = DownloadItem {
+        url: format!(
+            "https://huggingface.co/test/model/resolve/{}/config.json",
+            "a".repeat(40)
+        ),
+        save_path: path.to_string_lossy().into_owned(),
+        size: Some(bytes.len() as u64),
+        sha256: None,
+        proxy: None,
+        model_id: None,
+        resume_key: None,
+    };
+    let cancel = CancellationToken::new();
+    assert!(
+        !finished_copy_on_disk(&item, &path, bytes.len() as u64, true, &cancel)
+            .await
+            .unwrap()
+    );
+    assert_eq!(bytes_kept_on_resume(&item, &path, bytes.len() as u64), 0);
+    item.sha256 = Some(sha256_hex(bytes));
+    assert!(
+        finished_copy_on_disk(&item, &path, bytes.len() as u64, false, &cancel)
+            .await
+            .unwrap()
+    );
+    tokio::fs::write(&path, b"{\"version\":2}").await.unwrap();
+    assert!(
+        !finished_copy_on_disk(&item, &path, bytes.len() as u64, true, &cancel)
+            .await
+            .unwrap()
+    );
+}
+
+#[tokio::test]
 async fn a_resumed_task_keeps_a_file_it_had_finished_and_fetches_only_the_rest() {
     let model: Arc<Vec<u8>> = Arc::new((0..48 * 1024).map(|i| (i % 253) as u8).collect());
     let mmproj: Arc<Vec<u8>> = Arc::new((0..32 * 1024).map(|i| (i % 241) as u8).collect());

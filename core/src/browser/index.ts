@@ -33,3 +33,8 @@ export * from './extensions'
  * @module
  */
 export * from './models'
+
+export * from './catalogProtocol'
+export * from './modelCatalog'
+export * from './modelDownloads'
+export * from './modelAuxiliary'

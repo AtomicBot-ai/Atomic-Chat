@@ -7,7 +7,7 @@ describe('DefaultModelsService Hugging Face conversion', () => {
   const repo: HuggingFaceRepo = {
     id: 'acme/vision-model',
     modelId: 'acme/vision-model',
-    sha: 'abc123',
+    sha: 'a'.repeat(40),
     downloads: 42,
     likes: 7,
     tags: ['gguf', 'vision'],
@@ -57,14 +57,14 @@ describe('DefaultModelsService Hugging Face conversion', () => {
     expect(result.quants).toEqual([
       {
         model_id: 'acme/vision-model_Q4_K_M',
-        path: 'https://huggingface.co/acme/vision-model/resolve/main/vision-model.Q4_K_M.GGUF',
+        path: 'https://huggingface.co/acme/vision-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/vision-model.Q4_K_M.GGUF',
         file_size: '2.0 GB',
       },
     ])
     expect(result.mmproj_models).toEqual([
       {
         model_id: 'mmproj-vision-model-f16',
-        path: 'https://huggingface.co/acme/vision-model/resolve/main/mmproj-vision-model-f16.gguf',
+        path: 'https://huggingface.co/acme/vision-model/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/mmproj-vision-model-f16.gguf',
         file_size: '512.0 MB',
       },
     ])
@@ -137,7 +137,7 @@ describe('DefaultModelsService Hugging Face conversion', () => {
       const result = service.convertHfRepoToCatalogModel(shardedRepo)
 
       expect(result.quants[0].path).toBe(
-        'https://huggingface.co/unsloth/big-moe-GGUF/resolve/main/UD-IQ4_XS/big-moe-UD-IQ4_XS-00001-of-00003.gguf'
+        'https://huggingface.co/unsloth/big-moe-GGUF/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/UD-IQ4_XS/big-moe-UD-IQ4_XS-00001-of-00003.gguf'
       )
     })
   })

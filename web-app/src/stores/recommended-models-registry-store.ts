@@ -1,3 +1,4 @@
+import { unifiedModelSnapshot, usesUnifiedModelCatalog } from '@/services/unified-model-catalog'
 /**
  * Zustand store wrapping the remote recommended-models registry loader.
  *
@@ -17,6 +18,8 @@ import { create } from 'zustand'
 import {
   filterRecommendationsForPlatform,
   getCachedManifest,
+  sanitizeRecommendation,
+  sanitizeTiers,
   getRecommendationsOrFallback,
   type FetchOptions,
   type Recommendation,
@@ -49,6 +52,10 @@ const seedRecommendations = (): {
   recommendations: Recommendation[]
   tiers: Partial<Record<HardwareTier, Recommendation[]>>
 } => {
+  if (usesUnifiedModelCatalog()) {
+    const catalog = unifiedModelSnapshot('recommended')
+    return { recommendations: (catalog.recommendations as unknown[]).map(sanitizeRecommendation).filter((r): r is Recommendation => r !== null), tiers: sanitizeTiers(catalog.tiers) }
+  }
   const cached = getCachedManifest()
   if (cached) {
     return {
@@ -65,8 +72,7 @@ const seedRecommendations = (): {
 }
 
 const baselineFallback = (message: string): RegistryFetchResult => ({
-  recommendations: BASELINE_RECOMMENDED_MODELS.slice(),
-  tiers: {},
+  ...seedRecommendations(),
   source: 'baseline',
   fetchedAt: null,
   manifestUpdatedAt: null,

@@ -317,7 +317,7 @@ impl FinishedFile {
 /// so then it counts only on a resume, and only with no partial of the path
 /// waiting: a `.tmp` next to a finished copy means a fetch over it was under
 /// way, which is never an accident.
-async fn finished_copy_on_disk(
+pub(super) async fn finished_copy_on_disk(
     item: &DownloadItem,
     save_path: &Path,
     expected_size: u64,
@@ -334,6 +334,12 @@ async fn finished_copy_on_disk(
         return Ok(false);
     }
     let Some(expected_sha256) = &item.sha256 else {
+        // HF's small Git files often have no SHA-256. A previous file at
+        // this path is not evidence that it came from the selected commit.
+        if item.url.starts_with("https://huggingface.co/") || item.url.starts_with("https://hf.co/")
+        {
+            return Ok(false);
+        }
         return Ok(resume && !sidecar_path(save_path, "tmp").exists());
     };
     log::info!(
@@ -383,7 +389,11 @@ pub(super) fn bytes_kept_on_resume(
             kept
         };
     }
-    let finished = expected_size > 0
+    let unverifiable_hf = item.sha256.is_none()
+        && (item.url.starts_with("https://huggingface.co/")
+            || item.url.starts_with("https://hf.co/"));
+    let finished = !unverifiable_hf
+        && expected_size > 0
         && std::fs::metadata(save_path)
             .is_ok_and(|meta| meta.is_file() && meta.len() == expected_size);
     if finished {

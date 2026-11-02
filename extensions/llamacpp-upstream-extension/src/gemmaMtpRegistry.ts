@@ -1,3 +1,4 @@
+import { atomicAuxiliaryFile } from '@janhq/core'
 /**
  * @file Static registry mapping a Gemma 4 MTP *target* model to the separate
  * MTP *draft* head GGUF it needs for upstream llama.cpp speculative decoding
@@ -27,12 +28,13 @@ export interface GemmaMtpDraft {
   /** Exact filename of the draft head inside the repo. */
   draftFilename: string
   /** Pinned sha256 of the head file (lowercase hex) for download validation. */
-  draftSha256: string
+  draftSha256?: string
   /** Pinned byte size of the head file for download validation. */
   draftSize: number
+  revision?: string
 }
 
-interface GemmaMtpRegistryEntry extends GemmaMtpDraft {
+interface GemmaMtpRegistryEntry extends Pick<GemmaMtpDraft, 'repo' | 'draftFilename'> {
   /**
    * Predicate over a normalized (lowercased) model id that decides whether the
    * id refers to this target family. Kept deliberately strict so unrelated
@@ -47,9 +49,6 @@ const REGISTRY: readonly GemmaMtpRegistryEntry[] = [
     matches: (id) => id.includes('gemma') && id.includes('4') && id.includes('31b'),
     repo: 'am17an/Gemma4-31B-it-GGUF',
     draftFilename: 'mtp-gemma-4-31B-it.gguf',
-    draftSha256:
-      '9514a3a9a5f36971580c83212f59ee681a5b9a09d597a6d14e40ecd12f76e8b9',
-    draftSize: 514687200,
   },
   {
     // Gemma 4 26B-A4B (MoE). Require both "26b" and "a4b" so only the MoE
@@ -61,12 +60,6 @@ const REGISTRY: readonly GemmaMtpRegistryEntry[] = [
       id.includes('a4b'),
     repo: 'AtomicChat/gemma-4-26B-A4B-it-assistant-GGUF',
     draftFilename: 'gemma-4-26B-A4B-it-assistant.Q8_0.gguf',
-    // 2026-07-23: assistant repos were regenerated in the post-b10018
-    // gemma4-assistant format (the old heads no longer load on engine
-    // b10018-1.1.1+), so the pin tracks the re-uploaded file.
-    draftSha256:
-      '918d48b5c219035561e0ff791f2926c939cd367d71ee21b002e99222bdecab8b',
-    draftSize: 461766880,
   },
 ]
 
@@ -94,8 +87,7 @@ export function resolveGemmaMtpDraft(modelId: string): GemmaMtpDraft | null {
   return {
     repo: entry.repo,
     draftFilename: entry.draftFilename,
-    draftSha256: entry.draftSha256,
-    draftSize: entry.draftSize,
+    ...atomicAuxiliaryFile(entry.repo, entry.draftFilename),
   }
 }
 
@@ -106,5 +98,5 @@ export function checkGemmaMtpSupport(modelId: string): boolean {
 
 /** Build the Hugging Face resolve URL for a draft head. */
 export function gemmaMtpDraftUrl(draft: GemmaMtpDraft): string {
-  return `https://huggingface.co/${draft.repo}/resolve/main/${draft.draftFilename}`
+  return `https://huggingface.co/${draft.repo}/resolve/${draft.revision}/${draft.draftFilename}`
 }

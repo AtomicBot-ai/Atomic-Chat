@@ -22,7 +22,8 @@ const { mockEvents, mockDownloadEvent, mockToast, mockQueuedCapture } =
     mockQueuedCapture: vi.fn(),
   }))
 
-vi.mock('@janhq/core', () => ({
+vi.mock('@janhq/core', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@janhq/core')>(),
   EngineManager: { instance: vi.fn() },
   events: mockEvents,
   DownloadEvent: mockDownloadEvent,
@@ -42,13 +43,13 @@ const MB = 1024 ** 2
 const HEADROOM = 512 * MB
 
 const BIG_PATH =
-  'https://huggingface.co/acme/Big-GGUF/resolve/main/big-q4_k_m.gguf'
+  'https://huggingface.co/acme/Big-GGUF/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/big-q4_k_m.gguf'
 const BIG_MMPROJ_PATH =
-  'https://huggingface.co/acme/Big-GGUF/resolve/main/mmproj-f16.gguf'
+  'https://huggingface.co/acme/Big-GGUF/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/mmproj-f16.gguf'
 const SMALL_PATH =
-  'https://huggingface.co/acme/Small-GGUF/resolve/main/small-q4_k_m.gguf'
+  'https://huggingface.co/acme/Small-GGUF/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/small-q4_k_m.gguf'
 const UNKNOWN_PATH =
-  'https://huggingface.co/someone/Else-GGUF/resolve/main/else-q4_k_m.gguf'
+  'https://huggingface.co/someone/Else-GGUF/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/else-q4_k_m.gguf'
 
 const catalog: CatalogModel[] = [
   {
@@ -89,6 +90,12 @@ describe('pullModelWithMetadata disk-space preflight', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ sha: 'a'.repeat(40), siblings: [
+      { rfilename: 'big-q4_k_m.gguf', size: 6 * GB },
+      { rfilename: 'mmproj-f16.gguf', size: 800 * MB },
+      { rfilename: 'small-q4_k_m.gguf', size: 400 * MB },
+    ] })))
     ;(EngineManager.instance as ReturnType<typeof vi.fn>).mockReturnValue({
       get: vi.fn().mockReturnValue(engine),
     })
@@ -225,29 +232,19 @@ describe('pullModelWithMetadata disk-space preflight', () => {
     ).toMatchObject({ modelPath: BIG_PATH })
   })
 
-  it('starts when the size is not known up front', async () => {
-    // Not in the catalog and no HF metadata fetched: the Rust preflight
-    // (which measures the real size) is the guard.
+  it('rejects a file without metadata before checking space or importing it', async () => {
     const ipc = mockFreeSpace({ available: 1 * MB, headroom: HEADROOM })
-
-    await service.pullModelWithMetadata(
-      'else-q4_k_m',
-      UNKNOWN_PATH,
-      undefined,
-      undefined,
-      true,
-      false
-    )
-
-    expect(engine.import).toHaveBeenCalledTimes(1)
-    expect(ipc).not.toHaveBeenCalledWith('get_download_free_space', undefined)
-    expect(mockToast.error).not.toHaveBeenCalled()
-    expect(
-      useDownloadStore.getState().resumeParams['else-q4_k_m']
-    ).toMatchObject({ modelPath: UNKNOWN_PATH })
+    await expect(service.pullModelWithMetadata('else-q4_k_m', UNKNOWN_PATH)).rejects.toThrow('Missing file')
+    expect(engine.import).not.toHaveBeenCalled()
+    expect(ipc).not.toHaveBeenCalled()
+    expect(useDownloadStore.getState().resumeParams['else-q4_k_m']).toBeUndefined()
   })
 
   it('does not second-guess a resume, whose partial is already on disk', async () => {
+    mockFreeSpace({ available: 20 * GB, headroom: HEADROOM })
+    await service.pullModelWithMetadata('big-q4_k_m', BIG_PATH)
+    service = new DefaultModelsService()
+    vi.mocked(fetch).mockRejectedValue(new Error('offline'))
     mockFreeSpace({ available: 1 * GB, headroom: HEADROOM })
 
     await service.pullModelWithMetadata(

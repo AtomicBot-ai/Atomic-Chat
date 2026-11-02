@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ChevronsUpDown } from 'lucide-react'
-import { IconLoader2, IconPlayerStopFilled, IconRefresh } from '@tabler/icons-react'
+import {
+  IconLoader2,
+  IconPlayerStopFilled,
+  IconRefresh,
+} from '@tabler/icons-react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -16,7 +20,7 @@ import VoiceModelCard from '@/containers/VoiceModelCard'
 import VoiceLevelMeter from '@/containers/chatInput/VoiceLevelMeter'
 import {
   VOICE_LANGUAGES,
-  VOICE_MODEL_BYTES,
+  voiceModelDownloadBytes,
   VOICE_MODEL_NAME,
   type VoiceLanguage,
 } from '@/constants/voice'
@@ -121,7 +125,7 @@ export function VoiceSettingsPanel() {
           description={
             installed
               ? t('settings:voice.modelDescription', {
-                  size: `${(VOICE_MODEL_BYTES / 1024 ** 3).toFixed(2)} GB`,
+                  size: `${(voiceModelDownloadBytes() / 1024 ** 3).toFixed(2)} GB`,
                 })
               : t('settings:voice.modelMissing')
           }

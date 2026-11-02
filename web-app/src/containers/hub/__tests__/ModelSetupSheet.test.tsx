@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { mockHfModelMetadata } from '@/test/hf-model-metadata'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -44,7 +45,7 @@ const families: PrismFamiliesResponse = {
       id: 'bonsai-8b',
       title: 'Bonsai 8B',
       repo: file.repo,
-      revision: 'b072e1d',
+      revision: 'a'.repeat(40),
       files: [
         {
           file: file.file,
@@ -115,6 +116,7 @@ const renderSheet = () => render(<Sheet />)
 describe('ModelSetupSheet', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockHfModelMetadata(families.families)
     service = new FakeService()
     seedServiceHub({ modelSetup: service })
   })
@@ -137,6 +139,7 @@ describe('ModelSetupSheet', () => {
     // disk, and no setup-plan route of the core.
     expect(service.checkCompatibility).toHaveBeenCalledWith({
       ...file,
+      revision: 'a'.repeat(40),
       inspect_remote: true,
     })
     expect(service.families).toHaveBeenCalled()

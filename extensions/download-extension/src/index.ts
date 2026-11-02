@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import { BaseExtension, events } from '@janhq/core'
+import { BaseExtension, events, atomicDownloadFiles, cancelAtomicModelPreparation } from '@janhq/core'
 
 export enum Settings {
   hfToken = 'hf-token',
@@ -80,6 +80,7 @@ export function buildAuthHeaders(
 export default class DownloadManager extends BaseExtension {
   hfToken?: string
   private ownTasks?: Set<string>
+  private preparations = new Map<string, AbortController>()
 
   async onLoad() {
     this.registerSettings(SETTINGS)
@@ -118,8 +119,13 @@ export default class DownloadManager extends BaseExtension {
     // A task started here is cancelled here, whatever its id looks like.
     if (!this.ownTasks) this.ownTasks = new Set()
     this.ownTasks.add(taskId)
+    const controller = new AbortController()
+    this.preparations ??= new Map()
+    this.preparations.set(taskId, controller)
     let unlisten: (() => void) | undefined
     try {
+      onStage?.({ kind: 'connecting', attempt: 0, maxAttempts: 5 })
+      items = await atomicDownloadFiles(taskId, items, resume, { token: this.hfToken, signal: controller.signal })
       // relay tauri events to onProgress callback
       unlisten = await listen<DownloadEvent>(
         `download-${taskId}`,
@@ -134,6 +140,7 @@ export default class DownloadManager extends BaseExtension {
           onProgress?.(payload.transferred, payload.total)
         }
       )
+      controller.signal.throwIfAborted()
       await invoke<void>('download_files', {
         items,
         taskId,
@@ -141,15 +148,19 @@ export default class DownloadManager extends BaseExtension {
         resume,
       })
     } catch (error) {
+      if (controller.signal.aborted) throw new Error('Download cancelled')
       console.error('Error downloading task', taskId, error)
       throw error
     } finally {
       unlisten?.()
       this.ownTasks.delete(taskId)
+      this.preparations.delete(taskId)
     }
   }
 
   async cancelDownload(taskId: string) {
+    cancelAtomicModelPreparation(taskId)
+    this.preparations?.get(taskId)?.abort()
     try {
       // Both llama.cpp providers name backend installs `llamacpp-backend-*`, and the core runs every
       // backend install on desktop. One this extension did not start is the core's.

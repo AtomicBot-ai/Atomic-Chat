@@ -2,6 +2,7 @@ import { act, renderHook } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { toast } from 'sonner'
+import { atomicModelCatalogBaseline, saveAtomicDownloadPlan } from '@janhq/core'
 
 import { VOICE_MODEL_ID, VOICE_PROVIDER } from '@/constants/voice'
 import { useAppState } from '@/hooks/useAppState'
@@ -64,6 +65,7 @@ const upstream = (ids: string[]): ModelProvider =>
 describe('useVoiceModel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
     releaseVoiceEngine.mockResolvedValue(undefined)
     deleteModel.mockResolvedValue(undefined)
     stopModel.mockResolvedValue(undefined)
@@ -91,6 +93,53 @@ describe('useVoiceModel', () => {
     })
     useFavoriteModel.setState({ favoriteModels: [] })
     useAppState.setState({ activeModels: [] })
+  })
+
+  it('resumes its saved files when the new catalog no longer contains voice', async () => {
+    const catalog = structuredClone(atomicModelCatalogBaseline())
+    for (const [id, entry] of Object.entries(catalog.models))
+      if (entry.kind === 'auxiliary' && entry.definition.role === 'voice')
+        delete catalog.models[id]
+    localStorage.setItem(
+      'atomic_unified_model_catalog_v1',
+      JSON.stringify({ catalog })
+    )
+    const revision = 'a'.repeat(40)
+    const files = ['weights.gguf', 'projector.gguf'].map((path, index) => ({
+      url: `https://huggingface.co/voice/saved/resolve/${revision}/${path}`,
+      save_path: path,
+      size: 4,
+      source: { repo: 'voice/saved', revision, path },
+      purpose: index === 0 ? 'weights' : 'projector',
+    }))
+    saveAtomicDownloadPlan(`request:${VOICE_PROVIDER}/${VOICE_MODEL_ID}`, {
+      version: 1,
+      files,
+    })
+    useDownloadStore.setState({ resumableDownloads: new Set([VOICE_MODEL_ID]) })
+    const { result } = renderHook(() => useVoiceModel())
+    await act(async () => result.current.download())
+    expect(pullModelWithMetadata.mock.calls[0].slice(0, 3)).toEqual([
+      VOICE_MODEL_ID,
+      files[0].url,
+      files[1].url,
+    ])
+    expect(pullModelWithMetadata.mock.calls[0][5]).toBe(true)
+    expect(useDownloadStore.getState().resumableDownloads.has(VOICE_MODEL_ID)).toBe(false)
+  })
+
+  it('refuses a legacy voice resume before any transfer', async () => {
+    useDownloadStore.setState({ resumableDownloads: new Set([VOICE_MODEL_ID]) })
+    const { result } = renderHook(() => useVoiceModel())
+    await act(async () => result.current.download())
+    expect(pullModelWithMetadata).not.toHaveBeenCalled()
+    expect(toast.error).toHaveBeenCalledWith(
+      'common:voiceInput.setup.model.failed',
+      {
+        description: expect.stringContaining('partial files were kept'),
+      }
+    )
+    expect(result.current.downloading).toBe(false)
   })
 
   it('stops reporting the model as installed once it is removed', async () => {

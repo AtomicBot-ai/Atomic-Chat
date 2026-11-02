@@ -1,3 +1,7 @@
+import {
+  unifiedModelCollection,
+  unifiedModelBaseline,
+} from './unified-model-catalog'
 /**
  * Diffusion catalog registry — remote configuration loader.
  *
@@ -20,7 +24,6 @@
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 
 import { IMAGE_WORKFLOW_IDS } from '@/lib/diffusion/workflows'
-import { BASELINE_DIFFUSION_CATALOG } from './diffusion-catalog-baseline'
 import type {
   DiffusionFamilyId,
   DiffusionModality,
@@ -28,6 +31,7 @@ import type {
   ImageWorkflowId,
 } from './diffusion/types'
 
+/** @deprecated Independent catalog URL; retained for legacy/custom adapters. Production desktop projects models/catalog.json. */
 export const DEFAULT_DIFFUSION_CATALOG_URL =
   'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/models/diffusion.json'
 
@@ -687,7 +691,7 @@ export type DiffusionCatalogFetchOptions = {
 
 /** The bundled snapshot, re-validated so a stale generator cannot ship junk. */
 export const getBaselineDiffusionCatalog = (): DiffusionCatalog =>
-  parseDiffusionCatalog(BASELINE_DIFFUSION_CATALOG)
+  parseDiffusionCatalog(unifiedModelBaseline('diffusion'))
 
 /**
  * A release may teach the client a new family before the remote manifest PR is
@@ -720,6 +724,16 @@ export const mergeBundledDiffusionFamilies = (
 export const fetchDiffusionCatalog = async (
   options: DiffusionCatalogFetchOptions = {}
 ): Promise<DiffusionCatalogFetchResult> => {
+  if (options.url === undefined) {
+    const result = await unifiedModelCollection('diffusion', options.force)
+    return {
+      catalog: parseDiffusionCatalog(result.data),
+      source: result.source,
+      fetchedAt: result.fetchedAt,
+      ...(result.error ? { error: result.error } : {}),
+    }
+  }
+
   const {
     force = false,
     url = DIFFUSION_CATALOG_URL,

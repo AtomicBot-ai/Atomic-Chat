@@ -211,7 +211,16 @@ export async function launchApp(extraEnv: Record<string, string>): Promise<Runni
       waitforTimeout: 15_000,
       capabilities: {},
     })
-    await waitForSplashToGo(browser)
+    try {
+      await waitForSplashToGo(browser)
+    } catch (error) {
+      const page = await browser.execute(() => ({
+        text: document.body.innerText,
+        errors: (window as unknown as { __atomic_e2e_errors?: string[] }).__atomic_e2e_errors,
+        console: (window as unknown as { __atomic_e2e_console?: string[] }).__atomic_e2e_console,
+      })).catch(() => null)
+      throw new Error(`${String(error)}\n${JSON.stringify(page)}\n${output().slice(-6000)}`)
+    }
     const app: RunningApp = {
       child,
       browser,

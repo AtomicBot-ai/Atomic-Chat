@@ -10,7 +10,7 @@ import VoiceModelCard from '@/containers/VoiceModelCard'
 import { HubNoResults } from '@/containers/hub/HubSearch'
 import { HubSearchToolbar } from '@/containers/hub/HubSearchToolbar'
 import {
-  VOICE_MODEL_BYTES,
+  voiceModelDownloadBytes,
   VOICE_MODEL_HF_REPO,
   VOICE_MODEL_ID,
   VOICE_MODEL_NAME,
@@ -114,7 +114,9 @@ export function VoiceHub({
                       <span className="mx-1.5 text-muted-foreground/50">·</span>
                       <span className="whitespace-nowrap tabular-nums">
                         {t('common:voiceInput.setup.model.sizeGb', {
-                          size: (VOICE_MODEL_BYTES / 1024 ** 3).toFixed(2),
+                          size: (voiceModelDownloadBytes() / 1024 ** 3).toFixed(
+                            2
+                          ),
                         })}
                       </span>
                     </p>

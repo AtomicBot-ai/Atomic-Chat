@@ -6,6 +6,7 @@
  * carries the `voxtral` audio projector in its `libmtmd`. The only thing the
  * user has to fetch is the model itself.
  */
+import { atomicAuxiliaryFile, atomicModelCatalogBaseline } from '@janhq/core'
 
 /** The provider the voice model is downloaded into and started on. */
 export const VOICE_PROVIDER = 'llamacpp-upstream'
@@ -18,10 +19,16 @@ export const VOICE_MODEL_ID = 'ggml-org/Voxtral-Mini-3B-2507-Q4_K_M'
 
 export const VOICE_MODEL_HF_REPO = 'ggml-org/Voxtral-Mini-3B-2507-GGUF'
 
-const VOICE_MODEL_HF_BASE = `https://huggingface.co/${VOICE_MODEL_HF_REPO}/resolve/main`
+const WEIGHTS_VARIANT = 'Voxtral-Mini-3B-2507-Q4_K_M.gguf'
+const PROJECTOR_VARIANT = 'mmproj-Voxtral-Mini-3B-2507-Q8_0.gguf'
 
-export const VOICE_MODEL_URL = `${VOICE_MODEL_HF_BASE}/Voxtral-Mini-3B-2507-Q4_K_M.gguf`
-export const VOICE_MMPROJ_URL = `${VOICE_MODEL_HF_BASE}/mmproj-Voxtral-Mini-3B-2507-Q8_0.gguf`
+/** Resolve current sources only when voice is requested; optional catalog entries must not block app startup. */
+export function voiceModelSources() {
+  return {
+    model: atomicAuxiliaryFile(VOICE_MODEL_HF_REPO, WEIGHTS_VARIANT),
+    projector: atomicAuxiliaryFile(VOICE_MODEL_HF_REPO, PROJECTOR_VARIANT),
+  }
+}
 
 /** Display name on the model card. */
 export const VOICE_MODEL_NAME = 'Voxtral Mini 3B'
@@ -32,7 +39,22 @@ export const VOICE_MODEL_NAME = 'Voxtral Mini 3B'
  * (`renderGB`, `formatBytes`), so a hardcoded decimal-GB label would disagree
  * with the progress bar counting up beside it.
  */
-export const VOICE_MODEL_BYTES = 2_473_001_920 + 715_714_080
+const bundledVoice =
+  atomicModelCatalogBaseline().models[`auxiliary:${VOICE_MODEL_HF_REPO}`]
+    .variants
+/** Fallback for an installed model whose historical metadata contains no size. */
+export const VOICE_MODEL_BYTES =
+  Number(bundledVoice[WEIGHTS_VARIANT].size) +
+  Number(bundledVoice[PROJECTOR_VARIANT].size)
+
+export function voiceModelDownloadBytes(): number {
+  try {
+    const sources = voiceModelSources()
+    return sources.model.draftSize + sources.projector.draftSize
+  } catch {
+    return VOICE_MODEL_BYTES
+  }
+}
 
 /** Free disk space we tell the user to have on hand, rounded up from the above. */
 export const VOICE_MODEL_FREE_DISK_GB = 4

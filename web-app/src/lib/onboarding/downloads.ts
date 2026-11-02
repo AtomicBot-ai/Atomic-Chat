@@ -1,3 +1,4 @@
+import { mlxDownloadOptions } from '@/lib/models/mlx-download'
 import { EngineManager } from '@janhq/core'
 import { toast } from 'sonner'
 
@@ -128,40 +129,13 @@ async function importMlxRepository(
   }: { serviceHub: ServiceHub; huggingfaceToken?: string }
 ): Promise<boolean> {
   try {
-    const repoInfo = await serviceHub
-      .models()
-      .fetchHuggingFaceRepo(modelPath, huggingfaceToken)
-
-    if (!repoInfo?.siblings?.length) {
-      throw new Error('Failed to fetch repository files')
-    }
-
-    const modelFiles = repoInfo.siblings
-    const mainSafetensorsFile = modelFiles.find((f) =>
-      f.rfilename.toLowerCase().endsWith('.safetensors')
-    )
-    if (!mainSafetensorsFile) {
-      throw new Error('No safetensors file found in repository')
-    }
-
     const engine = EngineManager.instance().get('mlx')
     if (!engine) throw new Error('MLX engine not found')
-
-    const modelUrl = `https://huggingface.co/${modelPath}/resolve/main/${mainSafetensorsFile.rfilename}`
-    const extraFiles = modelFiles
-      .filter((f) => f.rfilename !== mainSafetensorsFile.rfilename)
-      .map((file) => ({
-        url: `https://huggingface.co/${modelPath}/resolve/main/${file.rfilename}`,
-        filename: file.rfilename,
-      }))
+    const request = await mlxDownloadOptions(serviceHub.models(), mlxId, modelPath, resume, huggingfaceToken)
 
     // `await` is load-bearing: without it the rejection escapes the catch and
     // the download fails with no toast and a row stuck in "downloading".
-    await engine.import(mlxId, {
-      modelPath: modelUrl,
-      files: extraFiles,
-      resume,
-    })
+    await engine.import(mlxId, request)
     return true
   } catch (error) {
     console.error('Error downloading MLX model:', error)

@@ -46,7 +46,7 @@ export type DiffusionBackend = 'cpu' | 'metal' | 'cuda' | 'vulkan' | 'rocm'
  */
 export type DiffusionOffloadPolicy = 'none' | 'group' | 'model'
 
-/** Model family ids. The catalog (`atomic-chat-conf/models/diffusion.json`) is keyed on these. */
+/** Model family ids. The unified catalog owns these IDs; models/diffusion.json is its deprecated generated compatibility export. */
 export type DiffusionFamilyId =
   | 'z-image'
   | 'flux.2-klein'

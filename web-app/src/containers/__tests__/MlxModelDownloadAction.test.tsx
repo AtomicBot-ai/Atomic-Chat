@@ -40,6 +40,7 @@ const button = () =>
 
 beforeEach(() => {
   vi.clearAllMocks()
+  localStorage.clear()
   useMlxEngineInstallStore.setState({ installing: false, progress: null })
   useDownloadStore.setState({
     downloads: {},
@@ -52,7 +53,8 @@ beforeEach(() => {
 describe('MlxModelDownloadAction', () => {
   it('downloads the model through the helper that adds a missing engine', async () => {
     fetchHuggingFaceRepo.mockResolvedValue({
-      siblings: [{ rfilename: 'model.safetensors' }],
+      sha: 'a'.repeat(40),
+      siblings: [{ rfilename: 'model.safetensors', size: 4 }],
     })
     engine.import.mockResolvedValue(undefined)
     render(<MlxModelDownloadAction model={model} />)
@@ -69,7 +71,7 @@ describe('MlxModelDownloadAction', () => {
       'Qwen3-4B-4bit',
       expect.objectContaining({
         modelPath:
-          'https://huggingface.co/mlx-community/Qwen3-4B-4bit/resolve/main/model.safetensors',
+          'https://huggingface.co/mlx-community/Qwen3-4B-4bit/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model.safetensors',
       })
     )
   })

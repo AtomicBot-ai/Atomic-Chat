@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/dialog'
 import { ModelLogo } from '@/containers/ModelLogo'
 import { VoiceSetupRow } from '@/containers/VoiceSetupRow'
-import { VOICE_MODEL_BYTES, VOICE_MODEL_NAME } from '@/constants/voice'
+import { voiceModelDownloadBytes, VOICE_MODEL_NAME } from '@/constants/voice'
 import { useVoiceModel } from '@/hooks/useVoiceModel'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 
@@ -156,7 +156,7 @@ const VoiceModelCard = memo(function VoiceModelCard({
             <span className="mx-1.5 text-muted-foreground/50">·</span>
             <span className="whitespace-nowrap tabular-nums">
               {t('common:voiceInput.setup.model.sizeGb', {
-                size: gb(VOICE_MODEL_BYTES),
+                size: gb(voiceModelDownloadBytes()),
               })}
             </span>
           </>
