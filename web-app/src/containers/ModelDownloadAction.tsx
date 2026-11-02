@@ -240,6 +240,10 @@ export const ModelDownloadAction = ({
   const [engineProgress, setEngineProgress] = useState(0)
   const setupModelId = quantModelIds(model, variant.model_id)[1]
   const [sheetPlan, setSheetPlan] = useState<PrismSetupPlan | null>(null)
+  // "Also download image support", kept here rather than in the sheet, which
+  // is unmounted while the engine installs: a retry keeps the user's choice,
+  // also when it starts without the sheet.
+  const [includeProjector, setIncludeProjector] = useState(true)
   // A file only PrismML runs downloads under the id the old core setup
   // registered it as, so a model set up before reads as downloaded. A
   // download already running under that id keeps the row on it even while
@@ -327,7 +331,7 @@ export const ModelDownloadAction = ({
       const plan = await loadPrismSetupPlan(serviceHub.modelSetup(), {
         ...hubFile,
         model_id: setupModelId,
-        include_projector: true,
+        include_projector: includeProjector,
       })
       if (!isPrismDownloadOnly(plan)) {
         setSheetPlan(plan)
@@ -343,7 +347,7 @@ export const ModelDownloadAction = ({
     } finally {
       setSetupStarting(false)
     }
-  }, [hubFile, serviceHub, setupModelId, runSetup, t])
+  }, [hubFile, serviceHub, setupModelId, includeProjector, runSetup, t])
 
   const requestDownload = useCallback(async () => {
     // The core's verdict decides the path when the Hub row has one; a row
@@ -425,15 +429,22 @@ export const ModelDownloadAction = ({
       modelName={model.model_name}
       modelId={setupModelId}
       initialPlan={sheetPlan}
+      includeProjector={includeProjector}
+      onIncludeProjectorChange={setIncludeProjector}
       onStart={(plan) => void runSetup(plan)}
     />
   ) : null
 
   // The PrismML build installs (its row is in the download panel, which
   // cancels it) and becomes active before the model download has a row.
-  if (prismStage === 'installing_engine' || prismStage === 'activating_engine') {
+  if (
+    prismStage === 'installing_engine' ||
+    prismStage === 'activating_engine'
+  ) {
     const percent =
-      prismStage === 'installing_engine' ? Math.round(engineProgress * 100) : 100
+      prismStage === 'installing_engine'
+        ? Math.round(engineProgress * 100)
+        : 100
     return (
       <Button
         type="button"

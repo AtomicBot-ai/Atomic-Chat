@@ -295,13 +295,19 @@ describe('ModelDownloadAction', () => {
         },
       ],
     }
-    const prismBuild = { version: 'prism-b9000-abcdef0', backend: 'macos-arm64' }
+    const prismBuild = {
+      version: 'prism-b9000-abcdef0',
+      backend: 'macos-arm64',
+    }
     const catalog = (installed: boolean): PrismCatalog => ({
       installed: installed ? [prismBuild] : [],
       available: [prismBuild],
       recommended: 'prism-b9000-abcdef0/macos-arm64',
       releases: [
-        { tag: prismBuild.version, variants: [{ id: prismBuild.backend, size: 20 }] },
+        {
+          tag: prismBuild.version,
+          variants: [{ id: prismBuild.backend, size: 20 }],
+        },
       ],
     })
 
@@ -455,7 +461,7 @@ describe('ModelDownloadAction', () => {
       expect(screen.queryByTestId('model-setup-sheet')).toBeNull()
     })
 
-    it('downloads under PrismML with the app\'s own downloader when the build is installed, and keeps a file PrismML runs', async () => {
+    it("downloads under PrismML with the app's own downloader when the build is installed, and keeps a file PrismML runs", async () => {
       known('compatible')
       planVerdict = verdict('compatible')
       mocks.prismCatalog.mockResolvedValue(catalog(true))
@@ -505,7 +511,11 @@ describe('ModelDownloadAction', () => {
       mocks.pullModelWithMetadata.mockImplementationOnce(async () => {
         useModelProvider.setState({
           providers: [
-            { provider: 'atomic-prism', settings: [], models: [{ id: prismId }] } as never,
+            {
+              provider: 'atomic-prism',
+              settings: [],
+              models: [{ id: prismId }],
+            } as never,
           ],
         })
       })
@@ -580,7 +590,78 @@ describe('ModelDownloadAction', () => {
       )
       expect(mocks.activatePrismBuild).not.toHaveBeenCalled()
       expect(mocks.pullModelWithMetadata).not.toHaveBeenCalled()
-      expect(await screen.findByRole('button', { name: 'hub:download' })).toBeEnabled()
+      expect(
+        await screen.findByRole('button', { name: 'hub:download' })
+      ).toBeEnabled()
+    })
+
+    /** Opens the sheet, turns image support off and starts the setup. */
+    const startWithoutImageSupport = async () => {
+      fireEvent.click(downloadButton())
+      fireEvent.click(await screen.findByTestId('model-setup-vision'))
+      await waitFor(() =>
+        expect(screen.queryByText(/mmproj-Q8_0\.gguf/)).toBeNull()
+      )
+      fireEvent.click(screen.getByTestId('model-setup-start'))
+    }
+
+    // Atomic-Chat #346: the retry turned image support back on.
+    it('keeps image support off in the sheet of a retry after a failed engine install', async () => {
+      known('engine_required')
+      mocks.installPrismBuild.mockRejectedValueOnce({
+        code: 'ENGINE_INSTALL_FAILED',
+        message: 'Could not install the engine.',
+      })
+      render(
+        <ModelDownloadAction variant={bonsai} model={bonsaiModel} asButton />
+      )
+      await startWithoutImageSupport()
+      await waitFor(() =>
+        expect(mocks.toastError).toHaveBeenCalledWith('hub:downloadFailed', {
+          description: 'Could not install the engine.',
+        })
+      )
+
+      fireEvent.click(
+        await screen.findByRole('button', { name: 'hub:download' })
+      )
+      expect(await screen.findByTestId('model-setup-vision')).not.toBeChecked()
+      const start = screen.getByTestId('model-setup-start')
+      await waitFor(() => expect(start).toBeEnabled())
+      fireEvent.click(start)
+
+      await waitFor(() =>
+        expect(mocks.pullModelWithMetadata).toHaveBeenCalled()
+      )
+      expect(mocks.pullModelWithMetadata.mock.calls[0]?.[2]).toBeUndefined()
+    })
+
+    it('leaves image support out of a retry that starts without the sheet', async () => {
+      known('engine_required')
+      mocks.pullModelWithMetadata.mockRejectedValueOnce(new Error('offline'))
+      render(
+        <ModelDownloadAction variant={bonsai} model={bonsaiModel} asButton />
+      )
+      await startWithoutImageSupport()
+      await waitFor(() =>
+        expect(mocks.toastError).toHaveBeenCalledWith(
+          'hub:downloadFailed',
+          expect.anything()
+        )
+      )
+      // The engine went in: the retry is only a download, with no sheet.
+      planVerdict = verdict('compatible')
+      mocks.prismCatalog.mockResolvedValue(catalog(true))
+
+      fireEvent.click(
+        await screen.findByRole('button', { name: 'hub:download' })
+      )
+
+      await waitFor(() =>
+        expect(mocks.pullModelWithMetadata).toHaveBeenCalledTimes(2)
+      )
+      expect(mocks.pullModelWithMetadata.mock.calls[1]?.[2]).toBeUndefined()
+      expect(screen.queryByTestId('model-setup-sheet')).toBeNull()
     })
 
     it('keeps following a running Bonsai download when the verdict is forgotten', async () => {

@@ -37,6 +37,12 @@ export type ModelSetupSheetProps = {
   modelId: string
   /** The plan the row just read, shown at once instead of asking the core again. */
   initialPlan?: PrismSetupPlan | null
+  /**
+   * "Also download image support". The row keeps it: the sheet is unmounted
+   * while the engine installs, and a retry after a failure keeps the choice.
+   */
+  includeProjector: boolean
+  onIncludeProjectorChange: (include: boolean) => void
   /** Set up: run the plan the sheet showed. The sheet closes; the row and the download panel follow. */
   onStart: (plan: PrismSetupPlan) => void
 }
@@ -89,12 +95,13 @@ export function ModelSetupSheet({
   modelName,
   modelId,
   initialPlan = null,
+  includeProjector,
+  onIncludeProjectorChange,
   onStart,
 }: ModelSetupSheetProps) {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
 
-  const [includeProjector, setIncludeProjector] = useState(true)
   const [plan, setPlan] = useState<PrismSetupPlan | null>(null)
   const [planError, setPlanError] = useState<string | null>(null)
   const [planChanged, setPlanChanged] = useState(false)
@@ -253,7 +260,7 @@ export function ModelSetupSheet({
               <span className="min-w-0">{t('hub:prismSetupVision')}</span>
               <Switch
                 checked={includeProjector}
-                onCheckedChange={setIncludeProjector}
+                onCheckedChange={onIncludeProjectorChange}
                 disabled={busy}
                 data-testid="model-setup-vision"
               />
