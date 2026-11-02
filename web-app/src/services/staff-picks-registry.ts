@@ -1,3 +1,7 @@
+import {
+  unifiedModelCollection,
+  usesUnifiedModelCatalog,
+} from './unified-model-catalog'
 /**
  * Staff-picks registry — remote configuration loader.
  *
@@ -59,6 +63,7 @@ export type StaffPick = {
   active?: boolean
 }
 
+/** @deprecated Independent catalog URL; retained for legacy/custom adapters. Production desktop projects models/catalog.json. */
 export const DEFAULT_STAFF_PICKS_URL =
   'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/models/staff-picks.json'
 
@@ -134,8 +139,7 @@ export const sanitizePick = (raw: unknown): StaffPick | null => {
   const platforms = Array.isArray(r.platforms)
     ? (r.platforms.filter(
         (p): p is StaffPickPlatform =>
-          typeof p === 'string' &&
-          ALLOWED_PLATFORMS.has(p as StaffPickPlatform)
+          typeof p === 'string' && ALLOWED_PLATFORMS.has(p as StaffPickPlatform)
       ) as StaffPickPlatform[])
     : undefined
 
@@ -346,6 +350,20 @@ export type FetchOptions = {
 export const getStaffPicksOrFallback = async (
   options: FetchOptions = {}
 ): Promise<StaffPicksFetchResult> => {
+  if (options.url === undefined && usesUnifiedModelCatalog()) {
+    const result = await unifiedModelCollection('staff-picks', options.force)
+    const manifest = result.data as unknown as StaffPicksManifest
+    return {
+      picks: manifest.picks
+        .map(sanitizePick)
+        .filter((p): p is StaffPick => p !== null),
+      source: result.source,
+      fetchedAt: result.fetchedAt,
+      manifestUpdatedAt: result.updatedAt,
+      ...(result.error ? { error: result.error } : {}),
+    }
+  }
+
   const {
     force = false,
     url = STAFF_PICKS_URL,

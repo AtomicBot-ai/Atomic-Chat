@@ -145,7 +145,7 @@ describe('model-catalog-registry', () => {
     )
     await clearCatalogCache()
 
-    const result = await getCatalogOrFallback()
+    const result = await getCatalogOrFallback({ url: 'https://fixture.invalid/catalog.json' })
     expect(result.source).toBe('remote')
     expect(result.manifest.models).toHaveLength(1)
     expect(result.manifest.models[0].model_name).toBe('unsloth/test')
@@ -165,10 +165,10 @@ describe('model-catalog-registry', () => {
     )
     await clearCatalogCache()
 
-    const first = await getCatalogOrFallback()
+    const first = await getCatalogOrFallback({ url: 'https://fixture.invalid/catalog.json' })
     expect(first.source).toBe('remote')
 
-    const second = await getCatalogOrFallback()
+    const second = await getCatalogOrFallback({ url: 'https://fixture.invalid/catalog.json' })
     expect(second.source).toBe('cache')
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
@@ -190,12 +190,12 @@ describe('model-catalog-registry', () => {
     )
     await clearCatalogCache()
 
-    expect((await getCatalogOrFallback()).source).toBe('remote')
+    expect((await getCatalogOrFallback({ url: 'https://fixture.invalid/catalog.json' })).source).toBe('remote')
     vi.resetModules()
     const { getCatalogOrFallback: getCatalogAfterRestart } = await import(
       '@/services/model-catalog-registry'
     )
-    expect((await getCatalogAfterRestart()).source).toBe('cache')
+    expect((await getCatalogAfterRestart({ url: 'https://fixture.invalid/catalog.json' })).source).toBe('cache')
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(localStorageMock.setItem).not.toHaveBeenCalled()
   })
@@ -209,7 +209,7 @@ describe('model-catalog-registry', () => {
     )
     await clearCatalogCache()
 
-    const result = await getCatalogOrFallback()
+    const result = await getCatalogOrFallback({ url: 'https://fixture.invalid/catalog.json' })
     expect(result.source).toBe('baseline')
     expect(result.manifest.models.length).toBeGreaterThan(0)
     expect(result.error).toContain('boom')
@@ -232,8 +232,8 @@ describe('model-catalog-registry', () => {
     )
     await clearCatalogCache()
 
-    await getCatalogOrFallback()
-    const fallback = await getCatalogOrFallback({ force: true })
+    await getCatalogOrFallback({ url: 'https://fixture.invalid/catalog.json' })
+    const fallback = await getCatalogOrFallback({ force: true, url: 'https://fixture.invalid/catalog.json' })
     expect(fallback.source).toBe('cache')
     expect(fallback.error).toContain('network down')
     expect(fallback.manifest.models[0].model_name).toBe('unsloth/test')
@@ -253,7 +253,7 @@ describe('model-catalog-registry', () => {
     )
     await clearCatalogCache()
 
-    const result = await getCatalogOrFallback()
+    const result = await getCatalogOrFallback({ url: 'https://fixture.invalid/catalog.json' })
     expect(result.source).toBe('baseline')
     expect(result.error).toMatch(/schema_version 999/)
   })
@@ -271,7 +271,7 @@ describe('model-catalog-registry', () => {
     )
     await clearCatalogCache()
 
-    const result = await getCatalogOrFallback()
+    const result = await getCatalogOrFallback({ url: 'https://fixture.invalid/catalog.json' })
     expect(result.source).toBe('baseline')
     expect(result.error).toMatch(/not a valid catalog/)
   })

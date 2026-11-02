@@ -1,11 +1,11 @@
 import { useCallback, useMemo } from 'react'
 import { toast } from 'sonner'
+import { readAtomicDownloadPlan } from '@janhq/core'
 
 import {
-  VOICE_MMPROJ_URL,
-  VOICE_MODEL_BYTES,
+  voiceModelDownloadBytes,
+  voiceModelSources,
   VOICE_MODEL_ID,
-  VOICE_MODEL_URL,
   VOICE_PROVIDER,
 } from '@/constants/voice'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
@@ -51,7 +51,9 @@ export function useVoiceModel(): VoiceModelState {
   const localDownloadingModels = useDownloadStore(
     (state) => state.localDownloadingModels
   )
-  const resumableDownloads = useDownloadStore((state) => state.resumableDownloads)
+  const resumableDownloads = useDownloadStore(
+    (state) => state.resumableDownloads
+  )
   const addLocalDownloadingModel = useDownloadStore(
     (state) => state.addLocalDownloadingModel
   )
@@ -92,15 +94,29 @@ export function useVoiceModel(): VoiceModelState {
     markSilentImport(VOICE_MODEL_ID)
 
     try {
+      const resume = resumableDownloads.has(VOICE_MODEL_ID)
+      const saved = resume
+        ? readAtomicDownloadPlan(`request:${VOICE_PROVIDER}/${VOICE_MODEL_ID}`)
+        : undefined
+      if (resume && !saved)
+        throw new Error(
+          'This download has no recorded model plan. Start a new download; partial files were kept.'
+        )
+      const sources = saved ? undefined : voiceModelSources()
+      const modelPath = saved?.files[0]?.url ?? sources!.model.url
+      const projectorPath = saved
+        ? saved.files.find((file) => file.purpose === 'projector')?.url
+        : sources!.projector.url
       await serviceHub
         .models()
         .pullModelWithMetadata(
           VOICE_MODEL_ID,
-          VOICE_MODEL_URL,
-          VOICE_MMPROJ_URL,
+          modelPath,
+          projectorPath,
           huggingfaceToken,
           false,
-          resumableDownloads.has(VOICE_MODEL_ID)
+          resume,
+          { provider: VOICE_PROVIDER }
         )
     } catch (error) {
       // If the pull rejects before any DownloadEvent fires, the global listener
@@ -155,7 +171,7 @@ export function useVoiceModel(): VoiceModelState {
     downloading,
     progress: progressEntry?.progress ?? 0,
     currentBytes: progressEntry?.current ?? 0,
-    totalBytes: progressEntry?.total || VOICE_MODEL_BYTES,
+    totalBytes: progressEntry?.total || voiceModelDownloadBytes(),
     download,
     cancelDownload,
     remove,

@@ -35,6 +35,7 @@ export interface SafetensorsFile {
 }
 
 export interface CatalogModel {
+  revision?: string
   model_name: string
   description: string
   library_name?: string
@@ -223,7 +224,9 @@ export interface ModelsService {
   fetchModelCatalog(): Promise<ModelCatalog>
   fetchHuggingFaceRepo(
     repoId: string,
-    hfToken?: string
+    hfToken?: string,
+    revision?: string,
+    signal?: AbortSignal
   ): Promise<HuggingFaceRepo | null>
   /**
    * Long-tail fallback: query HF for the top-N candidates matching a free

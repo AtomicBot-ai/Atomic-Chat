@@ -1,3 +1,6 @@
+import { usesUnifiedModelCatalog } from '@/services/unified-model-catalog'
+import { unifiedChatModels } from '@/services/models/hf-catalog'
+import { atomicModelCatalogSnapshot } from '@janhq/core'
 /**
  * Zustand store wrapping the model-catalog loader.
  *
@@ -81,7 +84,7 @@ const baselineIndex = (message: string): IndexFetchResult => ({
 })
 
 export const useModelCatalogStore = create<ModelCatalogState>()((set) => ({
-  catalog: adopt(BASELINE_MODEL_CATALOG),
+  catalog: adopt(usesUnifiedModelCatalog() ? unifiedChatModels(atomicModelCatalogSnapshot()) : BASELINE_MODEL_CATALOG),
   manifestUpdatedAt: null,
   source: 'baseline',
   status: 'idle',
@@ -92,6 +95,15 @@ export const useModelCatalogStore = create<ModelCatalogState>()((set) => ({
   indexFetchedAt: null,
   hasInitialized: false,
   refresh: async (options?: FetchOptions) => {
+    if (options?.url === undefined && usesUnifiedModelCatalog()) {
+      set({ status: 'loading', error: null })
+      const result = await getCatalogOrFallback(options)
+      set({ catalog: adopt(result.manifest.models), manifestUpdatedAt: result.manifestUpdatedAt,
+        source: result.source, fetchedAt: result.fetchedAt, error: result.error ?? null, index: null,
+        indexSource: result.source, indexFetchedAt: result.fetchedAt, hasInitialized: true, status: 'success',
+      })
+      return
+    }
     const initialState = useModelCatalogStore.getState()
     set({ status: 'loading', error: null })
 

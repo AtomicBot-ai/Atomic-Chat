@@ -23,9 +23,10 @@ const mocks = vi.hoisted(() => ({
 
 // A minimal in-process bus, so the test drives the dialog the way the
 // extension does: by emitting the real event name.
-vi.mock('@janhq/core', () => {
+vi.mock('@janhq/core', async (importOriginal) => {
   const handlers = new Map<string, Set<(payload: unknown) => void>>()
   return {
+    ...(await importOriginal<typeof import('@janhq/core')>()),
     events: {
       on: (name: string, handler: (payload: unknown) => void) => {
         if (!handlers.has(name)) handlers.set(name, new Set())

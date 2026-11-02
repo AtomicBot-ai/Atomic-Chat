@@ -1,3 +1,4 @@
+import { unifiedModelCollection } from '../unified-model-catalog'
 /**
  * GenieX's curated model list — `atomic-chat-conf/models/geniex-models.json` (openspec change
  * `add-geniex-runtime`, spec `geniex-models`).
@@ -22,8 +23,15 @@ import { invoke } from '@tauri-apps/api/core'
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 
 import baselineList from './baseline-models.json'
-import { GENIEX_CHIPS, GENIEX_DEVICES, type GeniexChip, type GeniexDevice, type GeniexHubFile } from './types'
+import {
+  GENIEX_CHIPS,
+  GENIEX_DEVICES,
+  type GeniexChip,
+  type GeniexDevice,
+  type GeniexHubFile,
+} from './types'
 
+/** @deprecated Independent catalog URL; retained for legacy/custom adapters. Production desktop projects models/catalog.json. */
 export const DEFAULT_GENIEX_MODELS_URL =
   'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/models/geniex-models.json'
 
@@ -49,7 +57,8 @@ export const GENIEX_PLATFORMS = ['win-arm64'] as const
 export type GeniexPlatform = (typeof GENIEX_PLATFORMS)[number]
 
 /** Where AI Hub bundles are allowed to come from: Qualcomm's S3, like conf's schema says. */
-const BUNDLE_URL = /^https:\/\/qaihub-public-assets\.s3\.us-west-2\.amazonaws\.com\/qai-hub-models\//
+const BUNDLE_URL =
+  /^https:\/\/qaihub-public-assets\.s3\.us-west-2\.amazonaws\.com\/qai-hub-models\//
 
 export type GeniexFile = GeniexHubFile
 
@@ -132,11 +141,14 @@ type Json = Record<string, unknown>
 
 const isObject = (value: unknown): value is Json =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
-const isString = (value: unknown): value is string => typeof value === 'string' && value.length > 0
+const isString = (value: unknown): value is string =>
+  typeof value === 'string' && value.length > 0
 const isPositiveInt = (value: unknown): value is number =>
   typeof value === 'number' && Number.isInteger(value) && value > 0
-const isDevice = (value: unknown): value is GeniexDevice => GENIEX_DEVICES.includes(value as GeniexDevice)
-const isChip = (value: unknown): value is GeniexChip => GENIEX_CHIPS.includes(value as GeniexChip)
+const isDevice = (value: unknown): value is GeniexDevice =>
+  GENIEX_DEVICES.includes(value as GeniexDevice)
+const isChip = (value: unknown): value is GeniexChip =>
+  GENIEX_CHIPS.includes(value as GeniexChip)
 const isPlatform = (value: unknown): value is GeniexPlatform =>
   GENIEX_PLATFORMS.includes(value as GeniexPlatform)
 const isSafeGguf = (value: unknown): value is string =>
@@ -147,7 +159,12 @@ const isSafeGguf = (value: unknown): value is string =>
 function parseGgufFile(raw: unknown): GeniexFile | null {
   if (!isObject(raw)) return null
   const { path, size, sha256 } = raw
-  if (!isSafeGguf(path) || !isPositiveInt(size) || typeof sha256 !== 'string' || !SHA256.test(sha256)) {
+  if (
+    !isSafeGguf(path) ||
+    !isPositiveInt(size) ||
+    typeof sha256 !== 'string' ||
+    !SHA256.test(sha256)
+  ) {
     return null
   }
   return { path, size, sha256 }
@@ -155,14 +172,44 @@ function parseGgufFile(raw: unknown): GeniexFile | null {
 
 /** The fields every model carries, whatever its kind; `null` for a malformed one. */
 function parseCommon(raw: Json) {
-  const { id, name, description, task, license, context_length, tools, reasoning, vision } = raw
+  const {
+    id,
+    name,
+    description,
+    task,
+    license,
+    context_length,
+    tools,
+    reasoning,
+    vision,
+  } = raw
   if (typeof id !== 'string' || !ID.test(id)) return null
-  if (!isString(name) || !isString(description) || task !== 'chat' || !isString(license)) return null
+  if (
+    !isString(name) ||
+    !isString(description) ||
+    task !== 'chat' ||
+    !isString(license)
+  )
+    return null
   if (!isPositiveInt(context_length)) return null
-  if (typeof tools !== 'boolean' || typeof reasoning !== 'boolean' || typeof vision !== 'boolean') {
+  if (
+    typeof tools !== 'boolean' ||
+    typeof reasoning !== 'boolean' ||
+    typeof vision !== 'boolean'
+  ) {
     return null
   }
-  return { id, name, description, task: 'chat' as const, license, context_length, tools, reasoning, vision }
+  return {
+    id,
+    name,
+    description,
+    task: 'chat' as const,
+    license,
+    context_length,
+    tools,
+    reasoning,
+    vision,
+  }
 }
 
 function parseGgufModel(raw: Json): GeniexGgufModel | null {
@@ -174,13 +221,18 @@ function parseGgufModel(raw: Json): GeniexGgufModel | null {
   if (typeof gated !== 'boolean') return null
   const file = parseGgufFile(raw.file)
   if (!file) return null
-  const mmproj = raw.mmproj === undefined ? undefined : parseGgufFile(raw.mmproj)
+  const mmproj =
+    raw.mmproj === undefined ? undefined : parseGgufFile(raw.mmproj)
   if (mmproj === null) return null
   // A vision model needs its projector: without one the file is a text model mislabelled.
   if (common.vision && !mmproj) return null
   // A device or platform this client does not know is left out; a model left with none is hidden.
-  const knownDevices = Array.isArray(devices) ? [...new Set(devices.filter(isDevice))] : []
-  const knownPlatforms = Array.isArray(platforms) ? [...new Set(platforms.filter(isPlatform))] : []
+  const knownDevices = Array.isArray(devices)
+    ? [...new Set(devices.filter(isDevice))]
+    : []
+  const knownPlatforms = Array.isArray(platforms)
+    ? [...new Set(platforms.filter(isPlatform))]
+    : []
   if (knownDevices.length === 0 || knownPlatforms.length === 0) return null
   return {
     kind: 'gguf',
@@ -206,14 +258,20 @@ function parseVariant(raw: unknown): GeniexBundleVariant | null {
   if (!isObject(bundle)) return null
   const { url, size, sha256 } = bundle
   if (typeof url !== 'string' || !BUNDLE_URL.test(url)) return null
-  if (!isPositiveInt(size) || typeof sha256 !== 'string' || !SHA256.test(sha256)) return null
+  if (
+    !isPositiveInt(size) ||
+    typeof sha256 !== 'string' ||
+    !SHA256.test(sha256)
+  )
+    return null
   if (!isString(precision)) return null
   return {
     id,
     chip,
     bundle: { url, size, sha256 },
     precision,
-    ...(typeof min_runtime_version === 'string' && VERSION.test(min_runtime_version)
+    ...(typeof min_runtime_version === 'string' &&
+    VERSION.test(min_runtime_version)
       ? { min_runtime_version }
       : {}),
   }
@@ -242,7 +300,13 @@ function parseModel(raw: unknown): GeniexModel | null {
 function parseHuggingFace(raw: unknown): GeniexList['huggingface'] {
   if (!isObject(raw)) return { quantizations: [], backends: {} }
   const quantizations = Array.isArray(raw.quantizations)
-    ? [...new Set(raw.quantizations.filter((q): q is string => typeof q === 'string' && QUANTIZATION.test(q)))]
+    ? [
+        ...new Set(
+          raw.quantizations.filter(
+            (q): q is string => typeof q === 'string' && QUANTIZATION.test(q)
+          )
+        ),
+      ]
     : []
   const backends: GeniexList['huggingface']['backends'] = {}
   if (isObject(raw.backends)) {
@@ -262,18 +326,22 @@ function parseHuggingFace(raw: unknown): GeniexList['huggingface'] {
 export function parseGeniexList(raw: unknown): GeniexList {
   if (!isObject(raw)) throw new Error('The GenieX model list is not an object.')
   const { schema_version, updated_at, models } = raw
-  if (!isPositiveInt(schema_version)) throw new Error('The GenieX model list has no schema_version.')
+  if (!isPositiveInt(schema_version))
+    throw new Error('The GenieX model list has no schema_version.')
   if (schema_version > SUPPORTED_SCHEMA_VERSION) {
     throw new Error(
       `The GenieX model list has schema_version ${schema_version}; this app reads ${SUPPORTED_SCHEMA_VERSION}.`
     )
   }
-  if (!Array.isArray(models)) throw new Error('The GenieX model list has no models array.')
+  if (!Array.isArray(models))
+    throw new Error('The GenieX model list has no models array.')
   return {
     schema_version,
     updated_at: typeof updated_at === 'string' ? updated_at : '',
     huggingface: parseHuggingFace(raw.huggingface),
-    models: models.map(parseModel).filter((model): model is GeniexModel => model !== null),
+    models: models
+      .map(parseModel)
+      .filter((model): model is GeniexModel => model !== null),
   }
 }
 
@@ -321,9 +389,14 @@ export const indexedDbListCache: GeniexListCache = {
     if (!db) return null
     return new Promise((resolve) => {
       try {
-        const request = db.transaction(CACHE_STORE, 'readonly').objectStore(CACHE_STORE).get(CACHE_KEY)
+        const request = db
+          .transaction(CACHE_STORE, 'readonly')
+          .objectStore(CACHE_STORE)
+          .get(CACHE_KEY)
         request.onsuccess = () => {
-          const entry = request.result as { value: unknown; fetchedAt: number } | undefined
+          const entry = request.result as
+            | { value: unknown; fetchedAt: number }
+            | undefined
           resolve(entry && Number.isFinite(entry.fetchedAt) ? entry : null)
         }
         request.onerror = () => resolve(null)
@@ -338,7 +411,9 @@ export const indexedDbListCache: GeniexListCache = {
     await new Promise<void>((resolve) => {
       try {
         const transaction = db.transaction(CACHE_STORE, 'readwrite')
-        transaction.objectStore(CACHE_STORE).put({ value, fetchedAt }, CACHE_KEY)
+        transaction
+          .objectStore(CACHE_STORE)
+          .put({ value, fetchedAt }, CACHE_KEY)
         transaction.oncomplete = () => resolve()
         transaction.onerror = () => resolve()
         transaction.onabort = () => resolve()
@@ -355,12 +430,21 @@ export const indexedDbListCache: GeniexListCache = {
 async function fetchJsonFrom(url: string): Promise<unknown> {
   if (url.startsWith('file://')) {
     // `file:///C:/…` has the pathname `/C:/…`; a Windows path starts at the drive letter.
-    const path = decodeURIComponent(new URL(url).pathname).replace(/^\/([A-Za-z]:\/)/, '$1')
+    const path = decodeURIComponent(new URL(url).pathname).replace(
+      /^\/([A-Za-z]:\/)/,
+      '$1'
+    )
     return JSON.parse(await invoke<string>('read_file_sync', { args: [path] }))
   }
   const get = async (fetcher: typeof fetch) => {
-    const response = await fetcher(url, { method: 'GET', headers: { Accept: 'application/json' } })
-    if (!response.ok) throw new Error(`GenieX model list: ${response.status} ${response.statusText}`)
+    const response = await fetcher(url, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    })
+    if (!response.ok)
+      throw new Error(
+        `GenieX model list: ${response.status} ${response.statusText}`
+      )
     return (await response.json()) as unknown
   }
   try {
@@ -374,7 +458,10 @@ async function fetchJsonFrom(url: string): Promise<unknown> {
 
 const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> =>
   new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`GenieX model list: no answer in ${ms} ms`)), ms)
+    const timer = setTimeout(
+      () => reject(new Error(`GenieX model list: no answer in ${ms} ms`)),
+      ms
+    )
     promise.then(
       (value) => {
         clearTimeout(timer)
@@ -407,7 +494,19 @@ export interface GeniexListOptions {
  * The list: a fresh cache (unless forced), else the network (cached when it parses), else the last
  * accepted list, else conf's first release bundled here. Never throws.
  */
-export async function fetchGeniexList(options: GeniexListOptions = {}): Promise<GeniexListResult> {
+export async function fetchGeniexList(
+  options: GeniexListOptions = {}
+): Promise<GeniexListResult> {
+  if (!options.url && !options.fetchJson && !options.cache) {
+    const result = await unifiedModelCollection('geniex-models', options.force)
+    return {
+      list: parseGeniexList(result.data),
+      source: result.source,
+      fetchedAt: result.fetchedAt,
+      ...(result.error ? { error: result.error } : {}),
+    }
+  }
+
   const cache = options.cache ?? indexedDbListCache
   const fetchJson = options.fetchJson ?? fetchJsonFrom
   const cached = await cache.read()
@@ -419,18 +518,37 @@ export async function fetchGeniexList(options: GeniexListOptions = {}): Promise<
       return null
     }
   })()
-  if (!options.force && cached && accepted && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
+  if (
+    !options.force &&
+    cached &&
+    accepted &&
+    Date.now() - cached.fetchedAt < CACHE_TTL_MS
+  ) {
     return { list: accepted, source: 'cache', fetchedAt: cached.fetchedAt }
   }
   try {
-    const raw = await withTimeout(fetchJson(options.url ?? GENIEX_MODELS_URL), FETCH_TIMEOUT_MS)
+    const raw = await withTimeout(
+      fetchJson(options.url ?? GENIEX_MODELS_URL),
+      FETCH_TIMEOUT_MS
+    )
     const list = parseGeniexList(raw)
     const fetchedAt = Date.now()
     await cache.write(raw, fetchedAt)
     return { list, source: 'remote', fetchedAt }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    if (accepted && cached) return { list: accepted, source: 'cache', fetchedAt: cached.fetchedAt, error: message }
-    return { list: parseGeniexList(BASELINE_LIST), source: 'baseline', fetchedAt: null, error: message }
+    if (accepted && cached)
+      return {
+        list: accepted,
+        source: 'cache',
+        fetchedAt: cached.fetchedAt,
+        error: message,
+      }
+    return {
+      list: parseGeniexList(BASELINE_LIST),
+      source: 'baseline',
+      fetchedAt: null,
+      error: message,
+    }
   }
 }

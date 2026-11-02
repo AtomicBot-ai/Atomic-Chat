@@ -7,6 +7,7 @@ import { useImageForm } from '@/hooks/useImageForm'
 import {
   downloadArtifact,
   resolveDiffusionDownloadTaskId,
+  readDiffusionDownloadRequest,
 } from '@/lib/diffusion/models'
 import { PRISM_PROVIDER } from '@/lib/model-setup'
 import type { ServiceHub } from '@/services'
@@ -37,7 +38,11 @@ export function resumeDownload(
   const imageCatalog = useImageGenerationStore.getState().catalog
   const huggingfaceToken = useGeneralSetting.getState().huggingfaceToken
 
-  const diffusionTarget = imageCatalog
+  const savedDiffusion = readDiffusionDownloadRequest(download.id)
+  const diffusionTarget = savedDiffusion ? {
+    family: savedDiffusion.family,
+    quant: { id: savedDiffusion.quantId },
+  } : imageCatalog
     ? resolveDiffusionDownloadTaskId(imageCatalog, download.id)
     : null
   if (diffusionTarget) {

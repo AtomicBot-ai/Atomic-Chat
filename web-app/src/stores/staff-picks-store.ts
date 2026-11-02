@@ -1,3 +1,4 @@
+import { unifiedModelSnapshot, usesUnifiedModelCatalog } from '@/services/unified-model-catalog'
 /**
  * Zustand store wrapping the remote staff-picks registry loader.
  *
@@ -17,6 +18,7 @@ import { create } from 'zustand'
 import {
   filterStaffPicksForPlatform,
   getCachedManifest,
+  sanitizePick,
   getStaffPicksOrFallback,
   type FetchOptions,
   type StaffPick,
@@ -41,13 +43,14 @@ type StaffPicksState = {
 }
 
 const seedPicks = (): StaffPick[] => {
+  if (usesUnifiedModelCatalog()) return (unifiedModelSnapshot('staff-picks').picks as unknown[]).map(sanitizePick).filter((p): p is StaffPick => p !== null)
   const cached = getCachedManifest()
   if (cached) return cached.manifest.picks.slice()
   return BASELINE_STAFF_PICKS.slice()
 }
 
 const baselineFallback = (message: string): StaffPicksFetchResult => ({
-  picks: BASELINE_STAFF_PICKS.slice(),
+  picks: seedPicks(),
   source: 'baseline',
   fetchedAt: null,
   manifestUpdatedAt: null,

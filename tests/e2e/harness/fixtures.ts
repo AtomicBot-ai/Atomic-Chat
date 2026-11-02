@@ -7,19 +7,31 @@
  * the core's own test doubles, and copying them here would let the copy drift
  * from the process protocol the core actually expects.
  */
+import { startModelMirror } from './model-mirror.js'
+import { readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { once } from 'node:events'
 import { createServer } from 'node:http'
-import { appendFile, cp, mkdir, readdir, stat, writeFile } from 'node:fs/promises'
+import {
+  appendFile,
+  cp,
+  mkdir,
+  readdir,
+  stat,
+  writeFile,
+} from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { Profile } from './profile.js'
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
-export const CORE_REPO = process.env.ATOMIC_CORE_REPO ?? resolve(REPO_ROOT, '../atomic-chat-core')
+export const CORE_REPO =
+  process.env.ATOMIC_CORE_REPO ?? resolve(REPO_ROOT, '../atomic-chat-core')
 
 export async function coreHelper<T>(file: string): Promise<T> {
-  return (await import(/* @vite-ignore */ pathToFileURL(join(CORE_REPO, file)).href)) as T
+  return (await import(
+    /* @vite-ignore */ pathToFileURL(join(CORE_REPO, file)).href
+  )) as T
 }
 
 /**
@@ -73,9 +85,14 @@ export async function installFakeBackend(
   profile: Profile,
   options: FakeBackendOptions = {}
 ): Promise<void> {
-  const config = await coreHelper<{ dataLayout: (root: string) => unknown }>('src/config/index.ts')
+  const config = await coreHelper<{ dataLayout: (root: string) => unknown }>(
+    'src/config/index.ts'
+  )
   const pack = await coreHelper<{
-    installFakeBackend: (layout: unknown, options: Record<string, unknown>) => Promise<unknown>
+    installFakeBackend: (
+      layout: unknown,
+      options: Record<string, unknown>
+    ) => Promise<unknown>
   }>('test/helpers/fake-backend-pack.ts')
   const provider = options.provider ?? FAKE_PROVIDER
   const version = options.version ?? FAKE_BACKEND_VERSION
@@ -109,7 +126,11 @@ function ggufWith(metadata: Record<string, string>): Buffer {
   stringType.writeUInt32LE(8)
   return Buffer.concat([
     header,
-    ...Object.entries(metadata).flatMap(([key, value]) => [text(key), stringType, text(value)]),
+    ...Object.entries(metadata).flatMap(([key, value]) => [
+      text(key),
+      stringType,
+      text(value),
+    ]),
   ])
 }
 
@@ -130,11 +151,24 @@ export interface FakeModelOptions {
  * large as `model_size_bytes` says. `embedding` is always written, which keeps
  * the extension from trying to read metadata out of that filler to find out.
  */
-export async function writeFakeModel(profile: Profile, modelId: string, options: FakeModelOptions = {}): Promise<void> {
-  const dir = join(profile.dataFolder, 'llamacpp', 'models', ...modelId.split('/'))
+export async function writeFakeModel(
+  profile: Profile,
+  modelId: string,
+  options: FakeModelOptions = {}
+): Promise<void> {
+  const dir = join(
+    profile.dataFolder,
+    'llamacpp',
+    'models',
+    ...modelId.split('/')
+  )
   await mkdir(dir, { recursive: true })
   const weights = options.tools
-    ? ggufWith({ 'general.architecture': 'llama', 'tokenizer.chat_template': '{{ messages }}{% if tools %}{{ tools }}{% endif %}' })
+    ? ggufWith({
+        'general.architecture': 'llama',
+        'tokenizer.chat_template':
+          '{{ messages }}{% if tools %}{{ tools }}{% endif %}',
+      })
     : Buffer.alloc(64, 0x47)
   await writeFile(join(dir, 'model.gguf'), weights)
   await writeFile(
@@ -196,22 +230,38 @@ export async function startFakeCloud(options: {
   const server = createServer((req, res) => {
     const path = (req.url ?? '').split('?')[0] ?? ''
     const authorization = req.headers.authorization ?? ''
-    const finish = (status: number, headers: Record<string, string>, body: string) => {
+    const finish = (
+      status: number,
+      headers: Record<string, string>,
+      body: string
+    ) => {
       seen.push({ method: req.method ?? '', path, authorization, status })
       res.writeHead(status, headers)
       res.end(body)
     }
     const json = (status: number, body: unknown) =>
-      finish(status, { 'content-type': 'application/json' }, JSON.stringify(body))
+      finish(
+        status,
+        { 'content-type': 'application/json' },
+        JSON.stringify(body)
+      )
 
     let raw = ''
     req.on('data', (chunk: Buffer) => (raw += chunk.toString()))
     req.on('end', () => {
       if (authorization !== `Bearer ${options.apiKey}`) {
-        return json(401, { error: { message: 'Incorrect API key provided', type: 'invalid_request_error' } })
+        return json(401, {
+          error: {
+            message: 'Incorrect API key provided',
+            type: 'invalid_request_error',
+          },
+        })
       }
       if (req.method === 'GET' && path === '/v1/models') {
-        return json(200, { object: 'list', data: [{ id: options.model, object: 'model', owned_by: 'e2e' }] })
+        return json(200, {
+          object: 'list',
+          data: [{ id: options.model, object: 'model', owned_by: 'e2e' }],
+        })
       }
       if (req.method === 'POST' && path === '/v1/chat/completions') {
         const completion = JSON.parse(raw || '{}') as CloudCompletion
@@ -230,18 +280,37 @@ export async function startFakeCloud(options: {
             object: 'chat.completion',
             created: 1_700_000_000,
             model: options.model,
-            choices: [{ index: 0, message: { role: 'assistant', content: options.reply }, finish_reason: 'stop' }],
+            choices: [
+              {
+                index: 0,
+                message: { role: 'assistant', content: options.reply },
+                finish_reason: 'stop',
+              },
+            ],
             usage: { prompt_tokens: 3, completion_tokens: 3, total_tokens: 6 },
           })
         }
         const words = options.reply.split(' ')
         const frames = [
-          ...words.map((word, i) => chunk(i === 0 ? { role: 'assistant', content: word } : { content: ` ${word}` }, null)),
+          ...words.map((word, i) =>
+            chunk(
+              i === 0
+                ? { role: 'assistant', content: word }
+                : { content: ` ${word}` },
+              null
+            )
+          ),
           chunk({}, 'stop'),
         ].map((frame) => `data: ${JSON.stringify(frame)}\n\n`)
-        return finish(200, { 'content-type': 'text/event-stream' }, `${frames.join('')}data: [DONE]\n\n`)
+        return finish(
+          200,
+          { 'content-type': 'text/event-stream' },
+          `${frames.join('')}data: [DONE]\n\n`
+        )
       }
-      return json(404, { error: { message: `no route for ${req.method} ${path}` } })
+      return json(404, {
+        error: { message: `no route for ${req.method} ${path}` },
+      })
     })
   })
   server.listen(0, '127.0.0.1')
@@ -261,17 +330,24 @@ export async function startFakeCloud(options: {
 }
 
 /** The port baked into the e2e build as the Hub's catalog and picks address (Makefile: E2E_FIXTURE_PORT). */
-export const HUB_FIXTURE_PORT = Number(process.env.ATOMIC_E2E_FIXTURE_PORT ?? 47391)
+export const HUB_FIXTURE_PORT = Number(
+  process.env.ATOMIC_E2E_FIXTURE_PORT ?? 47391
+)
 
 export interface HubFixtureRequest {
   method: string
   path: string
+  sourcePath?: string
   authorization: string
   /** The `Range` header, empty when the whole file was asked for. */
   range: string
 }
 
 export interface HubFixture {
+  proxyUrl: string
+  advanceMain: () => void
+  revision: string
+
   modelBytes: number
   /** sha256 of the model file, to compare with what landed on disk. */
   modelSha256: string
@@ -319,7 +395,8 @@ export async function startHubFixture(options: {
   header.writeBigUInt64LE(0n, 8) // tensor count
   header.writeBigUInt64LE(0n, 16) // metadata key-value count
   const model = Buffer.alloc(modelBytes)
-  for (let at = header.length; at + 4 <= modelBytes; at += 4) model.writeUInt32LE(at, at)
+  for (let at = header.length; at + 4 <= modelBytes; at += 4)
+    model.writeUInt32LE(at, at)
   header.copy(model)
 
   const catalog = {
@@ -334,7 +411,11 @@ export async function startHubFixture(options: {
         downloads: 0,
         num_quants: 1,
         quants: [
-          { model_id: options.quantId, path: `${origin}/model.gguf`, file_size: options.sizeLabel ?? '0.03 GB' },
+          {
+            model_id: options.quantId,
+            path: `${origin}/model.gguf`,
+            file_size: options.sizeLabel ?? '0.03 GB',
+          },
         ],
         num_mmproj: 0,
         mmproj_models: [],
@@ -347,34 +428,116 @@ export async function startHubFixture(options: {
   const picks = {
     schema_version: 1,
     updated_at: '2026-01-01T00:00:00Z',
-    picks: [{ model_name: options.modelName, title: options.title, summary: 'Fixture pick.', format: 'gguf', order: 1, active: true }],
+    picks: [
+      {
+        model_name: options.modelName,
+        title: options.title,
+        summary: 'Fixture pick.',
+        format: 'gguf',
+        order: 1,
+        active: true,
+      },
+    ],
   }
 
+  const revision = 'a'.repeat(40)
+  const nextRevision = 'b'.repeat(40)
+  let currentRevision = revision
+  const hash = createHash('sha256').update(model).digest('hex')
+  const unified = JSON.parse(
+    readFileSync(
+      join(REPO_ROOT, 'core/src/browser/modelCatalogBaseline.json'),
+      'utf8'
+    )
+  )
+  for (const collection of Object.values(unified.collections) as Array<
+    Record<string, unknown>
+  >) {
+    for (const key of [
+      'entries',
+      'recommendations',
+      'low_spec_recommendations',
+    ])
+      if (key in collection) collection[key] = []
+    if ('tiers' in collection) collection.tiers = {}
+  }
+  const id = `chat:${options.modelName}`
+  const declaredSize = options.sizeLabel
+    ? Number.parseFloat(options.sizeLabel) *
+      (/GB/.test(options.sizeLabel) ? 1024 ** 3 : 1024 ** 2)
+    : model.length
+  unified.models = {
+    [id]: {
+      kind: 'chat',
+      format: 'gguf',
+      definition: { ...picks.picks[0], revision },
+      variants: { default: { selection: 'all-required-files' } },
+      files: [
+        {
+          path: 'model.gguf',
+          size: declaredSize,
+          sha256: hash,
+          model_id: options.quantId,
+        },
+      ],
+      metadata: { author: 'e2e', tags: ['gguf'] },
+    },
+  }
+  unified.collections['staff-picks'].entries = [
+    { model: id, variant: 'default' },
+  ]
   const seen: HubFixtureRequest[] = []
   let failStatus: number | null = null
   let abortAfterBytes: number | null = null
-  const server = createServer((req, res) => {
-    const path = (req.url ?? '').split('?')[0] ?? ''
+  const handler: import('node:http').RequestListener = (req, res) => {
+    const sourcePath = (req.url ?? '').split('?')[0] ?? ''
+    const path = sourcePath.includes('/resolve/') ? '/model.gguf' : sourcePath
     seen.push({
       method: req.method ?? '',
       path,
+      sourcePath,
       authorization: req.headers.authorization ?? '',
       range: req.headers.range ?? '',
     })
     const json = (body: unknown) => {
-      res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' })
+      res.writeHead(200, {
+        'content-type': 'application/json',
+        'access-control-allow-origin': '*',
+      })
       res.end(JSON.stringify(body))
+    }
+    if (path === '/unified-model-catalog.json') return json(unified)
+    if (path.startsWith(`/api/models/${options.modelName}/revision/`)) {
+      const ref = path.split('/revision/')[1]
+      return json({
+        id: options.modelName,
+        modelId: options.modelName,
+        author: 'e2e',
+        tags: ['gguf'],
+        sha: ref === 'main' ? currentRevision : ref,
+        siblings: [
+          {
+            rfilename: 'model.gguf',
+            lfs: { size: declaredSize, sha256: hash },
+          },
+        ],
+      })
     }
     if (path === '/catalog.json') return json(catalog)
     if (path === '/staff-picks.json') return json(picks)
     if (path === '/model.gguf' && failStatus !== null) {
       res.writeHead(failStatus, { 'content-type': 'application/json' })
-      return res.end(JSON.stringify({ error: `fixture refused with ${failStatus}` }))
+      return res.end(
+        JSON.stringify({ error: `fixture refused with ${failStatus}` })
+      )
     }
     if (path === '/model.gguf') {
       if (failuresLeft > 0) {
         failuresLeft -= 1
-        res.writeHead(503, { 'content-type': 'text/plain', 'access-control-allow-origin': '*' })
+        res.writeHead(503, {
+          'content-type': 'text/plain',
+          'access-control-allow-origin': '*',
+        })
         return res.end('try again')
       }
       const range = /^bytes=(\d+)-/.exec(req.headers.range ?? '')
@@ -383,7 +546,11 @@ export async function startHubFixture(options: {
         'content-type': 'application/octet-stream',
         'content-length': String(model.length - from),
         'accept-ranges': 'bytes',
-        ...(range ? { 'content-range': `bytes ${from}-${model.length - 1}/${model.length}` } : {}),
+        ...(range
+          ? {
+              'content-range': `bytes ${from}-${model.length - 1}/${model.length}`,
+            }
+          : {}),
       })
       if (req.method === 'HEAD') return res.end()
       // A megabyte every 150 ms: about five seconds for the default size, so
@@ -394,26 +561,39 @@ export async function startHubFixture(options: {
         if (res.destroyed) return
         // A transfer that dies with the promised length unmet: what a dropped connection looks
         // like from the app's side, and the only way to reach the retry ladder from a fixture.
-        if (abortAfterBytes !== null && offset - from >= abortAfterBytes) return res.destroy()
+        if (abortAfterBytes !== null && offset - from >= abortAfterBytes)
+          return res.destroy()
         if (offset >= model.length) return res.end()
         const end = Math.min(offset + 1024 * 1024, model.length)
         res.write(model.subarray(offset, end))
         offset = end
-        setTimeout(pump, 150)
+        setTimeout(pump, 300)
       }
       return pump()
     }
     // Including the `.gz` twins the app asks for first.
     res.writeHead(404, { 'access-control-allow-origin': '*' })
     res.end()
-  })
+  }
+  const mirror = await startModelMirror(handler)
+  const server = createServer(handler)
   await new Promise<void>((resolve, reject) => {
     server.once('error', (error) =>
-      reject(new Error(`the Hub fixture could not listen on ${origin}: ${String(error)}. The port is baked into the e2e build.`))
+      reject(
+        new Error(
+          `the Hub fixture could not listen on ${origin}: ${String(error)}. The port is baked into the e2e build.`
+        )
+      )
     )
     server.listen(HUB_FIXTURE_PORT, '127.0.0.1', resolve)
   })
   return {
+    proxyUrl: mirror.proxyUrl,
+    revision,
+    advanceMain: () => {
+      currentRevision = nextRevision
+      unified.models[id].definition.revision = nextRevision
+    },
     modelBytes: model.length,
     modelSha256: createHash('sha256').update(model).digest('hex'),
     requests: () => [...seen],
@@ -424,6 +604,7 @@ export async function startHubFixture(options: {
       abortAfterBytes = bytes
     },
     stop: async () => {
+      await mirror.stop()
       server.closeAllConnections()
       server.close()
       await once(server, 'close')
@@ -444,20 +625,44 @@ export async function startHubFixture(options: {
 export const REAL_BACKEND_DIR = process.env.ATOMIC_E2E_LLAMA_BACKEND_DIR
 export const REAL_MODEL_GGUF = process.env.ATOMIC_E2E_MODEL_GGUF
 
-export async function installRealBackend(profile: Profile, backendDir: string): Promise<void> {
-  const target = join(profile.dataFolder, FAKE_PROVIDER, 'backends', FAKE_BACKEND_VERSION, FAKE_BACKEND)
+export async function installRealBackend(
+  profile: Profile,
+  backendDir: string
+): Promise<void> {
+  const target = join(
+    profile.dataFolder,
+    FAKE_PROVIDER,
+    'backends',
+    FAKE_BACKEND_VERSION,
+    FAKE_BACKEND
+  )
   await mkdir(dirname(target), { recursive: true })
   // Versioned dylibs are symlinks to one file; keep them that way.
   await cp(backendDir, target, { recursive: true, verbatimSymlinks: true })
 }
 
-export async function writeRealModel(profile: Profile, modelId: string, ggufPath: string): Promise<void> {
-  const dir = join(profile.dataFolder, 'llamacpp', 'models', ...modelId.split('/'))
+export async function writeRealModel(
+  profile: Profile,
+  modelId: string,
+  ggufPath: string
+): Promise<void> {
+  const dir = join(
+    profile.dataFolder,
+    'llamacpp',
+    'models',
+    ...modelId.split('/')
+  )
   await mkdir(dir, { recursive: true })
   const { size } = await stat(ggufPath)
   await writeFile(
     join(dir, 'model.yml'),
-    [`model_path: ${ggufPath}`, `name: ${modelId}`, `size_bytes: ${size}`, 'embedding: false', ''].join('\n')
+    [
+      `model_path: ${ggufPath}`,
+      `name: ${modelId}`,
+      `size_bytes: ${size}`,
+      'embedding: false',
+      '',
+    ].join('\n')
   )
 }
 
@@ -466,15 +671,21 @@ export async function writeRealModel(profile: Profile, modelId: string, ggufPath
  * opens one: it takes the next queued answer, or behaves as if the user
  * cancelled when there is none.
  */
-export async function answerNextDialog(profile: Profile, answer: string | string[] | null): Promise<void> {
-  await appendFile(join(profile.root, 'dialog-answers.jsonl'), `${JSON.stringify(answer)}\n`)
+export async function answerNextDialog(
+  profile: Profile,
+  answer: string | string[] | null
+): Promise<void> {
+  await appendFile(
+    join(profile.root, 'dialog-answers.jsonl'),
+    `${JSON.stringify(answer)}\n`
+  )
 }
 
 /** Kills fake backends the core journalled but did not get to stop. */
 export async function reapFakeBackends(dataFolder: string): Promise<void> {
-  const core = await coreHelper<{ reapJournalledChildren: (dataFolder: string) => void }>(
-    'test/helpers/compiled-core.ts'
-  )
+  const core = await coreHelper<{
+    reapJournalledChildren: (dataFolder: string) => void
+  }>('test/helpers/compiled-core.ts')
   core.reapJournalledChildren(dataFolder)
 }
 
@@ -487,7 +698,9 @@ export async function installedBackends(dataFolder: string): Promise<string[]> {
   for (const provider of ['llamacpp', 'llamacpp-upstream']) {
     const root = join(dataFolder, provider, 'backends')
     for (const version of await readdir(root).catch(() => [] as string[])) {
-      for (const backend of await readdir(join(root, version)).catch(() => [] as string[])) {
+      for (const backend of await readdir(join(root, version)).catch(
+        () => [] as string[]
+      )) {
         found.push(`${provider}:${version}/${backend}`)
       }
     }

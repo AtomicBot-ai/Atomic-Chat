@@ -1,3 +1,4 @@
+import { unifiedModelCollection } from '../unified-model-catalog'
 /**
  * LiteRT-LM's curated model list — `atomic-chat-conf/models/litert-lm-models.json` (openspec change
  * `add-litert-lm-runtime`, spec `litert-lm-models`).
@@ -27,6 +28,7 @@ import {
   type LiteRtLmNpu,
 } from './types'
 
+/** @deprecated Independent catalog URL; retained for legacy/custom adapters. Production desktop projects models/catalog.json. */
 export const DEFAULT_LITERT_LM_MODELS_URL =
   'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/models/litert-lm-models.json'
 
@@ -48,7 +50,12 @@ export const CACHE_TTL_MS = 60 * 60 * 1000
 const FETCH_TIMEOUT_MS = 10_000
 
 /** The platforms LiteRT-LM's library ships for, as conf names them. */
-export const LITERT_LM_PLATFORMS = ['macos-arm64', 'linux-x64', 'linux-arm64', 'win-x64'] as const
+export const LITERT_LM_PLATFORMS = [
+  'macos-arm64',
+  'linux-x64',
+  'linux-arm64',
+  'win-x64',
+] as const
 export type LiteRtLmPlatform = (typeof LITERT_LM_PLATFORMS)[number]
 
 export interface LiteRtLmFile {
@@ -115,7 +122,8 @@ type Json = Record<string, unknown>
 
 const isObject = (value: unknown): value is Json =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
-const isString = (value: unknown): value is string => typeof value === 'string' && value.length > 0
+const isString = (value: unknown): value is string =>
+  typeof value === 'string' && value.length > 0
 const isPositiveInt = (value: unknown): value is number =>
   typeof value === 'number' && Number.isInteger(value) && value > 0
 const isBackend = (value: unknown): value is LiteRtLmBackend =>
@@ -130,7 +138,12 @@ const isSafeFile = (value: unknown): value is string =>
 function parseFile(raw: unknown): LiteRtLmFile | null {
   if (!isObject(raw)) return null
   const { path, size, sha256 } = raw
-  if (!isSafeFile(path) || !isPositiveInt(size) || typeof sha256 !== 'string' || !SHA256.test(sha256)) {
+  if (
+    !isSafeFile(path) ||
+    !isPositiveInt(size) ||
+    typeof sha256 !== 'string' ||
+    !SHA256.test(sha256)
+  ) {
     return null
   }
   return { path, size, sha256 }
@@ -141,9 +154,16 @@ function parseVariant(raw: unknown): LiteRtLmVariant | null {
   const { id, backend, npu, platforms, min_runtime_version } = raw
   if (typeof id !== 'string' || !ID.test(id) || !isBackend(backend)) return null
   // An NPU file is compiled for one generation: without a target this client knows it runs nowhere.
-  if (backend === 'npu' ? !LITERT_LM_NPUS.includes(npu as LiteRtLmNpu) : npu !== undefined) return null
+  if (
+    backend === 'npu'
+      ? !LITERT_LM_NPUS.includes(npu as LiteRtLmNpu)
+      : npu !== undefined
+  )
+    return null
   // A platform this client does not know is left out; a variant left with none is hidden.
-  const known = Array.isArray(platforms) ? [...new Set(platforms.filter(isPlatform))] : []
+  const known = Array.isArray(platforms)
+    ? [...new Set(platforms.filter(isPlatform))]
+    : []
   if (known.length === 0) return null
   const file = parseFile(raw.file)
   if (!file) return null
@@ -152,7 +172,8 @@ function parseVariant(raw: unknown): LiteRtLmVariant | null {
     backend,
     ...(backend === 'npu' ? { npu: npu as LiteRtLmNpu } : {}),
     platforms: known,
-    ...(typeof min_runtime_version === 'string' && VERSION.test(min_runtime_version)
+    ...(typeof min_runtime_version === 'string' &&
+    VERSION.test(min_runtime_version)
       ? { min_runtime_version }
       : {}),
     file,
@@ -161,14 +182,34 @@ function parseVariant(raw: unknown): LiteRtLmVariant | null {
 
 function parseModel(raw: unknown): LiteRtLmModel | null {
   if (!isObject(raw)) return null
-  const { id, name, description, task, license, repo, revision, gated, context_length } = raw
+  const {
+    id,
+    name,
+    description,
+    task,
+    license,
+    repo,
+    revision,
+    gated,
+    context_length,
+  } = raw
   const { tools, reasoning, vision, variants } = raw
   if (typeof id !== 'string' || !ID.test(id)) return null
-  if (!isString(name) || !isString(description) || task !== 'chat' || !isString(license)) return null
+  if (
+    !isString(name) ||
+    !isString(description) ||
+    task !== 'chat' ||
+    !isString(license)
+  )
+    return null
   if (typeof repo !== 'string' || !REPO.test(repo)) return null
   if (typeof revision !== 'string' || !COMMIT.test(revision)) return null
   if (typeof gated !== 'boolean' || !isPositiveInt(context_length)) return null
-  if (typeof tools !== 'boolean' || typeof reasoning !== 'boolean' || typeof vision !== 'boolean') {
+  if (
+    typeof tools !== 'boolean' ||
+    typeof reasoning !== 'boolean' ||
+    typeof vision !== 'boolean'
+  ) {
     return null
   }
   if (!Array.isArray(variants)) return null
@@ -195,9 +236,12 @@ function parseModel(raw: unknown): LiteRtLmModel | null {
 
 /** The Hugging Face rules this client can use; unusable ones mean no Hugging Face models, not no list. */
 function parseHuggingFace(raw: unknown): LiteRtLmList['huggingface'] {
-  if (!isObject(raw) || raw.filter !== 'litert-lm') return { orgs: [], backends: {} }
+  if (!isObject(raw) || raw.filter !== 'litert-lm')
+    return { orgs: [], backends: {} }
   const orgs = Array.isArray(raw.orgs)
-    ? raw.orgs.filter((org): org is string => typeof org === 'string' && ORG.test(org))
+    ? raw.orgs.filter(
+        (org): org is string => typeof org === 'string' && ORG.test(org)
+      )
     : []
   const backends: LiteRtLmList['huggingface']['backends'] = {}
   if (isObject(raw.backends)) {
@@ -215,20 +259,25 @@ function parseHuggingFace(raw: unknown): LiteRtLmList['huggingface'] {
  * newer `schema_version` or no models array. Entries it does not understand are skipped.
  */
 export function parseLiteRtLmList(raw: unknown): LiteRtLmList {
-  if (!isObject(raw)) throw new Error('The LiteRT-LM model list is not an object.')
+  if (!isObject(raw))
+    throw new Error('The LiteRT-LM model list is not an object.')
   const { schema_version, updated_at, models } = raw
-  if (!isPositiveInt(schema_version)) throw new Error('The LiteRT-LM model list has no schema_version.')
+  if (!isPositiveInt(schema_version))
+    throw new Error('The LiteRT-LM model list has no schema_version.')
   if (schema_version > SUPPORTED_SCHEMA_VERSION) {
     throw new Error(
       `The LiteRT-LM model list has schema_version ${schema_version}; this app reads ${SUPPORTED_SCHEMA_VERSION}.`
     )
   }
-  if (!Array.isArray(models)) throw new Error('The LiteRT-LM model list has no models array.')
+  if (!Array.isArray(models))
+    throw new Error('The LiteRT-LM model list has no models array.')
   return {
     schema_version,
     updated_at: typeof updated_at === 'string' ? updated_at : '',
     huggingface: parseHuggingFace(raw.huggingface),
-    models: models.map(parseModel).filter((model): model is LiteRtLmModel => model !== null),
+    models: models
+      .map(parseModel)
+      .filter((model): model is LiteRtLmModel => model !== null),
   }
 }
 
@@ -276,9 +325,14 @@ export const indexedDbListCache: LiteRtLmListCache = {
     if (!db) return null
     return new Promise((resolve) => {
       try {
-        const request = db.transaction(CACHE_STORE, 'readonly').objectStore(CACHE_STORE).get(CACHE_KEY)
+        const request = db
+          .transaction(CACHE_STORE, 'readonly')
+          .objectStore(CACHE_STORE)
+          .get(CACHE_KEY)
         request.onsuccess = () => {
-          const entry = request.result as { value: unknown; fetchedAt: number } | undefined
+          const entry = request.result as
+            | { value: unknown; fetchedAt: number }
+            | undefined
           resolve(entry && Number.isFinite(entry.fetchedAt) ? entry : null)
         }
         request.onerror = () => resolve(null)
@@ -293,7 +347,9 @@ export const indexedDbListCache: LiteRtLmListCache = {
     await new Promise<void>((resolve) => {
       try {
         const transaction = db.transaction(CACHE_STORE, 'readwrite')
-        transaction.objectStore(CACHE_STORE).put({ value, fetchedAt }, CACHE_KEY)
+        transaction
+          .objectStore(CACHE_STORE)
+          .put({ value, fetchedAt }, CACHE_KEY)
         transaction.oncomplete = () => resolve()
         transaction.onerror = () => resolve()
         transaction.onabort = () => resolve()
@@ -310,12 +366,21 @@ export const indexedDbListCache: LiteRtLmListCache = {
 async function fetchJsonFrom(url: string): Promise<unknown> {
   if (url.startsWith('file://')) {
     // `file:///C:/…` has the pathname `/C:/…`; a Windows path starts at the drive letter.
-    const path = decodeURIComponent(new URL(url).pathname).replace(/^\/([A-Za-z]:\/)/, '$1')
+    const path = decodeURIComponent(new URL(url).pathname).replace(
+      /^\/([A-Za-z]:\/)/,
+      '$1'
+    )
     return JSON.parse(await invoke<string>('read_file_sync', { args: [path] }))
   }
   const get = async (fetcher: typeof fetch) => {
-    const response = await fetcher(url, { method: 'GET', headers: { Accept: 'application/json' } })
-    if (!response.ok) throw new Error(`LiteRT-LM model list: ${response.status} ${response.statusText}`)
+    const response = await fetcher(url, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    })
+    if (!response.ok)
+      throw new Error(
+        `LiteRT-LM model list: ${response.status} ${response.statusText}`
+      )
     return (await response.json()) as unknown
   }
   try {
@@ -329,7 +394,10 @@ async function fetchJsonFrom(url: string): Promise<unknown> {
 
 const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> =>
   new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`LiteRT-LM model list: no answer in ${ms} ms`)), ms)
+    const timer = setTimeout(
+      () => reject(new Error(`LiteRT-LM model list: no answer in ${ms} ms`)),
+      ms
+    )
     promise.then(
       (value) => {
         clearTimeout(timer)
@@ -365,6 +433,19 @@ export interface LiteRtLmListOptions {
 export async function fetchLiteRtLmList(
   options: LiteRtLmListOptions = {}
 ): Promise<LiteRtLmListResult> {
+  if (!options.url && !options.fetchJson && !options.cache) {
+    const result = await unifiedModelCollection(
+      'litert-lm-models',
+      options.force
+    )
+    return {
+      list: parseLiteRtLmList(result.data),
+      source: result.source,
+      fetchedAt: result.fetchedAt,
+      ...(result.error ? { error: result.error } : {}),
+    }
+  }
+
   const cache = options.cache ?? indexedDbListCache
   const fetchJson = options.fetchJson ?? fetchJsonFrom
   const cached = await cache.read()
@@ -376,18 +457,37 @@ export async function fetchLiteRtLmList(
       return null
     }
   })()
-  if (!options.force && cached && accepted && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
+  if (
+    !options.force &&
+    cached &&
+    accepted &&
+    Date.now() - cached.fetchedAt < CACHE_TTL_MS
+  ) {
     return { list: accepted, source: 'cache', fetchedAt: cached.fetchedAt }
   }
   try {
-    const raw = await withTimeout(fetchJson(options.url ?? LITERT_LM_MODELS_URL), FETCH_TIMEOUT_MS)
+    const raw = await withTimeout(
+      fetchJson(options.url ?? LITERT_LM_MODELS_URL),
+      FETCH_TIMEOUT_MS
+    )
     const list = parseLiteRtLmList(raw)
     const fetchedAt = Date.now()
     await cache.write(raw, fetchedAt)
     return { list, source: 'remote', fetchedAt }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    if (accepted && cached) return { list: accepted, source: 'cache', fetchedAt: cached.fetchedAt, error: message }
-    return { list: parseLiteRtLmList(BASELINE_LIST), source: 'baseline', fetchedAt: null, error: message }
+    if (accepted && cached)
+      return {
+        list: accepted,
+        source: 'cache',
+        fetchedAt: cached.fetchedAt,
+        error: message,
+      }
+    return {
+      list: parseLiteRtLmList(BASELINE_LIST),
+      source: 'baseline',
+      fetchedAt: null,
+      error: message,
+    }
   }
 }

@@ -1,3 +1,4 @@
+// Independent desktop feeds are deprecated. Legacy fixtures remain for mobile/custom adapters; managed desktop uses the unified catalog snapshot.
 /**
  * Model-related constants
  */

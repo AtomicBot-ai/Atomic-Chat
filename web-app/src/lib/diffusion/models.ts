@@ -13,6 +13,7 @@
  * the de-duplication and the "already on disk" logic can be tested directly.
  */
 
+import { readAtomicDownloadPlan, saveAtomicDownloadPlan } from '@janhq/core'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import {
@@ -23,6 +24,7 @@ import {
 import {
   DIFFUSION_FAMILY_IDS,
   findQuant,
+  sanitizeDiffusionFamily,
   type DiffusionCatalog,
   type DiffusionCatalogFamily,
   type DiffusionCatalogFile,
@@ -38,6 +40,7 @@ import {
   isTransferValidationError,
   sanitizeTaskId,
   transferFiles,
+  prepareTransferFiles,
   type TransferItem,
 } from '@/services/diffusion/transfer'
 import type {
@@ -171,7 +174,10 @@ export function hfResolveUrl(
 }
 
 const basenameOf = (filename: string): string =>
-  filename.split('/').filter((s) => s.length > 0).pop() ?? filename
+  filename
+    .split('/')
+    .filter((s) => s.length > 0)
+    .pop() ?? filename
 
 const normalizeRelative = (path: string): string =>
   path.replace(/\\/g, '/').replace(/^\/+/, '')
@@ -231,8 +237,7 @@ export function planArtifactDownload(
       ...(file.field ? { field: file.field } : {}),
       relativePath,
       savePath,
-      required:
-        file.field !== 'llm_vision' || workflowNeedsLlmVision(workflow),
+      required: file.field !== 'llm_vision' || workflowNeedsLlmVision(workflow),
       present: isPresent(files, relativePath, savePath, file.bytes),
     })
   }
@@ -300,23 +305,34 @@ export function listInstalledArtifacts(
   files: DiffusionModelFile[]
 ): InstalledArtifact[] {
   const installed: InstalledArtifact[] = []
-  for (const family of catalog.families) {
-    for (const quant of family.transformer.quants) {
-      const plan = planArtifactDownload(family, quant.id, files, '')
-      const transformer = plan.entries.find((e) => e.kind === 'transformer')
-      if (!transformer?.present) continue
-      const missing = plan.entries
-        .filter((e) => e.required && !e.present)
-        .map((e) => e.relativePath)
-      installed.push({
-        id: plan.artifactId,
-        family: family.id,
-        quantId: quant.id,
-        bytes: plan.totalBytes,
-        complete: missing.length === 0,
-        missing,
-      })
-    }
+  const candidates = new Map(
+    catalog.families.flatMap((family) =>
+      family.transformer.quants.map(
+        (quant) =>
+          [
+            artifactId(family.id, quant.id),
+            { family, quantId: quant.id },
+          ] as const
+      )
+    )
+  )
+  for (const saved of installedDiffusionRequests())
+    candidates.set(artifactId(saved.family.id, saved.quantId), saved)
+  for (const { family, quantId } of candidates.values()) {
+    const plan = planArtifactDownload(family, quantId, files, '')
+    const transformer = plan.entries.find((e) => e.kind === 'transformer')
+    if (!transformer?.present) continue
+    const missing = plan.entries
+      .filter((e) => e.required && !e.present)
+      .map((e) => e.relativePath)
+    installed.push({
+      id: plan.artifactId,
+      family: family.id,
+      quantId,
+      bytes: plan.totalBytes,
+      complete: missing.length === 0,
+      missing,
+    })
   }
   return installed
 }
@@ -444,10 +460,10 @@ export function familyRanges(
     dimMultiple: ranges.dim_multiple,
     ...(family.video
       ? {
-          frames: [family.video.frame_range[0], family.video.frame_range[1]] as [
-            number,
-            number,
-          ],
+          frames: [
+            family.video.frame_range[0],
+            family.video.frame_range[1],
+          ] as [number, number],
         }
       : {}),
   }
@@ -555,6 +571,78 @@ const inFlightFiles = new Map<string, Promise<void>>()
 /** Own transfer, then at most two retries for files another download dropped. */
 const MAX_DOWNLOAD_PASSES = 3
 
+const requestKey = (id: string) => `atomic_diffusion_request_v1:${id}`
+const installedKey = (id: string) => `atomic_diffusion_installed_v1:${id}`
+
+/** Installation receipts retain the source contract after conf changes. Files still determine presence. */
+export function installedDiffusionRequest(
+  id: string
+): ReturnType<typeof readDiffusionDownloadRequest> {
+  try {
+    const value = JSON.parse(localStorage.getItem(installedKey(id)) ?? 'null')
+    if (value?.version !== 1) return undefined
+    const family = sanitizeDiffusionFamily(value.family)
+    if (
+      family &&
+      typeof value.quantId === 'string' &&
+      artifactId(family.id, value.quantId) === id &&
+      findQuant(family, value.quantId)
+    )
+      return {
+        family,
+        quantId: value.quantId,
+        ...(value.workflow ? { workflow: value.workflow } : {}),
+      }
+  } catch {
+    /* Older installations use their existing catalog contract. */
+  }
+  return undefined
+}
+
+function installedDiffusionRequests() {
+  const saved: Array<
+    NonNullable<ReturnType<typeof installedDiffusionRequest>>
+  > = []
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i)
+    if (key?.startsWith('atomic_diffusion_installed_v1:')) {
+      const value = installedDiffusionRequest(
+        key.slice('atomic_diffusion_installed_v1:'.length)
+      )
+      if (value) saved.push(value)
+    }
+  }
+  return saved
+}
+
+/** A saved request survives changes to the current catalog and workflow. */
+export function readDiffusionDownloadRequest(taskId: string):
+  | {
+      family: DiffusionCatalogFamily
+      quantId: string
+      workflow?: ImageWorkflowId
+    }
+  | undefined {
+  try {
+    const value = JSON.parse(localStorage.getItem(requestKey(taskId)) ?? 'null')
+    if (value?.version !== 1) return undefined
+    const family = sanitizeDiffusionFamily(value.family)
+    if (
+      !family ||
+      !findQuant(family, value.quantId) ||
+      diffusionDownloadTaskId(artifactId(family.id, value.quantId)) !== taskId
+    )
+      return undefined
+    return {
+      family,
+      quantId: value.quantId,
+      ...(value.workflow ? { workflow: value.workflow } : {}),
+    }
+  } catch {
+    return undefined
+  }
+}
+
 /**
  * Download whatever an artifact is still missing. The download panel shows
  * the transfer under `diffusionDownloadTaskId(artifactId)`. Resolves to the
@@ -577,15 +665,64 @@ export async function downloadArtifact(
   let fetchedBytes = 0
 
   try {
+    started = true
+    const requestId = `request:${taskId}`
+    const saved = opts.resume ? readDiffusionDownloadRequest(taskId) : undefined
+    let prepared = opts.resume
+      ? readAtomicDownloadPlan<TransferItem>(requestId)
+      : undefined
+    if (opts.resume && (!saved || !prepared)) {
+      throw new Error(
+        'This download has no recorded model plan. Start a new download; partial files were kept.'
+      )
+    }
+    if (saved) {
+      family = saved.family
+      quantId = saved.quantId
+      opts = { ...opts, workflow: saved.workflow }
+    }
+    if (!prepared) {
+      const initial = planArtifactDownload(family, quantId, [], modelsRoot, {
+        workflow: opts.workflow,
+      })
+      started = true
+      prepared = await prepareTransferFiles(
+        initial.entries
+          .filter((entry) => entry.required)
+          .map((entry) => ({
+            url: entry.url,
+            save_path: entry.savePath,
+            size: entry.bytes,
+            ...(entry.sha256 ? { sha256: entry.sha256 } : {}),
+            model_id: taskId,
+            purpose: entry.kind,
+          })),
+        taskId,
+        opts.hfToken
+      )
+      saveAtomicDownloadPlan(requestId, prepared)
+      localStorage.setItem(
+        requestKey(taskId),
+        JSON.stringify({ version: 1, family, quantId, workflow: opts.workflow })
+      )
+    }
+    const recordInstallation = () =>
+      localStorage.setItem(
+        installedKey(artifactId(family.id, quantId)),
+        JSON.stringify({ version: 1, family, quantId, workflow: opts.workflow })
+      )
     for (let pass = 0; ; pass += 1) {
       const files = await diffusion.listModelFiles()
       const plan = planArtifactDownload(family, quantId, files, modelsRoot, {
         workflow: opts.workflow,
       })
       const missing = plan.entries.filter(
-        (entry) => entry.required && !entry.present
+        // An explicit download verifies complete files as well. Size alone
+        // cannot prove that an older file belongs to this immutable plan.
+        (entry) => entry.required && (pass === 0 || !entry.present)
       )
       if (missing.length === 0) {
+        recordInstallation()
         // A paused row brought back after a relaunch may wait on files that
         // are all on disk by now: nothing transfers, so close it the way a
         // finished transfer does instead of leaving it waiting.
@@ -610,8 +747,7 @@ export async function downloadArtifact(
       if (own.length > 0) {
         const ownBytes = own.reduce((sum, entry) => sum + entry.bytes, 0)
         const items: TransferItem[] = own.map((entry) => ({
-          url: entry.url,
-          save_path: entry.savePath,
+          ...prepared!.files.find((file) => file.save_path === entry.savePath)!,
           ...(proxy ? { proxy } : {}),
           ...(entry.sha256 ? { sha256: entry.sha256 } : {}),
           size: entry.bytes,
@@ -640,6 +776,7 @@ export async function downloadArtifact(
       }
 
       if (foreign.size === 0) {
+        recordInstallation()
         emitTransferSuccess(taskId, 'Model', fetchedBytes)
         return {
           ...plan,

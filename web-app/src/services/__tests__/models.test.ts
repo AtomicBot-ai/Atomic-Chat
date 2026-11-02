@@ -12,6 +12,7 @@ vi.hoisted(() => {
   g.IS_WINDOWS = false
   g.IS_LINUX = false
   g.DecompressionStream = undefined
+  g.fetch = vi.fn().mockRejectedValue(new Error('Network not configured'))
 })
 
 import {
@@ -20,7 +21,7 @@ import {
 } from '../models/default'
 import type { HuggingFaceRepo, CatalogModel } from '../models/types'
 import { EngineManager, events, DownloadEvent } from '@janhq/core'
-import { BASELINE_MODEL_CATALOG } from '@/constants/models'
+import { atomicModelCatalogBaseline, clearAtomicModelCatalogCache } from '@janhq/core'
 import { clearCatalogCache } from '@/services/model-catalog-registry'
 
 const { mockEvents, mockDownloadEvent } = vi.hoisted(() => ({
@@ -33,7 +34,8 @@ const { mockEvents, mockDownloadEvent } = vi.hoisted(() => ({
 }))
 
 // Mock EngineManager and events
-vi.mock('@janhq/core', () => ({
+vi.mock('@janhq/core', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@janhq/core')>(),
   EngineManager: {
     instance: vi.fn(),
   },
@@ -109,36 +111,21 @@ describe('DefaultModelsService', () => {
 
     beforeEach(async () => {
       await clearCatalogCache()
+      await new Promise(resolve => setTimeout(resolve, 0))
+      clearAtomicModelCatalogCache()
     })
 
-    it('should fetch model catalog successfully', async () => {
-      const mockModels: CatalogModel[] = [
-        {
-          model_name: 'OpenAI/GPT-4',
-          description: 'Large language model',
-          developer: 'OpenAI',
-          downloads: 1000,
-          num_quants: 5,
-          quants: [],
-        },
-      ]
-      const mockManifest = {
-        manifest_version: 1,
-        schema_version: 1,
-        updated_at: '2026-05-27T00:00:00Z',
-        models: mockModels,
-      }
-
-      ;(fetch as any).mockResolvedValue({
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-        json: vi.fn().mockResolvedValue(mockManifest),
-      })
-
+    it('reads pinned chat variants from the complete unified catalog', async () => {
+      const catalog = structuredClone(atomicModelCatalogBaseline())
+      const entry = Object.values(catalog.models).find(entry => entry.kind === 'chat')!
+      entry.metadata = { ...entry.metadata, downloads: 123456 }
+      vi.mocked(fetch).mockResolvedValue(Response.json(catalog))
       const result = await modelsService.fetchModelCatalog()
-
-      expect(result).toEqual(mockModels)
+      const model = result.find(model => model.model_name === entry.definition.model_name)!
+      expect(model.downloads).toBe(123456)
+      expect(model.revision).toBe(entry.definition.revision)
+      expect(model.quants?.every(quant => quant.path.includes(`/resolve/${model.revision}/`))).toBe(true)
+      expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/models/catalog.json'), expect.anything())
     })
 
     it('should fall back to baseline on HTTP error', async () => {
@@ -150,7 +137,9 @@ describe('DefaultModelsService', () => {
 
       const result = await modelsService.fetchModelCatalog()
 
-      expect(result).toEqual(BASELINE_MODEL_CATALOG)
+      expect(result.length).toBeGreaterThan(50)
+      expect(result.some(model => model.model_name === 'AtomicChat/Qwen3.5-4B-GGUF')).toBe(true)
+      expect(result.every(model => /^[0-9a-f]{40}$/.test(model.revision ?? ''))).toBe(true)
     })
 
     it('should fall back to baseline on network error', async () => {
@@ -158,7 +147,9 @@ describe('DefaultModelsService', () => {
 
       const result = await modelsService.fetchModelCatalog()
 
-      expect(result).toEqual(BASELINE_MODEL_CATALOG)
+      expect(result.length).toBeGreaterThan(50)
+      expect(result.some(model => model.model_name === 'AtomicChat/Qwen3.5-4B-GGUF')).toBe(true)
+      expect(result.every(model => /^[0-9a-f]{40}$/.test(model.revision ?? ''))).toBe(true)
     })
   })
 
@@ -236,10 +227,14 @@ describe('DefaultModelsService', () => {
         mmprojSize: 500,
       }
 
+      vi.mocked(fetch).mockResolvedValue(Response.json({ sha: 'a'.repeat(40), siblings: [
+        { rfilename: 'Bonsai-8B-PQ2_0.gguf', lfs: { size: 2000, sha256: 'a'.repeat(64) } },
+        { rfilename: 'mmproj-Q8_0.gguf', lfs: { size: 500, sha256: 'c'.repeat(64) } },
+      ] }))
       await modelsService.pullModelWithMetadata(
         'prism-ml/Bonsai-8B-PQ2_0',
-        'https://huggingface.co/prism-ml/Bonsai-8B-gguf/resolve/b072e1d/Bonsai-8B-PQ2_0.gguf',
-        'https://huggingface.co/prism-ml/Bonsai-8B-gguf/resolve/b072e1d/mmproj-Q8_0.gguf',
+        'https://huggingface.co/prism-ml/Bonsai-8B-gguf/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/Bonsai-8B-PQ2_0.gguf',
+        'https://huggingface.co/prism-ml/Bonsai-8B-gguf/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/mmproj-Q8_0.gguf',
         'hf_token',
         true,
         false,
@@ -248,9 +243,9 @@ describe('DefaultModelsService', () => {
 
       expect(prism.import).toHaveBeenCalledWith('prism-ml/Bonsai-8B-PQ2_0', {
         modelPath:
-          'https://huggingface.co/prism-ml/Bonsai-8B-gguf/resolve/b072e1d/Bonsai-8B-PQ2_0.gguf',
+          'https://huggingface.co/prism-ml/Bonsai-8B-gguf/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/Bonsai-8B-PQ2_0.gguf',
         mmprojPath:
-          'https://huggingface.co/prism-ml/Bonsai-8B-gguf/resolve/b072e1d/mmproj-Q8_0.gguf',
+          'https://huggingface.co/prism-ml/Bonsai-8B-gguf/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/mmproj-Q8_0.gguf',
         modelSha256: 'a'.repeat(64),
         modelSize: 2_000,
         mmprojSha256: 'c'.repeat(64),
@@ -651,7 +646,7 @@ describe('DefaultModelsService', () => {
       const mockRepoData = {
         id: 'microsoft/DialoGPT-medium',
         modelId: 'microsoft/DialoGPT-medium',
-        sha: 'abc123',
+        sha: 'a'.repeat(40),
         downloads: 5000,
         likes: 100,
         tags: ['conversational', 'pytorch'],
@@ -693,7 +688,7 @@ describe('DefaultModelsService', () => {
 
       expect(result).toEqual(mockRepoData)
       expect(fetch).toHaveBeenCalledWith(
-        'https://huggingface.co/api/models/microsoft/DialoGPT-medium?blobs=true&files_metadata=true',
+        'https://huggingface.co/api/models/microsoft/DialoGPT-medium/revision/main?blobs=true&files_metadata=true',
         {
           headers: undefined,
         }
@@ -701,7 +696,7 @@ describe('DefaultModelsService', () => {
     })
 
     it('should clean repository ID from various input formats', async () => {
-      const mockRepoData = { modelId: 'microsoft/DialoGPT-medium' }
+      const mockRepoData = { modelId: 'microsoft/DialoGPT-medium', sha: 'a'.repeat(40) }
       ;(fetch as any).mockResolvedValue({
         ok: true,
         json: vi.fn().mockResolvedValue(mockRepoData),
@@ -712,7 +707,7 @@ describe('DefaultModelsService', () => {
         'https://huggingface.co/microsoft/DialoGPT-medium'
       )
       expect(fetch).toHaveBeenCalledWith(
-        'https://huggingface.co/api/models/microsoft/DialoGPT-medium?blobs=true&files_metadata=true',
+        'https://huggingface.co/api/models/microsoft/DialoGPT-medium/revision/main?blobs=true&files_metadata=true',
         {
           headers: undefined,
         }
@@ -723,7 +718,7 @@ describe('DefaultModelsService', () => {
         'huggingface.co/microsoft/DialoGPT-medium'
       )
       expect(fetch).toHaveBeenCalledWith(
-        'https://huggingface.co/api/models/microsoft/DialoGPT-medium?blobs=true&files_metadata=true',
+        'https://huggingface.co/api/models/microsoft/DialoGPT-medium/revision/main?blobs=true&files_metadata=true',
         {
           headers: undefined,
         }
@@ -732,7 +727,7 @@ describe('DefaultModelsService', () => {
       // Test with trailing slash
       await modelsService.fetchHuggingFaceRepo('microsoft/DialoGPT-medium/')
       expect(fetch).toHaveBeenCalledWith(
-        'https://huggingface.co/api/models/microsoft/DialoGPT-medium?blobs=true&files_metadata=true',
+        'https://huggingface.co/api/models/microsoft/DialoGPT-medium/revision/main?blobs=true&files_metadata=true',
         {
           headers: undefined,
         }
@@ -743,7 +738,7 @@ describe('DefaultModelsService', () => {
       const mockRepoData = {
         id: 'unsloth/GLM-5.1-GGUF',
         modelId: 'unsloth/GLM-5.1-GGUF',
-        sha: 'glm123',
+        sha: 'a'.repeat(40),
         downloads: 9000,
         likes: 200,
         tags: ['gguf'],
@@ -803,7 +798,7 @@ describe('DefaultModelsService', () => {
       )
       expect(fetch).toHaveBeenNthCalledWith(
         2,
-        'https://huggingface.co/api/models/unsloth/GLM-5.1-GGUF?blobs=true&files_metadata=true',
+        'https://huggingface.co/api/models/unsloth/GLM-5.1-GGUF/revision/main?blobs=true&files_metadata=true',
         {
           headers: undefined,
         }
@@ -814,7 +809,7 @@ describe('DefaultModelsService', () => {
       const mockRepoData = {
         id: 'unsloth/GLM-5.1-GGUF',
         modelId: 'unsloth/GLM-5.1-GGUF',
-        sha: 'glm456',
+        sha: 'a'.repeat(40),
         downloads: 9000,
         likes: 200,
         tags: ['gguf'],
@@ -868,7 +863,7 @@ describe('DefaultModelsService', () => {
       )
       expect(fetch).toHaveBeenNthCalledWith(
         2,
-        'https://huggingface.co/api/models/unsloth/GLM-5.1-GGUF?blobs=true&files_metadata=true',
+        'https://huggingface.co/api/models/unsloth/GLM-5.1-GGUF/revision/main?blobs=true&files_metadata=true',
         {
           headers: undefined,
         }
@@ -904,7 +899,7 @@ describe('DefaultModelsService', () => {
 
       expect(result).toBeNull()
       expect(fetch).toHaveBeenCalledWith(
-        'https://huggingface.co/api/models/nonexistent/model?blobs=true&files_metadata=true',
+        'https://huggingface.co/api/models/nonexistent/model/revision/main?blobs=true&files_metadata=true',
         {
           headers: undefined,
         }
@@ -955,7 +950,7 @@ describe('DefaultModelsService', () => {
       const mockRepoData = {
         id: 'microsoft/DialoGPT-medium',
         modelId: 'microsoft/DialoGPT-medium',
-        sha: 'abc123',
+        sha: 'a'.repeat(40),
         downloads: 5000,
         likes: 100,
         tags: ['conversational'],
@@ -985,7 +980,7 @@ describe('DefaultModelsService', () => {
       const mockRepoData = {
         id: 'microsoft/DialoGPT-medium',
         modelId: 'microsoft/DialoGPT-medium',
-        sha: 'abc123',
+        sha: 'a'.repeat(40),
         downloads: 5000,
         likes: 100,
         tags: ['conversational'],
@@ -1026,7 +1021,7 @@ describe('DefaultModelsService', () => {
       const mockRepoData = {
         id: 'microsoft/DialoGPT-medium',
         modelId: 'microsoft/DialoGPT-medium',
-        sha: 'abc123',
+        sha: 'a'.repeat(40),
         downloads: 5000,
         likes: 100,
         tags: ['conversational'],
@@ -1077,7 +1072,7 @@ describe('DefaultModelsService', () => {
     const mockHuggingFaceRepo: HuggingFaceRepo = {
       id: 'microsoft/DialoGPT-medium',
       modelId: 'microsoft/DialoGPT-medium',
-      sha: 'abc123',
+      sha: 'a'.repeat(40),
       downloads: 1500,
       likes: 75,
       tags: ['pytorch', 'transformers', 'text-generation'],
@@ -1113,6 +1108,7 @@ describe('DefaultModelsService', () => {
         modelsService.convertHfRepoToCatalogModel(mockHuggingFaceRepo)
 
       const expected: CatalogModel = {
+        revision: mockHuggingFaceRepo.sha,
         model_name: 'microsoft/DialoGPT-medium',
         description: '**Tags**: pytorch, transformers, text-generation',
         developer: 'microsoft',
@@ -1121,12 +1117,12 @@ describe('DefaultModelsService', () => {
         quants: [
           {
             model_id: 'microsoft/model-q4_0',
-            path: 'https://huggingface.co/microsoft/DialoGPT-medium/resolve/main/model-q4_0.gguf',
+            path: 'https://huggingface.co/microsoft/DialoGPT-medium/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model-q4_0.gguf',
             file_size: '2.0 GB',
           },
           {
             model_id: 'microsoft/model-q8_0',
-            path: 'https://huggingface.co/microsoft/DialoGPT-medium/resolve/main/model-q8_0.GGUF',
+            path: 'https://huggingface.co/microsoft/DialoGPT-medium/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model-q8_0.GGUF',
             file_size: '4.0 GB',
           },
         ],
@@ -1271,10 +1267,10 @@ describe('DefaultModelsService', () => {
         modelsService.convertHfRepoToCatalogModel(mockHuggingFaceRepo)
 
       expect(result.quants[0].path).toBe(
-        'https://huggingface.co/microsoft/DialoGPT-medium/resolve/main/model-q4_0.gguf'
+        'https://huggingface.co/microsoft/DialoGPT-medium/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model-q4_0.gguf'
       )
       expect(result.quants[1].path).toBe(
-        'https://huggingface.co/microsoft/DialoGPT-medium/resolve/main/model-q8_0.GGUF'
+        'https://huggingface.co/microsoft/DialoGPT-medium/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/model-q8_0.GGUF'
       )
     })
 
@@ -1358,7 +1354,7 @@ describe('DefaultModelsService', () => {
       const minimalRepo: HuggingFaceRepo = {
         id: 'minimal/repo',
         modelId: 'minimal/repo',
-        sha: 'abc123',
+        sha: 'a'.repeat(40),
         downloads: 0,
         likes: 0,
         tags: [],

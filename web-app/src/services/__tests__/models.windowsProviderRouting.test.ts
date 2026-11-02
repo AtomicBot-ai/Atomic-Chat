@@ -39,7 +39,8 @@ const { mockEvents, mockDownloadEvent } = vi.hoisted(() => ({
   } as Record<string, string>,
 }))
 
-vi.mock('@janhq/core', () => ({
+vi.mock('@janhq/core', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@janhq/core')>()),
   EngineManager: {
     instance: vi.fn(),
   },

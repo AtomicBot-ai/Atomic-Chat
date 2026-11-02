@@ -143,7 +143,7 @@ describe('fetchDiffusionCatalog', () => {
     expect(result.catalog).toEqual(getBaselineDiffusionCatalog())
   })
 
-  it('adds the families this release bundles to a cache written without them', async () => {
+  it('ignores the old collection cache and uses a complete unified fallback', async () => {
     // A catalog cached by a build that does not know the video families: the
     // same profile runs builds of other branches, and their cache is ours.
     fetchOk(manifest())
@@ -151,12 +151,12 @@ describe('fetchDiffusionCatalog', () => {
     const bundledIds = getBaselineDiffusionCatalog().families.map((f) => f.id)
 
     const fresh = await fetchDiffusionCatalog()
-    expect(fresh.source).toBe('cache')
+    expect(fresh.source).toBe('baseline')
     expect(fresh.catalog.families.map((f) => f.id)).toEqual(bundledIds)
 
     fetchFails(new Error('offline'))
     const stale = await fetchDiffusionCatalog({ force: true })
-    expect(stale.source).toBe('cache')
+    expect(stale.source).toBe('baseline')
     expect(stale.catalog.families.map((f) => f.id)).toEqual(
       expect.arrayContaining(['ltx-2', 'wan2.2-ti2v-5b'])
     )
@@ -453,6 +453,7 @@ describe('baseline and lookups', () => {
     expect(baseline.families.map((f) => f.id)).toEqual([
       'z-image',
       'flux.2-klein',
+      'flux.3-klein',
       'flux.1',
       'flux.1-uncensored',
       'flux.1-abliterated',
@@ -461,6 +462,7 @@ describe('baseline and lookups', () => {
       'krea-2-turbo',
       'qwen-image',
       'qwen-image-2.1',
+      'qwen-image-2.1-turbo',
       'ltx-2',
       'wan2.2-ti2v-5b',
     ])
@@ -579,7 +581,7 @@ describe('baseline and lookups', () => {
         },
       ],
     })
-    expect(family?.transformer).toEqual({
+    expect(family?.transformer).toMatchObject({
       repo: 'realrebelai/KREA-2_GGUFs',
       quants: [
         {

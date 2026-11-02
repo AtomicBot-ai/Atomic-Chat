@@ -2051,7 +2051,11 @@ async fn the_hugging_face_token_does_not_follow_a_redirect_to_another_host() {
     let response = client.get(&item.url).send().await.unwrap();
 
     assert_eq!(response.text().await.unwrap(), "model");
-    assert_eq!(*hub_seen.lock().unwrap(), vec![true], "the hub gets the token");
+    assert_eq!(
+        *hub_seen.lock().unwrap(),
+        vec![true],
+        "the hub gets the token"
+    );
     assert_eq!(*cdn_seen.lock().unwrap(), vec![false], "the CDN never does");
     hub_server.abort();
     cdn_server.abort();
@@ -2152,6 +2156,45 @@ fn record_progress(
 fn sha256_hex(body: &[u8]) -> String {
     use sha2::Digest;
     hex::encode(sha2::Sha256::digest(body))
+}
+
+#[tokio::test]
+async fn a_finished_hf_file_is_reused_only_after_content_verification() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.json");
+    let bytes = b"{\"version\":1}";
+    tokio::fs::write(&path, bytes).await.unwrap();
+    let mut item = DownloadItem {
+        url: format!(
+            "https://huggingface.co/test/model/resolve/{}/config.json",
+            "a".repeat(40)
+        ),
+        save_path: path.to_string_lossy().into_owned(),
+        size: Some(bytes.len() as u64),
+        sha256: None,
+        proxy: None,
+        model_id: None,
+        resume_key: None,
+    };
+    let cancel = CancellationToken::new();
+    assert!(
+        !finished_copy_on_disk(&item, &path, bytes.len() as u64, true, &cancel)
+            .await
+            .unwrap()
+    );
+    assert_eq!(bytes_kept_on_resume(&item, &path, bytes.len() as u64), 0);
+    item.sha256 = Some(sha256_hex(bytes));
+    assert!(
+        finished_copy_on_disk(&item, &path, bytes.len() as u64, false, &cancel)
+            .await
+            .unwrap()
+    );
+    tokio::fs::write(&path, b"{\"version\":2}").await.unwrap();
+    assert!(
+        !finished_copy_on_disk(&item, &path, bytes.len() as u64, true, &cancel)
+            .await
+            .unwrap()
+    );
 }
 
 #[tokio::test]

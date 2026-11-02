@@ -1,3 +1,4 @@
+import { mockHfModelMetadata } from '@/test/hf-model-metadata'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -255,7 +256,7 @@ describe('ModelDownloadAction', () => {
     /** The id the Bonsai file registers under. */
     const prismId = 'prism-ml/Bonsai-8B-PQ2_0'
     const pinned = (file: string) =>
-      `https://huggingface.co/prism-ml/Bonsai-8B-gguf/resolve/b072e1d/${file}`
+      `https://huggingface.co/prism-ml/Bonsai-8B-gguf/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/${file}`
     const verdict = (
       outcome: CompatibilityVerdict['outcome'],
       provider: string | null = 'atomic-prism'
@@ -274,7 +275,7 @@ describe('ModelDownloadAction', () => {
           id: 'bonsai-8b',
           title: 'Bonsai 8B',
           repo: 'prism-ml/Bonsai-8B-gguf',
-          revision: 'b072e1d',
+          revision: 'a'.repeat(40),
           files: [
             {
               file: 'Bonsai-8B-PQ2_0.gguf',
@@ -323,6 +324,7 @@ describe('ModelDownloadAction', () => {
     }
 
     beforeEach(() => {
+      mockHfModelMetadata(families.families)
       useModelCompatibilityStore.setState({ verdicts: {} })
       rowVerdict = verdict('compatible', null)
       planVerdict = verdict('engine_required')

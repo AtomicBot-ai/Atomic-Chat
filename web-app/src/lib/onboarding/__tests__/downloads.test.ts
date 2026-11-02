@@ -40,15 +40,16 @@ import {
 } from '../downloads'
 
 const catalog = {
-  model_name: 'mlx-community/Qwen3.5 4B 4bit',
+  model_name: 'mlx-community/Qwen3.5-4B-4bit',
   developer: 'mlx-community',
 } as CatalogModel
 
 const repo = {
+  sha: 'a'.repeat(40),
   siblings: [
-    { rfilename: 'config.json' },
-    { rfilename: 'model.safetensors' },
-    { rfilename: 'tokenizer.json' },
+    { rfilename: 'config.json', size: 2 },
+    { rfilename: 'model.safetensors', size: 2 },
+    { rfilename: 'tokenizer.json', size: 2 },
   ],
 }
 
@@ -74,6 +75,7 @@ const candidate = (
 describe('MLX downloads from setup', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
     mocks.engines = { mlx: { import: vi.fn().mockResolvedValue(undefined) } }
     mlxEngine.mlxEngineActive.mockResolvedValue(true)
     useDownloadStore.setState({
@@ -96,12 +98,14 @@ describe('MLX downloads from setup', () => {
 
     expect(started).toBe(true)
     const base =
-      'https://huggingface.co/mlx-community/Qwen3.5 4B 4bit/resolve/main'
+      'https://huggingface.co/mlx-community/Qwen3.5-4B-4bit/resolve/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
     expect(mocks.engines.mlx.import).toHaveBeenCalledWith('Qwen3.5-4B-4bit', {
       modelPath: `${base}/model.safetensors`,
+      modelSize: 2,
+      modelSha256: undefined,
       files: [
-        { url: `${base}/config.json`, filename: 'config.json' },
-        { url: `${base}/tokenizer.json`, filename: 'tokenizer.json' },
+        { url: `${base}/config.json`, filename: 'config.json', size: 2, sha256: undefined },
+        { url: `${base}/tokenizer.json`, filename: 'tokenizer.json', size: 2, sha256: undefined },
       ],
       resume: false,
     })
@@ -113,6 +117,8 @@ describe('MLX downloads from setup', () => {
   })
 
   it('resumes a download that was paused before', async () => {
+    await startMlxCatalogDownload(catalog, { serviceHub: hubWith(async () => repo) })
+    mocks.engines.mlx.import.mockClear()
     useDownloadStore.setState({
       resumableDownloads: new Set(['Qwen3.5-4B-4bit']),
     })
@@ -127,7 +133,8 @@ describe('MLX downloads from setup', () => {
   it('reports a repository without weights and leaves it resumable', async () => {
     const started = await startMlxCatalogDownload(catalog, {
       serviceHub: hubWith(async () => ({
-        siblings: [{ rfilename: 'a.json' }],
+        sha: 'a'.repeat(40),
+        siblings: [{ rfilename: 'a.json', size: 2 }],
       })),
     })
 
@@ -169,6 +176,7 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
 describe('the MLX engine beside a new MLX model', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
     mocks.engines = { mlx: { import: vi.fn() } }
     useDownloadStore.setState({
       localDownloadingModels: new Set(),
@@ -300,6 +308,7 @@ describe('the MLX engine beside a new MLX model', () => {
 describe('importing models found on disk', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
     mocks.engines = {
       'mlx': { import: vi.fn().mockResolvedValue(undefined) },
       'llamacpp-upstream': { import: vi.fn().mockResolvedValue(undefined) },

@@ -27,6 +27,7 @@ import {
   downloadArtifact,
   resolveDiffusionDownloadTaskId,
   listInstalledArtifacts,
+  installedDiffusionRequest,
   parseArtifactId,
   planArtifactDeletion,
   planArtifactDownload,
@@ -74,7 +75,11 @@ const zImage: DiffusionCatalogFamily = {
   text_encoders: [QWEN3],
   defaults: { steps: 8, cfg_scale: 1, width: 1024, height: 1024 },
   ranges: { steps: [1, 50], dims: [256, 2048], dim_multiple: 16 },
-  capabilities: { negative_prompt: false, guidance: false, workflows: ['create'] },
+  capabilities: {
+    negative_prompt: false,
+    guidance: false,
+    workflows: ['create'],
+  },
 }
 
 const klein: DiffusionCatalogFamily = {
@@ -100,9 +105,20 @@ const klein: DiffusionCatalogFamily = {
   },
   vae_format: 'flux2',
   text_encoders: [QWEN3],
-  defaults: { steps: 4, cfg_scale: 1, sampling_method: 'euler', flow_shift: 3, width: 1024, height: 1024 },
+  defaults: {
+    steps: 4,
+    cfg_scale: 1,
+    sampling_method: 'euler',
+    flow_shift: 3,
+    width: 1024,
+    height: 1024,
+  },
   ranges: { steps: [1, 50], dims: [256, 2048], dim_multiple: 16 },
-  capabilities: { negative_prompt: false, guidance: true, workflows: ['create', 'transform'] },
+  capabilities: {
+    negative_prompt: false,
+    guidance: true,
+    workflows: ['create', 'transform'],
+  },
 }
 
 const catalog: DiffusionCatalog = {
@@ -206,10 +222,7 @@ describe('artifact ids', () => {
 
 describe('planArtifactDownload', () => {
   it('plans the exact verified Qwen-Image-2.1 artifact matrix', () => {
-    const family = findFamily(
-      getBaselineDiffusionCatalog(),
-      'qwen-image-2.1'
-    )!
+    const family = findFamily(getBaselineDiffusionCatalog(), 'qwen-image-2.1')!
     const plan = planArtifactDownload(family, 'q4_k', [], ROOT)
 
     expect(
@@ -326,7 +339,12 @@ describe('planArtifactDownload', () => {
         bytes: 7_224_707_136,
       },
     ]
-    const plan = planArtifactDownload(zImage, 'q8_0', files, 'C:\\data\\diffusion\\models')
+    const plan = planArtifactDownload(
+      zImage,
+      'q8_0',
+      files,
+      'C:\\data\\diffusion\\models'
+    )
     expect(plan.entries[0].present).toBe(true)
     expect(plan.entries[0].savePath).toBe(
       'C:\\data\\diffusion\\models\\z-image\\z-image-turbo-Q8_0.gguf'
@@ -385,7 +403,9 @@ describe('listInstalledArtifacts', () => {
   })
 
   it('does not count a stray side file as an installed artifact', () => {
-    expect(listInstalledArtifacts(catalog, [onDisk(SHARED_TE, QWEN3.bytes)])).toEqual([])
+    expect(
+      listInstalledArtifacts(catalog, [onDisk(SHARED_TE, QWEN3.bytes)])
+    ).toEqual([])
   })
 })
 
@@ -399,7 +419,12 @@ describe('planArtifactDeletion', () => {
   ]
 
   it('keeps the text encoder Klein still needs, frees the VAE nobody else uses', () => {
-    const { remove, kept } = planArtifactDeletion(zImage, 'q4_k_m', files, catalog)
+    const { remove, kept } = planArtifactDeletion(
+      zImage,
+      'q4_k_m',
+      files,
+      catalog
+    )
     expect(remove.map((f) => f.relativePath)).toEqual([
       'z-image/z-image-turbo-Q4_K_M.gguf',
       SHARED_AE,
@@ -513,15 +538,32 @@ describe('buildLoadRequest', () => {
       transformer: {
         repo: 'unsloth/FLUX.1-schnell-GGUF',
         quants: [
-          { id: 'q4_k_m', label: 'Q4_K_M', filename: 'flux1-schnell-Q4_K_M.gguf', bytes: 1 },
+          {
+            id: 'q4_k_m',
+            label: 'Q4_K_M',
+            filename: 'flux1-schnell-Q4_K_M.gguf',
+            bytes: 1,
+          },
         ],
       },
       text_encoders: [
-        { repo: 'unsloth/flux-text-encoders', filename: 'clip_l.safetensors', bytes: 2, field: 'clip_l' },
-        { repo: 'unsloth/flux-text-encoders', filename: 't5xxl_fp16.safetensors', bytes: 3, field: 't5xxl' },
+        {
+          repo: 'unsloth/flux-text-encoders',
+          filename: 'clip_l.safetensors',
+          bytes: 2,
+          field: 'clip_l',
+        },
+        {
+          repo: 'unsloth/flux-text-encoders',
+          filename: 't5xxl_fp16.safetensors',
+          bytes: 3,
+          field: 't5xxl',
+        },
       ],
     }
-    const request = buildLoadRequest(flux1, 'q4_k_m', [], ROOT, { offload: 'none' })
+    const request = buildLoadRequest(flux1, 'q4_k_m', [], ROOT, {
+      offload: 'none',
+    })
     expect(request.files).toEqual({
       diffusionModel: `${ROOT}/flux.1/flux1-schnell-Q4_K_M.gguf`,
       vae: `${ROOT}/${SHARED_AE}`,
@@ -529,14 +571,16 @@ describe('buildLoadRequest', () => {
       t5xxl: `${ROOT}/shared/unsloth--flux-text-encoders/t5xxl_fp16.safetensors`,
     })
     expect(request.files.vaeFormat).toBeUndefined()
-    expect(request.defaults).toEqual({ steps: 8, cfgScale: 1, width: 1024, height: 1024 })
+    expect(request.defaults).toEqual({
+      steps: 8,
+      cfgScale: 1,
+      width: 1024,
+      height: 1024,
+    })
   })
 
   it('loads the Qwen Image 2.1 vision projector only for reference workflows', () => {
-    const family = findFamily(
-      getBaselineDiffusionCatalog(),
-      'qwen-image-2.1'
-    )!
+    const family = findFamily(getBaselineDiffusionCatalog(), 'qwen-image-2.1')!
     const create = buildLoadRequest(family, 'q4_k', [], ROOT, {
       offload: 'group',
       workflow: 'create',
@@ -554,10 +598,7 @@ describe('buildLoadRequest', () => {
   })
 
   it('builds a Create-only Krea 2 Turbo load with transformer, Qwen3-VL and Wan VAE', () => {
-    const family = findFamily(
-      getBaselineDiffusionCatalog(),
-      'krea-2-turbo'
-    )!
+    const family = findFamily(getBaselineDiffusionCatalog(), 'krea-2-turbo')!
     const request = buildLoadRequest(family, 'q4_k_m', [], ROOT, {
       offload: 'group',
       workflow: 'create',
@@ -600,9 +641,15 @@ describe('buildLoadRequest', () => {
         bytes: 5_017_613_376,
       },
     ]
-    const request = buildLoadRequest(zImage, 'q4_k_m', reported, 'D:\\atomic\\diffusion\\models', {
-      offload: 'none',
-    })
+    const request = buildLoadRequest(
+      zImage,
+      'q4_k_m',
+      reported,
+      'D:\\atomic\\diffusion\\models',
+      {
+        offload: 'none',
+      }
+    )
     expect(request.files.diffusionModel).toBe(reported[0].path)
   })
 })
@@ -620,11 +667,42 @@ describe('downloadArtifact', () => {
     | undefined
 
   beforeEach(() => {
+    localStorage.clear()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = new URL(String(input))
+        const revision = url.pathname.split('/revision/')[1]
+        const all = [zImage, klein].flatMap((family) => [
+          ...family.transformer.quants.map((quant) => ({
+            rfilename: quant.filename,
+            size: quant.bytes,
+            ...(quant.sha256
+              ? { lfs: { size: quant.bytes, sha256: quant.sha256 } }
+              : {}),
+          })),
+          ...[family.vae, ...family.text_encoders]
+            .filter(Boolean)
+            .map((file) => ({
+              rfilename: file!.filename,
+              size: file!.bytes,
+              ...(file!.sha256
+                ? { lfs: { size: file!.bytes, sha256: file!.sha256 } }
+                : {}),
+            })),
+        ])
+        return Response.json({
+          sha: /^[0-9a-f]{40}$/.test(revision) ? revision : 'a'.repeat(40),
+          siblings: all,
+        })
+      })
+    )
     transfers.length = 0
     cancelled.length = 0
     onTransfer = undefined
     onDiskNow = [onDisk(SHARED_TE, QWEN3.bytes)]
-    const core = (globalThis as unknown as { core: Record<string, unknown> }).core
+    const core = (globalThis as unknown as { core: Record<string, unknown> })
+      .core
     core.extensionManager = {
       getByName: (name: string) =>
         name === '@janhq/download-extension'
@@ -637,7 +715,10 @@ describe('downloadArtifact', () => {
               ) => {
                 transfers.push({ items, taskId, resume })
                 onProgress?.(1, 2)
-                await onTransfer?.(items as Array<{ save_path: string }>, taskId)
+                await onTransfer?.(
+                  items as Array<{ save_path: string }>,
+                  taskId
+                )
               },
               cancelDownload: async (taskId: string) => {
                 cancelled.push(taskId)
@@ -654,7 +735,7 @@ describe('downloadArtifact', () => {
     })
   })
 
-  it('fetches only what is missing, under the artifact task id', async () => {
+  it('executes every required file under the artifact task id so finished copies are verified', async () => {
     const progress: number[] = []
     const plan = await downloadArtifact(zImage, 'q4_k_m', {
       onProgress: ({ transferred }) => progress.push(transferred),
@@ -663,28 +744,49 @@ describe('downloadArtifact', () => {
     expect(transfers).toHaveLength(1)
     expect(transfers[0].taskId).toBe('diffusion-model-z-image_q4_k_m')
     expect(transfers[0].resume).toBe(false)
-    expect(transfers[0].items).toEqual([
-      {
-        url: 'https://huggingface.co/unsloth/Z-Image-Turbo-GGUF/resolve/main/z-image-turbo-Q4_K_M.gguf',
-        save_path: `${ROOT}/z-image/z-image-turbo-Q4_K_M.gguf`,
-        sha256: 'b'.repeat(64),
-        size: 5_017_613_376,
-        model_id: 'diffusion-model-z-image_q4_k_m',
-      },
-      {
-        url: 'https://huggingface.co/unsloth/Z-Image-Turbo-ComfyUI/resolve/main/split_files/vae/ae.safetensors',
-        save_path: `${ROOT}/${SHARED_AE}`,
-        size: 335_304_388,
-        model_id: 'diffusion-model-z-image_q4_k_m',
-      },
+    expect(
+      (transfers[0].items as Array<{ url: string; save_path: string }>).map(
+        (file) => file.save_path
+      )
+    ).toEqual([
+      `${ROOT}/z-image/z-image-turbo-Q4_K_M.gguf`,
+      `${ROOT}/${SHARED_AE}`,
+      `${ROOT}/${SHARED_TE}`,
     ])
+    expect(
+      (transfers[0].items as Array<{ url: string }>).every((file) =>
+        /\/resolve\/[0-9a-f]{40}\//.test(file.url)
+      )
+    ).toBe(true)
     expect(progress).toEqual([1])
     expect(plan.entries.every((e) => e.present)).toBe(true)
     expect(plan.missingBytes).toBe(0)
   })
 
+  it('keeps an installed source contract when the catalog changes or removes its family', async () => {
+    await downloadArtifact(zImage, 'q4_k_m')
+    const saved = installedDiffusionRequest('z-image:q4_k_m')!
+    expect(saved.family.transformer.revision).toBe(zImage.transformer.revision)
+    const files = planArtifactDownload(saved.family, saved.quantId, [], ROOT)
+      .entries.filter((entry) => entry.required)
+      .map((entry) => onDisk(entry.relativePath, entry.bytes))
+    expect(listInstalledArtifacts({ ...catalog, families: [] }, files)).toEqual(
+      [expect.objectContaining({ id: 'z-image:q4_k_m', complete: true })]
+    )
+  })
+
   it('passes resume through to the diffusion transfer', async () => {
-    await downloadArtifact(zImage, 'q4_k_m', { resume: true })
+    await downloadArtifact(zImage, 'q4_k_m')
+    transfers.length = 0
+    vi.mocked(fetch).mockRejectedValue(new Error('offline'))
+    await downloadArtifact(
+      {
+        ...zImage,
+        transformer: { ...zImage.transformer, revision: 'f'.repeat(40) },
+      },
+      'q4_k_m',
+      { resume: true }
+    )
 
     expect(transfers).toHaveLength(1)
     expect(transfers[0]).toMatchObject({
@@ -693,14 +795,14 @@ describe('downloadArtifact', () => {
     })
   })
 
-  it('does not transfer anything when the artifact is complete', async () => {
+  it('verifies finished copies when an explicit new download is requested', async () => {
     onDiskNow = [
       onDisk('z-image/z-image-turbo-Q4_K_M.gguf', 5_017_613_376),
       onDisk(SHARED_AE, AE.bytes),
       onDisk(SHARED_TE, QWEN3.bytes),
     ]
     const plan = await downloadArtifact(zImage, 'q4_k_m')
-    expect(transfers).toEqual([])
+    expect(transfers).toHaveLength(1)
     expect(plan.missingBytes).toBe(0)
   })
 
@@ -712,6 +814,8 @@ describe('downloadArtifact', () => {
       onDisk(SHARED_AE, AE.bytes),
       onDisk(SHARED_TE, QWEN3.bytes),
     ]
+    await downloadArtifact(zImage, 'q4_k_m')
+    transfers.length = 0
     const emitted: Array<{ name: string; modelId?: string }> = []
     const core = (globalThis as unknown as { core: Record<string, unknown> })
       .core
@@ -736,13 +840,11 @@ describe('downloadArtifact', () => {
 
     try {
       await downloadArtifact(zImage, 'q4_k_m', { resume: true })
-      expect(transfers).toEqual([])
-      expect(emitted).toEqual([
-        {
-          name: DownloadEvent.onFileDownloadSuccess,
-          modelId: 'diffusion-model-z-image_q4_k_m',
-        },
-      ])
+      expect(transfers).toHaveLength(1)
+      expect(emitted).toContainEqual({
+        name: DownloadEvent.onFileDownloadSuccess,
+        modelId: 'diffusion-model-z-image_q4_k_m',
+      })
     } finally {
       delete core.events
       useDownloadStore.setState({ downloads: {} })
@@ -834,7 +936,8 @@ describe('downloadArtifact', () => {
 
   it('reports a failed integrity check as a validation failure, not a transfer error', async () => {
     const emitted: string[] = []
-    const core = (globalThis as unknown as { core: Record<string, unknown> }).core
+    const core = (globalThis as unknown as { core: Record<string, unknown> })
+      .core
     core.events = {
       on: () => {},
       off: () => {},
@@ -875,21 +978,32 @@ describe('video families', () => {
       ['vae', `${ltxShared}/ltx-2.3-22b-distilled_video_vae.safetensors`],
       ['audio_vae', `${ltxShared}/ltx-2.3-22b-distilled_audio_vae.safetensors`],
       ['text_encoder', `${gemmaShared}/gemma-3-12b-it-qat-UD-Q4_K_XL.gguf`],
-      ['text_encoder', `${ltxShared}/ltx-2.3-22b-distilled_embeddings_connectors.safetensors`],
+      [
+        'text_encoder',
+        `${ltxShared}/ltx-2.3-22b-distilled_embeddings_connectors.safetensors`,
+      ],
     ])
     expect(plan.entries.every((e) => e.required)).toBe(true)
     expect(plan.totalBytes).toBe(
-      14_000_000_000 + 1_400_000_000 + 360_000_000 + 7_400_000_000 + 2_300_000_000
+      14_000_000_000 +
+        1_400_000_000 +
+        360_000_000 +
+        7_400_000_000 +
+        2_300_000_000
     )
   })
 
   it('maps the video files, the sigma schedule, the video defaults and the frame range onto the load request', () => {
-    const files = planArtifactDownload(LTX_2, 'q4_k_m', [], ROOT).entries.map((e) => ({
-      path: e.savePath,
-      relativePath: e.relativePath,
-      bytes: e.bytes,
-    }))
-    const request = buildLoadRequest(LTX_2, 'q4_k_m', files, ROOT, { offload: 'group' })
+    const files = planArtifactDownload(LTX_2, 'q4_k_m', [], ROOT).entries.map(
+      (e) => ({
+        path: e.savePath,
+        relativePath: e.relativePath,
+        bytes: e.bytes,
+      })
+    )
+    const request = buildLoadRequest(LTX_2, 'q4_k_m', files, ROOT, {
+      offload: 'group',
+    })
     expect(request).toEqual({
       modelId: 'ltx-2:q4_k_m',
       family: 'ltx-2',
@@ -922,25 +1036,50 @@ describe('video families', () => {
           ],
         },
       },
-      ranges: { steps: [1, 50], dims: [256, 1216], dimMultiple: 32, frames: [9, 257] },
+      ranges: {
+        steps: [1, 50],
+        dims: [256, 1216],
+        dimMultiple: 32,
+        frames: [9, 257],
+      },
       offload: 'group',
     })
-    const wan = buildLoadRequest(WAN_22, 'q4_k_m', [], ROOT, { offload: 'none' })
+    const wan = buildLoadRequest(WAN_22, 'q4_k_m', [], ROOT, {
+      offload: 'none',
+    })
     expect(wan.files.t5xxl).toContain('umt5-xxl-encoder-Q4_K_M.gguf')
     expect(wan.files).not.toHaveProperty('audioVae')
-    expect(wan.defaults).toMatchObject({ flowShift: 5, video: { fps: 24, frameStep: 4, frameOffset: 1 } })
+    expect(wan.defaults).toMatchObject({
+      flowShift: 5,
+      video: { fps: 24, frameStep: 4, frameOffset: 1 },
+    })
     expect(wan.defaults).not.toHaveProperty('sigmas')
     expect(wan.ranges.frames).toEqual([5, 241])
   })
 
   it('keeps the shared audio VAE while another quant of the family still needs it', () => {
-    const catalog = { schema_version: 1, updated_at: '2026-09-23', families: [LTX_2] }
+    const catalog = {
+      schema_version: 1,
+      updated_at: '2026-09-23',
+      families: [LTX_2],
+    }
     const files = [
       ...planArtifactDownload(LTX_2, 'q4_k_m', [], '').entries,
       ...planArtifactDownload(LTX_2, 'q8_0', [], '').entries,
-    ].map((e) => ({ path: `/m/${e.relativePath}`, relativePath: e.relativePath, bytes: e.bytes }))
-    const { remove, kept } = planArtifactDeletion(LTX_2, 'q4_k_m', files, catalog)
-    expect(remove.map((f) => f.relativePath)).toEqual(['ltx-2/ltx-2.3-22b-distilled-Q4_K_M.gguf'])
+    ].map((e) => ({
+      path: `/m/${e.relativePath}`,
+      relativePath: e.relativePath,
+      bytes: e.bytes,
+    }))
+    const { remove, kept } = planArtifactDeletion(
+      LTX_2,
+      'q4_k_m',
+      files,
+      catalog
+    )
+    expect(remove.map((f) => f.relativePath)).toEqual([
+      'ltx-2/ltx-2.3-22b-distilled-Q4_K_M.gguf',
+    ])
     expect(kept.map((f) => f.relativePath)).toEqual([
       `${ltxShared}/ltx-2.3-22b-distilled_video_vae.safetensors`,
       `${ltxShared}/ltx-2.3-22b-distilled_audio_vae.safetensors`,
