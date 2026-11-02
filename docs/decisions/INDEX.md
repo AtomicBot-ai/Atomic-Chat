@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-508 records, 2026-05-19 → 2026-11-02.
+509 records, 2026-05-19 → 2026-11-02.
 
 ---
 
@@ -33,8 +33,9 @@ decision is reversed, add a new one that says which record it supersedes.
 
 ---
 
-## Local image & video generation (32)
+## Local image & video generation (33)
 
+- **2026-11-02** — [Open the Audios studio in releases, on the unified catalog's audio collection](2026-11-02-open-the-audios-studio-in-releases-on-the-unified-catalog.md) — flag on for desktop releases; models from `catalog.json`'s `audio` collection; resume only the same pinned plan. Supersedes the dev-only clauses of 2026-10-27 and 2026-11-01.
 - **2026-11-01** — [Run the Audios studio on the core's audio.cpp and conf's audio catalog](2026-11-01-run-the-audios-studio-on-the-core-and-the-audio-catalog.md) — `services/audio/`, the catalog's `controls` decide the form, a core without audio is a quiet state; still dev-only.
 - **2026-10-30** — [Pin media artifacts and stop on remote size changes](2026-10-30-pin-media-artifacts-and-stop-on-remote-size-changes.md)
 
