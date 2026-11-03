@@ -1048,7 +1048,7 @@ async function doSwitchToModel(
     //    from another in-flight switch) wins the race, and without this
     //    guard that benign race would surface as a spurious "Failed to load
     //    the model" toast on top of a model that is, in fact, running fine.
-    //    Mirrors the same handling in hermes-agent.tsx / claude-code.tsx.
+    //    Mirrors the same handling in hermes-agent.tsx.
     //
     //    Gating: the :1337 proxy is a user-facing surface, not a hard
     //    requirement for chatting with a *local* engine (llamacpp/mlx connect
