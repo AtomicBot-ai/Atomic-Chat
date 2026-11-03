@@ -4,24 +4,33 @@ import { ChevronRight } from 'lucide-react'
 import { route } from '@/constants/routes'
 import { SERVER_AGENTS } from '@/constants/integrations'
 import { AgentIcon } from '@/containers/AgentIcon'
+import type { AgentState } from '@/lib/agent-status'
+import { useAgentStatus } from '@/hooks/useAgentStatus'
 import { useServerSetup } from '@/hooks/useServerSetup'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { detectIntegrationAgentsOnce } from '@/lib/integration-agent-detection'
 import { isGuidedAgent } from '@/lib/integration-agent-setup'
-import { useLaunchStore } from '@/stores/launch-store'
 import { cn } from '@/lib/utils'
+
+/** The dot: green once it talks to the server, paler while only set up. */
+const DOT: Record<AgentState, string> = {
+  not_installed: 'bg-muted-foreground/40',
+  installed: 'bg-muted-foreground/40',
+  app_missing: 'bg-amber-400',
+  configured: 'bg-emerald-400/50',
+  opened: 'bg-emerald-400/50',
+  connected: 'bg-emerald-400',
+}
 
 /**
  * The integration agents, in the Server's order, as a palette under the
  * Server navigation. An agent Atomic Chat can configure opens the setup guide
  * on Overview at its review; an editor set up by hand opens its card on All
- * integrations. The dot is green once the agent was set up through Atomic
- * Chat.
+ * integrations. Each says where it stands (`useAgentStatus`).
  */
 export function NavServerAgents() {
   const { t } = useTranslation()
-  const installed = useLaunchStore((state) => state.installed)
-  const configured = useServerSetup((state) => state.configuredAgents)
+  const statusOf = useAgentStatus()
 
   useEffect(() => {
     detectIntegrationAgentsOnce()
@@ -34,12 +43,7 @@ export function NavServerAgents() {
       </p>
       <div className="space-y-0.5">
         {SERVER_AGENTS.map((agent) => {
-          const isConfigured = configured.some((entry) => entry.id === agent.id)
-          const status = isConfigured
-            ? t('common:navigation.configured')
-            : installed[agent.id]
-              ? t('common:navigation.installed')
-              : t('common:navigation.notInstalled')
+          const { state, label: status } = statusOf(agent)
           const guided = isGuidedAgent(agent)
           return (
             <Link
@@ -65,10 +69,7 @@ export function NavServerAgents() {
               <span
                 aria-hidden="true"
                 title={status}
-                className={cn(
-                  'size-1.5 shrink-0 rounded-full',
-                  isConfigured ? 'bg-emerald-400' : 'bg-muted-foreground/40'
-                )}
+                className={cn('size-1.5 shrink-0 rounded-full', DOT[state])}
               />
               <ChevronRight
                 size={12}

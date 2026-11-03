@@ -33,7 +33,7 @@ describe('openIntegrationAgent', () => {
     vi.mocked(osType).mockReturnValue('macos')
     vi.mocked(invoke).mockResolvedValue(undefined)
     vi.mocked(servedContextLength).mockResolvedValue(undefined)
-    useLaunchStore.setState({ launched: {}, binPath: {} })
+    useLaunchStore.setState({ opened: {}, connected: {}, binPath: {} })
   })
 
   const terminalCommand = () =>
@@ -97,7 +97,7 @@ describe('openIntegrationAgent', () => {
     )
   })
 
-  it('runs a terminal agent and remembers it opened', async () => {
+  it('runs a terminal agent, titled for it, and remembers it opened', async () => {
     const opened = await openIntegrationAgent(agent('codex'), {
       t,
       model: 'qwen3.5-4b',
@@ -108,8 +108,79 @@ describe('openIntegrationAgent', () => {
     expect(invoke).toHaveBeenCalledWith('open_agent_terminal', {
       command: `ATOMIC_CHAT_API_KEY='it'\\''s-secret' 'codex' '--profile' 'atomic-chat'`,
       proxy: undefined,
+      agent: {
+        agentId: 'codex',
+        agentName: 'Codex CLI',
+        endpoint: 'http://127.0.0.1:1337/v1',
+        model: 'qwen3.5-4b',
+      },
     })
-    expect(useLaunchStore.getState().launched).toEqual({ codex: true })
+    expect(useLaunchStore.getState().opened).toEqual({
+      codex: { at: expect.any(Number), model: 'qwen3.5-4b' },
+    })
+    expect(useLaunchStore.getState().connected).toEqual({ codex: false })
+  })
+
+  it('names the bare endpoint an agent without the API prefix is given', async () => {
+    await openIntegrationAgent(agent('claude-code'), { t, model: null, server })
+
+    expect(invoke).toHaveBeenCalledWith(
+      'open_agent_terminal',
+      expect.objectContaining({
+        agent: expect.objectContaining({ endpoint: 'http://127.0.0.1:1337' }),
+      })
+    )
+    expect(useLaunchStore.getState().opened).toEqual({
+      'claude-code': { at: expect.any(Number), model: null },
+    })
+  })
+
+  it('keeps what it knew of an agent whose running terminal came forward', async () => {
+    useLaunchStore.setState({
+      opened: { codex: { at: 5, model: 'qwen3.5-4b' } },
+      connected: { codex: true },
+    })
+    vi.mocked(invoke).mockResolvedValueOnce('focused')
+
+    const opened = await openIntegrationAgent(agent('codex'), {
+      t,
+      model: 'qwen3.5-4b',
+      server,
+    })
+
+    expect(opened).toBe(true)
+    expect(useLaunchStore.getState()).toMatchObject({
+      opened: { codex: { at: 5 } },
+      connected: { codex: true },
+    })
+
+    // A new window is a new process: heard from again before it is connected.
+    vi.mocked(invoke).mockResolvedValueOnce('opened')
+    await openIntegrationAgent(agent('codex'), {
+      t,
+      model: 'qwen3.5-4b',
+      server,
+    })
+    expect(useLaunchStore.getState().opened.codex.at).toBeGreaterThan(5)
+    expect(useLaunchStore.getState().connected).toEqual({ codex: false })
+  })
+
+  it('says where to allow Terminal when macOS refuses Automation', async () => {
+    vi.mocked(invoke).mockRejectedValueOnce(
+      'Terminal did not open: execution error: Not authorized to send Apple events to Terminal. (-1743)'
+    )
+
+    const opened = await openIntegrationAgent(agent('codex'), {
+      t,
+      model: null,
+      server,
+    })
+
+    expect(opened).toBe(false)
+    expect(toast.warning).toHaveBeenCalledWith('launch:toast.terminalFailed', {
+      description: 'launch:toast.terminalNotAllowedDesc',
+    })
+    expect(useLaunchStore.getState().opened).toEqual({})
   })
 
   it('opens a desktop agent in its own app, not a terminal', async () => {
@@ -123,7 +194,9 @@ describe('openIntegrationAgent', () => {
       'open_agent_terminal',
       expect.anything()
     )
-    expect(useLaunchStore.getState().launched).toEqual({ zed: true })
+    expect(useLaunchStore.getState().opened).toEqual({
+      zed: { at: expect.any(Number), model: null },
+    })
   })
 
   it('opens Zed through the launcher detection found off PATH', async () => {
@@ -136,7 +209,9 @@ describe('openIntegrationAgent', () => {
       apiKey: server.apiKey,
       path: cli,
     })
-    expect(useLaunchStore.getState().launched).toEqual({ zed: true })
+    expect(useLaunchStore.getState().opened).toEqual({
+      zed: { at: expect.any(Number), model: null },
+    })
   })
 
   it('warns instead of throwing when the terminal does not open', async () => {
@@ -152,7 +227,7 @@ describe('openIntegrationAgent', () => {
     expect(toast.warning).toHaveBeenCalledWith('launch:toast.terminalFailed', {
       description: 'no terminal app',
     })
-    expect(useLaunchStore.getState().launched).toEqual({})
+    expect(useLaunchStore.getState().opened).toEqual({})
   })
   it.skipIf(process.platform === 'win32').each(['muse', 'poolside'])(
     'preserves %s arguments through a POSIX shell',

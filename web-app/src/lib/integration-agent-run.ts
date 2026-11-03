@@ -232,11 +232,35 @@ function quotedAgentCommand(
   return `powershell.exe -NoProfile -EncodedCommand ${btoa(bytes)}`
 }
 
-/** Opens the agent's own window or terminal; whether it did. */
+/**
+ * What `open_agent_terminal` did: a new terminal, or the one already running
+ * this agent brought forward (macOS).
+ */
+type TerminalOutcome = 'opened' | 'focused'
+
+/**
+ * What the terminal is for (`AgentTerminalInfo` in Rust): its title, the line
+ * printed before the agent starts, and the window a later Connect brings
+ * forward.
+ */
+function terminalInfo(
+  agent: IntegrationAgent,
+  model: string | null,
+  { serverHost, serverPort, apiPrefix }: AgentServerSettings
+) {
+  return {
+    agentId: agent.id,
+    agentName: agent.name,
+    endpoint: `http://${agentConnectHost(serverHost)}:${serverPort}${agent.endpointWithPrefix ? apiPrefix : ''}`,
+    model,
+  }
+}
+
+/** Opens the agent's own window or terminal; what it did, `null` if nothing. */
 async function openAgent(
   agent: IntegrationAgent,
   { t, model, server }: OpenOptions
-): Promise<boolean> {
+): Promise<TerminalOutcome | null> {
   // Zed is a desktop editor, not a terminal agent: its AI agent lives in its
   // own window. Launch the app directly (no terminal) — the config written
   // before points its `openai_compatible` "Atomic Chat" provider at the local
@@ -247,7 +271,7 @@ async function openAgent(
       apiKey: server.apiKey || null,
       path: useLaunchStore.getState().binPath[agent.id] ?? null,
     })
-    return true
+    return 'opened'
   }
   // ZCode is a desktop app too, and it is never installed from here: the
   // provider file is written either way and read on its next start, so a
@@ -263,7 +287,7 @@ async function openAgent(
         duration: 10000,
       })
     }
-    return app.launched
+    return app.launched ? 'opened' : null
   }
   // OpenClaw also ships a desktop app (macOS `OpenClaw.app`, Windows Hub), and
   // it reads the very config written before — its Gateway owns the file and
@@ -273,7 +297,7 @@ async function openAgent(
     const app = await invoke<{ installed: boolean; launched: boolean }>(
       'launch_openclaw_app'
     )
-    if (app.launched) return true
+    if (app.launched) return 'opened'
     if (app.installed) {
       // Windows Hub installs per-user with no documented path or AUMID to
       // launch it by, so hand the user the one instruction we can give
@@ -282,18 +306,27 @@ async function openAgent(
         description: t('launch:toast.openclawAppReadyDesc'),
         duration: 10000,
       })
-      return false
+      return null
     }
   }
   // The window the served model was loaded with, for the agent told it at
   // launch rather than in its config.
   const contextLength =
     agent.id === 'goose' ? await servedContextLength() : undefined
-  await invoke('open_agent_terminal', {
-    command: terminalCommand(agent, model, server, contextLength),
-    proxy: buildProxyPayload(),
-  })
-  return true
+  const outcome = await invoke<TerminalOutcome | undefined>(
+    'open_agent_terminal',
+    {
+      command: terminalCommand(agent, model, server, contextLength),
+      proxy: buildProxyPayload(),
+      agent: terminalInfo(agent, model, server),
+    }
+  )
+  return outcome === 'focused' ? 'focused' : 'opened'
+}
+
+/** macOS refused to let Atomic Chat drive Terminal (Automation, -1743). */
+function automationDenied(message: string): boolean {
+  return /-1743|not authori[sz]ed to send apple events/i.test(message)
 }
 
 type OpenOptions = {
@@ -305,22 +338,32 @@ type OpenOptions = {
 
 /**
  * Starts an agent whose config already points at the Local API Server: its
- * desktop app, or a terminal running it. A failure is a warning toast, never
- * a throw — the config is written either way. Resolves whether the agent was
- * opened, and records it in the launch store for this run of the app.
+ * desktop app, or a terminal running it — or, while the terminal Atomic Chat
+ * opened for it still runs it, brings that one forward. A failure is a
+ * warning toast, never a throw — the config is written either way. Resolves
+ * whether the agent was opened, and records it in the launch store for this
+ * run of the server.
  */
 export async function openIntegrationAgent(
   agent: IntegrationAgent,
   options: OpenOptions
 ): Promise<boolean> {
   try {
-    const opened = await openAgent(agent, options)
-    if (opened) useLaunchStore.getState().markLaunched(agent.id)
-    return opened
+    const outcome = await openAgent(agent, options)
+    if (!outcome) return false
+    useLaunchStore.getState().markOpened(agent.id, options.model, {
+      reopened: outcome === 'focused',
+    })
+    return true
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
     toast.warning(
       options.t('launch:toast.terminalFailed', { name: agent.name }),
-      { description: err instanceof Error ? err.message : String(err) }
+      {
+        description: automationDenied(message)
+          ? options.t('launch:toast.terminalNotAllowedDesc')
+          : message,
+      }
     )
     return false
   }

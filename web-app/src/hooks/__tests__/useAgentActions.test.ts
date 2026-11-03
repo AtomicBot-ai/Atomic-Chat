@@ -2,15 +2,25 @@ import { act, renderHook } from '@testing-library/react'
 import { toast } from 'sonner'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { start, settle, writeConfig, installAgent, openAgent, ensureRunning } =
-  vi.hoisted(() => ({
-    start: vi.fn(),
-    settle: vi.fn(),
-    writeConfig: vi.fn(),
-    installAgent: vi.fn(),
-    openAgent: vi.fn(),
-    ensureRunning: vi.fn(),
-  }))
+const {
+  start,
+  settle,
+  writeConfig,
+  installAgent,
+  openAgent,
+  ensureRunning,
+  detect,
+  contextWindow,
+} = vi.hoisted(() => ({
+  start: vi.fn(),
+  settle: vi.fn(),
+  writeConfig: vi.fn(),
+  installAgent: vi.fn(),
+  openAgent: vi.fn(),
+  ensureRunning: vi.fn(),
+  detect: vi.fn(),
+  contextWindow: vi.fn(),
+}))
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } }))
 vi.mock('@/i18n/react-i18next-compat', () => ({
@@ -33,14 +43,36 @@ vi.mock('@/lib/integration-agent-run', () => ({
   openIntegrationAgent: openAgent,
 }))
 vi.mock('@/lib/integration-agent-detection', () => ({
-  detectIntegrationAgent: vi.fn(),
+  detectIntegrationAgent: detect,
 }))
+// The window check is measured by its own tests; here it answers what
+// `ensureAgentContextWindow` would, through the real message and error.
+vi.mock('@/lib/agent-context-window', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/lib/agent-context-window')>()
+  return {
+    ...actual,
+    requireAgentContextWindow: async (
+      target: IntegrationAgent,
+      t: (key: string, params?: Record<string, unknown>) => string
+    ) => {
+      const window = await contextWindow(target)
+      if (window.ok) return window.contextLength
+      throw new actual.AgentContextError(
+        actual.contextWindowMessage(t, target, window)
+      )
+    },
+  }
+})
 vi.mock('@/utils/servedModel', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/utils/servedModel')>()),
   ensureServedModelRunning: ensureRunning,
 }))
 
-import { INTEGRATION_AGENTS } from '@/constants/integrations'
+import {
+  INTEGRATION_AGENTS,
+  type IntegrationAgent,
+} from '@/constants/integrations'
 import { useAppState } from '@/hooks/useAppState'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useServerSetup } from '@/hooks/useServerSetup'
@@ -59,6 +91,8 @@ describe('useAgentActions', () => {
     writeConfig.mockResolvedValue(undefined)
     installAgent.mockResolvedValue(true)
     openAgent.mockResolvedValue(true)
+    detect.mockResolvedValue(true)
+    contextWindow.mockResolvedValue({ ok: true, contextLength: undefined })
     useAppState.setState({ serverStatus: 'running' })
     useLocalApiServer.setState({
       serverHost: '127.0.0.1',
@@ -175,6 +209,73 @@ describe('useAgentActions', () => {
     )
     expect(openAgent).not.toHaveBeenCalled()
     expect(useLaunchStore.getState().busy.codex).toBe(false)
+  })
+
+  it('offers Install instead of a terminal when the agent is gone, and writes nothing', async () => {
+    detect.mockResolvedValueOnce(false)
+    const { result } = renderHook(() => useAgentActions())
+
+    await act(() => result.current.connect(agent('codex')))
+
+    expect(toast.error).toHaveBeenCalledWith(
+      'api:agents.missingToast:{"name":"Codex CLI"}',
+      expect.objectContaining({
+        action: expect.objectContaining({ label: 'api:agents.install' }),
+      })
+    )
+    expect(writeConfig).not.toHaveBeenCalled()
+    expect(openAgent).not.toHaveBeenCalled()
+    expect(useServerSetup.getState().configuredAgents).toEqual([])
+    expect(useLaunchStore.getState().busy.codex).toBe(false)
+
+    // The toast's Install installs it.
+    const [, options] = vi.mocked(toast.error).mock.calls[0] as [
+      string,
+      { action: { onClick: () => void } },
+    ]
+    await act(async () => options.action.onClick())
+    expect(installAgent).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'codex' }),
+      expect.anything()
+    )
+  })
+
+  it('writes the window the model was reloaded with', async () => {
+    contextWindow.mockResolvedValueOnce({ ok: true, contextLength: 32768 })
+    const { result } = renderHook(() => useAgentActions())
+
+    await act(() => result.current.connect(agent('codex')))
+
+    expect(writeConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'codex' }),
+      'qwen3.5-4b',
+      expect.anything(),
+      { contextLength: 32768 }
+    )
+    expect(useServerSetup.getState().configuredAgents).toEqual([
+      expect.objectContaining({ id: 'codex' }),
+    ])
+  })
+
+  it('stops, saying the minimum, when the window cannot be grown', async () => {
+    contextWindow.mockResolvedValueOnce({
+      ok: false,
+      reason: 'reload',
+      minimum: 65536,
+      contextLength: 16384,
+    })
+    const { result } = renderHook(() => useAgentActions())
+
+    await act(() => result.current.connect(agent('hermes')))
+
+    expect(toast.error).toHaveBeenCalledWith(
+      'launch:toast.contextTooSmall:{"name":"Hermes Agent","minimum":"64K"}',
+      { description: 'launch:toast.contextTooSmallMemory:{"current":"16K"}' }
+    )
+    expect(writeConfig).not.toHaveBeenCalled()
+    expect(openAgent).not.toHaveBeenCalled()
+    expect(useServerSetup.getState().configuredAgents).toEqual([])
+    expect(useLaunchStore.getState().busy.hermes).toBe(false)
   })
 
   it('installs with the card busy until the installer is done', async () => {

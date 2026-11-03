@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react'
 import { invoke } from '@tauri-apps/api/core'
 import { toast } from 'sonner'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -6,6 +12,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const navigate = vi.hoisted(() => vi.fn())
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))
+vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn() }))
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } }))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
@@ -23,6 +30,9 @@ vi.mock('@/hooks/useAgentActions', () => ({
   useAgentActions: () => ({ install: vi.fn(), connect }),
 }))
 
+import { openUrl } from '@tauri-apps/plugin-opener'
+
+import { useApiServerLog } from '@/hooks/useApiServerLog'
 import { useAppState } from '@/hooks/useAppState'
 import { useServerSetup } from '@/hooks/useServerSetup'
 import { useLaunchStore } from '@/stores/launch-store'
@@ -39,7 +49,13 @@ describe('Connections, connected tools', () => {
       guide: null,
       guideActive: false,
     })
-    useLaunchStore.setState({ launched: {}, phase: {} })
+    useLaunchStore.setState({
+      installed: {},
+      opened: {},
+      connected: {},
+      phase: {},
+    })
+    useApiServerLog.getState().reset()
   })
 
   /** Disconnect asks first; this answers it. */
@@ -70,7 +86,7 @@ describe('Connections, connected tools', () => {
     expect(screen.getAllByText('api:connected.ready')).toHaveLength(2)
   })
 
-  it('connects a tool again, and says it is connected once Atomic Chat opened it', () => {
+  it('connects a tool again: opened, then connected once the server hears from it', () => {
     useServerSetup.setState({ configuredAgents: [{ id: 'codex', at: 1 }] })
     const { rerender } = render(<ConnectedTools />)
 
@@ -83,18 +99,69 @@ describe('Connections, connected tools', () => {
       expect.objectContaining({ id: 'codex' })
     )
 
-    useLaunchStore.setState({ launched: { codex: true } })
+    // Opening a window is not a connection.
+    act(() => useLaunchStore.getState().markOpened('codex', 'qwen'))
+    rerender(<ConnectedTools />)
+    expect(screen.getByText('api:connected.opened')).toBeInTheDocument()
+    expect(screen.queryByText('api:connected.connected')).toBeNull()
+
+    act(() =>
+      useApiServerLog.getState().applyBatch([
+        {
+          t: 'start',
+          entry: {
+            kind: 'request',
+            id: 'r1',
+            seq: 1,
+            startedAt: Date.now() + 1,
+            status: 'in_flight',
+            method: 'POST',
+            endpoint: 'responses',
+            model: 'qwen',
+            stream: true,
+          },
+        },
+      ])
+    )
     rerender(<ConnectedTools />)
     expect(screen.getByText('api:connected.connected')).toBeInTheDocument()
 
     // While it connects, the button waits.
-    useLaunchStore.setState({ phase: { codex: 'connecting' } })
+    act(() => useLaunchStore.setState({ phase: { codex: 'connecting' } }))
     rerender(<ConnectedTools />)
     expect(
       screen.getByRole('button', {
         name: 'api:connected.connectAgent:{"name":"Codex CLI"}',
       })
     ).toBeDisabled()
+  })
+
+  it('does not call a tool whose app is missing ready, and links its download', () => {
+    useServerSetup.setState({
+      configuredAgents: [
+        { id: 'zcode', at: 1 },
+        { id: 'kilo', at: 2 },
+      ],
+    })
+    useLaunchStore.setState({ installed: { zcode: false, kilo: false } })
+    render(<ConnectedTools />)
+
+    expect(screen.getByText('api:connected.appMissing')).toBeInTheDocument()
+    expect(screen.getByText('api:connected.notInstalled')).toBeInTheDocument()
+    expect(screen.queryByText('api:connected.ready')).toBeNull()
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'api:agents.downloadAgent:{"name":"ZCode"}',
+      })
+    )
+    expect(openUrl).toHaveBeenCalledWith('https://zcode.z.ai')
+    // Kilo is installed from here: Connect offers that.
+    expect(
+      screen.queryByRole('button', {
+        name: 'api:agents.downloadAgent:{"name":"Kilo Code"}',
+      })
+    ).toBeNull()
   })
 
   it('asks before disconnecting, and Cancel leaves the tool set up', () => {
