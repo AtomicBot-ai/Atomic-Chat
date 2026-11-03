@@ -13,6 +13,7 @@ pub mod copilot_config;
 pub mod droid_config;
 pub mod dsh_config;
 pub mod goose_config;
+pub mod json_key_backup;
 pub mod opencode_family;
 pub mod page_cache;
 pub mod windows_path;
