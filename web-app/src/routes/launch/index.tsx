@@ -42,6 +42,7 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useLaunchStore } from '@/stores/launch-store'
 import { useLaunchSettings } from '@/stores/launch-settings-store'
+import { servedContextLength } from '@/utils/servedModel'
 import { cn } from '@/lib/utils'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -237,12 +238,12 @@ function LaunchPage() {
         await ensureServerRunning()
       }
 
-      await writeAgentConfig(agent, model, {
-        serverHost,
-        serverPort,
-        apiPrefix,
-        apiKey,
-      })
+      await writeAgentConfig(
+        agent,
+        model,
+        { serverHost, serverPort, apiPrefix, apiKey },
+        { contextLength: await servedContextLength() }
+      )
       useServerSetup.getState().markAgentConfigured(agent.id)
 
       const configuredDescKey = agentConfiguredDescriptionKey(agent.id)

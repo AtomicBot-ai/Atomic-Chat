@@ -98,18 +98,18 @@ describe('Connections, connected tools', () => {
   })
 
   it('asks before disconnecting, and Cancel leaves the tool set up', () => {
-    useServerSetup.setState({ configuredAgents: [{ id: 'opencode', at: 1 }] })
+    useServerSetup.setState({ configuredAgents: [{ id: 'vscode', at: 1 }] })
     render(<ConnectedTools />)
 
     const disconnect = screen.getByRole('button', {
-      name: 'api:connected.forget:{"name":"OpenCode"}',
+      name: 'api:connected.forget:{"name":"VS Code"}',
     })
     // A word, not an icon.
     expect(disconnect).toHaveTextContent('api:connected.disconnectAction')
     fireEvent.click(disconnect)
 
     expect(
-      screen.getByText('api:connected.disconnectTitle:{"name":"OpenCode"}')
+      screen.getByText('api:connected.disconnectTitle:{"name":"VS Code"}')
     ).toBeInTheDocument()
     expect(screen.getByText('api:connected.forgetHint')).toBeInTheDocument()
     fireEvent.click(
@@ -117,14 +117,14 @@ describe('Connections, connected tools', () => {
     )
 
     expect(useServerSetup.getState().configuredAgents).toEqual([
-      { id: 'opencode', at: 1 },
+      { id: 'vscode', at: 1 },
     ])
     expect(invoke).not.toHaveBeenCalled()
   })
 
   it('only forgets a tool it cannot undo: its own settings are not touched', () => {
     useServerSetup.setState({
-      configuredAgents: [{ id: 'opencode', at: 1 }],
+      configuredAgents: [{ id: 'vscode', at: 1 }],
       endpointConfigured: true,
     })
     useAppState.setState({ serverStatus: 'stopped' })
@@ -133,7 +133,7 @@ describe('Connections, connected tools', () => {
 
     fireEvent.click(
       screen.getByRole('button', {
-        name: 'api:connected.forget:{"name":"OpenCode"}',
+        name: 'api:connected.forget:{"name":"VS Code"}',
       })
     )
     confirmDisconnect()
@@ -167,7 +167,7 @@ describe('Connections, connected tools', () => {
     expect(invoke).not.toHaveBeenCalled()
     confirmDisconnect()
 
-    expect(invoke).toHaveBeenCalledWith('disconnect_codex')
+    expect(invoke).toHaveBeenCalledWith('disconnect_agent', { agentId: 'codex' })
     await waitFor(() =>
       expect(useServerSetup.getState().configuredAgents).toEqual([])
     )

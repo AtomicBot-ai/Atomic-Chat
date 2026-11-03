@@ -13,6 +13,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { isAnswerableModel } from '@/lib/answerable-model'
 import { MODEL_LOAD_WATCHDOG_MS, withTimeout } from '@/lib/utils'
 import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
+import { readLoadedContextLength } from '@/utils/apiServerCapacity'
 import {
   ensureModelForServer,
   resolveServerModels,
@@ -43,6 +44,23 @@ export function servedModelId(
   server: ServedModelSource = useLocalApiServer.getState()
 ): string | null {
   return servedModel(server)?.model ?? null
+}
+
+/**
+ * The window `served` (by default the model the server serves) was loaded
+ * with, when its engine says; `undefined` otherwise. Agents are told it so
+ * they compact before the server refuses. Never throws.
+ */
+export async function servedContextLength(
+  served?: ServedModel | null
+): Promise<number | undefined> {
+  try {
+    const target = served === undefined ? servedModel() : served
+    if (!target) return undefined
+    return await readLoadedContextLength(target.provider, target.model)
+  } catch {
+    return undefined
+  }
 }
 
 /**

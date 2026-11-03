@@ -33,9 +33,6 @@ import { ServerButton } from './ServerPageParts'
  * Codex runs on a profile Atomic Chat owns, so disconnecting deletes it (and
  * anything an earlier release left in Codex's shared config.toml).
  */
-const DISCONNECT_COMMANDS: Record<string, string> = {
-  codex: 'disconnect_codex',
-}
 
 /** The row Disconnect asks about: one tool, or the custom application. */
 type Disconnecting = { agent: IntegrationAgent } | { endpoint: true }
@@ -43,10 +40,10 @@ type Disconnecting = { agent: IntegrationAgent } | { endpoint: true }
 /**
  * Server → Connections, "Connected tools": what was set up through Atomic
  * Chat to use this server. Connect opens a tool again (starting the server
- * first), as its card on Overview does. Disconnect asks first: for a tool in
- * `DISCONNECT_COMMANDS` it undoes that setup and the row goes only once it
- * has; for every other tool it only forgets the row — its own config stays
- * as written.
+ * first), as its card on Overview does. Disconnect asks first: for a tool
+ * whose config Atomic Chat writes it undoes that setup (`disconnect_agent`)
+ * and the row goes only once it has; an editor set up by hand only leaves
+ * the list.
  */
 export function ConnectedTools() {
   const { t } = useTranslation()
@@ -71,10 +68,11 @@ export function ConnectedTools() {
         : t('api:connected.ready')
 
   const remove = async (agent: IntegrationAgent) => {
-    const command = DISCONNECT_COMMANDS[agent.id]
-    if (command) {
+    // Every tool whose config Atomic Chat writes has its undo
+    // (`disconnect_agent`); an editor set up by hand has nothing of ours.
+    if (agent.configurable) {
       try {
-        await invoke(command)
+        await invoke('disconnect_agent', { agentId: agent.id })
       } catch (err) {
         toast.error(t('api:connected.disconnectFailed', { name: agent.name }), {
           description: err instanceof Error ? err.message : String(err),
@@ -101,7 +99,7 @@ export function ConnectedTools() {
   const undoes =
     disconnecting !== null &&
     'agent' in disconnecting &&
-    DISCONNECT_COMMANDS[disconnecting.agent.id] !== undefined
+    disconnecting.agent.configurable
 
   return (
     <section className="sp-panel" aria-label={t('api:connected.title')}>
@@ -143,7 +141,7 @@ export function ConnectedTools() {
             </ServerButton>
             <ServerButton
               aria-label={
-                DISCONNECT_COMMANDS[agent.id]
+                agent.configurable
                   ? t('api:connected.disconnect', { name: agent.name })
                   : t('api:connected.forget', { name: agent.name })
               }

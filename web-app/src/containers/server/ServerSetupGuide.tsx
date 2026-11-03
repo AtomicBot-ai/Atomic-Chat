@@ -45,6 +45,7 @@ import {
 } from '@/lib/integration-agent-setup'
 import { openIntegrationAgent } from '@/lib/integration-agent-run'
 import { useLaunchStore } from '@/stores/launch-store'
+import { servedContextLength } from '@/utils/servedModel'
 
 import {
   EngineModelFields,
@@ -184,7 +185,8 @@ export function ServerSetupGuide({ entry }: { entry: SetupGuideEntry }) {
           await writeAgentConfig(
             agent,
             model.model,
-            useLocalApiServer.getState()
+            useLocalApiServer.getState(),
+            { contextLength: await servedContextLength(model) }
           )
           useServerSetup.getState().markAgentConfigured(agent.id)
         } else {

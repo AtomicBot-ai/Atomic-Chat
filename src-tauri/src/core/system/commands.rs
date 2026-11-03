@@ -3095,7 +3095,11 @@ pub async fn configure_codex(
     api_url: String,
     model: String,
     api_key: Option<String>,
+    // The window the served model was loaded with, when the app knows it;
+    // the agent is told so it compacts before the server refuses.
+    context_length: Option<u32>,
 ) -> Result<(), String> {
+    let _ = context_length;
     let keyed = api_key.as_deref().is_some_and(|k| !k.is_empty());
     let profile = tauri::async_runtime::spawn_blocking({
         let (api_url, model) = (api_url.clone(), model.clone());
@@ -3119,7 +3123,11 @@ pub fn configure_opencode(
     api_url: String,
     model: String,
     api_key: Option<String>,
+    // The window the served model was loaded with, when the app knows it;
+    // the agent is told so it compacts before the server refuses.
+    context_length: Option<u32>,
 ) -> Result<(), String> {
+    let _ = context_length;
     let home = agent_home_dir()?;
     let dir = PathBuf::from(&home).join(".config").join("opencode");
     std::fs::create_dir_all(&dir)
@@ -3205,7 +3213,11 @@ pub fn configure_openclaude(
     api_url: String,
     model: String,
     api_key: Option<String>,
+    // The window the served model was loaded with, when the app knows it;
+    // the agent is told so it compacts before the server refuses.
+    context_length: Option<u32>,
 ) -> Result<(), String> {
+    let _ = context_length;
     configure_openclaude_at(&agent_home_dir()?, api_url, model, api_key)
 }
 
@@ -3307,7 +3319,11 @@ pub fn configure_mimo(
     api_url: String,
     model: String,
     api_key: Option<String>,
+    // The window the served model was loaded with, when the app knows it;
+    // the agent is told so it compacts before the server refuses.
+    context_length: Option<u32>,
 ) -> Result<(), String> {
+    let _ = context_length;
     let home = agent_home_dir()?;
     let dir = PathBuf::from(&home).join(".config").join("mimocode");
     std::fs::create_dir_all(&dir)
@@ -3385,7 +3401,11 @@ pub fn configure_droid(
     api_url: String,
     model: String,
     api_key: Option<String>,
+    // The window the served model was loaded with, when the app knows it;
+    // the agent is told so it compacts before the server refuses.
+    context_length: Option<u32>,
 ) -> Result<(), String> {
+    let _ = context_length;
     const DISPLAY_NAME: &str = "Atomic Chat";
 
     let home = agent_home_dir()?;
@@ -3497,7 +3517,11 @@ pub fn configure_zed(
     // provider key from its keychain / the ATOMIC_CHAT_API_KEY env var, not
     // from settings.json, so we don't persist it here.
     api_key: Option<String>,
+    // The window the served model was loaded with, when the app knows it;
+    // the agent is told so it compacts before the server refuses.
+    context_length: Option<u32>,
 ) -> Result<(), String> {
+    let _ = context_length;
     let _ = api_key;
     let home = agent_home_dir()?;
     let dir = PathBuf::from(&home).join(".config").join("zed");
@@ -4087,7 +4111,11 @@ pub fn configure_zcode(
     api_url: String,
     model: String,
     api_key: Option<String>,
+    // The window the served model was loaded with, when the app knows it;
+    // the agent is told so it compacts before the server refuses.
+    context_length: Option<u32>,
 ) -> Result<(), String> {
+    let _ = context_length;
     let home = agent_home_dir()?;
     let env_base = std::env::var("ZCODE_DATA_BASE_DIR").ok();
     let dir = zcode_config_dir(Path::new(&home), env_base.as_deref());
@@ -4475,7 +4503,11 @@ pub fn configure_openclaw(
     api_url: String,
     model: String,
     api_key: Option<String>,
+    // The window the served model was loaded with, when the app knows it;
+    // the agent is told so it compacts before the server refuses.
+    context_length: Option<u32>,
 ) -> Result<(), String> {
+    let _ = context_length;
     let home = agent_home_dir()?;
     let config_path = openclaw_config_path(&home);
 
@@ -4524,7 +4556,11 @@ pub fn configure_claude_code(
     api_url: String,
     model: Option<String>,
     api_key: Option<String>,
+    // The window the served model was loaded with, when the app knows it;
+    // the agent is told so it compacts before the server refuses.
+    context_length: Option<u32>,
 ) -> Result<(), String> {
+    let _ = context_length;
     let home = agent_home_dir()?;
     let dir = PathBuf::from(&home).join(".claude");
     std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create ~/.claude: {}", e))?;
@@ -4677,7 +4713,11 @@ pub fn configure_copilot(
     api_url: String,
     model: String,
     api_key: Option<String>,
+    // The window the served model was loaded with, when the app knows it;
+    // the agent is told so it compacts before the server refuses.
+    context_length: Option<u32>,
 ) -> Result<(), String> {
+    let _ = context_length;
     let env_vars = copilot_env_vars(&api_url, &model, api_key.as_deref());
 
     const MARKER: &str = "# Atomic Chat - Copilot CLI Config";
@@ -4720,7 +4760,15 @@ pub fn configure_copilot(
 /// providers / keys preserved). Pi speaks OpenAI Chat Completions, so `api_url`
 /// carries the `/v1` suffix.
 #[tauri::command]
-pub fn configure_pi(api_url: String, model: String, api_key: Option<String>) -> Result<(), String> {
+pub fn configure_pi(
+    api_url: String,
+    model: String,
+    api_key: Option<String>,
+    // The window the served model was loaded with, when the app knows it;
+    // the agent is told so it compacts before the server refuses.
+    context_length: Option<u32>,
+) -> Result<(), String> {
+    let _ = context_length;
     let home = agent_home_dir()?;
     let dir = PathBuf::from(&home).join(".pi").join("agent");
     std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create ~/.pi/agent: {}", e))?;
@@ -5226,7 +5274,11 @@ pub fn configure_dsh(
     api_url: String,
     model: String,
     api_key: Option<String>,
+    // The window the served model was loaded with, when the app knows it;
+    // the agent is told so it compacts before the server refuses.
+    context_length: Option<u32>,
 ) -> Result<(), String> {
+    let _ = context_length;
     let home = dsh_home_dir()?;
     configure_dsh_at(&home, &api_url, &model, api_key.as_deref())
 }
@@ -5259,7 +5311,11 @@ pub fn configure_goose(
     api_url: String,
     model: String,
     api_key: Option<String>,
+    // The window the served model was loaded with, when the app knows it;
+    // the agent is told so it compacts before the server refuses.
+    context_length: Option<u32>,
 ) -> Result<(), String> {
+    let _ = context_length;
     let env_vars = goose_env_vars(&api_url, &model, api_key.as_deref());
 
     const MARKER: &str = "# Atomic Chat - Goose Config";
@@ -5332,7 +5388,11 @@ pub fn configure_openhands(
     api_url: String,
     model: String,
     api_key: Option<String>,
+    // The window the served model was loaded with, when the app knows it;
+    // the agent is told so it compacts before the server refuses.
+    context_length: Option<u32>,
 ) -> Result<(), String> {
+    let _ = context_length;
     let env_vars = openhands_env_vars(&api_url, &model, api_key.as_deref());
 
     const MARKER: &str = "# Atomic Chat - OpenHands Config";
@@ -5381,7 +5441,11 @@ pub fn configure_kilo(
     api_url: String,
     model: String,
     api_key: Option<String>,
+    // The window the served model was loaded with, when the app knows it;
+    // the agent is told so it compacts before the server refuses.
+    context_length: Option<u32>,
 ) -> Result<(), String> {
+    let _ = context_length;
     let home = agent_home_dir()?;
     let dir = PathBuf::from(&home).join(".config").join("kilo");
     std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create ~/.config/kilo: {}", e))?;
@@ -5489,7 +5553,11 @@ pub fn configure_poolside(
     api_url: String,
     model: String,
     api_key: Option<String>,
+    // The window the served model was loaded with, when the app knows it;
+    // the agent is told so it compacts before the server refuses.
+    context_length: Option<u32>,
 ) -> Result<(), String> {
+    let _ = context_length;
     let standalone_base = poolside_standalone_base_url(&api_url);
     let env_vars = poolside_env_vars(&api_url, &model, api_key.as_deref());
 
@@ -5552,7 +5620,11 @@ pub fn configure_muse(
     api_url: String,
     model: String,
     api_key: Option<String>,
+    // The window the served model was loaded with, when the app knows it;
+    // the agent is told so it compacts before the server refuses.
+    context_length: Option<u32>,
 ) -> Result<(), String> {
+    let _ = context_length;
     let env_vars = muse_env_vars(&api_url, &model, api_key.as_deref());
 
     const MARKER: &str = "# Atomic Chat - Muse Code Config";
@@ -5598,7 +5670,11 @@ pub fn configure_cline(
     api_url: String,
     model: String,
     api_key: Option<String>,
+    // The window the served model was loaded with, when the app knows it;
+    // the agent is told so it compacts before the server refuses.
+    context_length: Option<u32>,
 ) -> Result<(), String> {
+    let _ = context_length;
     // Cline rejects an empty apikey (and an empty modelid; model is always set
     // because requiresModel is true), so fall back to a non-empty placeholder
     // when the local server runs without a key.
@@ -5950,7 +6026,11 @@ pub fn configure_atomic_agent(
     api_url: String,
     model: String,
     api_key: Option<String>,
+    // The window the served model was loaded with, when the app knows it;
+    // the agent is told so it compacts before the server refuses.
+    context_length: Option<u32>,
 ) -> Result<(), String> {
+    let _ = context_length;
     let state_dir = resolve_atomic_agent_state_dir()?;
     let path = state_dir.join("config.json");
 

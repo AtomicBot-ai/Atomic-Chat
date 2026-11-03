@@ -86,7 +86,8 @@ describe('useAgentActions', () => {
     expect(writeConfig).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'codex' }),
       'qwen3.5-4b',
-      expect.objectContaining({ serverPort: 1337 })
+      expect.objectContaining({ serverPort: 1337 }),
+      { contextLength: undefined }
     )
     expect(openAgent).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'codex' }),

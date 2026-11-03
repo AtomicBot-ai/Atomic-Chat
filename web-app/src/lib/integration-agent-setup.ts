@@ -36,18 +36,30 @@ export function agentApiUrl(
 export const isGuidedAgent = (agent: IntegrationAgent): boolean =>
   agent.configurable && !agent.editor
 
+/** What the app knows about the served model beyond its id. */
+export type AgentConfigOptions = {
+  /**
+   * The window the served model was loaded with: agents told nothing assume
+   * 128K-272K and never compact before a 16K-64K local server refuses.
+   */
+  contextLength?: number
+}
+
 /**
  * Writes the agent's own config so it uses the Local API Server: its URL,
- * the model and the key. Throws when the agent is unknown or the write
- * fails, so the caller reports one error.
+ * the model, the key and, when known, the model's context window. Throws
+ * when the agent is unknown or the write fails, so the caller reports one
+ * error.
  */
 export async function writeAgentConfig(
   agent: IntegrationAgent,
   model: string | null,
-  server: AgentServerSettings
+  server: AgentServerSettings,
+  options: AgentConfigOptions = {}
 ): Promise<void> {
   const apiUrl = agentApiUrl(agent, server)
   const apiKey = server.apiKey || undefined
+  const contextLength = options.contextLength ?? null
 
   switch (agent.id) {
     case 'claude-code':
@@ -55,37 +67,88 @@ export async function writeAgentConfig(
         apiUrl,
         model: model ?? undefined,
         apiKey,
+        contextLength,
       })
       break
     case 'codex':
-      await invoke('configure_codex', { apiUrl, model, apiKey })
+      await invoke('configure_codex', {
+        apiUrl,
+        model,
+        apiKey,
+        contextLength,
+      })
       break
     case 'opencode':
-      await invoke('configure_opencode', { apiUrl, model, apiKey })
+      await invoke('configure_opencode', {
+        apiUrl,
+        model,
+        apiKey,
+        contextLength,
+      })
       break
     case 'openclaude':
-      await invoke('configure_openclaude', { apiUrl, model, apiKey })
+      await invoke('configure_openclaude', {
+        apiUrl,
+        model,
+        apiKey,
+        contextLength,
+      })
       break
     case 'cline':
-      await invoke('configure_cline', { apiUrl, model, apiKey })
+      await invoke('configure_cline', {
+        apiUrl,
+        model,
+        apiKey,
+        contextLength,
+      })
       break
     case 'mimo':
-      await invoke('configure_mimo', { apiUrl, model, apiKey })
+      await invoke('configure_mimo', {
+        apiUrl,
+        model,
+        apiKey,
+        contextLength,
+      })
       break
     case 'zed':
-      await invoke('configure_zed', { apiUrl, model, apiKey })
+      await invoke('configure_zed', {
+        apiUrl,
+        model,
+        apiKey,
+        contextLength,
+      })
       break
     case 'zcode':
-      await invoke('configure_zcode', { apiUrl, model, apiKey })
+      await invoke('configure_zcode', {
+        apiUrl,
+        model,
+        apiKey,
+        contextLength,
+      })
       break
     case 'copilot':
-      await invoke('configure_copilot', { apiUrl, model, apiKey })
+      await invoke('configure_copilot', {
+        apiUrl,
+        model,
+        apiKey,
+        contextLength,
+      })
       break
     case 'droid':
-      await invoke('configure_droid', { apiUrl, model, apiKey })
+      await invoke('configure_droid', {
+        apiUrl,
+        model,
+        apiKey,
+        contextLength,
+      })
       break
     case 'atomic-agent':
-      await invoke('configure_atomic_agent', { apiUrl, model, apiKey })
+      await invoke('configure_atomic_agent', {
+        apiUrl,
+        model,
+        apiKey,
+        contextLength,
+      })
       break
     case 'hermes':
       await invoke('configure_hermes_agent', {
@@ -98,28 +161,68 @@ export async function writeAgentConfig(
       })
       break
     case 'pi':
-      await invoke('configure_pi', { apiUrl, model, apiKey })
+      await invoke('configure_pi', {
+        apiUrl,
+        model,
+        apiKey,
+        contextLength,
+      })
       break
     case 'goose':
-      await invoke('configure_goose', { apiUrl, model, apiKey })
+      await invoke('configure_goose', {
+        apiUrl,
+        model,
+        apiKey,
+        contextLength,
+      })
       break
     case 'openhands':
-      await invoke('configure_openhands', { apiUrl, model, apiKey })
+      await invoke('configure_openhands', {
+        apiUrl,
+        model,
+        apiKey,
+        contextLength,
+      })
       break
     case 'kilo':
-      await invoke('configure_kilo', { apiUrl, model, apiKey })
+      await invoke('configure_kilo', {
+        apiUrl,
+        model,
+        apiKey,
+        contextLength,
+      })
       break
     case 'poolside':
-      await invoke('configure_poolside', { apiUrl, model, apiKey })
+      await invoke('configure_poolside', {
+        apiUrl,
+        model,
+        apiKey,
+        contextLength,
+      })
       break
     case 'muse':
-      await invoke('configure_muse', { apiUrl, model, apiKey })
+      await invoke('configure_muse', {
+        apiUrl,
+        model,
+        apiKey,
+        contextLength,
+      })
       break
     case 'openclaw':
-      await invoke('configure_openclaw', { apiUrl, model, apiKey })
+      await invoke('configure_openclaw', {
+        apiUrl,
+        model,
+        apiKey,
+        contextLength,
+      })
       break
     case 'dsh':
-      await invoke('configure_dsh', { apiUrl, model, apiKey })
+      await invoke('configure_dsh', {
+        apiUrl,
+        model,
+        apiKey,
+        contextLength,
+      })
       break
     default:
       throw new Error(`Unknown agent: ${agent.id}`)

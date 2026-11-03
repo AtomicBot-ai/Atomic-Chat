@@ -207,7 +207,7 @@
     "forget": "Retirer {{name}} de cette liste",
     "forgetHint": "Le retire uniquement de cette liste. Ses propres paramètres restent tels qu'ils ont été écrits.",
     "disconnect": "Déconnecter {{name}}",
-    "disconnectHint": "Supprime le profil qu'Atomic Chat a écrit pour lui. Ses propres paramètres restent inchangés.",
+    "disconnectHint": "Retire ce qu'Atomic Chat a écrit pour lui et rétablit le modèle et les paramètres qu'il avait avant.",
     "disconnectAction": "Déconnecter",
     "disconnectTitle": "Déconnecter {{name}} ?",
     "cancel": "Annuler",

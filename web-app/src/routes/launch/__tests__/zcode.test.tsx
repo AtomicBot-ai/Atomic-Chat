@@ -137,6 +137,7 @@ describe('Launch page: ZCode', () => {
       apiUrl: 'http://127.0.0.1:1337/v1',
       model: 'qwen3-4b',
       apiKey: undefined,
+      contextLength: null,
     })
     expect(invoke).toHaveBeenCalledWith('launch_zcode', { path: null })
     const commands = vi.mocked(invoke).mock.calls.map(([cmd]) => cmd)

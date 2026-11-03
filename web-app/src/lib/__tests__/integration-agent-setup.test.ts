@@ -50,6 +50,19 @@ describe('integration agent setup', () => {
       apiUrl: 'http://127.0.0.1:1337/v1',
       model: 'qwen3.5-4b',
       apiKey: 'sk-atomic-key',
+      contextLength: null,
+    })
+  })
+
+  it("tells the agent the served model's window when the app knows it", async () => {
+    await writeAgentConfig(agent('kilo'), 'qwen3.5-4b', SERVER, {
+      contextLength: 32768,
+    })
+    expect(invoke).toHaveBeenCalledWith('configure_kilo', {
+      apiUrl: 'http://127.0.0.1:1337/v1',
+      model: 'qwen3.5-4b',
+      apiKey: 'sk-atomic-key',
+      contextLength: 32768,
     })
   })
 

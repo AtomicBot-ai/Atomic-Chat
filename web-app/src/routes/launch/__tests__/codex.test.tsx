@@ -132,6 +132,7 @@ describe('Launch page: Codex CLI', () => {
       apiUrl: 'http://127.0.0.1:1337/v1',
       model: 'qwen3-4b',
       apiKey: undefined,
+      contextLength: null,
     })
     expect(toast.success).toHaveBeenCalledWith('launch:toast.configured', {
       description: 'launch:toast.configuredDescCodex',
@@ -148,6 +149,7 @@ describe('Launch page: Codex CLI', () => {
       apiUrl: 'http://127.0.0.1:1337/v1',
       model: 'qwen3-4b',
       apiKey: "sk-it's",
+      contextLength: null,
     })
   })
 })

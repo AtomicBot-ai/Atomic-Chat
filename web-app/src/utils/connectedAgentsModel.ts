@@ -24,7 +24,11 @@ import { isEmbeddingOnlyModel } from '@/lib/answerable-model'
 import { writeAgentConfig } from '@/lib/integration-agent-setup'
 import { compactModelDisplayName } from '@/lib/model-display-name'
 import { isLocalProvider } from '@/utils/registerRemoteProvider'
-import { servedModel, servedModelId } from '@/utils/servedModel'
+import {
+  servedContextLength,
+  servedModel,
+  servedModelId,
+} from '@/utils/servedModel'
 
 /** One toast at a time: a newer change replaces the one before. */
 const TOAST_ID = 'connected-agents-model'
@@ -47,10 +51,13 @@ export async function pointConnectedAgentsAt(
   model: string
 ): Promise<IntegrationAgent[]> {
   const server = useLocalApiServer.getState()
+  const served = servedModel()
+  const contextLength =
+    served?.model === model ? await servedContextLength(served) : undefined
   const written: IntegrationAgent[] = []
   for (const agent of connectedConfigurableAgents()) {
     try {
-      await writeAgentConfig(agent, model, server)
+      await writeAgentConfig(agent, model, server, { contextLength })
       written.push(agent)
     } catch (error) {
       console.warn(

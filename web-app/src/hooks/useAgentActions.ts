@@ -16,7 +16,11 @@ import {
 import { writeAgentConfig } from '@/lib/integration-agent-setup'
 import { useLaunchSettings } from '@/stores/launch-settings-store'
 import { useLaunchStore, type RunPhase } from '@/stores/launch-store'
-import { ensureServedModelRunning, servedModelId } from '@/utils/servedModel'
+import {
+  ensureServedModelRunning,
+  servedContextLength,
+  servedModelId,
+} from '@/utils/servedModel'
 
 function setRunState(id: string, busy: boolean, phase: RunPhase) {
   const { setBusy, setPhase } = useLaunchStore.getState()
@@ -80,7 +84,9 @@ export function useAgentActions() {
         // it is loaded first, as Start loads it. Start above already did.
         if (serverWasRunning) await ensureServedModelRunning()
         const server = useLocalApiServer.getState()
-        await writeAgentConfig(agent, model, server)
+        await writeAgentConfig(agent, model, server, {
+          contextLength: await servedContextLength(),
+        })
         useServerSetup.getState().markAgentConfigured(agent.id)
         await openIntegrationAgent(agent, { t, model, server })
       } catch (err) {

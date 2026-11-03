@@ -147,7 +147,9 @@ describe('Server setup guide', () => {
     expect(writeConfig).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'codex' }),
       'qwen3.5-4b',
-      expect.objectContaining({ serverPort: 1337, apiKey: 'sk-atomic-key' })
+      expect.objectContaining({ serverPort: 1337, apiKey: 'sk-atomic-key' }),
+      // No engine answered for the window in the test.
+      { contextLength: undefined }
     )
     expect(useServerSetup.getState()).toMatchObject({
       setupDone: true,
