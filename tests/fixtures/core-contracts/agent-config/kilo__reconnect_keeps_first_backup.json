@@ -1,0 +1,33 @@
+{
+  "comparator": "agent-config-files",
+  "expected": {
+    "files": {
+      ".config/kilo/kilo.jsonc": "{\n  \"$schema\": \"https://app.kilo.ai/config.json\",\n  \"model\": \"atomic/AtomicChat/Qwen3.5-9B-GGUF\",\n  \"provider\": {\n    \"atomic\": {\n      \"models\": {\n        \"AtomicChat/Qwen3.5-9B-GGUF\": {\n          \"interleaved\": {\n            \"field\": \"reasoning_content\"\n          },\n          \"name\": \"AtomicChat/Qwen3.5-9B-GGUF\",\n          \"reasoning\": true\n        }\n      },\n      \"name\": \"Atomic Chat\",\n      \"npm\": \"@ai-sdk/openai-compatible\",\n      \"options\": {\n        \"apiKey\": \"sk-atomic-fixture-key\",\n        \"baseURL\": \"http://127.0.0.1:1337/v1\",\n        \"headerTimeout\": false,\n        \"timeout\": false\n      }\n    }\n  }\n}\n",
+      ".config/kilo/kilo.jsonc.atomic-chat-backup.json": "{\n  \"about\": \"Atomic Chat keeps the settings its connection replaced here and puts them back on Disconnect.\",\n  \"previous\": {\n    \"model\": \"kilo/auto\",\n    \"provider\": {\n      \"atomic\": {\n        \"name\": \"Their own\",\n        \"options\": {\n          \"baseURL\": \"https://example.com\"\n        }\n      }\n    }\n  }\n}\n"
+    },
+    "ok": true
+  },
+  "input": {
+    "agent": "kilo",
+    "api_key": "sk-atomic-fixture-key",
+    "api_url": "http://127.0.0.1:1337/v1",
+    "model": "AtomicChat/Qwen3.5-9B-GGUF",
+    "prior_runs": [
+      {
+        "api_key": "",
+        "api_url": "http://127.0.0.1:1337/v1",
+        "context_length": 65536,
+        "model": "old-model"
+      }
+    ],
+    "seed_files": {
+      ".config/kilo/kilo.jsonc": "{\n  \"model\": \"kilo/auto\",\n  \"provider\": { \"atomic\": { \"name\": \"Their own\", \"options\": { \"baseURL\": \"https://example.com\" } } }\n}\n"
+    },
+    "shell": "/bin/zsh"
+  },
+  "name": "kilo__reconnect_keeps_first_backup",
+  "source": {
+    "commit": "344cc5a42",
+    "file": "src-tauri/src/core/system/opencode_family.rs"
+  }
+}

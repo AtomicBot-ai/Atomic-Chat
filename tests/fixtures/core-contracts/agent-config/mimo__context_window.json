@@ -1,0 +1,23 @@
+{
+  "comparator": "agent-config-files",
+  "expected": {
+    "files": {
+      ".config/mimocode/mimocode.json": "{\n  \"$schema\": \"https://mimo.xiaomi.com/mimocode/config.json\",\n  \"model\": \"atomic/AtomicChat/Qwen3.5-9B-GGUF\",\n  \"provider\": {\n    \"atomic\": {\n      \"models\": {\n        \"AtomicChat/Qwen3.5-9B-GGUF\": {\n          \"interleaved\": {\n            \"field\": \"reasoning_content\"\n          },\n          \"limit\": {\n            \"context\": 32768,\n            \"output\": 8192\n          },\n          \"name\": \"AtomicChat/Qwen3.5-9B-GGUF\",\n          \"reasoning\": true\n        }\n      },\n      \"name\": \"Atomic Chat\",\n      \"npm\": \"@ai-sdk/openai-compatible\",\n      \"options\": {\n        \"apiKey\": \"sk-atomic-fixture-key\",\n        \"baseURL\": \"http://127.0.0.1:1337/v1\",\n        \"headerTimeout\": false,\n        \"timeout\": false\n      }\n    }\n  }\n}\n"
+    },
+    "ok": true
+  },
+  "input": {
+    "agent": "mimo",
+    "api_key": "sk-atomic-fixture-key",
+    "api_url": "http://127.0.0.1:1337/v1",
+    "context_length": 32768,
+    "model": "AtomicChat/Qwen3.5-9B-GGUF",
+    "seed_files": {},
+    "shell": "/bin/zsh"
+  },
+  "name": "mimo__context_window",
+  "source": {
+    "commit": "344cc5a42",
+    "file": "src-tauri/src/core/system/opencode_family.rs"
+  }
+}

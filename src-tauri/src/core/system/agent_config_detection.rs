@@ -22,6 +22,7 @@ use super::commands::{
     DSH_ROUTE_ID, DSH_SECTION, OPENCLAUDE_ATOMIC_PROFILE_ID, OPENCLAW_PROVIDER_ID,
     ZCODE_PROVIDER_ID, ZED_PROVIDER_ID,
 };
+use super::opencode_family::{opencode_style_configured, pi_configured, FamilyPaths};
 
 /// Shell-rc block markers written by `write_marked_env_to_shell` (the `MARKER`
 /// constant inside each `configure_*`), plus the legacy Claude Code block
@@ -60,6 +61,8 @@ pub(crate) struct AgentConfigPaths {
     pub openclaude_config: PathBuf,
     /// `$CODEX_HOME`, else `~/.codex`.
     pub codex_home: PathBuf,
+    /// Kilo Code, OpenCode, MiMo Code and pi.
+    pub family: FamilyPaths,
 }
 
 impl AgentConfigPaths {
@@ -77,6 +80,7 @@ impl AgentConfigPaths {
             openclaw_config: home.join(".openclaw").join("openclaw.json"),
             openclaude_config: home.join(".openclaude.json"),
             codex_home: home.join(".codex"),
+            family: FamilyPaths::resolve_with(home, &|_| None),
         }
     }
 
@@ -101,6 +105,7 @@ impl AgentConfigPaths {
             openclaw_config: openclaw_config_path(&home_str),
             openclaude_config: openclaude_global_config_path(&home_str),
             codex_home: codex_home(&home, std::env::var("CODEX_HOME").ok().as_deref()),
+            family: FamilyPaths::resolve_with(&home, &|name| std::env::var(name).ok()),
             home,
         })
     }
@@ -125,11 +130,7 @@ pub(crate) fn detect_configured_agents_in(
     let user_env_is_local = |name: &str| user_env(name).is_some_and(|v| is_local_url(&v));
 
     let checks: [(&str, bool); 19] = [
-        (
-            "kilo",
-            json_file(&home.join(".config").join("kilo").join("kilo.jsonc"))
-                .is_some_and(|v| has_object(&v, &["provider", ATOMIC_PROVIDER_KEY])),
-        ),
+        ("kilo", opencode_style_configured(&paths.family.kilo)),
         (
             "claude-code",
             claude_code_settings_local(home)
@@ -137,16 +138,11 @@ pub(crate) fn detect_configured_agents_in(
                     .is_some_and(|vars| var_is_local(&vars, "ANTHROPIC_BASE_URL"))
                 || user_env_is_local("ANTHROPIC_BASE_URL"),
         ),
-        (
-            "pi",
-            json_file(&home.join(".pi").join("agent").join("models.json"))
-                .is_some_and(|v| has_object(&v, &["providers", ATOMIC_PROVIDER_KEY])),
-        ),
+        ("pi", pi_configured(&paths.family.pi_dir)),
         ("codex", codex_configured(&paths.codex_home)),
         (
             "opencode",
-            json_file(&home.join(".config").join("opencode").join("opencode.json"))
-                .is_some_and(|v| has_object(&v, &["provider", ATOMIC_PROVIDER_KEY])),
+            opencode_style_configured(&paths.family.opencode),
         ),
         ("openclaude", openclaude_configured(paths)),
         ("dsh", paths.dsh_home.as_deref().is_some_and(dsh_configured)),
@@ -164,11 +160,7 @@ pub(crate) fn detect_configured_agents_in(
                 }),
         ),
         ("zcode", zcode_configured(&paths.zcode_dir)),
-        (
-            "mimo",
-            json_file(&home.join(".config").join("mimocode").join("mimocode.json"))
-                .is_some_and(|v| has_object(&v, &["provider", ATOMIC_PROVIDER_KEY])),
-        ),
+        ("mimo", opencode_style_configured(&paths.family.mimo)),
         (
             "droid",
             json_file(&home.join(".factory").join("settings.json")).is_some_and(|v| {
@@ -263,7 +255,7 @@ pub async fn detect_configured_agents() -> Vec<String> {
 
 /// A persistent User-scope env var from `HKCU\Environment`, where `setx` writes.
 #[cfg(windows)]
-fn read_user_env(name: &str) -> Option<String> {
+pub(crate) fn read_user_env(name: &str) -> Option<String> {
     use winreg::enums::HKEY_CURRENT_USER;
     use winreg::RegKey;
 
@@ -276,7 +268,7 @@ fn read_user_env(name: &str) -> Option<String> {
 }
 
 #[cfg(not(windows))]
-fn read_user_env(_name: &str) -> Option<String> {
+pub(crate) fn read_user_env(_name: &str) -> Option<String> {
     None
 }
 

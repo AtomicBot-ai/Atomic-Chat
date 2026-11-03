@@ -52,29 +52,37 @@ fn disconnect_openclaude() -> Result<(), String> {
     Ok(())
 }
 
-/// kilo: nothing to undo yet.
+/// kilo: our provider and `model` out of `kilo.jsonc`, the replaced ones back.
 fn disconnect_kilo() -> Result<(), String> {
-    Ok(())
+    super::opencode_family::disconnect_opencode_style(
+        &super::opencode_family::FamilyPaths::resolve()?.kilo,
+    )
 }
 
-/// opencode: nothing to undo yet.
+/// opencode: our provider and `model` out, the replaced ones back.
 fn disconnect_opencode() -> Result<(), String> {
-    Ok(())
+    super::opencode_family::disconnect_opencode_style(
+        &super::opencode_family::FamilyPaths::resolve()?.opencode,
+    )
 }
 
-/// mimo: nothing to undo yet.
+/// mimo: our provider and `model` out, the replaced ones back.
 fn disconnect_mimo() -> Result<(), String> {
-    Ok(())
+    super::opencode_family::disconnect_opencode_style(
+        &super::opencode_family::FamilyPaths::resolve()?.mimo,
+    )
 }
 
-/// pi: nothing to undo yet.
+/// pi: our provider, default model and compaction override out, the
+/// replaced default back.
 fn disconnect_pi() -> Result<(), String> {
-    Ok(())
+    super::opencode_family::disconnect_pi(&super::opencode_family::FamilyPaths::resolve()?.pi_dir)
 }
 
-/// goose: nothing to undo yet.
+/// goose: a connection writes nothing; what earlier releases saved user-wide
+/// goes.
 fn disconnect_goose() -> Result<(), String> {
-    Ok(())
+    super::goose_config::remove_legacy(None)
 }
 
 /// cline: nothing to undo yet.
