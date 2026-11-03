@@ -1,0 +1,27 @@
+{
+  "comparator": "agent-config-files",
+  "expected": {
+    "files": {
+      ".openclaude.json": "{\n  \"activeProviderProfileId\": \"provider_atomic_chat\",\n  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \"\",\n    \"CLAUDE_CODE_USE_GEMINI_VERTEX\": \"\",\n    \"CLAUDE_CODE_USE_OPENAI\": \"\",\n    \"OPENAI_API_BASE\": \"\",\n    \"OPENAI_BASE_URL\": \"\",\n    \"OPENAI_MODEL\": \"\"\n  },\n  \"providerProfiles\": [\n    {\n      \"baseUrl\": \"http://127.0.0.1:9999/v1\",\n      \"extraKey\": \"dropped\",\n      \"id\": \"legacy_atomic\",\n      \"model\": \"stale\",\n      \"provider\": \"atomic-chat\"\n    },\n    {\n      \"id\": \"provider_openai\",\n      \"provider\": \"openai\"\n    },\n    {\n      \"apiKey\": \"sk-atomic-fixture-key\",\n      \"baseUrl\": \"http://127.0.0.1:1337/v1\",\n      \"id\": \"provider_atomic_chat\",\n      \"model\": \"AtomicChat/Qwen3.5-9B-GGUF\",\n      \"name\": \"Atomic Chat\",\n      \"provider\": \"atomic-chat\"\n    }\n  ]\n}\n",
+      ".openclaude.json.atomic-chat-backup.json": "{\n  \"about\": \"Atomic Chat keeps the values it replaced here and puts them back when you disconnect.\",\n  \"created\": [\n    [\n      \"env\"\n    ]\n  ],\n  \"entries\": [\n    {\n      \"existed\": false,\n      \"path\": [\n        \"providerProfiles\",\n        {\n          \"id\": \"provider_atomic_chat\"\n        }\n      ],\n      \"written\": {\n        \"apiKey\": \"sk-atomic-fixture-key\",\n        \"baseUrl\": \"http://127.0.0.1:1337/v1\",\n        \"id\": \"provider_atomic_chat\",\n        \"model\": \"AtomicChat/Qwen3.5-9B-GGUF\",\n        \"name\": \"Atomic Chat\",\n        \"provider\": \"atomic-chat\"\n      }\n    },\n    {\n      \"existed\": false,\n      \"path\": [\n        \"activeProviderProfileId\"\n      ],\n      \"written\": \"provider_atomic_chat\"\n    },\n    {\n      \"existed\": false,\n      \"path\": [\n        \"env\",\n        \"CLAUDE_CODE_USE_OPENAI\"\n      ],\n      \"written\": \"\"\n    },\n    {\n      \"existed\": false,\n      \"path\": [\n        \"env\",\n        \"OPENAI_BASE_URL\"\n      ],\n      \"written\": \"\"\n    },\n    {\n      \"existed\": false,\n      \"path\": [\n        \"env\",\n        \"OPENAI_API_BASE\"\n      ],\n      \"written\": \"\"\n    },\n    {\n      \"existed\": false,\n      \"path\": [\n        \"env\",\n        \"OPENAI_MODEL\"\n      ],\n      \"written\": \"\"\n    },\n    {\n      \"existed\": false,\n      \"path\": [\n        \"env\",\n        \"ANTHROPIC_BASE_URL\"\n      ],\n      \"written\": \"\"\n    },\n    {\n      \"existed\": false,\n      \"path\": [\n        \"env\",\n        \"CLAUDE_CODE_USE_GEMINI_VERTEX\"\n      ],\n      \"written\": \"\"\n    }\n  ],\n  \"fileExisted\": true,\n  \"version\": 1\n}\n",
+      ".openclaude/.openclaude-profile.json": "{\n  \"createdAt\": \"<timestamp>\",\n  \"env\": {\n    \"OPENAI_API_KEY\": \"sk-atomic-fixture-key\",\n    \"OPENAI_BASE_URL\": \"http://127.0.0.1:1337/v1\",\n    \"OPENAI_MODEL\": \"AtomicChat/Qwen3.5-9B-GGUF\"\n  },\n  \"profile\": \"atomic-chat\"\n}\n",
+      ".openclaude/.openclaude-profile.json.atomic-chat-backup.json": "{\n  \"about\": \"Atomic Chat keeps the values it replaced here and puts them back when you disconnect.\",\n  \"created\": [],\n  \"entries\": [\n    {\n      \"existed\": false,\n      \"path\": [],\n      \"written\": {\n        \"createdAt\": \"<timestamp>\",\n        \"env\": {\n          \"OPENAI_API_KEY\": \"sk-atomic-fixture-key\",\n          \"OPENAI_BASE_URL\": \"http://127.0.0.1:1337/v1\",\n          \"OPENAI_MODEL\": \"AtomicChat/Qwen3.5-9B-GGUF\"\n        },\n        \"profile\": \"atomic-chat\"\n      }\n    }\n  ],\n  \"fileExisted\": false,\n  \"version\": 1\n}\n"
+    },
+    "ok": true
+  },
+  "input": {
+    "agent": "openclaude",
+    "api_key": "sk-atomic-fixture-key",
+    "api_url": "http://127.0.0.1:1337/v1",
+    "model": "AtomicChat/Qwen3.5-9B-GGUF",
+    "seed_files": {
+      ".openclaude.json": "{\n  \"providerProfiles\": [\n    { \"id\": \"legacy_atomic\", \"provider\": \"atomic-chat\", \"baseUrl\": \"http://127.0.0.1:9999/v1\", \"model\": \"stale\", \"extraKey\": \"dropped\" },\n    { \"id\": \"provider_openai\", \"provider\": \"openai\" }\n  ]\n}\n"
+    },
+    "shell": "/bin/zsh"
+  },
+  "name": "openclaude__users_own_atomic_chat_profile_kept",
+  "source": {
+    "commit": "a13a1e979",
+    "file": "src-tauri/src/core/system/claude_config.rs"
+  }
+}

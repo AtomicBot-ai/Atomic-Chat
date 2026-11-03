@@ -642,11 +642,11 @@ mod tests {
         write(&home.path().join(".config/zed/settings.json"), ours);
         let mut paths = AgentConfigPaths::under_home(home.path(), None);
         paths.zed_dir = Some(zed_dir.clone());
-        assert!(detect_configured_agents_in(&paths, &no_user_env).is_empty());
+        assert!(detect_configured_agents_in(&paths, &no_user_env, 1337).is_empty());
 
         write(&zed_dir.join("settings.json"), ours);
         assert_eq!(
-            detect_configured_agents_in(&paths, &no_user_env),
+            detect_configured_agents_in(&paths, &no_user_env, 1337),
             vec!["zed"]
         );
     }
@@ -678,7 +678,7 @@ mod tests {
         let mut paths = AgentConfigPaths::under_home(home.path(), None);
         paths.server = OurServer::new("192.168.1.20", 1337);
         assert_eq!(
-            detect_configured_agents_in(&paths, &no_user_env),
+            detect_configured_agents_in(&paths, &no_user_env, 1337),
             vec!["claude-code"]
         );
 

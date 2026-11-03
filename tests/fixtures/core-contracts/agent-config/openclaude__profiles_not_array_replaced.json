@@ -2,8 +2,10 @@
   "comparator": "agent-config-files",
   "expected": {
     "files": {
-      ".openclaude.json": "{\n  \"activeProviderProfileId\": \"provider_atomic_chat\",\n  \"providerProfiles\": [\n    {\n      \"baseUrl\": \"http://127.0.0.1:1337/v1\",\n      \"id\": \"provider_atomic_chat\",\n      \"model\": \"AtomicChat/Qwen3.5-9B-GGUF\",\n      \"name\": \"Atomic Chat\",\n      \"provider\": \"atomic-chat\"\n    }\n  ]\n}\n",
-      ".openclaude/.openclaude-profile.json": "{\n  \"createdAt\": \"<timestamp>\",\n  \"env\": {\n    \"OPENAI_BASE_URL\": \"http://127.0.0.1:1337/v1\",\n    \"OPENAI_MODEL\": \"AtomicChat/Qwen3.5-9B-GGUF\"\n  },\n  \"profile\": \"atomic-chat\"\n}\n"
+      ".openclaude.json": "{\n  \"activeProviderProfileId\": \"provider_atomic_chat\",\n  \"env\": {\n    \"ANTHROPIC_BASE_URL\": \"\",\n    \"CLAUDE_CODE_USE_GEMINI_VERTEX\": \"\",\n    \"CLAUDE_CODE_USE_OPENAI\": \"\",\n    \"OPENAI_API_BASE\": \"\",\n    \"OPENAI_BASE_URL\": \"\",\n    \"OPENAI_MODEL\": \"\"\n  },\n  \"providerProfiles\": [\n    {\n      \"apiKey\": \"sk-atomic-fixture-key\",\n      \"baseUrl\": \"http://127.0.0.1:1337/v1\",\n      \"id\": \"provider_atomic_chat\",\n      \"model\": \"AtomicChat/Qwen3.5-9B-GGUF\",\n      \"name\": \"Atomic Chat\",\n      \"provider\": \"atomic-chat\"\n    }\n  ]\n}\n",
+      ".openclaude.json.atomic-chat-backup.json": "{\n  \"about\": \"Atomic Chat keeps the values it replaced here and puts them back when you disconnect.\",\n  \"created\": [\n    [\n      \"providerProfiles\"\n    ],\n    [\n      \"env\"\n    ]\n  ],\n  \"entries\": [\n    {\n      \"existed\": false,\n      \"path\": [\n        \"providerProfiles\",\n        {\n          \"id\": \"provider_atomic_chat\"\n        }\n      ],\n      \"written\": {\n        \"apiKey\": \"sk-atomic-fixture-key\",\n        \"baseUrl\": \"http://127.0.0.1:1337/v1\",\n        \"id\": \"provider_atomic_chat\",\n        \"model\": \"AtomicChat/Qwen3.5-9B-GGUF\",\n        \"name\": \"Atomic Chat\",\n        \"provider\": \"atomic-chat\"\n      }\n    },\n    {\n      \"existed\": false,\n      \"path\": [\n        \"activeProviderProfileId\"\n      ],\n      \"written\": \"provider_atomic_chat\"\n    },\n    {\n      \"existed\": false,\n      \"path\": [\n        \"env\",\n        \"CLAUDE_CODE_USE_OPENAI\"\n      ],\n      \"written\": \"\"\n    },\n    {\n      \"existed\": false,\n      \"path\": [\n        \"env\",\n        \"OPENAI_BASE_URL\"\n      ],\n      \"written\": \"\"\n    },\n    {\n      \"existed\": false,\n      \"path\": [\n        \"env\",\n        \"OPENAI_API_BASE\"\n      ],\n      \"written\": \"\"\n    },\n    {\n      \"existed\": false,\n      \"path\": [\n        \"env\",\n        \"OPENAI_MODEL\"\n      ],\n      \"written\": \"\"\n    },\n    {\n      \"existed\": false,\n      \"path\": [\n        \"env\",\n        \"ANTHROPIC_BASE_URL\"\n      ],\n      \"written\": \"\"\n    },\n    {\n      \"existed\": false,\n      \"path\": [\n        \"env\",\n        \"CLAUDE_CODE_USE_GEMINI_VERTEX\"\n      ],\n      \"written\": \"\"\n    }\n  ],\n  \"fileExisted\": true,\n  \"version\": 1\n}\n",
+      ".openclaude/.openclaude-profile.json": "{\n  \"createdAt\": \"<timestamp>\",\n  \"env\": {\n    \"OPENAI_API_KEY\": \"sk-atomic-fixture-key\",\n    \"OPENAI_BASE_URL\": \"http://127.0.0.1:1337/v1\",\n    \"OPENAI_MODEL\": \"AtomicChat/Qwen3.5-9B-GGUF\"\n  },\n  \"profile\": \"atomic-chat\"\n}\n",
+      ".openclaude/.openclaude-profile.json.atomic-chat-backup.json": "{\n  \"about\": \"Atomic Chat keeps the values it replaced here and puts them back when you disconnect.\",\n  \"created\": [],\n  \"entries\": [\n    {\n      \"existed\": false,\n      \"path\": [],\n      \"written\": {\n        \"createdAt\": \"<timestamp>\",\n        \"env\": {\n          \"OPENAI_API_KEY\": \"sk-atomic-fixture-key\",\n          \"OPENAI_BASE_URL\": \"http://127.0.0.1:1337/v1\",\n          \"OPENAI_MODEL\": \"AtomicChat/Qwen3.5-9B-GGUF\"\n        },\n        \"profile\": \"atomic-chat\"\n      }\n    }\n  ],\n  \"fileExisted\": false,\n  \"version\": 1\n}\n"
     },
     "ok": true
   },
@@ -19,7 +21,7 @@
   },
   "name": "openclaude__profiles_not_array_replaced",
   "source": {
-    "commit": "ccf542733",
-    "file": "src-tauri/src/core/cli/fixture_dump.rs"
+    "commit": "a13a1e979",
+    "file": "src-tauri/src/core/system/claude_config.rs"
   }
 }
