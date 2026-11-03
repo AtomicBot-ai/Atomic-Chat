@@ -12,6 +12,7 @@ use crate::core::app::constants::{
 };
 use crate::core::app::models::AppConfiguration;
 use crate::core::mcp::helpers::{stop_mcp_servers_with_context, ShutdownContext};
+#[cfg(not(windows))]
 use crate::core::process_env::sanitize_std_command;
 #[cfg(any(target_os = "linux", test))]
 use crate::core::process_env::{strip_appimage_std_command, APPIMAGE_RUNTIME_ENV_VARS};
@@ -2627,19 +2628,6 @@ fn apply_login_path(_cmd: &mut std::process::Command) {}
 pub(crate) fn apply_tool_path(cmd: &mut std::process::Command) {
     apply_login_path(cmd);
     apply_runtime_path(cmd);
-}
-
-/// A console tool (`setx`, `reg`) started without flashing a console window
-/// over the app on Windows.
-pub(crate) fn hidden_console_command(program: &str) -> std::process::Command {
-    #[allow(unused_mut)]
-    let mut cmd = std::process::Command::new(program);
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
-    cmd
 }
 
 /// Re-read the persisted Windows PATH (User + Machine) from the registry and
@@ -5529,53 +5517,6 @@ pub fn configure_claude_code(
     Ok(())
 }
 
-/// Upsert a marked `export KEY='VALUE'` block into a shell rc file. Removes any
-/// previous block carrying the same `marker` plus stray `export <prefix>...`
-/// lines, then appends a fresh block. Generalizes `write_env_to_shell` (which is
-/// hardcoded to the legacy Jan / Claude Code marker) for Atomic-branded agents.
-fn write_marked_env_to_shell(
-    env_file_path: &str,
-    marker: &str,
-    export_prefix: &str,
-    env_vars: &[(String, String)],
-) -> Result<(), String> {
-    let new_entries: String = env_vars
-        .iter()
-        .map(|(k, v)| format!("export {}='{}'\n", k, v))
-        .collect();
-
-    let existing_content = std::fs::read_to_string(env_file_path).unwrap_or_default();
-
-    // Block-based removal first: drop everything between (and including) the
-    // paired marker lines. This is what makes rerun idempotent even when the
-    // managed block contains env vars whose names do NOT share `export_prefix`
-    // (e.g. Goose writes `OPENAI_*` lines alongside `GOOSE_*`). A user's own
-    // unrelated exports outside the block are preserved untouched.
-    let mut in_block = false;
-    let export_line = format!("export {}", export_prefix);
-    let cleaned: Vec<&str> = existing_content
-        .split('\n')
-        .filter(|line| {
-            if line.starts_with(marker) {
-                // Toggle on the opening marker, off after the closing marker.
-                in_block = !in_block;
-                return false;
-            }
-            if in_block {
-                return false;
-            }
-            // Safety net for any stray, prefix-matching managed lines that
-            // leaked outside a block (e.g. from an older write format).
-            !line.starts_with(export_line.as_str())
-        })
-        .collect();
-
-    let new_block = format!("{}\n{}\n{}\n", marker, new_entries, marker);
-    let final_content = cleaned.join("\n") + &new_block;
-    std::fs::write(env_file_path, &final_content).map_err(|e| e.to_string())?;
-    Ok(())
-}
-
 /// Environment variables Copilot CLI reads for BYOK — what earlier releases
 /// persisted to the user's shell rc (`setx` on Windows) and the old
 /// `atomic-chat-cli launch` set on the child. `configure_copilot` now writes
@@ -5903,7 +5844,7 @@ fn dsh_validate_env_value(name: &str, value: &str) -> Result<(), String> {
 /// dotenv file, preserving every line outside it. `#` starts a comment in dotenv
 /// too, so the markers are inert to any reader.
 ///
-/// Deliberately not `write_marked_env_to_shell`: that one emits shell
+/// Deliberately not the shell-rc block older releases wrote: that one emits shell
 /// `export K='V'` syntax, uses a different single-line marker scheme, and always
 /// appends a fresh block — it cannot express "remove the block and write
 /// nothing", which is exactly what the keyless path needs.
@@ -6211,7 +6152,7 @@ fn legacy_env_agent(agent_id: &str) -> Option<LegacyEnvAgent> {
 }
 
 /// `content` without the region between (and including) the paired `marker`
-/// lines — exactly the block `write_marked_env_to_shell` appended. Every
+/// lines — exactly the block older releases appended. Every
 /// other line stays, the user's own exports of the same variables included.
 pub(crate) fn remove_marked_env_block(content: &str, marker: &str) -> String {
     if !content.split('\n').any(|line| line.starts_with(marker)) {

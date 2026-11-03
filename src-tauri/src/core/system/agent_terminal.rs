@@ -287,6 +287,7 @@ fn prepare_launcher(
 /// own (or restores the last session's): that one is waited for and reused,
 /// instead of racing it with a second window.
 #[cfg(any(target_os = "macos", test))]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) const MACOS_OPEN_SCRIPT: &str = r#"on run argv
 	set launchLine to item 1 of argv
 	set tabTitle to item 2 of argv
@@ -332,6 +333,7 @@ end run
 /// when it still runs something, answering "focused"; "gone" otherwise.
 /// Never starts Terminal.
 #[cfg(any(target_os = "macos", test))]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) const MACOS_FOCUS_SCRIPT: &str = r#"on run argv
 	set windowId to (item 1 of argv) as integer
 	set tabTty to item 2 of argv

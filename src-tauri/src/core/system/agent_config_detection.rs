@@ -27,7 +27,7 @@ use super::commands::{
 };
 use super::opencode_family::{opencode_style_configured, pi_configured, FamilyPaths};
 
-/// Shell-rc block markers written by `write_marked_env_to_shell` (the `MARKER`
+/// Shell-rc block markers older releases wrote (the `MARKER`
 /// constant inside each `configure_*`), plus the legacy Claude Code block
 /// `write_env_to_shell` writes. Keep in sync with `commands.rs`.
 const COPILOT_SHELL_MARKER: &str = "# Atomic Chat - Copilot CLI Config";
