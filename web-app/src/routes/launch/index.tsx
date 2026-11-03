@@ -46,7 +46,7 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useLaunchStore } from '@/stores/launch-store'
 import { useLaunchSettings } from '@/stores/launch-settings-store'
-import { servedContextLength } from '@/utils/servedModel'
+import { requireAgentContextWindow } from '@/lib/agent-context-window'
 import { cn } from '@/lib/utils'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -242,11 +242,14 @@ function LaunchPage() {
         await ensureServerRunning()
       }
 
+      // A window below the agent's minimum is grown first; when it cannot
+      // be, this throws saying why and nothing is written.
+      const contextLength = await requireAgentContextWindow(agent, t)
       await writeAgentConfig(
         agent,
         model,
         { serverHost, serverPort, apiPrefix, apiKey },
-        { contextLength: await servedContextLength() }
+        { contextLength }
       )
       useServerSetup.getState().markAgentConfigured(agent.id)
 

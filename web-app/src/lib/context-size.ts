@@ -97,7 +97,7 @@ export async function growModelContext(args: {
   minCtxLen?: number
 }): Promise<GrowContextResult> {
   const { providerId, modelId, serviceHub, minCtxLen } = args
-  const { getProviderByName, updateProvider } = useModelProvider.getState()
+  const { getProviderByName } = useModelProvider.getState()
   const provider = getProviderByName(providerId)
   if (!provider) return { ok: false, reason: 'no_provider', from: 0 }
 
@@ -122,6 +122,29 @@ export async function growModelContext(args: {
     return { ok: false, reason: 'at_max', from, max: maxCtxLen }
   }
 
+  setModelContextLength(providerId, modelId, to)
+
+  // Scoped to this provider: an unscoped `stopModel` would also unload a
+  // copy of the model another engine may be serving.
+  await serviceHub.models().stopModel(modelId, providerId)
+
+  return { ok: true, from, to }
+}
+
+/**
+ * Set `provider`'s `ctx_len` for `modelId` in the provider store, which the
+ * next load reads. Nothing is reloaded. Whether it did (the model is listed).
+ */
+export function setModelContextLength(
+  providerId: string,
+  modelId: string,
+  value: number
+): boolean {
+  const { getProviderByName, updateProvider } = useModelProvider.getState()
+  const provider = getProviderByName(providerId)
+  const modelIndex = provider?.models.findIndex((m) => m.id === modelId) ?? -1
+  if (!provider || modelIndex === -1) return false
+  const model = provider.models[modelIndex]
   const updatedModel = {
     ...model,
     settings: {
@@ -130,7 +153,7 @@ export async function growModelContext(args: {
         ...(model.settings?.ctx_len ?? {}),
         controller_props: {
           ...(model.settings?.ctx_len?.controller_props ?? {}),
-          value: to,
+          value,
         },
       },
     },
@@ -138,10 +161,5 @@ export async function growModelContext(args: {
   const updatedModels = [...provider.models]
   updatedModels[modelIndex] = updatedModel as typeof model
   updateProvider(provider.provider, { models: updatedModels })
-
-  // Scoped to this provider: an unscoped `stopModel` would also unload a
-  // copy of the model another engine may be serving.
-  await serviceHub.models().stopModel(modelId, providerId)
-
-  return { ok: true, from, to }
+  return true
 }

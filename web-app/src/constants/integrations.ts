@@ -38,6 +38,15 @@ export type IntegrationAgent = {
   /** Whether a model must be picked before the agent can be enabled. */
   requiresModel: boolean
   /**
+   * The smallest context window (tokens) the agent works in: its system
+   * prompt and tool definitions alone take most of a smaller one. Connect
+   * reloads a served model loaded with less (`ensureAgentContextWindow`).
+   * Absent for the editors, set up by hand.
+   */
+  minContextLength?: number
+  /** Where to get an agent Atomic Chat cannot install (ZCode's app). */
+  downloadUrl?: string
+  /**
    * When true the local endpoint is passed WITH the API prefix (`/v1`).
    * Claude Code expects the bare host:port and appends its own path.
    */
@@ -63,6 +72,7 @@ const CATALOG: IntegrationAgent[] = [
     installable: true,
     configurable: true,
     requiresModel: true,
+    minContextLength: 32768,
     endpointWithPrefix: true,
   },
   {
@@ -75,6 +85,7 @@ const CATALOG: IntegrationAgent[] = [
     installable: true,
     configurable: true,
     requiresModel: false,
+    minContextLength: 32768,
     endpointWithPrefix: false,
   },
   {
@@ -87,6 +98,7 @@ const CATALOG: IntegrationAgent[] = [
     installable: true,
     configurable: true,
     requiresModel: true,
+    minContextLength: 32768,
     endpointWithPrefix: true,
   },
   {
@@ -99,6 +111,7 @@ const CATALOG: IntegrationAgent[] = [
     installable: true,
     configurable: true,
     requiresModel: true,
+    minContextLength: 32768,
     endpointWithPrefix: true,
   },
   {
@@ -111,6 +124,7 @@ const CATALOG: IntegrationAgent[] = [
     installable: true,
     configurable: true,
     requiresModel: true,
+    minContextLength: 32768,
     endpointWithPrefix: true,
   },
   {
@@ -124,6 +138,7 @@ const CATALOG: IntegrationAgent[] = [
     installable: true,
     configurable: true,
     requiresModel: true,
+    minContextLength: 32768,
     endpointWithPrefix: true,
   },
   {
@@ -136,6 +151,7 @@ const CATALOG: IntegrationAgent[] = [
     installable: true,
     configurable: true,
     requiresModel: true,
+    minContextLength: 32768,
     endpointWithPrefix: true,
   },
   {
@@ -152,6 +168,7 @@ const CATALOG: IntegrationAgent[] = [
     // section when one route is invalid -- so an unset model would take the
     // user's other providers down with it, not merely fail to help.
     requiresModel: true,
+    minContextLength: 32768,
     // The route is declared with the `openai-completions` protocol, whose
     // `baseURL` is expected to already carry the `/v1` prefix.
     endpointWithPrefix: true,
@@ -166,6 +183,7 @@ const CATALOG: IntegrationAgent[] = [
     installable: true,
     configurable: true,
     requiresModel: true,
+    minContextLength: 32768,
     // Registered as an `openai_compatible` provider, whose `api_url` is the
     // OpenAI API root with the `/v1` prefix.
     endpointWithPrefix: true,
@@ -183,6 +201,8 @@ const CATALOG: IntegrationAgent[] = [
     installable: false,
     configurable: true,
     requiresModel: true,
+    minContextLength: 32768,
+    downloadUrl: 'https://zcode.z.ai',
     // Stored as an `openai-chat-completions` provider, whose `baseUrl` is the
     // OpenAI API root ZCode appends `/chat/completions` to.
     endpointWithPrefix: true,
@@ -197,6 +217,7 @@ const CATALOG: IntegrationAgent[] = [
     installable: true,
     configurable: true,
     requiresModel: true,
+    minContextLength: 32768,
     endpointWithPrefix: true,
   },
   {
@@ -209,6 +230,7 @@ const CATALOG: IntegrationAgent[] = [
     installable: true,
     configurable: true,
     requiresModel: true,
+    minContextLength: 32768,
     endpointWithPrefix: true,
   },
   {
@@ -221,6 +243,7 @@ const CATALOG: IntegrationAgent[] = [
     installable: true,
     configurable: true,
     requiresModel: true,
+    minContextLength: 32768,
     endpointWithPrefix: true,
   },
   {
@@ -233,6 +256,7 @@ const CATALOG: IntegrationAgent[] = [
     installable: true,
     configurable: true,
     requiresModel: true,
+    minContextLength: 32768,
     endpointWithPrefix: true,
   },
   {
@@ -245,6 +269,7 @@ const CATALOG: IntegrationAgent[] = [
     installable: true,
     configurable: true,
     requiresModel: true,
+    minContextLength: 32768,
     endpointWithPrefix: true,
   },
   {
@@ -257,6 +282,7 @@ const CATALOG: IntegrationAgent[] = [
     installable: true,
     configurable: true,
     requiresModel: true,
+    minContextLength: 32768,
     endpointWithPrefix: false,
   },
   {
@@ -269,6 +295,7 @@ const CATALOG: IntegrationAgent[] = [
     installable: true,
     configurable: true,
     requiresModel: true,
+    minContextLength: 32768,
     // `--base-url` replaces the Meta Model API root (`https://api.meta.ai/v1`),
     // onto which Muse appends `/responses` itself -- the same Responses wire
     // protocol Codex CLI speaks, which the local server already serves.
@@ -285,6 +312,7 @@ const CATALOG: IntegrationAgent[] = [
     installable: true,
     configurable: true,
     requiresModel: true,
+    minContextLength: 32768,
     // Atomic Agent stores an `openai-compatible` provider, whose `baseUrl` is
     // the OpenAI API root. It normalises a trailing `/v1` away itself, but the
     // stored value should still read as the base URL the user would paste.
@@ -300,6 +328,8 @@ const CATALOG: IntegrationAgent[] = [
     installable: true,
     configurable: true,
     requiresModel: true,
+    // Hermes refuses to start on a smaller window.
+    minContextLength: 65536,
     endpointWithPrefix: true,
   },
   {
@@ -312,6 +342,7 @@ const CATALOG: IntegrationAgent[] = [
     installable: true,
     configurable: true,
     requiresModel: true,
+    minContextLength: 32768,
     endpointWithPrefix: true,
   },
   {
