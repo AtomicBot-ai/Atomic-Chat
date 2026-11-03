@@ -55,9 +55,11 @@ describe('integration agent setup', () => {
   })
 
   it("tells the agent the served model's window when the app knows it", async () => {
-    await writeAgentConfig(agent('kilo'), 'qwen3.5-4b', SERVER, {
-      contextLength: 32768,
-    })
+    await expect(
+      writeAgentConfig(agent('kilo'), 'qwen3.5-4b', SERVER, {
+        contextLength: 32768,
+      })
+    ).resolves.toBeUndefined()
     expect(invoke).toHaveBeenCalledWith('configure_kilo', {
       apiUrl: 'http://127.0.0.1:1337/v1',
       model: 'qwen3.5-4b',
