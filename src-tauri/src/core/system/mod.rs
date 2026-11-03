@@ -13,3 +13,4 @@ pub mod dsh_config;
 pub mod goose_config;
 pub mod opencode_family;
 pub mod page_cache;
+pub mod windows_path;

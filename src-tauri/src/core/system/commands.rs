@@ -760,53 +760,18 @@ fn jan_cli_bin_dir_windows() -> Result<PathBuf, String> {
         .join("bin"))
 }
 
-/// Strip the Windows extended-length / verbatim prefix (`\\?\` or `\\?\UNC\`)
-/// from a path string.
-///
-/// Tauri's `resource_dir()` returns verbatim-prefixed paths on Windows
-/// (e.g. `\\?\C:\Users\...\resources\bin`). That prefix is valid Win32 but does
-/// not belong in the user PATH: some tools fail to resolve executables from a
-/// `\\?\`-prefixed PATH entry because the prefix disables normal path parsing.
-/// We always write the plain, normalized form instead.
-#[cfg(windows)]
-fn strip_verbatim_prefix(path: &str) -> String {
-    if let Some(rest) = path.strip_prefix(r"\\?\UNC\") {
-        // \\?\UNC\server\share -> \\server\share
-        format!(r"\\{}", rest)
-    } else if let Some(rest) = path.strip_prefix(r"\\?\") {
-        // \\?\C:\... -> C:\...
-        rest.to_string()
-    } else {
-        path.to_string()
-    }
-}
-
-/// Add a directory to the Windows user PATH.
+/// Add a directory to the front of the Windows user PATH, dropping the
+/// pre-`resources\bin` entry older builds wrote. The value is edited as stored
+/// (see `windows_path`), so other entries keep their characters, their
+/// `%VAR%` references and the value its `REG_EXPAND_SZ` type.
 #[cfg(windows)]
 fn add_to_path_windows(install_dir: &PathBuf) -> Result<(), String> {
-    use std::process::Command;
+    use super::windows_path::{
+        env_lookup, path_with_dir_first, read_user_path, strip_verbatim_prefix, write_user_path,
+    };
 
     // Always write the normalized (non-verbatim) form to PATH.
     let install_dir_str = strip_verbatim_prefix(&install_dir.to_string_lossy());
-
-    let mut cmd = Command::new("powershell");
-    cmd.args([
-        "-NoProfile",
-        "-Command",
-        "[Environment]::GetEnvironmentVariable('Path', 'User')",
-    ]);
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
-    let read_output = cmd
-        .output()
-        .map_err(|e| format!("Failed to read user PATH: {}", e))?;
-
-    let existing_user_path = String::from_utf8_lossy(&read_output.stdout)
-        .trim()
-        .to_string();
 
     // Remove stale old-style PATH entry (..\\Programs\\Jan without \\resources\\bin)
     // left by previous versions that placed jan.exe next to the GUI binary.
@@ -814,131 +779,30 @@ fn add_to_path_windows(install_dir: &PathBuf) -> Result<(), String> {
         .parent()
         .and_then(|p| p.parent())
         .map(|p| p.to_string_lossy().to_string());
+    let stale: Vec<&str> = old_jan_dir.as_deref().into_iter().collect();
 
-    let old_jan_dir_norm = old_jan_dir.as_deref().map(strip_verbatim_prefix);
-
-    let parts: Vec<&str> = existing_user_path
-        .split(';')
-        .filter(|p| !p.is_empty())
-        .filter(|p| {
-            let norm = strip_verbatim_prefix(p);
-            // Drop the stale old-style GUI-dir entry...
-            if let Some(ref old) = old_jan_dir_norm {
-                if norm.eq_ignore_ascii_case(old) {
-                    return false;
-                }
-            }
-            // ...and drop any existing copy of our bin dir (including the
-            // legacy `\\?\`-prefixed form) so we can re-add the clean entry.
-            // This lets older installs self-heal on the next launch.
-            !norm.eq_ignore_ascii_case(&install_dir_str)
-        })
-        .collect();
-
-    let mut new_parts = vec![install_dir_str.as_str()];
-    new_parts.extend(parts);
-    let new_path = new_parts.join(";");
-
-    // Nothing to change: our clean entry is already present and no stale
-    // entries needed removing. Skip the write to avoid touching the registry
-    // on every launch.
-    if new_path == existing_user_path {
+    let (current, vtype) = read_user_path()?;
+    // Nothing to change: our clean entry already leads and no stale entries
+    // needed removing. Skip the write to avoid touching the registry on every
+    // launch.
+    let Some(next) = path_with_dir_first(&current, &install_dir_str, &stale, &env_lookup) else {
         return Ok(());
-    }
-
-    let mut cmd_write = Command::new("powershell");
-    cmd_write.args([
-        "-NoProfile",
-        "-Command",
-        &format!(
-            "[Environment]::SetEnvironmentVariable('Path', '{}', 'User')",
-            new_path.replace('\'', "''")
-        ),
-    ]);
-
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd_write.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
-
-    let write_output = cmd_write
-        .output()
-        .map_err(|e| format!("Failed to update user PATH: {}", e))?;
-
-    if !write_output.status.success() {
-        return Err(format!(
-            "Failed to update PATH: {}",
-            String::from_utf8_lossy(&write_output.stderr)
-        ));
-    }
-
+    };
+    write_user_path(&next, vtype)?;
     log::info!("Added {} to Windows user PATH", install_dir_str);
     Ok(())
 }
 
-/// Remove a directory from the Windows user PATH.
+/// Remove a directory from the Windows user PATH (any spelling of it,
+/// including the legacy `\\?\`-prefixed one), leaving every other entry as is.
 #[cfg(windows)]
 fn remove_from_path_windows(dir: &PathBuf) -> Result<(), String> {
-    use std::process::Command;
+    use super::windows_path::{env_lookup, path_without_dir, read_user_path, write_user_path};
 
     let dir_str = dir.to_string_lossy().to_string();
-
-    let mut cmd = Command::new("powershell");
-    cmd.args([
-        "-NoProfile",
-        "-Command",
-        "[Environment]::GetEnvironmentVariable('Path', 'User')",
-    ]);
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
-    let read_output = cmd
-        .output()
-        .map_err(|e| format!("Failed to read user PATH: {}", e))?;
-
-    let existing_user_path = String::from_utf8_lossy(&read_output.stdout)
-        .trim()
-        .to_string();
-
-    let dir_str = strip_verbatim_prefix(&dir_str);
-    let new_path: String = existing_user_path
-        .split(';')
-        // Match both the plain entry and any legacy `\\?\`-prefixed copy.
-        .filter(|p| !p.is_empty() && !strip_verbatim_prefix(p).eq_ignore_ascii_case(&dir_str))
-        .collect::<Vec<_>>()
-        .join(";");
-
-    if new_path.len() != existing_user_path.len() {
-        let mut cmd_write = Command::new("powershell");
-        cmd_write.args([
-            "-NoProfile",
-            "-Command",
-            &format!(
-                "[Environment]::SetEnvironmentVariable('Path', '{}', 'User')",
-                new_path.replace('\'', "''")
-            ),
-        ]);
-
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            cmd_write.creation_flags(0x08000000); // CREATE_NO_WINDOW
-        }
-
-        let write_output = cmd_write
-            .output()
-            .map_err(|e| format!("Failed to update user PATH: {}", e))?;
-
-        if !write_output.status.success() {
-            return Err(format!(
-                "Failed to update PATH: {}",
-                String::from_utf8_lossy(&write_output.stderr)
-            ));
-        }
-
+    let (current, vtype) = read_user_path()?;
+    if let Some(next) = path_without_dir(&current, &dir_str, &env_lookup) {
+        write_user_path(&next, vtype)?;
         log::info!("Removed {} from Windows user PATH", dir_str);
     }
     Ok(())
@@ -1346,26 +1210,9 @@ pub(crate) fn resolve_hermes_dir() -> Result<std::path::PathBuf, String> {
 /// or when the value is empty/absent.
 #[cfg(windows)]
 fn read_windows_user_env(name: &str) -> Option<String> {
-    use std::os::windows::process::CommandExt;
-    use std::process::Command;
-
-    let mut cmd = Command::new("powershell");
-    cmd.args([
-        "-NoProfile",
-        "-Command",
-        &format!("[Environment]::GetEnvironmentVariable('{}', 'User')", name),
-    ]);
-    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    let out = cmd.output().ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    if s.is_empty() {
-        None
-    } else {
-        Some(s)
-    }
+    // Straight from the registry: PowerShell's stdout is in the console code
+    // page, which mangles a non-ASCII user name in the path it returns.
+    super::windows_path::read_user_env(name)
 }
 
 #[cfg(not(windows))]
@@ -2127,31 +1974,11 @@ fn apply_login_path(_cmd: &mut std::process::Command) {}
 /// Returns the merged, de-duplicated PATH, or None if the registry read failed.
 #[cfg(windows)]
 fn refresh_windows_path() -> Option<String> {
-    use std::process::Command;
-
-    fn read_scope(scope: &str) -> Option<String> {
-        let mut cmd = Command::new("powershell");
-        cmd.args([
-            "-NoProfile",
-            "-Command",
-            &format!("[Environment]::GetEnvironmentVariable('Path', '{}')", scope),
-        ]);
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-        let out = cmd.output().ok()?;
-        if !out.status.success() {
-            return None;
-        }
-        let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        if s.is_empty() {
-            None
-        } else {
-            Some(s)
-        }
-    }
-
-    let user = read_scope("User");
-    let machine = read_scope("Machine");
+    // Read from the registry, not through two PowerShell processes per probe
+    // whose stdout is in the console code page (non-ASCII entries came back
+    // mangled and never resolved). `REG_EXPAND_SZ` entries are expanded.
+    let user = super::windows_path::read_scope_path(false);
+    let machine = super::windows_path::read_scope_path(true);
 
     // The npm global prefix on Windows defaults to %APPDATA%\npm, where global
     // shims (claude.cmd, codex.cmd, opencode.cmd, ...) installed via `npm i -g`
@@ -2169,9 +1996,7 @@ fn refresh_windows_path() -> Option<String> {
     }
 
     let live = std::env::var("PATH").unwrap_or_default();
-    let mut merged: Vec<String> = Vec::new();
-    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-    for chunk in [
+    let chunks: Vec<&str> = [
         machine.as_deref(),
         user.as_deref(),
         npm_global.as_deref(),
@@ -2179,19 +2004,8 @@ fn refresh_windows_path() -> Option<String> {
     ]
     .into_iter()
     .flatten()
-    {
-        for part in chunk.split(';').map(str::trim).filter(|p| !p.is_empty()) {
-            let key = part.to_lowercase();
-            if seen.insert(key) {
-                merged.push(part.to_string());
-            }
-        }
-    }
-    if merged.is_empty() {
-        None
-    } else {
-        Some(merged.join(";"))
-    }
+    .collect();
+    super::windows_path::merge_path_lists(&chunks)
 }
 
 /// Apply the freshly-read registry PATH to a spawned command (Windows only).
