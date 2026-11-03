@@ -254,7 +254,9 @@ function LaunchPage() {
       )
       useServerSetup.getState().markAgentConfigured(agent.id)
 
-      const configuredDescKey = agentConfiguredDescriptionKey(agent.id)
+      const configuredDescKey = agentConfiguredDescriptionKey(agent.id, {
+        keyed: Boolean(apiKey),
+      })
       toast.success(t('launch:toast.configured', { name: agent.name }), {
         description: t(configuredDescKey, { name: agent.name }),
         duration: 8000,

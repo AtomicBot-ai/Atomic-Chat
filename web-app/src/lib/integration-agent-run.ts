@@ -187,6 +187,12 @@ function terminalCommand(
       apiKey ? { ATOMIC_CHAT_API_KEY: apiKey } : {}
     )
   }
+  if (agent.id === 'copilot' && model) {
+    // The endpoint, key and limits are our `atomic-chat` entry in Copilot's
+    // providers.json; `--model <provider>/<id>` starts this run on it and
+    // leaves the user's own default alone.
+    return quotedAgentCommand(binary, ['--model', `atomic-chat/${model}`], {})
+  }
   if (agent.id === 'poolside') {
     const apiUrl = `http://${agentConnectHost(serverHost)}:${serverPort}${apiPrefix}`
     return quotedAgentCommand(binary, [], {

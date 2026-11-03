@@ -265,6 +265,44 @@ describe('openIntegrationAgent', () => {
     }
   )
 
+  it.skipIf(process.platform === 'win32')(
+    'starts Copilot on our providers.json model, the id intact',
+    async () => {
+      const model = "org/model's spaced $id `literal`"
+      await openIntegrationAgent(agent('copilot'), { t, model, server })
+      const command = (
+        vi
+          .mocked(invoke)
+          .mock.calls.find(([name]) => name === 'open_agent_terminal')?.[1] as {
+          command: string
+        }
+      ).command
+      // No variable is set for the run: the key lives in providers.json.
+      expect(command.startsWith("'copilot' ")).toBe(true)
+      const output = execFileSync(
+        '/bin/sh',
+        ['-c', 'copilot() { printf "%s\\n" "$@"; }; ' + command],
+        { encoding: 'utf8' }
+      )
+      expect(output.trim().split('\n')).toEqual([
+        '--model',
+        `atomic-chat/${model}`,
+      ])
+    }
+  )
+
+  it('starts a bare Copilot when no model is loaded', async () => {
+    await openIntegrationAgent(agent('copilot'), { t, model: null, server })
+    expect(
+      vi
+        .mocked(invoke)
+        .mock.calls.find(([name]) => name === 'open_agent_terminal')?.[1]
+    ).toEqual(expect.objectContaining({ command: 'copilot', proxy: undefined }))
+    expect(useLaunchStore.getState().opened).toEqual({
+      copilot: { at: expect.any(Number), model: null },
+    })
+  })
+
   it.each(['muse', 'poolside', 'codex', 'goose'])(
     'encodes %s data before crossing cmd.exe on Windows',
     async (id) => {

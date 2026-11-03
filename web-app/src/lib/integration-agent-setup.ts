@@ -229,8 +229,15 @@ export async function writeAgentConfig(
   }
 }
 
-/** The description of the "configured" toast: some agents pick it up live. */
-export function agentConfiguredDescriptionKey(agentId: string): string {
+/**
+ * The description of the "configured" toast: some agents pick it up live.
+ * `keyed` is whether the server has an API key, which Codex reads from a
+ * variable the user has to set when starting it themselves.
+ */
+export function agentConfiguredDescriptionKey(
+  agentId: string,
+  { keyed = false }: { keyed?: boolean } = {}
+): string {
   return agentId === 'zed'
     ? 'launch:toast.configuredDescEditor'
     : agentId === 'openclaw'
@@ -244,7 +251,11 @@ export function agentConfiguredDescriptionKey(agentId: string): string {
           'launch:toast.configuredDescZcode'
         : agentId === 'codex'
           ? // Only `codex --profile atomic-chat` uses the local server; say
-            // so, since a plain `codex` no longer does.
-            'launch:toast.configuredDescCodex'
+            // so, since a plain `codex` no longer does. The profile names the
+            // key's variable but never holds the key, so a keyed server needs
+            // it set in the user's own terminal.
+            keyed
+            ? 'launch:toast.configuredDescCodexKeyed'
+            : 'launch:toast.configuredDescCodex'
           : 'launch:toast.configuredDesc'
 }

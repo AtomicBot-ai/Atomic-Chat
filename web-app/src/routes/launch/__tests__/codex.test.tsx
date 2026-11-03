@@ -151,5 +151,10 @@ describe('Launch page: Codex CLI', () => {
       apiKey: "sk-it's",
       contextLength: null,
     })
+    // Run by hand, the profile needs the key's variable: the toast says so.
+    expect(toast.success).toHaveBeenCalledWith('launch:toast.configured', {
+      description: 'launch:toast.configuredDescCodexKeyed',
+      duration: 8000,
+    })
   })
 })

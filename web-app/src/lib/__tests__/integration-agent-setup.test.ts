@@ -99,6 +99,13 @@ describe('integration agent setup', () => {
     expect(agentConfiguredDescriptionKey('codex')).toBe(
       'launch:toast.configuredDescCodex'
     )
+    // A keyed server: the user must set the key's variable to run it alone.
+    expect(agentConfiguredDescriptionKey('codex', { keyed: true })).toBe(
+      'launch:toast.configuredDescCodexKeyed'
+    )
+    expect(agentConfiguredDescriptionKey('opencode', { keyed: true })).toBe(
+      'launch:toast.configuredDesc'
+    )
     expect(agentConfiguredDescriptionKey('opencode')).toBe(
       'launch:toast.configuredDesc'
     )
