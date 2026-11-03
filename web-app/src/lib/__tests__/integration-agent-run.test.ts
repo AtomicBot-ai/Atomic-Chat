@@ -10,9 +10,11 @@ vi.mock('@tauri-apps/plugin-os', () => ({ type: vi.fn(() => 'macos') }))
 vi.mock('sonner', () => ({
   toast: { info: vi.fn(), warning: vi.fn(), success: vi.fn(), error: vi.fn() },
 }))
+vi.mock('@/utils/servedModel', () => ({ servedContextLength: vi.fn() }))
 
 import { INTEGRATION_AGENTS } from '@/constants/integrations'
 import { useLaunchStore } from '@/stores/launch-store'
+import { servedContextLength } from '@/utils/servedModel'
 
 import { openIntegrationAgent } from '../integration-agent-run'
 
@@ -30,7 +32,69 @@ describe('openIntegrationAgent', () => {
     vi.clearAllMocks()
     vi.mocked(osType).mockReturnValue('macos')
     vi.mocked(invoke).mockResolvedValue(undefined)
+    vi.mocked(servedContextLength).mockResolvedValue(undefined)
     useLaunchStore.setState({ launched: {}, binPath: {} })
+  })
+
+  const terminalCommand = () =>
+    (
+      vi
+        .mocked(invoke)
+        .mock.calls.find(([name]) => name === 'open_agent_terminal')?.[1] as {
+        command: string
+      }
+    ).command
+
+  it('starts Kilo on our model, which beats the pick it saved', async () => {
+    await openIntegrationAgent(agent('kilo'), {
+      t,
+      model: 'qwen3.5-4b',
+      server,
+    })
+    expect(terminalCommand()).toBe(`'kilo' '--model' 'atomic/qwen3.5-4b'`)
+
+    vi.mocked(invoke).mockClear()
+    await openIntegrationAgent(agent('kilo'), { t, model: null, server })
+    expect(terminalCommand()).toBe('kilo')
+  })
+
+  it.skipIf(process.platform === 'win32')(
+    'gives Goose its provider, endpoint and window for this session only',
+    async () => {
+      vi.mocked(servedContextLength).mockResolvedValue(16384)
+      await openIntegrationAgent(agent('goose'), {
+        t,
+        model: "org/model's $name",
+        server: { ...server, apiPrefix: '/api/v1' },
+      })
+      const stub =
+        'goose() { printf "%s\\n" "$GOOSE_PROVIDER" "$GOOSE_MODEL" "$OPENAI_BASE_URL" "$OPENAI_API_KEY" "$GOOSE_CONTEXT_LIMIT" "$GOOSE_MAX_TOKENS" "${OPENAI_HOST-unset}" "$@"; }; '
+      const output = execFileSync('/bin/sh', ['-c', stub + terminalCommand()], {
+        encoding: 'utf8',
+        env: { PATH: process.env.PATH },
+      })
+      expect(output.split('\n').slice(0, -1)).toEqual([
+        'openai',
+        "org/model's $name",
+        'http://127.0.0.1:1337/api/v1',
+        "it's-secret",
+        '16384',
+        '4096',
+        'unset',
+        'session',
+      ])
+    }
+  )
+
+  it('leaves the Goose window unset when the server does not say it', async () => {
+    await openIntegrationAgent(agent('goose'), {
+      t,
+      model: 'qwen3',
+      server: { ...server, apiKey: '' },
+    })
+    expect(terminalCommand()).toBe(
+      `GOOSE_PROVIDER='openai' GOOSE_MODEL='qwen3' OPENAI_BASE_URL='http://127.0.0.1:1337/v1' OPENAI_API_KEY='atomic' 'goose' 'session'`
+    )
   })
 
   it('runs a terminal agent and remembers it opened', async () => {
@@ -126,7 +190,7 @@ describe('openIntegrationAgent', () => {
     }
   )
 
-  it.each(['muse', 'poolside', 'codex'])(
+  it.each(['muse', 'poolside', 'codex', 'goose'])(
     'encodes %s data before crossing cmd.exe on Windows',
     async (id) => {
       vi.mocked(osType).mockReturnValue('windows')

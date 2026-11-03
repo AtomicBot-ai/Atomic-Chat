@@ -64,8 +64,8 @@ test('every CLI agent carries the fields the launcher needs', () => {
 
 test('the agents that append their own API path are not given the prefix', () => {
   const byId = new Map(cliCatalog().map((agent) => [agent.id, agent]))
-  // Claude Code and Goose append `/v1` (Goose through OPENAI_BASE_PATH); handing them a prefixed
-  // endpoint produces `/v1/v1` and every request 404s.
+  // Claude Code appends `/v1` itself, and Goose's launcher adds the server prefix to its
+  // OPENAI_BASE_URL; handing them a prefixed endpoint produces `/v1/v1` and every request 404s.
   assert.equal(byId.get('claude-code').endpoint_with_prefix, false)
   assert.equal(byId.get('goose').endpoint_with_prefix, false)
   assert.equal(byId.get('codex').endpoint_with_prefix, true)

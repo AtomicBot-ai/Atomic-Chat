@@ -11,6 +11,7 @@ import {
 } from '@/lib/integration-agent-setup'
 import { createSafeUnlisten } from '@/lib/tauriEvent'
 import { useLaunchStore } from '@/stores/launch-store'
+import { servedContextLength } from '@/utils/servedModel'
 
 type Translate = (key: string, options?: Record<string, unknown>) => string
 
@@ -110,7 +111,8 @@ export async function installIntegrationAgent(
 function terminalCommand(
   agent: IntegrationAgent,
   model: string | null,
-  { serverHost, serverPort, apiPrefix, apiKey }: AgentServerSettings
+  { serverHost, serverPort, apiPrefix, apiKey }: AgentServerSettings,
+  contextLength?: number
 ): string {
   // Off-PATH installs (custom path, or OpenClaw's app-managed prefix) have to
   // be spawned by absolute path; everything else keeps the bare binary name.
@@ -128,7 +130,6 @@ function terminalCommand(
   // overrides only when launched with `--override-with-envs`. Everything else
   // runs its bare detect binary.
   if (agent.id === 'openclaw') return `${launcher} chat`
-  if (agent.id === 'goose') return `${launcher} session`
   if (agent.id === 'openhands') return `${launcher} --override-with-envs`
   if (agent.id === 'dsh') {
     // DeepSeek Harness is a browser app, not a terminal chat: a bare `dsh` has
@@ -139,6 +140,32 @@ function terminalCommand(
     return `${launcher} web`
   }
   const binary = useLaunchStore.getState().binPath[agent.id] || agent.detectBin
+  if (agent.id === 'kilo' && model) {
+    // Kilo opens on the model it last used before the one its config
+    // selects; named on the command line, ours wins.
+    return quotedAgentCommand(binary, ['--model', `atomic/${model}`], {})
+  }
+  if (agent.id === 'goose') {
+    // Goose reads its provider from the environment: given to this session
+    // only, never saved for the whole user. OPENAI_BASE_URL carries the API
+    // prefix; with the window and output cap it compacts before the server
+    // refuses.
+    const apiUrl = `http://${agentConnectHost(serverHost)}:${serverPort}${apiPrefix}`
+    return quotedAgentCommand(binary, ['session'], {
+      GOOSE_PROVIDER: 'openai',
+      GOOSE_MODEL: model ?? '',
+      OPENAI_BASE_URL: apiUrl,
+      OPENAI_API_KEY: apiKey || 'atomic',
+      ...(contextLength
+        ? {
+            GOOSE_CONTEXT_LIMIT: String(contextLength),
+            GOOSE_MAX_TOKENS: String(
+              Math.min(8192, Math.floor(contextLength / 4))
+            ),
+          }
+        : {}),
+    })
+  }
   if (agent.id === 'muse') {
     const apiUrl = `http://${agentConnectHost(serverHost)}:${serverPort}${apiPrefix}`
     return quotedAgentCommand(
@@ -258,8 +285,12 @@ async function openAgent(
       return false
     }
   }
+  // The window the served model was loaded with, for the agent told it at
+  // launch rather than in its config.
+  const contextLength =
+    agent.id === 'goose' ? await servedContextLength() : undefined
   await invoke('open_agent_terminal', {
-    command: terminalCommand(agent, model, server),
+    command: terminalCommand(agent, model, server, contextLength),
     proxy: buildProxyPayload(),
   })
   return true
