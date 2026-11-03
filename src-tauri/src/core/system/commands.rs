@@ -2,6 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
+use super::agent_terminal::{AgentTerminalInfo, TerminalOutcome};
 use crate::core::app::commands::{
     default_data_folder_path, get_app_configurations, get_jan_data_folder_path,
     update_app_configuration,
@@ -2289,11 +2290,20 @@ fn proxy_url_with_auth(url: &str, username: Option<&str>, password: Option<&str>
 /// Best-effort: `uv`/`curl` honor `ALL_PROXY`/SOCKS; npm and PowerShell
 /// `Invoke-RestMethod` largely ignore SOCKS env (handled by clearer messaging).
 fn apply_proxy_env(cmd: &mut std::process::Command, proxy: &ProxyEnv) {
+    for (key, value) in proxy_env_vars(proxy) {
+        cmd.env(key, value);
+    }
+}
+
+/// The variables [`apply_proxy_env`] sets, for a child that gets them some
+/// other way (the agent launcher script exports them). Empty without a URL.
+pub(crate) fn proxy_env_vars(proxy: &ProxyEnv) -> Vec<(String, String)> {
     let url = proxy.url.trim();
     if url.is_empty() {
-        return;
+        return Vec::new();
     }
     let full = proxy_url_with_auth(url, proxy.username.as_deref(), proxy.password.as_deref());
+    let mut vars: Vec<(String, String)> = Vec::new();
 
     for key in [
         "HTTP_PROXY",
@@ -2303,7 +2313,7 @@ fn apply_proxy_env(cmd: &mut std::process::Command, proxy: &ProxyEnv) {
         "ALL_PROXY",
         "all_proxy",
     ] {
-        cmd.env(key, &full);
+        vars.push((key.to_string(), full.clone()));
     }
 
     let mut no_proxy = proxy
@@ -2324,8 +2334,9 @@ fn apply_proxy_env(cmd: &mut std::process::Command, proxy: &ProxyEnv) {
             no_proxy.push_str(loopback);
         }
     }
-    cmd.env("NO_PROXY", &no_proxy);
-    cmd.env("no_proxy", &no_proxy);
+    vars.push(("NO_PROXY".to_string(), no_proxy.clone()));
+    vars.push(("no_proxy".to_string(), no_proxy));
+    vars
 }
 
 /// Detect a DNS/tunnel failure signature in installer output so we can append an
@@ -5907,9 +5918,17 @@ pub fn configure_atomic_agent(
 /// Open the OS terminal and run `command` interactively, so the user can start
 /// using a just-configured agent in one click. The terminal stays open after
 /// the command (it launches an interactive TUI agent like codex/claude).
+///
+/// `agent` names what the window is for: its title, the line printed before
+/// the agent starts, and (macOS) the window the next call for the same agent
+/// brings forward while the agent still runs there. See `agent_terminal`.
 #[tauri::command]
 #[cfg_attr(feature = "e2e", allow(unreachable_code, unused_variables))]
-pub fn open_agent_terminal(command: String, proxy: Option<ProxyEnv>) -> Result<(), String> {
+pub async fn open_agent_terminal(
+    command: String,
+    proxy: Option<ProxyEnv>,
+    agent: Option<AgentTerminalInfo>,
+) -> Result<TerminalOutcome, String> {
     let command = command.trim().to_string();
     if command.is_empty() {
         return Err("Empty terminal command".to_string());
@@ -5918,47 +5937,41 @@ pub fn open_agent_terminal(command: String, proxy: Option<ProxyEnv>) -> Result<(
     // An end-to-end build must not open terminal windows on the desktop of
     // whoever runs the tests; it writes down what it would have run instead.
     #[cfg(feature = "e2e")]
-    return crate::core::e2e::record_terminal(&crate::core::e2e::data_root(), &command);
+    return crate::core::e2e::record_terminal(&crate::core::e2e::data_root(), &command)
+        .map(|()| TerminalOutcome::Opened);
 
     #[cfg(target_os = "macos")]
     {
-        // Escape for an AppleScript double-quoted string literal.
-        let escaped = command.replace('\\', "\\\\").replace('"', "\\\"");
-        let _ = &proxy;
-        // When Terminal.app is *not* already running, `activate` opens a default
-        // empty window and `do script` opens a second one — two windows. So we
-        // branch: if it was already running, open a fresh window (don't hijack
-        // an existing session); if it was cold, reuse the auto-opened window 1.
-        let script = format!(
-            "set wasRunning to application \"Terminal\" is running\n\
-             tell application \"Terminal\"\n\
-             activate\n\
-             if wasRunning then\n\
-             do script \"{cmd}\"\n\
-             else\n\
-             delay 0.2\n\
-             do script \"{cmd}\" in window 1\n\
-             end if\n\
-             end tell",
-            cmd = escaped
-        );
-        std::process::Command::new("osascript")
-            .arg("-e")
-            .arg(&script)
-            .spawn()
-            .map_err(|e| format!("Failed to open Terminal: {}", e))?;
-        log::info!("Opened Terminal with command: {}", command);
-        return Ok(());
+        // The proxy and any key travel inside a launcher script, never typed
+        // into the shell; osascript is waited on, so a refused launch fails.
+        let proxy_env = proxy.as_ref().map(proxy_env_vars).unwrap_or_default();
+        return tokio::task::spawn_blocking(move || {
+            super::agent_terminal::open_macos(&command, &proxy_env, agent.as_ref())
+        })
+        .await
+        .map_err(|e| e.to_string())?;
     }
 
     #[cfg(target_os = "windows")]
     {
-        // `start "" cmd /K <cmd>` opens a fresh console that stays open so the
-        // interactive agent keeps running. The empty "" is the window title arg.
+        // `start "<title>" cmd /K <cmd>` opens a fresh console that stays open so the
+        // interactive agent keeps running. The first quoted argument is the window title.
         // The new console inherits this command's environment, so the proxy env
         // applied below reaches the interactive agent.
+        let title = agent
+            .as_ref()
+            .map(|a| super::agent_terminal::windows_title(&a.agent_name))
+            .unwrap_or_default();
+        let command = match agent.as_ref() {
+            Some(a) => format!(
+                "echo {}& {}",
+                super::agent_terminal::windows_echo_line(a),
+                command
+            ),
+            None => command,
+        };
         let mut cmd = std::process::Command::new("cmd");
-        cmd.args(["/C", "start", "", "cmd", "/K", &command]);
+        cmd.args(["/C", "start", &title, "cmd", "/K", &command]);
         // The launched console inherits this `cmd`'s environment, so refresh the
         // PATH from the registry (+ npm global prefix) here — otherwise a console
         // started from a GUI launched before Node/npm was installed inherits a
@@ -5970,41 +5983,27 @@ pub fn open_agent_terminal(command: String, proxy: Option<ProxyEnv>) -> Result<(
         cmd.spawn()
             .map_err(|e| format!("Failed to open terminal: {}", e))?;
         log::info!("Opened cmd with command: {}", command);
-        return Ok(());
+        return Ok(TerminalOutcome::Opened);
     }
 
     #[cfg(all(unix, not(target_os = "macos")))]
     {
-        // `exec $SHELL` keeps the window open after the agent exits.
-        let inner = format!("{}; exec $SHELL", command);
-        let candidates: &[(&str, &[&str])] = &[
-            ("x-terminal-emulator", &["-e"]),
-            ("gnome-terminal", &["--"]),
-            ("konsole", &["-e"]),
-            ("xfce4-terminal", &["-e"]),
-            ("xterm", &["-e"]),
-        ];
-        for (term, pre) in candidates {
-            let mut cmd = std::process::Command::new(term);
-            cmd.args(*pre);
-            cmd.args(["bash", "-lc", &inner]);
-            // The emulator inherits this env; resolve the login-shell PATH so the
-            // agent binary is found, then `bash -lc` sees PATH + proxy.
-            apply_login_path(&mut cmd);
-            apply_runtime_path(&mut cmd);
-            if let Some(ref proxy) = proxy {
-                apply_proxy_env(&mut cmd, proxy);
-            }
-            if cmd.spawn().is_ok() {
-                log::info!("Opened {} with command: {}", term, command);
-                return Ok(());
-            }
-        }
-        return Err("No supported terminal emulator found".to_string());
+        let proxy_env = proxy.as_ref().map(proxy_env_vars).unwrap_or_default();
+        return tokio::task::spawn_blocking(move || {
+            // The emulator itself has to be found and start cleanly: the
+            // login-shell PATH, no AppImage runtime leftovers.
+            let prepare = |cmd: &mut std::process::Command| {
+                apply_login_path(cmd);
+                apply_runtime_path(cmd);
+            };
+            super::agent_terminal::open_linux(&command, &proxy_env, agent.as_ref(), &prepare)
+        })
+        .await
+        .map_err(|e| e.to_string())?;
     }
 
     #[allow(unreachable_code)]
-    Ok(())
+    Ok(TerminalOutcome::Opened)
 }
 
 /// Launchers JetBrains IDEs ship, IntelliJ IDEA first: the executable in each
