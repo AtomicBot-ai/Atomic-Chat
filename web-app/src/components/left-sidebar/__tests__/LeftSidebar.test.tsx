@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { cleanup, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useLocation } from '@tanstack/react-router'
 import { LeftSidebar } from '..'
@@ -156,6 +156,7 @@ vi.mock('@/containers/dialogs/AddProjectDialog', () => ({
 // checked from one file.
 const platform = vi.hoisted(() => ({
   mediaGeneration: true,
+  audioGeneration: false,
   localApiServer: true,
   httpsProxy: true,
 }))
@@ -185,6 +186,7 @@ describe('LeftSidebar', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     platform.mediaGeneration = true
+    platform.audioGeneration = false
     platform.localApiServer = true
     platform.httpsProxy = true
     badges.integrationsBadgeSeen = true
@@ -254,6 +256,21 @@ describe('LeftSidebar', () => {
 
       expect(screen.queryByTestId('images-link')).not.toBeInTheDocument()
       expect(screen.queryByTestId('videos-link')).not.toBeInTheDocument()
+    })
+
+    it('lists Audios only where audio generation is on (dev builds)', () => {
+      render(<LeftSidebar />)
+      expect(screen.queryByTestId('audios-link')).not.toBeInTheDocument()
+      cleanup()
+
+      platform.audioGeneration = true
+      at('/audios/')
+      render(<LeftSidebar />)
+      expect(screen.getByTestId('audios-link')).toHaveAttribute(
+        'href',
+        '/audios/'
+      )
+      expect(rowFor('common:audios')).toHaveAttribute('data-active', 'true')
     })
 
     it('highlights Images on any image workflow', () => {

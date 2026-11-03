@@ -4,7 +4,12 @@ const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }))
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke }))
 
-import { checkProviderEndpoint } from '../providers/tauri'
+import {
+  checkProviderEndpoint,
+  checkProviderKeyUrl,
+  TauriProvidersService,
+} from '../providers/tauri'
+import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 
 const provider = (overrides: Partial<ModelProvider> = {}): ModelProvider =>
   ({
@@ -136,5 +141,129 @@ describe('checkProviderEndpoint', () => {
 
     expect(result.ok).toBe(false)
     expect(invoke).not.toHaveBeenCalled()
+  })
+
+  it('carries the HTTP status a refused key came back with', async () => {
+    invoke.mockRejectedValueOnce(
+      new Error('HTTP 401: {"error":{"code":"invalid_api_key"}}')
+    )
+
+    const result = await checkProviderEndpoint(provider({ api_key: 'bad' }))
+
+    // The body is kept: it tells an invalid key from one without permission.
+    expect(result).toMatchObject({
+      ok: false,
+      httpStatus: 401,
+      responseBody: '{"error":{"code":"invalid_api_key"}}',
+    })
+  })
+
+  it('has no HTTP status for a server that never answered', async () => {
+    invoke.mockRejectedValueOnce(new Error('Request failed: timed out'))
+
+    const result = await checkProviderEndpoint(provider())
+
+    expect(result.httpStatus).toBeUndefined()
+  })
+
+  it("refuses the app's own Local API Server without asking it", async () => {
+    useLocalApiServer.setState({
+      serverHost: '127.0.0.1',
+      serverPort: 1337,
+      apiPrefix: '/v1',
+    })
+
+    const result = await checkProviderEndpoint(
+      provider({ base_url: 'http://localhost:1337/v1' })
+    )
+
+    expect(result.ok).toBe(false)
+    expect(result.message).toBe(
+      "Lan-vllm points at Atomic Chat's own Local API Server (http://127.0.0.1:1337/v1). Use the address of the server you want to reach."
+    )
+    expect(invoke).not.toHaveBeenCalled()
+  })
+})
+
+describe('fetchModelsFromProvider', () => {
+  beforeEach(() => {
+    invoke.mockReset()
+    useLocalApiServer.setState({
+      serverHost: '127.0.0.1',
+      serverPort: 1337,
+      apiPrefix: '/v1',
+    })
+  })
+
+  it("does not take the app's own models for an endpoint pointing back at it", async () => {
+    await expect(
+      new TauriProvidersService().fetchModelsFromProvider(
+        provider({ base_url: 'http://127.0.0.1:1337/v1' })
+      )
+    ).rejects.toThrow('own Local API Server (http://127.0.0.1:1337/v1)')
+    expect(invoke).not.toHaveBeenCalled()
+  })
+})
+
+describe('checkProviderKeyUrl', () => {
+  beforeEach(() => {
+    invoke.mockReset()
+  })
+
+  const huggingface = provider({
+    provider: 'huggingface',
+    base_url: 'https://router.huggingface.co/v1',
+    api_key: 'hf_x',
+  })
+
+  it('asks the key-check URL once with the key, and takes any 2xx body', async () => {
+    invoke.mockResolvedValueOnce('{"name":"someone","type":"user"}')
+
+    const result = await checkProviderKeyUrl(
+      huggingface,
+      'https://huggingface.co/api/whoami-v2'
+    )
+
+    expect(result).toMatchObject({ ok: true, modelCount: 0 })
+    expect(invoke).toHaveBeenCalledTimes(1)
+    expect(invoke).toHaveBeenCalledWith('get_local_http', {
+      url: 'https://huggingface.co/api/whoami-v2',
+      headers: expect.objectContaining({ Authorization: 'Bearer hf_x' }),
+      timeoutSecs: 8,
+    })
+  })
+
+  it('carries a refusal’s status and body', async () => {
+    invoke.mockRejectedValueOnce(
+      new Error(
+        'HTTP 401: {"error":"Invalid credentials in Authorization header"}'
+      )
+    )
+
+    const result = await checkProviderKeyUrl(
+      huggingface,
+      'https://huggingface.co/api/whoami-v2'
+    )
+
+    expect(result).toMatchObject({
+      ok: false,
+      httpStatus: 401,
+      responseBody: '{"error":"Invalid credentials in Authorization header"}',
+    })
+    expect(result.message).toMatch(/^Authentication failed/)
+  })
+
+  it('does not call a missing key-check route a missing model list', async () => {
+    invoke.mockRejectedValueOnce(new Error('HTTP 404: Not Found'))
+
+    const result = await checkProviderKeyUrl(
+      huggingface,
+      'https://huggingface.co/api/whoami-v2'
+    )
+
+    expect(result.httpStatus).toBe(404)
+    expect(result.message).toBe(
+      'Cannot check the API key with Hugging Face at https://huggingface.co/api/whoami-v2: HTTP 404: Not Found'
+    )
   })
 })

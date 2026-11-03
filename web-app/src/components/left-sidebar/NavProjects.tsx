@@ -64,6 +64,8 @@ import {
   FoldersIcon,
   type FoldersIconHandle,
 } from '@/components/animated-icon/folders'
+import { collidingRowIds } from '@/lib/sidebar-row-names'
+import { NavRowActivity, NavRowTooltip } from './NavRowName'
 
 // Shared empty list so a project without threads keeps a stable `threads` prop
 // across renders (a fresh `[]` would defeat the memo below).
@@ -75,6 +77,7 @@ const ProjectItem = memo(function ProjectItem({
   threads,
   isOpen,
   isActive,
+  nameCollides,
   onOpenChange,
   onEdit,
   onDelete,
@@ -85,10 +88,13 @@ const ProjectItem = memo(function ProjectItem({
   isOpen: boolean
   /** The project's own page is the one open. */
   isActive: boolean
+  /** Another project's name starts the same way. */
+  nameCollides: boolean
   onOpenChange: (projectId: string, open: boolean) => void
   onEdit: (project: ThreadFolder) => void
   onDelete: (project: ThreadFolder) => void
 }) {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const folderIconRef = useRef<FoldersIconHandle>(null)
   const {
@@ -105,6 +111,11 @@ const ProjectItem = memo(function ProjectItem({
     transition,
     opacity: isDragging ? 0.5 : 1,
   }
+  // The project's latest chat, or the project itself when it has none newer.
+  const lastActivity = threads.reduce(
+    (latest, thread) => Math.max(latest, (thread.updated || 0) * 1000),
+    item.updated_at || 0
+  )
 
   return (
     <div ref={setNodeRef} style={style} className={cn(isDragging && 'z-10')}>
@@ -119,47 +130,68 @@ const ProjectItem = memo(function ProjectItem({
               type="button"
               {...attributes}
               {...listeners}
-              aria-label="Drag to reorder project"
+              aria-label={t('common:projects.dragToReorder')}
               className="text-muted-foreground/50 flex h-6 w-4 shrink-0 cursor-grab touch-none items-center justify-center opacity-0 transition-opacity group-hover/project-row:opacity-100 active:cursor-grabbing"
             >
               <GripVertical className="size-3.5" />
             </button>
-            <CollapsibleTrigger asChild>
-              <button
-                type="button"
-                className="hover:bg-sidebar-foreground/8 flex size-6 shrink-0 items-center justify-center rounded-md transition-colors"
-                aria-label={isOpen ? 'Collapse project' : 'Expand project'}
-              >
-                <ChevronRight
-                  className={cn(
-                    'text-muted-foreground size-4 shrink-0 transition-transform',
-                    isOpen && 'rotate-90'
-                  )}
-                />
-              </button>
-            </CollapsibleTrigger>
-            <SidebarMenuButton
-              asChild
-              isActive={isActive}
-              // The same highlight as an open chat row (ThreadList).
-              className="min-w-0 flex-1 pr-8 data-[active=true]:bg-sidebar-foreground/15"
-              onMouseEnter={() => folderIconRef.current?.startAnimation()}
-              onMouseLeave={() => folderIconRef.current?.stopAnimation()}
+            {/* A project without chats has nothing to unfold; the spacer
+                keeps its name in line with the others. */}
+            {threads.length > 0 ? (
+              <CollapsibleTrigger asChild>
+                <button
+                  type="button"
+                  className="hover:bg-sidebar-foreground/8 flex size-6 shrink-0 items-center justify-center rounded-md transition-colors"
+                  aria-label={
+                    isOpen
+                      ? t('common:projects.collapseProject')
+                      : t('common:projects.expandProject')
+                  }
+                >
+                  <ChevronRight
+                    className={cn(
+                      'text-muted-foreground size-4 shrink-0 transition-transform',
+                      isOpen && 'rotate-90'
+                    )}
+                  />
+                </button>
+              </CollapsibleTrigger>
+            ) : (
+              <span className="size-6 shrink-0" aria-hidden="true" />
+            )}
+            <NavRowTooltip
+              name={item.name}
+              lastActivity={lastActivity || undefined}
+              always={nameCollides}
             >
-              <Link to="/project/$projectId" params={{ projectId: item.id }}>
-                <FoldersIcon
-                  ref={folderIconRef}
-                  className="text-foreground/70"
-                  size={16}
-                />
-                <span className="truncate">{item.name}</span>
-              </Link>
-            </SidebarMenuButton>
+              <SidebarMenuButton
+                asChild
+                isActive={isActive}
+                // The same highlight as an open chat row (ThreadList).
+                className="min-w-0 flex-1 pr-8 data-[active=true]:bg-sidebar-foreground/15"
+                onMouseEnter={() => folderIconRef.current?.startAnimation()}
+                onMouseLeave={() => folderIconRef.current?.stopAnimation()}
+              >
+                <Link to="/project/$projectId" params={{ projectId: item.id }}>
+                  <FoldersIcon
+                    ref={folderIconRef}
+                    className="text-foreground/70"
+                    size={16}
+                  />
+                  <span data-row-name className="min-w-0 flex-1 truncate">
+                    {item.name}
+                  </span>
+                  {nameCollides && lastActivity > 0 && (
+                    <NavRowActivity at={lastActivity} />
+                  )}
+                </Link>
+              </SidebarMenuButton>
+            </NavRowTooltip>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <SidebarMenuAction className="hover:bg-sidebar-foreground/8 transition-opacity group-hover/project-row:opacity-100 group-focus-within/project-row:opacity-100 data-[state=open]:opacity-100 md:opacity-0">
                   <MoreHorizontal />
-                  <span className="sr-only">More</span>
+                  <span className="sr-only">{t('common:navigation.more')}</span>
                 </SidebarMenuAction>
               </DropdownMenuTrigger>
               <DropdownMenuContent
@@ -176,11 +208,11 @@ const ProjectItem = memo(function ProjectItem({
                   }}
                 >
                   <FolderOpenIcon className="text-muted-foreground" />
-                  <span>View Project</span>
+                  <span>{t('common:projects.viewProject')}</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => onEdit(item)}>
                   <FolderEditIcon className="text-muted-foreground" />
-                  <span>Edit Project</span>
+                  <span>{t('common:projects.editProject')}</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
@@ -188,7 +220,7 @@ const ProjectItem = memo(function ProjectItem({
                   onSelect={() => onDelete(item)}
                 >
                   <Trash2 />
-                  <span>Delete Project</span>
+                  <span>{t('common:projects.deleteProject')}</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -230,6 +262,15 @@ export function NavProjects({ onCreate }: { onCreate: () => void }) {
 
   const sortableProjectIds = useMemo(
     () => folders.map((f) => f.id),
+    [folders]
+  )
+  const collidingProjectIds = useMemo(
+    () =>
+      collidingRowIds(
+        folders,
+        (folder) => folder.id,
+        (folder) => folder.name
+      ),
     [folders]
   )
 
@@ -306,21 +347,26 @@ export function NavProjects({ onCreate }: { onCreate: () => void }) {
   return (
     <>
       <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+        {/* Folds only once there is a project to fold. */}
         <SidebarGroupLabel asChild>
-          <button
-            type="button"
-            aria-expanded={!collapsed}
-            onClick={() => toggleGroup('projects')}
-          >
-            <ChevronRight
-              size={12}
-              className={cn(
-                'mr-1 transition-transform',
-                !collapsed && 'rotate-90'
-              )}
-            />
-            {t('common:projects.title')}
-          </button>
+          {folders.length > 0 ? (
+            <button
+              type="button"
+              aria-expanded={!collapsed}
+              onClick={() => toggleGroup('projects')}
+            >
+              <ChevronRight
+                size={12}
+                className={cn(
+                  'mr-1 transition-transform',
+                  !collapsed && 'rotate-90'
+                )}
+              />
+              {t('common:projects.title')}
+            </button>
+          ) : (
+            <span>{t('common:projects.title')}</span>
+          )}
         </SidebarGroupLabel>
         <SidebarGroupAction
           className="hover:bg-sidebar-foreground/8"
@@ -352,6 +398,7 @@ export function NavProjects({ onCreate }: { onCreate: () => void }) {
                     threads={projectThreads}
                     isOpen={open}
                     isActive={item.id === activeProjectId}
+                    nameCollides={collidingProjectIds.has(item.id)}
                     onOpenChange={handleOpenChange}
                     onEdit={handleEdit}
                     onDelete={handleDelete}

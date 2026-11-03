@@ -1,0 +1,53 @@
+{
+  "title": "Point de terminaison personnalisé",
+  "description": "Connectez n'importe quel serveur compatible OpenAI ou un point de terminaison de modèle sur votre réseau.",
+  "add": "Ajouter un point de terminaison",
+  "empty": {
+    "title": "Vos propres modèles, où qu'ils s'exécutent",
+    "description": "Ajoutez votre premier point de terminaison personnalisé."
+  },
+  "noAddress": "Aucune adresse pour le moment",
+  "status": {
+    "notChecked": "Non vérifié",
+    "checking": "Vérification…",
+    "connected": "Connecté · {{models}}",
+    "reachable": "Ping réussi · {{latency}} ms · {{models}}",
+    "failed": "Aucune réponse",
+    "unverified": "Clé non vérifiée",
+    "keyRejected": "Clé refusée"
+  },
+  "actions": {
+    "ping": "Ping",
+    "models": "Modèles",
+    "showModels": "Modèles de {{name}}",
+    "configure": "Configurer {{name}}",
+    "remove": "Supprimer {{name}}"
+  },
+  "dialog": {
+    "addTitle": "Ajouter un point de terminaison",
+    "configureTitle": "Configurer le point de terminaison",
+    "description": "Saisissez un nom et l’URL de base du serveur.",
+    "name": "Nom",
+    "namePlaceholder": "Mon serveur local",
+    "nameLocked": "Le nom identifie le point de terminaison et ne peut pas être modifié.",
+    "baseUrl": "URL de base",
+    "baseUrlPlaceholder": "http://localhost:8080/v1",
+    "apiKey": "Clé API (facultatif)",
+    "invalidUrl": "Saisissez une URL HTTP ou HTTPS valide.",
+    "ownServer": "Il s'agit du serveur API local d'Atomic Chat lui-même ({{url}}). Un point de terminaison personnalisé doit être un autre serveur : les requêtes vers cette adresse reviendraient simplement à l'application.",
+    "localModelCollision": "“{{model}}” est aussi un modèle local. Le serveur API local envoie ses requêtes à {{provider}}, le fournisseur sélectionné pour ce modèle sur la page du serveur.",
+    "localModelCollisionEndpoint": "“{{model}}” est aussi un modèle local. Le serveur API local envoie ses requêtes à ce point de terminaison, le fournisseur sélectionné pour ce modèle sur la page du serveur.",
+    "localModelCollisionUnselected": "“{{model}}” est aussi un modèle local. Tant qu’aucun fournisseur n’est sélectionné pour ce modèle sur la page du serveur, le serveur API local envoie ses requêtes à ce point de terminaison.",
+    "keyRejected": "{{name}} a refusé la requête. Vérifiez la clé API.",
+    "saveAnyway": "Enregistrer quand même",
+    "checking": "Vérification…",
+    "cancel": "Annuler",
+    "save": "Enregistrer le point de terminaison"
+  },
+  "remove": {
+    "title": "Supprimer {{name}} ?",
+    "description": "Le point de terminaison, ses modèles et sa configuration seront supprimés.",
+    "cancel": "Annuler",
+    "confirm": "Supprimer le point de terminaison"
+  }
+}

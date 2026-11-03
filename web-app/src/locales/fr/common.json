@@ -1,34 +1,101 @@
 {
-  "api": "API",
-  "cloud": "Cloud",
   "assistants": "Assistants",
   "hardware": "Matériel",
   "mcp-servers": "Serveurs MCP",
   "connectors": "Connecteurs",
   "plugins": "Plugins",
   "local_api_server": "Serveur Local API",
-  "https_proxy": "Mandataire Proxy HTTPS",
-  "extensions": "Extensions",
+  "remote_access": "Accès à distance",
+  "integrations": "Intégrations",
   "experimental": "Expérimental",
+  "claude_code": "Claude Code",
+  "hermes_agent": "Hermes Agent",
+  "https_proxy": "Mandataire Proxy HTTPS",
+  "remote_lan": "Accès distant et LAN",
+  "extensions": "Extensions",
   "attachments": "Pièces jointes",
+  "voice": "Voix",
   "general": "Général",
   "settings": "Configurations",
   "modelProviders": "Fournisseurs de Modèles",
-  "manageProviders": "Manage providers",
-  "hiddenProviders": "{{count}} disabled",
+  "manageProviders": "Gérer les fournisseurs",
+  "hiddenProviders": "{{count}} désactivé(s)",
+  "hideProvider": "Masquer le fournisseur",
+  "showProvider": "Afficher le fournisseur",
   "interface": "Interface",
   "privacy": "Confidentialité",
   "keyboardShortcuts": "Raccourcis Clavier",
   "newChat": "Nouvelle discussion",
+  "newTask": "Nouvelle tâche",
+  "newBadge": "Nouveau",
   "newAgentChat": "Nouvelle discussion Agent",
   "chats": "Discussions",
+  "agentChats": "Discussions d'agent",
+  "searchChats": "Rechercher des discussions",
+  "searchAgentChats": "Rechercher des discussions d'agent",
   "favorites": "Favoris",
   "recents": "Récents",
   "hub": "Concentrateur Hub",
   "models": "Modèles",
+  "modelHub": "Hub de modèles",
   "images": "Images",
   "video": "Video",
-  "media": "Media",
+  "audios": "Audio",
+  "media": "Médias",
+  "launch": "Intégrations",
+  "api": "API",
+  "skills": "Compétences",
+  "backToSkills": "Retour aux compétences",
+  "cloud": "Cloud",
+  "agentSkill": {
+    "selected": "Compétence : {{name}}",
+    "remove": "Retirer la compétence sélectionnée",
+    "loading": "Chargement des compétences…",
+    "noMatches": "Aucune compétence activée ne correspond"
+  },
+  "skillsEmpty": "Aucune compétence n'est installée.",
+  "selectSkill": "Sélectionnez une compétence pour afficher ses instructions.",
+  "enableSkill": "Activer la compétence",
+  "skillEnabled": "Activée",
+  "skillDisabled": "Désactivée",
+  "bundled": "Intégrée",
+  "incompatible": "Incompatible",
+  "dangerous": "Sensible",
+  "scriptsCount": "{{count}} script",
+  "scriptsCount_many": "{{count}} scripts",
+  "scriptsCount_other": "{{count}} scripts",
+  "refresh": "Actualiser",
+  "createNewSkill": "Créer",
+  "writeSkillInstructions": "Rédiger les instructions de la compétence",
+  "uploadASkill": "Importer une compétence",
+  "uploadSkill": "Importer la compétence",
+  "uploadSkillDescription": "Importez une définition de compétence.",
+  "dropSkillToUpload": "Glissez-déposez ou cliquez pour importer",
+  "uploadingSkill": "Importation de la compétence…",
+  "uploadOneSkill": "Importez une seule compétence à la fois",
+  "skillFiles": "Fichiers de la compétence",
+  "skillFileRequirements": "Exigences relatives aux fichiers",
+  "skillMarkdownRequirement": "Le fichier .md doit contenir le nom et la description de la compétence au format YAML",
+  "skillArchiveRequirement": "Le fichier .zip ou .skill doit inclure un fichier SKILL.md",
+  "createSkillDescription": "Créez un workflow réutilisable pour le mode Agent.",
+  "skillName": "Nom de la compétence",
+  "skillNamePlaceholder": "rapport-hebdomadaire",
+  "description": "Description",
+  "skillDescriptionPlaceholder": "Génère des rapports d'avancement hebdomadaires à partir du travail récent. À utiliser lorsqu'un point ou un résumé de l'avancement est demandé.",
+  "instructions": "Instructions",
+  "skillInstructionsPlaceholder": "Résumez mon travail récent en trois sections : réussites, blocages et prochaines étapes. Gardez un ton professionnel sans être guindé…",
+  "skillActions": "Actions de la compétence",
+  "downloadSkill": "Télécharger",
+  "skillExported": "Compétence exportée",
+  "tryInChat": "Essayer dans une discussion",
+  "editSkill": "Modifier la compétence",
+  "editSkillDescription": "Modifiez la description et les instructions. Le nom de la compétence ne peut pas être changé.",
+  "uninstallSkill": "Désinstaller",
+  "skillUnavailable": "Indisponible",
+  "skillError": "Erreur de la compétence",
+  "skillInstructions": "Instructions",
+  "deleteSkill": "Supprimer la compétence",
+  "deleteSkillDescription": "Supprimer la compétence personnalisée “{{name}}” ? Cette action ne peut pas être annulée.",
   "helpSupport": "Aide & Support",
   "helpUsImproveJan": "Aidez-nous à améliorer Atomic Bot",
   "unstarAll": "Enlever toutes les étoiles",
@@ -53,6 +120,11 @@
   "profile": "Profil",
   "reset": "Réinitialiser",
   "search": "Rechercher",
+  "searchThreads": "Rechercher des discussions...",
+  "toNavigate": "pour naviguer",
+  "toSelect": "pour sélectionner",
+  "toClose": "pour fermer",
+  "clearRecent": "Effacer",
   "name": "Nom",
   "cancel": "Annuler",
   "create": "Créer",
@@ -85,6 +157,8 @@
   "downloads": "Téléchargements",
   "downloading": "Téléchargement en cours",
   "cancelDownload": "Annuler le téléchargement",
+  "pauseDownload": "Suspendre le téléchargement",
+  "resumeDownload": "Reprendre le téléchargement",
   "downloadCancelled": "Téléchargement annulé",
   "downloadComplete": "Téléchargement terminé",
   "thinking": "Réflexion...",
@@ -98,11 +172,117 @@
   "tools": "Outils",
   "webSearch": "Recherche Web",
   "reasoning": "Raisonnement",
+  "webSearchToggleTooltip": "Recherche web",
+  "webSearchToggleEnabled": "Recherche web activée",
+  "webSearchToggleDisabled": "Recherche web désactivée",
+  "webSearchToggleConnecting": "Connexion de la recherche web…",
+  "webSearchToggleUnavailable": "Recherche web indisponible. Cliquez pour réessayer ; si le problème persiste, vérifiez la connexion à votre fournisseur de recherche et la configuration MCP.",
+  "webSearchTemporarilyUnavailable": "La recherche web est temporairement indisponible. Réessayez.",
+  "webSearchStillConnecting": "La recherche web est encore en cours de connexion : ce message a donc été envoyé sans elle.",
+  "reasoningToggleEnabled": "Raisonnement activé",
+  "reasoningToggleDisabled": "Raisonnement désactivé",
+  "reasoningEffort": {
+    "title": "Effort",
+    "unavailable": "Indisponible pour ce modèle",
+    "ariaLabel": "Effort de réflexion : {{level}}",
+    "faster": "Plus rapide",
+    "smarter": "Plus intelligent",
+    "off": "Désactivé",
+    "low": "Faible",
+    "medium": "Moyen",
+    "high": "Élevé",
+    "xhigh": "Très élevé",
+    "max": "Max"
+  },
+  "voiceInput": {
+    "start": "Démarrer la saisie vocale",
+    "stop": "Arrêter et insérer",
+    "stopStarting": "Arrêter la saisie vocale",
+    "cancel": "Abandonner l'enregistrement",
+    "listening": "À l'écoute…",
+    "preparing": "Préparation de la saisie vocale…",
+    "starting": "Démarrage du modèle vocal…",
+    "transcribing": "Transcription…",
+    "placeholder": "À l'écoute — commencez à parler",
+    "startingPlaceholder": "Démarrage du modèle vocal — parlez dès qu'il est à l'écoute",
+    "stoppedBeforeReady": "La saisie vocale s'est arrêtée avant que le modèle vocal soit prêt. Rien n'a été enregistré.",
+    "level": "Niveau du microphone",
+    "elapsed": "Durée d'enregistrement",
+    "unavailableWhileStreaming": "La saisie vocale est indisponible pendant la génération d'une réponse",
+    "keptOnCancel": "Enregistrement arrêté. Le texte déjà inséré a été conservé.",
+    "deviceFallback": "Ce microphone n'était pas disponible : le microphone par défaut du système est utilisé.",
+    "errors": {
+      "permission": "Atomic Chat ne peut pas utiliser le microphone",
+      "noDevice": "Aucun microphone n'a été trouvé",
+      "deviceBusy": "Le microphone est utilisé par une autre application",
+      "deviceDisconnected": "Le microphone a été déconnecté",
+      "modelMissing": "Le modèle vocal n'est pas encore installé",
+      "engineFailed": "Impossible de démarrer le modèle vocal",
+      "transcriptionFailed": "Impossible de transcrire cette phrase",
+      "transcriptionUnsupported": "Cette version de llama.cpp ne peut pas exécuter le modèle vocal",
+      "transcriptionTimeout": "Le modèle vocal a mis trop de temps à répondre",
+      "internal": "La saisie vocale a rencontré un problème"
+    },
+    "setup": {
+      "step": "Étape {{current}} sur {{total}}",
+      "back": "Retour",
+      "next": "Suivant",
+      "done": "Terminé",
+      "intro": {
+        "title": "Parlez au lieu de taper",
+        "description": "Dictez dans la zone de message : vos mots s'affichent au fur et à mesure que vous parlez.",
+        "bulletLive": "Chaque phrase s'affiche dès que vous l'avez terminée.",
+        "bulletLocal": "Fonctionne sur cet ordinateur — l'audio ne le quitte jamais.",
+        "bulletAnywhere": "Fonctionne dans les discussions et en mode agent."
+      },
+      "permission": {
+        "title": "Autoriser l'accès au microphone",
+        "description": "Rien n'est enregistré tant que vous n'appuyez pas sur le bouton du microphone.",
+        "allow": "Autoriser le microphone",
+        "requesting": "En attente de votre réponse…",
+        "allowed": "Autorisé",
+        "denied": "L'accès au microphone a été refusé",
+        "deniedHelp": "Réactivez le microphone pour Atomic Chat dans vos paramètres de confidentialité.",
+        "openSystemSettings": "Ouvrir les paramètres système",
+        "checkAgain": "Vérifier à nouveau",
+        "restartNote": "Sur macOS, vous devrez peut-être redémarrer Atomic Chat après avoir modifié ce réglage.",
+        "unsupported": "Ce système gère l'accès au microphone en dehors de l'application.",
+        "rowTitle": "Microphone",
+        "rowDescription": "Nécessaire pour capter votre voix et la transcrire.",
+        "deniedShort": "Refusé",
+        "unsupportedShort": "Géré par le système",
+        "privacyNote": "Vous pouvez révoquer l'accès à tout moment dans les paramètres de confidentialité du système.",
+        "allowShort": "Autoriser"
+      },
+      "model": {
+        "title": "Installer le modèle vocal",
+        "description": "Voxtral Mini transcrit en local. Il n'est téléchargé qu'une seule fois.",
+        "meta": "{{size}} · llama.cpp · téléchargement unique",
+        "installed": "Installé",
+        "progress": "{{percent}} % · {{current}} / {{total}} GB",
+        "failed": "Le téléchargement du modèle vocal a échoué",
+        "diskNote": "Nécessite environ {{gb}} GB d'espace disque libre.",
+        "tagline": "Transcription multilingue en temps réel",
+        "sizeGb": "{{size}} GB"
+      },
+      "doneBlocked": "Autorisez le microphone et installez le modèle vocal pour terminer."
+    }
+  },
   "proactive": "Proactif",
   "selectAModel": "Sélectionnez un modèle",
+  "changeModel": "Changer de modèle",
+  "downloadModel": "Télécharger un modèle",
   "noToolsAvailable": "Aucun outil disponible",
   "noModelsFoundFor": "Aucun modèle trouvé pour \"{{searchValue}}\"",
+  "modelPicker": {
+    "downloadFromHuggingFace": "Télécharger depuis Hugging Face",
+    "noRunnableModels": "Aucun modèle exécutable pour l'instant.",
+    "providerSettings": "Paramètres de {{provider}}",
+    "downloadSize": "Télécharger {{size}}"
+  },
   "failedToLoadModels": "Échec du chargement des modèles",
+  "failedToLoadModelsTimeout": "Impossible de charger les modèles (délai dépassé)",
+  "retry": "Réessayer",
   "noModels": "Aucun modèle trouvé",
   "customAvatar": "Avatar personnalisé",
   "editAssistant": "Modifier l'assistant",
@@ -138,6 +318,7 @@
     "chatInput": "Demandez-moi n'importe quoi..."
   },
   "confirm": "Confirmer",
+  "ok": "OK",
   "continue": "Continuer",
   "loading": "Chargement...",
   "error": "Erreur",
@@ -154,6 +335,7 @@
   "enterApiKey": "Entrez la clé API",
   "scrollToBottom": "Faire défiler vers le bas",
   "generateAiResponse": "Générer une réponse de l'IA",
+  "continueAiResponse": "Continuer la réponse de l'IA",
   "addModel": {
     "title": "Ajouter un modèle",
     "modelId": "ID du modèle",
@@ -215,7 +397,9 @@
   "deleteModel": {
     "title": "Supprimer le modèle : {{modelId}}",
     "description": "Êtes-vous sûr de vouloir supprimer ce modèle ? Cette action ne peut pas être annulée.",
+    "managedShared": "Ce modèle se trouve dans le stockage partagé des moteurs GPU ({{engines}}) : le supprimer le retire de chacun d'eux, avec les caches de ces moteurs.",
     "success": "Le modèle {{modelId}} a été supprimé définitivement.",
+    "successFreed": "Le modèle {{modelId}} a été supprimé définitivement ; {{size}} libérés.",
     "cancel": "Annuler",
     "delete": "Supprimer"
   },
@@ -245,6 +429,14 @@
       "title": "Supprimer toutes les discussions",
       "description": "Toutes les discussions seront supprimées. Cette action ne peut pas être annulée."
     },
+    "deleteAllAgentThreads": {
+      "title": "Supprimer toutes les discussions d'agent",
+      "description": "Toutes les discussions d'agent seront supprimées. Cette action ne peut pas être annulée."
+    },
+    "deleteAllThreadsInProject": {
+      "title": "Supprimer toutes les discussions",
+      "description": "{{count}} discussions de \"{{projectName}}\" seront supprimées. Cette action ne peut pas être annulée."
+    },
     "deleteThread": {
       "description": "Êtes-vous sûr de vouloir supprimer cette discussion ? Cette action ne peut pas être annulée."
     },
@@ -259,6 +451,7 @@
     "addToProject": "Ajouter au projet",
     "removeFromProject": "Retirer du projet",
     "createNewProject": "Créer un nouveau projet",
+    "viewProject": "Voir le projet",
     "editProject": "Modifier le projet",
     "deleteProject": "Supprimer le projet",
     "projectName": "Nom du projet",
@@ -268,6 +461,14 @@
     "noProjectsYetDesc": "Commencez un nouveau projet en cliquant sur le bouton Ajouter un projet.",
     "projectNotFound": "Projet non trouvé",
     "projectNotFoundDesc": "Le projet que vous recherchez n'existe pas ou a été supprimé.",
+    "selectAssistant": "Sélectionner un assistant",
+    "noAssistantAssigned": "Aucun assistant n'est attribué à ce projet",
+    "files": "Fichiers",
+    "filesDescription": "Ajoutez des PDF, des documents ou d'autres textes auxquels ce projet pourra se référer.",
+    "uploading": "Indexation…",
+    "uploadingHint": "Le premier import télécharge aussi le modèle d'embedding. La progression s'affiche dans le panneau des téléchargements.",
+    "preparingIndexModel": "Téléchargement du modèle d'indexation des documents",
+    "filesLoadFailed": "Impossible de charger les fichiers du projet",
     "deleteProjectDialog": {
       "title": "Supprimer le projet",
       "permanentDelete": "Cela supprimera définitivement toutes les discussions.",
@@ -286,26 +487,65 @@
       "editTitle": "Modifier le projet",
       "nameLabel": "Nom du projet",
       "namePlaceholder": "Entrez le nom du projet...",
+      "assistant": "Assistant",
+      "selectAssistant": "Sélectionner un assistant (facultatif)",
+      "noAssistant": "Aucun assistant",
+      "addAssistant": "Ajouter un assistant",
       "createButton": "Créer",
       "updateButton": "Mettre à jour",
       "alreadyExists": "Le projet \"{{projectName}}\" existe déjà",
       "createSuccess": "Le projet \"{{projectName}}\" a été créé avec succès",
-      "renameSuccess": "Projet renommé de \"{{oldName}}\" en \"{{newName}}\""
+      "renameSuccess": "Projet renommé de \"{{oldName}}\" en \"{{newName}}\"",
+      "updateSuccess": "Le projet \"{{projectName}}\" a été mis à jour avec succès"
     },
     "noConversationsIn": "Aucune conversation dans {{projectName}}",
     "startNewConversation": "Écrivez un message ci-dessus pour commencer une conversation dans {{projectName}}.",
     "conversationsIn": "Conversations dans {{projectName}}",
     "conversationsDescription": "Cliquez sur n'importe quelle conversation pour continuer à discuter, ou commencez-en une nouvelle ci-dessous.",
+    "conversation": "Discussion",
+    "instructions": "Instructions",
+    "setup": "Configuration",
+    "instructionsDescription": "Personnalisez le ton et le style des réponses",
+    "manageInstructions": "Gérer les instructions",
     "thread": "discussion",
     "threads": "discussions",
     "updated": "Mis à jour :",
     "collapseProject": "Réduire le projet",
     "expandProject": "Développer le projet",
+    "dragToReorder": "Faites glisser pour réorganiser le projet",
     "update": "Mettre à jour",
     "searchProjects": "Rechercher des projets...",
     "noProjectsFound": "Aucun projet trouvé",
-    "tryDifferentSearch": "Essayez un autre terme de recherche"
+    "tryDifferentSearch": "Essayez un autre terme de recherche",
+    "secureEnvironment": {
+      "title": "Environnement sécurisé",
+      "description": "Les commandes et les scripts des discussions de ce projet ne peuvent accéder qu'aux dossiers ci-dessous et à leur propre dossier de discussion. Tout le reste de cet ordinateur est bloqué par le bac à sable Windows.",
+      "unavailable": "Non disponible sur cet ordinateur : {{reason}}",
+      "unknownReason": "le bac à sable Windows n'a pas démarré",
+      "noFolders": "Aucun dossier pour l'instant : les commandes ne peuvent utiliser que leur propre dossier de discussion.",
+      "addFolder": "Ajouter un dossier",
+      "removeFolder": "Retirer le dossier",
+      "canEdit": "Peut modifier",
+      "network": "Accès à Internet",
+      "networkDescription": "Permet aux commandes de télécharger des paquets et d'accéder à des sites web. Lorsque cette option est désactivée, les commandes ne peuvent pas accéder à Internet et la recherche web est désactivée dans les discussions de ce projet.",
+      "saveError": "Impossible d'enregistrer l'environnement sécurisé : {{error}}",
+      "createdWithoutIt": "Le projet \"{{projectName}}\" a été créé, mais son environnement sécurisé n'a pas pu être enregistré ; c'est donc un projet ordinaire pour l'instant : {{error}}",
+      "connectors": "Connecteurs",
+      "connectorsDescription": "Désactivés dans les discussions de ce projet, sauf s'ils sont cochés. Les connecteurs s'exécutent hors du bac à sable, avec vos propres accès aux fichiers et à Internet : n'autorisez que ceux auxquels vous confiez ce projet.",
+      "needsNetwork": "nécessite l'accès à Internet",
+      "serverRemoved": "supprimé"
+    }
   },
+  "attachmentsIngestion": {
+    "title": "Choisir comment intégrer les pièces jointes",
+    "description": "Choisissez d'inclure ces fichiers directement dans la discussion ou de les indexer sous forme d'embeddings.",
+    "inline": "Injecter dans la discussion",
+    "embeddings": "Utiliser les embeddings"
+  },
+  "attachmentInjectedIndicator": "Injecté dans la discussion",
+  "attachmentEmbeddedIndicator": "Intégré pour RAG",
+  "viewInjectedContent": "Voir le contenu injecté",
+  "injectedContentTitle": "Contenu du fichier injecté",
   "toast": {
     "allThreadsUnfavorited": {
       "title": "Toutes les discussions retirées des favoris",
@@ -314,6 +554,10 @@
     "deleteAllThreads": {
       "title": "Supprimer toutes les discussions",
       "description": "Toutes les discussions ont été supprimées définitivement."
+    },
+    "deleteAllAgentThreads": {
+      "title": "Supprimer toutes les discussions d'agent",
+      "description": "Toutes les discussions d'agent ont été supprimées définitivement."
     },
     "renameThread": {
       "title": "Renommer la discussion",
@@ -343,9 +587,16 @@
       "title": "Téléchargement annulé",
       "description": "Le processus de téléchargement a été annulé"
     },
+    "downloadResumed": {
+      "title": "Téléchargement repris"
+    },
     "downloadFailed": {
       "title": "Échec du téléchargement",
       "description": "Le téléchargement de {{item}} a échoué"
+    },
+    "downloadNotResumable": {
+      "title": "Impossible de reprendre ce téléchargement",
+      "description": "Impossible de reprendre {{item}} depuis ici. Téléchargez-le à nouveau : les données déjà présentes sur le disque sont conservées."
     },
     "modelValidationStarted": {
       "title": "Validation du modèle",
@@ -386,17 +637,181 @@
     "threadRemovedFromProject": {
       "title": "Discussion retirée",
       "description": "Discussion retirée de \"{{projectName}}\" avec succès"
+    },
+    "fileUploaded": {
+      "title": "Fichier importé",
+      "description": "Le fichier a été importé et indexé avec succès"
+    },
+    "uploadFailed": {
+      "title": "Échec de l'importation",
+      "description": "Impossible d'importer le fichier"
+    },
+    "unsupportedFileType": {
+      "title": "Type de fichier non pris en charge"
+    },
+    "fileDeleted": {
+      "title": "Retiré du projet",
+      "description": "Les discussions de ce projet n'utilisent plus {{fileName}}. Le fichier sur votre ordinateur n'a pas été modifié."
+    },
+    "deleteFailed": {
+      "title": "Échec de la suppression",
+      "description": "Impossible de supprimer le fichier"
+    },
+    "fileAlreadyExists": {
+      "title": "Le fichier existe déjà",
+      "description": "Le fichier est déjà joint à ce projet"
+    },
+    "attachmentsDisabledInfo": {
+      "title": "Pièces jointes désactivées",
+      "description": "Les pièces jointes sont désactivées dans les paramètres"
+    },
+    "downloadDiskFull": {
+      "title": "Espace disque insuffisant",
+      "description": "Libérez de l'espace sur le disque qui contient le dossier de données d'Atomic Chat, puis relancez le téléchargement."
+    },
+    "downloadDiskPermission": {
+      "title": "Autorisation d'écrire le modèle refusée",
+      "description": "L'application ne peut pas écrire dans le dossier de données d'Atomic Chat. Vérifiez les autorisations du dossier ou déplacez le dossier de données vers un emplacement accessible en écriture."
+    },
+    "downloadDiskLocked": {
+      "title": "Le fichier est utilisé par un autre programme",
+      "description": "Un antivirus ou un logiciel de sauvegarde bloque le fichier pendant son écriture. Ajoutez le dossier de données d'Atomic Chat à ses exclusions, puis réessayez."
+    },
+    "downloadDiskPathTooLong": {
+      "title": "Le chemin du fichier est trop long",
+      "description": "Windows limite les chemins à 260 caractères. Rapprochez le dossier de données d'Atomic Chat de la racine du disque, puis réessayez."
+    },
+    "downloadDiskDeviceLost": {
+      "title": "Le disque n'est plus disponible",
+      "description": "Le disque externe ou réseau qui contient le dossier de données d'Atomic Chat s'est déconnecté. Reconnectez-le et reprenez le téléchargement."
+    },
+    "downloadWontFit": {
+      "title": "Ce modèle ne tiendra pas sur votre disque",
+      "description": "{{model}} nécessite {{needed}} d'espace libre et ce disque dispose de {{available}}. Choisissez un modèle plus petit ou libérez de l'espace."
+    },
+    "downloadProxyUnreachable": {
+      "title": "Impossible de joindre le serveur via votre proxy",
+      "description": "Le téléchargement n'a jamais pu établir de connexion via {{proxyUrl}}. Vérifiez que l'adresse du proxy est correcte et que le proxy fonctionne, ou désactivez le proxy dans les paramètres.",
+      "action": "Paramètres du proxy"
+    },
+    "downloadNetworkUnreachable": {
+      "title": "Impossible de joindre le serveur de téléchargement",
+      "description": "La connexion n'a jamais abouti. Vérifiez votre connexion Internet, votre VPN ou votre pare-feu, puis relancez le téléchargement."
+    },
+    "fileDialogFailed": {
+      "title": "Impossible d'ouvrir la boîte de dialogue de fichiers",
+      "description": "Le système n'a pas affiché le sélecteur de fichier ou de dossier. Réessayez ; si le problème persiste, redémarrez Atomic Chat."
     }
   },
-  "attachmentInjectedIndicator": "Injecté dans la discussion",
-  "attachmentEmbeddedIndicator": "Intégré pour RAG",
-  "viewInjectedContent": "Voir le contenu injecté",
-  "injectedContentTitle": "Contenu du fichier injecté",
-  "skills": "Compétences",
+  "errors": {
+    "fileTooLarge": "Fichier trop volumineux",
+    "fileTooLargeDescription": "{{fileName}} dépasse la limite de {{maxFileSizeMB}} MB",
+    "fileReadFailed": "Impossible de lire le fichier",
+    "fileReadFailedDescription": "{{fileName}} n'a pas pu être lu depuis le disque"
+  },
+  "files": {
+    "chunksCount": "{{count}} segments",
+    "removeFromProject": "Retirer {{fileName}} du projet",
+    "removeTitle": "Retirer ce fichier du projet ?",
+    "removeDescription": "Les discussions de ce projet n'utiliseront plus {{fileName}}. Le fichier sur votre ordinateur n'est pas supprimé et vous pouvez l'importer à nouveau à tout moment.",
+    "remove": "Retirer"
+  },
+  "connectorsMenu": {
+    "title": "Connecteurs",
+    "empty": "Aucun connecteur pour l'instant",
+    "manage": "Gérer les connecteurs",
+    "toolCount": "{{count}} outils",
+    "toggleFailed": "Impossible de démarrer {{server}}",
+    "starting": "Démarrage de {{server}}",
+    "stopping": "Arrêt de {{server}}",
+    "connecting": "Connexion…",
+    "disconnecting": "Déconnexion…",
+    "ready": "{{server}} est prêt",
+    "stopped": "{{server}} est désactivé",
+    "cost": "{{count}} outils · ≈{{tokens}} jetons",
+    "costShare": "{{count}} outils · ≈{{tokens}} jetons ({{share}} % du contexte)",
+    "heavy": "Lourd : ces définitions d'outils occupent à elles seules {{share}} % du contexte de {{ctx}} jetons à chaque requête.",
+    "muteForChat": "Désactiver pour cette discussion",
+    "unmuteForChat": "Activer pour cette discussion",
+    "mutedForChat": "Désactivé pour cette discussion",
+    "toolCountPartial": "{{enabled}} outils sur {{count}}",
+    "costPartial": "{{enabled}} outils sur {{count}} · ≈{{tokens}} jetons",
+    "costSharePartial": "{{enabled}} outils sur {{count}} · ≈{{tokens}} jetons ({{share}} % du contexte)",
+    "configureTools": "Outils",
+    "systemServersAgentOnly": "Filesystem, Fetch et Sequential thinking ne fonctionnent qu'en mode Agent",
+    "systemServersAgentOnlyHint": "Activez le mode Agent dans le menu “+” de la zone de saisie pour permettre au modèle de les utiliser."
+  },
+  "connectorTools": {
+    "title": "Outils de {{name}}",
+    "scopeChat": "Les modifications s'appliquent uniquement à cette discussion.",
+    "scopeDefault": "Valeurs par défaut pour les nouvelles discussions. Une discussion qui a ses propres réglages d'outils les conserve.",
+    "summary": "{{enabled}} outils activés sur {{count}}",
+    "onForChat": "Activé pour cette discussion",
+    "onByDefault": "Activé pour les nouvelles discussions",
+    "mutedHint": "Activez le connecteur pour modifier ses outils.",
+    "search": "Rechercher des outils",
+    "enableAll": "Tout activer",
+    "disableAll": "Tout désactiver",
+    "noTools": "Aucun outil répertorié. Connectez le serveur pour charger ses outils.",
+    "noMatches": "Aucun outil ne correspond"
+  },
   "pluginsMenu": {
     "title": "Plugins",
     "emptySkills": "Aucune compétence pour l’instant",
     "manageSkills": "Gérer les compétences"
+  },
+  "toolCostHint": {
+    "title": "Les définitions d'outils occupent ≈{{tokens}} des {{ctx}} jetons de contexte",
+    "body": "Les connecteurs actifs ({{servers}}) ajoutent leurs définitions d'outils à chaque requête, ce qui ralentit les réponses d'un modèle local. Désactivez ceux dont vous n'avez pas besoin pour cette discussion.",
+    "mute": "Désactiver {{server}} pour cette discussion",
+    "dismiss": "Laisser tel quel"
+  },
+  "cornerCard": {
+    "collapse": "Réduire"
+  },
+  "downloadPanel": {
+    "collapse": "Réduire les téléchargements",
+    "expand": "Afficher les téléchargements",
+    "preparing": "Démarrage…",
+    "connecting": "Connexion…",
+    "retrying": "Échec de la connexion, nouvelle tentative ({{attempt}}/{{maxAttempts}})…",
+    "stalled": "Bloqué, reconnexion…",
+    "paused": "En pause",
+    "left": "encore {{eta}}"
+  },
+  "inferenceStatus": {
+    "starting": "Démarrage de {{model}}…",
+    "startingDetail": "Le modèle se charge en mémoire. La discussion répondra dès qu'il sera prêt.",
+    "restarting": "Redémarrage pour {{model}}…",
+    "restartingDetail": "Le moteur précédent s'arrête et celui-ci démarre. La discussion est en pause jusqu'à la fin du changement.",
+    "ready": "{{model}} est chargé",
+    "notLoaded": "Aucun modèle chargé — le premier message en démarrera un",
+    "retry": "Réessayer",
+    "logs": "Journaux"
+  },
+  "modelLoad": {
+    "starting": "Démarrage du modèle",
+    "ready": "Modèle prêt",
+    "loadedIntoMemory": "Chargé en mémoire",
+    "loadingIntoMemory": "Chargement en mémoire",
+    "cancel": "Annuler",
+    "cancelling": "Annulation…",
+    "dismiss": "Fermer",
+    "indicator": {
+      "loaded": "{{model}} est chargé",
+      "unload": "Décharger de la mémoire",
+      "unloading": "Déchargement de {{model}}…",
+      "loading": "Chargement de {{model}}…",
+      "stopLoading": "Arrêter le chargement",
+      "notLoaded": "Non chargé — le premier message le démarrera",
+      "failed": "Échec du chargement"
+    },
+    "engine": {
+      "stopping-previous": "Déchargement du modèle précédent",
+      "starting-container": "Démarrage du conteneur du moteur",
+      "initializing-engine": "Préparation du moteur",
+      "ready": "Moteur prêt"
+    }
   },
   "desktopNotification": {
     "modelReadyTitle": "Modèle téléchargé",
@@ -404,5 +819,70 @@
     "engineReadyTitle": "Moteur installé",
     "chatEngineReadyBody": "llama.cpp est prêt à exécuter des modèles.",
     "mediaEngineReadyBody": "Le moteur d'images et de vidéo est prêt."
+  },
+  "secureEnvironmentBlock": {
+    "notAllowed": "Non autorisé dans ce projet sécurisé. Autorisez-le dans les paramètres du projet, section Connecteurs.",
+    "webSearchOffline": "L'accès à Internet est désactivé dans ce projet sécurisé."
+  },
+  "navigation": {
+    "primary": "Navigation principale",
+    "workspace": "Espace de travail",
+    "server": "Serveur",
+    "modelsHub": "Hub de modèles",
+    "help": "Aide",
+    "helpTitle": "Comment pouvons-nous vous aider ?",
+    "chatWithUs": "Discuter avec nous",
+    "emailSupport": "Support par e-mail",
+    "discord": "Discord",
+    "newGithubIssue": "Nouveau ticket GitHub",
+    "toggleSidebar": "Afficher/Masquer la barre latérale",
+    "resizeSidebar": "Redimensionner la barre latérale",
+    "resizeSidebarHint": "Faites glisser pour redimensionner, double-cliquez pour réinitialiser",
+    "lastActivity": "Dernière activité : {{date}}",
+    "searchChats": "Rechercher des discussions",
+    "pinned": "Épinglées",
+    "pinChat": "Épingler la discussion",
+    "unpinChat": "Désépingler la discussion",
+    "dragToReorder": "Faites glisser pour réorganiser",
+    "more": "Plus",
+    "moveChat": "Déplacer {{title}}",
+    "overview": "Vue d'ensemble",
+    "agentsAndTools": "Agents et outils",
+    "installed": "Installé",
+    "notInstalled": "Non installé",
+    "discover": "Découvrir",
+    "localModels": "Modèles locaux",
+    "cloudProviders": "Fournisseurs cloud",
+    "customEndpoint": "Endpoint personnalisé",
+    "inferenceEngines": "Moteurs d'inférence",
+    "mcpConnectors": "Connecteurs MCP",
+    "serverStart": "Démarrer",
+    "serverStop": "Arrêter",
+    "serverStarting": "Démarrage…",
+    "engine": "Moteur",
+    "model": "Modèle",
+    "notSelected": "Non sélectionné",
+    "configuration": "Configuration",
+    "remoteAccess": "Accès à distance",
+    "activity": "Activité",
+    "connections": "Connexions",
+    "connectionsCount": "{{count}} configurée(s)",
+    "configured": "Configuré"
+  },
+  "support": {
+    "title": "Support Atomic Chat",
+    "subtitle": "Discutez avec notre équipe",
+    "close": "Fermer la discussion avec le support",
+    "greeting": "Bonjour. Comment pouvons-nous vous aider ?",
+    "messages": "Messages",
+    "teamName": "Équipe Atomic Chat",
+    "inputLabel": "Message à l'équipe Atomic Chat",
+    "placeholder": "Écrivez un message…",
+    "send": "Envoyer le message",
+    "sending": "Envoi…",
+    "notSent": "Non envoyé.",
+    "rateLimited": "Trop de messages. Patientez un instant, puis réessayez.",
+    "retry": "Réessayer",
+    "disclosure": "Vos messages sont envoyés à l'équipe Atomic Chat. La version de l'application, le système d'exploitation et les informations sur le matériel y sont joints pour nous aider à vous répondre."
   }
 }

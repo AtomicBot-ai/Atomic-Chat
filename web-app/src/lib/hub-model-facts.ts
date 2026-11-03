@@ -22,6 +22,8 @@ import {
   type ModelFormat,
 } from '@/lib/model-card'
 import { foundryLocalOf } from '@/lib/foundry-local/hub'
+import { liteRtLmOf } from '@/lib/litert-lm/hub'
+import { geniexOf } from '@/lib/geniex/hub'
 import { extractModelName } from '@/lib/models'
 import { formatBytes } from '@/lib/utils'
 import type { CatalogModel } from '@/services/models/types'
@@ -30,10 +32,12 @@ import type {
   StaffPickCategory,
 } from '@/services/staff-picks-registry'
 
-/** The name a row shows: a Foundry model's own, the pick's title, or the repo's. */
+/** The name a row shows: a Foundry, LiteRT-LM or GenieX model's own, the pick's title, or the repo's. */
 export function hubModelName(model: CatalogModel, pick?: StaffPick): string {
   return (
     foundryLocalOf(model)?.name ||
+    liteRtLmOf(model)?.name ||
+    geniexOf(model)?.name ||
     pick?.title ||
     extractModelName(model.model_name) ||
     model.model_name
@@ -61,11 +65,24 @@ export type HubModelFacts = {
    * The size against this device's memory, as the download card's badge reads it
    * (`estimateFit`). Absent while the size or the memory reading is unknown, and for the
    * models whose fit is the core's verdict in the card: a managed engine's checkpoint, a
-   * Foundry Local variant.
+   * Foundry Local or LiteRT-LM variant.
    */
   fit?: HardwareFit
   engines: HubEngineId[]
 }
+
+const liteRtCategories = (model: NonNullable<ReturnType<typeof liteRtLmOf>>): StaffPickCategory[] => [
+  ...(model.vision ? (['vision'] as const) : []),
+  ...(model.tools ? (['tools'] as const) : []),
+  ...(model.reasoning ? (['reasoning'] as const) : []),
+]
+
+/** A GenieX model's abilities are what its list says (or, for Hugging Face, its projector): never its name. */
+const geniexCategories = (model: NonNullable<ReturnType<typeof geniexOf>>): StaffPickCategory[] => [
+  ...(model.vision ? (['vision'] as const) : []),
+  ...(model.tools ? (['tools'] as const) : []),
+  ...(model.reasoning ? (['reasoning'] as const) : []),
+]
 
 export function hubModelFacts(
   model: CatalogModel,
@@ -77,6 +94,8 @@ export function hubModelFacts(
   }
 ): HubModelFacts {
   const foundry = model.is_foundry_local ? model.foundry_local : undefined
+  const liteRt = liteRtLmOf(model)
+  const geniex = geniexOf(model)
   const managedWeights = model.is_managed
     ? estimateWeightBytes(model.managed?.parameters)
     : null
@@ -92,12 +111,19 @@ export function hubModelFacts(
   if (model.is_managed) {
     sizeBytes = managedWeights ?? undefined
     sizeText = sizeBytes ? formatBytes(sizeBytes) : undefined
-  } else if (!foundry) {
+  } else if (geniex) {
+    // A GGUF's file with its projector, or this chip's bundle: what the card downloads.
+    const files = geniex.gguf
+      ? [geniex.gguf.file, ...(geniex.gguf.mmproj ? [geniex.gguf.mmproj] : [])]
+      : (geniex.variants ?? []).slice(0, 1).map((variant) => variant.bundle)
+    sizeBytes = files.length > 0 ? files.reduce((sum, file) => sum + file.size, 0) : undefined
+    sizeText = sizeBytes ? formatBytes(sizeBytes) : undefined
+  } else if (!foundry && !liteRt) {
     sizeText = modelDownloadSizeText(model)
     sizeBytes = parseFileSizeToBytes(sizeText)
   }
 
-  const verdictInCard = model.is_managed || !!foundry
+  const verdictInCard = model.is_managed || !!foundry || !!liteRt || !!geniex
   const fit =
     !verdictInCard && sizeBytes && options.budgetBytes > 0
       ? estimateFit(sizeBytes, options.budgetBytes)
@@ -109,7 +135,12 @@ export function hubModelFacts(
       model,
       isManagedProvider(options.format) ? options.format : undefined
     ),
-    capabilities: deriveCapabilities(model, options.categories),
+    // A LiteRT-LM model's are what its list says, never guessed from its name: a Hugging Face
+    // model's are read from the file after download.
+    capabilities: deriveCapabilities(
+      model,
+      liteRt ? liteRtCategories(liteRt) : geniex ? geniexCategories(geniex) : options.categories
+    ),
     sizeText,
     sizeBytes,
     fit,

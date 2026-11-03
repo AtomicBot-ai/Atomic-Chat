@@ -28,7 +28,17 @@ import {
 import { isOnboardingPending } from '@/lib/onboarding'
 import { buildApiKeyUpdate, saveProviderApiKey } from '@/lib/provider-api-key'
 import { buildBaseUrlUpdate } from '@/lib/provider-base-url'
-import { getProviderTitle } from '@/lib/utils'
+import {
+  checkProviderKey,
+  recordKeyCheck,
+  savedAnyway,
+  type KeyCheckOutcome,
+} from '@/lib/provider-key-check'
+import { cn, getProviderTitle } from '@/lib/utils'
+import {
+  useProviderKeyStatus,
+  useProviderKeyStatusStore,
+} from '@/stores/provider-key-status-store'
 import { getLocalApiServerUrl } from '@/utils/localApiServerControl'
 import { isKeylessRemoteProvider } from '@/utils/registerRemoteProvider'
 import type { ServiceHub } from '@/services'
@@ -69,6 +79,14 @@ export function CloudConnectionCard({
 }: CloudConnectionCardProps) {
   const { t } = useTranslation()
   const [keyDraft, setKeyDraft] = useState('')
+  // A key is checked with the provider before it is saved: `checking` while
+  // that request runs, `keyError` when the provider refused the key.
+  const [checking, setChecking] = useState(false)
+  const [keyError, setKeyError] = useState<string | null>(null)
+  // The key the provider called invalid, which the user may save anyway: a
+  // gateway can refuse its model list to a key that chats fine.
+  const [refusedKey, setRefusedKey] = useState<string | null>(null)
+  const keyStatus = useProviderKeyStatus(selected)
   const { connecting: connectingMedia, connect: connectMediaServer } =
     useConnectMediaServer(updateProvider)
 
@@ -76,6 +94,8 @@ export function CloudConnectionCard({
   // provider can never be saved onto another.
   useEffect(() => {
     setKeyDraft(selected?.api_key ?? '')
+    setKeyError(null)
+    setRefusedKey(null)
   }, [selected?.provider, selected?.api_key])
 
   const localApiServerUrl = useMemo(() => getLocalApiServerUrl(), [])
@@ -97,32 +117,121 @@ export function CloudConnectionCard({
   // setting but is reachable without one, and clearing an empty key would be a
   // no-op button that claims to disconnect something.
   const hasKey = Boolean(selected?.api_key?.trim())
+  // A saved key the provider refused, or one it could not be asked about,
+  // is not "Connected".
+  const keyState = connected ? keyStatus?.state : undefined
   // A server that only makes media (Automatic1111, stable-diffusion.cpp) has no chat models to
   // reload and needs no key: it is connected from its address, by asking it for its models.
   const mediaServer = selected?.media_only === true
 
-  const handleSaveKey = () => {
-    if (!selected) return
+  /**
+   * What to tell the user when a check refused the key: a line of ours, then
+   * the provider's own reason.
+   */
+  const refusalText = (
+    outcome: Extract<KeyCheckOutcome, { kind: 'refused' }>,
+    providerName: string
+  ) =>
+    outcome.reason === 'ownServer'
+      ? t('cloud:connection.ownServer', { url: outcome.serverUrl ?? '' })
+      : [
+          t('cloud:connection.keyRejected', {
+            provider: getProviderTitle(providerName),
+          }),
+          outcome.message,
+        ]
+          .filter(Boolean)
+          .join(' ')
+
+  /** Check the typed key, then save it; `saveAnyway` saves one it refused. */
+  const handleSaveKey = async (saveAnyway = false) => {
+    if (!selected || checking) return
+    const provider = selected
     const apiKey = keyDraft.trim()
     if (!apiKey) return
+    const title = getProviderTitle(provider.provider)
+
+    // A media server lists no chat models to ask with the key; it connects
+    // from its address, as before.
+    let outcome: KeyCheckOutcome | undefined
+    if (saveAnyway && keyError && refusedKey === apiKey) {
+      outcome = savedAnyway(keyError)
+    } else if (!mediaServer) {
+      setKeyError(null)
+      setRefusedKey(null)
+      setChecking(true)
+      try {
+        outcome = await checkProviderKey(provider, apiKey, serviceHub)
+      } finally {
+        setChecking(false)
+      }
+      if (outcome.kind === 'refused') {
+        setKeyError(refusalText(outcome, provider.provider))
+        if (outcome.reason === 'key') setRefusedKey(apiKey)
+        return
+      }
+    }
+    setKeyError(null)
+    setRefusedKey(null)
 
     saveProviderApiKey({
-      provider: selected,
+      provider,
       apiKey,
       duringOnboarding: isOnboardingPending(providers),
       updateProvider,
       serviceHub,
     })
-    toast.success(
-      t('cloud:connection.saved', {
-        provider: getProviderTitle(selected.provider),
-      })
-    )
+    if (outcome) recordKeyCheck(provider.provider, apiKey, outcome)
+    if (outcome?.kind === 'unverified') {
+      toast.warning(
+        t('cloud:connection.savedUnverified', { provider: title }),
+        {
+          description: outcome.message,
+        }
+      )
+    } else {
+      toast.success(t('cloud:connection.saved', { provider: title }))
+    }
+  }
+
+  /** Ask the provider again about the key it already has. */
+  const handleCheckAgain = async () => {
+    const apiKey = selected?.api_key?.trim()
+    if (!selected || !apiKey || checking) return
+    const provider = selected
+    const title = getProviderTitle(provider.provider)
+    setChecking(true)
+    let outcome: KeyCheckOutcome
+    try {
+      outcome = await checkProviderKey(provider, apiKey, serviceHub)
+    } finally {
+      setChecking(false)
+    }
+    if (outcome.kind === 'refused') {
+      const reason = refusalText(outcome, provider.provider)
+      useProviderKeyStatusStore
+        .getState()
+        .setStatus(provider.provider, apiKey, 'rejected', reason)
+      toast.error(reason)
+      return
+    }
+    recordKeyCheck(provider.provider, apiKey, outcome)
+    if (outcome.kind === 'verified') {
+      toast.success(t('cloud:connection.saved', { provider: title }))
+    } else {
+      toast.warning(
+        t('cloud:connection.savedUnverified', { provider: title }),
+        {
+          description: outcome.message,
+        }
+      )
+    }
   }
 
   const handleDisconnect = () => {
     if (!selected) return
     updateProvider(selected.provider, buildApiKeyUpdate(selected, ''))
+    useProviderKeyStatusStore.getState().clear(selected.provider)
     setKeyDraft('')
     toast.success(
       t('cloud:connection.removed', {
@@ -202,7 +311,16 @@ export function CloudConnectionCard({
           <CardItem
             title={
               <span className="flex items-center gap-2">
-                {connected ? (
+                {connected && keyState ? (
+                  <span
+                    className={cn(
+                      'size-2 shrink-0 rounded-full',
+                      keyState === 'rejected'
+                        ? 'bg-destructive'
+                        : 'bg-amber-500'
+                    )}
+                  />
+                ) : connected ? (
                   <span
                     data-testid="cloud-connection-status-dot"
                     className="size-2 shrink-0 rounded-full bg-green-500"
@@ -210,17 +328,37 @@ export function CloudConnectionCard({
                 ) : (
                   <span className="size-2 shrink-0 rounded-full bg-muted-foreground/50" />
                 )}
-                {connected
-                  ? t('cloud:connection.connected')
-                  : t('cloud:connection.notConnected')}
+                {keyState === 'rejected'
+                  ? t('cloud:connection.rejected')
+                  : keyState === 'unverified'
+                    ? t('cloud:connection.unverified')
+                    : connected
+                      ? t('cloud:connection.connected')
+                      : t('cloud:connection.notConnected')}
               </span>
             }
             description={
               <>
-                {isKeylessRemoteProvider(selected) && (
-                  <span className="block">
-                    {t('cloud:connection.keyless')}
+                {keyState && keyStatus && (
+                  <span
+                    data-testid="cloud-key-status"
+                    className={cn(
+                      'block break-words',
+                      keyState === 'rejected' && 'text-destructive'
+                    )}
+                  >
+                    {keyState === 'rejected'
+                      ? t('cloud:connection.rejectedHint', {
+                          provider: getProviderTitle(selected.provider),
+                        })
+                      : t('cloud:connection.unverifiedHint', {
+                          provider: getProviderTitle(selected.provider),
+                        })}
+                    {keyStatus.message && ` ${keyStatus.message}`}
                   </span>
+                )}
+                {isKeylessRemoteProvider(selected) && (
+                  <span className="block">{t('cloud:connection.keyless')}</span>
                 )}
                 <span className="block">
                   {t('cloud:connection.routing', {
@@ -232,45 +370,60 @@ export function CloudConnectionCard({
             align="start"
             actions={
               hasKey ? (
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button variant="outline" size="sm">
-                      {t('cloud:connection.disconnect')}
+                <div className="flex items-center gap-2">
+                  {keyState && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={checking}
+                      onClick={() => void handleCheckAgain()}
+                    >
+                      {checking && (
+                        <IconLoader2 size={14} className="animate-spin" />
+                      )}
+                      {t('cloud:connection.checkAgain')}
                     </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>
-                        {t('cloud:connection.disconnectTitle', {
-                          provider: getProviderTitle(selected.provider),
-                        })}
-                      </DialogTitle>
-                      <DialogDescription>
-                        {t('cloud:connection.disconnectDescription')}
-                      </DialogDescription>
-                    </DialogHeader>
-                    <DialogFooter className="mt-2">
-                      <DialogClose asChild>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="hover:no-underline"
-                        >
-                          {t('cloud:connection.cancel')}
-                        </Button>
-                      </DialogClose>
-                      <DialogClose asChild>
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={handleDisconnect}
-                        >
-                          {t('cloud:connection.disconnect')}
-                        </Button>
-                      </DialogClose>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
+                  )}
+                  <Dialog>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" size="sm">
+                        {t('cloud:connection.disconnect')}
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>
+                          {t('cloud:connection.disconnectTitle', {
+                            provider: getProviderTitle(selected.provider),
+                          })}
+                        </DialogTitle>
+                        <DialogDescription>
+                          {t('cloud:connection.disconnectDescription')}
+                        </DialogDescription>
+                      </DialogHeader>
+                      <DialogFooter className="mt-2">
+                        <DialogClose asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="hover:no-underline"
+                          >
+                            {t('cloud:connection.cancel')}
+                          </Button>
+                        </DialogClose>
+                        <DialogClose asChild>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={handleDisconnect}
+                          >
+                            {t('cloud:connection.disconnect')}
+                          </Button>
+                        </DialogClose>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                </div>
               ) : undefined
             }
           />
@@ -298,30 +451,65 @@ export function CloudConnectionCard({
                 ) : undefined
               }
               actions={
-                <div className="mt-2 flex w-full items-center gap-2">
-                  <InputControl
-                    type="password"
-                    className="w-full"
-                    value={keyDraft}
-                    placeholder={
-                      (apiKeySetting?.controller_props?.placeholder as
-                        | string
-                        | undefined) ?? t('cloud:connection.apiKeyPlaceholder')
-                    }
-                    inputActions={['unobscure', 'copy']}
-                    onChange={setKeyDraft}
-                  />
-                  <Button
-                    size="sm"
-                    className="shrink-0"
-                    disabled={!keyDraft.trim() || keyDraft === selected.api_key}
-                    onClick={handleSaveKey}
-                  >
-                    {/* A media server's key is optional; it connects from its address. */}
-                    {hasKey || mediaServer
-                      ? t('cloud:connection.save')
-                      : t('cloud:connection.connect')}
-                  </Button>
+                <div className="mt-2 w-full">
+                  <div className="flex w-full items-center gap-2">
+                    <InputControl
+                      type="password"
+                      className="w-full"
+                      value={keyDraft}
+                      placeholder={
+                        (apiKeySetting?.controller_props?.placeholder as
+                          | string
+                          | undefined) ??
+                        t('cloud:connection.apiKeyPlaceholder')
+                      }
+                      inputActions={['unobscure', 'copy']}
+                      onChange={(value) => {
+                        setKeyDraft(value)
+                        setKeyError(null)
+                        setRefusedKey(null)
+                      }}
+                    />
+                    <Button
+                      size="sm"
+                      className="shrink-0"
+                      disabled={
+                        checking ||
+                        !keyDraft.trim() ||
+                        keyDraft === selected.api_key
+                      }
+                      onClick={() => void handleSaveKey()}
+                    >
+                      {checking && (
+                        <IconLoader2 size={14} className="animate-spin" />
+                      )}
+                      {/* A media server's key is optional; it connects from its address. */}
+                      {checking
+                        ? t('cloud:connection.checking')
+                        : hasKey || mediaServer
+                          ? t('cloud:connection.save')
+                          : t('cloud:connection.connect')}
+                    </Button>
+                  </div>
+                  {keyError && (
+                    <p
+                      role="alert"
+                      className="mt-2 text-sm break-words text-destructive"
+                    >
+                      {keyError}
+                    </p>
+                  )}
+                  {keyError && refusedKey === keyDraft.trim() && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-2"
+                      disabled={checking}
+                      onClick={() => void handleSaveKey(true)}
+                    >
+                      {t('cloud:connection.saveAnyway')}
+                    </Button>
+                  )}
                 </div>
               }
             />

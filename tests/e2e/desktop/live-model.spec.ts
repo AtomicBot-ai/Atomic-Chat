@@ -52,6 +52,32 @@ describe.skipIf(!REAL_BACKEND_DIR || !REAL_MODEL_GGUF)('a chat with a real local
     if (session) expect(await endSession(session)).toEqual([])
   })
 
+  it('cancels real engine loading without leaving a process, session or journal entry', { timeout: 120_000 }, async () => {
+    await withArtifacts(session, async () => {
+      await waitForChat(session)
+      const { dataFolder } = session.profile
+      const engines = () => listProcesses().filter((process) =>
+        process.command.includes(dataFolder) && process.command.includes('llama-server')
+      )
+      const crash = watchFor(session, CRASH_TOAST)
+      await pickModel(session, MODEL_ID)
+      const toast = session.app.browser.$('//*[@data-sonner-toast][.//*[contains(normalize-space(.), "Starting Model")]]')
+      await toast.waitForDisplayed({ timeout: 30_000 })
+      await expect.poll(engines, { timeout: 30_000 }).toHaveLength(1)
+      await toast.$('button=Cancel').click()
+      await expect.poll(engines, { timeout: 30_000 }).toEqual([])
+      await expect.poll(() => coreSessions(dataFolder), { timeout: 30_000 }).toEqual([])
+      const journal = JSON.parse(await readFile(join(dataFolder, 'atomic-core', 'processes.json'), 'utf8').catch((error) => {
+        if (error.code === 'ENOENT') return '{"processes":[]}'
+        throw error
+      })) as { processes: unknown[] }
+      expect(journal.processes).toEqual([])
+      await session.app.browser.waitUntil(async () => !(await toast.isExisting()) || !(await toast.isDisplayed()), { timeout: 30_000 })
+      expect(await crash.stop()).toBe(0)
+      // The next test reloads this same model and requires a stored, visible answer.
+    })
+  })
+
   it('loads it with the argv the core builds and gets an answer', { timeout: 360_000 }, async () => {
     await withArtifacts(session, async () => {
       const dataFolder = session.profile.dataFolder

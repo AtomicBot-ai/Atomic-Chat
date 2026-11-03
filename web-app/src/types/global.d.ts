@@ -34,6 +34,8 @@ declare global {
   declare const FRESH_INSTALL: boolean
   /** Dev-only tier override: 'low' | 'standard', or '' when unset. */
   declare const FORCE_HARDWARE_TIER: string
+  /** Dev-only first-run variant (`OnboardingVariant`), or '' when unset. */
+  declare const FORCE_ONBOARDING_VARIANT: string
   interface Window {
     core: AppCore | undefined
     gtag?: (...args: unknown[]) => void

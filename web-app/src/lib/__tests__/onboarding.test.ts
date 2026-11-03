@@ -1,14 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { localStorageKey } from '@/constants/localStorage'
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
+import { useOnboardingStore } from '@/stores/onboarding-store'
 import { useProviderRegistryStore } from '@/stores/provider-registry-store'
 
 import {
+  currentOnboardingVariant,
   describeProviderState,
   hasPriorAppUse,
   hasValidProviders,
+  isOnboardingInProgress,
   isOnboardingPending,
   resetForcedOnboardingRun,
+  shouldEnterOnboarding,
 } from '../onboarding'
 
 const upstreamProvider = {
@@ -136,6 +140,31 @@ describe('forced onboarding runs', () => {
     expect(isOnboardingPending([upstreamProvider])).toBe(true)
   })
 
+  it('replays an unfinished run from its first step', () => {
+    useOnboardingStore.getState().begin('full', 'welcome')
+    useOnboardingStore.getState().goTo('cloud')
+
+    resetForcedOnboardingRun()
+
+    expect(useOnboardingStore.getState()).toMatchObject({
+      phase: 'idle',
+      step: null,
+    })
+  })
+
+  it('enters even with chats and models, but not once finished', () => {
+    const forced = {
+      providers: [upstreamProvider],
+      hasPriorThread: true,
+      setupCompleted: false,
+      force: true,
+    }
+    expect(shouldEnterOnboarding(forced)).toBe(true)
+    expect(shouldEnterOnboarding({ ...forced, setupCompleted: true })).toBe(
+      false
+    )
+  })
+
   it('leaves the flag alone in a shipped build', () => {
     vi.stubGlobal('FORCE_ONBOARDING', false)
     localStorage.setItem(localStorageKey.setupCompleted, 'true')
@@ -143,6 +172,115 @@ describe('forced onboarding runs', () => {
     resetForcedOnboardingRun()
 
     expect(localStorage.getItem(localStorageKey.setupCompleted)).toBe('true')
+  })
+})
+
+describe('entering the setup screen', () => {
+  const freshInstall = {
+    providers: [],
+    hasPriorThread: false,
+    setupCompleted: false,
+    force: false,
+  }
+
+  beforeEach(() => {
+    localStorage.clear()
+    useOnboardingStore.getState().reset()
+  })
+
+  it('sends a fresh install there', () => {
+    expect(shouldEnterOnboarding(freshInstall)).toBe(true)
+  })
+
+  it('keeps everyone with a chat, a model or a finished setup out', () => {
+    expect(
+      shouldEnterOnboarding({ ...freshInstall, hasPriorThread: true })
+    ).toBe(false)
+    expect(
+      shouldEnterOnboarding({ ...freshInstall, providers: [upstreamProvider] })
+    ).toBe(false)
+    expect(
+      shouldEnterOnboarding({ ...freshInstall, setupCompleted: true })
+    ).toBe(false)
+  })
+
+  // The Windows/Linux backend step relaunches the app in the middle of the
+  // flow; the next launch has to come back to it whatever else is true.
+  it('resumes a run that was on screen when the app closed', () => {
+    useOnboardingStore.getState().begin('full', 'backend')
+    localStorage.setItem(localStorageKey.setupCompleted, 'true')
+
+    expect(isOnboardingInProgress()).toBe(true)
+    expect(
+      shouldEnterOnboarding({
+        ...freshInstall,
+        providers: [upstreamProvider],
+        hasPriorThread: true,
+        setupCompleted: true,
+      })
+    ).toBe(true)
+    // Startup work that waits for onboarding keeps waiting.
+    expect(isOnboardingPending([upstreamProvider])).toBe(true)
+  })
+
+  it('lets the app take over once the run hands off', () => {
+    useOnboardingStore.getState().begin('full', 'welcome')
+    useOnboardingStore.getState().handOff('chat')
+    localStorage.setItem(localStorageKey.setupCompleted, 'true')
+
+    expect(isOnboardingInProgress()).toBe(false)
+    expect(isOnboardingPending([])).toBe(false)
+    expect(
+      shouldEnterOnboarding({ ...freshInstall, setupCompleted: true })
+    ).toBe(false)
+  })
+})
+
+describe('variants without a setup screen', () => {
+  const freshInstall = {
+    providers: [],
+    hasPriorThread: false,
+    setupCompleted: false,
+    force: false,
+  }
+
+  beforeEach(() => {
+    localStorage.clear()
+    useOnboardingStore.getState().reset()
+    vi.stubGlobal('FORCE_ONBOARDING_VARIANT', 'none')
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('keeps a fresh none install out of onboarding, even in a forced build', () => {
+    expect(shouldEnterOnboarding(freshInstall)).toBe(false)
+    expect(shouldEnterOnboarding({ ...freshInstall, force: true })).toBe(false)
+  })
+
+  // Nothing waits for a setup screen that never comes: on Windows/Linux the
+  // startup coordinator picks the GPU backend as soon as hardware is known.
+  it('lets startup work run at once with nothing installed', () => {
+    vi.stubGlobal('FORCE_ONBOARDING', true)
+
+    expect(isOnboardingPending([])).toBe(false)
+  })
+
+  it('still resumes a run that began under another variant', () => {
+    useOnboardingStore.getState().begin('full', 'backend')
+
+    expect(currentOnboardingVariant()).toBe('full')
+    expect(shouldEnterOnboarding(freshInstall)).toBe(true)
+    expect(isOnboardingPending([])).toBe(true)
+  })
+
+  it('sends a model-only install to the setup screen like the full flow', () => {
+    vi.stubGlobal('FORCE_ONBOARDING_VARIANT', 'model_only')
+
+    expect(currentOnboardingVariant()).toBe('model_only')
+    expect(shouldEnterOnboarding(freshInstall)).toBe(true)
+    expect(isOnboardingPending([])).toBe(true)
   })
 })
 

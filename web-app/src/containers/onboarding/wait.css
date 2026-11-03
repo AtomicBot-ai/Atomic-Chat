@@ -1,0 +1,203 @@
+/* Tailwind's layer order, stated first: this file can load before index.css,
+ * and a layer it used first would otherwise come before `base`. */
+@layer theme, base, components, utilities;
+
+/* The wait screen (`steps/WaitStep`) and Atomic Mines (`steps/AtomicMines`),
+ * from the prototype's `.ob-email`, `.ob-ready`, `.ob-game` and
+ * `.ob-mine-grid` rules on the shell's theme variables (`onboarding.css`).
+ * Only the board has colours of its own, defined here for both themes the way
+ * `media.css` does: the dark values are the prototype's, the light ones the
+ * same hues on a light ground. This file loads ahead of `onboarding.css`, so a
+ * rule that refines one of its classes is scoped to win on specificity. */
+.ob-shell {
+  --ob-mine-tile: #d3e9df;
+  --ob-mine-tile-line: #9fc8b6;
+  --ob-mine-tile-text: #1d5e54;
+  --ob-mine-open: color-mix(in oklab, #28786c 3%, var(--card));
+  --ob-mine-open-line: color-mix(in oklab, #28786c 14%, var(--border));
+  --ob-mine-one: #2f6d8a;
+  --ob-mine-two: #2f7a3e;
+  --ob-mine-three: #a8592a;
+  --ob-mine-atom: #f2dacd;
+  --ob-mine-atom-line: #c98a6c;
+}
+.dark .ob-shell {
+  --ob-mine-tile: #344d3b;
+  --ob-mine-tile-line: #57725e;
+  --ob-mine-tile-text: #c8e8d1;
+  --ob-mine-open: #17261d;
+  --ob-mine-open-line: #2c4433;
+  --ob-mine-one: #b1d5e1;
+  --ob-mine-two: #a8dbad;
+  --ob-mine-three: #e5b18b;
+  --ob-mine-atom: #694a3d;
+  --ob-mine-atom-line: #bf947e;
+}
+
+@layer components {
+  .ob-actions.ob-wait-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .ob-email {
+    max-width: 540px;
+    margin-top: 30px;
+    padding-top: 24px;
+    border-top: 1px solid var(--ob-surface-line);
+  }
+  .ob-email label {
+    color: var(--ob-text);
+    font-size: calc(var(--font-size-base) * 0.875);
+  }
+  .ob-email p {
+    margin-top: 5px;
+    color: var(--ob-subtle);
+    font-size: calc(var(--font-size-base) * 0.75);
+  }
+  .ob-email > div {
+    display: flex;
+    gap: 10px;
+    margin: 13px 0;
+  }
+  .ob-email input {
+    flex: 1;
+    min-width: 0;
+    height: 42px;
+    padding: 0 13px;
+    border: 1px solid var(--ob-surface-line);
+    border-radius: 9px;
+    background: var(--ob-bg);
+    color: var(--ob-text);
+    font-size: calc(var(--font-size-base) * 0.8125);
+  }
+  .ob-email small {
+    display: block;
+    min-height: 3em;
+    color: var(--ob-tag-text);
+    font-size: calc(var(--font-size-base) * 0.6875);
+    line-height: 1.5;
+  }
+
+  .ob-ready {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    max-width: 540px;
+    margin-top: 28px;
+    padding: 24px;
+    border: 1px solid var(--ob-selected-line);
+    border-radius: 12px;
+    background: var(--ob-selected);
+    color: var(--ob-tag-text);
+  }
+  /* The app sizes every lucide icon at 14px in the base layer. */
+  .ob-ready > svg {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+  }
+  .ob-ready small {
+    display: block;
+    margin-top: 4px;
+    color: var(--ob-subtle);
+    font-size: calc(var(--font-size-base) * 0.6875);
+  }
+
+  .ob-game {
+    max-width: 408px;
+    margin: 28px 0 0;
+    padding: 22px;
+    border: 1px solid var(--ob-surface-line);
+    border-radius: 14px;
+    background: var(--ob-surface);
+  }
+  .ob-game-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 15px;
+  }
+  .ob-game-heading span {
+    color: var(--ob-subtle);
+    font-size: calc(var(--font-size-base) * 0.6875);
+  }
+  .ob-mine-grid {
+    display: grid;
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+    gap: 4px;
+  }
+  .ob-mine-grid button {
+    display: grid;
+    place-items: center;
+    min-width: 0;
+    aspect-ratio: 1;
+    border: 1px solid var(--ob-mine-tile-line);
+    border-bottom-width: 3px;
+    border-radius: 5px;
+    background: var(--ob-mine-tile);
+    color: var(--ob-mine-tile-text);
+    font-size: calc(var(--font-size-base) * 0.875);
+    font-weight: 600;
+  }
+  .ob-shell .ob-mine-grid button:disabled {
+    opacity: 1;
+  }
+  .ob-mine-grid button.revealed {
+    border: 1px solid var(--ob-mine-open-line);
+    background: var(--ob-mine-open);
+    color: var(--ob-mine-one);
+  }
+  .ob-mine-grid button[data-count='2'] {
+    color: var(--ob-mine-two);
+  }
+  .ob-mine-grid button[data-count='3'],
+  .ob-mine-grid button[data-count='4'],
+  .ob-mine-grid button[data-count='5'] {
+    color: var(--ob-mine-three);
+  }
+  .ob-mine-grid button.mine {
+    border-color: var(--ob-mine-atom-line);
+    background: var(--ob-mine-atom);
+  }
+  .ob-mine-grid img {
+    width: 23px;
+    height: 23px;
+    filter: var(--ob-logo-filter);
+  }
+  .ob-game-tools {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 15px;
+  }
+  .ob-game-tools .ob-secondary {
+    gap: 6px;
+    min-height: 30px;
+    padding: 6px 10px;
+    font-size: calc(var(--font-size-base) * 0.6875);
+  }
+  .ob-game-tools span {
+    color: var(--ob-muted);
+    font-size: calc(var(--font-size-base) * 0.6875);
+    text-align: right;
+  }
+  .ob-game > p {
+    margin-top: 14px;
+    color: var(--ob-subtle);
+    font-size: calc(var(--font-size-base) * 0.625);
+  }
+}
+
+@media (max-width: 600px) {
+  .ob-email > div {
+    flex-wrap: wrap;
+  }
+  .ob-email input {
+    width: 100%;
+  }
+  .ob-game {
+    padding: 16px;
+  }
+}

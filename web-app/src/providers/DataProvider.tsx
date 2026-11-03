@@ -7,7 +7,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { refreshAppManagedProviders } from '@/lib/provider-visibility'
 import {
-  BACKEND_PRESERVE_KEYS,
+  FACTORY_RESET_PRESERVE_KEYS,
   localStorageKey,
 } from '@/constants/localStorage'
 
@@ -53,7 +53,12 @@ import {
   unregisterRemoteProvider,
 } from '@/utils/registerRemoteProvider'
 import { hydrateActiveModelsForRunningServer } from '@/utils/activeModelsSync'
+import { resumeServedHelperModels } from '@/utils/turnOffLocalApiServer'
+import { claimLaunchAutoStart } from '@/utils/localApiServerControl'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
 import { ensureRemoteProviderReady } from '@/utils/ensureRemoteProviderReady'
+import { syncServedModelSelection } from '@/utils/serverModelSelection'
 import { reconcileLaunchAtStartup } from '@/lib/launchAtStartup'
 import { ModelFactory } from '@/lib/model-factory'
 import { isProviderConnected } from '@/lib/cloud-providers'
@@ -103,6 +108,8 @@ const SESSION_CACHED_PROVIDERS = [
   'atomic-prism',
   'mlx',
   'foundry-local',
+  'litert-lm',
+  'geniex',
 ] as const
 
 /** Those, and every managed engine (`isManagedProvider`). */
@@ -268,7 +275,7 @@ export function DataProvider() {
 
   useEffect(() => {
     if (localStorage.getItem(localStorageKey.factoryResetPending) === 'true') {
-      const preserved = BACKEND_PRESERVE_KEYS.map(
+      const preserved = FACTORY_RESET_PRESERVE_KEYS.map(
         (key) => [key, localStorage.getItem(key)] as const
       )
 
@@ -456,6 +463,9 @@ export function DataProvider() {
   useEffect(() => {
     syncRemoteProviders()
   }, [providers])
+
+  // The server sends each model id to the provider its page shows (AC-03).
+  useEffect(() => syncServedModelSelection(), [])
 
   // The core's media catalog, asked again while the core is still starting.
   const mediaCatalog = useMediaCatalog((state) => state.catalog)
@@ -811,10 +821,10 @@ export function DataProvider() {
     }
   }, [serviceHub])
 
-  // Auto-start Local API Server on app startup, but only re-attach to an
-  // already-running server or raise the proxy for a model that is already
-  // running in a local engine. We never proactively load/select a model here:
-  // if nothing is running, the server stays down until the user starts a model.
+  // Auto-start Local API Server on app startup: re-attach to an
+  // already-running server, or start it when "Start automatically" is on. We
+  // never proactively load/select a model here: with nothing running, the
+  // server is up with no local model until the user loads one.
   useEffect(() => {
     const autoStartServer = async () => {
       try {
@@ -845,17 +855,36 @@ export function DataProvider() {
           return
         }
 
+        // Only the app's launch starts it: not a chat in its own window, not
+        // a reload of the main one after the user stopped the server.
+        if (!claimLaunchAutoStart()) {
+          console.log(
+            '[LocalAPI:startup] Not the app launch; leaving server stopped'
+          )
+          return
+        }
+
         if (!enableOnStartup) {
           console.log('[LocalAPI:startup] Local API server auto-start disabled in settings')
           return
         }
 
-        // Product decision: do NOT proactively load or pick a model on startup.
-        // The Local API Server is only raised for a model that is already
-        // running in a local engine (llamacpp/mlx). If nothing is running, the
-        // server stays down until the user starts a model manually.
-        const runningModels = await serviceHub.models().getActiveModels()
-        if (!runningModels || runningModels.length === 0) {
+        // "Start automatically" promises the server when Atomic Chat opens, so
+        // it comes up whether or not a model is running. No model is loaded or
+        // picked for it (ADR 2026-08-19): it answers with what is there —
+        // cloud models, an embedding, image or decision model — and with a
+        // local chat model once one is loaded (ADR 2026-10-21).
+        const runningModels =
+          (await serviceHub
+            .models()
+            .getActiveModels()
+            .catch(() => [] as string[])) ?? []
+        // Where there is no Local API Server to offer (mobile, web), the
+        // proxy is only ever raised for a model that is running.
+        if (
+          runningModels.length === 0 &&
+          !PlatformFeatures[PlatformFeature.LOCAL_API_SERVER]
+        ) {
           console.log(
             '[LocalAPI:startup] No model currently running; leaving server stopped'
           )
@@ -865,7 +894,7 @@ export function DataProvider() {
         const serverState = useLocalApiServer.getState()
         setServerStatus('pending')
         console.log(
-          '[LocalAPI:startup] Raising server for already-running model(s):',
+          '[LocalAPI:startup] Starting server; running model(s):',
           runningModels
         )
         try {
@@ -893,6 +922,9 @@ export function DataProvider() {
           }
           await hydrateActiveModelsForRunningServer(serviceHub.models())
           setServerStatus('running')
+          // As Start does: the embedding and decision models the last
+          // turn-off switched off come back (they start on the first request).
+          void resumeServedHelperModels(serviceHub)
         } catch (err) {
           console.error('[LocalAPI:startup] Server start failed:', err)
           setServerStatus('stopped')

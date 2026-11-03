@@ -12,12 +12,15 @@ export type DownloadNotification = { title: string; body: string }
  * What the OS notification says when a download from the panel finishes: a
  * model by its name, an engine by what it runs. `null` for a companion file
  * (the CUDA runtime), which only ever lands as part of an engine install.
+ * `rowName` is what the panel's row calls it, which names a model whose id
+ * does not (a managed repository, a decision model).
  */
 export function describeFinishedDownload(
   id: string,
   downloadType: string | undefined,
   catalog: DiffusionCatalog | null,
-  t: Translate
+  t: Translate,
+  rowName?: string
 ): DownloadNotification | null {
   switch (downloadKind(id, downloadType)) {
     case 'companion_artifact':
@@ -47,7 +50,7 @@ export function describeFinishedDownload(
       return {
         title: t('common:desktopNotification.modelReadyTitle'),
         body: t('common:desktopNotification.modelReadyBody', {
-          name: modelName(id, catalog),
+          name: modelName(id, catalog, rowName),
         }),
       }
   }
@@ -89,9 +92,17 @@ export function describeDiffusionDownloadToast(
   }
 }
 
-/** A diffusion task names its catalog family; other ids end in the file name. */
-function modelName(id: string, catalog: DiffusionCatalog | null): string {
+/**
+ * A diffusion task names its catalog family, and a row named other than its id
+ * names the model; other ids end in the file name.
+ */
+function modelName(
+  id: string,
+  catalog: DiffusionCatalog | null,
+  rowName: string | undefined
+): string {
   const diffusion = catalog ? resolveDiffusionDownloadTaskId(catalog, id) : null
   if (diffusion) return diffusion.family.name
+  if (rowName && rowName !== id) return rowName
   return id.split('/').pop() || id
 }

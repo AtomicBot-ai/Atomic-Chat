@@ -1,13 +1,21 @@
-import { useState } from 'react'
-import { IconLoader2, IconRefresh, IconX } from '@tabler/icons-react'
+import { useEffect, useRef, useState } from 'react'
+import { IconLoader2, IconRefresh } from '@tabler/icons-react'
 import { invoke } from '@tauri-apps/api/core'
 
-import { Button } from '@/components/ui/button'
-import { Progress } from '@/components/ui/progress'
+import {
+  CORNER_ACTION,
+  CORNER_CARD,
+  CORNER_PRIMARY_ACTION,
+  CornerCardHeader,
+  CornerMini,
+  CornerProgressLine,
+} from '@/containers/corner/CornerCard'
+import { CORNER_ORDER, CornerSlot } from '@/containers/corner/cornerStack'
+import { useAutoCollapse } from '@/containers/corner/useAutoCollapse'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { stepOf } from '@/lib/managed-engine/setup-view'
 import { managedEngine, managedEngines, providerKey } from '@/lib/managed-engines'
-import { cn, formatBytes } from '@/lib/utils'
+import { formatBytes } from '@/lib/utils'
 import type { EnvironmentOperation } from '@/services/managed-environment/types'
 import { useRunningHostSteps } from '@/stores/host-step-running-store'
 import {
@@ -18,12 +26,15 @@ import {
 
 /**
  * A managed engine's setup or removal in progress (whichever engine it is: the card speaks with that
- * engine's texts), as one of the app's notification cards (the same
- * place and look as the update banners: bottom right, above the download panel): the phase in
- * words, the bytes while the image downloads, and — only when the step needs it — the one action
- * left to the person: restart Windows after WSL was turned on, or sign out on Linux after the
- * `docker` group was added (Rust `atomic_core_finish_session_step`). After the UAC approval Windows
- * installs WSL for minutes with no window, so the card says that instead of asking for approval.
+ * engine's texts), as one of the corner's notification cards (the same column and look as the
+ * download panel and the update banners, `corner/CornerCard`): the phase in words, the bytes while
+ * the image downloads, and — only when the step needs it — the one action left to the person:
+ * restart Windows after WSL was turned on, or sign out on Linux after the `docker` group was added
+ * (Rust `atomic_core_finish_session_step`). After the UAC approval Windows installs WSL for minutes
+ * with no window, so the card says that instead of asking for approval.
+ *
+ * Like the other corner cards it folds into a pill three seconds after it appears; each new phase
+ * opens it again for another three, so a step that waits for the person is never only a pill.
  */
 export function ManagedEngineOperationBar() {
   const operation = useManagedEnvironmentStore((state) => selectSetupOperation(state))
@@ -125,64 +136,96 @@ export function OperationBarView({
     }
   }
 
+  const phaseKey = `${operation.operation_id}:${operation.phase}:${step}`
+  const { collapsed, expand, collapse, peek, holdProps } = useAutoCollapse(true)
+  const shownPhase = useRef(phaseKey)
+  useEffect(() => {
+    if (shownPhase.current === phaseKey) return
+    shownPhase.current = phaseKey
+    peek()
+  }, [phaseKey, peek])
+
+  const fraction = bytes ? bytes.completed / bytes.total : null
+  const icon = (size: number) =>
+    action ? (
+      <IconRefresh size={size} aria-hidden />
+    ) : (
+      <IconLoader2 size={size} aria-hidden className="animate-spin" />
+    )
+
+  if (collapsed) {
+    return (
+      <CornerSlot order={CORNER_ORDER.managedEngine}>
+        <CornerMini
+          icon={icon(15)}
+          text={fraction !== null ? `${Math.round(fraction * 100)}%` : title}
+          progress={fraction}
+          label={title}
+          onClick={expand}
+          testId="managed-operation-bar-mini"
+        />
+      </CornerSlot>
+    )
+  }
+
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      data-testid="managed-operation-bar"
-      className={cn(
-        'fixed z-40 bottom-[calc(1rem+var(--download-panel-offset,0px))] right-2 w-[min(24rem,calc(100vw-1rem))]',
-        'transition-[bottom] duration-200',
-        'rounded-xl border bg-background shadow-md'
-      )}
-    >
-      <Button
-        variant="ghost"
-        size="icon-xs"
-        aria-label={t(k('bar.later'))}
-        onClick={onDismiss}
-        className="absolute right-1.5 top-1.5 text-muted-foreground"
+    <CornerSlot order={CORNER_ORDER.managedEngine}>
+      <div
+        role="status"
+        aria-live="polite"
+        data-testid="managed-operation-bar"
+        className={CORNER_CARD}
+        {...holdProps}
       >
-        <IconX size={14} />
-      </Button>
+        <CornerCardHeader
+          title={title}
+          collapseLabel={t('common:cornerCard.collapse')}
+          onCollapse={collapse}
+          dismissLabel={t(k('bar.later'))}
+          onDismiss={onDismiss}
+        />
 
-      <div className="flex items-start gap-2.5 px-4 pt-4 pr-9">
-        {action ? (
-          <IconRefresh size={18} className="mt-0.5 shrink-0 text-muted-foreground" />
-        ) : (
-          <IconLoader2 size={18} className="mt-0.5 shrink-0 animate-spin text-muted-foreground" />
-        )}
-        <div className="min-w-0 flex-1">
-          <div className="text-sm font-medium leading-5">{title}</div>
-          <div className="mt-0.5 text-xs leading-5 text-muted-foreground break-words">{text}</div>
-        </div>
-      </div>
-
-      {bytes ? (
-        <div className="flex flex-col gap-1 px-4 pt-3">
-          <Progress value={(bytes.completed / bytes.total) * 100} />
-          <div className="text-[11px] leading-4 tabular-nums text-muted-foreground">
-            {formatBytes(bytes.completed)} / {formatBytes(bytes.total)}
+        <div className="bg-[var(--dl-row)]">
+          <div className="flex items-start gap-3 px-4 py-3">
+            <span className="flex shrink-0 pt-px text-[var(--dl-strong)]">{icon(18)}</span>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-semibold leading-[18px] break-words text-[var(--dl-title)]">
+                {text}
+              </p>
+              {bytes ? (
+                <p className="mt-0.5 text-[11px] leading-4 tabular-nums text-[var(--dl-text)]">
+                  {formatBytes(bytes.completed)} / {formatBytes(bytes.total)}
+                </p>
+              ) : null}
+              {error ? (
+                <p className="mt-1 text-[11px] leading-4 break-words text-destructive">{error}</p>
+              ) : null}
+            </div>
+            {fraction !== null ? (
+              <b className="shrink-0 text-xs font-medium leading-[18px] tabular-nums text-[var(--dl-strong)]">
+                {Math.round(fraction * 100)}%
+              </b>
+            ) : null}
           </div>
+          {fraction !== null ? <CornerProgressLine progress={fraction} label={title} /> : null}
         </div>
-      ) : null}
 
-      {error ? (
-        <div className="px-4 pt-2 text-[11px] leading-4 text-destructive break-words">{error}</div>
-      ) : null}
-
-      {action ? (
-        <div className="flex flex-wrap items-center justify-end gap-1 px-2 pb-2 pt-3">
-          <Button size="sm" variant="ghost" onClick={onDismiss}>
-            {t(k('bar.later'))}
-          </Button>
-          <Button size="sm" disabled={busy} onClick={() => void run(action.name)}>
-            {action.label}
-          </Button>
-        </div>
-      ) : (
-        <div className="pb-4" />
-      )}
-    </div>
+        {action ? (
+          <div className="flex flex-wrap items-center justify-end gap-1 border-t border-[var(--dl-divider)] px-2 py-2">
+            <button type="button" className={CORNER_ACTION} onClick={onDismiss}>
+              {t(k('bar.later'))}
+            </button>
+            <button
+              type="button"
+              className={CORNER_PRIMARY_ACTION}
+              disabled={busy}
+              onClick={() => void run(action.name)}
+            >
+              {action.label}
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </CornerSlot>
   )
 }

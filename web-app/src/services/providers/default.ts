@@ -27,6 +27,21 @@ export class DefaultProvidersService implements ProvidersService {
     }
   }
 
+  async checkProviderKeyUrl(
+    provider: ModelProvider,
+    url: string
+  ): Promise<EndpointCheckResult> {
+    // Same Rust command as the endpoint check.
+    void provider
+    void url
+    return {
+      ok: false,
+      latencyMs: 0,
+      modelCount: 0,
+      message: 'Endpoint checks run in the desktop app only.',
+    }
+  }
+
   async updateSettings(providerName: string, settings: ProviderSetting[]): Promise<void> {
     console.log('updateSettings called:', { providerName, settings })
     // No-op - not implemented in default service

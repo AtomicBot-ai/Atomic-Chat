@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { ThreadMessage } from '@janhq/core'
 import { getServiceHub } from '@/hooks/useServiceHub'
+import { trackThreadMessageWrite } from '@/lib/thread-message-sync'
 
 type MessageState = {
   messages: Record<string, ThreadMessage[]>
@@ -42,20 +43,27 @@ export const useMessages = create<MessageState>()((set, get) => ({
       },
     }))
 
-    // Persist to storage asynchronously
-    getServiceHub().messages().createMessage(newMessage).then((createdMessage) => {
-      set((state) => ({
-        messages: {
-          ...state.messages,
-          [message.thread_id]:
-            state.messages[message.thread_id]?.map((existing) =>
-              existing.id === newMessage.id ? createdMessage : existing
+    // Persist to storage asynchronously. Tracked so other windows showing
+    // this thread hear about the write and this one does not read it back
+    // mid-write (lib/thread-message-sync).
+    trackThreadMessageWrite(
+      message.thread_id,
+      getServiceHub().messages().createMessage(newMessage)
+    )
+      .then((createdMessage) => {
+        set((state) => ({
+          messages: {
+            ...state.messages,
+            [message.thread_id]: state.messages[message.thread_id]?.map(
+              (existing) =>
+                existing.id === newMessage.id ? createdMessage : existing
             ) ?? [createdMessage],
-        },
-      }))
-    }).catch((error) => {
-      console.error('Failed to persist message:', error)
-    })
+          },
+        }))
+      })
+      .catch((error) => {
+        console.error('Failed to persist message:', error)
+      })
   },
   updateMessage: (message) => {
     const updatedMessage = {
@@ -74,12 +82,21 @@ export const useMessages = create<MessageState>()((set, get) => ({
 
     // Persist to storage asynchronously using modifyMessage instead of createMessage
     // to prevent duplicates when updating existing messages
-    getServiceHub().messages().modifyMessage(updatedMessage).catch((error) => {
+    trackThreadMessageWrite(
+      message.thread_id,
+      getServiceHub().messages().modifyMessage(updatedMessage)
+    ).catch((error) => {
       console.error('Failed to persist message update:', error)
     })
   },
   deleteMessage: (threadId, messageId) => {
-    getServiceHub().messages().deleteMessage(threadId, messageId)
+    trackThreadMessageWrite(
+      threadId,
+      getServiceHub().messages().deleteMessage(threadId, messageId),
+      { deletedId: messageId }
+    ).catch((error) => {
+      console.error('Failed to persist message deletion:', error)
+    })
     set((state) => ({
       messages: {
         ...state.messages,

@@ -124,6 +124,8 @@ describe('ModelLoadSnackbar', () => {
       fireEvent.click(
         screen.getByRole('button', { name: 'Cancel', exact: true })
       )
+      expect(cancelModelLoad).toHaveBeenCalledOnce()
+      expect(snackbar()).not.toHaveAttribute('data-removed', 'true')
       await waitFor(() =>
         expect(
           screen.queryByRole('button', { name: 'Cancel' })

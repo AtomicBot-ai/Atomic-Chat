@@ -61,6 +61,8 @@ export type DiffusionCatalogEngine = 'sdcpp' | 'diffusers'
 /** A side file: VAE or text encoder. */
 export type DiffusionCatalogFile = {
   repo: string
+  /** Immutable commit in this file's repository; omitted retains legacy main. */
+  revision?: string
   /** Path inside the repo; may carry directories (`split_files/vae/ae.safetensors`). */
   filename: string
   bytes: number
@@ -99,6 +101,7 @@ export type DiffusionCatalogFamily = {
   engines: DiffusionCatalogEngine[]
   transformer: {
     repo: string
+    revision?: string
     quants: DiffusionCatalogQuant[]
   }
   vae?: DiffusionCatalogFile
@@ -184,6 +187,9 @@ export const QUANT_FILENAME_RE = /^(?:[A-Za-z0-9._-]+\/)*[A-Za-z0-9._-]+\.gguf$/
 /** Side files may live in a repo subfolder, but never climb out of it. */
 export const SIDE_FILENAME_RE = /^[A-Za-z0-9._/-]+\.(gguf|safetensors)$/
 const SHA256_RE = /^[0-9a-f]{64}$/
+const REVISION_RE = /^[0-9a-f]{40}$/
+const isRevision = (value: unknown): value is string =>
+  typeof value === 'string' && REVISION_RE.test(value)
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -246,6 +252,7 @@ const sanitizeFile = (
 ): DiffusionCatalogFile | null => {
   if (!isRecord(raw)) return null
   if (typeof raw.repo !== 'string' || !REPO_RE.test(raw.repo)) return null
+  if (raw.revision !== undefined && !isRevision(raw.revision)) return null
   if (typeof raw.filename !== 'string' || !isSafeSideFilename(raw.filename))
     return null
   if (!isPositiveInt(raw.bytes)) return null
@@ -254,6 +261,7 @@ const sanitizeFile = (
   const sha256 = optionalSha256(raw.sha256)
   return {
     repo: raw.repo,
+    ...(isRevision(raw.revision) ? { revision: raw.revision } : {}),
     filename: raw.filename,
     bytes: raw.bytes,
     ...(sha256 ? { sha256 } : {}),
@@ -398,6 +406,8 @@ export const sanitizeDiffusionFamily = (
   if (!isRecord(raw.transformer)) return null
   const repo = raw.transformer.repo
   if (typeof repo !== 'string' || !REPO_RE.test(repo)) return null
+  const revision = raw.transformer.revision
+  if (revision !== undefined && !isRevision(revision)) return null
   if (!Array.isArray(raw.transformer.quants)) return null
   const quants = raw.transformer.quants
     .map(sanitizeQuant)
@@ -469,7 +479,11 @@ export const sanitizeDiffusionFamily = (
     ...(raw.gated === true ? { gated: true } : {}),
     modality: raw.modality,
     engines,
-    transformer: { repo, quants },
+    transformer: {
+      repo,
+      ...(isRevision(revision) ? { revision } : {}),
+      quants,
+    },
     ...(vae ? { vae } : {}),
     ...(raw.vae_format === 'flux2' ? { vae_format: 'flux2' as const } : {}),
     ...(audioVae ? { audio_vae: audioVae } : {}),

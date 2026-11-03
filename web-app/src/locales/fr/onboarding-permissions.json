@@ -1,0 +1,29 @@
+{
+  "title": "Un peu d'accès. Plus de possibilités.",
+  "lead": "Choisissez ce que vous voulez activer. Tout est facultatif.",
+  "allow": "Autoriser",
+  "allowed": "Autorisé",
+  "notAllowed": "Non autorisé",
+  "asking": "Demande en cours…",
+  "skip": "Passer",
+  "notNow": "Pas maintenant",
+  "allowAccess": "Autoriser l'accès",
+  "notifications": {
+    "title": "Notifications",
+    "reason": "Soyez averti quand un modèle est prêt ou qu'une longue tâche se termine.",
+    "ask": "Autoriser les notifications ?",
+    "detail": "Atomic Chat peut afficher une notification à la fin d'un téléchargement. Vous pourrez modifier ce choix plus tard dans les paramètres système."
+  },
+  "microphone": {
+    "title": "Microphone",
+    "reason": "Dictez vos prompts et utilisez les conversations vocales.",
+    "ask": "Autoriser le microphone ?",
+    "detail": "L'accès au microphone n'est utilisé que lorsque vous lancez un enregistrement. La discussion textuelle fonctionne sans."
+  },
+  "warning": {
+    "title": "Continuer sans autorisations ?",
+    "body": "La saisie vocale et les notifications de téléchargement restent désactivées tant que vous ne les autorisez pas. Vous pourrez activer l'accès plus tard dans les Paramètres.",
+    "review": "Revoir les autorisations",
+    "proceed": "Continuer sans autorisations"
+  }
+}

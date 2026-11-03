@@ -37,6 +37,11 @@ type EmbeddingStore = {
   config: EmbeddingConfig | null
   /** Model id → every file of it is on disk. */
   installed: Record<string, boolean>
+  /**
+   * `installed` has been read at least once, or the read failed: until then
+   * an empty map means "not asked yet", not "nothing on disk".
+   */
+  installedRead: boolean
   /** The last failure of a call or an `embedding:error` event, cleared by the next success. */
   error: EmbeddingCoreError | null
   /** Model id with an activate / stop / remove in flight. */
@@ -57,6 +62,7 @@ export const useEmbeddingStore = create<EmbeddingStore>()((set, get) => ({
   status: null,
   config: null,
   installed: {},
+  installedRead: false,
   error: null,
   busy: null,
 
@@ -79,13 +85,19 @@ export const useEmbeddingStore = create<EmbeddingStore>()((set, get) => ({
 
   refreshInstalled: async () => {
     const { catalog } = get()
-    const entries = await Promise.all(
-      catalog.models.map(
-        async (model) =>
-          [model.id, await isEmbeddingModelInstalled(model)] as const
+    try {
+      const entries = await Promise.all(
+        catalog.models.map(
+          async (model) =>
+            [model.id, await isEmbeddingModelInstalled(model)] as const
+        )
       )
-    )
-    set({ installed: Object.fromEntries(entries) })
+      set({ installed: Object.fromEntries(entries), installedRead: true })
+    } catch (error) {
+      // A failed read is an answer too: nothing waits on it any longer.
+      set({ installedRead: true })
+      throw error
+    }
   },
 
   setStatus: (status) => set({ status }),
@@ -95,7 +107,11 @@ export const useEmbeddingStore = create<EmbeddingStore>()((set, get) => ({
 
   bind: () => {
     const embedding = getServiceHub().embedding()
-    if (!embedding.isSupported()) return () => {}
+    // Off the desktop there is no disk to read: the empty map is the answer.
+    if (!embedding.isSupported()) {
+      set({ installedRead: true })
+      return () => {}
+    }
     const unsubscribe = embedding.subscribe((event) => {
       if (event.type === 'state') {
         set({ status: event.status })

@@ -44,6 +44,11 @@ pub struct CoreError {
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub details: Option<String>,
+    /// The request was sent and no answer came in time — as opposed to a refused or reset
+    /// connection, which says nothing is listening any more. Only the supervisor reads it, to
+    /// tell a core that is slow (swapping, busy) from one that is gone; never on the wire.
+    #[serde(skip)]
+    pub timed_out: bool,
 }
 
 impl CoreError {
@@ -52,6 +57,7 @@ impl CoreError {
             code: code.to_string(),
             message: message.into(),
             details,
+            timed_out: false,
         }
     }
 
@@ -60,8 +66,20 @@ impl CoreError {
         Self::new("CORE_UNREACHABLE", message, Some(details.into()))
     }
 
+    /// A transport failure, marked when it was a deadline rather than a refusal.
+    fn transport(message: &str, details: String, error: &reqwest::Error) -> Self {
+        let mut core_error = Self::unreachable(message, details);
+        core_error.timed_out = error.is_timeout();
+        core_error
+    }
+
     pub fn is_unreachable(&self) -> bool {
         self.code == "CORE_UNREACHABLE"
+    }
+
+    /// Unreachable because the answer did not come in time: the core may only be slow.
+    pub fn is_timeout(&self) -> bool {
+        self.is_unreachable() && self.timed_out
     }
 }
 
@@ -107,6 +125,8 @@ pub struct ControlClient {
     base_url: String,
     token: String,
     http: reqwest::Client,
+    /// The deadline of the short probes: health, registration, heartbeat, snapshot.
+    probe_timeout: Duration,
 }
 
 impl ControlClient {
@@ -124,7 +144,14 @@ impl ControlClient {
             base_url: base_url.into(),
             token: token.into(),
             http,
+            probe_timeout: HEALTH_TIMEOUT,
         })
+    }
+
+    /// A shorter probe deadline, for tests that need a timeout without waiting 15 s for it.
+    pub fn with_probe_timeout(mut self, timeout: Duration) -> Self {
+        self.probe_timeout = timeout;
+        self
     }
 
     pub fn base_url(&self) -> &str {
@@ -138,7 +165,12 @@ impl ControlClient {
 
     pub async fn health(&self) -> Result<Health, CoreError> {
         let value = self
-            .request(reqwest::Method::GET, "/health", None, Some(HEALTH_TIMEOUT))
+            .request(
+                reqwest::Method::GET,
+                "/health",
+                None,
+                Some(self.probe_timeout),
+            )
             .await?;
         serde_json::from_value(value).map_err(|e| {
             CoreError::unreachable("The core's health response was not readable", e.to_string())
@@ -193,7 +225,7 @@ impl ControlClient {
             reqwest::Method::GET,
             "/snapshot",
             None,
-            Some(HEALTH_TIMEOUT),
+            Some(self.probe_timeout),
         )
         .await
     }
@@ -204,7 +236,7 @@ impl ControlClient {
                 reqwest::Method::POST,
                 "/clients",
                 Some(serde_json::json!({ "name": name, "pid": pid })),
-                Some(HEALTH_TIMEOUT),
+                Some(self.probe_timeout),
             )
             .await?;
         serde_json::from_value(value).map_err(|e| {
@@ -223,7 +255,7 @@ impl ControlClient {
                 reqwest::Method::POST,
                 &format!("/clients/{client_id}/heartbeat"),
                 Some(serde_json::json!({})),
-                Some(HEALTH_TIMEOUT),
+                Some(self.probe_timeout),
             )
             .await
         {
@@ -240,7 +272,7 @@ impl ControlClient {
             reqwest::Method::DELETE,
             &format!("/clients/{client_id}"),
             None,
-            Some(HEALTH_TIMEOUT),
+            Some(self.probe_timeout),
         )
         .await
         .map(|_| ())
@@ -315,14 +347,15 @@ impl ControlClient {
             request = request.json(&body);
         }
         let response = request.send().await.map_err(|e| {
-            CoreError::unreachable(
+            CoreError::transport(
                 "The Atomic Chat core did not answer.",
                 format!("{url}: {e}"),
+                &e,
             )
         })?;
         let status = response.status();
         let text = response.text().await.map_err(|e| {
-            CoreError::unreachable("Could not read the core's response", e.to_string())
+            CoreError::transport("Could not read the core's response", e.to_string(), &e)
         })?;
         if !status.is_success() {
             return Err(error_from_body(status, &text));
@@ -372,11 +405,11 @@ fn error_from_body(status: reqwest::StatusCode, body: &str) -> CoreError {
     }
 
     match serde_json::from_str::<Envelope>(body) {
-        Ok(envelope) => CoreError {
-            code: envelope.error.code,
-            message: envelope.error.message,
-            details: envelope.error.details,
-        },
+        Ok(envelope) => CoreError::new(
+            &envelope.error.code,
+            envelope.error.message,
+            envelope.error.details,
+        ),
         Err(_) => CoreError::new(
             &format!("HTTP_{}", status.as_u16()),
             format!("The core answered {status}."),
@@ -521,6 +554,39 @@ mod tests {
         let error = client.health().await.unwrap_err();
 
         assert!(error.is_unreachable(), "got {error}");
+    }
+
+    #[tokio::test]
+    async fn a_deadline_is_a_timeout_and_a_refusal_is_not() {
+        let core = FakeCore::start().await;
+        core.set_slow(Duration::from_millis(300));
+        let late = core
+            .client()
+            .with_probe_timeout(Duration::from_millis(50))
+            .heartbeat("client-1")
+            .await
+            .unwrap_err();
+        assert!(late.is_unreachable() && late.is_timeout(), "got {late}");
+
+        let refused = ControlClient::new("http://127.0.0.1:1", "t")
+            .unwrap()
+            .health()
+            .await
+            .unwrap_err();
+        assert!(
+            refused.is_unreachable() && !refused.is_timeout(),
+            "got {refused}"
+        );
+
+        // The flag never reaches the webview: the wire shape is unchanged.
+        assert_eq!(
+            serde_json::to_value(&late)
+                .unwrap()
+                .as_object()
+                .unwrap()
+                .len(),
+            3
+        );
     }
 
     #[tokio::test]

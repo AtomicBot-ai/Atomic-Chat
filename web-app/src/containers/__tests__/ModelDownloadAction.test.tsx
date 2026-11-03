@@ -51,9 +51,12 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 
 vi.mock('@/hooks/useGeneralSetting', () => ({
-  useGeneralSetting: (
-    selector: (state: { huggingfaceToken: string }) => unknown
-  ) => selector({ huggingfaceToken: '' }),
+  // `getState` too: a resume reads the token at the click.
+  useGeneralSetting: Object.assign(
+    (selector: (state: { huggingfaceToken: string }) => unknown) =>
+      selector({ huggingfaceToken: '' }),
+    { getState: () => ({ huggingfaceToken: '' }) }
+  ),
 }))
 
 import { ModelDownloadAction } from '../ModelDownloadAction'
@@ -189,6 +192,54 @@ describe('ModelDownloadAction', () => {
     expect(downloads.localDownloadingModels.has(variant.model_id)).toBe(false)
     expect(downloads.downloadOriginByModelId[variant.model_id]).toBeUndefined()
     expect(downloads.resumableDownloads.has(variant.model_id)).toBe(true)
+  })
+
+  it('offers Resume for a paused download instead of Cancel, and resumes it', () => {
+    const id = variant.model_id
+    useDownloadStore.setState({
+      downloads: {
+        [id]: {
+          id,
+          name: id,
+          progress: 0.3,
+          current: 3,
+          total: 10,
+          speed: { bytesPerSecond: 0, atBytes: 3, atTime: 0 },
+        },
+      },
+      // Also how a download a quit cut off comes back after the relaunch.
+      pausedDownloads: new Set([id]),
+      resumeParams: { [id]: { modelPath: variant.path } },
+    })
+    try {
+      render(<ModelDownloadAction variant={variant} model={model} asButton />)
+
+      expect(
+        screen.queryByRole('button', { name: 'common:cancelDownload' })
+      ).toBeNull()
+      const resume = screen.getByRole('button', {
+        name: 'common:resumeDownload',
+      })
+      expect(resume).toHaveTextContent('30%')
+
+      fireEvent.click(resume)
+
+      expect(mocks.pullModelWithMetadata).toHaveBeenCalledWith(
+        id,
+        variant.path,
+        undefined,
+        '',
+        true,
+        true,
+        {}
+      )
+      expect(useDownloadStore.getState().pausedDownloads.has(id)).toBe(false)
+    } finally {
+      useDownloadStore.setState({
+        pausedDownloads: new Set(),
+        resumeParams: {},
+      })
+    }
   })
 
   describe('a file only PrismML runs', () => {

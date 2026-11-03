@@ -73,9 +73,10 @@ Consequences you must respect:
 - Speculative flags are provider/build-gated. `llamacpp-upstream` currently
   wires build-checked `draft-mtp` / `draft-dflash`; do not infer support from a
   model family or expose an unverified fork flag.
-- Release builds bundle both provider trees on Windows/Linux.
-  `download-llamacpp-backend-if-exists` remains a no-op on Windows and skips on
-  Linux, but the release-specific download paths are active there.
+- Installers bundle only the `llamacpp-upstream` tree, on every platform. The
+  core installs `llamacpp` (TurboQuant) on first use and MLX on demand; the
+  `download-llamacpp-backend` and `build-mlx-server` make targets run by hand
+  only.
 - The optimal backend is a property of a provider _and_ its pinned release, not
   of the GPU. On Linux `llamacpp` picks CUDA 13.3 → CUDA 12.4 → ROCm → Vulkan →
   CPU, while `llamacpp-upstream` stays Vulkan → CPU on the same hardware,
@@ -115,7 +116,7 @@ opportunistically breaks existing user installs.
 | Root `package.json` name | `jan-app`              | leave — rename = migration   |
 | Web app workspace        | `@janhq/web-app`       | leave                        |
 | Pre-install tarballs     | `janhq-*-*.tgz`        | leave — installer expects it |
-| Tauri CLI binary         | `jan-cli`              | leave                        |
+| CLI install commands     | `*_jan_cli` (Rust)     | leave — Tauri IPC names      |
 | `Cargo.toml` repo URL    | `github.com/janhq/jan` | leave                        |
 | Tauri bundle id          | `chat.atomic.app`      | use this                     |
 | Cargo crate              | `Atomic-Chat`          | use this                     |

@@ -5,7 +5,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { type AppConfiguration, type AutostartPreference } from '@janhq/core'
 import {
-  BACKEND_PRESERVE_KEYS,
+  FACTORY_RESET_PRESERVE_KEYS,
   localStorageKey,
 } from '@/constants/localStorage'
 import type { LogEntry, LogExport, UnifiedLogEntry } from './types'
@@ -63,7 +63,7 @@ export class TauriAppService extends DefaultAppService {
     }
 
     const savedBackend: Record<string, string> = {}
-    for (const key of BACKEND_PRESERVE_KEYS) {
+    for (const key of FACTORY_RESET_PRESERVE_KEYS) {
       const val = window.localStorage.getItem(key)
       if (val) savedBackend[key] = val
     }

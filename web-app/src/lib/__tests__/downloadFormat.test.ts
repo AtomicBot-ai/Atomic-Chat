@@ -5,6 +5,7 @@ import {
   bytesUnit,
   formatBytes,
   formatDownloadReadout,
+  formatDownloadStatusLine,
   formatEta,
   formatProgressPair,
   formatSpeed,
@@ -102,6 +103,54 @@ describe('formatDownloadReadout', () => {
         stage: { kind: 'retrying', attempt: 2, maxAttempts: 5 },
       })
     ).toBe('common:downloadPanel.retrying(attempt=2,maxAttempts=5)')
+  })
+})
+
+describe('formatDownloadStatusLine', () => {
+  const transfer = {
+    current: 4.2 * GB,
+    total: 12.4 * GB,
+    bytesPerSecond: 18.4 * MB,
+  }
+
+  it('says what the transfer is doing where the readout puts the percent', () => {
+    expect(formatDownloadStatusLine(t, transfer)).toBe(
+      'common:downloading · 4.20 / 12.40 GB · common:downloadPanel.left(eta=7m 36s)'
+    )
+  })
+
+  it('can leave the word out of a transfer that is simply running', () => {
+    expect(formatDownloadStatusLine(t, transfer, { runningWord: false })).toBe(
+      '4.20 / 12.40 GB · common:downloadPanel.left(eta=7m 36s)'
+    )
+    expect(
+      formatDownloadStatusLine(
+        t,
+        { ...transfer, paused: true },
+        { runningWord: false }
+      )
+    ).toBe('common:downloadPanel.paused · 4.20 / 12.40 GB')
+  })
+
+  it('reads Paused with the size and no estimate', () => {
+    expect(formatDownloadStatusLine(t, { ...transfer, paused: true })).toBe(
+      'common:downloadPanel.paused · 4.20 / 12.40 GB'
+    )
+  })
+
+  it('leads with a reconnect, and drops the estimate of a connection that is gone', () => {
+    expect(
+      formatDownloadStatusLine(t, {
+        ...transfer,
+        stage: { kind: 'stalled', attempt: 0, maxAttempts: 5 },
+      })
+    ).toBe('common:downloadPanel.stalled · 4.20 / 12.40 GB')
+  })
+
+  it('says it is starting before the first byte', () => {
+    expect(
+      formatDownloadStatusLine(t, { current: 0, total: 0, bytesPerSecond: 0 })
+    ).toBe('common:downloadPanel.preparing')
   })
 })
 

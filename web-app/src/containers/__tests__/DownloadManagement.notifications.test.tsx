@@ -12,8 +12,12 @@ vi.mock('sonner', () => ({
   },
 }))
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }))
+// The key, and the model's name when the string carries one.
 vi.mock('@/i18n/react-i18next-compat', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, options?: { name?: string }) =>
+      options?.name ? `${key}|${options.name}` : key,
+  }),
 }))
 vi.mock('@/hooks/useServiceHub', () => ({
   useServiceHub: () => ({ models: () => ({ abortDownload: vi.fn() }) }),
@@ -35,21 +39,30 @@ vi.mock('@/containers/downloads/DownloadPanel', () => ({
 }))
 vi.mock('@/lib/telemetry-queue', () => ({ queuedCapture: vi.fn() }))
 vi.mock('@/lib/sentry', () => ({ captureHandledError: vi.fn() }))
-// What reached the OS, in order. The focus and Settings gates live in
-// `notifyWhenAway` itself and are covered by its own test.
-const sent = vi.hoisted(() => [] as Array<[string, string]>)
+// What was offered to the OS, in order, with whether it counts as on screen.
+// The focus and Settings gates live in `notifyUnlessWatching` itself and are
+// covered by its own test.
+const sent = vi.hoisted(
+  () => [] as Array<{ watching: boolean; title: string; body: string }>
+)
 vi.mock('@/lib/notifications', () => ({
-  notifyWhenAway: (title: string, body: string) => {
-    sent.push([title, body])
+  notifyUnlessWatching: (watching: boolean, title: string, body: string) => {
+    sent.push({ watching, title, body })
     return true
   },
 }))
 
 import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { managedDownloadId } from '@/lib/managed-engine/download-id'
 import { DownloadManagement } from '../DownloadManegement'
 
 const MODEL = 'bartowski/Kimi-K3-Q4_K_M'
 const ENGINE = 'llamacpp-backend-b6500/macos-arm64'
+const MODEL_READY = {
+  watching: false,
+  title: 'common:desktopNotification.modelReadyTitle',
+  body: 'common:desktopNotification.modelReadyBody|Kimi-K3-Q4_K_M',
+}
 
 describe('DownloadManagement — desktop notification when a download finishes', () => {
   const handlers = new Map<string, Set<(payload: unknown) => void>>()
@@ -71,6 +84,8 @@ describe('DownloadManagement — desktop notification when a download finishes',
     useDownloadStore.setState({
       downloads: {},
       localDownloadingModels: new Set(),
+      pausedDownloads: new Set(),
+      downloadOriginByModelId: {},
     })
     const core = ((
       globalThis as unknown as { core?: Record<string, unknown> }
@@ -92,7 +107,7 @@ describe('DownloadManagement — desktop notification when a download finishes',
       .events
   })
 
-  it('announces a model once, even when both success events arrive', () => {
+  it('announces a model once, focused or not, even when both success events arrive', () => {
     render(<DownloadManagement />)
     progress(MODEL, 'Model')
     emit(DownloadEvent.onFileDownloadSuccess, {
@@ -104,16 +119,11 @@ describe('DownloadManagement — desktop notification when a download finishes',
       downloadType: 'Model',
     })
 
-    expect(sent).toEqual([
-      [
-        'common:desktopNotification.modelReadyTitle',
-        'common:desktopNotification.modelReadyBody',
-      ],
-    ])
+    expect(sent).toEqual([MODEL_READY])
     expect(useDownloadStore.getState().downloads).toEqual({})
   })
 
-  it('announces an engine install', () => {
+  it('leaves an engine install to its toast in a focused window', () => {
     render(<DownloadManagement />)
     progress(ENGINE, 'Backend')
     emit(DownloadEvent.onFileDownloadAndVerificationSuccess, {
@@ -122,11 +132,77 @@ describe('DownloadManagement — desktop notification when a download finishes',
     })
 
     expect(sent).toEqual([
-      [
-        'common:desktopNotification.engineReadyTitle',
-        'common:desktopNotification.chatEngineReadyBody',
-      ],
+      {
+        watching: true,
+        title: 'common:desktopNotification.engineReadyTitle',
+        body: 'common:desktopNotification.chatEngineReadyBody',
+      },
     ])
+  })
+
+  it('announces a first-run download, whose row the setup screen does not draw', () => {
+    useDownloadStore.getState().addLocalDownloadingModel(MODEL)
+    render(<DownloadManagement hidePanel />)
+    progress(MODEL, 'Model')
+    emit(DownloadEvent.onFileDownloadAndVerificationSuccess, {
+      modelId: MODEL,
+      downloadType: 'Model',
+    })
+
+    expect(sent).toEqual([MODEL_READY])
+  })
+
+  it('announces a download whose row was closed before its success arrived', () => {
+    render(<DownloadManagement />)
+    progress(MODEL, 'Model')
+    act(() => useDownloadStore.getState().removeDownload(MODEL))
+    emit(DownloadEvent.onFileDownloadSuccess, {
+      modelId: MODEL,
+      downloadType: 'Model',
+    })
+    emit(DownloadEvent.onFileDownloadSuccess, {
+      modelId: MODEL,
+      downloadType: 'Model',
+    })
+
+    expect(sent).toEqual([MODEL_READY])
+  })
+
+  it('names a model by its row: a managed one by its repository', () => {
+    const id = managedDownloadId('meta-llama/Llama-3.1-8B')
+    useDownloadStore.getState().setDownloadOrigin(id, 'meta-llama/Llama-3.1-8B')
+    render(<DownloadManagement />)
+    progress(id, 'Model')
+    emit(DownloadEvent.onFileDownloadSuccess, {
+      modelId: id,
+      downloadType: 'Model',
+    })
+
+    expect(sent.map((entry) => entry.body)).toEqual([
+      'common:desktopNotification.modelReadyBody|meta-llama/Llama-3.1-8B',
+    ])
+  })
+
+  it('says nothing is ready when a download is cancelled or fails', () => {
+    render(<DownloadManagement />)
+    progress(MODEL, 'Model')
+    emit(DownloadEvent.onFileDownloadStopped, {
+      modelId: MODEL,
+      downloadType: 'Model',
+    })
+    progress(ENGINE, 'Backend')
+    emit(DownloadEvent.onFileDownloadError, {
+      modelId: ENGINE,
+      downloadType: 'Backend',
+      error: 'HTTP status 500',
+    })
+    // A late success for either finds nothing running.
+    emit(DownloadEvent.onFileDownloadSuccess, {
+      modelId: MODEL,
+      downloadType: 'Model',
+    })
+
+    expect(sent).toEqual([])
   })
 
   it('announces a download that has not reported bytes yet', () => {

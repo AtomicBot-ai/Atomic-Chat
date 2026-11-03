@@ -14,6 +14,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use super::codex_config::{codex_home, profile_is_ours};
 use super::commands::{
     agent_home_dir, detect_shell_env_file, dsh_home_dir, entry_is_ours,
     openclaude_global_config_path, openclaw_config_path, resolve_atomic_agent_state_dir,
@@ -55,6 +56,8 @@ pub(crate) struct AgentConfigPaths {
     pub dsh_home: Option<PathBuf>,
     pub openclaw_config: PathBuf,
     pub openclaude_config: PathBuf,
+    /// `$CODEX_HOME`, else `~/.codex`.
+    pub codex_home: PathBuf,
 }
 
 impl AgentConfigPaths {
@@ -70,6 +73,7 @@ impl AgentConfigPaths {
             dsh_home: Some(home.join(".dsh")),
             openclaw_config: home.join(".openclaw").join("openclaw.json"),
             openclaude_config: home.join(".openclaude.json"),
+            codex_home: home.join(".codex"),
         }
     }
 
@@ -92,6 +96,7 @@ impl AgentConfigPaths {
             dsh_home: dsh_home_dir().ok(),
             openclaw_config: openclaw_config_path(&home_str),
             openclaude_config: openclaude_global_config_path(&home_str),
+            codex_home: codex_home(&home, std::env::var("CODEX_HOME").ok().as_deref()),
             home,
         })
     }
@@ -133,7 +138,7 @@ pub(crate) fn detect_configured_agents_in(
             json_file(&home.join(".pi").join("agent").join("models.json"))
                 .is_some_and(|v| has_object(&v, &["providers", ATOMIC_PROVIDER_KEY])),
         ),
-        ("codex", codex_configured(home)),
+        ("codex", codex_configured(&paths.codex_home)),
         (
             "opencode",
             json_file(&home.join(".config").join("opencode").join("opencode.json"))
@@ -314,13 +319,14 @@ fn claude_code_settings_local(home: &Path) -> bool {
     })
 }
 
-/// Our `[model_providers.atomic]` table in `~/.codex/config.toml` (current and
-/// older releases both write it inside a managed block).
-fn codex_configured(home: &Path) -> bool {
-    read_text(&home.join(".codex").join("config.toml")).is_some_and(|text| {
-        text.lines()
-            .any(|l| l.trim() == format!("[model_providers.{}]", ATOMIC_PROVIDER_KEY))
-    })
+/// Our profile, or — until the startup repair has moved them out — the
+/// `[model_providers.atomic]` table earlier releases wrote into `config.toml`.
+fn codex_configured(codex_home: &Path) -> bool {
+    profile_is_ours(codex_home)
+        || read_text(&codex_home.join("config.toml")).is_some_and(|text| {
+            text.lines()
+                .any(|l| l.trim() == format!("[model_providers.{}]", ATOMIC_PROVIDER_KEY))
+        })
 }
 
 fn openclaude_configured(paths: &AgentConfigPaths) -> bool {
@@ -524,6 +530,19 @@ mod tests {
              # <<< Atomic Chat (managed) <<<\n\n[mcp_servers.x]\ncommand = \"x\"\n\
              # >>> Atomic Chat (managed) >>>\n[model_providers.atomic]\nname = \"Atomic Chat\"\n\
              base_url = \"http://127.0.0.1:1337/v1\"\n# <<< Atomic Chat (managed) <<<\n",
+        );
+        assert_eq!(detect(home.path(), None), vec!["codex"]);
+    }
+
+    #[test]
+    fn detects_our_codex_profile_but_not_someone_elses() {
+        let home = tempfile::tempdir().unwrap();
+        let profile = home.path().join(".codex/atomic-chat.config.toml");
+        write(&profile, "model = \"theirs\"\n");
+        assert!(detect(home.path(), None).is_empty());
+        write(
+            &profile,
+            &super::super::codex_config::render_profile("http://127.0.0.1:1337/v1", "qwen3", false),
         );
         assert_eq!(detect(home.path(), None), vec!["codex"]);
     }

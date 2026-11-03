@@ -1,8 +1,52 @@
 {
+  "title": "Téléchargements",
+  "summary": {
+    "totalStorage": "Stockage total",
+    "enginesNotCounted": "Moteurs non comptabilisés",
+    "items": "Éléments téléchargés",
+    "freeSpace": "Espace libre"
+  },
+  "search": "Rechercher des téléchargements…",
+  "searchLabel": "Rechercher des téléchargements",
+  "categoryLabel": "Catégorie de téléchargement",
+  "category": {
+    "all": "Tous les téléchargements",
+    "local": "Modèles locaux",
+    "image": "Images",
+    "video": "Vidéos",
+    "voice": "Voix",
+    "engine": "Moteurs"
+  },
+  "column": {
+    "download": "Téléchargement",
+    "storage": "Stockage",
+    "actions": "Actions"
+  },
   "kind": {
+    "embedding": "embeddings de documents",
+    "decision": "modèle de décision",
+    "image": "génération d'images",
+    "video": "génération de vidéos",
+    "voice": "reconnaissance vocale",
+    "engine": "moteur d'inférence",
     "partial": "téléchargement incomplet",
     "draft": "modèle brouillon pour le décodage spéculatif"
   },
+  "unknownSize": "La taille de cet élément est inconnue",
+  "remove": "Supprimer {{name}}",
+  "removeTitle": "Supprimer le téléchargement",
+  "copyId": "Copier {{name}}",
+  "idCopied": "ID du modèle copié",
+  "confirm": {
+    "title": "Supprimer {{name}} ?",
+    "description": "L'élément sera supprimé de cet ordinateur. Vous pourrez le télécharger à nouveau plus tard.",
+    "cancel": "Annuler",
+    "remove": "Supprimer"
+  },
+  "removed": "{{name}} supprimé",
+  "removeFailed": "Impossible de supprimer {{name}}",
+  "empty": "Rien n'a encore été téléchargé. Les modèles, modèles multimédias et moteurs que vous téléchargez apparaissent ici.",
+  "noMatch": "Aucun téléchargement ne correspond à votre recherche.",
   "blocked": {
     "draftInUse": "Le décodage spéculatif MLX est activé. Désactivez-le dans les paramètres du moteur MLX pour supprimer les modèles brouillons."
   },

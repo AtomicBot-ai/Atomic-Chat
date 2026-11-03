@@ -1,0 +1,87 @@
+--- a/web-app/src/stores/__tests__/support-chat-store.test.ts
++++ b/web-app/src/stores/__tests__/support-chat-store.test.ts
+@@ -308,3 +308,36 @@
+     localStorage.removeItem(localStorageKey.supportChat)
+   })
+ })
++
++it('QA: a stalled support send must expire instead of blocking all later messages', async () => {
++  reset()
++  vi.useFakeTimers()
++  client.createConversation.mockResolvedValue({
++    conversation_id: 'qa',
++    token: 'qa-token',
++  })
++  let release!: (value: { seq: number; created_at: string }) => void
++  client.sendMessage
++    .mockReset()
++    .mockImplementationOnce(
++      () =>
++        new Promise((resolve) => {
++          release = resolve
++        })
++    )
++    .mockResolvedValue({ seq: 2, created_at: '2026-10-28T12:00:00Z' })
++  const first = sendSupportMessage('First message')
++  await vi.advanceTimersByTimeAsync(1)
++  const second = sendSupportMessage('Second message')
++  await vi.advanceTimersByTimeAsync(600_000)
++  const statuses = store().messages.map((message) => message.status)
++  const sends = client.sendMessage.mock.calls.length
++  release({ seq: 1, created_at: '2026-10-28T12:00:00Z' })
++  await Promise.all([first, second])
++  vi.useRealTimers()
++  console.log(
++    'QA_SUPPORT_STALL',
++    JSON.stringify({ elapsedMs: 600000, statuses, sends })
++  )
++  expect(statuses).toContain('failed')
++})
+--- a/web-app/src/containers/server/__tests__/ServerAgents.test.tsx
++++ b/web-app/src/containers/server/__tests__/ServerAgents.test.tsx
+@@ -292,3 +292,25 @@
+     })
+   })
+ })
++
++it('QA: server restart should allow reconnecting an agent that has already exited', () => {
++  useServerSetup.setState({ configuredAgents: [{ id: 'codex', at: 1 }] })
++  useLaunchStore.setState({
++    installed: { codex: true },
++    launched: { codex: true },
++    phase: {},
++  })
++  useAppState.setState({ serverStatus: 'stopped' })
++  render(<ServerAgents />)
++  expect(
++    within(card('Codex CLI')).getByRole('button', {
++      name: 'api:agents.connectAgent:{"name":"Codex CLI"}',
++    })
++  ).toBeInTheDocument()
++  act(() => useAppState.setState({ serverStatus: 'running' }))
++  expect(
++    within(card('Codex CLI')).getByRole('button', {
++      name: 'api:agents.connectAgent:{"name":"Codex CLI"}',
++    })
++  ).toBeInTheDocument()
++})
+--- a/web-app/src/lib/__tests__/integration-agent-run.test.ts
++++ b/web-app/src/lib/__tests__/integration-agent-run.test.ts
+@@ -72,3 +72,17 @@
+     expect(useLaunchStore.getState().launched).toEqual({})
+   })
+ })
++
++it.each(['muse', 'poolside'])(
++  'QA: %s quotes an apostrophe in the configured API key',
++  async (id) => {
++    vi.mocked(invoke).mockClear().mockResolvedValue(undefined)
++    await openIntegrationAgent(agent(id), { t, model: 'qa/model', server })
++    const call = vi
++      .mocked(invoke)
++      .mock.calls.find(([command]) => command === 'open_agent_terminal')
++    const command = (call?.[1] as { command: string }).command
++    console.log('QA_LAUNCH_QUOTING', id, command)
++    expect(command).not.toContain("='it's-secret'")
++  }
++)

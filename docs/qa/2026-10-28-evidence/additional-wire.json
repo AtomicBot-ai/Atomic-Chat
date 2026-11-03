@@ -1,0 +1,107 @@
+[
+  {
+    "client": "muse",
+    "path": "/muse-code/models",
+    "authorized": true,
+    "status": 200,
+    "body": "{\"data\":[{\"created\":1,\"id\":\"qa/client-model\",\"metadata\":{\"muse-code\":{\"attachment\":false,\"cost\":{\"cached\":\"0\",\"currency\":\"USD\",\"input\":\"0\",\"output\":\"0\"},\"description\":\"qa/client-model via Atomic Chat\",\"family\":\"llama.cpp-upstream\",\"is_hidden\":false,\"limit\":{\"context\":32768,\"output\":32768},\"modalities\":{\"input\":[\"text\"],\"output\":[\"text\"]},\"name\":\"qa/client-model\",\"options\":{\"include\":[],\"temperature\":0.9,\"top_p\":0.9},\"reasoning\":false,\"release_date\":\"2026-01-01\",\"temperature\":false,\"tool_call\":tr"
+  },
+  {
+    "client": "muse",
+    "path": "/v1/responses",
+    "authorized": true,
+    "status": 200,
+    "body": "event: response.created\ndata: {\"response\":{\"id\":\"resp_fe07ac7c53904b71aceda4cf4d781287\",\"model\":\"qa/client-model\",\"object\":\"response\",\"output\":[],\"parallel_tool_calls\":true,\"status\":\"in_progress\",\"tool_choice\":\"auto\",\"tools\":[],\"usage\":null},\"sequence_number\":0,\"type\":\"response.created\"}\n\nevent: response.output_item.added\ndata: {\"item\":{\"content\":[],\"id\":\"msg_84743799dcf140bf9b0d0ab7b9f2b5e6\",\"role\":\"assistant\",\"status\":\"in_progress\",\"type\":\"message\"},\"output_index\":0,\"sequence_number\":1,\"type\":"
+  },
+  {
+    "client": "muse",
+    "path": "/v1/responses",
+    "authorized": true,
+    "status": 200,
+    "body": "event: response.created\ndata: {\"response\":{\"id\":\"resp_8d3dacb7b7c34391a1b8611b5d56c0e2\",\"model\":\"qa/client-model\",\"object\":\"response\",\"output\":[],\"parallel_tool_calls\":true,\"status\":\"in_progress\",\"tool_choice\":\"auto\",\"tools\":[],\"usage\":null},\"sequence_number\":0,\"type\":\"response.created\"}\n\nevent: response.output_item.added\ndata: {\"item\":{\"content\":[],\"id\":\"msg_f8d751cdee854f81b8b727bca961d0da\",\"role\":\"assistant\",\"status\":\"in_progress\",\"type\":\"message\"},\"output_index\":0,\"sequence_number\":1,\"type\":"
+  },
+  {
+    "client": "muse",
+    "path": "/v1/responses",
+    "authorized": true,
+    "status": 200,
+    "body": "event: response.created\ndata: {\"response\":{\"id\":\"resp_50083e1781164c07a82261d4df158818\",\"model\":\"qa/client-model\",\"object\":\"response\",\"output\":[],\"parallel_tool_calls\":true,\"status\":\"in_progress\",\"tool_choice\":\"auto\",\"tools\":[],\"usage\":null},\"sequence_number\":0,\"type\":\"response.created\"}\n\nevent: response.output_item.added\ndata: {\"item\":{\"content\":[],\"id\":\"msg_d6d6e5e953654123901139ff5c2d3170\",\"role\":\"assistant\",\"status\":\"in_progress\",\"type\":\"message\"},\"output_index\":0,\"sequence_number\":1,\"type\":"
+  },
+  {
+    "client": "muse",
+    "path": "/v1/responses",
+    "authorized": true,
+    "status": 200,
+    "body": "event: response.created\ndata: {\"response\":{\"id\":\"resp_4a0bc0402e73478fbd29e2369622804b\",\"model\":\"qa/client-model\",\"object\":\"response\",\"output\":[],\"parallel_tool_calls\":true,\"status\":\"in_progress\",\"tool_choice\":\"auto\",\"tools\":[],\"usage\":null},\"sequence_number\":0,\"type\":\"response.created\"}\n\nevent: response.output_item.added\ndata: {\"item\":{\"content\":[],\"id\":\"msg_ca0bdb3485ce4c38b440aa82a9b68e01\",\"role\":\"assistant\",\"status\":\"in_progress\",\"type\":\"message\"},\"output_index\":0,\"sequence_number\":1,\"type\":"
+  },
+  {
+    "client": "muse",
+    "path": "/v1/responses",
+    "authorized": true,
+    "status": 200,
+    "body": "event: response.created\ndata: {\"response\":{\"id\":\"resp_7e3124689d32445aa5ade82648a5331b\",\"model\":\"qa/client-model\",\"object\":\"response\",\"output\":[],\"parallel_tool_calls\":true,\"status\":\"in_progress\",\"tool_choice\":\"auto\",\"tools\":[],\"usage\":null},\"sequence_number\":0,\"type\":\"response.created\"}\n\nevent: response.output_item.added\ndata: {\"item\":{\"content\":[],\"id\":\"msg_b8d350dfe3654095805a9061bc5c117e\",\"role\":\"assistant\",\"status\":\"in_progress\",\"type\":\"message\"},\"output_index\":0,\"sequence_number\":1,\"type\":"
+  },
+  {
+    "client": "muse",
+    "path": "/v1/responses",
+    "authorized": true,
+    "status": 200,
+    "body": "event: response.created\ndata: {\"response\":{\"id\":\"resp_1bdde09ff28d40aebdf59d5c2890bc23\",\"model\":\"qa/client-model\",\"object\":\"response\",\"output\":[],\"parallel_tool_calls\":true,\"status\":\"in_progress\",\"tool_choice\":\"auto\",\"tools\":[],\"usage\":null},\"sequence_number\":0,\"type\":\"response.created\"}\n\nevent: response.output_item.added\ndata: {\"item\":{\"content\":[],\"id\":\"msg_190597113d2a4e79b4b791bf0fe0fc3e\",\"role\":\"assistant\",\"status\":\"in_progress\",\"type\":\"message\"},\"output_index\":0,\"sequence_number\":1,\"type\":"
+  },
+  {
+    "client": "muse",
+    "path": "/v1/responses",
+    "authorized": true,
+    "status": 200,
+    "body": "event: response.created\ndata: {\"response\":{\"id\":\"resp_01c8e21f176a4dfcbc362cef70b0096a\",\"model\":\"qa/client-model\",\"object\":\"response\",\"output\":[],\"parallel_tool_calls\":true,\"status\":\"in_progress\",\"tool_choice\":\"auto\",\"tools\":[],\"usage\":null},\"sequence_number\":0,\"type\":\"response.created\"}\n\nevent: response.output_item.added\ndata: {\"item\":{\"content\":[],\"id\":\"msg_1c9de2e89c6240a7bb5be39b498521d4\",\"role\":\"assistant\",\"status\":\"in_progress\",\"type\":\"message\"},\"output_index\":0,\"sequence_number\":1,\"type\":"
+  },
+  {
+    "client": "muse",
+    "path": "/v1/responses",
+    "authorized": true,
+    "status": 200,
+    "body": "event: response.created\ndata: {\"response\":{\"id\":\"resp_30821f2671a64c54814447ebaef62077\",\"model\":\"qa/client-model\",\"object\":\"response\",\"output\":[],\"parallel_tool_calls\":true,\"status\":\"in_progress\",\"tool_choice\":\"auto\",\"tools\":[],\"usage\":null},\"sequence_number\":0,\"type\":\"response.created\"}\n\nevent: response.output_item.added\ndata: {\"item\":{\"content\":[],\"id\":\"msg_0483f30b02834e2781dae314614017ed\",\"role\":\"assistant\",\"status\":\"in_progress\",\"type\":\"message\"},\"output_index\":0,\"sequence_number\":1,\"type\":"
+  },
+  {
+    "client": "muse",
+    "path": "/v1/responses",
+    "authorized": true,
+    "status": 200,
+    "body": "event: response.created\ndata: {\"response\":{\"id\":\"resp_c565cd04a8e94449a1a5b9f6a192e862\",\"model\":\"qa/client-model\",\"object\":\"response\",\"output\":[],\"parallel_tool_calls\":true,\"status\":\"in_progress\",\"tool_choice\":\"auto\",\"tools\":[],\"usage\":null},\"sequence_number\":0,\"type\":\"response.created\"}\n\nevent: response.output_item.added\ndata: {\"item\":{\"content\":[],\"id\":\"msg_2c1c5358a6e041b19929b946a474dbec\",\"role\":\"assistant\",\"status\":\"in_progress\",\"type\":\"message\"},\"output_index\":0,\"sequence_number\":1,\"type\":"
+  },
+  {
+    "client": "muse",
+    "path": "/v1/responses",
+    "authorized": true,
+    "status": 200,
+    "body": "event: response.created\ndata: {\"response\":{\"id\":\"resp_ac353d8a9973465c8cbac08b74a4ad67\",\"model\":\"qa/client-model\",\"object\":\"response\",\"output\":[],\"parallel_tool_calls\":true,\"status\":\"in_progress\",\"tool_choice\":\"auto\",\"tools\":[],\"usage\":null},\"sequence_number\":0,\"type\":\"response.created\"}\n\nevent: response.output_item.added\ndata: {\"item\":{\"content\":[],\"id\":\"msg_7ec9035a77534048b16ff6644bad343b\",\"role\":\"assistant\",\"status\":\"in_progress\",\"type\":\"message\"},\"output_index\":0,\"sequence_number\":1,\"type\":"
+  },
+  {
+    "client": "muse",
+    "path": "/v1/responses",
+    "authorized": true,
+    "status": 200,
+    "body": "event: response.created\ndata: {\"response\":{\"id\":\"resp_9d722e6bcb9445de9817c8f0fdc40795\",\"model\":\"qa/client-model\",\"object\":\"response\",\"output\":[],\"parallel_tool_calls\":true,\"status\":\"in_progress\",\"tool_choice\":\"auto\",\"tools\":[],\"usage\":null},\"sequence_number\":0,\"type\":\"response.created\"}\n\nevent: response.output_item.added\ndata: {\"item\":{\"content\":[],\"id\":\"msg_7a719caeef02438eabaad437e9a08279\",\"role\":\"assistant\",\"status\":\"in_progress\",\"type\":\"message\"},\"output_index\":0,\"sequence_number\":1,\"type\":"
+  },
+  {
+    "client": "muse",
+    "path": "/v1/responses",
+    "authorized": true,
+    "status": 200,
+    "body": "event: response.created\ndata: {\"response\":{\"id\":\"resp_9b688dfe281f411089b0493ccb170254\",\"model\":\"qa/client-model\",\"object\":\"response\",\"output\":[],\"parallel_tool_calls\":true,\"status\":\"in_progress\",\"tool_choice\":\"auto\",\"tools\":[],\"usage\":null},\"sequence_number\":0,\"type\":\"response.created\"}\n\nevent: response.output_item.added\ndata: {\"item\":{\"content\":[],\"id\":\"msg_0eefaf24182c4ba1b668c6779e691038\",\"role\":\"assistant\",\"status\":\"in_progress\",\"type\":\"message\"},\"output_index\":0,\"sequence_number\":1,\"type\":"
+  },
+  {
+    "client": "muse",
+    "path": "/v1/responses",
+    "authorized": true,
+    "status": 200,
+    "body": "event: response.created\ndata: {\"response\":{\"id\":\"resp_da4bcce2ed414f4697b1151f7c991041\",\"model\":\"qa/client-model\",\"object\":\"response\",\"output\":[],\"parallel_tool_calls\":true,\"status\":\"in_progress\",\"tool_choice\":\"auto\",\"tools\":[],\"usage\":null},\"sequence_number\":0,\"type\":\"response.created\"}\n\nevent: response.output_item.added\ndata: {\"item\":{\"content\":[],\"id\":\"msg_5d6f81ada1014ce0948d6b2e0ba9bd4f\",\"role\":\"assistant\",\"status\":\"in_progress\",\"type\":\"message\"},\"output_index\":0,\"sequence_number\":1,\"type\":"
+  },
+  {
+    "client": "openclaw",
+    "path": "/v1/chat/completions",
+    "authorized": true,
+    "status": 200,
+    "body": "data: {\"id\":\"chatcmpl-fake\",\"object\":\"chat.completion.chunk\",\"created\":1700000000,\"model\":\"qa/client-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"QA_CLIENT_REPLY\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-fake\",\"object\":\"chat.completion.chunk\",\"created\":1700000000,\"model\":\"qa/client-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+  }
+]

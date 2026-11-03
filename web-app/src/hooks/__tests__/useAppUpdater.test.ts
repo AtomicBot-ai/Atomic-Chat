@@ -25,6 +25,11 @@ vi.mock('@janhq/core', () => ({
   },
 }))
 
+const mockIsPackageManaged = vi.hoisted(() => vi.fn())
+vi.mock('@/lib/package-managed', () => ({
+  isPackageManaged: mockIsPackageManaged,
+}))
+
 const mockToastError = vi.hoisted(() => vi.fn())
 vi.mock('sonner', () => ({
   toast: { error: mockToastError, info: vi.fn() },
@@ -84,6 +89,7 @@ describe('useAppUpdater', () => {
       } as EventsService,
     })
     mockIsDev.mockReturnValue(false)
+    mockIsPackageManaged.mockResolvedValue(false)
   })
 
   afterEach(() => {
@@ -148,6 +154,59 @@ describe('useAppUpdater', () => {
 
     expect(result.current.updateState.isUpdateAvailable).toBe(true)
     expect(result.current.updateState.remindMeLater).toBe(true)
+  })
+
+  describe('package-managed install', () => {
+    beforeEach(() => {
+      mockIsPackageManaged.mockResolvedValue(true)
+    })
+
+    it('never asks the update server', async () => {
+      mockUpdaterCheck.mockResolvedValue({ version: '9.9.9' })
+      const { result } = renderHook(() => useAppUpdater())
+
+      let updateResult: unknown
+      await act(async () => {
+        updateResult = await result.current.checkForUpdate(true)
+      })
+
+      expect(mockUpdaterCheck).not.toHaveBeenCalled()
+      expect(updateResult).toBe(null)
+      expect(result.current.updateState.isUpdateAvailable).toBe(false)
+    })
+
+    it('reports itself so the settings page can hide the update button', async () => {
+      const { result } = renderHook(() => useAppUpdater())
+
+      await waitFor(() => expect(result.current.packageManaged).toBe(true))
+    })
+
+    it('refuses to download and install', async () => {
+      const { result } = renderHook(() => useAppUpdater())
+      act(() => {
+        const syncHandler = mockEvents.on.mock.calls[0][1]
+        syncHandler({ isUpdateAvailable: true, updateInfo: { version: '9.9.9' } })
+      })
+
+      await act(async () => {
+        await result.current.downloadAndInstallUpdate()
+      })
+
+      expect(mockUpdaterDownloadAndInstallWithProgress).not.toHaveBeenCalled()
+    })
+  })
+
+  it('does not ask the update server when the build disables the updater', async () => {
+    Object.assign(global, { AUTO_UPDATER_DISABLED: true })
+    try {
+      const { result } = renderHook(() => useAppUpdater())
+      await act(async () => {
+        await result.current.checkForUpdate()
+      })
+      expect(mockUpdaterCheck).not.toHaveBeenCalled()
+    } finally {
+      Object.assign(global, { AUTO_UPDATER_DISABLED: false })
+    }
   })
 
   describe('checkForUpdate', () => {
@@ -243,6 +302,75 @@ describe('useAppUpdater', () => {
       expect(mockUpdaterCheck).not.toHaveBeenCalled()
       expect(result.current.updateState.isUpdateAvailable).toBe(false)
       expect(updateResult).toBe(null)
+    })
+  })
+
+  // QA 2.2.25 NEW-01: Settings has to say what a check found, and a check
+  // that failed must not read as "up to date".
+  describe('checkForUpdateNow', () => {
+    const checkNow = async () => {
+      const { result } = renderHook(() => useAppUpdater())
+      let outcome: unknown
+      await act(async () => {
+        outcome = await result.current.checkForUpdateNow()
+      })
+      return { result, outcome }
+    }
+
+    it('names the update it found', async () => {
+      mockUpdaterCheck.mockResolvedValue({ version: '2.2.26' })
+
+      const { result, outcome } = await checkNow()
+
+      expect(outcome).toEqual({
+        status: 'available',
+        update: { version: '2.2.26' },
+      })
+      expect(result.current.updateState.isUpdateAvailable).toBe(true)
+    })
+
+    it('says the app is up to date when the server has nothing newer', async () => {
+      mockUpdaterCheck.mockResolvedValue(null)
+
+      const { outcome } = await checkNow()
+
+      expect(outcome).toEqual({ status: 'up-to-date' })
+    })
+
+    it('reports a check that could not reach the server as failed', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      mockUpdaterCheck.mockRejectedValue(new Error('error sending request'))
+
+      const { result, outcome } = await checkNow()
+
+      expect(outcome).toEqual({ status: 'failed' })
+      expect(result.current.updateState.isUpdateAvailable).toBe(false)
+    })
+
+    it('says why nothing was checked', async () => {
+      mockIsDev.mockReturnValue(true)
+      expect((await checkNow()).outcome).toEqual({
+        status: 'not-checked',
+        reason: 'development',
+      })
+
+      mockIsDev.mockReturnValue(false)
+      mockIsPackageManaged.mockResolvedValue(true)
+      expect((await checkNow()).outcome).toEqual({
+        status: 'not-checked',
+        reason: 'package-managed',
+      })
+
+      Object.assign(global, { AUTO_UPDATER_DISABLED: true })
+      try {
+        expect((await checkNow()).outcome).toEqual({
+          status: 'not-checked',
+          reason: 'disabled',
+        })
+      } finally {
+        Object.assign(global, { AUTO_UPDATER_DISABLED: false })
+      }
+      expect(mockUpdaterCheck).not.toHaveBeenCalled()
     })
   })
 

@@ -75,10 +75,13 @@ export function ImportLocalFile() {
     if (typeof picked === 'string') setMlxFolder(picked)
   }
 
+  // Below the toolbar's compact step the label hides and the icon stays;
+  // the accessible name and the tooltip keep saying what it does.
+  const name = t('hub:import.button')
   const label = (
     <>
       <Upload size={14} />
-      {t('hub:import.button')}
+      <span className="hub-toolbar-label">{name}</span>
     </>
   )
 
@@ -87,7 +90,7 @@ export function ImportLocalFile() {
       {mlxProvider ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button size="sm" variant="import">
+            <Button size="sm" variant="import" aria-label={name} title={name}>
               {label}
             </Button>
           </DropdownMenuTrigger>
@@ -103,7 +106,13 @@ export function ImportLocalFile() {
           </DropdownMenuContent>
         </DropdownMenu>
       ) : (
-        <Button size="sm" variant="import" onClick={() => void pickFile()}>
+        <Button
+          size="sm"
+          variant="import"
+          aria-label={name}
+          title={name}
+          onClick={() => void pickFile()}
+        >
           {label}
         </Button>
       )}

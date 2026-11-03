@@ -7,6 +7,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { useInferenceStatus } from '@/hooks/useInferenceStatus'
 import { toolActivityLabel } from '@/lib/tools/activity-label'
 import type { TraceBlock } from '@/lib/tools/types'
 import { cn } from '@/lib/utils'
@@ -39,6 +40,9 @@ export function ToolActivityGroup({
   onRetry,
 }: ToolActivityGroupProps) {
   const { t } = useTranslation('chat')
+  const { phase } = useInferenceStatus()
+  const loadingModel =
+    active && (phase === 'starting' || phase === 'restarting')
   // The newest concrete step owns the live headline, including the interval
   // after its result/error arrives and before the next call starts. Tool parts
   // can advance to an output state while the enclosing turn is still active;
@@ -54,20 +58,22 @@ export function ToolActivityGroup({
   // timeline, but new tool calls never expand it and shove the answer around.
   const [open, setOpen] = useState(false)
 
-  const summary = headlineTool
-    ? toolActivityLabel(
-        headlineTool.toolName,
-        headlineTool.presentation,
-        headlineTool.state,
-        t
-      )
-    : live
-      ? t('activity.working')
-      : errorMessage
-        ? errorMessage
-        : tools.length > 0
-          ? t('activity.completedActions', { count: tools.length })
-          : t('activity.working')
+  const summary = loadingModel
+    ? t('activity.loadingModel')
+    : headlineTool
+      ? toolActivityLabel(
+          headlineTool.toolName,
+          headlineTool.presentation,
+          headlineTool.state,
+          t
+        )
+      : live
+        ? t('activity.working')
+        : errorMessage
+          ? errorMessage
+          : tools.length > 0
+            ? t('activity.completedActions', { count: tools.length })
+            : t('activity.working')
 
   const hasDetails = tools.length > 0 || Boolean(errorMessage)
   const StatusIcon =

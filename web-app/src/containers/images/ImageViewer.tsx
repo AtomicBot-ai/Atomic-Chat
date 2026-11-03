@@ -35,6 +35,7 @@ import {
   type GalleryImageItem,
 } from '@/services/diffusion/types'
 import { ImageRecipePopover } from './ImageRecipePopover'
+import { mediaPreviewFrameStyle } from './mediaPreview'
 
 type ImageViewerProps = {
   item: GalleryImageItem | null
@@ -58,6 +59,10 @@ const isEditableTarget = (target: EventTarget | null) => {
 /**
  * The selected image, large, with the toolbar: recipe, save a copy, reveal in
  * the file manager, delete. Click the image for a full-screen preview.
+ *
+ * The viewer is as tall as the picture and its toolbar, so the actions sit on
+ * the picture's bottom edge whatever its shape; the page gives the gallery
+ * the rest of the pane.
  *
  * Arrow keys step through the gallery and Delete opens the confirmation —
  * unless focus is in a text field, where those keys mean what they always do.
@@ -207,19 +212,20 @@ export const ImageViewer = memo(function ImageViewer({
 
   return (
     <div
-      className="group/viewer @container grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto] gap-2 overflow-hidden px-6 pt-4 pb-2"
+      className="group/viewer @container flex min-w-0 flex-col gap-2 overflow-hidden px-6 pt-4 pb-2"
       data-testid="image-viewer"
     >
-      {/* Keep the control itself definite-sized. If it shrink-wraps the
-          intrinsic bitmap, percentage max sizes become circular and can be
-          recomputed differently after a workflow route change. */}
+      {/* The frame's size comes from container units — the region's width
+          and the pane's height cap — never from the intrinsic bitmap, so it
+          is right from the first paint and stays put across a workflow route
+          change. The region is as tall as the frame. */}
       <div
-        className="relative flex min-h-0 min-w-0 items-start justify-center overflow-hidden [container-type:size]"
+        className="relative flex min-w-0 justify-center [container-type:inline-size]"
         data-testid="image-viewer-region"
       >
         <button
           type="button"
-          className="group/image relative flex size-full min-h-0 min-w-0 items-start justify-center overflow-hidden rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="group/image relative flex w-full min-w-0 justify-center overflow-hidden rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-label={t('images:viewer.fullscreen')}
           onClick={() => {
             setFullscreen(true)
@@ -229,10 +235,7 @@ export const ImageViewer = memo(function ImageViewer({
           <span
             className="relative block shrink-0 overflow-hidden rounded-lg shadow-md"
             data-testid="image-viewer-frame"
-            style={{
-              width: `min(100cqw, ${100 * item.width / item.height}cqh)`,
-              height: `min(100cqh, ${100 * item.height / item.width}cqw)`,
-            }}
+            style={mediaPreviewFrameStyle(item.width, item.height)}
           >
             {/* The frame owns geometry and clipping from the first paint. Only
                 this inner layer is animated, and only its opacity changes, so
@@ -281,9 +284,9 @@ export const ImageViewer = memo(function ImageViewer({
         </Button>
       </div>
 
-      {/* The actions for the open image, on their own row under it rather
-          than over it. On a narrow canvas the labels fold away and the icons
-          stay. */}
+      {/* The actions for the open image, on their own row right under it
+          rather than over it. On a narrow canvas the labels fold away and the
+          icons stay. */}
       <div className="flex min-w-0 items-center justify-center gap-0.5 [&_button>span]:hidden @[32rem]:[&_button>span]:inline">
         <ImageRecipePopover
           recipe={item.recipe}

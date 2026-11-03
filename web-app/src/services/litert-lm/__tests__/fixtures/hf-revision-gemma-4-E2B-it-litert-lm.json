@@ -1,0 +1,145 @@
+{
+  "id": "litert-community/gemma-4-E2B-it-litert-lm",
+  "modelId": "litert-community/gemma-4-E2B-it-litert-lm",
+  "author": "litert-community",
+  "sha": "a790a852d433991c0c0a41c1154cf9b3850300fa",
+  "lastModified": "2026-10-22T15:29:09.000Z",
+  "gated": false,
+  "disabled": false,
+  "library_name": "litert-lm",
+  "tags": [
+    "litert-lm",
+    "base_model:google/gemma-4-E2B-it",
+    "base_model:finetune:google/gemma-4-E2B-it",
+    "license:apache-2.0",
+    "region:us"
+  ],
+  "cardData": {
+    "license": "apache-2.0",
+    "base_model": [
+      "google/gemma-4-E2B-it"
+    ]
+  },
+  "siblings": [
+    {
+      "rfilename": ".gitattributes",
+      "blobId": "0cef36c3a406d6d6a5dec9cd492cbcc5f03b6efd",
+      "size": 2485
+    },
+    {
+      "rfilename": "README.md",
+      "blobId": "af31466749de8331a627ade5b939349a27173400",
+      "size": 17262
+    },
+    {
+      "rfilename": "chat_template.jinja",
+      "blobId": "fc07877d13ebc35a1cf9a2fefb7a253ee8603412",
+      "size": 11995
+    },
+    {
+      "rfilename": "gemini4_2b_sizes.png",
+      "blobId": "a650f5fd305ec61d81a3c9b1f12cddd59a901d6d",
+      "size": 118939,
+      "lfs": {
+        "sha256": "0f268b3b6f268ae7b50ea49267694a380c0ff9d446b5ef71065ab8908591865a",
+        "size": 118939,
+        "pointerSize": 131
+      }
+    },
+    {
+      "rfilename": "gemma-4-E2B-it-gpu.litertlm",
+      "blobId": "59ecc4e2f37b090baa877e4cff5ec07c090ef2f6",
+      "size": 2008432640,
+      "lfs": {
+        "sha256": "a53a59001894c58e6bdb5b9b227709f91a2e3e556baa7d85acf9c55402ba5cf5",
+        "size": 2008432640,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "gemma-4-E2B-it-web.litertlm",
+      "blobId": "5913a992e127877cea8ff08f4677387a4e0a192c",
+      "size": 2008432640,
+      "lfs": {
+        "sha256": "3a08e8d94e23b814ae5414469c370c503813949acb8ceaa17e4ebf8a35af35b5",
+        "size": 2008432640,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "gemma-4-E2B-it-web.task",
+      "blobId": "e77bb3c413764f81e823b4e2d7daaf21ba5924ed",
+      "size": 2003697664,
+      "lfs": {
+        "sha256": "2cbff161177a4d51c9d04360016185976f504517ba5758cd10c1564e5421c5a5",
+        "size": 2003697664,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "gemma-4-E2B-it.litertlm",
+      "blobId": "6ee39c6e26084e9e2933a64a2b92231d532df6f7",
+      "size": 2588147712,
+      "lfs": {
+        "sha256": "181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c",
+        "size": 2588147712,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "gemma-4-E2B-it_Google_Tensor_G5.litertlm",
+      "blobId": "93dd8ec880c18bcf11d2ae8a4da8fbf3922bbdc1",
+      "size": 3113545589,
+      "lfs": {
+        "sha256": "af1082986639ecde7db95d91be6fe54f8b6b458104734c5bafc204e69d6852dc",
+        "size": 3113545589,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "gemma-4-E2B-it_Google_Tensor_G6.litertlm",
+      "blobId": "141f5ad51bc5acf834cc4b75ff256347e4111718",
+      "size": 3313938293,
+      "lfs": {
+        "sha256": "f86c7c19c736e9307267946edef58b0a45494a9127036d54d90dd6b7617c95b7",
+        "size": 3313938293,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "gemma-4-E2B-it_Qualcomm_QCS8275.litertlm",
+      "blobId": "e92d14eaa66ac62e53fbd5b67e76913276c46bdb",
+      "size": 2722352245,
+      "lfs": {
+        "sha256": "794339191f0e1dc8353b7f84fb205af5e62870ed5647a315eddbf7a9a9c90f06",
+        "size": 2722352245,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "gemma-4-E2B-it_intel_LNL.litertlm",
+      "blobId": "5460749dbacdb98be944c98b471fffa3ad1523d3",
+      "size": 2960506880,
+      "lfs": {
+        "sha256": "dacc900381bdc837696fc5deb1f3b7dbfe0854295dc3934564e1841086ab0383",
+        "size": 2960506880,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "gemma-4-E2B-it_intel_PTL.litertlm",
+      "blobId": "95a56d930ded277e65c919097d2c3861eb721f52",
+      "size": 2948333568,
+      "lfs": {
+        "sha256": "8c0877f721ff0c057a007b330bbf9f6ec4d0278e730f88db95f2252372c701e8",
+        "size": 2948333568,
+        "pointerSize": 135
+      }
+    },
+    {
+      "rfilename": "notebook.ipynb",
+      "blobId": "278596be5f22c128b57864cb24a7ce6efedd25dc",
+      "size": 24232
+    }
+  ]
+}

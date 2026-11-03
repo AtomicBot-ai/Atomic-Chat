@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { AvatarEmoji } from '../AvatarEmoji'
 
 describe('AvatarEmoji Component', () => {
@@ -120,5 +120,83 @@ describe('AvatarEmoji Component', () => {
     
     const img = screen.getByRole('img')
     expect(img).toHaveAttribute('alt', 'Custom avatar')
+  })
+
+  // QA 2.2.23 #12: an assistant without an avatar showed an empty tile.
+  describe('fallback for an assistant without a usable avatar', () => {
+    const fallbackOf = (container: HTMLElement) =>
+      container.querySelector('[data-slot="avatar-fallback"]')
+
+    it('shows the first letter of the name when there is no avatar', () => {
+      const { container } = render(
+        <AvatarEmoji avatar={undefined} name="RC 2.2.0 QA Assistant" />
+      )
+      expect(fallbackOf(container)).toHaveTextContent(/^R$/)
+      expect(fallbackOf(container)).toHaveAttribute('aria-hidden', 'true')
+    })
+
+    it('treats a blank avatar as missing', () => {
+      const { container } = render(<AvatarEmoji avatar="  " name="writer" />)
+      expect(fallbackOf(container)).toHaveTextContent(/^W$/)
+    })
+
+    it('falls back when the avatar image fails to load, and retries a new one', () => {
+      const { container, rerender } = render(
+        <AvatarEmoji avatar="/images/gone.png" name="Research" />
+      )
+      fireEvent.error(screen.getByRole('img'))
+      expect(screen.queryByRole('img')).toBeNull()
+      expect(fallbackOf(container)).toHaveTextContent(/^R$/)
+
+      rerender(<AvatarEmoji avatar="/images/other.png" name="Research" />)
+      expect(screen.getByRole('img')).toHaveAttribute(
+        'src',
+        '/images/other.png'
+      )
+    })
+
+    it('uses the assistant glyph for a name without a letter or digit', () => {
+      const { container } = render(<AvatarEmoji name="  --  " />)
+      const fallback = fallbackOf(container)
+      expect(fallback).not.toBeNull()
+      expect(fallback!.querySelector('svg')).not.toBeNull()
+    })
+
+    it('sizes the initial to the slot it is given', () => {
+      const { container } = render(
+        <AvatarEmoji name="Writer" fallbackClassName="size-6 text-base" />
+      )
+      expect(fallbackOf(container)).toHaveClass('size-6', 'text-base')
+      expect(fallbackOf(container)).not.toHaveClass('size-4')
+    })
+
+    it('renders a given fallback instead of the initial, also for a broken image', () => {
+      const { rerender } = render(
+        <AvatarEmoji name="Writer" fallback={<span>pick</span>} />
+      )
+      expect(screen.getByText('pick')).toBeInTheDocument()
+
+      rerender(
+        <AvatarEmoji
+          avatar="/images/gone.png"
+          name="Writer"
+          fallback={<span>pick</span>}
+        />
+      )
+      fireEvent.error(screen.getByRole('img'))
+      expect(screen.getByText('pick')).toBeInTheDocument()
+    })
+
+    it.each([
+      ['  écrivain', 'É'],
+      ['2.2 QA', '2'],
+      ['— помощник', 'П'],
+    ])(
+      'takes the first letter or digit of %j, upper-cased',
+      (name, initial) => {
+        const { container } = render(<AvatarEmoji name={name} />)
+        expect(fallbackOf(container)?.textContent).toBe(initial)
+      }
+    )
   })
 })

@@ -1,0 +1,37 @@
+[
+  {
+    "key": "ctx_len",
+    "title": "Context Length",
+    "description": "Maximum prompt plus reply length in tokens. 0 takes the model's own length; a larger value is cut to what the model file allows. Applies from the next model load.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 0,
+      "placeholder": "0",
+      "type": "number",
+      "min": 0,
+      "max": 1048576,
+      "textAlign": "right"
+    }
+  },
+  {
+    "key": "speculative_decoding",
+    "title": "Speculative Decoding",
+    "description": "Use the draft model built into the file to speed up generation, when the file has one. Applies from the next model load.",
+    "controllerType": "checkbox",
+    "controllerProps": {
+      "value": true
+    }
+  },
+  {
+    "key": "timeout",
+    "title": "Timeout for LiteRT-LM",
+    "description": "How long a LiteRT-LM model may take to load, in seconds: opening the file, creating the engine (compiling GPU shaders on the first run) and starting the host's server.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 600,
+      "placeholder": "e.g 600",
+      "type": "number",
+      "textAlign": "right"
+    }
+  }
+]

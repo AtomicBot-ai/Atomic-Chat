@@ -31,5 +31,25 @@
   "personality": "Personnalité",
   "capabilities": "Capacités",
   "instructionsDateHint": "Conseil : Utilisez {{current_date}} pour insérer la date d'aujourd'hui.",
-  "maxToolSteps": "Limite d’étapes de l’outil"
+  "maxToolSteps": "Limite d’étapes de l’outil",
+  "setAsDefault": "Définir comme assistant par défaut",
+  "isDefault": "Par défaut",
+  "defaultAssistantSection": "Assistant par défaut",
+  "defaultAssistantDesc": "Utilisé au démarrage d'une nouvelle discussion",
+  "allAssistants": "Tous les assistants",
+  "none": "Aucun",
+  "noAssistants": "Aucun assistant disponible",
+  "samplingTrigger": "Échantillonnage — {{name}}",
+  "contextSize": "Taille du contexte",
+  "contextSizeHint": "Taille du contexte du prompt. La modifier redémarre le modèle en cours d'exécution.",
+  "contextSizeFit": "Ajuster à la mémoire de l'appareil",
+  "contextSizeFitHint": "Laissez le moteur choisir le plus grand contexte compatible avec cet appareil. Désactivé : réglez-le manuellement.",
+  "contextSizeFitOn": "Choisie par le moteur pour tenir dans la mémoire de cet appareil. Désactivez l'option pour la régler manuellement.",
+  "contextSizeFitAtMax": "Le contexte est ajusté à la mémoire de cet appareil. Désactivez \"Ajuster à la mémoire de l'appareil\" dans les paramètres du modèle pour le régler manuellement.",
+  "paramCategory": {
+    "sampling": "Échantillonnage",
+    "penalties": "Pénalités",
+    "general": "Général",
+    "context": "Contexte"
+  }
 }

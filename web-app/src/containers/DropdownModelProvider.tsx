@@ -14,7 +14,10 @@ import {
 } from '@/lib/cloud-providers'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
-import { ModelSourceBadge } from '@/components/ModelSourceBadge'
+import {
+  ModelSourceBadge,
+  modelSourceLabel,
+} from '@/components/ModelSourceBadge'
 import {
   IconChevronDown,
   IconChevronLeft,
@@ -45,16 +48,27 @@ import { isLocalProvider } from '@/utils/registerRemoteProvider'
 import { switchToModel } from '@/utils/switchModel'
 import {
   compactModelDisplayName,
+  modelVariantDetails,
   qualifiedModelDisplayName,
 } from '@/lib/model-display-name'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
-import { useLeftPanel } from '@/hooks/useLeftPanel'
+import { useSidebarDocked } from '@/components/ui/sidebar'
 import { useRunSettingsPanel } from '@/stores/run-settings-panel-store'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { formatDownloadReadout } from '@/lib/downloadFormat'
 import { cancelDownload } from '@/lib/downloadCancellation'
+import { isPausableDownload } from '@/lib/downloadControls'
+import {
+  pauseOnboardingJob,
+  resumeOnboardingJob,
+  retryOnboardingJob,
+} from '@/lib/onboarding/job-controls'
+import {
+  usePendingOnboardingModel,
+  type PendingOnboardingModel,
+} from '@/hooks/usePendingOnboardingModel'
 import { downloadKind } from '@/lib/telemetry'
-import { isAnswerableModel } from '@/lib/answerable-model'
+import { isAnswerableModel, isEmbeddingOnlyModel } from '@/lib/answerable-model'
 import {
   HuggingFaceAction,
   ModelPickerEmptyState,
@@ -122,6 +136,92 @@ interface SearchableModel {
   value: string
 }
 
+type PickerModelOptionProps = {
+  item: SearchableModel
+  selected: boolean
+  selectedClassName: string
+  /** Favorites mix engines, so each of their rows names its own. */
+  showProvider?: boolean
+  onSelect: (item: SearchableModel) => void
+}
+
+/**
+ * One installed model in the list. The name has the first line to itself (two
+ * at most); what tells it apart from its siblings — quantization, owner, the
+ * app it was found in — sits under it, so a badge never takes the name's width
+ * and an ellipsis never eats the quant. The full id is the tooltip and ends
+ * the accessible name.
+ */
+function PickerModelOption({
+  item,
+  selected,
+  selectedClassName,
+  showProvider = false,
+  onSelect,
+}: PickerModelOptionProps) {
+  const { model } = item
+  const name = compactModelDisplayName(model)
+  const { quant, owner } = modelVariantDetails(model)
+  const source = modelSourceLabel(model.source)
+  // "ollama/…" found by the Ollama scan: the badge already says where.
+  const details = [
+    quant,
+    owner?.toLowerCase() === source?.toLowerCase() ? undefined : owner,
+  ].filter((part): part is string => !!part)
+  const spoken = [name, ...details, source].filter(Boolean).join(', ')
+
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      aria-label={model.id === name ? spoken : `${spoken} (${model.id})`}
+      title={model.id}
+      onClick={() => onSelect(item)}
+      className={cn(
+        'mx-1 mb-1 flex w-[calc(100%-0.5rem)] min-w-0 items-center gap-2 rounded-sm px-2 py-1.5 text-left transition-all duration-200',
+        'hover:bg-secondary/40',
+        selected && selectedClassName
+      )}
+    >
+      <span
+        aria-hidden="true"
+        className={cn(
+          'flex size-4.5 shrink-0 items-center justify-center rounded-full border',
+          selected ? 'border-blue-500' : 'border-muted-foreground/40'
+        )}
+        data-testid={`model-selection-${item.value}`}
+      >
+        {selected && <span className="size-2 rounded-full bg-blue-500" />}
+      </span>
+      {showProvider && (
+        <div className="shrink-0">
+          <ProvidersAvatar provider={item.provider} />
+        </div>
+      )}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <span
+          data-testid="model-option-name"
+          className="line-clamp-2 text-sm wrap-anywhere"
+        >
+          {name}
+        </span>
+        {(details.length > 0 || source) && (
+          <span
+            data-testid="model-option-details"
+            className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground"
+          >
+            {details.length > 0 && (
+              <span className="min-w-0 truncate">{details.join(' · ')}</span>
+            )}
+            <ModelSourceBadge source={model.source} className="shrink-0" />
+          </span>
+        )}
+      </div>
+    </button>
+  )
+}
+
 // Helper functions for localStorage
 const setLastUsedModel = (provider: string, model: string) => {
   try {
@@ -152,6 +252,111 @@ type DropdownModelProviderProps = {
  */
 type PickerView = 'main' | 'models'
 
+/**
+ * What the picker says about the first run's chat model: how its download
+ * stands, or Queued while it waits its turn in the run's queue.
+ */
+const pendingStatusOf = (
+  pending: PendingOnboardingModel
+): PendingOnboardingModel['status'] | 'queued' =>
+  pending.view.state === 'queued' ? 'queued' : pending.status
+
+/**
+ * The first run's chat model at the top of the panel until it is ready,
+ * whatever is selected meanwhile (a cloud model, say): its progress, and
+ * Pause, Resume or Retry, the same controls the run's own strip offers.
+ */
+function PendingModelDownload({
+  pending,
+}: {
+  pending: PendingOnboardingModel
+}) {
+  const { t } = useTranslation()
+  const serviceHub = useServiceHub()
+  const download = useDownloadStore(
+    (state) => state.downloads[pending.job.taskId]
+  )
+  const { job, view } = pending
+  const status = pendingStatusOf(pending)
+  const readout =
+    status === 'interrupted' || status === 'queued'
+      ? t(`onboarding-handoff:picker.${status}`)
+      : formatDownloadReadout(t, {
+          progress: view.progress,
+          current: view.currentBytes,
+          total: view.totalBytes,
+          bytesPerSecond: download?.speed?.bytesPerSecond ?? 0,
+          stage: download?.stage,
+          paused: status === 'paused',
+        })
+  const action =
+    status === 'interrupted'
+      ? {
+          label: t('onboarding-handoff:picker.retry'),
+          run: () => retryOnboardingJob(job, { serviceHub, t }),
+        }
+      : status === 'paused'
+        ? {
+            label: t('onboarding-handoff:picker.resume'),
+            run: () => resumeOnboardingJob(job, { serviceHub, t }),
+          }
+        : status === 'downloading' && isPausableDownload(job.taskId)
+          ? {
+              label: t('onboarding-handoff:picker.pause'),
+              run: () => pauseOnboardingJob(job, serviceHub),
+            }
+          : null
+
+  return (
+    <section
+      aria-label={t('onboarding-handoff:picker.section')}
+      data-testid="model-picker-pending"
+      className="shrink-0 border-b p-3 text-xs"
+    >
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <strong className="truncate text-sm font-medium" title={job.title}>
+          {job.title}
+        </strong>
+        <span className="shrink-0 tabular-nums text-muted-foreground">
+          {view.percent}%
+        </span>
+      </div>
+      <div
+        role="progressbar"
+        aria-label={t('onboarding-handoff:picker.progress', {
+          name: job.title,
+        })}
+        aria-valuenow={view.percent}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        className="my-2 h-1.5 overflow-hidden rounded-full bg-secondary"
+      >
+        <div
+          className={cn(
+            'h-full rounded-full transition-[width] duration-500 motion-reduce:transition-none',
+            status === 'interrupted' ? 'bg-destructive' : 'bg-primary'
+          )}
+          style={{ width: `${view.percent}%` }}
+        />
+      </div>
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <span className="truncate text-muted-foreground" title={readout}>
+          {readout}
+        </span>
+        {action && (
+          <button
+            type="button"
+            className="shrink-0 cursor-pointer text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            onClick={action.run}
+          >
+            {action.label}
+          </button>
+        )}
+      </div>
+    </section>
+  )
+}
+
 const DropdownModelProvider = memo(function DropdownModelProvider({
   className,
   compact: compactOverride,
@@ -174,6 +379,15 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
     (state) => state.localDownloadingModels
   )
   const pausedDownloads = useDownloadStore((state) => state.pausedDownloads)
+  // The first run's chat model until it is ready: the panel shows its
+  // download at the top whatever is selected, and with nothing selected the
+  // pill says how far it is instead of "Select a model".
+  const pendingDownload = usePendingOnboardingModel()
+  const pending = selectedModel?.id ? null : pendingDownload
+  // The selection as of the latest render, for the startup check below that
+  // reads it after an await.
+  const selectedModelRef = useRef(selectedModel)
+  selectedModelRef.current = selectedModel
 
   // Search state
   const [open, setOpen] = useState(false)
@@ -197,7 +411,9 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   // narrowest, so the pill folds down to the model's mark; the name stays on
   // hover and in the panel. With nothing selected there is no mark to fold
   // down to, so "Select a model" stays.
-  const leftBarOpen = useLeftPanel((state) => state.open)
+  // The sidebar as it is, not the saved preference: in a window too narrow
+  // to dock it, an open sidebar lies over the page and takes no room.
+  const leftBarOpen = useSidebarDocked()
   const rightBarOpen = useRunSettingsPanel((state) => state.isOpen)
   const compact =
     (compactOverride ?? (leftBarOpen && rightBarOpen)) && !!selectedModel?.id
@@ -331,11 +547,43 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
         // session); otherwise leave the selector blank.
         try {
           const activeModelIds = await serviceHub.models().getActiveModels()
-          const activeModelId = activeModelIds?.[0]
-          if (activeModelId) {
-            const activeProvider = providers.find(
-              (p) => p.active && p.models.some((m) => m.id === activeModelId)
+          // A model selected while the engines were being asked stands: the
+          // first run selects its model the moment the download lands, the
+          // same moment the new provider list brings this check here.
+          if (selectedModelRef.current) return
+          // Project indexing loads the embedding model in the same engine, so
+          // it is "running" too — and it used to land in the composer as the
+          // chat model (AC-01). Only a running model that can chat counts.
+          for (const activeModelId of activeModelIds ?? []) {
+            const listing = providers.filter(
+              (p) =>
+                p.active &&
+                p.models.some(
+                  (m) => m.id === activeModelId && !isEmbeddingOnlyModel(m)
+                )
             )
+            // The ids above merge every engine, and both llama.cpp providers
+            // list the same models folder: the first provider listing a
+            // running id need not be the one running it. Taking TurboQuant
+            // for a model upstream served loaded it again there (B12), so
+            // with more than one candidate each engine is asked.
+            let activeProvider: (typeof listing)[number] | undefined =
+              listing[0]
+            if (listing.length > 1) {
+              const serving = await Promise.all(
+                listing.map((p) =>
+                  serviceHub
+                    .models()
+                    .getActiveModels(p.provider)
+                    .then(
+                      (ids) => (ids ?? []).includes(activeModelId),
+                      () => false
+                    )
+                )
+              )
+              if (selectedModelRef.current) return
+              activeProvider = listing.find((_, index) => serving[index])
+            }
             if (activeProvider) {
               selectModelProvider(activeProvider.provider, activeModelId)
               setLastUsedModel(activeProvider.provider, activeModelId)
@@ -345,12 +593,17 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
         } catch (error) {
           console.debug('Error checking active models on startup:', error)
         }
+        if (selectedModelRef.current) return
         selectModelProvider('', '')
         return
       }
 
       const lastUsed = getLastUsedModel()
-      if (lastUsed && checkModelExists(lastUsed.provider, lastUsed.model)) {
+      const lastUsedModel = lastUsed
+        ? checkModelExists(lastUsed.provider, lastUsed.model)
+        : undefined
+      // A last-used embedding model is what the AC-01 bug left behind.
+      if (lastUsed && lastUsedModel && !isEmbeddingOnlyModel(lastUsedModel)) {
         selectModelProvider(lastUsed.provider, lastUsed.model)
         if (lastUsed.provider === 'llamacpp') {
           await serviceHub
@@ -369,13 +622,15 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
               p.provider === 'llamacpp' ||
               p.provider === 'atomic-prism' ||
               p.provider === 'mlx' ||
-              p.provider === 'foundry-local') &&
+              p.provider === 'foundry-local' ||
+              p.provider === 'litert-lm' ||
+              p.provider === 'geniex') &&
             isPickerSection(p) &&
-            p.models.length > 0
+            p.models.some((m) => !isEmbeddingOnlyModel(m))
         )
         if (localProvider && localProvider.models.length > 0) {
           const firstModel = localProvider.models.find(
-            (m) => m.id !== EMBEDDING_MODEL_ID
+            (m) => !isEmbeddingOnlyModel(m)
           )
           if (!firstModel) {
             selectModelProvider('', '')
@@ -558,10 +813,18 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
         })
       }
     }
-    return [...rows.values()].filter((download) =>
-      isChatModelDownload(download.id)
+    // The first run's model has its own section at the top of the panel.
+    return [...rows.values()].filter(
+      (download) =>
+        isChatModelDownload(download.id) &&
+        download.id !== pendingDownload?.job.taskId
     )
-  }, [downloads, localDownloadingModels, pausedDownloads])
+  }, [
+    downloads,
+    localDownloadingModels,
+    pausedDownloads,
+    pendingDownload?.job.taskId,
+  ])
 
   // Create Fzf instance for fuzzy search
   const fzfInstance = useMemo(() => {
@@ -725,6 +988,20 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   const detailDisplayModel = selectedModel
     ? qualifiedModelDisplayName(selectedModel)
     : displayModel
+  const pendingStatus = pending ? pendingStatusOf(pending) : null
+  const pendingLabel = pending
+    ? pendingStatus === 'interrupted' || pendingStatus === 'queued'
+      ? t(`onboarding-handoff:picker.${pendingStatus}`)
+      : t(`onboarding-handoff:picker.${pendingStatus}`, {
+          percent: pending.view.percent,
+        })
+    : null
+  const pendingName = pending
+    ? t('onboarding-handoff:picker.trigger', {
+        name: pending.job.title,
+        status: pendingLabel,
+      })
+    : undefined
 
   if (!providers.length) return null
 
@@ -739,26 +1016,40 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
         data-testid="model-picker-pill-shell"
         className={cn(
           'inline-flex h-7 shrink-0 overflow-hidden rounded-full',
-          compact && selectedModel?.id
-            ? 'w-20'
-            : selectedModel?.id
-              ? 'w-[10.5rem]'
-              : 'w-32',
+          pending
+            ? 'w-44'
+            : compact && selectedModel?.id
+              ? 'w-20'
+              : selectedModel?.id
+                ? 'w-[10.5rem]'
+                : 'w-32',
           className
         )}
       >
         <div className="inline-flex h-7 w-full min-w-0 items-center rounded-full border bg-secondary/40 text-xs transition-colors duration-200 hover:bg-secondary/70">
-          <ActiveModelIndicator className="ml-1.5" />
+          {!pending && <ActiveModelIndicator className="ml-1.5" />}
           <PopoverTrigger asChild>
             <button
               type="button"
-              title={selectedModel?.id ?? displayModel}
-              aria-label={compact ? displayModel : undefined}
+              title={pendingName ?? selectedModel?.id ?? displayModel}
+              aria-label={pendingName ?? (compact ? displayModel : undefined)}
               data-test-id="model-picker-trigger"
               className={cn(
                 'inline-flex h-full min-w-0 flex-1 items-center justify-center gap-1 rounded-full px-1.5'
               )}
             >
+              {pending && (
+                <IconLoader2
+                  aria-hidden="true"
+                  size={14}
+                  data-testid="model-picker-pending-spinner"
+                  className={cn(
+                    'shrink-0 text-muted-foreground',
+                    pendingStatus === 'downloading' &&
+                      'animate-spin motion-reduce:animate-none'
+                  )}
+                />
+              )}
               {provider && (
                 <div className="shrink-0">
                   <ProvidersAvatar provider={provider} className="size-4" />
@@ -766,13 +1057,14 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
               )}
               {(!compact || !selectedModel?.id) && (
                 <span
-                  key={displayModel}
+                  key={pending ? 'pending' : displayModel}
                   className={cn(
                     'truncate font-medium animate-in fade-in-0 duration-150',
-                    !selectedModel?.id && 'text-muted-foreground'
+                    !selectedModel?.id && 'text-muted-foreground',
+                    pending && 'tabular-nums'
                   )}
                 >
-                  {displayModel}
+                  {pendingLabel ?? displayModel}
                 </span>
               )}
               {settledEffortLabel && (
@@ -795,6 +1087,9 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
       <PopoverContent
         className={cn(
           'w-70 p-0 backdrop-blur-2xl bg-background/95 border',
+          // The download section sits above either view; the models view
+          // then takes the height that is left.
+          pendingDownload && 'flex flex-col',
           view === 'main' &&
             'w-[min(22rem,calc(100dvw-2rem))] max-h-[var(--radix-popover-content-available-height)] overflow-y-auto',
           view === 'models' &&
@@ -813,6 +1108,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
         avoidCollisions
         collisionPadding={16}
       >
+        {pendingDownload && <PendingModelDownload pending={pendingDownload} />}
         {view === 'main' ? (
           <div className="flex min-w-0 flex-col p-3">
             {/* The model row: what is selected, and the way into the list. */}
@@ -858,7 +1154,9 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
               'flex min-h-0 flex-col',
               pickerEmpty && !searchValue.trim()
                 ? 'w-full'
-                : 'size-full'
+                : pendingDownload
+                  ? 'w-full flex-1'
+                  : 'size-full'
             )}
           >
             {/* Search input, with the way back to the model row. */}
@@ -953,58 +1251,19 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                     </div>
 
                     {/* Favorite models */}
-                    {favoriteItems.map((searchableModel) => {
-                      const isSelected =
-                        selectedModel?.id === searchableModel.model.id &&
-                        selectedProvider === searchableModel.provider.provider
-
-                      return (
-                        <button
-                          type="button"
-                          role="radio"
-                          aria-checked={isSelected}
-                          key={`fav-${searchableModel.value}`}
-                          title={searchableModel.model.id}
-                          onClick={() => handleSelect(searchableModel)}
-                          className={cn(
-                            'mx-1 mb-1 flex w-[calc(100%-0.5rem)] min-w-0 items-center gap-2 rounded-sm px-2 py-1.5 text-left transition-all duration-200',
-                            'hover:bg-secondary/40',
-                            isSelected && 'bg-secondary/50'
-                          )}
-                        >
-                          <span
-                            aria-hidden="true"
-                            className={cn(
-                              'flex size-4.5 shrink-0 items-center justify-center rounded-full border',
-                              isSelected
-                                ? 'border-blue-500'
-                                : 'border-muted-foreground/40'
-                            )}
-                            data-testid={`model-selection-${searchableModel.value}`}
-                          >
-                            {isSelected && (
-                              <span className="size-2 rounded-full bg-blue-500" />
-                            )}
-                          </span>
-                          <div className="flex min-w-0 flex-1 items-center gap-1">
-                            <div className="shrink-0">
-                              <ProvidersAvatar
-                                provider={searchableModel.provider}
-                              />
-                            </div>
-                            <span className="text-sm truncate">
-                              {qualifiedModelDisplayName(searchableModel.model)}
-                            </span>
-                            {searchableModel.model.source && (
-                              <ModelSourceBadge
-                                source={searchableModel.model.source}
-                                className="shrink-0"
-                              />
-                            )}
-                          </div>
-                        </button>
-                      )
-                    })}
+                    {favoriteItems.map((searchableModel) => (
+                      <PickerModelOption
+                        key={`fav-${searchableModel.value}`}
+                        item={searchableModel}
+                        selected={
+                          selectedModel?.id === searchableModel.model.id &&
+                          selectedProvider === searchableModel.provider.provider
+                        }
+                        selectedClassName="bg-secondary/50"
+                        showProvider
+                        onSelect={handleSelect}
+                      />
+                    ))}
                   </div>
                 )}
 
@@ -1077,60 +1336,19 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                         </div>
 
                         {/* Models for this provider */}
-                        {models.map((searchableModel) => {
-                          const isSelected =
-                            selectedModel?.id === searchableModel.model.id &&
-                            selectedProvider ===
-                              searchableModel.provider.provider
-
-                          return (
-                            <button
-                              type="button"
-                              role="radio"
-                              aria-checked={isSelected}
-                              key={searchableModel.value}
-                              title={searchableModel.model.id}
-                              onClick={() => handleSelect(searchableModel)}
-                              className={cn(
-                                'mx-1 mb-1 flex w-[calc(100%-0.5rem)] min-w-0 items-center gap-2 rounded-sm px-2 py-1.5 text-left transition-all duration-200',
-                                'hover:bg-secondary/40',
-                                isSelected &&
-                                  'bg-secondary/60 hover:bg-secondary/60'
-                              )}
-                            >
-                              <span
-                                aria-hidden="true"
-                                className={cn(
-                                  'flex size-4.5 shrink-0 items-center justify-center rounded-full border',
-                                  isSelected
-                                    ? 'border-blue-500'
-                                    : 'border-muted-foreground/40'
-                                )}
-                                data-testid={`model-selection-${searchableModel.value}`}
-                              >
-                                {isSelected && (
-                                  <span className="size-2 rounded-full bg-blue-500" />
-                                )}
-                              </span>
-                              <div className="flex min-w-0 flex-1 items-center gap-2">
-                                <span
-                                  className="text-sm truncate"
-                                  title={searchableModel.model.id}
-                                >
-                                  {qualifiedModelDisplayName(
-                                    searchableModel.model
-                                  )}
-                                </span>
-                                {searchableModel.model.source && (
-                                  <ModelSourceBadge
-                                    source={searchableModel.model.source}
-                                    className="shrink-0"
-                                  />
-                                )}
-                              </div>
-                            </button>
-                          )
-                        })}
+                        {models.map((searchableModel) => (
+                          <PickerModelOption
+                            key={searchableModel.value}
+                            item={searchableModel}
+                            selected={
+                              selectedModel?.id === searchableModel.model.id &&
+                              selectedProvider ===
+                                searchableModel.provider.provider
+                            }
+                            selectedClassName="bg-secondary/60 hover:bg-secondary/60"
+                            onSelect={handleSelect}
+                          />
+                        ))}
                       </div>
                     )
                 })}

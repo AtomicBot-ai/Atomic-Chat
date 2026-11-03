@@ -5,17 +5,35 @@
     "functions": 60.71,
     "lines": 65.6
   },
-  "web-app/src/containers/SetupScreen.tsx": {
-    "statements": 79.29,
-    "branches": 66.22,
-    "functions": 86.66,
-    "lines": 79.29
+  "web-app/src/containers/onboarding/Onboarding.tsx": {
+    "statements": 100,
+    "branches": 82,
+    "functions": 100,
+    "lines": 100
+  },
+  "web-app/src/lib/onboarding/steps.ts": {
+    "statements": 100,
+    "branches": 91,
+    "functions": 100,
+    "lines": 100
+  },
+  "web-app/src/stores/onboarding-store.ts": {
+    "statements": 100,
+    "branches": 96,
+    "functions": 93,
+    "lines": 100
+  },
+  "web-app/src/lib/onboarding/jobs.ts": {
+    "statements": 100,
+    "branches": 92,
+    "functions": 100,
+    "lines": 100
   },
   "web-app/src/containers/SetupBackendStep.tsx": {
-    "statements": 3.21,
-    "branches": 100,
-    "functions": 0,
-    "lines": 3.21
+    "statements": 94,
+    "branches": 76,
+    "functions": 100,
+    "lines": 94
   },
   "web-app/src/utils/getModelToStart.ts": {
     "statements": 10.2,

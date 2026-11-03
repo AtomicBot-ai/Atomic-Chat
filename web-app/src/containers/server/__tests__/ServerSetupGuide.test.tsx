@@ -1,22 +1,25 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { control, hub, settle, restart, writeConfig } = vi.hoisted(() => ({
-  control: {
-    status: 'stopped' as 'running' | 'stopped' | 'pending',
-    isRunning: false,
-    isModelLoading: false,
-    isBusy: false,
-    start: vi.fn(),
-    stop: vi.fn(),
-    toggle: vi.fn(),
-    refreshStatus: vi.fn(),
-  },
-  hub: { tag: 'hub' },
-  settle: vi.fn(),
-  restart: vi.fn(),
-  writeConfig: vi.fn(),
-}))
+const { control, hub, settle, restart, writeConfig, openAgent } = vi.hoisted(
+  () => ({
+    control: {
+      status: 'stopped' as 'running' | 'stopped' | 'pending',
+      isRunning: false,
+      isModelLoading: false,
+      isBusy: false,
+      start: vi.fn(),
+      stop: vi.fn(),
+      toggle: vi.fn(),
+      refreshStatus: vi.fn(),
+    },
+    hub: { tag: 'hub' },
+    settle: vi.fn(),
+    restart: vi.fn(),
+    writeConfig: vi.fn(),
+    openAgent: vi.fn(),
+  })
+)
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({
@@ -56,12 +59,19 @@ vi.mock('@/lib/integration-agent-setup', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/integration-agent-setup')>()),
   writeAgentConfig: writeConfig,
 }))
+vi.mock('@/lib/integration-agent-run', () => ({
+  openIntegrationAgent: openAgent,
+}))
 
 import { useAppState } from '@/hooks/useAppState'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServerSetup } from '@/hooks/useServerSetup'
 import { useLaunchStore } from '@/stores/launch-store'
+import {
+  useOnboardingStore,
+  type OnboardingDestination,
+} from '@/stores/onboarding-store'
 
 import { ServerSetupGuide } from '../ServerSetupGuide'
 
@@ -111,6 +121,7 @@ describe('Server setup guide', () => {
       guideRevision: 0,
       guideActive: false,
     })
+    useOnboardingStore.getState().reset()
   })
 
   it('connects an agent: saves the model, starts the server with it, writes the agent config', async () => {
@@ -138,6 +149,32 @@ describe('Server setup guide', () => {
       'qwen3.5-4b',
       expect.objectContaining({ serverPort: 1337, apiKey: 'sk-atomic-key' })
     )
+    expect(useServerSetup.getState()).toMatchObject({
+      setupDone: true,
+      configuredAgents: [expect.objectContaining({ id: 'codex' })],
+    })
+    // Configured, the agent opens on the model it was set up for.
+    expect(openAgent).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'codex' }),
+      expect.objectContaining({
+        model: 'qwen3.5-4b',
+        server: expect.objectContaining({ serverPort: 1337 }),
+      })
+    )
+  })
+
+  it('does not open an agent known to be missing once its config is written', async () => {
+    useLaunchStore.setState({ installed: { codex: false } })
+    render(<ServerSetupGuide entry={{ path: 'agent', agentId: 'codex' }} />)
+
+    await configure()
+
+    expect(
+      await screen.findByText(/api:guide\.doneAgentTitle/)
+    ).toBeInTheDocument()
+    expect(writeConfig).toHaveBeenCalledTimes(1)
+    expect(openAgent).not.toHaveBeenCalled()
+    // Written, the agent counts as set up even though it did not open.
     expect(useServerSetup.getState()).toMatchObject({
       setupDone: true,
       configuredAgents: [expect.objectContaining({ id: 'codex' })],
@@ -227,6 +264,7 @@ describe('Server setup guide', () => {
     expect(useLocalApiServer.getState().serverPort).toBe(8080)
     expect(useServerSetup.getState().endpointConfigured).toBe(true)
     expect(writeConfig).not.toHaveBeenCalled()
+    expect(openAgent).not.toHaveBeenCalled()
   })
 
   it('says when the chosen agent is not installed yet, with the way to install it', () => {
@@ -260,6 +298,121 @@ describe('Server setup guide', () => {
     expect(
       screen.getByRole('button', { name: /api:guide\.configure/ })
     ).toBeDisabled()
+  })
+})
+
+describe('Server setup guide during first-run setup', () => {
+  const guideHint = () =>
+    screen.queryByRole('region', { name: 'onboarding-server:guide.label' })
+
+  /** A run handed off to `destination`, its chat model downloading or not. */
+  const handedOff = (
+    destination: OnboardingDestination,
+    downloading: boolean
+  ) => {
+    const store = useOnboardingStore.getState()
+    store.begin('full', 'server')
+    store.enqueue({
+      key: 'chat',
+      kind: 'chat',
+      title: 'Qwen3.5 4B',
+      taskId: 'qwen3.5-4b',
+      phase: downloading ? 'running' : 'done',
+    })
+    store.handOff(destination)
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    settle.mockResolvedValue(true)
+    writeConfig.mockResolvedValue(undefined)
+    useAppState.setState({ serverStatus: 'stopped' })
+    useLocalApiServer.setState({
+      defaultModelLocalApiServer: null,
+      lastServerModels: [],
+    })
+    useModelProvider.setState({
+      providers: [
+        {
+          provider: 'llamacpp-upstream',
+          active: true,
+          persist: true,
+          settings: [],
+          models: [{ id: 'qwen3.5-4b' }],
+        } as unknown as ModelProvider,
+      ],
+    })
+    useServerSetup.setState({
+      setupDone: false,
+      configuredAgents: [],
+      guide: null,
+      guideActive: false,
+    })
+    useOnboardingStore.getState().reset()
+  })
+
+  it('shows "Connect your tool" until Configure & start, which ends the hints', async () => {
+    handedOff('agents', false)
+    useOnboardingStore.getState().setGuide({ path: 'agents', hint: 1 })
+    render(<ServerSetupGuide entry={{ path: 'agent', agentId: 'codex' }} />)
+
+    expect(guideHint()).toHaveTextContent(
+      'onboarding-server:guide.connect.title'
+    )
+
+    await configure()
+
+    expect(
+      await screen.findByText(/api:guide\.doneAgentTitle/)
+    ).toBeInTheDocument()
+    expect(guideHint()).toBeNull()
+    expect(useOnboardingStore.getState().guide).toBeNull()
+    expect(useServerSetup.getState().setupDone).toBe(true)
+  })
+
+  it('ends the hints as the work starts, so a failed step does not bring one back', async () => {
+    settle.mockResolvedValueOnce(false)
+    handedOff('agents', false)
+    useOnboardingStore.getState().setGuide({ path: 'agents', hint: 1 })
+    render(<ServerSetupGuide entry={{ path: 'agent', agentId: 'codex' }} />)
+
+    await configure()
+
+    expect(screen.getByText('api:guide.errorTitle')).toBeInTheDocument()
+    expect(useOnboardingStore.getState().guide).toBeNull()
+
+    click('api:guide.reviewSettings')
+
+    expect(
+      screen.getByText('api:guide.reviewAgentTitle:{"name":"Codex CLI"}')
+    ).toBeInTheDocument()
+    expect(guideHint()).toBeNull()
+  })
+
+  it('waits for the model first-run setup is downloading for the server', () => {
+    handedOff('agents', true)
+    render(<ServerSetupGuide entry={{ path: 'agent', agentId: 'codex' }} />)
+
+    const configureButton = screen.getByRole('button', {
+      name: /onboarding-server:guide\.waitingForModel/,
+    })
+    expect(configureButton).toBeDisabled()
+
+    act(() => useOnboardingStore.getState().setJobPhase('chat', 'done'))
+
+    expect(
+      screen.getByRole('button', { name: /api:guide\.configure/ })
+    ).toBeEnabled()
+  })
+
+  it('does not wait when setup handed off to chat', () => {
+    handedOff('chat', true)
+    render(<ServerSetupGuide entry={{ path: 'agent', agentId: 'codex' }} />)
+
+    expect(
+      screen.getByRole('button', { name: /api:guide\.configure/ })
+    ).toBeEnabled()
+    expect(guideHint()).toBeNull()
   })
 })
 

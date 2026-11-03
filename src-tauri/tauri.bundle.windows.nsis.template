@@ -701,8 +701,6 @@ Section Install
     File /a "/oname=LICENSE" "D:\a\jan\jan\src-tauri\resources\LICENSE"
     SetOutPath "$INSTDIR\resources\pre-install"
     File /nonfatal /a /r "D:\a\jan\jan\src-tauri\resources\pre-install\"
-    SetOutPath "$INSTDIR\resources\bin"
-    File /a "/oname=jan-cli.exe" "D:\a\jan\jan\src-tauri\resources\bin\jan-cli.exe"
     SetOutPath $INSTDIR
 
   ; Copy external binaries

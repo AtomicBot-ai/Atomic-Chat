@@ -146,7 +146,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('reworking a conversation', () => {
       const first = await storedMessages(dataFolder)
 
       // Another answer to the same question replaces the first one.
-      await browser.$('button[title="Regenerate response"]').click()
+      await browser.$('button[aria-label="Regenerate"]').click()
       await expect
         .poll(async () => (await storedMessages(dataFolder)).find((m) => m.role === 'assistant')?.id, { timeout: 60_000 })
         .not.toBe(first[1]!.id)
@@ -172,7 +172,9 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('reworking a conversation', () => {
 
       // Removing the answer takes it off the page and out of the store.
       await browser.$('(//button[@aria-label="Edit Message"])[2]/following-sibling::button[1]').click()
-      await browser.$('button[aria-label="Delete Message"]').click()
+      // Every message's trash button is named "Delete Message" too: confirm
+      // inside the dialog.
+      await browser.$('[role="dialog"] button[aria-label="Delete Message"]').click()
       await expect
         .poll(async () => (await storedMessages(dataFolder)).map((m) => m.role), { timeout: 30_000 })
         .toEqual(['user'])

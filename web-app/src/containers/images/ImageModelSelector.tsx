@@ -3,6 +3,7 @@ import {
   IconCheck,
   IconChevronDown,
   IconCircleCheckFilled,
+  IconPlayerPlay,
   IconTrash,
 } from '@tabler/icons-react'
 import { toast } from 'sonner'
@@ -35,6 +36,10 @@ import { fitForQuant, recommendedQuant } from '@/lib/diffusion/fit'
 import { artifactId } from '@/lib/diffusion/models'
 import { familySupportsWorkflow } from '@/lib/diffusion/workflows'
 import { formatBytes } from '@/lib/downloadFormat'
+import {
+  engineFetchFailureText,
+  hostCheckHeadlineKey,
+} from '@/lib/engine-fetch-failure'
 import { DIFFUSION_FAMILY_ICON_KEYS } from '@/lib/model-logo'
 import { cn } from '@/lib/utils'
 import type {
@@ -362,6 +367,16 @@ function LocalEngineRow({ modality }: { modality: DiffusionModality }) {
   const ns = modality === 'video' ? 'videos' : 'images'
   const unsupported =
     engine.hostBackendId === null && !engine.resolvingHostBackend
+  // The row has room for the headline only; the reason is on hover.
+  const reason =
+    unsupported && engine.hostBackendReason
+      ? [
+          engineFetchFailureText(engine.hostBackendReason, t),
+          engine.hostBackendReason,
+        ]
+          .filter(Boolean)
+          .join(' — ')
+      : undefined
   const { transferred, total } = engine.progress
   const percent = total > 0 ? Math.round((transferred / total) * 100) : 0
   return (
@@ -369,11 +384,25 @@ function LocalEngineRow({ modality }: { modality: DiffusionModality }) {
       className="flex items-center gap-2.5 rounded-lg px-2.5 py-2"
       data-testid="image-models-engine-missing"
     >
-      <p className="min-w-0 flex-1 text-xs text-muted-foreground">
+      <p
+        className="min-w-0 flex-1 text-xs text-muted-foreground"
+        title={reason}
+      >
         {unsupported
-          ? t('images:setup.engine.unsupported')
+          ? t(hostCheckHeadlineKey(engine.hostBackendCheckFailed))
           : t('images:remote.localNeedsEngine')}
       </p>
+      {unsupported && engine.hostBackendCheckFailed && (
+        <Button
+          size="sm"
+          variant="secondary"
+          className="shrink-0"
+          onClick={() => void engine.retryHostBackend()}
+          data-testid="image-models-engine-retry"
+        >
+          {t('images:errors.actions.retry')}
+        </Button>
+      )}
       {!unsupported && (
         <Button
           size="sm"
@@ -787,14 +816,20 @@ function QuantDownloadRow({
 }) {
   const { t } = useTranslation()
   const percent = Math.round(artifact.progress * 100)
-  const actionLabel = artifact.downloading
-    ? t('common:cancelDownload')
-    : artifact.installed
-      ? t('images:model.finishDownload')
-      : t('images:model.download')
+  // A paused download (also one brought back after a relaunch) resumes from
+  // here; a running one cancels.
+  const actionLabel = artifact.paused
+    ? t('common:resumeDownload')
+    : artifact.downloading
+      ? t('common:cancelDownload')
+      : artifact.installed
+        ? t('images:model.finishDownload')
+        : t('images:model.download')
 
   const runAction = () => {
-    if (artifact.downloading) {
+    if (artifact.paused) {
+      void artifact.resume()
+    } else if (artifact.downloading) {
       void artifact.cancelDownload()
     } else {
       void artifact.download()
@@ -825,6 +860,13 @@ function QuantDownloadRow({
           <span
             className="absolute inset-y-0 left-0 bg-primary/20 transition-[width] duration-200"
             style={{ width: `${percent}%` }}
+            aria-hidden
+          />
+        )}
+        {artifact.paused && (
+          <IconPlayerPlay
+            size={12}
+            className="relative z-10 mr-1 shrink-0"
             aria-hidden
           />
         )}

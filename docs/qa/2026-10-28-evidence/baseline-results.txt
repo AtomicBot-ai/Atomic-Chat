@@ -1,0 +1,44 @@
+
+verify-corepack.log
+ Test Files  656 passed | 1 skipped (657)
+      Tests  7463 passed | 19 skipped (7482)
+ Test Files  7 passed (7)
+      Tests  211 passed (211)
+ Test Files  12 passed (12)
+      Tests  314 passed (314)
+Coverage floor passed (13 critical files).
+test result: FAILED. 1123 passed; 157 failed; 11 ignored; 0 measured; 0 filtered out; finished in 16.25s
+Rust failures in this invocation were sandbox localhost/OS access failures; see unrestricted rerun below.
+
+rust-unrestricted.log
+test result: ok. 1280 passed; 0 failed; 11 ignored; 0 measured; 0 filtered out; finished in 25.31s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 44 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.21s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 49 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 73 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 39 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+flows-checked.log
+ Test Files  6 failed | 5 passed (11)
+      Tests  8 failed | 34 passed (42)
+
+flows-final.log
+ Test Files  2 failed | 4 passed (6)
+      Tests  1 failed | 13 passed (14)
+
+additional-final.log
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+
+opencode-direct.log
+ Test Files  1 passed (1)
+      Tests  2 passed (2)

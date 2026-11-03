@@ -1,0 +1,59 @@
+[33mThe CJS build of Vite's Node API is deprecated. See https://vite.dev/guide/troubleshooting.html#vite-cjs-node-api-deprecated for more details.[39m
+
+ RUN  v3.2.4 <QA_ROOT>/source
+
+stdout | src/lib/__tests__/integration-agent-run.test.ts > QA: muse quotes an apostrophe in the configured API key
+QA_LAUNCH_QUOTING muse META_API_KEY='it's-secret' muse --provider meta --base-url 'http://127.0.0.1:1337/v1' --model 'qa/model'
+
+stdout | src/lib/__tests__/integration-agent-run.test.ts > QA: poolside quotes an apostrophe in the configured API key
+QA_LAUNCH_QUOTING poolside POOLSIDE_STANDALONE_BASE_URL='http://127.0.0.1:1337' POOLSIDE_API_KEY='it's-secret' POOLSIDE_STANDALONE_MODEL='qa/model' pool
+
+ ❯ |@janhq/web-app| src/lib/__tests__/integration-agent-run.test.ts (5 tests | 2 failed) 6ms
+   ✓ openIntegrationAgent > runs a terminal agent and remembers it opened 1ms
+   ✓ openIntegrationAgent > opens a desktop agent in its own app, not a terminal 0ms
+   ✓ openIntegrationAgent > warns instead of throwing when the terminal does not open 0ms
+   × QA: muse quotes an apostrophe in the configured API key 3ms
+     → expected 'META_API_KEY=\'it\'s-secret\' muse --…' not to contain '=\'it\'s-secret\''
+   × QA: poolside quotes an apostrophe in the configured API key 0ms
+     → expected 'POOLSIDE_STANDALONE_BASE_URL=\'http:/…' not to contain '=\'it\'s-secret\''
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |@janhq/web-app| src/lib/__tests__/integration-agent-run.test.ts > QA: muse quotes an apostrophe in the configured API key
+AssertionError: expected 'META_API_KEY=\'it\'s-secret\' muse --…' not to contain '=\'it\'s-secret\''
+
+Expected: "='it's-secret'"
+Received: "META_API_KEY='it's-secret' muse --provider meta --base-url 'http://127.0.0.1:1337/v1' --model 'qa/model'"
+
+ ❯ src/lib/__tests__/integration-agent-run.test.ts:86:25
+     84|     const command = (call?.[1] as { command: string }).command
+     85|     console.log('QA_LAUNCH_QUOTING', id, command)
+     86|     expect(command).not.toContain("='it's-secret'")
+       |                         ^
+     87|   }
+     88| )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |@janhq/web-app| src/lib/__tests__/integration-agent-run.test.ts > QA: poolside quotes an apostrophe in the configured API key
+AssertionError: expected 'POOLSIDE_STANDALONE_BASE_URL=\'http:/…' not to contain '=\'it\'s-secret\''
+
+Expected: "='it's-secret'"
+Received: "POOLSIDE_STANDALONE_BASE_URL='http://127.0.0.1:1337' POOLSIDE_API_KEY='it's-secret' POOLSIDE_STANDALONE_MODEL='qa/model' pool"
+
+ ❯ src/lib/__tests__/integration-agent-run.test.ts:86:25
+     84|     const command = (call?.[1] as { command: string }).command
+     85|     console.log('QA_LAUNCH_QUOTING', id, command)
+     86|     expect(command).not.toContain("='it's-secret'")
+       |                         ^
+     87|   }
+     88| )
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 3 passed (5)
+   Start at  15:23:13
+   Duration  608ms (transform 49ms, setup 102ms, collect 33ms, tests 6ms, environment 214ms, prepare 43ms)
+

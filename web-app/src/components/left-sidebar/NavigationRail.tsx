@@ -26,6 +26,8 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
+import { SupportChatSheet } from '@/containers/support/SupportChatSheet'
+import { useSupportChatStore } from '@/stores/support-chat-store'
 
 const DISCORD_URL = 'https://discord.com/invite/8wGSsvmg4V'
 const NEW_ISSUE_URL = 'https://github.com/AtomicBot-ai/Atomic-Chat/issues/new'
@@ -41,6 +43,7 @@ export function NavigationRail({ section }: { section: NavigationSection }) {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
   const [helpOpen, setHelpOpen] = useState(false)
+  const setSupportOpen = useSupportChatStore((state) => state.setSheetOpen)
   const { setOpen, setOpenMobile, isMobile } = useSidebar()
   // Picking a section always shows its sidebar, even if it was collapsed.
   const reveal = () => (isMobile ? setOpenMobile(true) : setOpen(true))
@@ -83,6 +86,11 @@ export function NavigationRail({ section }: { section: NavigationSection }) {
       </TooltipContent>
     </Tooltip>
   )
+
+  const openSupportChat = () => {
+    setHelpOpen(false)
+    setSupportOpen(true)
+  }
 
   return (
     <nav
@@ -143,6 +151,12 @@ export function NavigationRail({ section }: { section: NavigationSection }) {
             </TooltipContent>
           </Tooltip>
           <PopoverContent
+            // Closing the menu would hand focus back to the Help button, and
+            // out of the support chat it just opened.
+            onCloseAutoFocus={(event) => {
+              if (useSupportChatStore.getState().sheetOpen)
+                event.preventDefault()
+            }}
             side="right"
             align="end"
             sideOffset={12}
@@ -151,6 +165,15 @@ export function NavigationRail({ section }: { section: NavigationSection }) {
             <div className="px-2.5 py-2 text-xs font-medium text-muted-foreground">
               {t('common:navigation.helpTitle')}
             </div>
+            <button
+              type="button"
+              className={helpItem}
+              data-testid="help-chat-with-us"
+              onClick={openSupportChat}
+            >
+              <MessageCircle size={17} />
+              <span>{t('common:navigation.chatWithUs')}</span>
+            </button>
             <button
               type="button"
               className={helpItem}
@@ -184,6 +207,8 @@ export function NavigationRail({ section }: { section: NavigationSection }) {
           <Settings size={20} strokeWidth={1.7} />
         )}
       </div>
+      {/* Portalled to the body; mounted here with the menu that opens it. */}
+      <SupportChatSheet />
     </nav>
   )
 }

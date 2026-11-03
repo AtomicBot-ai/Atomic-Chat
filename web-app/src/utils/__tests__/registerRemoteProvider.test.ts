@@ -19,6 +19,10 @@ describe('isLocalProvider', () => {
     expect(isLocalProvider('sglang')).toBe(true)
     expect(LOCAL_PROVIDER_NAMES).toContain('foundry-local')
     expect(isLocalProvider('foundry-local')).toBe(true)
+    expect(LOCAL_PROVIDER_NAMES).toContain('litert-lm')
+    expect(isLocalProvider('litert-lm')).toBe(true)
+    expect(LOCAL_PROVIDER_NAMES).toContain('geniex')
+    expect(isLocalProvider('geniex')).toBe(true)
     expect(isLocalProvider('nvidia')).toBe(false)
   })
 

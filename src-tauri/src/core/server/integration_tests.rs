@@ -442,3 +442,67 @@ async fn polling_endpoints_stay_out_of_the_dashboard() {
 
     harness.stop().await;
 }
+
+/// AC-13 and AC-12 on the app's own proxy (mobile): a model nothing serves gets
+/// OpenAI's `model_not_found` envelope with the old wording as its message, on
+/// every model route; an empty conversation is refused before the engine.
+#[tokio::test(flavor = "multi_thread")]
+async fn unknown_models_and_empty_conversations_get_openai_errors() {
+    let harness = Harness::start("test-model", false).await;
+    let client = reqwest::Client::new();
+    let post = |path: &'static str, body: Value| {
+        client
+            .post(format!("http://127.0.0.1:{}/v1{path}", harness.proxy_port))
+            .json(&body)
+            .send()
+    };
+
+    for path in ["/chat/completions", "/messages", "/responses"] {
+        let response = post(
+            path,
+            serde_json::json!({
+                "model": "ghost",
+                "input": "hi",
+                "messages": [{"role": "user", "content": "hi"}]
+            }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.status(), 404, "{path}");
+        assert_eq!(
+            response.headers()["content-type"],
+            "application/json",
+            "{path}"
+        );
+        assert_eq!(
+            response.json::<Value>().await.unwrap(),
+            serde_json::json!({"error": {
+                "message": "No running session found for model 'ghost'",
+                "type": "invalid_request_error",
+                "param": "model",
+                "code": "model_not_found",
+            }}),
+            "{path}"
+        );
+    }
+
+    for path in ["/chat/completions", "/messages"] {
+        let response = post(
+            path,
+            serde_json::json!({"model": "test-model", "max_tokens": 8, "messages": []}),
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.status(), 400, "{path}");
+        let body = response.json::<Value>().await.unwrap();
+        assert_eq!(body["error"]["code"], "empty_array", "{path}");
+        assert_eq!(body["error"]["param"], "messages", "{path}");
+        assert_eq!(body["error"]["type"], "invalid_request_error", "{path}");
+    }
+    assert!(
+        harness.seen_upstream_body.lock().unwrap().is_none(),
+        "an empty conversation must never reach the engine"
+    );
+
+    harness.stop().await;
+}

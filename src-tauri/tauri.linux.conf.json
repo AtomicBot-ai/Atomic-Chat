@@ -1,5 +1,6 @@
 {
   "app": {
+    "enableGTKAppId": true,
     "windows": [
       {
         "label": "main",
@@ -42,11 +43,13 @@
       "resources/agent-skills/**/*",
       "resources/bin/sqlite-vec.so",
       "resources/llamacpp-backend-upstream/**/*",
-      "resources/llamacpp-backend/**/*",
       "licenses/cloudflared-LICENSE.txt"
     ],
     "externalBin": ["resources/bin/uv", "resources/bin/cloudflared"],
     "linux": {
+      "deb": {
+        "desktopTemplate": "build-utils/atomic-chat.desktop"
+      },
       "appimage": {
         "bundleMediaFramework": true,
         "files": {}

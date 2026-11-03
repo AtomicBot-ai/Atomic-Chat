@@ -2,9 +2,17 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import llamacpp_extension from '../index'
 import { events } from '@janhq/core'
 import type {
+  CoreBackendCatalog,
   CoreBackendRecommendation,
   CoreBackendUpdateCheck,
 } from '../../../shared/atomicCoreRuntime'
+import {
+  getLocalInstalledBackends,
+  isBackendInstalled,
+  loadCatalog,
+} from '../backend'
+import { mapOldBackendToNew } from '../../../../src-tauri/plugins/tauri-plugin-llamacpp/guest-js/index'
+import settingsJson from '../../settings.json'
 
 // Mock fetch globally
 global.fetch = vi.fn()
@@ -28,6 +36,7 @@ vi.mock('../backend', async () => {
     isBackendInstalled: vi.fn(),
     getBackendExePath: vi.fn(),
     getBackendDir: vi.fn(),
+    getLocalInstalledBackends: vi.fn(async () => []),
     loadCatalog: vi.fn(async () => {
       throw new Error('no catalog in this test')
     }),
@@ -1705,12 +1714,14 @@ describe('llamacpp_extension', () => {
       recommendedCategory: 'CUDA 13',
     }
 
+    // A dev build (or an older installer) whose bundled pack is on disk.
     const adopt = (storedType: string | null, active = BUNDLED) =>
       extension['adoptOptimalBackendOnFirstRun'](
         storedType,
         active,
         BUNDLED,
-        LATEST_BY_TYPE
+        LATEST_BY_TYPE,
+        true
       )
 
     const coreAnswers = (
@@ -1839,10 +1850,457 @@ describe('llamacpp_extension', () => {
         null,
         'b10018-1.3.0/macos-arm64',
         'b10018-1.3.0/macos-arm64',
-        { 'macos-arm64': 'b10269-1.4.0/macos-arm64' }
+        { 'macos-arm64': 'b10269-1.4.0/macos-arm64' },
+        true
       )
 
       expect(extension['core'].recommendBackend).not.toHaveBeenCalled()
+    })
+
+    // Release builds bundle nothing and the provider is off on a fresh
+    // install: no archive is fetched at app start, whatever the hardware.
+    it('fetches nothing while no TurboQuant pack is on disk', async () => {
+      await extension['adoptOptimalBackendOnFirstRun'](
+        null,
+        CUDA,
+        null,
+        LATEST_BY_TYPE,
+        false
+      )
+      await extension['adoptOptimalBackendOnFirstRun'](
+        null,
+        'none',
+        null,
+        LATEST_BY_TYPE,
+        false
+      )
+
+      expect(extension['core'].recommendBackend).not.toHaveBeenCalled()
+      expect(extension['switchThroughCore']).not.toHaveBeenCalled()
+      expect(extension['firstRunAdoption']).toBeNull()
+    })
+  })
+
+  /// No TurboQuant build ships with the app on any platform: the provider's
+  /// first use downloads one, app start never does, and a pack an older
+  /// installer copied into the data folder stays the selected build.
+  describe('without a bundled build', () => {
+    const TAG = 'b10298-2.0.0'
+    const CUDA = `${TAG}/windows-x64-cuda-13.3`
+    const CPU = `${TAG}/windows-x64-cpu`
+    const VULKAN = `${TAG}/windows-x64-vulkan`
+    const TYPE_KEY = 'atomic_llamacpp_turboquant_backend_type'
+    const entry = (pair: string, order: number) => {
+      const [version, backend] = pair.split('/')
+      return { version, backend, order }
+    }
+    const catalogOf = (
+      partial: Partial<CoreBackendCatalog> = {}
+    ): CoreBackendCatalog => ({
+      provider: 'llamacpp',
+      os_type: 'windows',
+      arch_suffix: 'x64',
+      hardware_source: 'probe',
+      features: {},
+      supported_backends: [],
+      remote: [],
+      installed: [],
+      available: [entry(CUDA, 3), entry(VULKAN, 2), entry(CPU, 1)],
+      recommended: CUDA,
+      recommended_installed: null,
+      latest_by_type: {
+        'windows-x64-cuda-13.3': CUDA,
+        'windows-x64-vulkan': VULKAN,
+        'windows-x64-cpu': CPU,
+      },
+      static_variants: [],
+      source: 'redirect',
+      releases: [],
+      ...partial,
+    })
+
+    let storage: Map<string, string>
+    let installed: Set<string>
+    let persisted: Array<{ key: string; controllerProps: any }>
+    const persistedValue = () =>
+      persisted.find((s) => s.key === 'version_backend')?.controllerProps.value
+
+    /// The settings store of `BaseExtension`, which the test setup mocks away.
+    const withSettings = (versionBackend: string) => {
+      persisted = [
+        {
+          key: 'version_backend',
+          controllerProps: {
+            value: versionBackend,
+            options:
+              versionBackend === 'none'
+                ? []
+                : [{ value: versionBackend, name: versionBackend }],
+          },
+        },
+      ]
+      extension['config'] = { version_backend: versionBackend } as any
+      Object.assign(extension, {
+        getSettings: vi.fn(async () => structuredClone(persisted)),
+        getSetting: vi.fn(
+          async (key: string, fallback: unknown) =>
+            persisted.find((s) => s.key === key)?.controllerProps.value ??
+            fallback
+        ),
+        // The stored value wins while the new options carry it.
+        registerSettings: vi.fn(async (next: typeof persisted) => {
+          persisted = next.map((setting) => {
+            const old = persisted.find((s) => s.key === setting.key)
+            const options = setting.controllerProps.options?.length
+              ? setting.controllerProps.options
+              : old?.controllerProps.options
+            const value =
+              old?.controllerProps.value ?? setting.controllerProps.value
+            const kept =
+              !options ||
+              options.some((o: { value: string }) => o.value === value)
+            return {
+              ...setting,
+              controllerProps: {
+                ...setting.controllerProps,
+                options,
+                value: kept ? value : setting.controllerProps.value,
+              },
+            }
+          })
+        }),
+        // Like `BaseExtension.updateSettings`: every setting is reported.
+        updateSettings: vi.fn(async (next: typeof persisted) => {
+          for (const setting of next) {
+            const own = persisted.find((s) => s.key === setting.key)
+            if (own) own.controllerProps.value = setting.controllerProps.value
+          }
+          for (const setting of persisted)
+            extension.onSettingUpdate(
+              setting.key,
+              setting.controllerProps.value
+            )
+        }),
+      })
+    }
+
+    beforeEach(() => {
+      vi.stubGlobal('IS_MAC', false)
+      vi.stubGlobal('SETTINGS', settingsJson)
+      storage = new Map()
+      installed = new Set()
+      vi.mocked(localStorage.getItem).mockImplementation(
+        (key) => storage.get(key) ?? null
+      )
+      vi.mocked(localStorage.setItem).mockImplementation((key, value) => {
+        storage.set(key, value)
+      })
+      vi.mocked(localStorage.removeItem).mockImplementation((key) => {
+        storage.delete(key)
+      })
+      vi.mocked(mapOldBackendToNew).mockImplementation(async (b) => b)
+      vi.mocked(isBackendInstalled).mockImplementation(
+        async (backend, version) => installed.has(`${version}/${backend}`)
+      )
+      vi.mocked(getLocalInstalledBackends).mockImplementation(async () =>
+        [...installed].map((pair) => {
+          const [version, backend] = pair.split('/')
+          return { version, backend }
+        })
+      )
+      vi.mocked(loadCatalog).mockResolvedValue(catalogOf())
+      extension['tryInstallBundledBackend'] = vi.fn(async () => null)
+      extension['switchThroughCore'] = vi.fn(async () => undefined)
+      extension['isInitializing'] = false
+      const core = extension['core']
+      vi.spyOn(core, 'recommendBackend')
+      vi.spyOn(core, 'listInstalledBackends').mockImplementation(async () =>
+        [...installed].map((pair) => {
+          const [version, backend] = pair.split('/')
+          return { version, backend, path: `/data/${pair}`, active: false }
+        })
+      )
+      vi.spyOn(core, 'installBackend').mockImplementation(
+        async (version, backend) => {
+          installed.add(`${version}/${backend}`)
+          return { version, backend, installed: true, path: '/pack' }
+        }
+      )
+      vi.spyOn(core, 'load').mockResolvedValue({
+        model_id: 'm',
+        pid: 1,
+        port: 2,
+        api_key: 'k',
+      } as any)
+      extension['coreSettings'] = {
+        ensureReady: vi.fn(async () => undefined),
+      } as any
+      extension['findSessionByModel'] = vi.fn().mockResolvedValue(null)
+    })
+
+    afterEach(() => {
+      vi.mocked(localStorage.getItem).mockReset()
+      vi.mocked(localStorage.setItem).mockReset()
+      vi.mocked(localStorage.removeItem).mockReset()
+      vi.mocked(mapOldBackendToNew).mockReset()
+      vi.mocked(isBackendInstalled).mockReset()
+      vi.mocked(getLocalInstalledBackends).mockImplementation(async () => [])
+      vi.mocked(loadCatalog).mockImplementation(async () => {
+        throw new Error('no catalog in this test')
+      })
+      vi.unstubAllGlobals()
+    })
+
+    describe('a fresh install with nothing on disk', () => {
+      it('selects the build the core recommends and fetches nothing at start', async () => {
+        withSettings('none')
+
+        await extension.configureBackends()
+
+        expect(extension['config'].version_backend).toBe(CUDA)
+        expect(persistedValue()).toBe(CUDA)
+        expect(extension['core'].installBackend).not.toHaveBeenCalled()
+        expect(extension['switchThroughCore']).not.toHaveBeenCalled()
+        expect(extension['core'].recommendBackend).not.toHaveBeenCalled()
+        expect(extension['firstRunAdoption']).toBeNull()
+        // A default is not a choice: no type preference is recorded.
+        expect(storage.has(TYPE_KEY)).toBe(false)
+      })
+
+      it('lets an earlier default follow the recommendation', async () => {
+        // A CPU default from an earlier start, before the GPU was known.
+        withSettings(`b10200-1.9.0/windows-x64-cpu`)
+
+        await extension.configureBackends()
+
+        expect(extension['config'].version_backend).toBe(CUDA)
+        expect(persistedValue()).toBe(CUDA)
+        expect(storage.has(TYPE_KEY)).toBe(false)
+        expect(extension['core'].installBackend).not.toHaveBeenCalled()
+      })
+
+      it('downloads the selected build at the first load, then loads it', async () => {
+        withSettings(CUDA)
+        const stages: unknown[] = []
+
+        await extension.load('m', undefined, false, false, {
+          onStage: (stage) => stages.push(stage),
+        })
+
+        const install = vi.mocked(extension['core'].installBackend)
+        expect(install).toHaveBeenCalledOnce()
+        expect(install.mock.calls[0].slice(0, 3)).toEqual([
+          TAG,
+          'windows-x64-cuda-13.3',
+          'llamacpp-backend-b10298-2_0_0/windows-x64-cuda-13_3',
+        ])
+        // The download panel follows it like any backend download.
+        expect(events.emit).toHaveBeenCalledWith(
+          'onFileDownloadAndVerificationSuccess',
+          expect.objectContaining({ downloadType: 'Backend' })
+        )
+        const load = vi.mocked(extension['core'].load)
+        expect(load).toHaveBeenCalledOnce()
+        expect(install.mock.invocationCallOrder[0]).toBeLessThan(
+          load.mock.invocationCallOrder[0]
+        )
+        expect(stages[0]).toEqual({ kind: 'installingEngine' })
+        expect(extension['config'].version_backend).toBe(CUDA)
+      })
+
+      it('resolves a build at the first load when startup could not pick one', async () => {
+        withSettings('none')
+
+        await extension.load('m')
+
+        expect(extension['core'].installBackend).toHaveBeenCalledWith(
+          TAG,
+          'windows-x64-cuda-13.3',
+          expect.any(String),
+          false,
+          null,
+          undefined
+        )
+        expect(extension['config'].version_backend).toBe(CUDA)
+        expect(persistedValue()).toBe(CUDA)
+        expect(events.emit).toHaveBeenCalledWith('settingsChanged', {
+          key: 'version_backend',
+          value: CUDA,
+        })
+        // Written as a default: one download, and no type preference.
+        expect(extension['core'].installBackend).toHaveBeenCalledOnce()
+        expect(storage.has(TYPE_KEY)).toBe(false)
+      })
+
+      it('fails the load with a clear error when the release list is out of reach', async () => {
+        withSettings('none')
+        vi.mocked(loadCatalog).mockRejectedValue(new Error('offline'))
+
+        await expect(extension.configureBackends()).rejects.toThrow(
+          'Failed to fetch supported backends'
+        )
+        expect(extension['config'].version_backend).toBe('none')
+
+        await expect(extension.load('m')).rejects.toThrow(
+          'the list of builds to download could not be reached'
+        )
+        expect(extension['core'].installBackend).not.toHaveBeenCalled()
+        expect(extension['core'].load).not.toHaveBeenCalled()
+      })
+
+      it('says so when the catalog has no build for this computer', async () => {
+        withSettings('none')
+        vi.mocked(loadCatalog).mockResolvedValue(
+          catalogOf({ available: [], recommended: null, latest_by_type: {} })
+        )
+
+        await expect(extension.load('m')).rejects.toThrow(
+          'TurboQuant publishes no engine build for this computer'
+        )
+        expect(extension['core'].load).not.toHaveBeenCalled()
+      })
+
+      it('starts no download when another setting is saved', async () => {
+        withSettings(CUDA)
+
+        await extension.updateSettings([
+          { key: 'version_backend', controllerProps: { value: CUDA } },
+        ] as any)
+        await new Promise((resolve) => setTimeout(resolve, 0))
+
+        expect(extension['core'].installBackend).not.toHaveBeenCalled()
+      })
+
+      it('downloads a build the user picks', async () => {
+        withSettings(CUDA)
+
+        extension.onSettingUpdate('version_backend', VULKAN)
+
+        await vi.waitFor(() =>
+          expect(extension['core'].installBackend).toHaveBeenCalledWith(
+            TAG,
+            'windows-x64-vulkan',
+            expect.any(String),
+            false,
+            null,
+            undefined
+          )
+        )
+        expect(storage.get(TYPE_KEY)).toBe('windows-x64-vulkan')
+      })
+
+      it('shares one download between a load and a pick of the same build', async () => {
+        withSettings(CUDA)
+
+        await Promise.all([
+          extension['ensureBackendReady']('windows-x64-cuda-13.3', TAG),
+          extension['ensureBackendReady']('windows-x64-cuda-13.3', TAG),
+        ])
+
+        expect(extension['core'].installBackend).toHaveBeenCalledOnce()
+      })
+
+      it('installs the selected build for the decision-model engine button', async () => {
+        withSettings(CUDA)
+
+        await expect(extension.installSelectedBackend()).resolves.toBe(CUDA)
+        expect(installed.has(CUDA)).toBe(true)
+
+        // Once a pack is on disk there is nothing left for it to do.
+        await expect(extension.installSelectedBackend()).resolves.toBeNull()
+        expect(extension['core'].installBackend).toHaveBeenCalledOnce()
+      })
+    })
+
+    describe('a pack an older installer left on disk', () => {
+      const NEW_TAG = 'b10400-2.1.0'
+
+      it('stays selected when a newer release is out and the catalog no longer lists it', async () => {
+        installed.add(CPU)
+        storage.set(TYPE_KEY, 'windows-x64-cpu')
+        withSettings(CPU)
+        vi.mocked(loadCatalog).mockResolvedValue(
+          catalogOf({
+            installed: [entry(CPU, 1)],
+            available: [
+              entry(`${NEW_TAG}/windows-x64-cuda-13.3`, 3),
+              entry(`${NEW_TAG}/windows-x64-cpu`, 1),
+            ],
+            recommended: `${NEW_TAG}/windows-x64-cuda-13.3`,
+            latest_by_type: {
+              'windows-x64-cuda-13.3': `${NEW_TAG}/windows-x64-cuda-13.3`,
+              'windows-x64-cpu': `${NEW_TAG}/windows-x64-cpu`,
+            },
+          })
+        )
+
+        await extension.configureBackends()
+        await extension.load('m')
+
+        expect(extension['config'].version_backend).toBe(CPU)
+        expect(persistedValue()).toBe(CPU)
+        expect(extension['switchThroughCore']).not.toHaveBeenCalled()
+        expect(extension['core'].recommendBackend).not.toHaveBeenCalled()
+        expect(extension['core'].installBackend).not.toHaveBeenCalled()
+        expect(extension['core'].load).toHaveBeenCalledOnce()
+      })
+
+      it('leaves a missing selected build to the core when another pack is on disk', async () => {
+        installed.add(CPU)
+        withSettings(CUDA)
+
+        await extension.load('m')
+
+        expect(extension['core'].installBackend).not.toHaveBeenCalled()
+        expect(extension['core'].load).toHaveBeenCalledOnce()
+        await expect(extension.installSelectedBackend()).resolves.toBeNull()
+      })
+
+      describe('on macOS', () => {
+        const MAC = `${TAG}/macos-arm64`
+        const MAC_NEW = `${NEW_TAG}/macos-arm64`
+        const macCatalog = (partial: Partial<CoreBackendCatalog> = {}) =>
+          catalogOf({
+            os_type: 'macos',
+            arch_suffix: 'arm64',
+            installed: [entry(MAC, 1)],
+            available: [entry(MAC_NEW, 2), entry(MAC, 1)],
+            recommended: MAC_NEW,
+            recommended_installed: MAC,
+            latest_by_type: { 'macos-arm64': MAC_NEW },
+            ...partial,
+          })
+
+        beforeEach(() => {
+          vi.stubGlobal('IS_MAC', true)
+          installed.add(MAC)
+        })
+
+        it('keeps a stored type the catalog does not carry, and the build on disk', async () => {
+          storage.set(TYPE_KEY, 'macos-arm64-legacy')
+          withSettings(MAC)
+          vi.mocked(loadCatalog).mockResolvedValue(macCatalog())
+
+          await extension.configureBackends()
+
+          // Nothing bundled would take over: the preference is not cleared.
+          expect(localStorage.removeItem).not.toHaveBeenCalledWith(TYPE_KEY)
+          expect(extension['config'].version_backend).toBe(MAC)
+          expect(extension['switchThroughCore']).not.toHaveBeenCalled()
+          expect(extension['core'].installBackend).not.toHaveBeenCalled()
+        })
+
+        it('recovers the build on disk when the saved settings were lost', async () => {
+          withSettings('none')
+          vi.mocked(loadCatalog).mockResolvedValue(macCatalog())
+
+          await extension.configureBackends()
+
+          // Not the newer release, which is not downloaded.
+          expect(extension['config'].version_backend).toBe(MAC)
+          expect(extension['core'].installBackend).not.toHaveBeenCalled()
+        })
+      })
     })
   })
 

@@ -22,6 +22,8 @@ import {
   type HubSortableColumn,
 } from '@/lib/hub-model-facts'
 import { foundryLocalOf } from '@/lib/foundry-local/hub'
+import { liteRtLmOf } from '@/lib/litert-lm/hub'
+import { geniexOf } from '@/lib/geniex/hub'
 import type { UnservedCheckpoint } from '@/lib/managed-engine/hub-state'
 import type { ManagedEngine } from '@/lib/managed-engines'
 import type { ModelFormat } from '@/lib/model-card'
@@ -104,18 +106,18 @@ type Row = LocalModelTableItem & {
 
 /** Where Hugging Face's parameter count is asked for: a name that carries none. */
 const needsHubParams = (model: CatalogModel, facts: HubModelFacts) =>
-  !facts.params && !model.is_managed && !foundryLocalOf(model)
+  !facts.params && !model.is_managed && !foundryLocalOf(model) && !liteRtLmOf(model) && !geniexOf(model)
 
 /**
  * Whose repository a row is, when the row is named after the repository: four uploads of one
  * model (bartowski's, unsloth's…) otherwise read alike until opened. A pick's title and a
- * Foundry Local model's name are names of their own and need none.
+ * Foundry Local or LiteRT-LM model's name are names of their own and need none.
  */
 const repoOwner = (
   model: CatalogModel,
   pick: StaffPick | undefined
 ): string | undefined => {
-  if (pick?.title || foundryLocalOf(model)) return undefined
+  if (pick?.title || foundryLocalOf(model) || liteRtLmOf(model) || geniexOf(model)) return undefined
   const repo = hubRepoId(model)
   const slash = repo.indexOf('/')
   return slash > 0 ? repo.slice(0, slash) : undefined
@@ -129,6 +131,8 @@ const awaitsCard = (item: LocalModelTableItem) =>
   !!item.fromHuggingFace &&
   !item.model.is_managed &&
   !foundryLocalOf(item.model) &&
+  !liteRtLmOf(item.model) &&
+  !geniexOf(item.model) &&
   modelDownloadSizeText(item.model) === undefined &&
   !isHuggingFaceCardFailed(item.model.model_name)
 
@@ -451,9 +455,11 @@ const SummaryRow = memo(function SummaryRow({
   } = row
   const id = model.model_name
   const foundry = foundryLocalOf(model)
+  const liteRt = liteRtLmOf(model)
+  const geniex = geniexOf(model)
   const unknown = t('hub:table.unknown')
   const engineText = engines.map(hubEngineLabel).join(', ')
-  const verdictInCard = model.is_managed || !!foundry
+  const verdictInCard = model.is_managed || !!foundry || !!liteRt || !!geniex
   const owner = repoOwner(model, pick)
 
   return (
@@ -501,6 +507,16 @@ const SummaryRow = memo(function SummaryRow({
             {foundry?.origin === 'microsoft' && (
               <span className="mt-1 block text-[10px] font-normal text-muted-foreground">
                 {t('hub:foundryLocal.microsoftCatalog')}
+              </span>
+            )}
+            {liteRt?.origin === 'huggingface' && (
+              <span className="mt-1 block text-[10px] font-normal text-muted-foreground">
+                {t('hub:liteRtLm.notVerified')}
+              </span>
+            )}
+            {geniex?.origin === 'huggingface' && (
+              <span className="mt-1 block text-[10px] font-normal text-muted-foreground">
+                {t('hub:geniex.notVerified')}
               </span>
             )}
             <span className="model-inline-meta mt-1 text-[10px] font-normal text-muted-foreground">

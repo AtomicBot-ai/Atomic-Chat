@@ -78,6 +78,18 @@ export const localStorageKey = {
   // means the app was closed mid-flow — the only way to see that at all, since
   // a window close gives the renderer no reliable chance to report it.
   onboardingInFlight: 'onboarding-in-flight',
+  // The first-run flow (`stores/onboarding-store`): its step, the chat model
+  // chosen, the download queue it started and where it handed off. Kept until
+  // the run settles, so a relaunch — the Windows/Linux backend step forces
+  // one — comes back to the same screen with the same queue.
+  onboarding: 'atomic-onboarding',
+  // Install token and pending model-ready notification; never the email address.
+  emailReminder: 'atomic-email-reminder',
+  // This install's cohort in the onboarding experiment
+  // (`lib/onboarding/experiment`): `{experiment, variant, assignedAt}`, drawn
+  // once on the first launch. Kept through a factory reset, as the analytics
+  // id is, so a reset install stays in its cohort.
+  onboardingCohort: 'atomic-onboarding-cohort',
   // A `backend_step_resolved` that a relaunch is about to interrupt. Written
   // just before "Restart now" kills the process and sent on the next launch —
   // otherwise a successful restart reports nothing at all and the data shows
@@ -109,6 +121,23 @@ export const localStorageKey = {
   // Durable Video form choices: resolution, frame count, steps, cfg, guidance
   // and the seed as typed. Unsent prompt text is deliberately excluded.
   videoForm: 'video-form',
+  // What is known about each provider's API key beyond "one is saved": it
+  // could not be checked when it was saved, or the provider rejected it. Keyed
+  // by provider name; an entry applies only to the key it was recorded for.
+  providerKeyStatus: 'provider-key-status',
+  // Model downloads a quit, crash or Pause stopped before they finished, so the
+  // next launch lists them as paused with a Resume (`lib/interrupted-downloads`).
+  // Never holds the Hugging Face token.
+  interruptedDownloads: 'atomic-interrupted-downloads',
+  // The support chat (`stores/support-chat-store`): the relay conversation and
+  // its token, the last messages, the sync and read positions, and messages
+  // not yet delivered, so a crash or a relaunch does not lose their text.
+  supportChat: 'atomic-support-chat',
+  // Prefix of one item per composer with unsent text (`hooks/usePrompt`):
+  // `composer-draft:<thread id | project:<id>>` → `{text, at}`. One item per
+  // composer, so a chat window writes only the drafts it changed and never
+  // replaces another window's. Pruned at launch by age and count.
+  composerDraftPrefix: 'composer-draft:',
 }
 
 /**
@@ -126,6 +155,12 @@ export const BACKEND_PRESERVE_KEYS = [
   'llama_cpp_backend_type',
   'atomic_llamacpp_upstream_backend_type',
   'atomic_llamacpp_turboquant_backend_type',
+] as const
+
+/** What a factory reset keeps in localStorage: the backend builds and the onboarding cohort. */
+export const FACTORY_RESET_PRESERVE_KEYS = [
+  ...BACKEND_PRESERVE_KEYS,
+  localStorageKey.onboardingCohort,
 ] as const
 
 export const CACHE_EXPIRY_MS = 1000 * 60 * 60 * 24

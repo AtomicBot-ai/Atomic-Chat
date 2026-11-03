@@ -64,7 +64,7 @@
     "autoApproveTools": "Auto-approve tool calls",
     "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation.",
     "desktopNotifications": "Thông báo trên máy tính",
-    "desktopNotificationsDesc": "Gửi thông báo hệ thống khi phản hồi, hình ảnh, video hoặc tệp tải xuống đã sẵn sàng và cửa sổ không được lấy nét.",
+    "desktopNotificationsDesc": "Gửi thông báo hệ thống khi phản hồi, hình ảnh, video hoặc tệp tải xuống đã sẵn sàng.",
     "legacyChatEngine": "Dùng công cụ chat cũ",
     "legacyChatEngineDesc": "Buộc mọi tin nhắn đi qua pipeline chat cũ và tắt hoàn toàn chế độ agent. Lối thoát tạm thời."
   },
@@ -336,8 +336,6 @@
     "checking": "Checking…",
     "upToDate": "The engine is up to date.",
     "updateCheckFailed": "Could not check for updates",
-    "backgroundUpdateTitle": "Updating the media engine",
-    "backgroundUpdateDesc": "Downloading stable-diffusion.cpp {{tag}} in the background. You can keep working.",
     "updateComplete": "Media engine updated to {{tag}}",
     "updateFailed": "The media engine could not be updated"
   },

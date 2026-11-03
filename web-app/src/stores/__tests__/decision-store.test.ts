@@ -22,6 +22,7 @@ vi.mock('@/services/decision-catalog-registry', async (importOriginal) => {
   }
 })
 
+import { isDecisionModelInstalled } from '@/lib/decision/models'
 import { seedServiceHub } from '@/test/service-hub'
 import type {
   DecisionEvent,
@@ -113,10 +114,23 @@ describe('useDecisionStore', () => {
   it('marks which catalog models are on disk', async () => {
     const [first] = useDecisionStore.getState().catalog.models
     installedIds.add(first.id)
+    expect(useDecisionStore.getState().installedRead).toBe(false)
     await useDecisionStore.getState().refreshInstalled()
-    const { installed } = useDecisionStore.getState()
+    const { installed, installedRead } = useDecisionStore.getState()
+    expect(installedRead).toBe(true)
     expect(installed[first.id]).toBe(true)
     expect(Object.values(installed).filter(Boolean)).toHaveLength(1)
+  })
+
+  it('counts a failed read of the disk as read, so nothing waits on it', async () => {
+    vi.mocked(isDecisionModelInstalled).mockRejectedValueOnce(
+      new Error('EACCES')
+    )
+    await expect(
+      useDecisionStore.getState().refreshInstalled()
+    ).rejects.toThrow('EACCES')
+    expect(useDecisionStore.getState().installedRead).toBe(true)
+    expect(useDecisionStore.getState().installed).toEqual({})
   })
 
   it('follows the core events once bound', async () => {
@@ -150,5 +164,7 @@ describe('useDecisionStore', () => {
     useDecisionStore.getState().bind()()
     expect(service.subscribe).not.toHaveBeenCalled()
     expect(useDecisionStore.getState().status).toBeNull()
+    // Nothing to read is an answer: the empty map is what is installed.
+    expect(useDecisionStore.getState().installedRead).toBe(true)
   })
 })

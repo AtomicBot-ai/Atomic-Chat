@@ -1,11 +1,19 @@
 import { useEffect, useRef } from 'react'
+import { useRouter } from '@tanstack/react-router'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { useShallow } from 'zustand/react/shallow'
 
+import { route } from '@/constants/routes'
 import { useAppState } from '@/hooks/useAppState'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
+import { useModelProvider } from '@/hooks/useModelProvider'
+import { isOnboardingOnScreen } from '@/lib/onboarding'
 import { createSafeUnlisten } from '@/lib/tauriEvent'
+import { getProviderTitle } from '@/lib/utils'
+import type { EngineId, EngineVersions } from '@/services/engines/types'
+import { useEngineVersionsStore } from '@/stores/engine-versions-store'
+import { useServerPickerRequest } from '@/stores/server-picker-request-store'
 import { setLocalApiServerRunning } from '@/utils/localApiServerControl'
 import {
   resumeServedHelperModels,
@@ -33,12 +41,32 @@ type TrayStatusPayload = {
   server_running: boolean
   server_url: string
   model_label: string
+  runtime_label: string
   ram_used_mb: number
   ram_total_mb: number
   ram_percent: number
 }
 
 const TRAY_REFRESH_MS = 5000
+
+/**
+ * The tray's Runtime row: the engine the loaded chat models run on and the
+ * build it runs ("llama.cpp · b11463"), its name alone until the core says
+ * which build is active, "<n> runtimes" when they run on several engines,
+ * and empty with nothing loaded.
+ */
+export function trayRuntimeLabel(
+  providers: readonly string[],
+  engines: Partial<Record<EngineId, EngineVersions>>
+): string {
+  const distinct = [...new Set(providers)]
+  if (distinct.length > 1) return `${distinct.length} runtimes`
+  const [provider] = distinct
+  if (!provider) return ''
+  const title = getProviderTitle(provider)
+  const version = engines[provider as EngineId]?.active?.version
+  return version ? `${title} · ${version}` : title
+}
 
 /**
  * Push live status into the desktop system tray every 5 s.
@@ -90,8 +118,8 @@ export function useTrayStatusSync(): void {
         // processes of llama.cpp, llama.cpp upstream and MLX), fall back to
         // `activeModels`, which also tracks engines the resolver does not list
         // (Foundation Models).
+        const nonEmbedding = sessions.filter((s) => !s.is_embedding)
         const modelLabel = (() => {
-          const nonEmbedding = sessions.filter((s) => !s.is_embedding)
           if (nonEmbedding.length === 1) return nonEmbedding[0].model_id
           if (nonEmbedding.length > 1)
             return `${nonEmbedding.length} models loaded`
@@ -100,6 +128,23 @@ export function useTrayStatusSync(): void {
             return `${current.activeModels.length} models loaded`
           return ''
         })()
+        // The runtime from the same source as the model: a session names its
+        // engine, an `activeModels` id is looked up in the providers holding it.
+        // Read from the stores here rather than subscribed to, so a new engine
+        // answer does not re-render the app shell; the next tick shows it.
+        const runtimeProviders =
+          nonEmbedding.length > 0
+            ? nonEmbedding.map((s) => s.provider)
+            : current.activeModels.flatMap((id) => {
+                const owner = useModelProvider
+                  .getState()
+                  .providers.find((p) => p.models.some((m) => m.id === id))
+                return owner ? [owner.provider] : []
+              })
+        const runtimeLabel = trayRuntimeLabel(
+          runtimeProviders,
+          useEngineVersionsStore.getState().engines
+        )
 
         const ramUsed = usage?.used_memory ?? 0
         const ramTotal = usage?.total_memory ?? 0
@@ -110,6 +155,7 @@ export function useTrayStatusSync(): void {
           server_running: current.serverStatus === 'running',
           server_url: `http://127.0.0.1:${current.serverPort}${current.apiPrefix}`,
           model_label: modelLabel,
+          runtime_label: runtimeLabel,
           ram_used_mb: ramUsed,
           ram_total_mb: ramTotal,
           ram_percent: ramPercent,
@@ -147,6 +193,14 @@ export function useTrayStatusSync(): void {
   // toggling the server from the tray has already configured a model. If
   // start fails because no model is loaded the frontend will surface the
   // error the next time the user opens the app.
+  //
+  // The tray's Model and Runtime rows land here too: Rust has already shown
+  // the window, and this takes it to Server → Engine & model with the model
+  // or engine picker open. The picker is asked for through a one-shot store
+  // because the page does not exist yet when the click arrives. The first-run
+  // flow takes the whole window and is not left from outside, so there the
+  // click only shows the window.
+  const router = useRouter()
   useEffect(() => {
     if (!IS_TAURI || !(IS_MACOS || IS_WINDOWS)) return
     const unlisteners: Array<() => Promise<void>> = []
@@ -185,9 +239,19 @@ export function useTrayStatusSync(): void {
       })
     )
 
+    register(
+      listen<unknown>('tray-open-model-config', (event) => {
+        if (isOnboardingOnScreen(router.state.matches)) return
+        useServerPickerRequest
+          .getState()
+          .request(event.payload === 'runtime' ? 'engine' : 'model')
+        void router.navigate({ to: route.api.model })
+      })
+    )
+
     return () => {
       cancelled = true
       unlisteners.splice(0).forEach((detach) => void detach())
     }
-  }, [])
+  }, [router])
 }

@@ -1,0 +1,34 @@
+{
+  "title": "Allez au-delà du texte.",
+  "lead": "Ajoutez la création d’images ou de vidéos. Ces téléchargements démarrent après celui de votre modèle de discussion.",
+  "art": {
+    "image": "Images",
+    "video": "Vidéo"
+  },
+  "preview": {
+    "imageAlt": "Un robot nacré au visage vert menthe dans un studio sombre",
+    "videoAlt": "Un robot nacré fait un signe de la main et sourit",
+    "play": "Lire la vidéo",
+    "pause": "Mettre la vidéo en pause"
+  },
+  "purpose": {
+    "image": "Créez des images à partir d’un prompt",
+    "video": "Créez de courtes vidéos · forte utilisation de la mémoire"
+  },
+  "size": {
+    "download": "{{size}} GB à télécharger",
+    "onDisk": "{{size}} GB sur le disque"
+  },
+  "memory": "~{{size}} GB de mémoire",
+  "caution": "Utilise la majeure partie de la mémoire de cet appareil. Fermez les autres applications.",
+  "queue": {
+    "add": "Ajouter à la file d’attente",
+    "queued": "En attente · cliquez pour retirer",
+    "downloading": "Téléchargement · cliquez pour retirer",
+    "interrupted": "Interrompu · cliquez pour retirer",
+    "downloaded": "Téléchargé"
+  },
+  "order": "Ordre de téléchargement : {{order}}",
+  "skip": "Passer",
+  "engineTitle": "Moteur d’images pour {{name}}"
+}

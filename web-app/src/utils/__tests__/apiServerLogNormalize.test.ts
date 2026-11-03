@@ -58,6 +58,12 @@ describe('normalizeStarted', () => {
     expect(entry?.promptPreview).toBe('hi')
   })
 
+  it('carries the mark of a request nobody watched', () => {
+    expect(normalizeStarted({ id: 'quiet', unwatched: true })?.unwatched).toBe(true)
+    expect(normalizeStarted({ id: 'seen', unwatched: false })?.unwatched).toBe(false)
+    expect(normalizeStarted({ id: 'legacy' })?.unwatched).toBeUndefined()
+  })
+
   it('returns null without an id', () => {
     expect(normalizeStarted({ endpoint: 'models' })).toBeNull()
     expect(normalizeStarted(null)).toBeNull()

@@ -10,7 +10,6 @@ import {
 
 import { Button } from '@/components/ui/button'
 import { ExtensionManager } from '@/lib/extension'
-import HeaderPage from '@/containers/HeaderPage'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useBackendUpdater } from '@/hooks/useBackendUpdater'
 import { cn, LOCAL_LLAMACPP_EXTENSION_NAME } from '@/lib/utils'
@@ -314,180 +313,144 @@ export default function SetupBackendStep({ onDone }: SetupBackendStepProps) {
   }, [finish, recommendation])
 
   return (
-    <div className="relative flex h-svh w-full flex-col overflow-hidden">
-      <div className="flex h-svh min-h-0 w-full flex-col">
-        <HeaderPage />
-
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-          <div className="pointer-events-auto mx-auto my-auto flex w-full max-w-[640px] flex-col px-6 py-8 sm:px-10 sm:py-10">
-            <div className="mb-5 shrink-0 text-center">
-              <div className="mb-5 flex items-center justify-center gap-3 font-studio text-4xl font-semibold leading-none tracking-tight sm:text-5xl">
-                <div className="flex h-[1em] w-[1em] shrink-0 items-center justify-center rounded-lg bg-neutral-950 p-[3px] shadow-sm dark:bg-white dark:shadow-none">
-                  <img
-                    src="/images/transparent-logo.png"
-                    alt=""
-                    className="size-full min-h-0 min-w-0 object-contain invert dark:invert-0"
-                    draggable={false}
-                  />
-                </div>
-                <span>Atomic Chat</span>
-              </div>
-              <div className="mb-2 min-w-0">
-                <span className="inline-block text-lg font-bold leading-snug sm:text-xl md:text-2xl">
-                  {t('setup:backendStep.title')}
-                </span>
-              </div>
-              <p className="text-muted-foreground mx-auto max-w-full text-sm leading-relaxed sm:text-base">
-                {t('setup:backendStep.description')}
-              </p>
-            </div>
-
-            <div
-              className={cn(
-                'w-full shrink-0 rounded-lg border bg-secondary/50 p-5 sm:p-6'
-              )}
-            >
-              {uiPhase === 'detecting' && (
-                <div className="flex flex-col items-center gap-3 py-4 text-center">
-                  <IconLoader2
-                    size={28}
-                    className="animate-spin text-muted-foreground"
-                  />
-                  <p className="text-sm text-muted-foreground">
-                    {t('setup:backendStep.detecting')}
-                  </p>
-                </div>
-              )}
-
-              {uiPhase === 'recommend' && recommendation && (
-                <div className="flex flex-col gap-4">
-                  <div className="flex items-start gap-3">
-                    <IconRocket
-                      size={28}
-                      className="mt-0.5 shrink-0 text-foreground"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <h2 className="text-base font-semibold leading-tight sm:text-lg">
-                        {t('setup:backendStep.recommendTitle', {
-                          backend: recommendation.recommendedCategory,
-                        })}
-                      </h2>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        {t('setup:backendStep.recommendDesc')}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    <Button
-                      variant="outline"
-                      onClick={handleStayOnCpu}
-                      className="order-2 w-full sm:order-1"
-                    >
-                      <IconCpu size={16} className="mr-1" />
-                      {t('setup:backendStep.stayOnCpu')}
-                    </Button>
-                    <Button
-                      onClick={handleDownload}
-                      className="order-1 w-full sm:order-2"
-                    >
-                      <IconDownload size={16} className="mr-1" />
-                      {t('setup:backendStep.downloadAction')}
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {uiPhase === 'downloading' && (
-                <div className="flex flex-col items-center gap-3 py-2 text-center">
-                  <IconLoader2
-                    size={28}
-                    className="animate-spin text-foreground"
-                  />
-                  <h2 className="text-base font-semibold leading-tight">
-                    {t('setup:backendStep.downloadingTitle')}
-                  </h2>
-                  <p className="text-sm text-muted-foreground">
-                    {t('setup:backendStep.downloadingDesc', {
-                      backend:
-                        recommendation?.recommendedCategory ??
-                        downloadState.backendName ??
-                        '',
-                    })}
-                  </p>
-                </div>
-              )}
-
-              {uiPhase === 'switching' && (
-                <div className="flex flex-col items-center gap-3 py-2 text-center">
-                  <IconLoader2
-                    size={28}
-                    className="animate-spin text-foreground"
-                  />
-                  <h2 className="text-base font-semibold leading-tight">
-                    {t('setup:backendStep.switchingTitle')}
-                  </h2>
-                  <p className="text-sm text-muted-foreground">
-                    {t('setup:backendStep.switchingDesc', {
-                      backend:
-                        recommendation?.recommendedCategory ??
-                        downloadState.backendName ??
-                        '',
-                    })}
-                  </p>
-                </div>
-              )}
-
-              {uiPhase === 'restart-required' && (
-                <div className="flex flex-col gap-4">
-                  <div className="flex items-start gap-3">
-                    <IconRefresh
-                      size={28}
-                      className="mt-0.5 shrink-0 text-foreground"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <h2 className="text-base font-semibold leading-tight sm:text-lg">
-                        {t('setup:backendStep.restartTitle')}
-                      </h2>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        {t('setup:backendStep.restartDesc')}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    <Button
-                      variant="outline"
-                      onClick={handleRestartLater}
-                      className="order-2 w-full sm:order-1"
-                    >
-                      {t('setup:backendStep.restartLater')}
-                    </Button>
-                    <Button
-                      onClick={handleRestartNow}
-                      className="order-1 w-full sm:order-2"
-                    >
-                      <IconRefresh size={16} className="mr-1" />
-                      {t('setup:backendStep.restartNow')}
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {uiPhase === 'recommend' && (
-              <div className="relative z-60 flex shrink-0 flex-col items-center pt-4">
-                <Button
-                  type="button"
-                  variant="link"
-                  onClick={handleSkip}
-                  className="text-muted-foreground/60 hover:text-muted-foreground relative z-60 h-auto p-0 text-xs font-normal underline-offset-4"
-                >
-                  {t('setup:skip')}
-                </Button>
-              </div>
-            )}
+    <div className="flex w-full flex-col">
+      <div
+        className={cn(
+          'w-full shrink-0 rounded-lg border bg-secondary/50 p-5 sm:p-6'
+        )}
+      >
+        {uiPhase === 'detecting' && (
+          <div className="flex flex-col items-center gap-3 py-4 text-center">
+            <IconLoader2
+              size={28}
+              className="animate-spin text-muted-foreground"
+            />
+            <p className="text-sm text-muted-foreground">
+              {t('setup:backendStep.detecting')}
+            </p>
           </div>
-        </div>
+        )}
+
+        {uiPhase === 'recommend' && recommendation && (
+          <div className="flex flex-col gap-4">
+            <div className="flex items-start gap-3">
+              <IconRocket
+                size={28}
+                className="mt-0.5 shrink-0 text-foreground"
+              />
+              <div className="min-w-0 flex-1">
+                <h2 className="text-base font-semibold leading-tight sm:text-lg">
+                  {t('setup:backendStep.recommendTitle', {
+                    backend: recommendation.recommendedCategory,
+                  })}
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {t('setup:backendStep.recommendDesc')}
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <Button
+                variant="outline"
+                onClick={handleStayOnCpu}
+                className="order-2 w-full sm:order-1"
+              >
+                <IconCpu size={16} className="mr-1" />
+                {t('setup:backendStep.stayOnCpu')}
+              </Button>
+              <Button
+                onClick={handleDownload}
+                className="order-1 w-full sm:order-2"
+              >
+                <IconDownload size={16} className="mr-1" />
+                {t('setup:backendStep.downloadAction')}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {uiPhase === 'downloading' && (
+          <div className="flex flex-col items-center gap-3 py-2 text-center">
+            <IconLoader2 size={28} className="animate-spin text-foreground" />
+            <h2 className="text-base font-semibold leading-tight">
+              {t('setup:backendStep.downloadingTitle')}
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              {t('setup:backendStep.downloadingDesc', {
+                backend:
+                  recommendation?.recommendedCategory ??
+                  downloadState.backendName ??
+                  '',
+              })}
+            </p>
+          </div>
+        )}
+
+        {uiPhase === 'switching' && (
+          <div className="flex flex-col items-center gap-3 py-2 text-center">
+            <IconLoader2 size={28} className="animate-spin text-foreground" />
+            <h2 className="text-base font-semibold leading-tight">
+              {t('setup:backendStep.switchingTitle')}
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              {t('setup:backendStep.switchingDesc', {
+                backend:
+                  recommendation?.recommendedCategory ??
+                  downloadState.backendName ??
+                  '',
+              })}
+            </p>
+          </div>
+        )}
+
+        {uiPhase === 'restart-required' && (
+          <div className="flex flex-col gap-4">
+            <div className="flex items-start gap-3">
+              <IconRefresh
+                size={28}
+                className="mt-0.5 shrink-0 text-foreground"
+              />
+              <div className="min-w-0 flex-1">
+                <h2 className="text-base font-semibold leading-tight sm:text-lg">
+                  {t('setup:backendStep.restartTitle')}
+                </h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {t('setup:backendStep.restartDesc')}
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <Button
+                variant="outline"
+                onClick={handleRestartLater}
+                className="order-2 w-full sm:order-1"
+              >
+                {t('setup:backendStep.restartLater')}
+              </Button>
+              <Button
+                onClick={handleRestartNow}
+                className="order-1 w-full sm:order-2"
+              >
+                <IconRefresh size={16} className="mr-1" />
+                {t('setup:backendStep.restartNow')}
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
+
+      {uiPhase === 'recommend' && (
+        <div className="relative z-60 flex shrink-0 flex-col items-center pt-4">
+          <Button
+            type="button"
+            variant="link"
+            onClick={handleSkip}
+            className="text-muted-foreground/60 hover:text-muted-foreground relative z-60 h-auto p-0 text-xs font-normal underline-offset-4"
+          >
+            {t('setup:skip')}
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

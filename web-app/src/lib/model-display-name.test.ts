@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   compactModelDisplayName,
+  modelVariantDetails,
   prettyModelName,
   qualifiedModelDisplayName,
 } from './model-display-name'
@@ -162,5 +163,62 @@ describe('qualifiedModelDisplayName', () => {
     expect(
       qualifiedModelDisplayName({ id: 'model-Q4_K_M.gguf' } as Model)
     ).toBe('Model Q4_K_M')
+  })
+})
+
+// QA 09 (2.2.23): the picker names a row once and puts these under the name.
+describe('modelVariantDetails', () => {
+  it('gives the quant as spelled and the owner of a namespaced id', () => {
+    expect(
+      modelVariantDetails({
+        id: 'unsloth/Qwen3_5-9B-GGUF-Qwen3_5-9B-IQ4_XS',
+      } as Model)
+    ).toEqual({ quant: 'IQ4_XS', owner: 'unsloth' })
+    expect(
+      modelVariantDetails({
+        id: 'ollama/gemma-4-12b-uncensored-heretic-q4_K_M',
+      } as Model)
+    ).toEqual({ quant: 'q4_K_M', owner: 'ollama' })
+    expect(
+      modelVariantDetails({
+        id: 'prism-ml/prism-ml/Ternary-Bonsai-1_7B-PQ2_0',
+      } as Model)
+    ).toEqual({ quant: 'PQ2_0', owner: 'prism-ml' })
+  })
+
+  it('names the owner, not the whole repo path, of a cached Hugging Face file', () => {
+    expect(
+      modelVariantDetails({
+        id: 'lmstudio-community/Meta-Llama-3.1-8B-Instruct-GGUF/Meta-Llama-3.1-8B-Instruct-Q6_K',
+      } as Model)
+    ).toEqual({ quant: 'Q6_K', owner: 'lmstudio-community' })
+  })
+
+  it('leaves out what the id does not carry', () => {
+    expect(
+      modelVariantDetails({ id: 'gemma-4-E4B-it-IQ4_XS' } as Model)
+    ).toEqual({ quant: 'IQ4_XS', owner: undefined })
+    expect(
+      modelVariantDetails({ id: 'ollama/heretic-12b-latest' } as Model)
+    ).toEqual({ quant: undefined, owner: 'ollama' })
+    expect(modelVariantDetails({ id: 'gpt-4.1' } as Model)).toEqual({
+      quant: undefined,
+      owner: undefined,
+    })
+  })
+
+  it('does not repeat what a nickname already reads', () => {
+    expect(
+      modelVariantDetails({
+        id: 'ollama/gemma-4-12b-q4_K_M',
+        displayName: 'gemma-4-12b:q4_K_M',
+      } as Model)
+    ).toEqual({ quant: undefined, owner: 'ollama' })
+    expect(
+      modelVariantDetails({
+        id: 'prism-ml/Ternary-Bonsai-1_7B-PQ2_0',
+        displayName: 'prism-ml/Ternary Bonsai',
+      } as Model)
+    ).toEqual({ quant: 'PQ2_0', owner: undefined })
   })
 })

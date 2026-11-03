@@ -1,3 +1,4 @@
+import '@/test/telemetry-ready'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import posthog from 'posthog-js'
@@ -10,7 +11,7 @@ import {
 import { classifySubscriptionFailure } from '@/lib/telemetry'
 
 vi.mock('posthog-js', () => ({
-  default: { capture: vi.fn(), has_opted_in_capturing: () => true },
+  default: { capture: vi.fn() },
 }))
 
 const lastCall = () => {

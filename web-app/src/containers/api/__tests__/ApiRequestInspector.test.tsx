@@ -18,8 +18,8 @@ vi.mock('@/hooks/useLocalApiServer', () => ({
     selector({ apiPrefix: '/v1' }),
 }))
 
-vi.mock('@/utils/apiServerCapacity', () => ({
-  getModelContextLength: () => contextLength.value,
+vi.mock('@/containers/server/useServedContextLength', () => ({
+  useServedContextLength: () => contextLength.value,
 }))
 
 function request(overrides: Partial<ApiRequestEntry> = {}): ApiRequestEntry {
@@ -155,6 +155,27 @@ describe('ApiRequestInspector', () => {
     )
     expect(screen.getByText('api:detail.noPrompt')).toBeInTheDocument()
     expect(screen.getByText('api:detail.noReply')).toBeInTheDocument()
+    expect(screen.queryByText('api:detail.notRecordedHint')).toBeNull()
+  })
+
+  it('says why a request nobody watched has no text, and how to see it', () => {
+    render(
+      <ApiRequestInspector
+        entry={request({
+          unwatched: true,
+          promptPreview: undefined,
+          replyPreview: undefined,
+        })}
+        hasSelection
+      />
+    )
+    expect(screen.getByText('api:detail.notRecordedHint')).toBeInTheDocument()
+    expect(screen.getAllByText('api:detail.notRecorded')).toHaveLength(2)
+    expect(screen.queryByText('api:detail.noPrompt')).toBeNull()
+    expect(screen.queryByText('api:detail.noReply')).toBeNull()
+    // Its numbers are shown as for any other request.
+    expect(screen.getByText('3.5 s')).toBeInTheDocument()
+    expect(screen.getByText('150')).toBeInTheDocument()
   })
 
   it('prompts for a selection, and reports an evicted one', () => {

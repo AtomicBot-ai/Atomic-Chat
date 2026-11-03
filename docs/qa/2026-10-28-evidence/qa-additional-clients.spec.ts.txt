@@ -1,0 +1,176 @@
+import { createServer } from 'node:http'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { mkdir, readFile, writeFile, chmod } from 'node:fs/promises'
+import { join } from 'node:path'
+import { spawn } from 'node:child_process'
+import { invoke } from '../harness/app.js'
+import { waitForChat, pickModel } from '../harness/chat.js'
+import { installFakeBackend, writeFakeModel } from '../harness/fixtures.js'
+import { endSession, startSession, type Session } from '../harness/session.js'
+import { startServerFromSidebar } from '../harness/navigation.js'
+
+const model = 'qa/client-model'
+const key = 'qa-client-auth-key'
+const prompt = 'Reply briefly. Do not call any tools.'
+const cli = '/Users/misha/.nvm/versions/node/v22.22.0/bin/'
+const cases = [
+  { id: 'muse', bin: '/Users/misha/.local/bin/muse', args: ['exec', prompt] },
+  {
+    id: 'openclaw',
+    bin: cli + 'openclaw',
+    args: [
+      'agent',
+      '--local',
+      '--session-id',
+      '22222222-2222-4222-8222-222222222222',
+      '--message',
+      prompt,
+      '--json',
+      '--timeout',
+      '40',
+    ],
+  },
+]
+let session: Session
+let base: string
+let proxy: ReturnType<typeof createServer>
+let currentClient = ''
+const requests: any[] = []
+
+describe('QA real installed CLI clients with API authentication', () => {
+  beforeAll(async () => {
+    session = await startSession('qa-real-clients', {
+      apiServer: { apiKey: key },
+      webviewSeed: { 'setup-completed': 'true' },
+      prepare: async (profile) => {
+        await installFakeBackend(profile, { reply: 'QA_CLIENT_REPLY' })
+        await writeFakeModel(profile, model)
+      },
+    })
+    base = `http://127.0.0.1:${session.apiPort}/v1`
+    const upstream = base.replace(/\/v1$/, '')
+    proxy = createServer(async (req, res) => {
+      const chunks: Buffer[] = []
+      for await (const chunk of req) chunks.push(Buffer.from(chunk))
+      const result = await fetch(upstream + req.url, {
+        method: req.method,
+        headers: {
+          'content-type': 'application/json',
+          'authorization': req.headers.authorization ?? '',
+        },
+        ...(req.method === 'POST' ? { body: Buffer.concat(chunks) } : {}),
+      })
+      const body = await result.text()
+      requests.push({
+        client: currentClient,
+        path: req.url,
+        authorized: req.headers.authorization === `Bearer ${key}`,
+        status: result.status,
+        body: body.slice(0, 500),
+      })
+      res.writeHead(result.status, {
+        'content-type':
+          result.headers.get('content-type') ?? 'application/json',
+      })
+      res.end(body)
+    })
+    await new Promise<void>((resolve) => proxy.listen(0, '127.0.0.1', resolve))
+    base = `http://127.0.0.1:${(proxy.address() as any).port}/v1`
+    await waitForChat(session)
+  })
+  afterAll(async () => {
+    proxy.closeAllConnections()
+    await new Promise<void>((resolve) => proxy.close(() => resolve()))
+    await writeFile(
+      '/tmp/atomic-integration-regression-20261028/additional-wire.json',
+      JSON.stringify(requests, null, 2)
+    )
+    expect(await endSession(session)).toEqual([])
+  })
+  it('starts the API with the selected model', async () => {
+    await pickModel(session, model)
+    await startServerFromSidebar(session.app.browser)
+  })
+  for (const testCase of cases) {
+    it(
+      `${testCase.id} answers using the configuration written by Atomic Chat`,
+      { timeout: 100_000 },
+      async () => {
+        currentClient = testCase.id
+        await invoke(session.app.browser, `configure_${testCase.id}`, {
+          apiUrl:
+            testCase.id === 'claude_code' ? base.replace(/\/v1$/, '') : base,
+          model,
+          apiKey: key,
+          contextLength: 65536,
+        })
+        const cwd = join(session.profile.root, testCase.id)
+        await mkdir(cwd, { recursive: true })
+        const env: Record<string, string> = {
+          PATH: process.env.PATH!,
+          ...session.profile.env,
+          NO_PROXY: '127.0.0.1,localhost',
+          DISABLE_TELEMETRY: '1',
+          DISABLE_AUTOUPDATER: '1',
+        }
+        if (testCase.id === 'copilot') {
+          const rc = await readFile(
+            join(session.profile.home, '.zshenv'),
+            'utf8'
+          )
+          for (const match of rc.matchAll(/^export (COPILOT_\w+)='([^']*)'/gm))
+            env[match[1]!] = match[2]!
+        }
+        const args =
+          testCase.id === 'muse'
+            ? [
+                'exec',
+                '--provider',
+                'meta',
+                '--base-url',
+                base,
+                '--model',
+                model,
+                '--disable-write',
+                '--disable-shell',
+                prompt,
+              ]
+            : testCase.args
+        if (testCase.id === 'muse') env.META_API_KEY = key
+        const result = await new Promise<{
+          code: number | null
+          signal: string | null
+          output: string
+        }>((resolve) => {
+          const child = spawn(testCase.bin, args, {
+            cwd,
+            env,
+            stdio: ['ignore', 'pipe', 'pipe'],
+          })
+          let output = ''
+          child.stdout.on('data', (data) => {
+            output += data
+          })
+          child.stderr.on('data', (data) => {
+            output += data
+          })
+          const timer = setTimeout(() => child.kill('SIGKILL'), 50_000)
+          child.on('error', (error) => {
+            clearTimeout(timer)
+            resolve({ code: -1, signal: null, output: String(error) })
+          })
+          child.on('exit', (code, signal) => {
+            clearTimeout(timer)
+            resolve({ code, signal, output })
+          })
+        })
+        await writeFile(
+          `/tmp/atomic-integration-regression-20261028/client-${testCase.id}.log`,
+          JSON.stringify(result, null, 2)
+        )
+        expect(result.code, result.output.slice(-2000)).toBe(0)
+        expect(result.output).toContain('QA_CLIENT_REPLY')
+      }
+    )
+  }
+})

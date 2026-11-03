@@ -740,3 +740,54 @@ describe('video families', () => {
     expect(findQuant(ltx!, 'q4_k_m')?.recommended).toBe(true)
   })
 })
+
+describe('per-repository diffusion revisions', () => {
+  it('preserves independent pins through parsing and caching', async () => {
+    clearDiffusionCatalogCache()
+    const raw = family()
+    const transformer = { ...raw.transformer, revision: 'a'.repeat(40) }
+    const vae = { ...raw.vae, revision: 'b'.repeat(40) }
+    const text_encoders = raw.text_encoders.map((file) => ({
+      ...file,
+      revision: 'c'.repeat(40),
+    }))
+    fetchOk(manifest([family({ transformer, vae, text_encoders })]))
+    try {
+      const result = await fetchDiffusionCatalog({ url: REMOTE_URL })
+      expect(result.catalog.families[0].transformer.revision).toBe(
+        'a'.repeat(40)
+      )
+      expect(result.catalog.families[0].vae?.revision).toBe('b'.repeat(40))
+      expect(
+        getCachedDiffusionCatalog()?.catalog.families[0].text_encoders[0]
+          .revision
+      ).toBe('c'.repeat(40))
+    } finally {
+      clearDiffusionCatalogCache()
+      vi.restoreAllMocks()
+    }
+  })
+
+  it.each(['main', '../main', '', 'a'.repeat(39), null, 123])(
+    'rejects malformed pins %j',
+    (revision) => {
+      const raw = family()
+      expect(
+        sanitizeDiffusionFamily(
+          family({ transformer: { ...raw.transformer, revision } })
+        )
+      ).toBeNull()
+      expect(
+        sanitizeDiffusionFamily(family({ vae: { ...raw.vae, revision } }))
+      ).toBeNull()
+      expect(
+        sanitizeDiffusionFamily(
+          family({ text_encoders: [{ ...raw.text_encoders[0], revision }] })
+        )
+      ).toBeNull()
+      expect(
+        sanitizeDiffusionFamily(family({ audio_vae: { ...raw.vae, revision } }))
+      ).toBeNull()
+    }
+  )
+})

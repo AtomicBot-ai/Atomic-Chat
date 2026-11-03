@@ -139,5 +139,9 @@ export function agentConfiguredDescriptionKey(agentId: string): string {
         ? // ZCode polls its provider file, so a running app switches over
           // without a restart.
           'launch:toast.configuredDescZcode'
-        : 'launch:toast.configuredDesc'
+        : agentId === 'codex'
+          ? // Only `codex --profile atomic-chat` uses the local server; say
+            // so, since a plain `codex` no longer does.
+            'launch:toast.configuredDescCodex'
+          : 'launch:toast.configuredDesc'
 }

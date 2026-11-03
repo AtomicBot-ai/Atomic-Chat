@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { DownloadEvent } from '@janhq/core'
 
+import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { seedServiceHub } from '@/test/service-hub'
 import {
   findFamily,
@@ -703,6 +704,51 @@ describe('downloadArtifact', () => {
     expect(plan.missingBytes).toBe(0)
   })
 
+  it('closes a waiting row whose files are already complete as a finished download', async () => {
+    // A paused row brought back after a relaunch, for files that finished
+    // meanwhile: nothing transfers, so only this event can clear the row.
+    onDiskNow = [
+      onDisk('z-image/z-image-turbo-Q4_K_M.gguf', 5_017_613_376),
+      onDisk(SHARED_AE, AE.bytes),
+      onDisk(SHARED_TE, QWEN3.bytes),
+    ]
+    const emitted: Array<{ name: string; modelId?: string }> = []
+    const core = (globalThis as unknown as { core: Record<string, unknown> })
+      .core
+    core.events = {
+      on: () => {},
+      off: () => {},
+      emit: (name: string, payload: { modelId?: string }) =>
+        emitted.push({ name, modelId: payload?.modelId }),
+    }
+    useDownloadStore.setState({
+      downloads: {
+        'diffusion-model-z-image_q4_k_m': {
+          id: 'diffusion-model-z-image_q4_k_m',
+          name: 'diffusion-model-z-image_q4_k_m',
+          progress: 0.4,
+          current: 4,
+          total: 10,
+          speed: { bytesPerSecond: 0, atBytes: 4, atTime: 0 },
+        },
+      },
+    })
+
+    try {
+      await downloadArtifact(zImage, 'q4_k_m', { resume: true })
+      expect(transfers).toEqual([])
+      expect(emitted).toEqual([
+        {
+          name: DownloadEvent.onFileDownloadSuccess,
+          modelId: 'diffusion-model-z-image_q4_k_m',
+        },
+      ])
+    } finally {
+      delete core.events
+      useDownloadStore.setState({ downloads: {} })
+    }
+  })
+
   it('leaves a shared file to the download already fetching it', async () => {
     onDiskNow = []
     let releaseFirst!: () => void
@@ -900,6 +946,22 @@ describe('video families', () => {
       `${ltxShared}/ltx-2.3-22b-distilled_audio_vae.safetensors`,
       `${gemmaShared}/gemma-3-12b-it-qat-UD-Q4_K_XL.gguf`,
       `${ltxShared}/ltx-2.3-22b-distilled_embeddings_connectors.safetensors`,
+    ])
+  })
+})
+
+describe('pinned diffusion downloads', () => {
+  it('uses each repository commit and leaves unpinned dependencies on main', () => {
+    const family = {
+      ...zImage,
+      transformer: { ...zImage.transformer, revision: 'a'.repeat(40) },
+      vae: { ...AE, revision: 'b'.repeat(40) },
+    }
+    const plan = planArtifactDownload(family, 'q4_k_m', [], ROOT)
+    expect(plan.entries.map((entry) => entry.url)).toEqual([
+      `https://huggingface.co/unsloth/Z-Image-Turbo-GGUF/resolve/${'a'.repeat(40)}/z-image-turbo-Q4_K_M.gguf`,
+      `https://huggingface.co/unsloth/Z-Image-Turbo-ComfyUI/resolve/${'b'.repeat(40)}/split_files/vae/ae.safetensors`,
+      'https://huggingface.co/unsloth/Z-Image-Turbo-ComfyUI/resolve/main/split_files/text_encoders/qwen_3_4b.safetensors',
     ])
   })
 })

@@ -5,6 +5,8 @@ import { isEmbeddingDownloadTaskId } from '@/lib/embedding/models'
 import { isDiffusionModelDownloadTaskId } from '@/lib/diffusion/models'
 import { isManagedDownloadId } from '@/lib/managed-engine/download-id'
 import { isFoundryLocalDownloadId } from '@/lib/foundry-local/download-id'
+import { isLiteRtLmDownloadId } from '@/lib/litert-lm/download-id'
+import { isGeniexDownloadId } from '@/lib/geniex/download-id'
 import { isDiffusionEngineTaskId } from '@/services/diffusion/engine'
 import { cancelTransfer } from '@/services/diffusion/transfer'
 import { cancelEngineBuildDownload } from '@/services/engine-builds/core'
@@ -51,7 +53,8 @@ export function clearDownloadCancellationRequested(id: string) {
  * binaries (`llamacpp*`), MLX repos (`mlx*`) and diffusion artifacts run
  * through the download extension and are cancelled there; chat-model files
  * go through the model service's abort; managed models (`managed-*`, TensorRT-LLM and vLLM),
- * Foundry Local variants (`foundry-local-*`),
+ * Foundry Local variants (`foundry-local-*`), LiteRT-LM variants (`litert-lm-*`),
+ * GenieX models (`geniex-*`, a bundle's unpacking under the same id included),
  * decision models (`decision-*`) and embedding models (`embedding-*`) are a
  * plain transfer of their files, stopped by task id. The media engine
  * (`diffusion-backend-*`) is downloaded by the core, which stops it by task id
@@ -68,14 +71,26 @@ export function cancelDownload(
   download: { id: string; name: string },
   serviceHub: ServiceHub
 ): void {
-  const { markResumableDownload, clearPausedDownload, clearResumeParams } =
-    useDownloadStore.getState()
-  for (const key of new Set([download.name, download.id])) {
+  const store = useDownloadStore.getState()
+  const keys = new Set([download.name, download.id])
+  // Pause already stopped the transfer, so no stop event will come to clear a
+  // paused row: a paused checkpoint's row stayed in the panel for good, and a
+  // download brought back after a relaunch would come back again.
+  const paused = [...keys].some((key) => store.pausedDownloads.has(key))
+  for (const key of keys) {
     markDownloadCancellationRequested(key)
-    markResumableDownload(key)
-    clearPausedDownload(key)
-    clearResumeParams(key)
+    store.markResumableDownload(key)
+    store.clearPausedDownload(key)
+    store.clearResumeParams(key)
+    if (paused) {
+      store.removeDownload(key)
+      store.removeLocalDownloadingModel(key)
+      store.clearDownloadOrigin(key)
+    }
   }
+  // A checkpoint's transfer has nothing left to stop. The model service's
+  // abort still runs for a chat-model file: its stop event reports the cancel.
+  if (paused && isDiffusionModelDownloadTaskId(download.id)) return
   if (
     isDiffusionEngineTaskId(download.id) ||
     isEngineBuildTaskId(download.id) ||
@@ -87,7 +102,9 @@ export function cancelDownload(
     isDecisionDownloadTaskId(download.id) ||
     isEmbeddingDownloadTaskId(download.id) ||
     isManagedDownloadId(download.id) ||
-    isFoundryLocalDownloadId(download.id)
+    isFoundryLocalDownloadId(download.id) ||
+    isLiteRtLmDownloadId(download.id) ||
+    isGeniexDownloadId(download.id)
   ) {
     void cancelTransfer(download.id)
   } else if (

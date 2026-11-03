@@ -507,6 +507,30 @@ describe('ImageModelSelector', () => {
     expect(useImageSetting.getState().selectedArtifactId).toBe(Q4_ID)
   })
 
+  it('offers a retry on the engine row when the build list could not be loaded', async () => {
+    useImageGenerationStore.setState({
+      status: makeStatus({ install: { state: 'not-installed' } }),
+      hostBackendId: null,
+      hostBackendReason: 'sd.cpp manifest from https://x: fetch failed',
+      hostBackendCheckFailed: 'manifest',
+      hostBackendResolved: true,
+    })
+    const retry = vi
+      .spyOn(useImageGenerationStore.getState(), 'refreshHostBackend')
+      .mockResolvedValue()
+    render(<ImageModelSelector variant="page" />)
+
+    const row = screen.getByTestId('image-models-engine-missing')
+    expect(row).toHaveTextContent('images:setup.engine.offline')
+    expect(
+      within(row).getByTitle(
+        'images:setup.engine.reason.unreachable — sd.cpp manifest from https://x: fetch failed'
+      )
+    ).toBeInTheDocument()
+    await userEvent.click(screen.getByTestId('image-models-engine-retry'))
+    expect(retry).toHaveBeenCalledWith({ force: true })
+  })
+
   it('removes an installed quant after confirmation', async () => {
     fake.listModelFiles.mockResolvedValue([])
     render(<ImageModelSelector variant="page" />)
@@ -550,6 +574,43 @@ describe('ImageModelSelector', () => {
     })
     expect(cancel).toHaveTextContent('18%')
     expect(cancel).toHaveClass('w-24')
+  })
+
+  it('offers Resume, not Cancel or Download, for a paused download brought back after a relaunch', async () => {
+    const taskId = diffusionDownloadTaskId(Q4_ID)
+    act(() => {
+      useImageGenerationStore.setState({
+        modelFiles: [],
+        installedArtifacts: [],
+      })
+      useDownloadStore.getState().updateProgress(taskId, 0.42, taskId, 42, 100)
+      useDownloadStore.setState({ pausedDownloads: new Set([taskId]) })
+    })
+    try {
+      render(<ImageModelSelector />)
+      const row = screen.getByTestId(`artifact-${Q4_ID}`)
+
+      expect(
+        within(row).queryByRole('button', { name: 'common:cancelDownload' })
+      ).not.toBeInTheDocument()
+      expect(
+        within(row).queryByRole('button', { name: 'images:model.download' })
+      ).not.toBeInTheDocument()
+      const resume = within(row).getByRole('button', {
+        name: 'common:resumeDownload',
+      })
+      expect(resume).toHaveTextContent('42%')
+
+      await userEvent.click(resume)
+      await waitFor(() => expect(transfer.download).toHaveBeenCalledTimes(1))
+      expect(transfer.download.mock.calls[0][1]).toBe('q4_k_m')
+      expect(transfer.download.mock.calls[0][2]).toMatchObject({ resume: true })
+      expect(useDownloadStore.getState().pausedDownloads.has(taskId)).toBe(
+        false
+      )
+    } finally {
+      useDownloadStore.setState({ pausedDownloads: new Set() })
+    }
   })
 
   it('tells the user when the catalog has not arrived', () => {

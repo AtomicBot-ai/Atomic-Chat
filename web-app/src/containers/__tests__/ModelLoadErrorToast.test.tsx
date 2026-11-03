@@ -80,4 +80,21 @@ describe('showModelLoadErrorToast', () => {
     ).toBeInTheDocument()
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
   })
+
+  it('carries the fix a failure offers as its button, expanded or not', () => {
+    const action = { label: 'Install', onClick: vi.fn() }
+    showModelLoadErrorToast({
+      title: 'MLX engine is not installed',
+      description: 'It is a one-time download.',
+      details: CRASH_LOG,
+      action,
+    })
+    expect(lastToast()[1]?.action).toBe(action)
+
+    render(<>{lastToast()[1]?.description}</>)
+    fireEvent.click(
+      screen.getByRole('button', { name: /model-errors:showDetails/ })
+    )
+    expect(lastToast()[1]?.action).toBe(action)
+  })
 })

@@ -12,6 +12,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { imageRecipeSettings } from '@/lib/diffusion/recipe'
 import { captureImageGalleryAction } from '@/lib/diffusion/telemetry'
 import type { ImageRecipe } from '@/services/diffusion/types'
 
@@ -31,8 +32,9 @@ type ImageRecipePopoverProps = {
 /**
  * The embedded recipe, readable, with "Restore these settings".
  *
- * Every row is a value the user chose or the engine recorded; the prompt is
- * copyable on its own because that is the part people reuse most.
+ * Every row is a value the user chose or the engine recorded; a knob a
+ * provider's model was never sent has no row (`imageRecipeSettings`). The
+ * prompt is copyable on its own because that is the part people reuse most.
  */
 export const ImageRecipePopover = memo(function ImageRecipePopover({
   recipe,
@@ -41,20 +43,27 @@ export const ImageRecipePopover = memo(function ImageRecipePopover({
 }: ImageRecipePopoverProps) {
   const { t } = useTranslation()
 
+  const settings = imageRecipeSettings(recipe)
   const rows: Array<[string, string]> = [
     [t('images:viewer.details.model'), recipe.model.displayName],
     [t('images:viewer.details.size'), `${recipe.width}×${recipe.height}`],
-    [t('images:viewer.details.steps'), String(recipe.steps)],
-    [t('images:viewer.details.cfg'), String(recipe.cfgScale)],
   ]
+  if (settings.steps !== undefined) {
+    rows.push([t('images:viewer.details.steps'), String(settings.steps)])
+  }
+  if (settings.cfgScale !== undefined) {
+    rows.push([t('images:viewer.details.cfg'), String(settings.cfgScale)])
+  }
   if (recipe.guidance !== null) {
     rows.push([t('images:viewer.details.guidance'), String(recipe.guidance)])
   }
-  rows.push([t('images:viewer.details.seed'), String(recipe.seed)])
-  if (recipe.batchSize > 1) {
+  if (settings.seed !== undefined) {
+    rows.push([t('images:viewer.details.seed'), String(settings.seed)])
+  }
+  if (recipe.batchSize > 1 && settings.batchSeed !== undefined) {
     rows.push([
       t('images:viewer.details.batchSeed'),
-      `${recipe.batchSeed} · ${recipe.index + 1}/${recipe.batchSize}`,
+      `${settings.batchSeed} · ${recipe.index + 1}/${recipe.batchSize}`,
     ])
   }
   if (recipe.samplingMethod) {

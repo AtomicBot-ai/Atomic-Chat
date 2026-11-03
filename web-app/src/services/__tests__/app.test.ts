@@ -203,8 +203,10 @@ describe('TauriAppService', () => {
     })
   })
 
-  it('performs factory reset through real invoke and preserves backend keys', async () => {
+  it('performs factory reset through real invoke and preserves backend keys and the onboarding cohort', async () => {
+    const cohort = '{"experiment":"onboarding_v1","variant":"none","assignedAt":1}'
     window.localStorage.setItem('llama_cpp_backend_type', 'cpu')
+    window.localStorage.setItem('atomic-onboarding-cohort', cohort)
     window.localStorage.setItem('discard-me', 'value')
     ipcHandler.mockReturnValue(undefined)
 
@@ -212,6 +214,8 @@ describe('TauriAppService', () => {
 
     expect(engineMocks.unload).toHaveBeenCalledTimes(2)
     expect(window.localStorage.getItem('llama_cpp_backend_type')).toBe('cpu')
+    // A reset install stays in its experiment cohort, as it stays one person.
+    expect(window.localStorage.getItem('atomic-onboarding-cohort')).toBe(cohort)
     expect(window.localStorage.getItem('discard-me')).toBeNull()
     expect(ipcHandler).toHaveBeenCalledWith('factory_reset', {})
   })

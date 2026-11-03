@@ -377,3 +377,38 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
     },
   },
 ]
+
+/**
+ * The order the Server lists integrations in: Claude Code, Codex and Atomic
+ * Agent first, then the rest by tokens on OpenRouter's app ranking (coding,
+ * This Month, read 2026-10-27; DeepSeek Harness by its place on the daily
+ * board, it is not on the monthly one). Agents OpenRouter does not attribute
+ * follow in catalog order, editors last.
+ */
+const SERVER_AGENT_ORDER = [
+  'claude-code',
+  'codex',
+  'atomic-agent',
+  'hermes',
+  'kilo',
+  'cline',
+  'pi',
+  'openclaw',
+  'dsh',
+  'openhands',
+  'zcode',
+  'zed',
+  'goose',
+  'mimo',
+]
+
+const serverRank = (agent: IntegrationAgent): number => {
+  const ranked = SERVER_AGENT_ORDER.indexOf(agent.id)
+  if (ranked !== -1) return ranked
+  return SERVER_AGENT_ORDER.length + (agent.kind === 'editor' ? 1 : 0)
+}
+
+/** Every integration in the Server's order; the sort keeps catalog order on ties. */
+export const SERVER_AGENTS: IntegrationAgent[] = [...INTEGRATION_AGENTS].sort(
+  (a, b) => serverRank(a) - serverRank(b)
+)

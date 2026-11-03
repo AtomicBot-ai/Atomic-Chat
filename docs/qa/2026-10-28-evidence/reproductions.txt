@@ -1,0 +1,2 @@
+QA_SUPPORT_STALL {"elapsedMs":600000,"statuses":["pending","pending"],"sends":1}
+

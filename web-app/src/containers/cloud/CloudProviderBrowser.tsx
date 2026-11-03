@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { ChevronRight, CircleCheck, Search } from 'lucide-react'
+import { useMemo, useState, type RefObject } from 'react'
+import { ChevronRight, CircleCheck, Search, TriangleAlert } from 'lucide-react'
 
 import { Input } from '@/components/ui/input'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
@@ -13,6 +13,10 @@ import {
 import { isProviderConnected } from '@/lib/cloud-providers'
 import { isMediaConnected } from '@/lib/media-models'
 import { cn, getProviderTitle } from '@/lib/utils'
+import {
+  keyStatusFor,
+  useProviderKeyStatusStore,
+} from '@/stores/provider-key-status-store'
 
 /** Model matches rendered at once; the rest wait for a narrower search. */
 const MODEL_RESULTS_LIMIT = 50
@@ -22,6 +26,10 @@ type CloudProviderBrowserProps = {
   providers: ProviderObject[]
   selected?: string
   onSelect: (provider: string, model?: string) => void
+  /** Merged onto the pane: the page hides it while a narrow page configures. */
+  className?: string
+  /** The pane, for the page to put focus back on its selected row. */
+  catalogRef?: RefObject<HTMLElement | null>
 }
 
 /**
@@ -29,17 +37,21 @@ type CloudProviderBrowserProps = {
  * finds a model across them ("Available through N providers").
  *
  * Counts and status are the provider's own: its model list as the registry
- * and the last reload left it, and the same "connected" the connection card
- * shows. There is no error state — nothing records a failed cloud request.
+ * and the last reload left it, and the same state the connection card shows:
+ * connected, or a saved key that is unverified or was rejected
+ * (`provider-key-status-store`).
  */
 export function CloudProviderBrowser({
   providers,
   selected,
   onSelect,
+  className,
+  catalogRef,
 }: CloudProviderBrowserProps) {
   const { t } = useTranslation()
   const [query, setQuery] = useState('')
   const needle = query.trim()
+  const keyStatuses = useProviderKeyStatusStore((state) => state.statuses)
 
   const catalog = useMemo(() => buildCloudModelCatalog(providers), [providers])
   const models = useMemo(
@@ -64,8 +76,14 @@ export function CloudProviderBrowser({
 
   const providerRow = (provider: ProviderObject, model?: string) => {
     const title = getProviderTitle(provider.provider)
-    const connected =
+    const configured =
       isProviderConnected(provider) || isMediaConnected(provider)
+    // A key the provider refused, or one it could not be asked about, is
+    // listed as such rather than as connected.
+    const keyState = configured
+      ? keyStatusFor(provider, keyStatuses)?.state
+      : undefined
+    const connected = configured && !keyState
     return (
       <button
         type="button"
@@ -84,16 +102,36 @@ export function CloudProviderBrowser({
       >
         <ProvidersAvatar provider={provider} className="size-6 shrink-0" />
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-medium">{title}</span>
+          {/* A long name ("ChatGPT subscription (Codex)") takes a second
+              line instead of an ellipsis. */}
+          <span
+            className="line-clamp-2 text-sm font-medium break-words"
+            title={title}
+          >
+            {title}
+          </span>
           <span className="mt-0.5 block truncate text-xs text-muted-foreground">
             {countLabel(listedModels(provider).length)}
             {connected && ` · ${t('cloud:connection.connected')}`}
+            {keyState === 'rejected' && ` · ${t('cloud:connection.rejected')}`}
+            {keyState === 'unverified' &&
+              ` · ${t('cloud:connection.unverified')}`}
           </span>
         </span>
         {connected && (
           <CircleCheck
             size={14}
             className="shrink-0 text-emerald-500"
+            aria-hidden
+          />
+        )}
+        {keyState && (
+          <TriangleAlert
+            size={14}
+            className={cn(
+              'shrink-0',
+              keyState === 'rejected' ? 'text-destructive' : 'text-amber-500'
+            )}
             aria-hidden
           />
         )}
@@ -108,7 +146,11 @@ export function CloudProviderBrowser({
 
   return (
     <aside
-      className="flex min-h-0 min-w-0 flex-col border-r border-border"
+      ref={catalogRef}
+      className={cn(
+        'flex min-h-0 min-w-0 flex-col border-r border-border',
+        className
+      )}
       aria-label={t('cloud:browser.label')}
     >
       <div className="p-3 pb-2">

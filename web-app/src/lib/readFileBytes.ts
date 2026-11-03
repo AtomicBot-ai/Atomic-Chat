@@ -87,3 +87,48 @@ export async function readFileBytes(
 
   return { bytes, size }
 }
+
+/**
+ * Read at most `maxBytes` from the start of a file, for previews that show
+ * the head of a large file rather than refusing it.
+ */
+export async function readFileHead(
+  path: string,
+  maxBytes: number
+): Promise<{
+  bytes: Uint8Array<ArrayBuffer>
+  size: number
+  truncated: boolean
+}> {
+  const stat = await fs.fileStat(path)
+  if (!stat || stat.isDirectory) {
+    throw new Error(`Cannot read ${path}: not a file`)
+  }
+  const size = Number(stat.size)
+  if (!Number.isFinite(size) || size < 0) {
+    throw new Error(`Cannot read ${path}: unknown size`)
+  }
+
+  const length = Math.min(size, maxBytes)
+  const bytes = new Uint8Array(new ArrayBuffer(length))
+  const core = getServiceHub().core()
+  let offset = 0
+  while (offset < length) {
+    const chunk = toBytes(
+      await core.invoke('read_file_chunk', {
+        path,
+        offset,
+        length: Math.min(READ_FILE_CHUNK_BYTES, length - offset),
+      })
+    )
+    if (chunk.byteLength === 0) break
+    bytes.set(chunk.subarray(0, length - offset), offset)
+    offset += chunk.byteLength
+  }
+
+  return {
+    bytes: offset < length ? bytes.slice(0, offset) : bytes,
+    size,
+    truncated: size > offset,
+  }
+}

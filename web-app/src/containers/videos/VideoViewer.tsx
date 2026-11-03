@@ -19,6 +19,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import DeleteGalleryVideosDialog from '@/containers/dialogs/DeleteGalleryVideosDialog'
+import { mediaPreviewFrameStyle } from '@/containers/images/mediaPreview'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useVideoForm } from '@/hooks/useVideoForm'
 import { useVideoSetting } from '@/hooks/useVideoSetting'
@@ -70,6 +71,10 @@ const isEditableTarget = (target: EventTarget | null) => {
  * webview cannot decode gets a button that opens it in the system player.
  * Where the webview may not load clips unasked (Linux), the player is mounted
  * only once Play is pressed; until then the frame shows the poster.
+ *
+ * The viewer is as tall as the clip and its toolbar, so the actions sit on
+ * the clip's bottom edge whatever its shape; the page gives the gallery the
+ * rest of the pane.
  *
  * Arrow keys step through the gallery and Delete opens the confirmation —
  * unless focus is in a text field, where those keys mean what they always do.
@@ -273,23 +278,21 @@ export const VideoViewer = memo(function VideoViewer({
 
   return (
     <div
-      className="group/viewer @container grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,1fr)_auto] gap-2 overflow-hidden px-6 pt-4 pb-2"
+      className="group/viewer @container flex min-w-0 flex-col gap-2 overflow-hidden px-6 pt-4 pb-2"
       data-testid="video-viewer"
     >
-      {/* The frame owns the geometry: the clip's aspect inside the region,
-          never larger than either axis, the same way the image viewer sizes
-          its bitmap. The player fills the frame. */}
+      {/* The frame owns the geometry: the clip's aspect at the region's
+          width under the pane's height cap, the same way the image viewer
+          sizes its bitmap. The region is as tall as the frame, and the
+          player fills the frame. */}
       <div
-        className="relative flex min-h-0 min-w-0 items-start justify-center overflow-hidden [container-type:size]"
+        className="relative flex min-w-0 justify-center [container-type:inline-size]"
         data-testid="video-viewer-region"
       >
         <div
           className="relative block shrink-0 overflow-hidden rounded-lg bg-black shadow-md"
           data-testid="video-viewer-frame"
-          style={{
-            width: `min(100cqw, ${(100 * frameWidth) / frameHeight}cqh)`,
-            height: `min(100cqh, ${(100 * frameHeight) / frameWidth}cqw)`,
-          }}
+          style={mediaPreviewFrameStyle(frameWidth, frameHeight)}
         >
           {unplayable ? (
             <div

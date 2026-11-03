@@ -1,0 +1,21 @@
+{
+  "retry": "Повторить",
+  "retryLabel": "Повторить загрузку",
+  "panel": {
+    "label": "Загрузки при настройке",
+    "backToSetup": "Вернуться к настройке",
+    "dismiss": "Скрыть"
+  },
+  "picker": {
+    "downloading": "Загрузка {{percent}}%",
+    "paused": "Пауза {{percent}}%",
+    "interrupted": "Загрузка прервана",
+    "queued": "В очереди",
+    "trigger": "{{name}} · {{status}}",
+    "section": "Загрузка модели",
+    "progress": "Загрузка {{name}}",
+    "pause": "Пауза",
+    "resume": "Продолжить",
+    "retry": "Повторить"
+  }
+}

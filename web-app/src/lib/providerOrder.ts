@@ -25,6 +25,10 @@ const PROVIDER_PRIORITY: Record<string, number> = {
   // Every desktop OS (change add-foundry-local): after the engines that share a model folder, before
   // the managed ones.
   'foundry-local': 6,
+  // Its sibling on every desktop OS the core registers it on (change add-litert-lm-runtime).
+  'litert-lm': 7,
+  // Qualcomm GenieX, registered by the core on Snapdragon X only (change add-geniex-runtime).
+  'geniex': 8,
 }
 
 /**
@@ -33,7 +37,7 @@ const PROVIDER_PRIORITY: Record<string, number> = {
  * order — vLLM, SGLang, TensorRT-LLM (changes add-vllm-runtime,
  * add-sglang-runtime). Read from the registry, so a new engine needs no entry.
  */
-const MANAGED_PRIORITY_FROM = 7
+const MANAGED_PRIORITY_FROM = 9
 
 const providerPriority = (provider: string): number => {
   if (Object.hasOwn(PROVIDER_PRIORITY, provider)) return PROVIDER_PRIORITY[provider]

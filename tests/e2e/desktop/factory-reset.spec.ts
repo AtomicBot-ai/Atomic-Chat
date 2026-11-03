@@ -10,7 +10,7 @@ import { readdir, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { followRelaunch } from '../harness/app.js'
-import { chooseFromMenu, isAlive, pageShows, pickModel, send, waitForChat } from '../harness/chat.js'
+import { chooseFromMenu, isAlive, pageShows, pickModel, send, waitForChat, SKIP_ONBOARDING } from '../harness/chat.js'
 import { readLock } from '../harness/core.js'
 import {
   FAKE_BACKEND,
@@ -108,7 +108,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a factory reset', () => {
       browser = session.app.browser
 
       // It comes back as a new install: onboarding, no conversation.
-      await browser.$('button=Skip').waitForDisplayed({ timeout: 60_000 })
+      await browser.$(SKIP_ONBOARDING).waitForDisplayed({ timeout: 60_000 })
       expect(isAlive(core.pid)).toBe(false)
 
       // Gone from disk: the thread, the model, and the key — wherever it was kept.

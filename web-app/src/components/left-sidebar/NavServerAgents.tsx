@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { Link } from '@tanstack/react-router'
 import { ChevronRight } from 'lucide-react'
 import { route } from '@/constants/routes'
-import { INTEGRATION_AGENTS } from '@/constants/integrations'
+import { SERVER_AGENTS } from '@/constants/integrations'
 import { AgentIcon } from '@/containers/AgentIcon'
 import { useServerSetup } from '@/hooks/useServerSetup'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -12,10 +12,11 @@ import { useLaunchStore } from '@/stores/launch-store'
 import { cn } from '@/lib/utils'
 
 /**
- * The integration agents as a palette under the Server navigation. An agent
- * Atomic Chat can configure opens the setup guide on Overview at its review;
- * an editor set up by hand opens its card on All integrations. The dot is
- * green once the agent was set up through Atomic Chat.
+ * The integration agents, in the Server's order, as a palette under the
+ * Server navigation. An agent Atomic Chat can configure opens the setup guide
+ * on Overview at its review; an editor set up by hand opens its card on All
+ * integrations. The dot is green once the agent was set up through Atomic
+ * Chat.
  */
 export function NavServerAgents() {
   const { t } = useTranslation()
@@ -32,7 +33,7 @@ export function NavServerAgents() {
         {t('common:navigation.agentsAndTools')}
       </p>
       <div className="space-y-0.5">
-        {INTEGRATION_AGENTS.map((agent) => {
+        {SERVER_AGENTS.map((agent) => {
           const isConfigured = configured.some((entry) => entry.id === agent.id)
           const status = isConfigured
             ? t('common:navigation.configured')

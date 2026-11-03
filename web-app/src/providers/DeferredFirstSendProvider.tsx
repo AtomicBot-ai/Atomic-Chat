@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { generateId } from 'ai'
+import { generateId, type UIMessage } from 'ai'
 import {
   ChatCompletionRole,
   MessageStatus,
@@ -10,6 +10,7 @@ import { toast } from 'sonner'
 
 import { route } from '@/constants/routes'
 import { useAppState } from '@/hooks/useAppState'
+import { useAgentMode } from '@/hooks/useAgentMode'
 import { useAssistant } from '@/hooks/useAssistant'
 import { useChat } from '@/hooks/use-chat'
 import { useMessages } from '@/hooks/useMessages'
@@ -37,15 +38,47 @@ import { useDeferredFirstSend } from '@/stores/deferred-first-send-store'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { switchToModel } from '@/utils/switchModel'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { composerThreadKey } from '@/lib/composer-thread-key'
+import {
+  attachmentTelemetry,
+  beginChatTurn,
+  captureChatRequest,
+  captureChatResponse,
+  contextTelemetry,
+  currentChatTurn,
+  responseShapeFromMessage,
+  type ChatOutcome,
+} from '@/lib/chat-telemetry'
+import { type RouteReason } from '@/lib/agent-route'
+import { resolveThreadExecutionRoute } from '@/lib/thread-execution-route'
+import { classifyChatFailure, lengthBucket } from '@/lib/telemetry'
+import { ttftBegin, ttftSnapshot } from '@/lib/ttft-timing'
+import { DEFAULT_CTX_LEN } from '@/lib/context-size'
 
 type Worker = {
   queueId: string
   threadId: string
   title: string
   prompt: string
+  composerKey: string
+  projectId?: string
   navigateWhenStarted: boolean
   systemMessage?: string
 }
+
+/** The send this provider made, until its `chat_response_received` is out. */
+type SentTurn = {
+  threadId: string
+  turnId: string
+  routeReason?: RouteReason
+}
+
+const selectedCtxLen = (): number | null =>
+  (useModelProvider.getState().selectedModel?.settings?.ctx_len
+    ?.controller_props?.value as number) ?? null
+
+// Older home queue entries have no explicit composer key.
+const HOME_COMPOSER_KEY = composerThreadKey({ isComposer: true })
 
 const matchesModelId = (candidate: string, expected: string) =>
   candidate === expected || candidate.replace(/\\/g, '/') === expected
@@ -58,6 +91,7 @@ const matchesModelId = (candidate: string, expected: string) =>
  */
 export function DeferredFirstSendProvider() {
   const queued = useDeferredFirstSend((state) => state.queued)
+  const claimedId = useDeferredFirstSend((state) => state.claimedId)
   const clearQueue = useDeferredFirstSend((state) => state.clear)
   const providers = useModelProvider((state) => state.providers)
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
@@ -75,6 +109,75 @@ export function DeferredFirstSendProvider() {
   const toolCallsRef = useRef<ChatToolCall[]>([])
   const toolControllerRef = useRef<AbortController | null>(null)
   const addToolOutputRef = useRef<(output: ChatToolOutput) => void>(() => {})
+  const sentTurnRef = useRef<SentTurn | null>(null)
+  const turnErrorRef = useRef<unknown>(undefined)
+
+  /**
+   * The `chat_response_received` for the send below, built the way the thread
+   * page builds it. The thread's Chat calls back into whichever page rendered
+   * it last, so if the user opened the thread the page emits this instead,
+   * under the same turn id; once that turn is no longer the thread's in-flight
+   * one, there is nothing left to report here.
+   */
+  const captureTurnOutcome = ({
+    message,
+    messages,
+    isAbort,
+    isError,
+  }: {
+    message: UIMessage
+    messages: UIMessage[]
+    isAbort: boolean
+    isError: boolean
+  }) => {
+    const turn = sentTurnRef.current
+    if (!turn) return
+    sentTurnRef.current = null
+    if (currentChatTurn(turn.threadId) !== turn.turnId) return
+
+    const error = turnErrorRef.current
+    const meta = (message.metadata ?? {}) as Record<string, unknown>
+    const usage = meta.usage as
+      | { inputTokens?: number; outputTokens?: number }
+      | undefined
+    const ctxLen = selectedCtxLen()
+    // Nothing here grows the context and continues, so a reply cut off at the
+    // context limit is a stopped turn; `length` short of it is max_tokens.
+    const outcome: ChatOutcome = isAbort
+      ? 'aborted'
+      : isError
+        ? classifyChatFailure(error) === 'aborted'
+          ? 'aborted'
+          : 'error'
+        : meta.finishReason === 'length' &&
+            (usage?.inputTokens ?? 0) + (usage?.outputTokens ?? 0) >=
+              (ctxLen ?? DEFAULT_CTX_LEN) * 0.9
+          ? 'truncated_stopped'
+          : 'success'
+    const { ragToolNames, mcpToolNames } = useAppState.getState()
+    const shape = responseShapeFromMessage(message, ragToolNames, mcpToolNames)
+    const { selectedModel: model, selectedProvider: provider } =
+      useModelProvider.getState()
+
+    captureChatResponse({
+      ...shape,
+      ...attachmentTelemetry([]),
+      ...contextTelemetry(shape.tokens_total as number | null, ctxLen),
+      ...ttftSnapshot(),
+      turn_id: turn.turnId,
+      thread_id: turn.threadId,
+      source: 'chat',
+      engine: 'chat-transport',
+      route_reason: turn.routeReason,
+      outcome,
+      error,
+      model_id: (meta.modelId as string | undefined) ?? model?.id ?? null,
+      provider: (meta.providerId as string | undefined) ?? provider ?? null,
+      turn_index: messages.length,
+      ctx_overflow: outcome === 'truncated_stopped',
+      ctx_auto_increased: false,
+    })
+  }
 
   const { sendMessage, addToolOutput } = useChat({
     sessionId: worker?.threadId,
@@ -92,10 +195,18 @@ export function DeferredFirstSendProvider() {
       })
     },
     onError: (error) => {
+      // The AI SDK always follows this with `onFinish({ isError: true })`,
+      // which reports the turn together with the reply it got.
+      turnErrorRef.current = error
       console.error('[DeferredFirstSend] background send failed', error)
       toast.error(t('chat:replyGate.backgroundFailed'))
     },
-    onFinish: ({ message, isAbort }) => {
+    onFinish: ({ message, messages, isAbort, isError }) => {
+      // A stop or a failure ends the turn; otherwise it ends once no tool call
+      // is waiting for the automatic follow-up.
+      if (isAbort || isError || toolCallsRef.current.length === 0) {
+        captureTurnOutcome({ message, messages, isAbort, isError })
+      }
       const current = worker
       if (!current || isAbort) return
 
@@ -146,7 +257,7 @@ export function DeferredFirstSendProvider() {
         callMcpTool: (args) => serviceHub.mcp().callTool(args),
         callExecTool: (args) =>
           runChatExecToolCall({ service: serviceHub.chatExec(), ...args }),
-        getProjectId: () => undefined,
+        getProjectId: () => current.projectId,
         processOutput: (content) =>
           downscaleToolResultContent(
             content,
@@ -177,7 +288,8 @@ export function DeferredFirstSendProvider() {
     // The home composer owns the fast path and can hand the turn to the full
     // ThreadDetail flow. This provider is the fallback once navigation unmounts
     // that composer; standing down here also avoids two simultaneous starts.
-    if (window.location.pathname === route.home) return
+    if (claimedId === queued.id) return
+    if (!queued.project && window.location.pathname === route.home) return
 
     for (const expectedId of queued.downloadModelIds) {
       const provider = providers.find((entry) =>
@@ -202,13 +314,15 @@ export function DeferredFirstSendProvider() {
       })
       return
     }
-  }, [providers, queued, serviceHub, worker])
+  }, [claimedId, providers, queued, serviceHub, worker])
 
   // Once the selected local model is actually serving, create the chat and
   // hand it to the background session. Route movement is decided at this
   // moment: New Chat follows the new conversation; every other page stays put.
   useEffect(() => {
     if (!queued || worker || !selectedModel?.id) return
+    // New Chat is still mounted and sends this one itself.
+    if (claimedId === queued.id) return
     if (!activeModels.includes(selectedModel.id)) return
     if (
       !queued.downloadModelIds.some((id) =>
@@ -222,27 +336,45 @@ export function DeferredFirstSendProvider() {
     const createBackgroundThread = async () => {
       const assistantState = useAssistant.getState()
       const assistant =
+        queued.assistant ??
         assistantState.pendingAssistant ??
         assistantState.assistants.find(
           (item) => item.id === assistantState.defaultAssistantId
         ) ??
         assistantState.assistants[0]
       const previousThreadId = useThreads.getState().currentThreadId
-      const navigateWhenStarted = window.location.pathname === route.home
-      const thread = await useThreads.getState().createThread(
-        { id: selectedModel.id, provider: selectedProvider },
-        queued.prompt,
-        assistant
-      )
+      const navigateWhenStarted = queued.project
+        ? window.location.pathname === `/project/${queued.project.id}`
+        : window.location.pathname === route.home
+      const thread = await useThreads
+        .getState()
+        .createThread(
+          { id: selectedModel.id, provider: selectedProvider },
+          queued.prompt,
+          assistant,
+          queued.project
+        )
       if (cancelled) return
       if (!navigateWhenStarted) {
         useThreads.setState({ currentThreadId: previousThreadId })
+      }
+      // Before the send: its tool calls are approved by this thread's mode.
+      if (queued.agentState) {
+        useAgentMode
+          .getState()
+          .handOffThreadState(
+            queued.composerKey ?? HOME_COMPOSER_KEY,
+            thread.id,
+            queued.agentState
+          )
       }
       setWorker({
         queueId: queued.id,
         threadId: thread.id,
         title: thread.title ?? queued.prompt,
         prompt: queued.prompt,
+        composerKey: queued.composerKey ?? HOME_COMPOSER_KEY,
+        projectId: queued.project?.id,
         navigateWhenStarted,
         systemMessage: assistant?.instructions
           ? renderInstructions(assistant.instructions)
@@ -261,6 +393,7 @@ export function DeferredFirstSendProvider() {
     }
   }, [
     activeModels,
+    claimedId,
     clearQueue,
     queued,
     selectedModel,
@@ -280,17 +413,62 @@ export function DeferredFirstSendProvider() {
       [],
       messageId
     )
+    const turnIndex = useMessages.getState().getMessages(worker.threadId).length
     useMessages.getState().addMessage(userMessage)
+    ttftBegin()
+    turnErrorRef.current = undefined
     sendMessage({
       id: messageId,
       parts: [{ type: 'text', text: worker.prompt }],
       metadata: userMessage.metadata,
     })
 
-    if (usePrompt.getState().prompt === worker.prompt) {
-      usePrompt.getState().setPrompt('')
+    // The same `chat_request_sent` the thread page sends for a chat turn. This
+    // send is always the chat transport, whatever Agent mode says; the route's
+    // reason is reported only when the router would have picked it too.
+    const routed = resolveThreadExecutionRoute(worker.threadId)
+    const routeReason =
+      routed.route === 'chat-transport' ? routed.reason : undefined
+    const turnId = beginChatTurn(worker.threadId)
+    sentTurnRef.current = { threadId: worker.threadId, turnId, routeReason }
+    const { selectedModel: model, selectedProvider: provider } =
+      useModelProvider.getState()
+    const { ragToolNames, mcpToolNames, toolCostReports } =
+      useAppState.getState()
+    const toolCost = toolCostReports[worker.threadId]
+    captureChatRequest({
+      ...attachmentTelemetry([]),
+      engine: 'chat-transport',
+      route_reason: routeReason,
+      ...contextTelemetry(null, selectedCtxLen()),
+      turn_id: turnId,
+      thread_id: worker.threadId,
+      source: 'chat',
+      model_id: model?.id,
+      provider,
+      turn_index: turnIndex,
+      prompt_len_bucket: lengthBucket(worker.prompt.length),
+      is_agent_mode: false,
+      agent_skill: null,
+      tools_enabled_count: ragToolNames.size + mcpToolNames.size,
+      has_rag: ragToolNames.size > 0,
+      has_mcp: mcpToolNames.size > 0,
+      tools_tokens_estimate: toolCost?.totalTokens ?? null,
+      tools_ctx_share:
+        toolCost?.ctxShare !== undefined
+          ? Math.round(toolCost.ctxShare * 100) / 100
+          : null,
+      tools_heavy_servers: toolCost?.heavyServers.length ?? 0,
+    })
+
+    // Clear the draft in its original composer, not in
+    // whichever chat the user has opened since.
+    const prompts = usePrompt.getState()
+    if (prompts.getDraft(worker.composerKey) === worker.prompt) {
+      prompts.setDraft(worker.composerKey, '')
     }
-    useAssistant.getState().setPendingAssistant(undefined)
+    if (!worker.projectId)
+      useAssistant.getState().setPendingAssistant(undefined)
 
     if (worker.navigateWhenStarted) {
       void navigate({

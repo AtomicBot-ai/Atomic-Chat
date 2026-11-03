@@ -2,12 +2,14 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Box,
   Clapperboard,
+  Copy,
   Cpu,
   FileClock,
   HardDrive,
   Image,
   Mic,
   PieChart,
+  Play,
   Search,
   Trash2,
   X,
@@ -25,10 +27,17 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import HeaderPage from '@/containers/HeaderPage'
 import { useInstalledInventory } from '@/hooks/useInstalledInventory'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { copyToClipboard } from '@/lib/clipboard'
 import { downloadStatusLabel, formatProgressPair } from '@/lib/downloadFormat'
 import {
   INVENTORY_CATEGORIES,
@@ -57,9 +66,48 @@ const KIND_ICONS: Record<InventoryKind, typeof Box> = {
 const sizeLabel = (bytes: number | null): string =>
   bytes && bytes > 0 ? formatBytes(bytes) : '—'
 
-/** The name a confirmation and its toast use: a build is named with its version. */
+/**
+ * The name a confirmation and its toasts use: a build is named with its
+ * version, a model with its quant and, in brackets, its owner, so one model
+ * and quant from two owners are two names.
+ */
 const removalName = (item: InventoryItem): string =>
-  item.kind === 'engine' ? [item.name, ...item.details].join(' ') : item.name
+  item.kind === 'engine'
+    ? [item.name, ...item.details].join(' ')
+    : [item.name, item.quant, item.owner && `(${item.owner})`]
+        .filter(Boolean)
+        .join(' ')
+
+/**
+ * The full id behind a model row's readable name, for whoever needs the
+ * exact file: shown on hover and on keyboard focus, copied on click. It stays
+ * out of sight until the row is hovered or something in it has focus; its
+ * slot is kept either way, so the row never moves.
+ */
+function ModelIdCopy({ id }: { id: string }) {
+  const { t } = useTranslation()
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label={t('downloads:copyId', { name: id })}
+          onClick={async () => {
+            if (await copyToClipboard(id))
+              toast.success(t('downloads:idCopied'))
+          }}
+          className="size-5 text-muted-foreground opacity-0 group-focus-within:opacity-100 group-hover:opacity-100"
+        >
+          <Copy className="size-3.5" />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-[min(32rem,calc(100vw-2rem))] break-all">
+        {id}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
 
 type Refusal = { code?: unknown; message?: unknown }
 
@@ -72,7 +120,8 @@ type Refusal = { code?: unknown; message?: unknown }
 export function DownloadsPage() {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
-  const { items, totalBytes, remove, cancel } = useInstalledInventory()
+  const { items, loading, totalBytes, remove, cancel, resume } =
+    useInstalledInventory()
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<CategoryFilter>('all')
   const [confirming, setConfirming] = useState<InventoryItem | null>(null)
@@ -106,9 +155,18 @@ export function DownloadsPage() {
     [t]
   )
 
+  // Most telling first, since the line's ellipsis cuts from the end: the
+  // engine and the quant, what the item is and why it stays, then the owner,
+  // which the full id on hover and in the confirmation also gives.
   const detailLine = useCallback(
     (item: InventoryItem) =>
-      [...item.details, kindLabel(item.kind), blockedReason(item)]
+      [
+        ...item.details,
+        item.quant,
+        kindLabel(item.kind),
+        blockedReason(item),
+        item.owner,
+      ]
         .filter(Boolean)
         .join(' · '),
     [kindLabel, blockedReason]
@@ -126,7 +184,9 @@ export function DownloadsPage() {
       (item) =>
         (category === 'all' || item.category === category) &&
         (needle.length === 0 ||
-          `${item.name} ${detailLine(item)}`.toLowerCase().includes(needle))
+          `${item.name} ${detailLine(item)} ${item.modelId ?? ''}`
+            .toLowerCase()
+            .includes(needle))
     )
   }, [items, query, category, detailLine])
 
@@ -165,6 +225,8 @@ export function DownloadsPage() {
     }
   }
 
+  // The total and the count wait for the list's first read: a number
+  // that grows as the rest arrives reads as a wrong one until it stops.
   const tiles = [
     {
       icon: HardDrive,
@@ -172,18 +234,21 @@ export function DownloadsPage() {
       value: totalBytes > 0 ? formatBytes(totalBytes) : '0 MB',
       label: t('downloads:summary.totalStorage'),
       hint: hasEngineBuilds ? t('downloads:summary.enginesNotCounted') : null,
+      pending: loading,
     },
     {
       icon: Box,
       value: String(installedCount),
       label: t('downloads:summary.items'),
       hint: null,
+      pending: loading,
     },
     {
       icon: PieChart,
       value: sizeLabel(freeBytes),
       label: t('downloads:summary.freeSpace'),
       hint: null,
+      pending: false,
     },
   ]
 
@@ -200,12 +265,12 @@ export function DownloadsPage() {
           </h1>
         </div>
       </HeaderPage>
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
         <div
           className="grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-3"
           data-testid="downloads-summary"
         >
-          {tiles.map(({ icon: Icon, value, label, hint }) => (
+          {tiles.map(({ icon: Icon, value, label, hint, pending }) => (
             <div
               key={label}
               className="min-w-0 rounded-xl border border-border bg-card p-4"
@@ -214,8 +279,15 @@ export function DownloadsPage() {
               <div
                 className="font-studio truncate text-xl font-semibold tabular-nums"
                 aria-label={label}
+                aria-busy={pending || undefined}
               >
-                {value}
+                {/* Inline and one em tall, inside the value's own line: the
+                    card keeps its height when the number takes its place. */}
+                {pending ? (
+                  <Skeleton className="inline-block h-[1em] w-16 align-middle" />
+                ) : (
+                  value
+                )}
               </div>
               <p className="mt-1 truncate text-xs text-muted-foreground">
                 {label}
@@ -258,7 +330,10 @@ export function DownloadsPage() {
           </select>
         </div>
         <div className="overflow-hidden rounded-xl border border-border">
-          <table className="w-full table-fixed text-left text-sm">
+          <table
+            className="w-full table-fixed text-left text-sm"
+            aria-busy={loading || undefined}
+          >
             <thead className="bg-secondary/30 text-xs text-muted-foreground">
               <tr>
                 <th className="p-3 font-medium">
@@ -282,7 +357,7 @@ export function DownloadsPage() {
                   <tr
                     key={item.key}
                     data-testid="downloads-row"
-                    className="border-t border-border hover:bg-secondary/20"
+                    className="group border-t border-border hover:bg-secondary/20"
                   >
                     <td className="p-3">
                       <div className="flex min-w-0 items-center gap-3">
@@ -290,11 +365,14 @@ export function DownloadsPage() {
                           <Icon size={17} />
                         </div>
                         <div className="min-w-0">
-                          <div
-                            className="truncate font-medium"
-                            title={item.name}
-                          >
-                            {item.name}
+                          <div className="flex min-w-0 items-center gap-1">
+                            <div
+                              className="truncate font-medium"
+                              title={item.modelId ?? item.name}
+                            >
+                              {item.name}
+                            </div>
+                            {item.modelId && <ModelIdCopy id={item.modelId} />}
                           </div>
                           {detail && (
                             <div
@@ -334,7 +412,21 @@ export function DownloadsPage() {
                         </span>
                       )}
                     </td>
-                    <td className="p-3 text-right">
+                    <td className="p-3 text-right whitespace-nowrap">
+                      {/* A paused download, also one a quit cut off and the
+                          relaunch brought back, picks up from its bytes. */}
+                      {item.download?.paused && (
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={t('common:resumeDownload')}
+                          title={t('common:resumeDownload')}
+                          onClick={() => resume(item)}
+                          className="text-muted-foreground"
+                        >
+                          <Play size={15} />
+                        </Button>
+                      )}
                       {item.download ? (
                         <Button
                           variant="ghost"
@@ -372,14 +464,51 @@ export function DownloadsPage() {
                   </tr>
                 )
               })}
+              {/* Until the session's first read of the disk, and of the
+                  embedding and decision models, answers, what is listed may
+                  not be all there is: placeholder rows say more is coming, in
+                  place of an empty page that would read as nothing
+                  downloaded. A later visit starts from the last read. */}
+              {loading &&
+                Array.from(
+                  { length: visible.length === 0 ? 3 : 1 },
+                  (_, index) => (
+                    <tr
+                      key={`pending-${index}`}
+                      aria-hidden="true"
+                      data-testid="downloads-row-pending"
+                      className="border-t border-border"
+                    >
+                      <td className="p-3">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <Skeleton className="size-9 shrink-0 rounded-lg" />
+                          <div className="min-w-0 flex-1 space-y-1.5">
+                            <Skeleton className="h-3.5 w-2/5" />
+                            <Skeleton className="h-3 w-1/4" />
+                          </div>
+                        </div>
+                      </td>
+                      <td className="p-3">
+                        <Skeleton className="h-3.5 w-16" />
+                      </td>
+                      <td className="p-3" />
+                    </tr>
+                  )
+                )}
             </tbody>
           </table>
-          {visible.length === 0 && (
-            <p className="p-8 text-center text-sm text-muted-foreground">
-              {items.length === 0
-                ? t('downloads:empty')
-                : t('downloads:noMatch')}
+          {loading ? (
+            <p role="status" className="sr-only">
+              {t('common:loading')}
             </p>
+          ) : (
+            visible.length === 0 && (
+              <p className="p-8 text-center text-sm text-muted-foreground">
+                {items.length === 0
+                  ? t('downloads:empty')
+                  : t('downloads:noMatch')}
+              </p>
+            )
           )}
         </div>
       </div>
@@ -391,7 +520,7 @@ export function DownloadsPage() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="break-words">
+            <DialogTitle className="wrap-anywhere">
               {confirming &&
                 t('downloads:confirm.title', {
                   name: removalName(confirming),
@@ -399,6 +528,13 @@ export function DownloadsPage() {
             </DialogTitle>
             <DialogDescription>
               {t('downloads:confirm.description')}
+              {/* The exact file, for a model whose name and quant another
+                  owner's copy may share. */}
+              {confirming?.modelId && (
+                <span className="mt-1 block font-mono text-xs wrap-anywhere">
+                  {confirming.modelId}
+                </span>
+              )}
             </DialogDescription>
           </DialogHeader>
           {managedNote && (

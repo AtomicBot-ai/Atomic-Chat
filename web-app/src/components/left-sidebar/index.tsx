@@ -1,6 +1,7 @@
 import { useLocation, useNavigate } from '@tanstack/react-router'
 import {
   Activity,
+  AudioLines,
   Blocks,
   Clapperboard,
   Cloud,
@@ -23,6 +24,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
+  useSidebar,
 } from '@/components/ui/sidebar'
 import { route } from '@/constants/routes'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -43,6 +45,7 @@ import { NavGroupLabel, NavRow } from './NavRow'
 import { NavigationRail } from './NavigationRail'
 import { isPathActive, navigationSection } from '@/lib/navigation'
 import { WindowTitlebar } from './WindowTitlebar'
+import { cn } from '@/lib/utils'
 
 function WorkspaceNavigation({
   onCreateProject,
@@ -53,6 +56,7 @@ function WorkspaceNavigation({
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const media = PlatformFeatures[PlatformFeature.MEDIA_GENERATION]
+  const audio = PlatformFeatures[PlatformFeature.AUDIO_GENERATION]
 
   return (
     <>
@@ -85,6 +89,15 @@ function WorkspaceNavigation({
             icon={<Clapperboard size={16} />}
             active={isPathActive(pathname, route.videos.index, true)}
             testId="videos-link"
+          />
+        )}
+        {audio && (
+          <NavRow
+            to={route.audios.index}
+            label={t('common:audios')}
+            icon={<AudioLines size={16} />}
+            active={isPathActive(pathname, route.audios.index, true)}
+            testId="audios-link"
           />
         )}
       </SidebarMenu>
@@ -219,6 +232,9 @@ export function LeftSidebar() {
   const projectDialogOpen = useProjectDialog((state) => state.open)
   const setProjectDialogOpen = useProjectDialog((state) => state.setOpen)
   const { open: searchOpen, setOpen: setSearchOpen } = useSearchDialog()
+  // In a window too narrow to dock it, the open sidebar lies over the page,
+  // so it has to stack above the page's own raised layers.
+  const { compact, open: sidebarOpen } = useSidebar()
 
   const handleCreateProject = async (name: string, assistantId?: string) => {
     const project = await addFolder(name, assistantId)
@@ -234,7 +250,9 @@ export function LeftSidebar() {
     <>
       <NavigationRail section={section} />
       <WindowTitlebar section={section} />
-      <div className="relative z-30">
+      <div
+        className={cn('relative', compact && sidebarOpen ? 'z-[45]' : 'z-30')}
+      >
         <Sidebar variant="floating" collapsible="offcanvas">
           <SidebarHeader className="gap-0 px-3 pb-2 pt-3">
             <div className="flex items-center justify-between px-1 pb-1">
@@ -255,7 +273,9 @@ export function LeftSidebar() {
             </div>
           </SidebarHeader>
           <SidebarContent
-            className="mask-b-from-95%"
+            // Rows measure the sidebar's width (`@…/sidebar`) to decide what
+            // fits beside a name.
+            className="@container/sidebar mask-b-from-95%"
             aria-label={t(SECTION_TITLES[section])}
           >
             {section === 'chat' && (
@@ -267,7 +287,10 @@ export function LeftSidebar() {
             {section === 'models' && <ModelsNavigation />}
             {section === 'settings' && <SettingsNavigation />}
           </SidebarContent>
-          <SidebarRail />
+          <SidebarRail
+            aria-label={t('common:navigation.resizeSidebar')}
+            title={t('common:navigation.resizeSidebarHint')}
+          />
         </Sidebar>
       </div>
       <AddProjectDialog

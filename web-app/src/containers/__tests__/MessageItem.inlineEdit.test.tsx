@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { UIMessage } from 'ai'
@@ -72,6 +73,33 @@ beforeEach(() => {
 })
 
 describe('MessageItem inline editing', () => {
+  it('saves an earlier message using the current session handler after readiness changes', () => {
+    function Thread({ ready }: { ready: boolean }) {
+      const [message, setMessage] = useState(userMessage)
+      return (
+        <MessageItem
+          message={message}
+          isFirstMessage
+          isLastMessage={false}
+          status="ready"
+          onEdit={(_id, text) => {
+            if (ready)
+              setMessage({ ...message, parts: [{ type: 'text', text }] })
+          }}
+        />
+      )
+    }
+    const view = render(<Thread ready={false} />)
+    view.rerender(<Thread ready />)
+    fireEvent.click(editButton())
+    fireEvent.change(screen.getByTestId('inline-message-editor'), {
+      target: { value: 'What is 20 + 22?' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'common:save' }))
+    expect(screen.getByText('What is 20 + 22?')).toBeVisible()
+    expect(screen.queryByText('original text')).toBeNull()
+  })
+
   it('renders a persisted skill invocation in its original inline position', () => {
     renderMessage({
       id: 'skill-message',

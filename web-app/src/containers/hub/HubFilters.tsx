@@ -18,6 +18,8 @@ import { useManagedHubStates } from '@/hooks/useManagedHubState'
 import { useModelLikes } from '@/hooks/useModelLikes'
 import { usePrismHubVisible } from '@/hooks/useModelSetup'
 import { useFoundryLocalHubVisible } from '@/hooks/useFoundryLocalHub'
+import { useLiteRtLmHubVisible } from '@/hooks/useLiteRtLmHub'
+import { useGeniexHubVisible } from '@/hooks/useGeniexHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   HUB_FORMAT_LABELS,
@@ -88,11 +90,15 @@ export function HubFilters({
     .map((entry) => entry.engine.id)
   const prismVisible = usePrismHubVisible()
   const foundryLocalVisible = useFoundryLocalHubVisible()
+  const liteRtLmVisible = useLiteRtLmHubVisible()
+  const geniexVisible = useGeniexHubVisible()
   const availableFormats = hubFormats({
     mlx: IS_MACOS,
     managed: visibleManaged,
     prism: prismVisible,
     foundryLocal: foundryLocalVisible,
+    liteRtLm: liteRtLmVisible,
+    geniex: geniexVisible,
   })
   const engines = useHubEngines(availableFormats)
   const sortKeys = HUB_SORT_KEYS.filter(
@@ -118,9 +124,10 @@ export function HubFilters({
             variant="outline"
             size="sm"
             aria-label={t('hub:filters.label')}
+            title={t('hub:filters.button')}
           >
             <SlidersHorizontal size={15} />
-            {t('hub:filters.button')}
+            <span className="hub-toolbar-label">{t('hub:filters.button')}</span>
             {activeCount > 0 && (
               <span className="rounded-full bg-primary/15 px-1.5 text-xs tabular-nums">
                 {activeCount}
@@ -260,7 +267,7 @@ export function HubFilters({
             title={t(SORT_LABEL_KEYS[state.sort])}
           >
             <ArrowUpDown size={15} />
-            <span>{t('hub:sort')}</span>
+            <span className="hub-toolbar-label">{t('hub:sort')}</span>
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="max-w-72">

@@ -162,6 +162,17 @@ export default defineConfig(({ mode }) => {
       FORCE_HARDWARE_TIER: JSON.stringify(
         process.env.FORCE_HARDWARE_TIER ?? env.FORCE_HARDWARE_TIER ?? ''
       ),
+      // Dev-only: pins the first-run variant (`none`, `model_only`, `full`) so
+      // each one can be previewed (`FORCE_ONBOARDING_VARIANT=… make dev-fresh`).
+      // Read under `tauri dev` only, so it is '' in every shipped build even
+      // when the variable is set on the build machine.
+      FORCE_ONBOARDING_VARIANT: JSON.stringify(
+        process.env.IS_DEV === 'true'
+          ? (process.env.FORCE_ONBOARDING_VARIANT ??
+              env.FORCE_ONBOARDING_VARIANT ??
+              '')
+          : ''
+      ),
       UPDATE_CHECK_INTERVAL_MS: JSON.stringify(
         Number(env.UPDATE_CHECK_INTERVAL_MS) || 60 * 60 * 1000
       ),

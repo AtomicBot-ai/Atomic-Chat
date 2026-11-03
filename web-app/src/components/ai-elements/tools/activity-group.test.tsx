@@ -1,7 +1,9 @@
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import i18n from '@/i18n/setup'
+import { useAppState } from '@/hooks/useAppState'
+import { useModelProvider } from '@/hooks/useModelProvider'
 import { TranslationContext } from '@/i18n/context'
 import { ToolActivityGroup } from './activity-group'
 
@@ -34,6 +36,27 @@ describe('ToolActivityGroup completed headline', () => {
 
   afterEach(() => {
     i18n.language = original
+  })
+
+  it('shows the model load while an active agent turn waits, then returns to Working', () => {
+    i18n.language = 'en'
+    useModelProvider.setState({
+      selectedProvider: 'llamacpp-upstream',
+      selectedModel: { id: 'qa-model' } as Model,
+    })
+    useAppState
+      .getState()
+      .updateLoadingModel(true, { modelId: 'qa-model', kind: 'start' })
+    render(
+      <TranslationContext.Provider
+        value={{ t: (key, options) => i18n.t(key, options), i18n }}
+      >
+        <ToolActivityGroup active tools={[]} />
+      </TranslationContext.Provider>
+    )
+    expect(screen.getByRole('button')).toHaveTextContent('Loading model…')
+    act(() => useAppState.getState().updateLoadingModel(false))
+    expect(screen.getByRole('button')).toHaveTextContent('Working')
   })
 
   it('uses the singular for one action and the plural otherwise', () => {

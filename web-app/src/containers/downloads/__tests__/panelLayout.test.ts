@@ -102,4 +102,31 @@ describe('panelLayout', () => {
     expect(layout.bottom).toBeGreaterThanOrEqual(16)
     expect(layout.listMax).toBeGreaterThan(0)
   })
+
+  // 2026-10-27: an update card stacked above the panel on the home screen
+  // reached up over the centred composer; the column fitted only the panel.
+  it('docks above the composer when the other cards do not fit beneath it', () => {
+    // 800 - 16 - (464 + 12) = 308 below the composer; 180 of other cards
+    // leaves 128 for the panel, less than a useful one.
+    const layout = panelLayout(composerCentred, VIEWPORT, 352, {
+      otherHeight: 180,
+      hasList: true,
+    })
+    expect(layout.bottom).toBe(800 - 340 + 12)
+  })
+
+  it('stays in the corner while the cards fit under the composer', () => {
+    const withPanel = panelLayout(composerCentred, VIEWPORT, 352, {
+      otherHeight: 60,
+      hasList: true,
+    })
+    expect(withPanel).toEqual({ bottom: 16, listMax: 308 - 60 - 44 })
+
+    // Folded pills only: no list to keep room for.
+    const pills = panelLayout(composerCentred, VIEWPORT, 352, {
+      otherHeight: 92,
+      hasList: false,
+    })
+    expect(pills.bottom).toBe(16)
+  })
 })

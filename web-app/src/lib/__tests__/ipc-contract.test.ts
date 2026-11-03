@@ -37,11 +37,17 @@ const EXPECTED_DESKTOP_ONLY = new Set([
   // Writes the logs through the crash-report scrubber, which lives in the
   // desktop-only telemetry module; the mobile targets have no Logs window.
   'export_logs',
+  // An AI Hub bundle's zip, unpacked by the GenieX installer (change add-geniex-runtime): a
+  // desktop model store, and GenieX runs on Snapdragon X laptops only.
+  'extract_zip',
   // The session resolver answers from the app's mirror of atomic-chat-core's session table, and
   // no core runs on the mobile targets.
   'list_local_sessions',
   'resolve_local_session',
   'is_update_available',
+  // `lib/package-managed.ts` reads a rejection as "not package-managed" for
+  // that call, and the mobile targets have no updater to turn off.
+  'is_package_managed_install',
   // Best-effort crash-reporting scope sync. Every call site in
   // `lib/sentry.ts` swallows a rejection, and `PlatformFeature.ANALYTICS` is
   // false on mobile, so their absence there changes nothing.

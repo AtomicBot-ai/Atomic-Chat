@@ -75,7 +75,11 @@ describe('useAgentSkills', () => {
     }
     vi.mocked(listAgentSkills).mockResolvedValue([bundled, older, newest])
     vi.mocked(getAgentSkill).mockImplementation(async (name) => ({
-      ...(name === newest.name ? newest : name === older.name ? older : bundled),
+      ...(name === newest.name
+        ? newest
+        : name === older.name
+          ? older
+          : bundled),
       body: '# Body',
     }))
 
@@ -99,13 +103,18 @@ describe('useAgentSkills', () => {
       description: skill.description,
       instructions: '# Body',
     }
-    await act(() => result.current.addCreated(request))
+    const created = await act(() => result.current.addCreated(request))
     expect(createAgentSkill).toHaveBeenCalledWith(request)
     expect(result.current.selected?.name).toBe(skill.name)
+    // The page opens what was added by the name the core returned.
+    expect(created.name).toBe(skill.name)
 
-    await act(() => result.current.addImported('/tmp/custom-skill'))
+    const imported = await act(() =>
+      result.current.addImported('/tmp/custom-skill')
+    )
     expect(importAgentSkill).toHaveBeenCalledWith('/tmp/custom-skill')
     expect(result.current.selected?.name).toBe(skill.name)
+    expect(imported.name).toBe(skill.name)
   })
 
   it('loads, selects, enables, and selects the next skill after deletion', async () => {

@@ -24,6 +24,11 @@ const { appState, localApiState, startServer, stopServer, invoke } = vi.hoisted(
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke }))
 
+const currentWindow = vi.hoisted(() => ({ label: 'main' }))
+vi.mock('@tauri-apps/api/webviewWindow', () => ({
+  getCurrentWebviewWindow: () => currentWindow,
+}))
+
 vi.mock('@/hooks/useAppState', () => ({
   useAppState: { getState: () => appState },
 }))
@@ -39,8 +44,11 @@ import type { DiffusionStatus } from '@/services/diffusion/types'
 import type { EmbeddingStatus } from '@/services/embedding/types'
 
 import {
+  claimLaunchAutoStart,
   getLocalApiServerUrl,
-  probeLocalApiServer,
+  sendTestChatCompletion,
+  TEST_REQUEST_MAX_TOKENS,
+  TEST_REQUEST_MESSAGE,
   hasResidentEmbeddingModel,
   hasResidentMediaModel,
   raiseLocalApiServerForMediaModel,
@@ -282,45 +290,98 @@ describe('localApiServerControl', () => {
     })
   })
 
-  describe('probeLocalApiServer', () => {
-    it('asks for the model list with the key and counts what came back', async () => {
+  describe('claimLaunchAutoStart', () => {
+    beforeEach(() => {
+      sessionStorage.clear()
+      currentWindow.label = 'main'
+    })
+
+    it('lets the main window start the server once, even across a reload', () => {
+      expect(claimLaunchAutoStart()).toBe(true)
+      // A reload keeps the window's sessionStorage, and so the claim.
+      expect(claimLaunchAutoStart()).toBe(false)
+    })
+
+    it('never lets a chat window start it', () => {
+      currentWindow.label = 'thread-1'
+      expect(claimLaunchAutoStart()).toBe(false)
+      // Nor does asking use the main window's launch up.
+      currentWindow.label = 'main'
+      expect(claimLaunchAutoStart()).toBe(true)
+    })
+  })
+
+  describe('sendTestChatCompletion', () => {
+    it('sends the example chat completion, capped short, with the key', async () => {
       invoke.mockResolvedValue(
-        JSON.stringify({ object: 'list', data: [{ id: 'a' }, { id: 'b' }] })
+        JSON.stringify({ model: '/models/gemma.gguf', choices: [] })
       )
 
-      const result = await probeLocalApiServer(
+      const result = await sendTestChatCompletion(
         'http://127.0.0.1:1337/v1/',
-        'secret'
+        'secret',
+        'gemma-4'
       )
 
-      expect(invoke).toHaveBeenCalledWith('get_local_http', {
-        url: 'http://127.0.0.1:1337/v1/models',
-        headers: { Authorization: 'Bearer secret' },
-        timeoutSecs: 10,
+      expect(invoke.mock.calls).toEqual([
+        [
+          'post_local_http',
+          {
+            url: 'http://127.0.0.1:1337/v1/chat/completions',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer secret',
+            },
+            body: expect.any(String),
+            timeoutSecs: 60,
+          },
+        ],
+      ])
+      expect(JSON.parse(invoke.mock.calls[0][1].body)).toEqual({
+        model: 'gemma-4',
+        messages: [{ role: 'user', content: TEST_REQUEST_MESSAGE }],
+        max_tokens: TEST_REQUEST_MAX_TOKENS,
+        stream: false,
       })
-      expect(result).toMatchObject({ ok: true, modelCount: 2 })
+      // Named as asked, not by the engine's own id for it.
+      expect(result).toMatchObject({ ok: true, model: 'gemma-4' })
     })
 
     it('sends no key header when the server has none', async () => {
-      invoke.mockResolvedValue('{"data":[]}')
+      invoke.mockResolvedValue('{}')
 
-      await probeLocalApiServer('http://127.0.0.1:1337/v1', '  ')
+      await sendTestChatCompletion('http://127.0.0.1:1337/v1', '  ', 'qwen')
 
-      expect(invoke.mock.calls[0][1].headers).toEqual({})
+      expect(invoke.mock.calls[0][1].headers).toEqual({
+        'Content-Type': 'application/json',
+      })
     })
 
     it('reports the HTTP status of a refusal', async () => {
-      invoke.mockRejectedValue('HTTP 401: {"error":"unauthorized"}')
+      invoke.mockRejectedValue('HTTP 503: No models are available')
 
-      const result = await probeLocalApiServer('http://127.0.0.1:1337/v1', 'x')
+      const result = await sendTestChatCompletion(
+        'http://127.0.0.1:1337/v1',
+        'x',
+        'qwen'
+      )
 
-      expect(result).toMatchObject({ ok: false, httpStatus: 401 })
+      expect(result).toMatchObject({
+        ok: false,
+        httpStatus: 503,
+        model: 'qwen',
+        message: 'HTTP 503: No models are available',
+      })
     })
 
     it('reports a server that is not there without a status', async () => {
       invoke.mockRejectedValue(new Error('Request failed: connection refused'))
 
-      const result = await probeLocalApiServer('http://127.0.0.1:1337/v1', '')
+      const result = await sendTestChatCompletion(
+        'http://127.0.0.1:1337/v1',
+        '',
+        'qwen'
+      )
 
       expect(result).toMatchObject({
         ok: false,

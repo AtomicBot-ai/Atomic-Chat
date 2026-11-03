@@ -1,0 +1,17 @@
+
+ RUN  v3.2.7 <QA_ROOT>/source/tests/e2e
+
+stderr | desktop/live-model.spec.ts > a chat with a real local model > loads it with the argv the core builds and gets an answer
+2026-10-28T12:34:51.981Z WARN webdriver: Request encountered a stale element - terminating request
+
+stderr | desktop/live-model.spec.ts > a chat with a real local model > loads it with the argv the core builds and gets an answer
+2026-10-28T12:34:51.986Z WARN webdriver: Request encountered a stale element - terminating request
+
+ ✓ desktop/live-model.spec.ts (1 test) 20411ms
+   ✓ a chat with a real local model > loads it with the argv the core builds and gets an answer  15971ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  15:34:46
+   Duration  20.74s (transform 110ms, setup 0ms, collect 143ms, tests 20.41s, environment 0ms, prepare 23ms)
+

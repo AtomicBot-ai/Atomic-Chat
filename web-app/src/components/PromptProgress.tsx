@@ -1,4 +1,5 @@
 import { useAppState } from '@/hooks/useAppState'
+import { useInferenceStatus } from '@/hooks/useInferenceStatus'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   ActivityDetail,
@@ -8,6 +9,8 @@ import {
 export function PromptProgress() {
   const { t } = useTranslation('chat')
   const promptProgress = useAppState((state) => state.promptProgress)
+  const { phase } = useInferenceStatus()
+  const loadingModel = phase === 'starting' || phase === 'restarting'
 
   const percentage =
     promptProgress && promptProgress.total > 0
@@ -15,6 +18,7 @@ export function PromptProgress() {
       : 0
 
   const showReadingProgress =
+    !loadingModel &&
     promptProgress &&
     promptProgress.total > 0 &&
     percentage > 0 &&
@@ -23,7 +27,9 @@ export function PromptProgress() {
   return (
     <AgentActivity
       active
-      workingLabel={t('activity.working')}
+      workingLabel={t(
+        loadingModel ? 'activity.loadingModel' : 'activity.working'
+      )}
       durationLabel=""
       hasDetails={Boolean(showReadingProgress)}
       // Rendered inside the indicator row, not the message flow — the default

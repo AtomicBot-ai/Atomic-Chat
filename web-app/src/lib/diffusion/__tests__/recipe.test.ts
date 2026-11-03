@@ -1,7 +1,19 @@
 import { describe, expect, it } from 'vitest'
 
-import { exportFilename, restoreDraftFromRecipe } from '../recipe'
+import { useImageForm } from '@/hooks/useImageForm'
+import type { ImageRecipe } from '@/services/diffusion/types'
+import {
+  exportFilename,
+  imageRecipeSettings,
+  restoreDraftFromRecipe,
+} from '../recipe'
 import { makeItem, makeRecipe } from './image-fixtures'
+
+const remoteEngine: ImageRecipe['engine'] = {
+  kind: 'remote',
+  provider: 'openrouter',
+  api: 'openrouter-images',
+}
 
 describe('exportFilename', () => {
   it('stamps local time and the per-image seed, with the batch index for a batch', () => {
@@ -85,8 +97,143 @@ describe('restoreDraftFromRecipe', () => {
   })
 
   it('leaves the negative prompt collapsed when there was none', () => {
-    const { draft } = restoreDraftFromRecipe(makeRecipe({ negativePrompt: null }))
+    const { draft } = restoreDraftFromRecipe(
+      makeRecipe({ negativePrompt: null })
+    )
     expect(draft.negativePrompt).toBe('')
     expect(draft.negativeOpen).toBe(false)
+  })
+})
+
+describe('imageRecipeSettings', () => {
+  it('keeps every number a local engine recorded, zeros included', () => {
+    expect(
+      imageRecipeSettings(
+        makeRecipe({ steps: 8, cfgScale: 0, seed: 0, batchSeed: 0 })
+      )
+    ).toEqual({ steps: 8, cfgScale: 0, seed: 0, batchSeed: 0 })
+  })
+
+  it('drops the placeholders the core records for knobs a provider was not sent', () => {
+    const settings = imageRecipeSettings(
+      makeRecipe({
+        engine: remoteEngine,
+        steps: 0,
+        cfgScale: 0,
+        seed: -1,
+        batchSeed: -1,
+      })
+    )
+    expect(settings).toEqual({
+      steps: undefined,
+      cfgScale: undefined,
+      seed: undefined,
+      batchSeed: undefined,
+    })
+  })
+
+  it('keeps what a provider was sent, a zero seed included', () => {
+    expect(
+      imageRecipeSettings(
+        makeRecipe({
+          engine: remoteEngine,
+          steps: 28,
+          cfgScale: 4.5,
+          seed: 0,
+          batchSeed: 0,
+        })
+      )
+    ).toEqual({ steps: 28, cfgScale: 4.5, seed: 0, batchSeed: 0 })
+  })
+
+  it('treats a field the recipe leaves out as not provided', () => {
+    const recipe = { ...makeRecipe(), steps: undefined, seed: undefined }
+    const settings = imageRecipeSettings(recipe as unknown as ImageRecipe)
+    expect(settings.steps).toBeUndefined()
+    expect(settings.seed).toBeUndefined()
+    expect(settings.cfgScale).toBe(1)
+  })
+})
+
+describe("a provider's picture", () => {
+  const placeholders = makeRecipe({
+    engine: remoteEngine,
+    steps: 0,
+    cfgScale: 0,
+    seed: -1,
+    batchSeed: -1,
+  })
+  const {
+    steps: _steps,
+    cfgScale: _cfg,
+    seed: _seed,
+    batchSeed: _batchSeed,
+    ...unsent
+  } = placeholders
+
+  it.each([
+    ['the old placeholders', placeholders],
+    ['the knobs left out', unsent as ImageRecipe],
+  ])(
+    'restores no steps, CFG or seed from %s, so the form keeps its own',
+    (_label, recipe) => {
+      const { draft } = restoreDraftFromRecipe(recipe)
+      expect(draft).not.toHaveProperty('steps')
+      expect(draft).not.toHaveProperty('cfgScale')
+      expect(draft).not.toHaveProperty('seedText')
+      expect(draft).toMatchObject({
+        prompt: 'a lighthouse at dusk',
+        width: 1024,
+      })
+    }
+  )
+
+  it('keeps the form’s steps, CFG and seed when the draft is applied', () => {
+    useImageForm.setState({ steps: 12, cfgScale: 3, seedText: '77' })
+    useImageForm
+      .getState()
+      .applyDraft(restoreDraftFromRecipe(placeholders).draft)
+    expect(useImageForm.getState()).toMatchObject({
+      prompt: 'a lighthouse at dusk',
+      steps: 12,
+      cfgScale: 3,
+      seedText: '77',
+    })
+  })
+
+  it('restores the knobs it was sent, a zero seed included', () => {
+    const { draft } = restoreDraftFromRecipe(
+      makeRecipe({
+        engine: remoteEngine,
+        steps: 28,
+        cfgScale: 4.5,
+        seed: 1,
+        batchSeed: 0,
+      })
+    )
+    expect(draft).toMatchObject({ steps: 28, cfgScale: 4.5, seedText: '0' })
+  })
+
+  it('names the export without a seed it does not have', () => {
+    const createdAtMs = new Date(2026, 8, 10, 14, 30, 5).getTime()
+    for (const recipe of [placeholders, unsent as ImageRecipe]) {
+      const item = makeItem({
+        recipe: { ...recipe, createdAtMs, index: 1, batchSize: 2 },
+      })
+      expect(exportFilename(item)).toBe('AtomicChat_20260910-143005_2.png')
+    }
+    const single = makeItem({
+      recipe: { ...placeholders, createdAtMs, batchSize: 1 },
+    })
+    expect(exportFilename(single)).toBe('AtomicChat_20260910-143005.png')
+    const seeded = makeItem({
+      recipe: makeRecipe({
+        engine: remoteEngine,
+        createdAtMs,
+        seed: 0,
+        batchSize: 1,
+      }),
+    })
+    expect(exportFilename(seeded)).toBe('AtomicChat_20260910-143005_0.png')
   })
 })

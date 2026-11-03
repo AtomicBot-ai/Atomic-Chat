@@ -20,14 +20,6 @@
     "pi__empty_key",
     "pi__existing_other_provider",
     "pi__providers_not_object_replaced",
-    "codex__fresh",
-    "codex__rerun",
-    "codex__empty_key",
-    "codex__existing_toml_preserved",
-    "codex__existing_managed_block_replaced",
-    "codex__whitespace_only_file",
-    "codex__model_needing_toml_escape",
-    "codex__keyed_then_keyless_rerun",
     "opencode__fresh",
     "opencode__rerun",
     "opencode__empty_key",
@@ -143,6 +135,7 @@
     },
     "shell": "`input.shell` is $SHELL during the run. The four env-var agents (copilot, goose, openhands, muse, poolside) pick their rc file from it: a value ending in `/bash` selects ~/.bash_profile on macOS and ~/.bashrc on Linux, anything else selects ~/.zshenv. These fixtures were emitted on a host where cfg!(target_os) = macos, so the bash cases show ~/.bash_profile; on Linux the same writer targets ~/.bashrc."
   },
+  "note": "Since 2026-10-27 the eight codex__* cases are retired: they pinned the two managed regions the Rust writer put into the user's shared ~/.codex/config.toml (root model/model_provider at the top, [model_providers.atomic] at the end), which left a user with a root `model` of their own with a duplicate key and a Codex that would not start. Codex now runs on a profile file of Atomic Chat's own and the shared file is only ever repaired; the core's configure/codex.test.ts and codex-repair.test.ts pin that (core ADR 2026-10-27-codex-runs-on-a-profile-of-its-own).",
   "source": {
     "commit": "ccf542733",
     "file": "src-tauri/src/core/cli/fixture_dump.rs"

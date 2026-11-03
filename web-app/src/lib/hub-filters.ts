@@ -63,6 +63,8 @@ const ALL_FORMATS: readonly ModelFormat[] = [
   'tensorrt-llm',
   'atomic-prism',
   'foundry-local',
+  'litert-lm',
+  'geniex',
 ]
 
 const isFormat = (value: unknown): value is ModelFormat =>
@@ -77,6 +79,8 @@ export const HUB_FORMAT_LABELS: Record<ModelFormat, string> = {
   'tensorrt-llm': 'TensorRT-LLM',
   'atomic-prism': 'PrismML',
   'foundry-local': 'Foundry Local',
+  'litert-lm': 'LiteRT-LM',
+  'geniex': 'GenieX',
 }
 
 /** What a linked safetensors checkpoint reads as where no managed engine is offered: no Hub format. */
@@ -93,13 +97,16 @@ export function isManagedFormat(format: ModelFormat | undefined): boolean {
  * in registry order — vLLM, SGLang, TensorRT-LLM — then PrismML where its provider is shown
  * (`usePrismHubVisible()`): the core hides it where PrismML publishes no build. Foundry Local last,
  * exactly where its provider is shown (change add-foundry-local): the core registers it only on the
- * hosts it runs on, and the format never becomes the default.
+ * hosts it runs on, and the format never becomes the default. LiteRT-LM after it, by the same rule
+ * (change add-litert-lm-runtime), and GenieX after that (change add-geniex-runtime).
  */
 export function hubFormats(options: {
   mlx: boolean
   managed: readonly string[]
   prism?: boolean
   foundryLocal?: boolean
+  liteRtLm?: boolean
+  geniex?: boolean
 }): ModelFormat[] {
   return [
     'gguf',
@@ -109,6 +116,8 @@ export function hubFormats(options: {
       .filter((id): id is ModelFormat => options.managed.includes(id) && isFormat(id)),
     ...(options.prism ? (['atomic-prism'] as const) : []),
     ...(options.foundryLocal ? (['foundry-local'] as const) : []),
+    ...(options.liteRtLm ? (['litert-lm'] as const) : []),
+    ...(options.geniex ? (['geniex'] as const) : []),
   ]
 }
 

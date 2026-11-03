@@ -1,5 +1,10 @@
-import { describe, expect, it } from 'vitest'
-import { isPathActive, navigationSection, normalizePath } from '../navigation'
+import { afterEach, describe, expect, it } from 'vitest'
+import {
+  isPageOnScreen,
+  isPathActive,
+  navigationSection,
+  normalizePath,
+} from '../navigation'
 
 describe('navigationSection', () => {
   it.each([
@@ -52,5 +57,19 @@ describe('isPathActive', () => {
     expect(isPathActive('/images/create', '/images/')).toBe(false)
     expect(isPathActive('/images/create', '/images/', true)).toBe(true)
     expect(isPathActive('/imagesx', '/images/', true)).toBe(false)
+  })
+})
+
+describe('isPageOnScreen', () => {
+  afterEach(() => window.history.replaceState(null, '', '/'))
+
+  it('reads the page the window shows, and the pages below it', () => {
+    window.history.replaceState(null, '', '/images/txt2img')
+    expect(isPageOnScreen('/images/')).toBe(true)
+    expect(isPageOnScreen('/videos/')).toBe(false)
+
+    window.history.replaceState(null, '', '/threads/01THREAD')
+    expect(isPageOnScreen('/threads/01THREAD')).toBe(true)
+    expect(isPageOnScreen('/threads/01OTHER')).toBe(false)
   })
 })

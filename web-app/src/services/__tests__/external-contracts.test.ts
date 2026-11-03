@@ -302,11 +302,18 @@ describe('pinned external registry contracts', () => {
       ])
     }
 
-    const setupScreen = readFileSync(
-      resolve(repositoryRoot, 'web-app', 'src', 'containers', 'SetupScreen.tsx'),
+    const modelOptions = readFileSync(
+      resolve(
+        repositoryRoot,
+        'web-app',
+        'src',
+        'containers',
+        'onboarding',
+        'useModelOptions.ts'
+      ),
       'utf8'
     )
-    expect(setupScreen).toContain('useResolvedRecommendedModels')
+    expect(modelOptions).toContain('useResolvedRecommendedModels')
 
     const recommendedLoader = readFileSync(
       resolve(

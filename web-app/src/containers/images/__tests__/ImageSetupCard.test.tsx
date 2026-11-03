@@ -102,6 +102,89 @@ describe('ImageSetupCard', () => {
     expect(card).toHaveTextContent('images:setup.engine.unsupported')
     expect(card).toHaveTextContent('Intel Macs are not supported.')
     expect(screen.queryByTestId('image-engine-install')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('image-engine-retry')).not.toBeInTheDocument()
+  })
+
+  it('says the build list could not be loaded, why, after how many attempts, and retries', async () => {
+    const readError =
+      'sd.cpp manifest from https://raw.githubusercontent.com/x: timed out after 8000ms'
+    useImageGenerationStore.setState({
+      hostBackendId: null,
+      hostBackendReason: readError,
+      hostBackendCheckFailed: 'manifest',
+      hostBackendAttempt: 3,
+      hostBackendResolved: true,
+    })
+    const retry = vi
+      .spyOn(useImageGenerationStore.getState(), 'refreshHostBackend')
+      .mockResolvedValue()
+    render(<ImageSetupCard />)
+
+    const card = screen.getByTestId('image-setup-card')
+    expect(card).toHaveTextContent('images:setup.engine.offline')
+    expect(card).not.toHaveTextContent('images:setup.engine.unsupported')
+    expect(screen.getByTestId('image-engine-failure-reason')).toHaveTextContent(
+      'images:setup.engine.reason.timeoutSeconds images:setup.engine.attempts'
+    )
+    expect(screen.getByTestId('image-engine-host-reason')).toHaveTextContent(
+      readError
+    )
+    await userEvent.click(screen.getByTestId('image-engine-retry'))
+    expect(retry).toHaveBeenCalledWith({ force: true })
+  })
+
+  it('says it is trying again while the check repeats on its own', () => {
+    useImageGenerationStore.setState({
+      hostBackendId: null,
+      hostBackendCheckFailed: null,
+      hostBackendAttempt: 2,
+      hostBackendResolved: false,
+    })
+    render(<ImageSetupCard />)
+
+    const button = screen.getByTestId('image-engine-install')
+    expect(button).toBeDisabled()
+    expect(button).toHaveTextContent('images:setup.engine.retrying')
+    expect(screen.queryByTestId('image-engine-retry')).not.toBeInTheDocument()
+  })
+
+  it('names the network reason when the engine download fails, the core words on hover', () => {
+    useImageGenerationStore.setState({
+      engineInstall: {
+        inFlight: false,
+        transferred: 0,
+        total: 0,
+        error: {
+          code: 'INTERNAL',
+          message: 'Unable to connect. Is the computer able to access the url?',
+        },
+      },
+    })
+    render(<ImageSetupCard />)
+
+    const line = screen.getByTestId('image-engine-install-error')
+    expect(line).toHaveTextContent(
+      'images:setup.engine.failed images:setup.engine.reason.unreachable'
+    )
+    expect(line).toHaveAttribute(
+      'title',
+      'Unable to connect. Is the computer able to access the url?'
+    )
+  })
+
+  it('offers a retry when the core did not answer the host check', () => {
+    useImageGenerationStore.setState({
+      hostBackendId: null,
+      hostBackendReason: 'The core did not answer.',
+      hostBackendCheckFailed: 'core',
+      hostBackendResolved: true,
+    })
+    render(<ImageSetupCard />)
+
+    expect(screen.getByTestId('image-setup-card')).toHaveTextContent(
+      'images:setup.engine.checkFailed'
+    )
+    expect(screen.getByTestId('image-engine-retry')).toBeInTheDocument()
   })
 
   it('speaks for the Video page', () => {

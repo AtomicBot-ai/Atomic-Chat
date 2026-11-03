@@ -91,6 +91,29 @@ describe('collectReplyModels', () => {
     expect(options.map((o) => o.modelId)).toEqual(['fine'])
   })
 
+  // AC-01: a send with nothing selected auto-starts the first option here.
+  it('never offers an embedding GGUF, even as the last used model', () => {
+    const lastUsed = {
+      provider: 'llamacpp-upstream',
+      model: 'nomic-embed.gguf',
+    }
+    const options = collectReplyModels(
+      [
+        local([
+          model('nomic-embed.gguf', { embedding: true }),
+          model('bge-small.gguf', { capabilities: ['embeddings'] }),
+          model('lfm2.5.gguf'),
+        ]),
+      ],
+      lastUsed
+    )
+
+    expect(options.map((o) => o.modelId)).toEqual(['lfm2.5.gguf'])
+    expect(resolveReplyModel(options, lastUsed)?.option.modelId).toBe(
+      'lfm2.5.gguf'
+    )
+  })
+
   it('qualifies the key by provider, so the same GGUF in two engines is two rows', () => {
     const options = collectReplyModels([
       provider('llamacpp-upstream', [model('shared.gguf')]),
@@ -346,6 +369,30 @@ describe('resolveReplyModel', () => {
         providerName: 'foundry-local',
         modelId: 'qwen2.5-7b-instruct-openvino-npu',
       },
+    })
+  })
+
+  it('starts a LiteRT-LM model when no other default engine holds one, before the fork', () => {
+    // change add-litert-lm-runtime: its variants are a download of their own, like Foundry Local's.
+    const options = collectReplyModels([
+      provider('llamacpp', [model('LFM2.5-1.2B-Q4_K_M')]),
+      provider('litert-lm', [model('gemma-4-e2b-it-cpu')]),
+    ])
+
+    expect(resolveReplyModel(options)).toMatchObject({
+      option: { providerName: 'litert-lm', modelId: 'gemma-4-e2b-it-cpu' },
+    })
+  })
+
+  it('starts a GenieX model when no other default engine holds one, before the fork', () => {
+    // change add-geniex-runtime: a Snapdragon X laptop may hold only GenieX models.
+    const options = collectReplyModels([
+      provider('llamacpp', [model('LFM2.5-1.2B-Q4_K_M')]),
+      provider('geniex', [model('qwen3-4b')]),
+    ])
+
+    expect(resolveReplyModel(options)).toMatchObject({
+      option: { providerName: 'geniex', modelId: 'qwen3-4b' },
     })
   })
 

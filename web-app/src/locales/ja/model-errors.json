@@ -37,5 +37,8 @@
   "generationCrashTitle": "生成中にモデルがクラッシュしました",
   "generationCrashDescription": "応答の生成中にモデルのバックエンドプロセスが予期せず終了しました。一部の GPU ドライバの Vulkan バックエンドで発生することがあります。モデルを再読み込みするか、「設定 → プロバイダー」で CPU バックエンドに切り替えてみてください。",
   "startupTimedOutTitle": "サーバーの起動に失敗しました: タイムアウト",
-  "startupTimedOutDescription": "ローカル API サーバーの起動に時間がかかりすぎたため中止されました。モデルバックエンドがファイルの準備やダウンロードで停止している可能性があります。再試行するか、ネットワーク接続を確認してください。"
+  "startupTimedOutDescription": "ローカル API サーバーの起動に時間がかかりすぎたため中止されました。モデルバックエンドがファイルの準備やダウンロードで停止している可能性があります。再試行するか、ネットワーク接続を確認してください。",
+  "mlxEngineMissingTitle": "MLX エンジンがインストールされていません",
+  "mlxEngineMissingDescription": "ダウンロードは一度だけです。エンジンが入るとすぐにモデルを読み込みます。",
+  "mlxEngineMissingAction": "インストール"
 }

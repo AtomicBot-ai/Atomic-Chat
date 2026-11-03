@@ -5,15 +5,21 @@ import { join } from 'node:path'
 import test from 'node:test'
 
 // The Launch page and the CLI must offer the same agents in the same order: a user who configures
-// Codex from the app and then runs `jan-cli launch codex` has to get the same provider written the
-// same way. `integrations.ts` is the source of truth; the CLI's `launch --list --json` is compared
-// against it here, the way the Rust catalog was compared by its own drift test.
+// Codex from the app and then runs `atomic-chat-cli launch codex` has to get the same provider
+// written the same way. `integrations.ts` is the source of truth; the CLI's `launch --list --json`
+// is compared against it here, the way the Rust catalog was compared by its own drift test.
 //
 // The three GUI editors in the web list keep their provider in IDE storage with no writable config
 // file, so no CLI can configure them and they are expected to be absent.
 const EDITORS = new Set(['vscode', 'jetbrains', 'xcode'])
 const ROOT = new URL('..', import.meta.url).pathname
-const CLI = join(ROOT, 'src-tauri/resources/bin', process.platform === 'win32' ? 'jan-cli.exe' : 'jan-cli')
+// The installer ships no separate CLI binary: Install CLI copies `atomic-chat-core` onto the PATH as
+// `atomic-chat-cli`, so the bundled core is what a user runs.
+const CLI = join(
+  ROOT,
+  'src-tauri/resources/bin',
+  process.platform === 'win32' ? 'atomic-chat-core.exe' : 'atomic-chat-core'
+)
 
 /** Ids in `INTEGRATION_AGENTS`, in file order. Entries are indented four spaces. */
 function webAppAgentIds() {
@@ -67,12 +73,12 @@ test('the agents that append their own API path are not given the prefix', () =>
 
 test('the CLI in resources/bin is the core build it claims to be', () => {
   const version = execFileSync(CLI, ['--version'], { encoding: 'utf8', timeout: 30_000 }).trim()
-  assert.match(version, /^\d+\.\d+\.\d+/, 'jan-cli --version should print a semantic version')
+  assert.match(version, /^\d+\.\d+\.\d+/, 'atomic-chat-core --version should print a semantic version')
   const pinned = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).atomicCore?.version
   const stamp = join(ROOT, 'src-tauri/resources/bin/atomic-chat-core-version.txt')
   // The stamp only exists after `yarn download:core`; a local build (ATOMIC_CORE_LOCAL) has none.
   if (pinned && existsSync(stamp)) {
     assert.equal(readFileSync(stamp, 'utf8').trim(), pinned, 'resources/bin holds a different core version')
-    assert.equal(version, pinned, 'jan-cli reports a different version than the pinned core')
+    assert.equal(version, pinned, 'atomic-chat-core reports a different version than the pinned core')
   }
 })

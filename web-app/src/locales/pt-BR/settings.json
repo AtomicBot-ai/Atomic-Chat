@@ -64,7 +64,7 @@
     "autoApproveTools": "Auto-approve tool calls",
     "autoApproveToolsDesc": "Run tool and MCP calls without asking for confirmation.",
     "desktopNotifications": "Notificações da área de trabalho",
-    "desktopNotificationsDesc": "Enviar uma notificação do sistema quando uma resposta, imagens, um vídeo ou um download estiverem prontos e a janela não estiver em foco.",
+    "desktopNotificationsDesc": "Enviar uma notificação do sistema quando uma resposta, imagens, um vídeo ou um download estiverem prontos.",
     "legacyChatEngine": "Usar o mecanismo de chat antigo",
     "legacyChatEngineDesc": "Força o pipeline de chat anterior para todas as mensagens e desativa completamente o modo agente. Válvula de escape temporária."
   },
@@ -368,8 +368,6 @@
     "checking": "Checking…",
     "upToDate": "The engine is up to date.",
     "updateCheckFailed": "Could not check for updates",
-    "backgroundUpdateTitle": "Updating the media engine",
-    "backgroundUpdateDesc": "Downloading stable-diffusion.cpp {{tag}} in the background. You can keep working.",
     "updateComplete": "Media engine updated to {{tag}}",
     "updateFailed": "The media engine could not be updated"
   },

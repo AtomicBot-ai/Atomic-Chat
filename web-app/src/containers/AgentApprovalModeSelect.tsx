@@ -142,10 +142,10 @@ export function AgentApprovalModeSelect({
             const Icon = MODE_ICONS[option.value]
             const selected = mode === option.value
             return (
-              // The item's own `items-center` keeps the icon and the checkmark
-              // on the middle of the title + description block. Pinned to the
-              // title line they sat at the top of the three-line Full access
-              // row and read as "flown up".
+              // The item's own `items-center` keeps the icon and the
+              // checkmark on the middle of the title + description block.
+              // Pinned to the title line they sat at the top of the
+              // three-line Full access row and read as "flown up".
               <DropdownMenuItem
                 key={option.value}
                 onSelect={() => handleSelect(option.value)}

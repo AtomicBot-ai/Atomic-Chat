@@ -1,6 +1,21 @@
 import { getModelToStart } from './getModelToStart'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import {
+  isEmbeddingOnlyModel,
+  type AnswerableModelLike,
+} from '@/lib/answerable-model'
 import { LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
+
+/** A loaded id as the provider store lists it, or just the id when no provider does. */
+function describeLoadedModel(modelId: string): AnswerableModelLike {
+  for (const provider of useModelProvider.getState().providers) {
+    const model = provider?.models?.find(
+      (m: { id: string }) => m.id === modelId
+    )
+    if (model) return model
+  }
+  return { id: modelId }
+}
 
 export type EnsureModelResult =
   | { status: 'already_loaded'; modelId: string; providerName: string }
@@ -137,11 +152,15 @@ export async function ensureModelForServer(
     }
   }
 
-  if (loadedModels && loadedModels.length > 0 && !modelOverride) {
-    const modelId = loadedModels[0]
+  // An embedding session (project indexing loads one) is not a chat model the
+  // server could answer with, so it never counts as "already loaded" (AC-01).
+  const loadedChatModel = modelOverride
+    ? undefined
+    : loadedModels?.find((id) => !isEmbeddingOnlyModel(describeLoadedModel(id)))
+  if (loadedChatModel) {
     const providerName =
-      findProviderForModel(modelId)?.provider ?? LOCAL_LLAMACPP_PROVIDER
-    return { status: 'already_loaded', modelId, providerName }
+      findProviderForModel(loadedChatModel)?.provider ?? LOCAL_LLAMACPP_PROVIDER
+    return { status: 'already_loaded', modelId: loadedChatModel, providerName }
   }
 
   // No model loaded — pick one (prefer user-configured default, then auto-pick)

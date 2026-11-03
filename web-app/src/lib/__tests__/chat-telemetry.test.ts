@@ -1,3 +1,4 @@
+import '@/test/telemetry-ready'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import posthog from 'posthog-js'
@@ -19,9 +20,7 @@ import {
 import type { Attachment } from '@/types/attachment'
 
 vi.mock('posthog-js', () => ({
-  // `has_opted_in_capturing` is what `queuedCapture` checks before sending;
-  // without it every event would sit in the startup queue instead.
-  default: { capture: vi.fn(), has_opted_in_capturing: () => true },
+  default: { capture: vi.fn() },
 }))
 
 const captured = () => vi.mocked(posthog.capture).mock.calls
@@ -307,7 +306,9 @@ describe('captureChatResponse', () => {
     const turn = beginChatTurn(thread)
     captureChatResponse(base(turn, thread))
     captureChatResponse(base(turn, thread))
-    expect(captured().filter((c) => c[0] === 'chat_response_received')).toHaveLength(1)
+    expect(
+      captured().filter((c) => c[0] === 'chat_response_received')
+    ).toHaveLength(1)
   })
 
   it('classifies the error and reports its status without the message', () => {

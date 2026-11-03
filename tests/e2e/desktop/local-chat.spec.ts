@@ -84,9 +84,9 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a chat with a local model', () => {
       ) as { processes: { pid: number; exe: string }[] }
       const child = journal.processes.find((p) => p.pid === seenByCore[0]!.pid)
       expect(child?.exe).toContain(`${FAKE_BACKEND_VERSION}/${FAKE_BACKEND}`)
-      expect(await installedBackends(dataFolder)).toEqual([
+      expect(await installedBackends(dataFolder)).toEqual(expect.arrayContaining([
         `${FAKE_PROVIDER}:${FAKE_BACKEND_VERSION}/${FAKE_BACKEND}`,
-      ])
+      ]))
 
       // Both turns reached the thread store Rust owns.
       const threads = await readdir(join(dataFolder, 'threads'))

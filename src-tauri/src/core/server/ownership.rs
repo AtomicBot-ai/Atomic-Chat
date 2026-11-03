@@ -65,6 +65,11 @@ pub struct CoreOwner<C: ControlCaller> {
     /// Provider registrations to hand the core before it starts serving, so a restarted core
     /// serves every cloud model the user registered: `(provider, control API body)`.
     pub providers: Vec<(String, Value)>,
+    /// The `PUT /server/selection` body the webview last sent (AC-03), handed over after the
+    /// providers so a restarted core routes each selected id as the server page shows it. `None`
+    /// when the webview has not sent one. A core that refuses it (older than the route) still
+    /// starts serving, by its rules without a selection.
+    pub selection: Option<Value>,
 }
 
 /// The `/server/start` body for a configuration. The core writes the app's
@@ -130,6 +135,18 @@ impl<C: ControlCaller> PublicApiOwner for CoreOwner<C> {
                             e.message
                         )
                     })?;
+            }
+            if let Some(selection) = &self.selection {
+                if let Err(error) = self
+                    .caller
+                    .call("PUT", "/server/selection", Some(selection.clone()))
+                    .await
+                {
+                    log::warn!(
+                        "[atomic-core] the core did not take the served model selection: {}",
+                        error.message
+                    );
+                }
             }
             server_start_attempted = true;
             let state = match self
@@ -266,6 +283,7 @@ mod tests {
                 listener_open: false,
             },
             providers: vec![("cloud".into(), json!({}))],
+            selection: None,
         };
         assert!(owner.start(&config()).await.unwrap_err().contains("could not hand provider"));
         assert_eq!(*calls.lock().await, vec!["GET /server", "PUT /cloud/providers/cloud"]);
@@ -282,6 +300,7 @@ mod tests {
                 listener_open: true,
             },
             providers: Vec::new(),
+            selection: None,
         };
         assert_eq!(owner.start(&config()).await, Err("lost response".into()));
         assert_eq!(
@@ -301,6 +320,7 @@ mod tests {
                 listener_open: true,
             },
             providers: Vec::new(),
+            selection: None,
         };
         assert_eq!(owner.start(&config()).await, Err("lost response".into()));
         assert_eq!(*calls.lock().await, vec!["GET /server", "POST /server/start"]);
@@ -316,6 +336,7 @@ mod tests {
                 initially_running: true,
             },
             providers: Vec::new(),
+            selection: None,
         };
         assert!(owner.start(&config()).await.unwrap_err().contains("already running"));
         assert_eq!(calls.lock().await.len(), 1);
@@ -331,6 +352,7 @@ mod tests {
                 initially_running: false,
             },
             providers: vec![("my provider".into(), json!({"models": ["m"]}))],
+            selection: Some(json!({"models": [{"model": "m", "provider": "llamacpp-upstream"}]})),
         };
 
         assert_eq!(owner.start(&config()).await, Ok(43121));
@@ -340,8 +362,17 @@ mod tests {
         let calls = calls.lock().await;
         assert_eq!(calls[0].1, "/server");
         assert_eq!(calls[1].1, "/cloud/providers/my%20provider");
+        // AC-03: the selection reaches the core after the providers it may name, before it serves.
         assert_eq!(
             calls[2],
+            (
+                "PUT".into(),
+                "/server/selection".into(),
+                Some(json!({"models": [{"model": "m", "provider": "llamacpp-upstream"}]}))
+            )
+        );
+        assert_eq!(
+            calls[3],
             (
                 "POST".into(),
                 "/server/start".into(),
@@ -352,6 +383,26 @@ mod tests {
                 }))
             )
         );
-        assert_eq!(calls[4].1, "/server/stop");
+        assert_eq!(calls[5].1, "/server/stop");
+    }
+
+    #[tokio::test]
+    async fn a_core_that_refuses_the_selection_still_serves() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let owner = CoreOwner {
+            caller: FailedStart {
+                calls: Arc::clone(&calls),
+                fail_path: "/server/selection",
+                fail_code: "NOT_FOUND",
+                listener_open: false,
+            },
+            providers: Vec::new(),
+            selection: Some(json!({"models": []})),
+        };
+        assert_eq!(owner.start(&config()).await, Ok(1337));
+        assert_eq!(
+            *calls.lock().await,
+            vec!["GET /server", "PUT /server/selection", "POST /server/start"]
+        );
     }
 }

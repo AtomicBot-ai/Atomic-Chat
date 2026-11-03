@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SystemMonitorRouteImport } from './routes/system-monitor'
+import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as LogsRouteImport } from './routes/logs'
 import { Route as DownloadsRouteImport } from './routes/downloads'
 import { Route as IndexRouteImport } from './routes/index'
@@ -21,6 +22,7 @@ import { Route as HubIndexRouteImport } from './routes/hub/index'
 import { Route as EndpointsIndexRouteImport } from './routes/endpoints/index'
 import { Route as ConnectorsIndexRouteImport } from './routes/connectors/index'
 import { Route as CloudIndexRouteImport } from './routes/cloud/index'
+import { Route as AudiosIndexRouteImport } from './routes/audios/index'
 import { Route as ApiIndexRouteImport } from './routes/api/index'
 import { Route as ThreadsThreadIdRouteImport } from './routes/threads/$threadId'
 import { Route as SettingsVoiceRouteImport } from './routes/settings/voice'
@@ -52,6 +54,11 @@ import { Route as SettingsProvidersProviderNameRouteImport } from './routes/sett
 const SystemMonitorRoute = SystemMonitorRouteImport.update({
   id: '/system-monitor',
   path: '/system-monitor',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OnboardingRoute = OnboardingRouteImport.update({
+  id: '/onboarding',
+  path: '/onboarding',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LogsRoute = LogsRouteImport.update({
@@ -107,6 +114,11 @@ const ConnectorsIndexRoute = ConnectorsIndexRouteImport.update({
 const CloudIndexRoute = CloudIndexRouteImport.update({
   id: '/cloud/',
   path: '/cloud/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AudiosIndexRoute = AudiosIndexRouteImport.update({
+  id: '/audios/',
+  path: '/audios/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiIndexRoute = ApiIndexRouteImport.update({
@@ -250,6 +262,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/downloads': typeof DownloadsRoute
   '/logs': typeof LogsRoute
+  '/onboarding': typeof OnboardingRoute
   '/system-monitor': typeof SystemMonitorRoute
   '/api/activity': typeof ApiActivityRoute
   '/api/connections': typeof ApiConnectionsRoute
@@ -276,6 +289,7 @@ export interface FileRoutesByFullPath {
   '/settings/voice': typeof SettingsVoiceRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/api/': typeof ApiIndexRoute
+  '/audios/': typeof AudiosIndexRoute
   '/cloud/': typeof CloudIndexRoute
   '/connectors/': typeof ConnectorsIndexRoute
   '/endpoints/': typeof EndpointsIndexRoute
@@ -291,6 +305,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/downloads': typeof DownloadsRoute
   '/logs': typeof LogsRoute
+  '/onboarding': typeof OnboardingRoute
   '/system-monitor': typeof SystemMonitorRoute
   '/api/activity': typeof ApiActivityRoute
   '/api/connections': typeof ApiConnectionsRoute
@@ -317,6 +332,7 @@ export interface FileRoutesByTo {
   '/settings/voice': typeof SettingsVoiceRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/api': typeof ApiIndexRoute
+  '/audios': typeof AudiosIndexRoute
   '/cloud': typeof CloudIndexRoute
   '/connectors': typeof ConnectorsIndexRoute
   '/endpoints': typeof EndpointsIndexRoute
@@ -333,6 +349,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/downloads': typeof DownloadsRoute
   '/logs': typeof LogsRoute
+  '/onboarding': typeof OnboardingRoute
   '/system-monitor': typeof SystemMonitorRoute
   '/api/activity': typeof ApiActivityRoute
   '/api/connections': typeof ApiConnectionsRoute
@@ -359,6 +376,7 @@ export interface FileRoutesById {
   '/settings/voice': typeof SettingsVoiceRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/api/': typeof ApiIndexRoute
+  '/audios/': typeof AudiosIndexRoute
   '/cloud/': typeof CloudIndexRoute
   '/connectors/': typeof ConnectorsIndexRoute
   '/endpoints/': typeof EndpointsIndexRoute
@@ -376,6 +394,7 @@ export interface FileRouteTypes {
     | '/'
     | '/downloads'
     | '/logs'
+    | '/onboarding'
     | '/system-monitor'
     | '/api/activity'
     | '/api/connections'
@@ -402,6 +421,7 @@ export interface FileRouteTypes {
     | '/settings/voice'
     | '/threads/$threadId'
     | '/api/'
+    | '/audios/'
     | '/cloud/'
     | '/connectors/'
     | '/endpoints/'
@@ -417,6 +437,7 @@ export interface FileRouteTypes {
     | '/'
     | '/downloads'
     | '/logs'
+    | '/onboarding'
     | '/system-monitor'
     | '/api/activity'
     | '/api/connections'
@@ -443,6 +464,7 @@ export interface FileRouteTypes {
     | '/settings/voice'
     | '/threads/$threadId'
     | '/api'
+    | '/audios'
     | '/cloud'
     | '/connectors'
     | '/endpoints'
@@ -458,6 +480,7 @@ export interface FileRouteTypes {
     | '/'
     | '/downloads'
     | '/logs'
+    | '/onboarding'
     | '/system-monitor'
     | '/api/activity'
     | '/api/connections'
@@ -484,6 +507,7 @@ export interface FileRouteTypes {
     | '/settings/voice'
     | '/threads/$threadId'
     | '/api/'
+    | '/audios/'
     | '/cloud/'
     | '/connectors/'
     | '/endpoints/'
@@ -500,6 +524,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DownloadsRoute: typeof DownloadsRoute
   LogsRoute: typeof LogsRoute
+  OnboardingRoute: typeof OnboardingRoute
   SystemMonitorRoute: typeof SystemMonitorRoute
   ApiActivityRoute: typeof ApiActivityRoute
   ApiConnectionsRoute: typeof ApiConnectionsRoute
@@ -526,6 +551,7 @@ export interface RootRouteChildren {
   SettingsVoiceRoute: typeof SettingsVoiceRoute
   ThreadsThreadIdRoute: typeof ThreadsThreadIdRoute
   ApiIndexRoute: typeof ApiIndexRoute
+  AudiosIndexRoute: typeof AudiosIndexRoute
   CloudIndexRoute: typeof CloudIndexRoute
   ConnectorsIndexRoute: typeof ConnectorsIndexRoute
   EndpointsIndexRoute: typeof EndpointsIndexRoute
@@ -545,6 +571,13 @@ declare module '@tanstack/react-router' {
       path: '/system-monitor'
       fullPath: '/system-monitor'
       preLoaderRoute: typeof SystemMonitorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/onboarding': {
+      id: '/onboarding'
+      path: '/onboarding'
+      fullPath: '/onboarding'
+      preLoaderRoute: typeof OnboardingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/logs': {
@@ -622,6 +655,13 @@ declare module '@tanstack/react-router' {
       path: '/cloud'
       fullPath: '/cloud/'
       preLoaderRoute: typeof CloudIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/audios/': {
+      id: '/audios/'
+      path: '/audios'
+      fullPath: '/audios/'
+      preLoaderRoute: typeof AudiosIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/': {
@@ -820,6 +860,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DownloadsRoute: DownloadsRoute,
   LogsRoute: LogsRoute,
+  OnboardingRoute: OnboardingRoute,
   SystemMonitorRoute: SystemMonitorRoute,
   ApiActivityRoute: ApiActivityRoute,
   ApiConnectionsRoute: ApiConnectionsRoute,
@@ -846,6 +887,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsVoiceRoute: SettingsVoiceRoute,
   ThreadsThreadIdRoute: ThreadsThreadIdRoute,
   ApiIndexRoute: ApiIndexRoute,
+  AudiosIndexRoute: AudiosIndexRoute,
   CloudIndexRoute: CloudIndexRoute,
   ConnectorsIndexRoute: ConnectorsIndexRoute,
   EndpointsIndexRoute: EndpointsIndexRoute,

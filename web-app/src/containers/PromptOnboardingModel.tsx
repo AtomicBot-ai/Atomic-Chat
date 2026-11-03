@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui/button'
+import { CORNER_ORDER, CornerSlot } from '@/containers/corner/cornerStack'
 import { useOnboardingModelReminder } from '@/hooks/useOnboardingModelReminder'
 import { useRecommendedDownloads } from '@/hooks/useRecommendedDownloads'
 import { useEffect, useRef, useState } from 'react'
@@ -14,7 +15,8 @@ const reminderModelLogoSrc = (repo: string) =>
  *  waiting. Same budget as the composer's widget (`ReplyModelGate`). */
 const RECOMMENDATION_WAIT_MS = 8_000
 
-/// Bottom-right offer shown once onboarding has been left without a model,
+/// Bottom-right offer, in the corner column (`corner/cornerStack`), shown once
+/// onboarding has been left without a model,
 /// either by Skip or by the auto-exit timeout. Repeats the first onboarding
 /// recommendation — the manifest's best fit for this machine, the same one the
 /// composer's widget leads with — so the user can still get a local model in
@@ -60,43 +62,45 @@ export function PromptOnboardingModel() {
   }
 
   return (
-    <div className="fixed bottom-[calc(1rem+var(--download-panel-offset,0px))] right-4 z-50 p-4 shadow-lg bg-background w-4/5 md:w-100 border rounded-lg transition-[bottom] duration-200">
-      <div className="flex items-center gap-2">
-        <img
-          src={reminderModelLogoSrc(offer.repo)}
-          alt=""
-          className="size-5 shrink-0 object-contain"
-          aria-hidden
-        />
-        <h2 className="font-medium">
-          {offer.title}
-          <span className="text-muted-foreground">
-            {' '}
-            ({offer.variant.file_size})
-          </span>
-        </h2>
+    <CornerSlot order={CORNER_ORDER.reminder}>
+      <div className="p-4 shadow-lg bg-background w-[min(25rem,calc(100vw-2rem))] border rounded-lg">
+        <div className="flex items-center gap-2">
+          <img
+            src={reminderModelLogoSrc(offer.repo)}
+            alt=""
+            className="size-5 shrink-0 object-contain"
+            aria-hidden
+          />
+          <h2 className="font-medium">
+            {offer.title}
+            <span className="text-muted-foreground">
+              {' '}
+              ({offer.variant.file_size})
+            </span>
+          </h2>
+        </div>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Get started with {offer.title}, our recommended local model for your
+          device.
+        </p>
+        <div className="mt-4 flex justify-end space-x-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground"
+            onClick={handleDismiss}
+          >
+            Later
+          </Button>
+          <Button
+            onClick={handleDownload}
+            disabled={offer.isDownloading}
+            size="sm"
+          >
+            {offer.isDownloading ? 'Downloading' : 'Download'}
+          </Button>
+        </div>
       </div>
-      <p className="mt-2 text-sm text-muted-foreground">
-        Get started with {offer.title}, our recommended local model for your
-        device.
-      </p>
-      <div className="mt-4 flex justify-end space-x-2">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="text-muted-foreground"
-          onClick={handleDismiss}
-        >
-          Later
-        </Button>
-        <Button
-          onClick={handleDownload}
-          disabled={offer.isDownloading}
-          size="sm"
-        >
-          {offer.isDownloading ? 'Downloading' : 'Download'}
-        </Button>
-      </div>
-    </div>
+    </CornerSlot>
   )
 }

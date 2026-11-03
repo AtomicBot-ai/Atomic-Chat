@@ -12,7 +12,7 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { isAlive } from '../harness/chat.js'
+import { isAlive, pickModel, waitForChat } from '../harness/chat.js'
 import { writeFakeModel } from '../harness/fixtures.js'
 import { CAN_RUN_FAKE_BACKEND, listProcesses } from '../harness/platform.js'
 import type { Profile } from '../harness/profile.js'
@@ -80,9 +80,11 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('remote access with an API key', () => {
       const browser = session.app.browser
       const { dataFolder, root } = session.profile
 
+      await waitForChat(session)
+      await pickModel(session, MODEL_ID)
       await openRemoteLan(session)
       expect(await remoteCardState(session)).toBe('Stopped')
-      await browser.$(`${REMOTE} button=Start remote access`).click()
+      await browser.$(REMOTE).$('button=Start remote access').click()
       await browser.waitUntil(async () => (await remoteCardState(session)) === 'Connected', {
         timeout: 60_000,
         timeoutMsg: `remote access never came online: ${JSON.stringify(await remoteAccessStatus(dataFolder))}`,
@@ -101,14 +103,14 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('remote access with an API key', () => {
       expect(edge.hosts()).toContain(TUNNEL_HOST)
 
       // The page: the URL, its QR code.
-      const urlRow = browser.$(`${REMOTE} [role="group"][aria-label="${TUNNEL_URL}"]`)
+      const urlRow = browser.$(`${REMOTE} [role="group"][aria-label="${TUNNEL_URL}/v1"]`)
       await urlRow.waitForDisplayed({ timeout: 15_000 })
       await urlRow.$('button[aria-label="Show QR code"]').click()
       await browser.$('[data-testid="access-qr-code"]').waitForDisplayed({ timeout: 15_000 })
       await browser.keys('Escape')
       await browser.waitUntil(async () => !(await browser.$('[data-testid="access-qr-code"]').isExisting()), { timeout: 15_000 })
 
-      await browser.$(`${REMOTE} button=Stop remote access`).click()
+      await browser.$(REMOTE).$('button=Stop remote access').click()
       await browser.waitUntil(async () => (await remoteCardState(session)) === 'Stopped', { timeout: 30_000 })
       expect(await remoteAccessStatus(dataFolder)).toMatchObject({ state: 'off', url: null, canStart: true })
       await browser.waitUntil(async () => !isAlive(launch?.pid as number), { timeout: 15_000 })
@@ -146,9 +148,11 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('remote access without an API key', () =>
     await withArtifacts(session, async () => {
       const browser = session.app.browser
       const { dataFolder, root } = session.profile
+      await waitForChat(session)
+      await pickModel(session, MODEL_ID)
       await openRemoteLan(session)
 
-      await browser.$(`${REMOTE} button=Start remote access`).click()
+      await browser.$(REMOTE).$('button=Start remote access').click()
       const dialog = browser.$('[role="dialog"]')
       await dialog.waitForDisplayed({ timeout: 15_000 })
       expect(await dialog.getText()).toContain('Start without an API key?')
@@ -157,9 +161,10 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('remote access without an API key', () =>
       expect(await tunnelLaunches(root)).toEqual([])
       expect((await remoteAccessStatus(dataFolder)).state).toBe('off')
 
-      await browser.$(`${REMOTE} button=Start remote access`).click()
-      await dialog.waitForDisplayed({ timeout: 15_000 })
-      await dialog.$('button=Generate key and start').click()
+      await browser.$(REMOTE).$('button=Start remote access').click()
+      const reopenedDialog = browser.$('[role="dialog"]')
+      await reopenedDialog.waitForDisplayed({ timeout: 15_000 })
+      await reopenedDialog.$('button=Generate key and start').click()
       await browser.waitUntil(async () => (await remoteCardState(session)) === 'Connected', { timeout: 60_000 })
       // A key now guards the listener; the page kept it for the user.
       const key = await browser.execute(() => {
@@ -171,7 +176,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('remote access without an API key', () =>
       expect((await models(session.apiPort, key)).status).toBe(200)
       expect((await remoteAccessStatus(dataFolder)).serverHasApiKey).toBe(true)
 
-      await browser.$(`${REMOTE} button=Stop remote access`).click()
+      await browser.$(REMOTE).$('button=Stop remote access').click()
       await browser.waitUntil(async () => (await remoteCardState(session)) === 'Stopped', { timeout: 30_000 })
     })
   }, 300_000)
@@ -206,8 +211,10 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('remote access that cannot start', () => 
     await withArtifacts(session, async () => {
       const browser = session.app.browser
       const { dataFolder, root } = session.profile
+      await waitForChat(session)
+      await pickModel(session, MODEL_ID)
       await openRemoteLan(session)
-      await browser.$(`${REMOTE} button=Start remote access`).click()
+      await browser.$(REMOTE).$('button=Start remote access').click()
       // The first attempt gets its 15 s to register, then the HTTP/2 retry gets the same.
       await browser.waitUntil(async () => (await remoteCardState(session)) === 'Error', {
         timeout: 90_000,
@@ -219,7 +226,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('remote access that cannot start', () => 
       expect(launches).toHaveLength(2)
       expect(launches[1]?.argv.slice(-2)).toEqual(['--protocol', 'http2'])
       for (const { pid } of launches) expect(isAlive(pid)).toBe(false)
-      expect(await browser.$(`${REMOTE} button=Start remote access`).isEnabled()).toBe(true)
+      expect(await browser.$(REMOTE).$('button=Start remote access').isEnabled()).toBe(true)
     })
   }, 300_000)
 })
@@ -248,8 +255,10 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('remote access in a build without the tun
       const browser = session.app.browser
       const { dataFolder, root } = session.profile
       expect(coreCommand(dataFolder)).not.toContain('--cloudflared-bin')
+      await waitForChat(session)
+      await pickModel(session, MODEL_ID)
       await openRemoteLan(session)
-      await browser.$(`${REMOTE} button=Start remote access`).click()
+      await browser.$(REMOTE).$('button=Start remote access').click()
       await browser.waitUntil(async () => (await remoteCardState(session)) === 'Error', { timeout: 30_000 })
       expect(await remoteAccessStatus(dataFolder)).toMatchObject({ state: 'error', error: 'cloudflared_unavailable', canStart: true })
       expect(await browser.$(`${REMOTE} [role="alert"]`).getText()).toContain('cloudflared')
@@ -281,8 +290,10 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND || process.env.E2E_LAN !== '1')('LAN acces
     await withArtifacts(session, async () => {
       const browser = session.app.browser
       const { dataFolder } = session.profile
+      await waitForChat(session)
+      await pickModel(session, MODEL_ID)
       await openRemoteLan(session)
-      await browser.$(`${LAN} button=Start local network`).click()
+      await browser.$(LAN).$('button=Start local network').click()
       await browser.waitUntil(async () => (await browser.$(`${LAN} output`).getText()).trim() === 'Connected', { timeout: 60_000 })
 
       const addresses = await lanAddresses(dataFolder)
@@ -306,7 +317,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND || process.env.E2E_LAN !== '1')('LAN acces
       }
       expect(reached).toBeDefined()
 
-      await browser.$(`${LAN} button=Stop local network`).click()
+      await browser.$(LAN).$('button=Stop local network').click()
       await browser.waitUntil(async () => (await browser.$(`${LAN} output`).getText()).trim() === 'Stopped', { timeout: 30_000 })
       // Off the network, still on loopback.
       await expect(

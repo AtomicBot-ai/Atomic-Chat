@@ -6,10 +6,24 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { coreSessions, CRASH_TOAST, liveFakeBackends, pageShows, pickModel, send, waitForChat, watchFor } from '../harness/chat.js'
+import {
+  coreSessions,
+  CRASH_TOAST,
+  liveFakeBackends,
+  pageShows,
+  pickModel,
+  send,
+  waitForChat,
+  watchFor,
+} from '../harness/chat.js'
 import { installFakeBackend, writeFakeModel } from '../harness/fixtures.js'
 import { CAN_RUN_FAKE_BACKEND } from '../harness/platform.js'
-import { endSession, startSession, withArtifacts, type Session } from '../harness/session.js'
+import {
+  endSession,
+  startSession,
+  withArtifacts,
+  type Session,
+} from '../harness/session.js'
 
 const MODEL_ID = 'e2e/fake-model'
 const REPLY = 'ATOMIC-E2E-AFTER-CANCEL-7b3e'
@@ -27,8 +41,9 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('cancelling a model load', () => {
   beforeAll(async () => {
     session = await startSession('model-load-cancel', {
       prepare: async (profile) => {
-        // Twenty seconds before the backend reports ready: long enough to cancel, short enough to wait out.
-        await installFakeBackend(profile, { reply: REPLY, delayMs: 20_000 })
+        // Neither the health endpoint nor the readiness log can finish this
+        // load before Cancel. A log-only delay can still pass health polling.
+        await installFakeBackend(profile, { reply: REPLY, mode: 'no-ready' })
         await writeFakeModel(profile, MODEL_ID)
       },
     })
@@ -63,6 +78,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('cancelling a model load', () => {
       expect(loading).toBeDefined()
 
       // A message loads it again, and this time it is allowed to finish.
+      await installFakeBackend(session.profile, { reply: REPLY })
       await send(session, 'after the cancel')
       await pageShows(session, REPLY, 120_000)
       const [loaded] = await coreSessions(dataFolder)

@@ -75,6 +75,15 @@ pub(super) struct TransferTuning {
     pub max_connections: usize,
     /// How often the segment map of a multi-connection download is saved.
     pub persist_interval: Duration,
+    /// A connection of a multi-connection download that brings fewer bytes
+    /// than this in a whole `idle_timeout` is treated like a silent one:
+    /// dropped and reopened where it stopped.
+    ///
+    /// QA 2.2.25 (NEW-04): the idle watchdog only fires on total silence, so a
+    /// connection that a flaky Wi-Fi left trickling a packet now and then
+    /// held the last ~20 MB of a projector for nine minutes; a fresh
+    /// connection after a pause fetched them in 15 s.
+    pub slow_window_floor: u64,
 }
 
 impl Default for TransferTuning {
@@ -88,6 +97,10 @@ impl Default for TransferTuning {
             min_segment_size: 16 * 1024 * 1024,
             max_connections: 8,
             persist_interval: Duration::from_secs(1),
+            // About 2 KiB/s per connection: below it, eight connections
+            // together move under 17 KiB/s, where a file of this size would
+            // take days anyway.
+            slow_window_floor: 64 * 1024,
         }
     }
 }
@@ -271,6 +284,113 @@ async fn lock_path_for_writing(
 
 pub(super) fn expected_download_size(item: &DownloadItem, response_size: u64) -> u64 {
     item.size.filter(|size| *size > 0).unwrap_or(response_size)
+}
+
+/// What one file of a download task ended as.
+pub(super) struct FinishedFile {
+    pub path: PathBuf,
+    /// Already checked against the item's size and hash on the way in, so the
+    /// validation pass after the transfers need not read it again.
+    pub verified: bool,
+}
+
+impl FinishedFile {
+    fn downloaded(path: &Path) -> Self {
+        Self {
+            path: path.to_path_buf(),
+            verified: false,
+        }
+    }
+}
+
+/// Whether `save_path` already holds the finished file `item` describes.
+///
+/// QA 2.2.25 (NEW-04): one task fetches all files of a model (model, mmproj,
+/// shards) at once, and a pause cancels the whole task. A file that had
+/// finished — renamed into place, its hash checked — leaves no partial behind,
+/// and a resume only ever looked at partials: the 2.4 GB model of a
+/// model+mmproj pair came again from byte 0 to finish a 20 MB projector tail,
+/// and the bar fell from 99% to 26%.
+///
+/// A finished copy counts when it has the expected size and, for an item that
+/// names a hash, that hash. Without a hash the size is all there is to go on,
+/// so then it counts only on a resume, and only with no partial of the path
+/// waiting: a `.tmp` next to a finished copy means a fetch over it was under
+/// way, which is never an accident.
+async fn finished_copy_on_disk(
+    item: &DownloadItem,
+    save_path: &Path,
+    expected_size: u64,
+    resume: bool,
+    cancel_token: &CancellationToken,
+) -> Result<bool, String> {
+    if expected_size == 0 {
+        return Ok(false);
+    }
+    let full_size = tokio::fs::metadata(save_path)
+        .await
+        .is_ok_and(|meta| meta.is_file() && meta.len() == expected_size);
+    if !full_size {
+        return Ok(false);
+    }
+    let Some(expected_sha256) = &item.sha256 else {
+        return Ok(resume && !sidecar_path(save_path, "tmp").exists());
+    };
+    log::info!(
+        "Checking the hash of the finished copy of '{}' already on disk",
+        item.url
+    );
+    match jan_utils::crypto::compute_file_sha256_with_cancellation(save_path, cancel_token).await {
+        Ok(computed) if computed == *expected_sha256 => Ok(true),
+        Ok(_) => {
+            log::warn!(
+                "The copy of '{}' on disk does not match its hash; downloading it again",
+                item.url
+            );
+            Ok(false)
+        }
+        Err(_) if cancel_token.is_cancelled() => Err("Download cancelled".to_string()),
+        Err(error) => {
+            log::warn!(
+                "Could not check the copy of '{}' on disk ({error}); downloading it again",
+                item.url
+            );
+            Ok(false)
+        }
+    }
+}
+
+/// Bytes of `item` a resume starts with: what the partial saved for this very
+/// file holds, else a finished copy at its full size.
+///
+/// The free-space check and the task's first progress event both read it, so
+/// neither counts bytes the resume is about to fetch again (a partial saved
+/// under another identity, or larger than the file) nor forgets a file that
+/// is already complete. A finished copy whose hash is still to be checked is
+/// counted; it falls back to zero only in the rare case that it fails.
+pub(super) fn bytes_kept_on_resume(
+    item: &DownloadItem,
+    save_path: &Path,
+    expected_size: u64,
+) -> u64 {
+    if sidecar_path(save_path, "tmp").exists() {
+        let same_file = std::fs::read_to_string(sidecar_path(save_path, "url"))
+            .is_ok_and(|saved| saved == item.resume_identity());
+        let kept = segmented::downloaded_bytes_on_disk(save_path);
+        return if !same_file || (expected_size > 0 && kept > expected_size) {
+            0
+        } else {
+            kept
+        };
+    }
+    let finished = expected_size > 0
+        && std::fs::metadata(save_path)
+            .is_ok_and(|meta| meta.is_file() && meta.len() == expected_size);
+    if finished {
+        expected_size
+    } else {
+        0
+    }
 }
 
 fn validate_content_range(
@@ -823,16 +943,39 @@ pub async fn _download_files_internal(
     // them here turns a write error at 80% of a 20 GB transfer into an upfront
     // message that names the actual problem.
     let mut already_downloaded = Vec::new();
-    for save_path in &save_paths {
+    for (item, save_path) in items.iter().zip(&save_paths) {
         ensure_path_within_limit(save_path)?;
         if resume {
-            already_downloaded.push(segmented::downloaded_bytes_on_disk(save_path));
+            let size =
+                expected_download_size(item, file_sizes.get(&item.url).copied().unwrap_or(0));
+            already_downloaded.push(bytes_kept_on_resume(item, save_path, size));
         }
     }
     let needed = remaining_bytes(total_size, &already_downloaded);
     match &core_location {
         Some(location) => check_reported_free_space(location.free_bytes, needed)?,
         None => ensure_free_space(&jan_data_folder, needed)?,
+    }
+
+    // A resume starts from everything it keeps, for every file at once. Each
+    // file used to report only when its own transfer began, so the first
+    // events of a resumed task summed one file's bytes and zero for the rest:
+    // the bar dropped below where the pause had left it, then climbed back.
+    if resume && total_size > 0 {
+        for (index, kept) in already_downloaded.iter().enumerate() {
+            progress_tracker
+                .update_progress(&format!("{task_id}-{index}"), *kept)
+                .await;
+        }
+        let (transferred, total) = progress_tracker.get_total_progress().await;
+        let _ = app.emit(
+            &evt_name,
+            DownloadEvent {
+                transferred,
+                total,
+                stage: None,
+            },
+        );
     }
 
     // Collect download tasks for parallel execution
@@ -867,7 +1010,12 @@ pub async fn _download_files_internal(
         let result = task.await.map_err(|e| format!("Task join error: {e}"))?;
 
         match result {
-            Ok(downloaded_path) => {
+            // A finished copy found on disk was checked on the way in.
+            Ok(finished) if finished.verified => {}
+            Ok(FinishedFile {
+                path: downloaded_path,
+                ..
+            }) => {
                 // Spawn validation task in parallel
                 let item_clone = item.clone();
                 let app_clone = app.clone();
@@ -967,7 +1115,7 @@ async fn download_single_file(
     file_id: String,
     file_size: u64,
     ctx: DownloadCtx,
-) -> Result<std::path::PathBuf, String> {
+) -> Result<FinishedFile, String> {
     let DownloadCtx {
         header_map,
         resume,
@@ -987,6 +1135,34 @@ async fn download_single_file(
                 .await
                 .map_err(|error| disk_err_to_string(&error))?;
         }
+    }
+
+    let expected_size = expected_download_size(item, file_size);
+    if finished_copy_on_disk(item, save_path, expected_size, resume, &cancel_token).await? {
+        // Partials left from a fetch over it hold nothing it lacks.
+        for ext in ["tmp", "url", segmented::PARTS_EXT, "parts.new"] {
+            let _ = tokio::fs::remove_file(sidecar_path(save_path, ext)).await;
+        }
+        progress_tracker
+            .update_progress(&file_id, expected_size)
+            .await;
+        let (transferred, total) = progress_tracker.get_total_progress().await;
+        let _ = app.emit(
+            &evt_name,
+            DownloadEvent {
+                transferred,
+                total,
+                stage: None,
+            },
+        );
+        log::info!(
+            "'{}' is already complete on disk ({expected_size} bytes); not downloading it again",
+            item.url
+        );
+        return Ok(FinishedFile {
+            path: save_path.to_path_buf(),
+            verified: true,
+        });
     }
 
     let stage_reporter = StageReporter::new(app.clone(), evt_name.clone());
@@ -1011,7 +1187,6 @@ async fn download_single_file(
         .unwrap_or_else(|_| item.url.clone());
     log::info!("Started downloading: {decoded_url}");
     let client = _get_client_for_item(item, &header_map).map_err(err_to_string)?;
-    let expected_size = expected_download_size(item, file_size);
     let mut download_delta = 0u64;
     let mut initial_progress = 0u64;
 
@@ -1032,7 +1207,7 @@ async fn download_single_file(
         })
         .await?;
         match outcome {
-            segmented::SegmentedOutcome::Done => return Ok(save_path.to_path_buf()),
+            segmented::SegmentedOutcome::Done => return Ok(FinishedFile::downloaded(save_path)),
             segmented::SegmentedOutcome::Declined(reason) => {
                 log::info!(
                     "Downloading '{}' over one connection from byte 0: {reason}",
@@ -1058,7 +1233,7 @@ async fn download_single_file(
                 .map_err(|error| disk_err_to_string(&error))?;
             let _ = tokio::fs::remove_file(&url_save_path).await;
             log::info!("Completed download was already present for '{}'", item.url);
-            return Ok(save_path.to_path_buf());
+            return Ok(FinishedFile::downloaded(save_path));
         }
         if expected_size > 0 && downloaded_size > expected_size {
             log::warn!(
@@ -1415,7 +1590,7 @@ async fn download_single_file(
         .map(|u| u.to_string())
         .unwrap_or_else(|_| item.url.clone());
     log::info!("Finished downloading: {decoded_url}");
-    Ok(save_path.to_path_buf())
+    Ok(FinishedFile::downloaded(save_path))
 }
 
 #[cfg(test)]
@@ -1478,7 +1653,9 @@ pub(super) async fn download_single_file_with_tuning_for_test(
         progress_tracker: ProgressTracker::new(std::slice::from_ref(item), sizes),
         tuning,
     };
-    download_single_file(app, item, save_path, file_id, expected_size, ctx).await
+    download_single_file(app, item, save_path, file_id, expected_size, ctx)
+        .await
+        .map(|finished| finished.path)
 }
 
 #[cfg(test)]

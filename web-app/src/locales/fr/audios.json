@@ -1,0 +1,73 @@
+{
+  "page": {
+    "title": "Audio",
+    "subtitle": "Créez de la voix, de la musique et des effets sonores."
+  },
+  "mode": {
+    "choose": "Mode",
+    "speech": {
+      "title": "Synthèse vocale",
+      "hint": "Faites lire un texte à voix haute."
+    },
+    "music": {
+      "title": "Texte vers musique",
+      "hint": "Créez une piste instrumentale."
+    },
+    "effects": {
+      "title": "Effets sonores",
+      "hint": "Créez un son à partir d'une description."
+    }
+  },
+  "model": {
+    "select": "Sélectionner un modèle audio",
+    "listTitle_speech": "Modèles de synthèse vocale",
+    "listTitle_music": "Modèles de musique",
+    "listTitle_effects": "Modèles d'effets sonores",
+    "download": "Télécharger {{name}}",
+    "downloadShort": "Télécharger",
+    "comingSoon": "Disponible avec le moteur audio."
+  },
+  "form": {
+    "text": "Texte",
+    "textPlaceholder": "Saisissez le texte à lire à voix haute…",
+    "prompt": "Prompt",
+    "promptPlaceholder": "Décrivez l'audio souhaité…",
+    "generate": "Générer",
+    "settings": "Paramètres",
+    "reset": "Réinitialiser",
+    "resetHint": "Rétablit les paramètres audio. Votre prompt est conservé.",
+    "voice": "Voix",
+    "voiceDefault": "Voix par défaut du modèle",
+    "speed": "Vitesse",
+    "speedHint": "Débit de parole. 1 correspond à la vitesse normale.",
+    "duration": "Durée",
+    "durationSeconds": "{{seconds}} secondes",
+    "tempo": "Tempo",
+    "tempoHint": "Battements par minute.",
+    "loop": "Lecture en boucle",
+    "advanced": "Avancé",
+    "pitch": "Hauteur",
+    "pitchHint": "Hauteur de la voix. 1 correspond à la hauteur naturelle.",
+    "sampleRate": "Fréquence d'échantillonnage",
+    "sampleRateKhz": "{{rate}} kHz",
+    "outputFormat": "Format de sortie",
+    "outputFormatValue": "WAV · Mono",
+    "disabled": {
+      "noEngine": "La génération audio nécessite le moteur audio, qui ne fait pas encore partie de cette version.",
+      "noModel": "Téléchargez d'abord un modèle audio.",
+      "emptyPrompt": "Écrivez d'abord un prompt."
+    }
+  },
+  "gallery": {
+    "empty": {
+      "title": "Vos fichiers audio apparaissent ici",
+      "description": "Saisissez un prompt et générez de l'audio."
+    },
+    "emptyNoModel": "Téléchargez un modèle audio pour commencer."
+  },
+  "setup": {
+    "card": {
+      "downloadModel": "Télécharger le modèle"
+    }
+  }
+}

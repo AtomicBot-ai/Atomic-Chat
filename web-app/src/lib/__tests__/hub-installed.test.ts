@@ -12,6 +12,8 @@ import {
   quantModelIds,
   withStaffPicks,
   FOUNDRY_LOCAL_PROVIDER,
+  LITERT_LM_PROVIDER,
+  GENIEX_PROVIDER,
 } from '../hub-installed'
 import { setManagedEnginesForTests, TENSORRT_LLM_ENGINE } from '@/lib/managed-engines'
 
@@ -251,6 +253,97 @@ describe('collectInstalledModels — Foundry Local (change add-foundry-local)', 
     expect(findInstalledLocalModel(providers, ['qwen3-4b-generic-gpu'], [FOUNDRY_LOCAL_PROVIDER])).toEqual({
       modelId: 'qwen3-4b-generic-gpu',
       provider: 'foundry-local',
+    })
+  })
+})
+
+describe('collectInstalledModels — LiteRT-LM (change add-litert-lm-runtime)', () => {
+  const liteRt = (models: Array<{ id: string; name?: string; sizeBytes?: number }>): ModelProvider =>
+    ({ active: true, provider: 'litert-lm', settings: [], models }) as unknown as ModelProvider
+
+  it('lists a downloaded variant once, as a LiteRT-LM entry named as its model.yml names it', () => {
+    const rows = collectInstalledModels(
+      [],
+      [liteRt([{ id: 'gemma-4-e4b-gpu', name: 'Gemma 4 E4B (GPU)', sizeBytes: 3_650_000_000 }])]
+    )
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({
+      model_name: 'litert-lm/gemma-4-e4b-gpu',
+      is_litert_lm: true,
+      litert_lm: { origin: 'installed', model_id: 'gemma-4-e4b-gpu', name: 'Gemma 4 E4B (GPU)' },
+    })
+    expect(modelFormat(rows[0])).toBe('litert-lm')
+  })
+
+  it('keeps it apart from a Foundry Local or GGUF row spelled alike', () => {
+    const rows = collectInstalledModels(
+      [gguf('someone/gemma-GGUF', ['gemma-4-e4b-gpu'])],
+      [
+        provider('llamacpp', ['someone/other-Q4_K_M']),
+        ({ active: true, provider: 'foundry-local', settings: [], models: [{ id: 'gemma-4-e4b-gpu' }] }) as unknown as ModelProvider,
+        liteRt([{ id: 'gemma-4-e4b-gpu' }]),
+      ]
+    )
+
+    expect(rows.map((row) => [row.model_name, modelFormat(row)])).toEqual([
+      ['someone/other-Q4_K_M', 'gguf'],
+      ['foundry-local/gemma-4-e4b-gpu', 'foundry-local'],
+      ['litert-lm/gemma-4-e4b-gpu', 'litert-lm'],
+    ])
+  })
+
+  it('finds the downloaded variant only under its own provider', () => {
+    const providers = [provider('llamacpp', ['gemma-4-e4b-gpu']), liteRt([{ id: 'gemma-4-e4b-gpu' }])]
+    expect(findInstalledLocalModel(providers, ['gemma-4-e4b-gpu'], [LITERT_LM_PROVIDER])).toEqual({
+      modelId: 'gemma-4-e4b-gpu',
+      provider: 'litert-lm',
+    })
+  })
+})
+
+describe('collectInstalledModels — GenieX (change add-geniex-runtime)', () => {
+  const geniex = (models: Array<{ id: string; name?: string; sizeBytes?: number }>): ModelProvider =>
+    ({ active: true, provider: 'geniex', settings: [], models }) as unknown as ModelProvider
+
+  it('lists a downloaded model once, as a GenieX entry named as its model.yml names it', () => {
+    // spec geniex-desktop "Скачанные модели GenieX ведут себя как локальные".
+    const rows = collectInstalledModels(
+      [],
+      [geniex([{ id: 'gemma-4-e4b', name: 'Gemma 4 E4B', sizeBytes: 6_000_000_000 }])]
+    )
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({
+      model_name: 'geniex/gemma-4-e4b',
+      is_geniex: true,
+      geniex: { origin: 'installed', model_id: 'gemma-4-e4b', name: 'Gemma 4 E4B' },
+    })
+    expect(modelFormat(rows[0])).toBe('geniex')
+  })
+
+  it('keeps it apart from a GGUF or LiteRT-LM row spelled alike', () => {
+    const rows = collectInstalledModels(
+      [gguf('someone/gemma-GGUF', ['gemma-4-e4b'])],
+      [
+        provider('llamacpp', ['someone/other-Q4_K_M']),
+        ({ active: true, provider: 'litert-lm', settings: [], models: [{ id: 'gemma-4-e4b' }] }) as unknown as ModelProvider,
+        geniex([{ id: 'gemma-4-e4b' }]),
+      ]
+    )
+
+    expect(rows.map((row) => [row.model_name, modelFormat(row)])).toEqual([
+      ['someone/other-Q4_K_M', 'gguf'],
+      ['litert-lm/gemma-4-e4b', 'litert-lm'],
+      ['geniex/gemma-4-e4b', 'geniex'],
+    ])
+  })
+
+  it('finds the downloaded model only under its own provider', () => {
+    const providers = [provider('llamacpp', ['gemma-4-e4b']), geniex([{ id: 'gemma-4-e4b' }])]
+    expect(findInstalledLocalModel(providers, ['gemma-4-e4b'], [GENIEX_PROVIDER])).toEqual({
+      modelId: 'gemma-4-e4b',
+      provider: 'geniex',
     })
   })
 })

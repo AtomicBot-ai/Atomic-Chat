@@ -82,6 +82,9 @@ describe('integration agent setup', () => {
       'launch:toast.configuredDescOpenclaw'
     )
     expect(agentConfiguredDescriptionKey('codex')).toBe(
+      'launch:toast.configuredDescCodex'
+    )
+    expect(agentConfiguredDescriptionKey('opencode')).toBe(
       'launch:toast.configuredDesc'
     )
   })

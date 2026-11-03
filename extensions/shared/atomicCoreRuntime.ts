@@ -30,6 +30,8 @@ export type CoreProvider =
   | 'vllm'
   | 'sglang'
   | 'foundry-local'
+  | 'litert-lm'
+  | 'geniex'
 
 export type Invoke = <T>(
   command: string,
@@ -264,10 +266,11 @@ export interface CoreBackendUpdateCheckRequest {
 
 /**
  * An engine build the core installs itself (`/engine-builds/:engine`, core 0.12.0): MLX's
- * `mlx-server`, bundled with the installer or downloaded by the core, and the Foundry Local runtime
- * (change `add-foundry-local`). snake_case on the wire.
+ * `mlx-server`, bundled with the installer or downloaded by the core, the Foundry Local runtime
+ * (change `add-foundry-local`), the LiteRT-LM library (change `add-litert-lm-runtime`) and the
+ * Qualcomm GenieX SDK (change `add-geniex-runtime`). snake_case on the wire.
  */
-export type CoreEngineBuildId = 'sd-cpp' | 'mlx' | 'foundry-local'
+export type CoreEngineBuildId = 'sd-cpp' | 'mlx' | 'foundry-local' | 'litert-lm' | 'geniex'
 
 export interface CoreEngineBuildRef {
   tag: string

@@ -18,8 +18,11 @@ import { runMacosLlamacppDefaultMigration } from './lib/macosLlamacppDefaultMigr
 import { runTurboquantDefaultMigration } from './lib/turboquantDefaultMigration'
 import { initSentryFrontend } from './lib/sentry'
 import { resetForcedOnboardingRun } from './lib/onboarding'
+import { isFirstLaunch, rememberFirstLaunch } from './lib/onboarding-telemetry'
+import { assignOnboardingCohort } from './lib/onboarding/experiment'
 import { useGeneralSetting } from './hooks/useGeneralSetting'
 import { useModelProvider } from './hooks/useModelProvider'
+import { restoreThreadWindowModel } from './lib/thread-window-model'
 import { isLocalProvider } from '@/utils/registerRemoteProvider'
 import GlobalError from './containers/GlobalError'
 
@@ -167,6 +170,15 @@ runMacosLlamacppDefaultMigration()
 // blob, which would misclassify a fresh install as an existing profile.
 runTurboquantDefaultMigration()
 
+// `app_opened.is_first_launch` is about this launch as it began; the first
+// render can already mark setup done (a variant without a setup screen) and
+// What's New can mark the version seen before that event is sent.
+rememberFirstLaunch()
+
+// A new install joins the onboarding experiment here, before the home route
+// decides whether (and which) setup screen to show.
+assignOnboardingCohort({ firstLaunch: isFirstLaunch() })
+
 // Dev-only (`make dev-onboarding`): drop the persisted onboarding completion
 // flag so the forced run replays the whole flow — picker, 15s auto-exit, chat
 // handoff, model reminder — on every launch, without a factory reset. Must run
@@ -194,6 +206,10 @@ if (!useGeneralSetting.getState().preloadModelOnStartup) {
     useModelProvider.setState({ selectedProvider: '', selectedModel: null })
   }
 }
+
+// A chat opened in its own window starts on the model of the window that
+// opened it, provider included, whatever the reset above cleared (B12).
+restoreThreadWindowModel()
 
 // Tauri webviews ignore the HTML5 `download` attribute, so streamdown's
 // code-block download button needs to go through Tauri's save dialog.

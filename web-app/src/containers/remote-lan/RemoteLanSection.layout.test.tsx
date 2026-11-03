@@ -118,8 +118,8 @@ describe('Remote access and Local network cards', () => {
       for (const card of [remote, lan]) {
         expectNoHorizontalOverflow(card)
         const action = within(card).getByRole('button', { name: /^start /i })
-        // One line of label in the 36 px control, not a wrapped one.
-        expect(action.getBoundingClientRect().height).toBeCloseTo(36, 0)
+        // One line of label in the 28 px control, not a wrapped one.
+        expect(action.getBoundingClientRect().height).toBeCloseTo(28, 0)
         expectFits(action, card)
       }
     }

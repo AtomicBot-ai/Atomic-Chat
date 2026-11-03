@@ -7,6 +7,18 @@
     "allowOnce": "Autoriser une fois",
     "alwaysAllow": "Autoriser dans la discussion",
     "parameters": "Paramètres de l'outil",
-    "permissionScope": "Les permissions accordées ne s'appliquent qu'à cette conversation."
+    "permissionScope": "Les permissions accordées ne s'appliquent qu'à cette conversation.",
+    "exec": {
+      "commandTitle": "Exécuter cette commande ?",
+      "scriptTitle": "Exécuter ce script {{language}} ?",
+      "description": "L'assistant souhaite l'exécuter sur votre ordinateur. Les autorisations accordées ne s'appliquent qu'à cette discussion.",
+      "unsandboxed": "S'exécute sur votre ordinateur avec vos autorisations, dans le dossier de cette discussion. Vérifiez avant d'autoriser.",
+      "timeout": "S'arrête après {{seconds}} s.",
+      "secure": "S'exécute dans le bac à sable Windows de ce projet sécurisé : seuls le dossier de cette discussion et ceux du projet ({{folders}}) sont accessibles ; tout le reste de votre ordinateur est bloqué.",
+      "secureNoFolders": "S'exécute dans le bac à sable Windows de ce projet sécurisé : seul le dossier de cette discussion est accessible ; tout le reste de votre ordinateur est bloqué.",
+      "secureFolderEditable": "{{path}} — modifiable",
+      "secureFolderReadOnly": "{{path}} — lecture seule",
+      "secureOffline": "Aucun accès à Internet."
+    }
   }
 }

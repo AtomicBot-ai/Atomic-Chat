@@ -1,0 +1,11 @@
+{
+  "title": "Vos modèles cloud aussi.",
+  "lead": "Connectez un fournisseur pour plus de choix. Votre modèle local continue de se télécharger.",
+  "providers": "Fournisseurs cloud",
+  "keyFor": "Clé API {{provider}}",
+  "connected": "Connecté",
+  "notVerified": "Non vérifiée",
+  "skip": "Passer",
+  "keyPlaceholder": "Entrez la clé API",
+  "connecting": "Connexion…"
+}

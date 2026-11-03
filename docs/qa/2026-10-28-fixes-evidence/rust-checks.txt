@@ -1,0 +1,9 @@
+cargo-check: exit 0
+
+warning: `Atomic-Chat` (lib) generated 2 warnings (run `cargo fix --lib -p Atomic-Chat` to apply 1 suggestion)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.37s
+
+cargo-clippy: exit 0
+
+warning: `Atomic-Chat` (lib) generated 57 warnings (run `cargo clippy --fix --lib -p Atomic-Chat` to apply 33 suggestions)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.60s

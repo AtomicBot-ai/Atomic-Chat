@@ -217,13 +217,12 @@ export default function AddProjectDialog({
                 >
                   {selectedAssistant ? (
                     <div className="flex items-center gap-2">
-                      {selectedAssistant.avatar && (
-                        <AvatarEmoji
-                          avatar={selectedAssistant.avatar}
-                          imageClassName="w-4 h-4 object-contain"
-                          textClassName="text-sm"
-                        />
-                      )}
+                      <AvatarEmoji
+                        avatar={selectedAssistant.avatar}
+                        name={selectedAssistant.name}
+                        imageClassName="w-4 h-4 object-contain"
+                        textClassName="text-sm"
+                      />
                       <span>{selectedAssistant.name}</span>
                     </div>
                   ) : (
@@ -248,13 +247,12 @@ export default function AddProjectDialog({
                     onSelect={() => setSelectedAssistantId(assistant.id)}
                   >
                     <div className="flex items-center gap-2">
-                      {assistant.avatar && (
-                        <AvatarEmoji
-                          avatar={assistant.avatar}
-                          imageClassName="w-4 h-4 object-contain"
-                          textClassName="text-sm"
-                        />
-                      )}
+                      <AvatarEmoji
+                        avatar={assistant.avatar}
+                        name={assistant.name}
+                        imageClassName="w-4 h-4 object-contain"
+                        textClassName="text-sm"
+                      />
                       <span>{assistant.name}</span>
                     </div>
                   </DropdownMenuItem>

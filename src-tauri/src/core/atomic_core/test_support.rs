@@ -46,6 +46,11 @@ struct CoreState {
     /// models the ambiguous failure where the core committed an operation but
     /// the client never received the acknowledgement.
     applied_mutations: AtomicU64,
+    /// How long every control request waits before it is answered: a core that is alive but
+    /// swapping. Open event streams are not affected.
+    slow: Mutex<std::time::Duration>,
+    /// What registration tells the client about heartbeats.
+    heartbeat_interval_ms: AtomicU64,
 }
 
 pub(crate) struct FakeCore {
@@ -82,6 +87,8 @@ impl FakeCore {
             force_resync: Mutex::new(false),
             sessions: Mutex::new(json!([])),
             applied_mutations: AtomicU64::new(0),
+            slow: Mutex::new(std::time::Duration::ZERO),
+            heartbeat_interval_ms: AtomicU64::new(15_000),
         });
 
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
@@ -142,6 +149,18 @@ impl FakeCore {
     /// instance entirely.
     pub(crate) fn demand_resync(&self, demand: bool) {
         *self.state.force_resync.lock().unwrap() = demand;
+    }
+
+    /// Answer every control request only after `delay`, as a core under memory pressure does;
+    /// `Duration::ZERO` answers at once again.
+    pub(crate) fn set_slow(&self, delay: std::time::Duration) {
+        *self.state.slow.lock().unwrap() = delay;
+    }
+
+    pub(crate) fn set_heartbeat_interval_ms(&self, interval_ms: u64) {
+        self.state
+            .heartbeat_interval_ms
+            .store(interval_ms, Ordering::SeqCst);
     }
 
     /// Drop every registration, as expiry does after three missed heartbeats.
@@ -275,6 +294,11 @@ async fn serve(
         ));
     }
 
+    let slow = *state.slow.lock().unwrap();
+    if !slow.is_zero() {
+        tokio::time::sleep(slow).await;
+    }
+
     let method = request.method().clone();
     let path = request.uri().path().to_string();
     let query = request.uri().query().unwrap_or("").to_string();
@@ -316,7 +340,7 @@ async fn serve(
                 StatusCode::CREATED,
                 json!({
                     "client": { "id": id, "name": "atomic-chat-app", "pid": 1, "registered_at": 0, "last_seen": 0 },
-                    "heartbeat_interval_ms": 15_000,
+                    "heartbeat_interval_ms": state.heartbeat_interval_ms.load(Ordering::SeqCst),
                     "snapshot": snapshot(&state),
                 }),
             )

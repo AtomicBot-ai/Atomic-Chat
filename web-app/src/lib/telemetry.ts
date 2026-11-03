@@ -10,6 +10,7 @@ import {
   AUDIO_EXTENSIONS,
   DOCUMENT_EXTENSIONS,
   IMAGE_EXTENSIONS,
+  VIDEO_EXTENSIONS,
 } from '@/containers/chatInput/classifyDroppedPaths'
 import {
   isContextLimitError,
@@ -94,6 +95,8 @@ export type LoadBackend =
   | 'vllm'
   | 'sglang'
   | 'foundry-local'
+  | 'litert-lm'
+  | 'geniex'
   | 'unknown'
 
 const STDERR_TAIL_BYTES = 2048
@@ -377,7 +380,9 @@ export function loadBackendFromProvider(provider?: string | null): LoadBackend {
     provider === 'tensorrt-llm' ||
     provider === 'vllm' ||
     provider === 'sglang' ||
-    provider === 'foundry-local'
+    provider === 'foundry-local' ||
+    provider === 'litert-lm' ||
+    provider === 'geniex'
   )
     return provider
   return 'unknown'
@@ -953,6 +958,7 @@ export function attachmentExt(nameOrPath?: string | null): string {
   if (
     IMAGE_EXTENSIONS.has(ext) ||
     AUDIO_EXTENSIONS.has(ext) ||
+    VIDEO_EXTENSIONS.has(ext) ||
     DOCUMENT_EXTENSIONS.has(ext)
   )
     return ext

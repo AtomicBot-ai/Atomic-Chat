@@ -1,0 +1,12 @@
+
+ RUN  v3.2.7 <QA_ROOT>/source/tests/e2e
+
+ ✓ desktop/qa-opencode-real.spec.ts (2 tests) 94482ms
+   ✓ QA real installed CLI clients with API authentication > starts the API with the selected model  8179ms
+   ✓ QA real installed CLI clients with API authentication > opencode answers using the configuration written by Atomic Chat  81526ms
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  15:51:55
+   Duration  94.78s (transform 98ms, setup 0ms, collect 129ms, tests 94.48s, environment 0ms, prepare 21ms)
+

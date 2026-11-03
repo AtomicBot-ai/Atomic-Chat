@@ -1,0 +1,73 @@
+{
+  "page": {
+    "title": "Audios",
+    "subtitle": "Create speech, music, and sound effects."
+  },
+  "mode": {
+    "choose": "Mode",
+    "speech": {
+      "title": "Text to speech",
+      "hint": "Read text aloud with a voice."
+    },
+    "music": {
+      "title": "Text to music",
+      "hint": "Create an instrumental track."
+    },
+    "effects": {
+      "title": "Sound effects",
+      "hint": "Create a sound from a description."
+    }
+  },
+  "model": {
+    "select": "Select audio model",
+    "listTitle_speech": "Speech models",
+    "listTitle_music": "Music models",
+    "listTitle_effects": "Sound effect models",
+    "download": "Download {{name}}",
+    "downloadShort": "Download",
+    "comingSoon": "Arrives with the audio engine."
+  },
+  "form": {
+    "text": "Text",
+    "textPlaceholder": "Enter the text to read aloud…",
+    "prompt": "Prompt",
+    "promptPlaceholder": "Describe the audio you want…",
+    "generate": "Generate",
+    "settings": "Settings",
+    "reset": "Reset",
+    "resetHint": "Restore audio settings. Your prompt stays.",
+    "voice": "Voice",
+    "voiceDefault": "Model default",
+    "speed": "Speed",
+    "speedHint": "Speaking rate. 1 is the normal speed.",
+    "duration": "Duration",
+    "durationSeconds": "{{seconds}} seconds",
+    "tempo": "Tempo",
+    "tempoHint": "Beats per minute.",
+    "loop": "Loop playback",
+    "advanced": "Advanced",
+    "pitch": "Pitch",
+    "pitchHint": "Voice pitch. 1 is the natural pitch.",
+    "sampleRate": "Sample rate",
+    "sampleRateKhz": "{{rate}} kHz",
+    "outputFormat": "Output format",
+    "outputFormatValue": "WAV · Mono",
+    "disabled": {
+      "noEngine": "Audio generation needs the audio engine, which is not part of this build yet.",
+      "noModel": "Download an audio model first.",
+      "emptyPrompt": "Write a prompt first."
+    }
+  },
+  "gallery": {
+    "empty": {
+      "title": "Your audio appears here",
+      "description": "Enter a prompt and generate audio."
+    },
+    "emptyNoModel": "Download an audio model to get started."
+  },
+  "setup": {
+    "card": {
+      "downloadModel": "Download model"
+    }
+  }
+}

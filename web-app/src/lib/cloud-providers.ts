@@ -24,6 +24,7 @@ import {
   isSelfHostedProviderName,
 } from '@/utils/registerRemoteProvider'
 import { useProviderRegistryStore } from '@/stores/provider-registry-store'
+import { getProviderTitle } from '@/lib/utils'
 
 /**
  * A provider served by an in-process engine extension.
@@ -180,4 +181,17 @@ export const groupCloudProviders = (
       cloud.filter((provider) => !isSelfHostedGroup(provider))
     ),
   }
+}
+
+/**
+ * Names `getProviderTitle` spells out too long for a one-line card.
+ *
+ * The subscription's full title is "ChatGPT subscription (Codex)", which the
+ * half-width card truncates mid-word; the line underneath already says it is a
+ * sign-in, so the card carries the brand alone.
+ */
+const GALLERY_LABELS: Record<string, string> = { chatgpt: 'ChatGPT (Codex)' }
+
+export function galleryLabel(providerName: string): string {
+  return GALLERY_LABELS[providerName] ?? getProviderTitle(providerName)
 }

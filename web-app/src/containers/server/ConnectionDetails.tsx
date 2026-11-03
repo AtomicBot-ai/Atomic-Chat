@@ -31,11 +31,11 @@ import type { DecisionState } from '@/services/decision/types'
 import type { EmbeddingState } from '@/services/embedding/types'
 import { useDecisionStore } from '@/stores/decision-store'
 import { useEmbeddingStore } from '@/stores/embedding-store'
-import { getModelContextLength } from '@/utils/apiServerCapacity'
 import { formatCount } from '@/utils/apiServerStats'
 import { getLocalApiServerUrl } from '@/utils/localApiServerControl'
 
 import { ServerCopyButton } from './ServerPageParts'
+import { useServedContextLength } from './useServedContextLength'
 
 /** `idle` is an enabled module unloaded for idling: the next request starts it. */
 const DECISION_SERVED_STATES = new Set<DecisionState>([
@@ -195,7 +195,7 @@ export function ConnectionDetails() {
   const apiKeyHint = t('api:strip.apiKeyHint', { key: API_KEY_PLACEHOLDER })
 
   const loadedModel = activeModels[0] ?? null
-  const contextLength = getModelContextLength(loadedModel)
+  const contextLength = useServedContextLength(loadedModel)
 
   const { tone, label }: { tone: StatusTone; label: string } =
     serverStatus === 'stopped'

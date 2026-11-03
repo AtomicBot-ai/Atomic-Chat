@@ -1,19 +1,15 @@
 /**
- * Buffer for events emitted before PostHog is allowed to send anything.
+ * Buffer for events emitted before the analytics provider is ready.
  *
- * `AnalyticProvider` initialises PostHog with `opt_out_capturing_by_default:
- * true` and calls `opt_in_capturing()` only from the `.finally()` of an async
- * chain that first awaits the device's distinct id and then up to ~6s of
- * hardware IPC timeouts. posthog-js *drops* — it does not buffer — every
- * `capture()` made while opted out, so everything the app emitted during
- * startup was lost outright. `backend_step_shown` fires on mount of the very
- * first screen of a Windows first launch, i.e. squarely inside that window,
- * which explains its 6.1% coverage far better than the event's age does.
+ * `AnalyticProvider` initializes PostHog opted out, restores the install's
+ * identity, applies consent, and collects cohort/hardware properties before
+ * flushing. PostHog drops captures before init or while opted out; its consent
+ * getter can nevertheless return true before init. Only the provider knows
+ * when events can be sent with the correct identity and properties.
  *
- * Buffering here rather than opting in straight after `init()` is deliberate:
- * the device has to keep the `distinct_id` that `serviceHub.analytic()` owns,
- * or every early session would land on a separate anonymous id and the
- * per-device counting that this whole area depends on would split.
+ * Keeping that boundary explicit prevents early events from landing on a
+ * temporary anonymous id. Disabled analytics discards pending activity rather
+ * than keeping it for a later opt-in.
  */
 
 import posthog from 'posthog-js'
@@ -33,19 +29,25 @@ const MAX_QUEUED = 50
 
 const queue: QueuedEvent[] = []
 let droppedBeforeFlush = 0
-let flushed = false
+let state: 'buffering' | 'ready' | 'disabled' = 'buffering'
 
-/** `has_opted_in_capturing` throws if `init` has not run yet. */
-function canSendNow(): boolean {
-  try {
-    return posthog.has_opted_in_capturing()
-  } catch {
-    return false
-  }
+/** Re-arm the readiness boundary when the provider initializes again. */
+export function bufferTelemetryUntilReady(): void {
+  state = 'buffering'
+}
+
+/** Do not retain opted-out activity for a later opt-in. */
+export function disableTelemetryQueue(): void {
+  state = 'disabled'
+  queue.length = 0
+  droppedBeforeFlush = 0
 }
 
 /**
- * Capture an event, or hold it until consent has been applied.
+ * Capture an event, or hold it until the provider has restored the identity,
+ * applied consent and registered the super-properties. SDK consent is not a
+ * readiness check: posthog-js 1.255.1 returns true before init, but silently
+ * drops capture calls in that state.
  *
  * Every emitter in the app should go through this rather than
  * `posthog.capture` directly, so no event depends on winning a race with the
@@ -55,8 +57,9 @@ export function queuedCapture(
   event: string,
   props: Record<string, unknown>
 ): void {
+  if (state === 'disabled') return
   try {
-    if (flushed || canSendNow()) {
+    if (state === 'ready') {
       posthog.capture(event, props)
       return
     }
@@ -71,15 +74,17 @@ export function queuedCapture(
 }
 
 /**
- * Replay everything held so far. Called once, immediately after
- * `posthog.opt_in_capturing()`.
+ * Replay everything held so far and explicitly allow subsequent captures.
+ * Called by AnalyticProvider after identity, consent and super-properties.
+ * PostHog still enforces consent on each capture after this boundary.
  *
  * Events keep their original timestamps so funnel ordering survives the delay,
  * and carry `queued_ms` so the size of the startup window stays measurable
  * after the fix — if it ever grows again, the data says so.
  */
 export function flushTelemetryQueue(): void {
-  flushed = true
+  if (state === 'disabled') return
+  state = 'ready'
   const pending = queue.splice(0, queue.length)
   const dropped = droppedBeforeFlush
   droppedBeforeFlush = 0
@@ -110,5 +115,5 @@ export function flushTelemetryQueue(): void {
 export function resetTelemetryQueueForTests(): void {
   queue.length = 0
   droppedBeforeFlush = 0
-  flushed = false
+  state = 'buffering'
 }

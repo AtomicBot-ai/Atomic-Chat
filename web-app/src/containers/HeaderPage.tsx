@@ -16,7 +16,7 @@ const HeaderPage = memo(function HeaderPage({
   return (
     <div
       className={cn(
-        'relative h-15 flex shrink-0 items-center pl-4 pr-4',
+        'relative h-(--page-header-height) flex shrink-0 items-center pl-4 pr-4',
         children === undefined && 'border-none',
         className
       )}

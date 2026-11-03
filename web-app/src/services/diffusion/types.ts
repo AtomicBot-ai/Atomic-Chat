@@ -216,6 +216,12 @@ export type NativeDiffusionErrorCode =
   | 'INVALID_OUTPUT'
   | 'JOB_BUSY'
   | 'JOB_NOT_FOUND'
+  /**
+   * Raised by the app, never by the core: the core that ran a local job is
+   * gone (a new instance answers now, or none can be started), so the engine
+   * stopped under the job — on a small machine, almost always for memory.
+   */
+  | 'ENGINE_STOPPED'
   | 'QUEUE_FULL'
   | 'CANCELLED'
   | 'DISK_FULL'
@@ -386,13 +392,19 @@ export type ImageRecipe = {
   negativePrompt: string | null
   width: number
   height: number
-  steps: number
-  cfgScale: number
+  /**
+   * `steps`, `cfgScale`, `seed` and `batchSeed`: a local recipe always has
+   * them. A provider's recipe leaves out the knobs its model was not sent
+   * (core 0.18.9); an older one holds 0, 0, -1 and -1 instead. Read them
+   * through `imageRecipeSettings`.
+   */
+  steps?: number
+  cfgScale?: number
   guidance: number | null
   /** The seed this image was actually sampled with (`batchSeed + index`). */
-  seed: number
+  seed?: number
   /** The seed the batch was requested with; restore this, not `seed`. */
-  batchSeed: number
+  batchSeed?: number
   batchSize: number
   samplingMethod: string | null
   flowShift: number | null
@@ -624,10 +636,16 @@ export type VideoRecipe = {
   /** The frame count the engine reported for the file it wrote, after its own normalisation. */
   frameCount: number
   fps: number
-  steps: number
-  cfgScale: number
+  /**
+   * `steps`, `cfgScale` and `seed`: a local clip always has them. A provider's
+   * clip leaves them out (the seed when its model takes none; core 0.18.9); an
+   * older one holds the form's steps and CFG and seed -1. Read them through
+   * `videoRecipeSettings`.
+   */
+  steps?: number
+  cfgScale?: number
   guidance: number | null
-  seed: number
+  seed?: number
   samplingMethod: string | null
   flowShift: number | null
   workflow: VideoWorkflowId
@@ -691,9 +709,11 @@ export type DiffusionEvent =
   /**
    * The core generation that held the configuration is gone and a new one
    * attached (the desktop seam raises this from the relay's snapshot): the
-   * output folder and idle interval have to be sent again.
+   * output folder and idle interval have to be sent again. `instanceId` is
+   * the core process behind it: the same one after a re-attach (its jobs go
+   * on), a new one after the core was restarted (its jobs are gone).
    */
-  | { type: 'reset'; generation: number | null }
+  | { type: 'reset'; generation: number | null; instanceId?: string | null }
 
 /**
  * The service surface. Every method maps 1:1 onto one core control route
@@ -780,4 +800,10 @@ export interface DiffusionService {
 
   /** Subscribe to plugin events. Returns an unsubscribe function. */
   subscribe(handler: (event: DiffusionEvent) => void): () => void
+
+  /**
+   * The core instance attached right now, the one a job submitted now runs
+   * in; null when there is no core or it cannot be asked.
+   */
+  coreInstance?(): Promise<string | null>
 }

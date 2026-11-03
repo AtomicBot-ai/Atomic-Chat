@@ -4,6 +4,8 @@ import {
   ENGINE_OVERHEAD_BYTES,
   estimateWeightBytes,
   foundryLocalRows,
+  liteRtLmRows,
+  geniexRows,
   hubListSources,
   passesManagedPrefilter,
   managedBrowseRows,
@@ -12,6 +14,12 @@ import {
 import type { GpuFacts } from '@/services/managed-environment/types'
 import type { CatalogModel } from '@/services/models/types'
 import { catalogHubCard, curatedHubCard } from '@/lib/foundry-local/hub'
+import { curatedLiteRtLmCard, hfLiteRtLmCard } from '@/lib/litert-lm/hub'
+import { bundleGeniexCard, curatedGeniexCard, hfGeniexCard } from '@/lib/geniex/hub'
+import type { GeniexBundleModel, GeniexGgufModel } from '@/services/geniex/curated'
+import type { GeniexHfModel } from '@/services/geniex/huggingface'
+import type { LiteRtLmModel } from '@/services/litert-lm/curated'
+import type { LiteRtLmHfModel } from '@/services/litert-lm/huggingface'
 import type { FoundryLocalModel } from '@/services/foundry-local/curated'
 import type { CatalogModel as MicrosoftModel } from '@/services/foundry-local/microsoft-catalog'
 
@@ -201,6 +209,203 @@ describe('hubListSources', () => {
       feedFormat: 'gguf',
       prefilter: false,
     })
+  })
+})
+
+describe('liteRtLmRows (change add-litert-lm-runtime)', () => {
+  const curatedModel = (id: string, name: string, repo: string): LiteRtLmModel => ({
+    id,
+    name,
+    description: `${name}, checked by Atomic Chat`,
+    task: 'chat',
+    license: 'apache-2.0',
+    repo,
+    revision: 'a'.repeat(40),
+    gated: false,
+    context_length: 32768,
+    tools: true,
+    reasoning: true,
+    vision: true,
+    variants: [
+      {
+        id: `${id}-cpu`,
+        backend: 'cpu',
+        platforms: ['macos-arm64', 'win-x64'],
+        file: { path: 'model.litertlm', size: 5, sha256: 'b'.repeat(64) },
+      },
+    ],
+  })
+  const hfModel = (repo: string): LiteRtLmHfModel => ({
+    repo,
+    name: repo.split('/')[1],
+    revision: 'c'.repeat(40),
+    gated: false,
+    license: 'apache-2.0',
+    variants: [
+      {
+        id: `${repo.split('/')[1].toLowerCase()}-cpu`,
+        backend: 'cpu',
+        platforms: ['macos-arm64'],
+        file: { path: 'model.litertlm', size: 7, sha256: 'd'.repeat(64) },
+      },
+    ],
+  })
+  const curated = [curatedLiteRtLmCard(curatedModel('gemma-4-e4b', 'Gemma 4 E4B', 'litert-community/gemma-4-E4B-it-litert-lm'))]
+  const huggingFace = [hfLiteRtLmCard(hfModel('litert-community/Qwen3-4B')), hfLiteRtLmCard(hfModel('litert-community/Phi-4-mini-instruct'))]
+
+  const shape = (rows: ReturnType<typeof liteRtLmRows>) =>
+    rows.map((row) => [row.section, row.model.litert_lm?.model_id])
+
+  it('lists its own models: no picks, no catalog, no GGUF feed', () => {
+    expect(hubListSources('litert-lm')).toEqual({
+      staffPicks: false,
+      catalog: false,
+      curated: true,
+      feedFormat: 'gguf',
+      prefilter: false,
+    })
+  })
+
+  it('lists the curated models first, then Hugging Face’s, marked as such', () => {
+    const rows = liteRtLmRows({ curated, huggingFace, query: '' })
+    expect(shape(rows)).toEqual([
+      ['curated', 'gemma-4-e4b'],
+      ['huggingface', 'litert-community/Qwen3-4B'],
+      ['huggingface', 'litert-community/Phi-4-mini-instruct'],
+    ])
+    expect(rows.every((row) => row.model.is_litert_lm)).toBe(true)
+    expect(rows[1].model.litert_lm?.origin).toBe('huggingface')
+  })
+
+  it('searches both by name', () => {
+    expect(shape(liteRtLmRows({ curated, huggingFace, query: 'QWEN3' }))).toEqual([
+      ['huggingface', 'litert-community/Qwen3-4B'],
+    ])
+    expect(shape(liteRtLmRows({ curated, huggingFace, query: 'gemma 4' }))).toEqual([
+      ['curated', 'gemma-4-e4b'],
+    ])
+  })
+
+  it('shows the curated list alone while Hugging Face is unavailable, and Hugging Face alone over an empty list', () => {
+    expect(shape(liteRtLmRows({ curated, huggingFace: [], query: '' }))).toEqual([['curated', 'gemma-4-e4b']])
+    expect(shape(liteRtLmRows({ curated: [], huggingFace, query: '' }))).toEqual([
+      ['huggingface', 'litert-community/Qwen3-4B'],
+      ['huggingface', 'litert-community/Phi-4-mini-instruct'],
+    ])
+  })
+})
+
+describe('geniexRows (change add-geniex-runtime)', () => {
+  const SHA = 'a'.repeat(64)
+  const ggufModel = (id: string, name: string, repo: string): GeniexGgufModel => ({
+    kind: 'gguf',
+    id,
+    name,
+    description: `${name}, checked by Atomic Chat`,
+    task: 'chat',
+    license: 'apache-2.0',
+    context_length: 32768,
+    tools: true,
+    reasoning: true,
+    vision: false,
+    gguf: {
+      repo,
+      revision: 'b'.repeat(40),
+      gated: false,
+      file: { path: 'model-Q4_0.gguf', size: 5, sha256: SHA },
+      devices: ['npu', 'gpu', 'cpu'],
+      platforms: ['win-arm64'],
+    },
+  })
+  const bundleModel = (id: string, name: string, chips: Array<'x-elite' | 'x2-elite'>): GeniexBundleModel => ({
+    kind: 'qairt',
+    id,
+    name,
+    description: `${name}, compiled by Qualcomm AI Hub`,
+    task: 'chat',
+    license: 'apache-2.0',
+    context_length: 4096,
+    tools: true,
+    reasoning: false,
+    vision: false,
+    variants: chips.map((chip) => ({
+      id: `${id}-${chip}`,
+      chip,
+      bundle: { url: `https://qaihub-public-assets.s3.us-west-2.amazonaws.com/qai-hub-models/${id}/${chip}.zip`, size: 7, sha256: SHA },
+      precision: 'w4a16',
+    })),
+  })
+  const hfModel = (repo: string): GeniexHfModel => ({
+    model_id: repo.split('/')[1].toLowerCase(),
+    repo,
+    name: repo.split('/')[1],
+    revision: 'c'.repeat(40),
+    gated: false,
+    license: 'apache-2.0',
+    quantization: 'Q4_0',
+    file: { path: 'model-Q4_0.gguf', size: 9, sha256: SHA },
+    devices: ['npu', 'gpu', 'cpu', 'hybrid'],
+    platforms: ['win-arm64'],
+  })
+  const curated = [curatedGeniexCard(ggufModel('gemma-4-e4b', 'Gemma 4 E4B', 'google/gemma-4-E4B-it-qat-q4_0-gguf'))]
+  const huggingFace = [hfGeniexCard(hfModel('unsloth/Qwen3-4B-GGUF')), hfGeniexCard(hfModel('bartowski/Phi-4-mini-GGUF'))]
+  const bundles = [
+    bundleGeniexCard(bundleModel('qwen3-4b-aihub', 'Qwen3 4B (AI Hub)', ['x-elite', 'x2-elite'])),
+    bundleGeniexCard(bundleModel('gemma-4-e4b-aihub', 'Gemma 4 E4B (AI Hub)', ['x2-elite'])),
+  ]
+
+  const shape = (rows: ReturnType<typeof geniexRows>) =>
+    rows.map((row) => [row.section, row.model.geniex?.model_id])
+
+  it('lists its own models: no picks, no catalog, no GGUF feed', () => {
+    expect(hubListSources('geniex')).toEqual({
+      staffPicks: false,
+      catalog: false,
+      curated: true,
+      feedFormat: 'gguf',
+      prefilter: false,
+    })
+  })
+
+  it('lists the GGUF shelf (curated, then Hugging Face) and then the AI Hub shelf for this chip', () => {
+    // spec geniex-desktop "Model Hub предлагает модели GenieX на двух полках".
+    const rows = geniexRows({ curated, huggingFace, bundles, chip: 'x-elite', query: '' })
+    expect(shape(rows)).toEqual([
+      ['gguf', 'gemma-4-e4b'],
+      ['gguf', 'qwen3-4b-gguf'],
+      ['gguf', 'phi-4-mini-gguf'],
+      ['aihub', 'qwen3-4b-aihub'],
+    ])
+    expect(rows.every((row) => row.model.is_geniex)).toBe(true)
+    expect(rows[1].model.geniex?.origin).toBe('huggingface')
+    // The bundle for the other chip is hidden (spec geniex-models "Бандлы под два чипа").
+    expect(rows[3].model.geniex?.variants?.map((v) => v.chip)).toEqual(['x-elite'])
+  })
+
+  it('shows no bundle while the chip is unknown, and the other chip’s bundles on an X2 Elite', () => {
+    expect(shape(geniexRows({ curated: [], huggingFace: [], bundles, chip: null, query: '' }))).toEqual([])
+    expect(shape(geniexRows({ curated: [], huggingFace: [], bundles, chip: 'x2-elite', query: '' }))).toEqual([
+      ['aihub', 'qwen3-4b-aihub'],
+      ['aihub', 'gemma-4-e4b-aihub'],
+    ])
+  })
+
+  it('searches both shelves by name', () => {
+    expect(shape(geniexRows({ curated, huggingFace, bundles, chip: 'x-elite', query: 'QWEN3' }))).toEqual([
+      ['gguf', 'qwen3-4b-gguf'],
+      ['aihub', 'qwen3-4b-aihub'],
+    ])
+    expect(shape(geniexRows({ curated, huggingFace, bundles, chip: 'x-elite', query: 'gemma 4' }))).toEqual([
+      ['gguf', 'gemma-4-e4b'],
+    ])
+  })
+
+  it('shows the curated list alone while Hugging Face is unavailable, and Hugging Face alone over an empty list', () => {
+    expect(shape(geniexRows({ curated, huggingFace: [], bundles: [], chip: 'x-elite', query: '' }))).toEqual([['gguf', 'gemma-4-e4b']])
+    expect(shape(geniexRows({ curated: [], huggingFace, bundles: [], chip: 'x-elite', query: '' }))).toEqual([
+      ['gguf', 'qwen3-4b-gguf'],
+      ['gguf', 'phi-4-mini-gguf'],
+    ])
   })
 })
 

@@ -254,7 +254,9 @@ export default class mlx_extension extends AIEngine {
   /**
    * The provider page's version: the build the core starts MLX from, as
    * `<tag>/<origin>` (`bundled` — shipped with the installer, `downloaded` —
-   * installed by the core), `none` without one.
+   * installed by the core), `none` without one. A changed value is announced
+   * with `settingsChanged`, so the page shows an engine installed while it is
+   * open.
    */
   private async detectBackendVersion(): Promise<void> {
     try {
@@ -262,6 +264,9 @@ export default class mlx_extension extends AIEngine {
       const display = active ? `${active.tag}/${active.origin}` : 'none'
 
       const currentSettings = await this.getSettings()
+      const previous = currentSettings.find(
+        (item: any) => item.key === 'version_backend'
+      )?.controllerProps?.value
       await this.updateSettings(
         currentSettings.map((item: any) => {
           if (item.key === 'version_backend') {
@@ -270,6 +275,12 @@ export default class mlx_extension extends AIEngine {
           return item
         })
       )
+      if (previous !== display) {
+        events.emit('settingsChanged', {
+          key: 'version_backend',
+          value: display,
+        })
+      }
 
       logger.info('MLX engine build:', display)
     } catch (err) {

@@ -1,0 +1,251 @@
+{
+  "id": "unsloth/Qwen3-4B-GGUF",
+  "sha": "22c9fc8a8c7700b76a1789366280a6a5a1ad1120",
+  "gated": false,
+  "cardData": {
+    "license": "apache-2.0"
+  },
+  "tags": [
+    "gguf",
+    "text-generation",
+    "license:apache-2.0"
+  ],
+  "siblings": [
+    {
+      "rfilename": ".gitattributes",
+      "size": 3083
+    },
+    {
+      "rfilename": "Qwen3-4B-BF16.gguf",
+      "size": 8051285536,
+      "lfs": {
+        "sha256": "f59dbdf0a0131f4bafe257e5eaf25137a88c89c7a009e9418b0e447accda58a8",
+        "size": 8051285536
+      }
+    },
+    {
+      "rfilename": "Qwen3-4B-IQ4_NL.gguf",
+      "size": 2381344032,
+      "lfs": {
+        "sha256": "51fa8380d1c9a7dd47876dbed6c963fffeceec54a0065feeb6a8f3c113e1a562",
+        "size": 2381344032
+      }
+    },
+    {
+      "rfilename": "Qwen3-4B-IQ4_XS.gguf",
+      "size": 2270752032,
+      "lfs": {
+        "sha256": "82aa8394fd5b43eea0c287c88ae932b22f90e192e1288cff94bc39e2d5a97c01",
+        "size": 2270752032
+      }
+    },
+    {
+      "rfilename": "Qwen3-4B-Q2_K.gguf",
+      "size": 1669500192,
+      "lfs": {
+        "sha256": "a5f2398927fa06fe12074aa39086004300185b82de53a1d2623b0f015e3881b0",
+        "size": 1669500192
+      }
+    },
+    {
+      "rfilename": "Qwen3-4B-Q2_K_L.gguf",
+      "size": 1669500192,
+      "lfs": {
+        "sha256": "a5f2398927fa06fe12074aa39086004300185b82de53a1d2623b0f015e3881b0",
+        "size": 1669500192
+      }
+    },
+    {
+      "rfilename": "Qwen3-4B-Q3_K_M.gguf",
+      "size": 2075618592,
+      "lfs": {
+        "sha256": "e78ff54a67f3b3f57e637fbf0770d5b73c1e215ea7c0153980f1e8140c2b2486",
+        "size": 2075618592
+      }
+    },
+    {
+      "rfilename": "Qwen3-4B-Q3_K_S.gguf",
+      "size": 1886997792,
+      "lfs": {
+        "sha256": "0f16e5ebc31514dbdb0e0c736ed6d28c2b086de689afb0f1ab1f7a2ad2eff43e",
+        "size": 1886997792
+      }
+    },
+    {
+      "rfilename": "Qwen3-4B-Q4_0.gguf",
+      "size": 2375773472,
+      "lfs": {
+        "sha256": "92f4a83cdfe691b216a949f915e47f35f0ed85b833aa03490c719160ac5cdf7a",
+        "size": 2375773472
+      }
+    },
+    {
+      "rfilename": "Qwen3-4B-Q4_1.gguf",
+      "size": 2596629792,
+      "lfs": {
+        "sha256": "deb1db47d2e12a719e3473a1b48d6474a48dc05c097650eab292058180be765a",
+        "size": 2596629792
+      }
+    },
+    {
+      "rfilename": "Qwen3-4B-Q4_K_M.gguf",
+      "size": 2497281312,
+      "lfs": {
+        "sha256": "f6f851777709861056efcdad3af01da38b31223a3ba26e61a4f8bf3a2195813a",
+        "size": 2497281312
+      }
+    },
+    {
+      "rfilename": "Qwen3-4B-Q4_K_S.gguf",
+      "size": 2383310112,
+      "lfs": {
+        "sha256": "78cea0ccfd5fd7af5761f7dfdeebd2ec8f04328be0f1e6f70e2213a6f1309bc9",
+        "size": 2383310112
+      }
+    },
+    {
+      "rfilename": "Qwen3-4B-Q5_K_M.gguf",
+      "size": 2889514272,
+      "lfs": {
+        "sha256": "37edbd37f5b7a4d4e7a766400c57def1f790e809de03513b86bf11bb06979695",
+        "size": 2889514272
+      }
+    },
+    {
+      "rfilename": "Qwen3-4B-Q5_K_S.gguf",
+      "size": 2823712032,
+      "lfs": {
+        "sha256": "7bc3b33f8439ef774adc4665f61c8c31132056a8616db6227a6664397a42563a",
+        "size": 2823712032
+      }
+    },
+    {
+      "rfilename": "Qwen3-4B-Q6_K.gguf",
+      "size": 3306261792,
+      "lfs": {
+        "sha256": "002b8b61c298976afc2c9c3ca65f9dbb28deba22c4b6381853dfaa92b5690022",
+        "size": 3306261792
+      }
+    },
+    {
+      "rfilename": "Qwen3-4B-Q8_0.gguf",
+      "size": 4280405792,
+      "lfs": {
+        "sha256": "eed555233267a33c7e8ee31682762cc7751b3f6d224039086e0e846f05fffa5d",
+        "size": 4280405792
+      }
+    },
+    {
+      "rfilename": "Qwen3-4B-UD-IQ1_M.gguf",
+      "size": 1143484192,
+      "lfs": {
+        "sha256": "be85300f9bee244206991b46631eb937ff46917a241ad5e396fcb8beee4fc55b",
+        "size": 1143484192
+      }
+    },
+    {
+      "rfilename": "Qwen3-4B-UD-IQ1_S.gguf",
+      "size": 1083150112,
+      "lfs": {
+        "sha256": "bdc1138cb754d50dd4cc226597d307dd1f011710a8ddf8c68bb25e7fd215e470",
+        "size": 1083150112
+      }
+    },
+    {
+      "rfilename": "Qwen3-4B-UD-IQ2_M.gguf",
+      "size": 1532931872,
+      "lfs": {
+        "sha256": "c9ae27462f4edf0fdce39d41f6c129be7907d1c4ebe26c1298b30bc1bbac6c9f",
+        "size": 1532931872
+      }
+    },
+    {
+      "rfilename": "Qwen3-4B-UD-IQ2_XXS.gguf",
+      "size": 1255345952,
+      "lfs": {
+        "sha256": "2c41173a2bcd7a5c1f53524cb0efef1f5ee647523d8c1988be71a943d9a70e5c",
+        "size": 1255345952
+      }
+    },
+    {
+      "rfilename": "Qwen3-4B-UD-IQ3_XXS.gguf",
+      "size": 1674376992,
+      "lfs": {
+        "sha256": "f288d0748fca57526304df6e4648b126f7e900ef48b4adbea4ac553063593306",
+        "size": 1674376992
+      }
+    },
+    {
+      "rfilename": "Qwen3-4B-UD-Q2_K_XL.gguf",
+      "size": 1695724832,
+      "lfs": {
+        "sha256": "a09c9695db755e5f3896b20323f16eb79554be6ad4637ef9787245bc212b53d7",
+        "size": 1695724832
+      }
+    },
+    {
+      "rfilename": "Qwen3-4B-UD-Q3_K_XL.gguf",
+      "size": 2131692832,
+      "lfs": {
+        "sha256": "fd11f2a0741a8bad10d6892bac438326460844c09d8eaeb27419fb89360c8f55",
+        "size": 2131692832
+      }
+    },
+    {
+      "rfilename": "Qwen3-4B-UD-Q4_K_XL.gguf",
+      "size": 2546341152,
+      "lfs": {
+        "sha256": "f6e3fb6c2cdc869d16e66c719e94f2c02095d195967230e759a2d77fe814c71f",
+        "size": 2546341152
+      }
+    },
+    {
+      "rfilename": "Qwen3-4B-UD-Q5_K_XL.gguf",
+      "size": 2905253152,
+      "lfs": {
+        "sha256": "bf8683da9e517b872859fdc8a0704a599021305380f5c08780c209b07ba26fe6",
+        "size": 2905253152
+      }
+    },
+    {
+      "rfilename": "Qwen3-4B-UD-Q6_K_XL.gguf",
+      "size": 3658223392,
+      "lfs": {
+        "sha256": "ac0767b5e9c9f16efe57ce422253a33747970c166c3131c4d4d59d20511f07e1",
+        "size": 3658223392
+      }
+    },
+    {
+      "rfilename": "Qwen3-4B-UD-Q8_K_XL.gguf",
+      "size": 5056700192,
+      "lfs": {
+        "sha256": "93bc18247eac98a8265c80c78b1322a96cc9c83218351f5a6922fb9e6f8fb242",
+        "size": 5056700192
+      }
+    },
+    {
+      "rfilename": "README.md",
+      "size": 19797
+    },
+    {
+      "rfilename": "config.json",
+      "size": 752
+    },
+    {
+      "rfilename": "imatrix_unsloth.dat",
+      "size": 3842218,
+      "lfs": {
+        "sha256": "e21e35efacc3e2304aadb54985fb1fb28baf30718606876ec0b98ab8844b5a45",
+        "size": 3842218
+      }
+    },
+    {
+      "rfilename": "params",
+      "size": 178
+    },
+    {
+      "rfilename": "template",
+      "size": 1482
+    }
+  ]
+}

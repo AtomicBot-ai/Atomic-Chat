@@ -222,6 +222,27 @@ export function compactModelDisplayName(model: Model): string {
 }
 
 /**
+ * What tells installed variants of one model apart in a list that names each
+ * row by {@link compactModelDisplayName}: the quantization ("Q4_K_M") and the
+ * repository owner ("unsloth"). Either is left out when the name already reads
+ * it — a nickname that spells its quant, or one that starts with its owner.
+ */
+export function modelVariantDetails(model: Model): {
+  quant?: string
+  owner?: string
+} {
+  const name = compactModelDisplayName(model).toLowerCase()
+  const quant = modelQuantLabel(model.id)
+  const segments = model.id.replace(/\\/g, '/').split('/').filter(Boolean)
+  const owner = segments.length > 1 ? segments[0] : undefined
+  return {
+    quant: quant && !name.includes(quant.toLowerCase()) ? quant : undefined,
+    owner:
+      owner && !name.startsWith(`${owner.toLowerCase()}/`) ? owner : undefined,
+  }
+}
+
+/**
  * Readable model name with its repository owner and quantization. The compact
  * composer pill deliberately omits both, while the model details and full
  * picker need them to tell apart otherwise identical rows: the same model from

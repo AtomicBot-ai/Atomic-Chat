@@ -15,6 +15,16 @@ export const AUDIO_EXTENSIONS: ReadonlySet<string> = new Set([
   'wav',
 ])
 
+// Video is attached for the user to watch: no chat model takes video input,
+// so the model is only told that a clip was attached. Restricted to the
+// containers the webviews can play (see `workspace-preview-kind.ts`).
+export const VIDEO_EXTENSIONS: ReadonlySet<string> = new Set([
+  'mp4',
+  'm4v',
+  'mov',
+  'webm',
+])
+
 export const DOCUMENT_EXTENSIONS: ReadonlySet<string> = new Set([
   // Documents
   'pdf',
@@ -114,6 +124,7 @@ const extensionFromPath = (path: string): string =>
 export type ClassifiedPaths = {
   images: string[]
   audio: string[]
+  videos: string[]
   docs: string[]
   unsupported: string[]
 }
@@ -123,6 +134,7 @@ export const classifyDroppedPaths = (
 ): ClassifiedPaths => {
   const images: string[] = []
   const audio: string[] = []
+  const videos: string[] = []
   const docs: string[] = []
   const unsupported: string[] = []
   for (const p of paths) {
@@ -135,8 +147,9 @@ export const classifyDroppedPaths = (
     }
     if (IMAGE_EXTENSIONS.has(ext)) images.push(p)
     else if (AUDIO_EXTENSIONS.has(ext)) audio.push(p)
+    else if (VIDEO_EXTENSIONS.has(ext)) videos.push(p)
     else if (DOCUMENT_EXTENSIONS.has(ext)) docs.push(p)
     else unsupported.push(p)
   }
-  return { images, audio, docs, unsupported }
+  return { images, audio, videos, docs, unsupported }
 }

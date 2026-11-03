@@ -17,6 +17,33 @@
   "enterCommand": "Entrez la commande (uvx ou npx)",
   "arguments": "Arguments",
   "argument": "Argument {{index}}",
+  "connection": "Connexion",
+  "connectionLocal": "Sur cet ordinateur",
+  "connectionRemote": "Adresse web",
+  "commandLinePlaceholder": "npx -y @modelcontextprotocol/server-filesystem ~/Documents",
+  "url": "URL",
+  "enterUrl": "https://example.com/mcp",
+  "showAdvanced": "Afficher les options avancées",
+  "hideAdvanced": "Masquer les options avancées",
+  "headers": "En-têtes",
+  "headerName": "Nom de l'en-tête",
+  "headerValue": "Valeur de l'en-tête",
+  "timeout": "Délai d'expiration (secondes)",
+  "enterTimeout": "Entrez le délai en secondes",
+  "transport": "Transport",
+  "transportHttp": "HTTP (bascule automatiquement sur SSE)",
+  "transportSse": "SSE",
+  "cwd": "Répertoire de travail",
+  "enterCwd": "Répertoire facultatif dans lequel la commande s'exécute",
+  "addServerByJson": "Ajouter un serveur via JSON",
+  "formErrors": {
+    "commandRequired": "La commande est requise",
+    "commandUnterminatedQuote": "La ligne de commande contient un guillemet non fermé",
+    "commandTrailingBackslash": "La ligne de commande se termine par un échappement incomplet",
+    "commandEnvPrefix": "Définissez les variables d'environnement dans les options avancées au lieu de les placer devant la commande",
+    "urlInvalid": "Entrez une URL valide, par ex. https://example.com/mcp",
+    "nameExists": "Un serveur nommé \"{{name}}\" existe déjà"
+  },
   "envVars": "Variables d'environnement",
   "key": "Clé",
   "value": "Valeur",
@@ -61,12 +88,12 @@
     "toolCallTimeoutDesc": "Temps maximum d'attente pour une réponse d'outil MCP avant l'expiration du délai."
   },
   "tabs": {
-    "servers": "Servers",
-    "logs": "Logs"
+    "servers": "Serveurs",
+    "logs": "Journaux"
   },
   "logs": {
-    "allServers": "All servers",
-    "serverFilterLabel": "Filter by server",
-    "noLogs": "No MCP logs yet"
+    "allServers": "Tous les serveurs",
+    "serverFilterLabel": "Filtrer par serveur",
+    "noLogs": "Aucun journal MCP pour le moment"
   }
 }

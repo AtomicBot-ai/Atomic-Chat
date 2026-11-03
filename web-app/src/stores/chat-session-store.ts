@@ -3,11 +3,9 @@ import { create } from "zustand";
 import type { Chat, UIMessage } from "@ai-sdk/react";
 import type { ChatStatus } from "ai";
 import { CustomChatTransport } from "@/lib/custom-chat-transport";
-import {
-  desktopNotificationsEnabled,
-  isWindowAway,
-  showDesktopNotification,
-} from "@/lib/notifications";
+import { route } from "@/constants/routes";
+import { isPageOnScreen } from "@/lib/navigation";
+import { notifyUnlessWatching } from "@/lib/notifications";
 import { useThreadReadStatus } from "@/stores/thread-read-store";
 import i18n from "@/i18n/setup";
 
@@ -187,29 +185,26 @@ export const useChatSessions = create<ChatSessionState>((set, get) => ({
 
       // Fire an OS notification when a thread finishes generating, controlled
       // solely by the global Desktop notifications switch. Suppressed while
-      // the user is actively looking at this conversation in a focused window.
+      // the user is actively looking at this conversation in a focused window:
+      // its page, not `activeConversationId`, which follows the last chat any
+      // hook bound — a background first send (DeferredFirstSendProvider) takes
+      // it while the user is on another page. A failed turn is not a reply;
+      // its error is on the thread.
       const justFinished = wasStreaming && !isStreaming;
       if (justFinished) {
         const hasMessages = existing.chat.messages.length > 0;
         const hasPendingTools = existing.data.tools.length > 0;
-        const notFocusedHere =
-          isWindowAway() || state.activeConversationId !== sessionId;
 
-        if (
-          desktopNotificationsEnabled() &&
-          hasMessages &&
-          !hasPendingTools &&
-          notFocusedHere
-        ) {
-          const threadTitle = existing.title ?? "";
-          const notificationTitle = i18n.t(
-            "settings:threadNotifications.notificationTitle"
+        if (hasMessages && !hasPendingTools && status !== "error") {
+          notifyUnlessWatching(
+            isPageOnScreen(
+              route.threadsDetail.replace("$threadId", sessionId)
+            ),
+            i18n.t("settings:threadNotifications.notificationTitle"),
+            i18n.t("settings:threadNotifications.notificationBody", {
+              title: existing.title ?? "",
+            })
           );
-          const notificationBody = i18n.t(
-            "settings:threadNotifications.notificationBody",
-            { title: threadTitle }
-          );
-          void showDesktopNotification(notificationTitle, notificationBody);
         }
 
         if (

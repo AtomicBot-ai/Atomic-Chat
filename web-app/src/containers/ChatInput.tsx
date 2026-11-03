@@ -17,7 +17,7 @@ import {
 } from '@/lib/managed-engine/chat'
 import AgentApprovalInline from '@/containers/AgentApprovalInline'
 import { addExternalAgentFolder } from '@/lib/agent-workspace-actions'
-import { usePrompt } from '@/hooks/usePrompt'
+import { selectDraft, usePrompt } from '@/hooks/usePrompt'
 import { useThreads } from '@/hooks/useThreads'
 import {
   useCallback,
@@ -58,6 +58,7 @@ import {
 import { captureReplyGateReady } from '@/lib/reply-gate-telemetry'
 import { useReplyModelAutoStart } from '@/hooks/useReplyModelAutoStart'
 import { useDeferredFirstSend } from '@/stores/deferred-first-send-store'
+import { useThreadManagementStore } from '@/hooks/useThreadManagement'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
 import { generateId, type ChatStatus } from 'ai'
@@ -111,8 +112,14 @@ import {
   createImageAttachment,
   createDocumentAttachment,
   createAudioAttachment,
+  createVideoAttachment,
 } from '@/types/attachment'
 import { AttachmentChip } from '@/containers/AttachmentChip'
+import {
+  AttachmentPreviewDialog,
+  type AttachmentPreviewSource,
+} from '@/containers/AttachmentPreviewDialog'
+import { attachmentPreviewMediaType } from '@/lib/attachment-preview'
 import { FileTooLargeError } from '@/lib/readFileBytes'
 import { readImageAttachmentFromPath } from '@/containers/chatInput/imageFromPath'
 import {
@@ -126,6 +133,7 @@ import {
   DOCUMENT_EXTENSIONS,
   IMAGE_EXTENSIONS,
   AUDIO_EXTENSIONS,
+  VIDEO_EXTENSIONS,
   classifyDroppedPaths,
 } from '@/containers/chatInput/classifyDroppedPaths'
 import JanBrowserExtensionDialog from '@/containers/dialogs/JanBrowserExtensionDialog'
@@ -172,6 +180,7 @@ import type { AgentSkill } from '@/services/agent/skills'
 const ATTACHABLE_EXTENSIONS = [
   ...IMAGE_EXTENSIONS,
   ...AUDIO_EXTENSIONS,
+  ...VIDEO_EXTENSIONS,
   ...DOCUMENT_EXTENSIONS,
 ]
 
@@ -193,6 +202,12 @@ type ChatInputProps = {
   initialMessage?: boolean
   preselectedAgentSkillName?: string
   projectId?: string
+  /**
+   * The thread page's route thread. Keys this composer's state (draft,
+   * approval mode, voice) from its first render; the global
+   * `currentThreadId` is only set later, in the page's effect.
+   */
+  threadId?: string
   onSubmit?: (
     text: string,
     files?: InitialMessageFile[],
@@ -209,6 +224,7 @@ const ChatInput = memo(function ChatInput({
   initialMessage,
   preselectedAgentSkillName,
   projectId,
+  threadId,
   onSubmit,
   onStop,
   chatStatus,
@@ -230,8 +246,6 @@ const ChatInput = memo(function ChatInput({
   const tools = useAppState((state) => state.tools)
   const cancelToolCall = useAppState((state) => state.cancelToolCall)
   const reducedMotion = useReducedMotion()
-  const prompt = usePrompt((state) => state.prompt)
-  const setPrompt = usePrompt((state) => state.setPrompt)
   // Narrow selectors on purpose. Subscribing to the whole voice store
   // would pull in `level`, which updates ~20 times a second.
   const voicePhase = useVoiceInput((state) => state.phase)
@@ -277,14 +291,29 @@ const ChatInput = memo(function ChatInput({
       .join('|')
   )
 
-  // Keys per-composer state (voice, workspace, approval mode). Composers use
-  // a placeholder key until the real thread exists — the project composer its
-  // own `project:<id>` slot, so it never fights the home composer over one.
+  // Keys per-composer state (voice, workspace, approval mode, draft text).
+  // Composers use a placeholder key until the real thread exists — the
+  // project composer its own `project:<id>` slot, so it never fights the
+  // home composer over one.
+  // Built from props where the page has them (the route's thread, the
+  // project), so the first render already belongs to the right composer.
   const composerThreadKey = buildComposerThreadKey({
     isComposer: Boolean(initialMessage),
-    currentThreadId,
+    currentThreadId: threadId ?? currentThreadId,
     projectId,
   })
+  // The unsent draft belongs to this composer: it is read and written by
+  // this key, so another chat's text is never rendered or overwritten here.
+  // Binding makes it the store's `prompt` for the other readers.
+  const prompt = usePrompt(selectDraft(composerThreadKey))
+  const setPrompt = useCallback(
+    (value: string) => usePrompt.getState().setDraft(composerThreadKey, value),
+    [composerThreadKey]
+  )
+  const bindDraft = usePrompt((state) => state.bindDraft)
+  useLayoutEffect(() => {
+    bindDraft(composerThreadKey)
+  }, [bindDraft, composerThreadKey])
   // Which engine would serve a send right now. Gates agent-only affordances;
   // per-turn factors (audio) are re-resolved at send time.
   //
@@ -435,12 +464,13 @@ const ChatInput = memo(function ChatInput({
     if (!skill) return
 
     setSelectedAgentSkill(skill)
-    const currentPrompt = usePrompt.getState().prompt
+    const currentPrompt = usePrompt.getState().getDraft(composerThreadKey)
     const next = prependAgentSkillInvocation(currentPrompt, skill.name)
     if (next.value !== currentPrompt) setPrompt(next.value)
   }, [
     agentSkills,
     agentSkillsLoading,
+    composerThreadKey,
     preselectedAgentSkillName,
     setPrompt,
   ])
@@ -470,6 +500,8 @@ const ChatInput = memo(function ChatInput({
   const [dropdownToolsAvailable, setDropdownToolsAvailable] = useState(false)
   const [tooltipToolsAvailable, setTooltipToolsAvailable] = useState(false)
   const [isDragOver, setIsDragOver] = useState(false)
+  const [previewSource, setPreviewSource] =
+    useState<AttachmentPreviewSource | null>(null)
   // The Send slot clips its button only while it grows or shrinks; settled,
   // the button's focus ring must show whole.
   const [sendControlMoving, setSendControlMoving] = useState(false)
@@ -913,10 +945,10 @@ const ChatInput = memo(function ChatInput({
   const captureVoiceAnchor = useCallback(
     () =>
       captureDictationAnchor(
-        usePrompt.getState().prompt,
+        usePrompt.getState().getDraft(composerThreadKey),
         textareaRef.current?.selectionStart ?? null
       ),
-    []
+    [composerThreadKey]
   )
 
   // Recompute the whole value from the anchor on every new phrase rather than
@@ -948,7 +980,7 @@ const ChatInput = memo(function ChatInput({
 
     if (state.canRevert) {
       const reverted = revertDictation(
-        usePrompt.getState().prompt,
+        usePrompt.getState().getDraft(composerThreadKey),
         voiceAnchor,
         state.insertedLength
       )
@@ -965,11 +997,16 @@ const ChatInput = memo(function ChatInput({
   }, [voiceOutcome, voiceAnchor, composerThreadKey, setPrompt, t])
 
   // Stop dictation when this composer goes away, otherwise the microphone
-  // stays open with nowhere to put the text.
+  // stays open with nowhere to put the text. That includes a start still
+  // waiting for the voice model: left alone it opened the microphone once the
+  // model was up, for a composer that no longer existed.
   useEffect(() => {
     return () => {
       const state = useVoiceInput.getState()
-      if (state.ownerKey === composerThreadKey && state.sessionId) {
+      if (
+        state.ownerKey === composerThreadKey &&
+        (state.sessionId || state.phase === 'starting')
+      ) {
         void state.cancel()
       }
     }
@@ -1116,7 +1153,7 @@ const ChatInput = memo(function ChatInput({
       // store can be cleared immediately while we still know what to forward
       // to the new thread page.
       const docsSnapshot = attachments
-        .filter((att) => att.type === 'document')
+        .filter((att) => att.type === 'document' || att.type === 'video')
         .map((att) => ({ ...att }))
 
       const messagePayload = {
@@ -1313,12 +1350,25 @@ const ChatInput = memo(function ChatInput({
   // depending on it would re-fire the queued send on any unrelated keystroke.
   const sendMessageRef = useRef(handleSendMessage)
   sendMessageRef.current = handleSendMessage
+  // Same reason: the queued send reads this composer's draft without
+  // re-firing when the key changes.
+  const composerThreadKeyRef = useRef(composerThreadKey)
+  composerThreadKeyRef.current = composerThreadKey
+  // The root queue entry this composer is completing itself (claimed, so the
+  // root does not send it too); released to the root if New Chat unmounts.
+  const claimedRootSendRef = useRef<string | null>(null)
+  useEffect(
+    () => () => {
+      const claimed = claimedRootSendRef.current
+      if (claimed) useDeferredFirstSend.getState().release(claimed)
+    },
+    []
+  )
 
   const handleReplyGateResolved = useCallback(
     (resolution: ReplyModelGateResolution) => {
       const canRunFromRoot =
         Boolean(initialMessage) &&
-        !projectId &&
         !onSubmit &&
         attachments.length === 0 &&
         (resolution.outcome === 'download' ||
@@ -1326,15 +1376,36 @@ const ChatInput = memo(function ChatInput({
         (resolution.downloadModelIds?.length ?? 0) > 0
 
       if (canRunFromRoot) {
+        // What the composer showed at Send travels with the message, for a
+        // thread created after the user may have left (and changed it).
+        const agent = useAgentMode.getState()
+        const queueId = generateId()
+        const project = projectId
+          ? useThreadManagementStore.getState().getFolderById(projectId)
+          : undefined
+        const assistant = project?.assistantId
+          ? assistants.find((entry) => entry.id === project.assistantId)
+          : (selectedAssistant ??
+            assistants.find((entry) => entry.id === defaultAssistantId) ??
+            assistants[0])
         useDeferredFirstSend.getState().enqueue({
-          id: generateId(),
-          prompt: usePrompt.getState().prompt,
+          id: queueId,
+          prompt: usePrompt.getState().getDraft(composerThreadKey),
           downloadModelIds: resolution.downloadModelIds!,
           createdAt: Date.now(),
+          composerKey: composerThreadKey,
+          project,
+          assistant,
+          agentState: {
+            approvalMode: agent.approvalModes[composerThreadKey],
+            workspace: agent.workspaces[composerThreadKey],
+          },
         })
         // Keep the fast path local while New Chat is still mounted. The root
         // queue is its navigation-safe backup and takes over only if the user
         // leaves this route before the download finishes.
+        useDeferredFirstSend.getState().claim(queueId)
+        claimedRootSendRef.current = queueId
         setQueuedSend(resolution)
         return
       }
@@ -1343,7 +1414,16 @@ const ChatInput = memo(function ChatInput({
       useDeferredFirstSend.getState().clear()
       setQueuedSend(resolution)
     },
-    [attachments.length, initialMessage, onSubmit, projectId]
+    [
+      attachments.length,
+      composerThreadKey,
+      initialMessage,
+      onSubmit,
+      projectId,
+      assistants,
+      defaultAssistantId,
+      selectedAssistant,
+    ]
   )
 
   const handleReplyGateDismissed = useCallback(() => {
@@ -1400,11 +1480,17 @@ const ChatInput = memo(function ChatInput({
 
     setQueuedSend(null)
     setReplyGateOpen(false)
+    // This composer completes the send (or drops it, below), so the root's
+    // backup of it goes too.
+    if (claimedRootSendRef.current) {
+      useDeferredFirstSend.getState().clear(claimedRootSendRef.current)
+      claimedRootSendRef.current = null
+    }
 
     // The user may have cleared or rewritten the field while the model came up.
     // Whatever is in it now is what they meant; an empty field means they
     // changed their mind, and re-sending the old text would put words in.
-    const pending = usePrompt.getState().prompt
+    const pending = usePrompt.getState().getDraft(composerThreadKeyRef.current)
     if (!queuedSend.resumesStoppedModel) {
       captureReplyGateReady({
         branch: queuedSend.branch,
@@ -2439,6 +2525,50 @@ const ChatInput = memo(function ChatInput({
     await commitAudioAttachments(outcome)
   }
 
+  // Video is only referenced by path: nothing is read, parsed or indexed, so
+  // the document size limit and model checks do not apply.
+  const ingestVideoPaths = async (paths: readonly string[]) => {
+    const prepared: Attachment[] = []
+    for (const p of paths) {
+      const name = p.split(/[\\/]/).pop() || p
+      const fileType = name.split('.').pop()?.toLowerCase()
+      let size: number | undefined
+      try {
+        const stat = await fs.fileStat(p)
+        size = stat?.size ? Number(stat.size) : undefined
+      } catch (e) {
+        console.warn('Failed to read file size for', p, e)
+      }
+      prepared.push(
+        createVideoAttachment({
+          name,
+          path: p,
+          fileType,
+          mimeType: attachmentPreviewMediaType(name, fileType),
+          size,
+        })
+      )
+    }
+
+    let duplicates: string[] = []
+    setAttachmentsForThread(attachmentsKey, (current) => {
+      const existingPaths = new Set(
+        current.filter((a) => a.type === 'video').map((a) => a.path)
+      )
+      duplicates = prepared
+        .filter((att) => existingPaths.has(att.path))
+        .map((att) => att.name)
+      const fresh = prepared.filter((att) => !existingPaths.has(att.path))
+      return fresh.length > 0 ? [...current, ...fresh] : current
+    })
+
+    if (duplicates.length > 0) {
+      toast.warning('Files already attached', {
+        description: `${duplicates.join(', ')} ${duplicates.length === 1 ? 'is' : 'are'} already in the list`,
+      })
+    }
+  }
+
   const handleVisionModelDownloadComplete = useCallback(
     (modelId: string) => {
       setShowVisionModelPrompt(false)
@@ -2503,7 +2633,8 @@ const ChatInput = memo(function ChatInput({
       toast.info('Attachments are disabled in Settings')
       return
     }
-    const { images, audio, docs, unsupported } = classifyDroppedPaths(paths)
+    const { images, audio, videos, docs, unsupported } =
+      classifyDroppedPaths(paths)
 
     if (unsupported.length > 0) {
       const names = unsupported.map((p) => p.split(/[\\/]/).pop() || p)
@@ -2534,6 +2665,10 @@ const ChatInput = memo(function ChatInput({
       } else {
         void ingestAudioPaths(audio)
       }
+    }
+
+    if (videos.length > 0) {
+      void ingestVideoPaths(videos)
     }
 
     if (docs.length > 0) {
@@ -2882,6 +3017,22 @@ const ChatInput = memo(function ChatInput({
                               size={att.size}
                               error={att.error}
                               isProcessing={showAttachmentLoader}
+                              note={
+                                att.type === 'video'
+                                  ? t('chat:attachmentPreview.videoModelNote')
+                                  : undefined
+                              }
+                              onOpen={() =>
+                                setPreviewSource({
+                                  name: att.name,
+                                  path: att.path,
+                                  url: att.dataUrl,
+                                  mimeType: att.mimeType,
+                                  fileType: att.fileType,
+                                  size: att.size,
+                                  inlineContent: att.inlineContent,
+                                })
+                              }
                               onRemove={() => handleRemoveAttachment(idx)}
                               onRetry={() => handleRetryAttachment(idx)}
                             />
@@ -2895,10 +3046,26 @@ const ChatInput = memo(function ChatInput({
                           >
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <div
+                                <button
+                                  type="button"
+                                  disabled={!att.dataUrl}
+                                  aria-label={t(
+                                    'chat:attachmentPreview.openPreview',
+                                    { name: att.name }
+                                  )}
+                                  onClick={() =>
+                                    setPreviewSource({
+                                      name: att.name,
+                                      url: att.dataUrl,
+                                      mimeType: att.mimeType,
+                                      size: att.size,
+                                    })
+                                  }
                                   className={cn(
                                     'relative border rounded-xl size-14 overflow-hidden',
                                     'flex items-center justify-center',
+                                    att.dataUrl &&
+                                      'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                                     showAttachmentLoader &&
                                       'ring-1 ring-primary/30 bg-muted/40'
                                   )}
@@ -2927,7 +3094,7 @@ const ChatInput = memo(function ChatInput({
                                       />
                                     </div>
                                   )}
-                                </div>
+                                </button>
                               </TooltipTrigger>
                               <TooltipContent>
                                 <div className="text-xs">
@@ -3104,7 +3271,11 @@ const ChatInput = memo(function ChatInput({
                   onPaste={handlePaste}
                   placeholder={
                     isVoiceActive && !prompt
-                      ? t('common:voiceInput.placeholder')
+                      ? // Nothing is captured until the voice model is up, so
+                        // "Listening — start speaking" would lose those words.
+                        voicePhase === 'starting'
+                        ? t('common:voiceInput.startingPlaceholder')
+                        : t('common:voiceInput.placeholder')
                       : t('common:placeholder.chatInput')
                   }
                   autoFocus
@@ -3305,7 +3476,11 @@ const ChatInput = memo(function ChatInput({
                   {selectedModel?.capabilities?.includes('embeddings') && (
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button variant="ghost" size="icon-xs">
+                        <Button
+                          variant="ghost"
+                          size="icon-xs"
+                          aria-label={t('embeddings')}
+                        >
                           <IconCodeCircle2
                             size={18}
                             className="text-muted-foreground"
@@ -3534,6 +3709,7 @@ const ChatInput = memo(function ChatInput({
                           variant="destructive"
                           size="icon-sm"
                           className="rounded-full mr-1 mb-1"
+                          aria-label={t('common:stop')}
                           onClick={() => {
                             if (currentThreadId) stopStreaming(currentThreadId)
                           }}
@@ -3576,6 +3752,7 @@ const ChatInput = memo(function ChatInput({
                             blockSendUntilModelReady
                           }
                           data-test-id="send-message-button"
+                          aria-label={t('chat:sendMessage')}
                           onClick={() => handleSendMessage(prompt)}
                           className="rounded-full mr-1 mb-1"
                         >
@@ -3650,6 +3827,11 @@ const ChatInput = memo(function ChatInput({
         onOpenChange={setShowVisionModelPrompt}
         modelName={selectedModel ? getModelDisplayName(selectedModel) : ''}
         onModelReady={handleVisionModelDownloadComplete}
+      />
+
+      <AttachmentPreviewDialog
+        source={previewSource}
+        onClose={() => setPreviewSource(null)}
       />
     </div>
   )

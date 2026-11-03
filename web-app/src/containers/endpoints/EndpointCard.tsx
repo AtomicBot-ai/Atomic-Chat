@@ -12,12 +12,14 @@ import {
 
 import { Button } from '@/components/ui/button'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
+import { LocalModelCollisionNotice } from '@/containers/endpoints/LocalModelCollisionNotice'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { listedModels } from '@/lib/cloud-model-catalog'
 import { isProviderConnected } from '@/lib/cloud-providers'
 import { isMediaConnected } from '@/lib/media-models'
 import { cn, getProviderLogo, getProviderTitle } from '@/lib/utils'
 import { useEndpointCheckStore } from '@/stores/endpoint-check-store'
+import { useProviderKeyStatus } from '@/stores/provider-key-status-store'
 
 type EndpointCardProps = {
   provider: ProviderObject
@@ -67,6 +69,9 @@ export function EndpointCard({
         ? t('cloud:models.countOne')
         : t('cloud:models.count', { count })
   const connected = isProviderConnected(provider) || isMediaConnected(provider)
+  // A saved key the server refused, or one it could not be asked about.
+  const keyStatus = useProviderKeyStatus(provider)
+  const keyState = connected ? keyStatus?.state : undefined
   const hasAddress = Boolean(provider.base_url?.trim())
   const bodyId = `endpoint-models-${name}`
 
@@ -108,6 +113,25 @@ export function EndpointCard({
         </span>
       </>
     )
+  } else if (keyState && keyStatus) {
+    status = (
+      <>
+        <TriangleAlert
+          size={12}
+          className={cn(
+            'shrink-0',
+            keyState === 'rejected' ? 'text-destructive' : 'text-amber-500'
+          )}
+          aria-hidden
+        />
+        <span className="line-clamp-2 break-words" title={keyStatus.message}>
+          {keyState === 'rejected'
+            ? t('endpoints:status.keyRejected')
+            : t('endpoints:status.unverified')}
+          {keyStatus.message ? ` · ${keyStatus.message}` : ''}
+        </span>
+      </>
+    )
   } else if (connected) {
     status = (
       <>
@@ -131,7 +155,7 @@ export function EndpointCard({
       aria-label={title}
       className="min-w-0 rounded-xl border border-border bg-card"
     >
-      <div className="flex flex-wrap items-center gap-4 p-4">
+      <div className="flex flex-wrap items-center gap-3 p-4">
         <span className="flex size-6 shrink-0 items-center justify-center text-foreground">
           {getProviderLogo(name) ? (
             <ProvidersAvatar provider={provider} className="size-6" />
@@ -151,7 +175,9 @@ export function EndpointCard({
             role="status"
             className={cn(
               'mt-2 flex min-w-0 items-center gap-1 text-xs text-muted-foreground',
-              check && !check.ok && !checking && 'text-destructive'
+              ((check && !check.ok) || (!check && keyState === 'rejected')) &&
+                !checking &&
+                'text-destructive'
             )}
           >
             {status}
@@ -233,7 +259,20 @@ export function EndpointCard({
         </div>
       </div>
       {expanded && children && (
-        <div id={bodyId} className="flex flex-col border-t border-border">
+        <div
+          id={bodyId}
+          // The model cards unfold on this card's surface, on its 16px inset,
+          // rather than as cards nested inside it.
+          className="flex flex-col border-t border-border [&_.content-card]:rounded-none [&_.content-card]:border-0 [&_.content-card]:bg-transparent [&_.content-card]:p-4 [&_.content-card+.content-card]:border-t"
+        >
+          {!mediaServer && (
+            <div className="px-4 pt-3 empty:hidden">
+              <LocalModelCollisionNotice
+                endpoint={name}
+                modelIds={listedModels(provider).map((m) => m.id)}
+              />
+            </div>
+          )}
           {children}
         </div>
       )}

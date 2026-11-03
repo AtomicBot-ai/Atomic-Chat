@@ -146,15 +146,18 @@ export default function AddEditAssistant({
                 onClick={() => setShowEmojiPicker(!showEmojiPicker)}
                 ref={emojiPickerTriggerRef}
               >
-                {avatar ? (
-                  <AvatarEmoji
-                    avatar={avatar}
-                    imageClassName="size-5 object-contain"
-                    textClassName=""
-                  />
-                ) : (
-                  <IconMoodSmile size={18} className="text-muted-foreground" />
-                )}
+                {/* No avatar yet, or one that fails to load: offer the picker. */}
+                <AvatarEmoji
+                  avatar={avatar}
+                  imageClassName="size-5 object-contain"
+                  textClassName=""
+                  fallback={
+                    <IconMoodSmile
+                      size={18}
+                      className="text-muted-foreground"
+                    />
+                  }
+                />
               </div>
               <div className="relative" ref={emojiPickerRef}>
                 <EmojiPicker

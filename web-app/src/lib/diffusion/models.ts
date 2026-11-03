@@ -13,6 +13,7 @@
  * the de-duplication and the "already on disk" logic can be tested directly.
  */
 
+import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import {
   DIFFUSION_SHARED_DIR,
@@ -161,8 +162,12 @@ export function sharedRepoDir(repo: string): string {
   return repo.replace(/\//g, '--')
 }
 
-export function hfResolveUrl(repo: string, filename: string): string {
-  return `https://huggingface.co/${repo}/resolve/main/${filename}`
+export function hfResolveUrl(
+  repo: string,
+  filename: string,
+  revision = 'main'
+): string {
+  return `https://huggingface.co/${repo}/resolve/${encodeURIComponent(revision)}/${filename}`
 }
 
 const basenameOf = (filename: string): string =>
@@ -220,7 +225,7 @@ export function planArtifactDownload(
       kind,
       repo: file.repo,
       filename: file.filename,
-      url: hfResolveUrl(file.repo, file.filename),
+      url: hfResolveUrl(file.repo, file.filename, file.revision),
       bytes: file.bytes,
       ...(file.sha256 ? { sha256: file.sha256 } : {}),
       ...(file.field ? { field: file.field } : {}),
@@ -236,6 +241,7 @@ export function planArtifactDownload(
     'transformer',
     {
       repo: family.transformer.repo,
+      revision: family.transformer.revision,
       filename: quant.filename,
       bytes: quant.bytes,
       ...(quant.sha256 ? { sha256: quant.sha256 } : {}),
@@ -580,7 +586,11 @@ export async function downloadArtifact(
         (entry) => entry.required && !entry.present
       )
       if (missing.length === 0) {
-        if (started) emitTransferSuccess(taskId, 'Model', fetchedBytes)
+        // A paused row brought back after a relaunch may wait on files that
+        // are all on disk by now: nothing transfers, so close it the way a
+        // finished transfer does instead of leaving it waiting.
+        if (started || taskId in useDownloadStore.getState().downloads)
+          emitTransferSuccess(taskId, 'Model', fetchedBytes)
         return plan
       }
       if (pass >= MAX_DOWNLOAD_PASSES) {

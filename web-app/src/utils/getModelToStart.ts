@@ -1,19 +1,22 @@
 import { localStorageKey } from '@/constants/localStorage'
-import { EMBEDDING_MODEL_ID } from '@/constants/models'
+import { isAnswerableModel, isEmbeddingOnlyModel } from '@/lib/answerable-model'
 import type { ModelInfo } from '@janhq/core'
 
 // Upstream llama.cpp first: it understands the full Gemma 4 projector set
 // (`gemma4uv`/`gemma4ua`) that the turboquant fork doesn't yet carry, so the
 // default vision model starts cleanly. TurboQuant (`llamacpp`) stays a
 // manual macOS choice. See ADR 2026-06-09 (ATO-116). PrismML lists only the
-// Bonsai files the core set up for it. Foundry Local (change add-foundry-local) is last: its
-// variants are a separate download, never a copy of a model another engine lists.
+// Bonsai files the core set up for it. Foundry Local (change add-foundry-local) and LiteRT-LM
+// (change add-litert-lm-runtime) and GenieX (change add-geniex-runtime) are last: their models
+// are a separate download, never a copy of a model another engine lists.
 const localProviderNames = [
   'llamacpp-upstream',
   'llamacpp',
   'atomic-prism',
   'mlx',
   'foundry-local',
+  'litert-lm',
+  'geniex',
 ] as const
 
 export const getLastUsedModel = (): {
@@ -35,10 +38,9 @@ function findFirstLocalModel(
   for (const name of localProviderNames) {
     const provider = getProviderByName(name)
 
-    // Skip broken-link models (weights file gone) — loading them only crashes.
-    const firstUsable = provider?.models?.find(
-      (m) => m.id !== EMBEDDING_MODEL_ID && !(m as { missing?: boolean }).missing
-    )
+    // Skip broken-link models (weights file gone) — loading them only crashes
+    // — and embedding models, which cannot chat.
+    const firstUsable = provider?.models?.find(isAnswerableModel)
     // A deactivated provider (Settings → Model Providers toggle) must never
     // be auto-started — e.g. TurboQuant ships disabled on fresh installs.
     if (provider && provider.active !== false && firstUsable) {
@@ -69,7 +71,9 @@ export const getModelToStart = (params: {
       provider &&
       provider.active !== false &&
       lastModel &&
-      !(lastModel as { missing?: boolean }).missing
+      !(lastModel as { missing?: boolean }).missing &&
+      // A last-used embedding model is what the AC-01 bug left behind.
+      !isEmbeddingOnlyModel(lastModel)
     ) {
       return { model: lastUsedModel.model, provider }
     } else {

@@ -1,0 +1,134 @@
+name: msstore
+
+# The Microsoft Store installs Atomic Chat (an "EXE or MSI app") from a URL we host: the Store downloads the
+# installer from it on every install, so it must answer without a redirect (GitHub release assets redirect,
+# and Partner Center refuses them), keep serving the same bytes while a submission points at it, and carry the
+# version in its path. release.yml uploads Atomic.Chat_<version>_x64_msstore.exe to every draft; this copies
+# it to its own public object in the atomic-chat-downloads bucket on Hetzner Object Storage when a person
+# publishes the release (`release: published`, which `make release-prod` does), or by hand:
+#
+#   gh workflow run msstore.yml --ref vX.Y.Z                    # on the tag: the environment admits tags only
+#   gh workflow run msstore.yml --ref <tag with this file> -f tag=vX.Y.Z   # a release tagged before it existed
+#
+# The run summary prints the URL for Partner Center (Packages > Package URL); a new Store version is a new
+# submission with the new URL. Pre-releases and drafts change nothing. An uploaded installer is never
+# replaced or deleted: the live submission keeps installing from its URL until a newer one goes live.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'The published release (vX.Y.Z); default: the tag this runs on'
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    # The same Hetzner project as the apt/dnf repository; its S3 credentials cover every bucket in it.
+    environment: packages
+    concurrency:
+      group: msstore-${{ inputs.tag || github.event.release.tag_name || github.ref_name }}
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ inputs.tag || github.event.release.tag_name || github.ref_name }}
+      BUCKET: atomic-chat-downloads
+      BASE_URL: https://atomic-chat-downloads.fsn1.your-objectstorage.com
+      AWS_ENDPOINT_URL: https://fsn1.your-objectstorage.com
+      AWS_DEFAULT_REGION: fsn1
+      # Newer aws CLIs add checksums by default that not every S3-compatible store accepts.
+      AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+      AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+    steps:
+      - name: Resolve the release and its Store installer
+        id: release
+        run: |
+          set -euo pipefail
+          if ! [[ "$TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "::notice::$TAG is not a stable vX.Y.Z tag"; echo "upload=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          version="${BASH_REMATCH[1]}"
+          name="Atomic.Chat_${version}_x64_msstore.exe"
+          info="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease,assets \
+            --jq "\"\(.isDraft) \(.isPrerelease) \([.assets[].name | select(. == \"$name\")] | length)\"")"
+          read -r draft prerelease found <<< "$info"
+          if [ "$draft" = true ]; then
+            echo "::notice::$TAG is a draft"; echo "upload=false" >> "$GITHUB_OUTPUT"; exit 0
+          elif [ "$prerelease" = true ]; then
+            echo "::notice::$TAG is a pre-release"; echo "upload=false" >> "$GITHUB_OUTPUT"; exit 0
+          elif [ "$found" = 0 ]; then
+            # Tag builds always bundle it (release.yml, build-windows): a published release without it
+            # has nothing the Store can install.
+            echo "::error::$TAG has no $name"; exit 1
+          fi
+          {
+            echo "upload=true"
+            echo "name=$name"
+            echo "key=msstore/$version/$name"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Download it
+        if: steps.release.outputs.upload == 'true'
+        env:
+          NAME: ${{ steps.release.outputs.name }}
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$NAME" --dir dl
+          echo "SHA256=$(sha256sum "dl/$NAME" | cut -d' ' -f1)" >> "$GITHUB_ENV"
+          echo "SIZE=$(stat -c %s "dl/$NAME")" >> "$GITHUB_ENV"
+
+      - name: Upload it, unless the same bytes are already there
+        if: steps.release.outputs.upload == 'true'
+        env:
+          NAME: ${{ steps.release.outputs.name }}
+          KEY: ${{ steps.release.outputs.key }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.PACKAGES_S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PACKAGES_S3_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          if existing="$(aws s3api head-object --bucket "$BUCKET" --key "$KEY" \
+                --query 'Metadata.sha256' --output text 2>/dev/null)"; then
+            if [ "$existing" = "$SHA256" ]; then
+              echo "::notice::$KEY is already uploaded"; exit 0
+            fi
+            echo "::error::$KEY holds other bytes (sha256 $existing); a Store submission may install from it, so it is not replaced"
+            exit 1
+          fi
+          # The bucket stays private (no listing, no anonymous writes); the object alone is public.
+          aws s3 cp "dl/$NAME" "s3://$BUCKET/$KEY" --only-show-errors \
+            --acl public-read \
+            --content-type application/octet-stream \
+            --cache-control 'public, max-age=31536000, immutable' \
+            --metadata "sha256=$SHA256"
+
+      - name: Check the public URL serves it without a redirect
+        if: steps.release.outputs.upload == 'true'
+        env:
+          KEY: ${{ steps.release.outputs.key }}
+        run: |
+          set -euo pipefail
+          url="$BASE_URL/$KEY"
+          status="$(curl -sS -o /dev/null -w '%{http_code}' --max-redirs 0 -I "$url")"
+          if [ "$status" != 200 ]; then echo "::error::$url answers $status, not 200"; exit 1; fi
+          served="$(curl -sSf --max-redirs 0 "$url" | sha256sum | cut -d' ' -f1)"
+          if [ "$served" != "$SHA256" ]; then
+            echo "::error::$url serves sha256 $served, the release asset is $SHA256"; exit 1
+          fi
+          {
+            echo "### Microsoft Store installer for $TAG"
+            echo
+            echo "Partner Center > Packages > Package URL:"
+            echo
+            echo '```'
+            echo "$url"
+            echo '```'
+            echo
+            echo "- size: $SIZE bytes"
+            echo "- sha256: \`$SHA256\`"
+            echo "- architecture x64, installer parameters \`/S\`, app type EXE"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,107 @@
+[
+  {
+    "client": "opencode",
+    "path": "/v1/chat/completions",
+    "authorized": true,
+    "status": 200,
+    "body": "data: {\"id\":\"chatcmpl-fake\",\"object\":\"chat.completion.chunk\",\"created\":1700000000,\"model\":\"qa/client-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"QA_CLIENT_REPLY\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-fake\",\"object\":\"chat.completion.chunk\",\"created\":1700000000,\"model\":\"qa/client-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+  },
+  {
+    "client": "opencode",
+    "path": "/v1/chat/completions",
+    "authorized": true,
+    "status": 200,
+    "body": "data: {\"id\":\"chatcmpl-fake\",\"object\":\"chat.completion.chunk\",\"created\":1700000000,\"model\":\"qa/client-model\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"QA_CLIENT_REPLY\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-fake\",\"object\":\"chat.completion.chunk\",\"created\":1700000000,\"model\":\"qa/client-model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+  },
+  {
+    "client": "openclaude",
+    "path": "/v1/models",
+    "authorized": false,
+    "status": 401,
+    "body": "Invalid or missing authorization token"
+  },
+  {
+    "client": "openclaude",
+    "path": "/v1/chat/completions",
+    "authorized": false,
+    "status": 401,
+    "body": "Invalid or missing authorization token"
+  },
+  {
+    "client": "openclaude",
+    "path": "/v1/chat/completions",
+    "authorized": false,
+    "status": 401,
+    "body": "Invalid or missing authorization token"
+  },
+  {
+    "client": "openclaude",
+    "path": "/v1/chat/completions",
+    "authorized": false,
+    "status": 401,
+    "body": "Invalid or missing authorization token"
+  },
+  {
+    "client": "openclaude",
+    "path": "/v1/chat/completions",
+    "authorized": false,
+    "status": 401,
+    "body": "Invalid or missing authorization token"
+  },
+  {
+    "client": "openclaude",
+    "path": "/v1/chat/completions",
+    "authorized": false,
+    "status": 401,
+    "body": "Invalid or missing authorization token"
+  },
+  {
+    "client": "openclaude",
+    "path": "/v1/chat/completions",
+    "authorized": false,
+    "status": 401,
+    "body": "Invalid or missing authorization token"
+  },
+  {
+    "client": "hermes_agent",
+    "path": "/api/v1/models",
+    "authorized": false,
+    "status": 401,
+    "body": "Invalid or missing authorization token"
+  },
+  {
+    "client": "hermes_agent",
+    "path": "/api/tags",
+    "authorized": false,
+    "status": 401,
+    "body": "Invalid or missing authorization token"
+  },
+  {
+    "client": "hermes_agent",
+    "path": "/v1/props",
+    "authorized": false,
+    "status": 401,
+    "body": "Invalid or missing authorization token"
+  },
+  {
+    "client": "hermes_agent",
+    "path": "/props",
+    "authorized": false,
+    "status": 401,
+    "body": "Invalid or missing authorization token"
+  },
+  {
+    "client": "hermes_agent",
+    "path": "/version",
+    "authorized": false,
+    "status": 401,
+    "body": "Invalid or missing authorization token"
+  },
+  {
+    "client": "hermes_agent",
+    "path": "/v1/chat/completions",
+    "authorized": false,
+    "status": 401,
+    "body": "Invalid or missing authorization token"
+  }
+]

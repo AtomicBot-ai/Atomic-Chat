@@ -1,0 +1,9 @@
+Command: make test-layout
+Result: exit 0
+
+Test Files  60 passed (60)
+      Tests  700 passed (700)
+   Start at  16:58:36
+   Duration  300.56s (transform 0ms, setup 4.79s, collect 85.94s, tests 204.15s, environment 0ms, prepare 13056.09s)
+
+Previous complete run: 699 passed, 1 failed. MessageItem scroll-anchor assertion measured 625 versus 624 (1px). No tolerance or product change was made; the final full rerun passed all 700 tests.

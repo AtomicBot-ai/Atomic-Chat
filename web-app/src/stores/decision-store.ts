@@ -33,6 +33,11 @@ type DecisionStore = {
   config: DecisionConfig | null
   /** Model id → every file of it is on disk. */
   installed: Record<string, boolean>
+  /**
+   * `installed` has been read at least once, or the read failed: until then
+   * an empty map means "not asked yet", not "nothing on disk".
+   */
+  installedRead: boolean
   /** The last failure of a call or a `decision:error` event, cleared by the next success. */
   error: DecisionCoreError | null
   /** Model id with an activate / stop / remove in flight. */
@@ -53,6 +58,7 @@ export const useDecisionStore = create<DecisionStore>()((set, get) => ({
   status: null,
   config: null,
   installed: {},
+  installedRead: false,
   error: null,
   busy: null,
 
@@ -75,12 +81,19 @@ export const useDecisionStore = create<DecisionStore>()((set, get) => ({
 
   refreshInstalled: async () => {
     const { catalog } = get()
-    const entries = await Promise.all(
-      catalog.models.map(
-        async (model) => [model.id, await isDecisionModelInstalled(model)] as const
+    try {
+      const entries = await Promise.all(
+        catalog.models.map(
+          async (model) =>
+            [model.id, await isDecisionModelInstalled(model)] as const
+        )
       )
-    )
-    set({ installed: Object.fromEntries(entries) })
+      set({ installed: Object.fromEntries(entries), installedRead: true })
+    } catch (error) {
+      // A failed read is an answer too: nothing waits on it any longer.
+      set({ installedRead: true })
+      throw error
+    }
   },
 
   setStatus: (status) => set({ status }),
@@ -90,7 +103,11 @@ export const useDecisionStore = create<DecisionStore>()((set, get) => ({
 
   bind: () => {
     const decision = getServiceHub().decision()
-    if (!decision.isSupported()) return () => {}
+    // Off the desktop there is no disk to read: the empty map is the answer.
+    if (!decision.isSupported()) {
+      set({ installedRead: true })
+      return () => {}
+    }
     const unsubscribe = decision.subscribe((event) => {
       if (event.type === 'state') {
         set({ status: event.status })

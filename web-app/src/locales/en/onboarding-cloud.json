@@ -1,0 +1,11 @@
+{
+  "title": "Your cloud models, too.",
+  "lead": "Connect a provider for more choice. Your local model keeps downloading.",
+  "providers": "Cloud providers",
+  "keyFor": "{{provider}} API key",
+  "connected": "Connected",
+  "notVerified": "Not verified",
+  "skip": "Skip",
+  "keyPlaceholder": "Enter API key",
+  "connecting": "Connecting…"
+}

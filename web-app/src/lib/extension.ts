@@ -121,10 +121,21 @@ export class ExtensionManager {
   }
 
   /**
-   * Loads all registered extension.
+   * Loads all registered extension. One whose `onLoad` fails is logged and
+   * the rest still load (see `registerActive`).
    */
   async load() {
-    await Promise.all(this.listExtensions().map((ext) => ext.onLoad()))
+    const entries = [...this.extensions.entries()]
+    const results = await Promise.allSettled(
+      entries.map(([, ext]) => ext.onLoad())
+    )
+    results.forEach((result, index) => {
+      if (result.status === 'rejected')
+        console.error(
+          `Extension '${entries[index][0]}' failed to load:`,
+          result.reason
+        )
+    })
   }
 
   /**
@@ -206,16 +217,26 @@ export class ExtensionManager {
   }
 
   /**
-   * Registers all active extensions.
+   * Registers all active extensions. One that cannot be imported (a broken
+   * bundle, say one left with a bare `@tauri-apps/*` import) is logged and
+   * skipped: `ExtensionProvider` renders the app only once this settles, so
+   * failing them all left the window blank.
    * @returns {void}
    */
   async registerActive() {
     // Get active extensions
     const activeExtensions = (await this.getActive()) ?? []
     // Activate all
-    await Promise.all(
+    const results = await Promise.allSettled(
       activeExtensions.map((ext: Extension) => this.activateExtension(ext))
     )
+    results.forEach((result, index) => {
+      if (result.status === 'rejected')
+        console.error(
+          `Extension '${activeExtensions[index].name}' failed to import and was skipped:`,
+          result.reason
+        )
+    })
   }
 
   /**

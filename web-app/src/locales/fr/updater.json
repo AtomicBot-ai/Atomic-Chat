@@ -4,7 +4,26 @@
   "nightlyBuild": "Build nocturne",
   "showReleaseNotes": "Afficher les notes de version",
   "hideReleaseNotes": "Masquer les notes de version",
+  "openRelease": "Voir la version",
   "remindMeLater": "Me le rappeler plus tard",
   "downloading": "Téléchargement...",
-  "updateNow": "Mettre à jour maintenant"
+  "updateNow": "Mettre à jour maintenant",
+  "update": "Mettre à jour",
+  "starting": "Démarrage…",
+  "installing": "Installation…",
+  "dismiss": "Ignorer",
+  "relaunchingWindows": "Mise à jour installée. L'application va redémarrer automatiquement.",
+  "app": {
+    "title": "Nouvelle version d'Atomic Chat",
+    "subtitle": "Une nouvelle mise à jour de l'application est disponible",
+    "moreHighlights": "+{{count}} de plus"
+  },
+  "engine": {
+    "title": "Nouvelle mise à jour de {{engine}}",
+    "downloadSize": "{{size}} à télécharger",
+    "noRestartNeeded": "Aucun redémarrage nécessaire après la mise à jour",
+    "restartRequired": "Redémarrage requis après la mise à jour",
+    "showWhatsNew": "Voir les nouveautés",
+    "updateFailed": "Impossible de lancer la mise à jour du moteur. Veuillez réessayer."
+  }
 }

@@ -34,6 +34,10 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { getDiffusionPaths } from '@/lib/diffusion/config'
 import { parseArtifactId } from '@/lib/diffusion/models'
 import { formatBytes } from '@/lib/downloadFormat'
+import {
+  engineFetchFailureText,
+  hostCheckHeadlineKey,
+} from '@/lib/engine-fetch-failure'
 import { cn } from '@/lib/utils'
 import { findFamily, findQuant } from '@/services/diffusion-catalog-registry'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
@@ -255,7 +259,16 @@ export function MediaSettingsPanel() {
                     backend: engine.install.backendId,
                   })
               : engine.hostBackendId === null
-                ? (engine.hostBackendReason ?? t('settings:media.engineUnsupported'))
+                ? engine.hostBackendCheckFailed && !engine.resolvingHostBackend
+                  ? [
+                      t(hostCheckHeadlineKey(engine.hostBackendCheckFailed)),
+                      engineFetchFailureText(engine.hostBackendReason, t) ??
+                        engine.hostBackendReason,
+                    ]
+                      .filter(Boolean)
+                      .join(' ')
+                  : (engine.hostBackendReason ??
+                    t('settings:media.engineUnsupported'))
                 : t('settings:media.engineNotInstalled')
           }
           actions={
@@ -303,6 +316,18 @@ export function MediaSettingsPanel() {
                   {t('settings:media.reinstall')}
                 </Button>
               </div>
+            ) : engine.hostBackendCheckFailed &&
+              engine.hostBackendId === null &&
+              !engine.resolvingHostBackend ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void engine.retryHostBackend()}
+                data-testid="media-engine-retry"
+              >
+                <IconRefresh size={14} />
+                {t('images:errors.actions.retry')}
+              </Button>
             ) : (
               <Button
                 size="sm"

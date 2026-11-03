@@ -3,6 +3,7 @@ import { createJSONStorage, persist } from 'zustand/middleware'
 
 import { localStorageKey } from '@/constants/localStorage'
 import { snapFrames } from '@/lib/video/duration'
+import type { RestoredVideoFormDraft } from '@/lib/video/recipe'
 import type { VideoCapabilities } from '@/services/diffusion/types'
 
 /** What the Video form holds; the numeric part is what a recipe restores. */
@@ -43,7 +44,11 @@ type VideoFormState = VideoFormDraft & {
    * Replace the whole draft, e.g. from a recipe, together with the family
    * its numbers are for, so picking that recipe's model keeps them.
    */
-  applyDraft: (draft: VideoFormDraft, recipeFamily?: string | null) => void
+  /** A knob the draft leaves out (one a recipe cannot vouch for) keeps the form's value. */
+  applyDraft: (
+    draft: RestoredVideoFormDraft,
+    recipeFamily?: string | null
+  ) => void
   /**
    * Reset the numeric parameters to the loaded model's defaults, keeping the
    * prompt: "start over with the knobs" is what Reset means, not "clear".

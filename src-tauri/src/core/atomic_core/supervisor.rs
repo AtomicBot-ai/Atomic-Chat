@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-use super::client::{ControlClient, CoreError};
+use super::client::{ControlClient, CoreError, HEALTH_TIMEOUT};
 use super::launch;
 use super::lock::{self, LockState};
 
@@ -123,6 +123,8 @@ pub struct Supervisor {
     generation: AtomicU64,
     ever_attached: AtomicBool,
     start_timeout: Duration,
+    /// The deadline of the probes an attachment makes (health, registration, heartbeat).
+    probe_timeout: Duration,
 }
 
 impl Supervisor {
@@ -140,11 +142,18 @@ impl Supervisor {
             generation: AtomicU64::new(0),
             ever_attached: AtomicBool::new(false),
             start_timeout: launch::START_TIMEOUT,
+            probe_timeout: HEALTH_TIMEOUT,
         }
     }
 
     pub fn with_start_timeout(mut self, timeout: Duration) -> Self {
         self.start_timeout = timeout;
+        self
+    }
+
+    /// A shorter probe deadline, for tests of a slow core that should not take 15 s each.
+    pub fn with_probe_timeout(mut self, timeout: Duration) -> Self {
+        self.probe_timeout = timeout;
         self
     }
 
@@ -209,6 +218,34 @@ impl Supervisor {
         }
     }
 
+    /// Whether the core behind `attached` still owns the data folder: the lock names the same
+    /// instance, and its PID is the process that wrote it.
+    ///
+    /// Not reaped first, unlike the lock reads that decide a launch: this only ever follows a
+    /// timeout, and a core that died does not time out — the kernel closes its sockets, so the
+    /// next request is refused, which is not "only slow". A zombie read as alive here costs one
+    /// more heartbeat interval, never a second owner.
+    pub fn owner_still_running(&self, attached: &Attached) -> bool {
+        let mut system = sysinfo::System::new();
+        system.refresh_processes(
+            sysinfo::ProcessesToUpdate::Some(&[sysinfo::Pid::from_u32(attached.pid)]),
+            true,
+        );
+        matches!(
+            lock::inspect(&self.data_folder, &system),
+            LockState::Owned(record) if record.instance_id == attached.instance_id
+        )
+    }
+
+    /// A failure that says only "not in time" while the process is still the folder's owner: a
+    /// core that is swapping or busy, not one that is gone. Such a core is neither dropped nor
+    /// replaced — a new attachment would not answer sooner, and replacing it would throw away
+    /// whatever it is running (ADR 2026-10-26-keep-a-slow-core-that-is-still-alive-attached). A
+    /// refused or reset connection, or a lock that names someone else, is still a core that went.
+    pub fn is_only_slow(&self, attached: &Attached, error: &CoreError) -> bool {
+        error.is_timeout() && self.owner_still_running(attached)
+    }
+
     /// One control call, with a single reattach if the core disappeared under
     /// us. Exactly one: a core that cannot be reached twice in a row is a
     /// failure the caller has to see, not something to keep retrying.
@@ -222,6 +259,8 @@ impl Supervisor {
         let attached = self.ensure_attached(allow_launch).await?;
         match attached.client.call(method, path, body.clone()).await {
             Ok(value) => Ok(value),
+            // Slow is not gone: the caller sees the timeout, the attachment stays.
+            Err(e) if self.is_only_slow(&attached, &e) => Err(e),
             Err(e) if e.is_unreachable() => {
                 self.invalidate(attached.generation).await;
                 // A transport error does not say whether the core applied the
@@ -241,8 +280,9 @@ impl Supervisor {
     }
 
     /// Report that we are still here. Returns `false` when the attachment is
-    /// gone — either the core forgot us or it is no longer answering — in which
-    /// case it has already been invalidated.
+    /// gone — either the core forgot us or it is no longer there — in which
+    /// case it has already been invalidated. A core that only answers late
+    /// while its process still owns the folder stays attached.
     pub async fn heartbeat_once(&self) -> bool {
         let Some(attached) = self.current().await else {
             return false;
@@ -253,6 +293,10 @@ impl Supervisor {
                 log::info!("[atomic-core] our client registration expired; reattaching");
                 self.invalidate(attached.generation).await;
                 false
+            }
+            Err(e) if self.is_only_slow(&attached, &e) => {
+                log::info!("[atomic-core] heartbeat timed out, but the core is still running; staying attached: {e}");
+                true
             }
             Err(e) => {
                 log::info!("[atomic-core] heartbeat failed: {e}");
@@ -469,7 +513,7 @@ impl Supervisor {
                 ),
             )
         })?;
-        let client = ControlClient::new(base_url, token)?;
+        let client = ControlClient::new(base_url, token)?.with_probe_timeout(self.probe_timeout);
         let health = client.handshake(self.expected_version.as_deref()).await?;
         let registration = client.register(CLIENT_NAME, std::process::id()).await?;
         let generation = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
@@ -666,6 +710,86 @@ mod tests {
 
         assert_eq!(second.instance_id, "instance-b");
         assert!(second.generation > first.generation);
+    }
+
+    #[tokio::test]
+    async fn a_core_that_only_answers_late_keeps_its_attachment_and_its_registration() {
+        // QA 2026-10-23: an 8 GB Mac swapping an image model let one heartbeat time out; the app
+        // dropped the attachment, the core's lease ran out and it retired mid-image.
+        let core = FakeCore::start().await;
+        let dir = tempfile::tempdir().unwrap();
+        let supervisor =
+            supervisor(&core, &dir, None).with_probe_timeout(Duration::from_millis(100));
+        let attached = supervisor.ensure_attached(false).await.unwrap();
+
+        core.set_slow(Duration::from_millis(500));
+
+        assert!(
+            supervisor.heartbeat_once().await,
+            "a late answer from a live owner is not a dead core"
+        );
+        let current = supervisor.current().await.expect("still attached");
+        assert_eq!(current.generation, attached.generation);
+        assert_eq!(core.registered_clients(), 1, "nothing registered again");
+    }
+
+    #[tokio::test]
+    async fn a_late_core_whose_lock_names_another_instance_is_dropped() {
+        let core = FakeCore::start().await;
+        let dir = tempfile::tempdir().unwrap();
+        let supervisor =
+            supervisor(&core, &dir, None).with_probe_timeout(Duration::from_millis(100));
+        supervisor.ensure_attached(false).await.unwrap();
+
+        // Another owner took the folder; the old address only hangs.
+        core.set_slow(Duration::from_millis(500));
+        let replacement = FakeCore::start().await;
+        replacement.set_instance_id("instance-b");
+        replacement.publish_lock(dir.path());
+
+        assert!(!supervisor.heartbeat_once().await);
+        assert!(supervisor.current().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_late_core_without_a_lock_is_dropped() {
+        let core = FakeCore::start().await;
+        let dir = tempfile::tempdir().unwrap();
+        let supervisor =
+            supervisor(&core, &dir, None).with_probe_timeout(Duration::from_millis(100));
+        supervisor.ensure_attached(false).await.unwrap();
+
+        core.set_slow(Duration::from_millis(500));
+        std::fs::remove_file(lock::instance_lock_path(dir.path())).unwrap();
+
+        assert!(!supervisor.heartbeat_once().await);
+        assert!(supervisor.current().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_timeout_from_the_live_owner_is_only_slow_and_a_refusal_is_not() {
+        let core = FakeCore::start().await;
+        let dir = tempfile::tempdir().unwrap();
+        let supervisor =
+            supervisor(&core, &dir, None).with_probe_timeout(Duration::from_millis(100));
+        let attached = supervisor.ensure_attached(false).await.unwrap();
+        // Ordinary calls carry the long deadline; stand in for one that ran out.
+        let slow_client = attached
+            .client
+            .clone()
+            .with_probe_timeout(Duration::from_millis(50));
+        core.set_slow(Duration::from_millis(300));
+        let error = slow_client.health().await.unwrap_err();
+        assert!(error.is_timeout(), "got {error}");
+
+        assert!(supervisor.is_only_slow(&attached, &error));
+
+        let refused = ControlClient::new("http://127.0.0.1:1", "t")
+            .unwrap()
+            .health()
+            .await
+            .unwrap_err();
+        assert!(!supervisor.is_only_slow(&attached, &refused));
     }
 
     #[tokio::test]

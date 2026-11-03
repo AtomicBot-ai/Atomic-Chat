@@ -3,18 +3,11 @@ import {
   type DownloadProgressProps,
   type DownloadStage,
 } from '@/hooks/useDownloadStore'
-import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useProxyConfig } from '@/hooks/useProxyConfig'
 import { useServiceHub } from '@/hooks/useServiceHub'
-import { PRISM_PROVIDER } from '@/lib/model-setup'
-import {
-  prismSetupDeps,
-  verifyPrismDownload,
-} from '@/services/model-setup/prism-setup'
 import { DownloadEvent, DownloadState, events } from '@janhq/core'
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { toast } from 'sonner'
-import { IconCheck } from '@tabler/icons-react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
@@ -41,15 +34,10 @@ import {
 } from '@/lib/telemetry'
 import { queuedCapture } from '@/lib/telemetry-queue'
 import { captureHandledError } from '@/lib/sentry'
-import {
-  downloadArtifact,
-  isDiffusionModelDownloadTaskId,
-  resolveDiffusionDownloadTaskId,
-} from '@/lib/diffusion/models'
-import { isDiffusionEngineTaskId } from '@/services/diffusion/engine'
-import { isEngineBuildTaskId } from '@/services/engine-builds/install'
-import { isEngineUpdateTaskId } from '@/services/engines/update'
-import { cancelTransfer } from '@/services/diffusion/transfer'
+import { resumeDownload } from '@/lib/downloadResume'
+import { isPausableDownload, pauseDownload } from '@/lib/downloadControls'
+import { engineDownloadLabel } from '@/lib/engineDownloadLabel'
+import { bindInterruptedDownloads } from '@/lib/interrupted-downloads'
 import {
   decisionDownloadTaskId,
   isDecisionDownloadTaskId,
@@ -60,16 +48,19 @@ import {
 } from '@/lib/embedding/models'
 import { isManagedDownloadId } from '@/lib/managed-engine/download-id'
 import { isFoundryLocalDownloadId } from '@/lib/foundry-local/download-id'
+import { isLiteRtLmDownloadId } from '@/lib/litert-lm/download-id'
+import { isGeniexDownloadId } from '@/lib/geniex/download-id'
 import { useDecisionStore } from '@/stores/decision-store'
 import { useEmbeddingStore } from '@/stores/embedding-store'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
-import { useImageForm } from '@/hooks/useImageForm'
-import { notifyWhenAway } from '@/lib/notifications'
+import { notifyUnlessWatching } from '@/lib/notifications'
 import {
   describeDiffusionDownloadToast,
   describeFinishedDownload,
 } from '@/lib/downloadNotification'
+import type { DecisionCatalog } from '@/services/decision-catalog-registry'
 import type { DiffusionCatalog } from '@/services/diffusion-catalog-registry'
+import type { EmbeddingCatalog } from '@/services/embedding-catalog-registry'
 
 /**
  * ATO-109: emit the terminal `model_download` event. Deduplicated so the two
@@ -125,31 +116,94 @@ function captureDownloadTerminal(
   }
 }
 
+type RowNameSources = {
+  origins: Record<string, string>
+  decisionCatalog: DecisionCatalog
+  embeddingCatalog: EmbeddingCatalog
+}
+
 /**
- * OS notification for a finished download, shown only while the user is away
- * from the window (the toast covers a focused one). Must run before the row is
- * removed: both success events may arrive for one download, and only the
- * first still finds its row.
+ * What the panel calls a download. A managed model's id spells its repository
+ * with `_`; the Hub's Download recorded the repository itself as the
+ * download's origin. A decision or embedding model's task id is its catalog id
+ * behind a prefix: the row shows the model's name instead.
+ */
+function downloadRowName(
+  id: string,
+  { origins, decisionCatalog, embeddingCatalog }: RowNameSources
+): string {
+  return (
+    (isManagedDownloadId(id) && origins[id]) ||
+    (isFoundryLocalDownloadId(id) && origins[id]) ||
+    (isLiteRtLmDownloadId(id) && origins[id]) ||
+    (isGeniexDownloadId(id) && origins[id]) ||
+    (isEmbeddingDownloadTaskId(id) &&
+      embeddingCatalog.models.find(
+        (model) => embeddingDownloadTaskId(model.id) === id
+      )?.name) ||
+    (isDecisionDownloadTaskId(id) &&
+      decisionCatalog.models.find(
+        (model) => decisionDownloadTaskId(model.id) === id
+      )?.name) ||
+    id
+  )
+}
+
+/**
+ * OS notification for a finished download. A model is announced whether or
+ * not the window has focus: it is what the user was waiting for, wherever
+ * they are, the setup screen (which draws no panel) included. An engine
+ * install is a step of a setup that reports its own end, so a focused window
+ * keeps just its toast.
+ *
+ * Once per download: both success events may arrive for one, and a success
+ * for a transfer that never ran (every file already on disk) says nothing.
+ * `inFlight` holds the downloads that reported progress, so one whose row is
+ * already gone is still announced; the row covers one that has not reported
+ * bytes yet. Must run before the row and its origin are removed, which name
+ * the model.
  */
 function notifyDownloadFinished(
   state: DownloadState,
+  inFlight: Set<string>,
   catalog: DiffusionCatalog | null,
   t: (key: string, options?: Record<string, unknown>) => string
 ): void {
-  const { downloads, localDownloadingModels } = useDownloadStore.getState()
-  const hasRow =
-    state.modelId in downloads || localDownloadingModels.has(state.modelId)
-  if (!hasRow) return
+  const id = state.modelId
+  const { downloads, localDownloadingModels, downloadOriginByModelId } =
+    useDownloadStore.getState()
+  const ran = inFlight.delete(id)
+  if (!ran && !(id in downloads) && !localDownloadingModels.has(id)) return
+  const downloadType = (state as unknown as { downloadType?: string })
+    .downloadType
   const notification = describeFinishedDownload(
-    state.modelId,
-    (state as unknown as { downloadType?: string }).downloadType,
+    id,
+    downloadType,
     catalog,
-    t
+    t,
+    downloadRowName(id, {
+      origins: downloadOriginByModelId,
+      decisionCatalog: useDecisionStore.getState().catalog,
+      embeddingCatalog: useEmbeddingStore.getState().catalog,
+    })
   )
-  if (notification) notifyWhenAway(notification.title, notification.body)
+  if (!notification) return
+  notifyUnlessWatching(
+    downloadKind(id, downloadType) === 'gpu_backend',
+    notification.title,
+    notification.body
+  )
 }
 
-export function DownloadManagement() {
+export function DownloadManagement({
+  hidePanel = false,
+}: {
+  /**
+   * Keep the listeners, draw no panel: the first-run screen shows the run's
+   * downloads in its own strip.
+   */
+  hidePanel?: boolean
+} = {}) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const prevDownloadCount = useRef(0)
@@ -163,9 +217,11 @@ export function DownloadManagement() {
     collapsedMs: 0,
     peakDownloads: 0,
   })
+  // The downloads that reported progress and have not ended yet, for
+  // `notifyDownloadFinished`.
+  const inFlight = useRef(new Set<string>())
   const serviceHub = useServiceHub()
   const imageCatalog = useImageGenerationStore((state) => state.catalog)
-  const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
   const {
     downloads,
     updateProgress,
@@ -176,9 +232,7 @@ export function DownloadManagement() {
     markResumableDownload,
     clearResumableDownload,
     pausedDownloads,
-    markPausedDownload,
     clearPausedDownload,
-    resumeParams,
     clearResumeParams,
     clearDownloadOrigin,
     downloadOriginByModelId,
@@ -186,23 +240,17 @@ export function DownloadManagement() {
   const decisionCatalog = useDecisionStore((s) => s.catalog)
   const embeddingCatalog = useEmbeddingStore((s) => s.catalog)
 
+  // A model download that Pause, a quit or a crash stopped comes back after a
+  // relaunch, paused and with its Resume (`lib/interrupted-downloads`).
+  useEffect(() => bindInterruptedDownloads(), [])
+
   const downloadProcesses = useMemo(() => {
-    // A managed model's id spells its repository with `_`; the Hub's Download
-    // recorded the repository itself as the download's origin. A decision or
-    // embedding model's task id is its catalog id behind a prefix: the row
-    // shows the model's name instead.
     const rowName = (id: string) =>
-      (isManagedDownloadId(id) && downloadOriginByModelId[id]) ||
-      (isFoundryLocalDownloadId(id) && downloadOriginByModelId[id]) ||
-      (isEmbeddingDownloadTaskId(id) &&
-        embeddingCatalog.models.find(
-          (model) => embeddingDownloadTaskId(model.id) === id
-        )?.name) ||
-      (isDecisionDownloadTaskId(id) &&
-        decisionCatalog.models.find(
-          (model) => decisionDownloadTaskId(model.id) === id
-        )?.name) ||
-      id
+      downloadRowName(id, {
+        origins: downloadOriginByModelId,
+        decisionCatalog,
+        embeddingCatalog,
+      })
     // Get downloads with progress data
     const downloadsWithProgress = Object.entries(downloads).map(
       ([downloadKey, download]) => {
@@ -302,6 +350,7 @@ export function DownloadManagement() {
 
   const onFileDownloadUpdate = useCallback(
     async (state: DownloadState) => {
+      inFlight.current.add(state.modelId)
       // The downloader also emits status-only updates while its retry ladders
       // run (`stage`), which carry no byte counts. Feeding those through
       // `updateProgress` would publish 0/0 and rewind the bar (#290).
@@ -350,6 +399,7 @@ export function DownloadManagement() {
         return
       }
 
+      inFlight.current.delete(state.modelId)
       clearPausedDownload(state.modelId)
       clearResumeParams(state.modelId)
       removeDownload(state.modelId)
@@ -570,6 +620,7 @@ export function DownloadManagement() {
         totalBytes: useDownloadStore.getState().downloads[event.modelId]?.total,
       })
 
+      inFlight.current.delete(event.modelId)
       clearResumableDownload(event.modelId)
       clearPausedDownload(event.modelId)
       clearResumeParams(event.modelId)
@@ -619,6 +670,7 @@ export function DownloadManagement() {
           ?.downloadType,
         totalBytes: state.size?.total,
       })
+      inFlight.current.delete(state.modelId)
       clearPausedDownload(state.modelId)
       clearResumeParams(state.modelId)
       removeDownload(state.modelId)
@@ -650,7 +702,7 @@ export function DownloadManagement() {
     async (state: DownloadState) => {
       console.debug('onFileDownloadSuccess', state)
 
-      notifyDownloadFinished(state, imageCatalog, t)
+      notifyDownloadFinished(state, inFlight.current, imageCatalog, t)
       captureDownloadTerminal('completed', state.modelId, {
         downloadType: (state as unknown as { downloadType?: string })
           ?.downloadType,
@@ -700,7 +752,7 @@ export function DownloadManagement() {
     async (state: DownloadState) => {
       console.debug('onFileDownloadAndVerificationSuccess', state)
 
-      notifyDownloadFinished(state, imageCatalog, t)
+      notifyDownloadFinished(state, inFlight.current, imageCatalog, t)
       captureDownloadTerminal('completed', state.modelId, {
         downloadType: (state as unknown as { downloadType?: string })
           ?.downloadType,
@@ -787,146 +839,16 @@ export function DownloadManagement() {
     onFileDownloadAndVerificationSuccess,
   ])
 
-  // ATO-154: pause/resume is only offered for resumable model (GGUF) downloads.
-  // Backend-binary downloads (`llamacpp*`) and MLX repos (`mlx-community/*`,
-  // which start with `mlx`) get cancel-only, matching Jan's gating.
-  // Decision and embedding models resume from their Hub or settings card,
-  // not from here.
-  // Engine updates (`engine-update-*`) are the core's to stop, cancel-only.
-  // Managed models are cancel-only too: Download again in the Hub resumes
-  // from the files on disk (change add-tensorrt-llm-model-hub, design D6);
-  // so are Foundry Local variants (change add-foundry-local).
-  const isPausableDownload = (id: string): boolean =>
-    !id.startsWith('llamacpp') &&
-    !isDiffusionEngineTaskId(id) &&
-    !isEngineBuildTaskId(id) &&
-    !isEngineUpdateTaskId(id) &&
-    !id.startsWith('mlx') &&
-    !isDecisionDownloadTaskId(id) &&
-    !isEmbeddingDownloadTaskId(id) &&
-    !isManagedDownloadId(id) &&
-    !isFoundryLocalDownloadId(id)
-
   const handlePauseDownload = useCallback(
-    (download: { id: string; name: string }) => {
-      markPausedDownload(download.id)
-      markResumableDownload(download.id)
-      if (download.id !== download.name) {
-        markPausedDownload(download.name)
-        markResumableDownload(download.name)
-      }
-      if (isDiffusionModelDownloadTaskId(download.id)) {
-        void cancelTransfer(download.id)
-      } else {
-        void serviceHub.models().abortDownload(download.name)
-      }
-    },
-    [markPausedDownload, markResumableDownload, serviceHub]
+    (download: { id: string; name: string }) =>
+      pauseDownload(download, serviceHub),
+    [serviceHub]
   )
 
   const handleResumeDownload = useCallback(
-    (download: { id: string; name: string }) => {
-      const diffusionTarget = imageCatalog
-        ? resolveDiffusionDownloadTaskId(imageCatalog, download.id)
-        : null
-      if (diffusionTarget) {
-        clearPausedDownload(download.id)
-        if (download.id !== download.name) clearPausedDownload(download.name)
-        markResumableDownload(download.id)
-        toast.success(t('common:toast.downloadResumed.title'), {
-          icon: (
-            <IconCheck
-              size={16}
-              className="text-blue-500 dark:text-blue-400"
-              aria-hidden
-            />
-          ),
-          duration: 2500,
-        })
-        void downloadArtifact(
-          diffusionTarget.family,
-          diffusionTarget.quant.id,
-          {
-            resume: true,
-            hfToken: huggingfaceToken,
-            workflow: useImageForm.getState().workflow,
-          }
-        )
-          // Nothing else re-lists the models folder for a resume started
-          // here, so the finished model kept reading as "not downloaded".
-          .then(() => useImageGenerationStore.getState().refreshModelFiles())
-          .catch((error) => {
-            // downloadArtifact emits the ordinary transfer-error event first;
-            // that listener owns the existing user-facing failure path.
-            console.error(
-              '[DownloadManagement] diffusion resume failed:',
-              error
-            )
-          })
-        return
-      }
-
-      const params = resumeParams[download.id] ?? resumeParams[download.name]
-      if (!params) {
-        // No stored params (e.g. resumed after an app restart). Fall back to
-        // cancel-style cleanup so the row doesn't get stuck in a paused state.
-        clearPausedDownload(download.id)
-        toast.error(t('common:toast.downloadFailed.title'), {
-          description: t('common:toast.downloadFailed.description', {
-            item: download.name,
-          }),
-        })
-        return
-      }
-      clearPausedDownload(download.id)
-      if (download.id !== download.name) clearPausedDownload(download.name)
-      markResumableDownload(download.id)
-      const {
-        modelPath,
-        mmprojPath,
-        hfToken,
-        skipVerification,
-        ...pullOptions
-      } = params
-      void serviceHub
-        .models()
-        .pullModelWithMetadata(
-          download.id,
-          modelPath,
-          mmprojPath,
-          hfToken,
-          skipVerification ?? true,
-          true,
-          pullOptions
-        )
-        .then(async (refusal) => {
-          // A Bonsai file ends as the Hub's download does: kept only if the
-          // core says PrismML runs the file now on disk.
-          if (pullOptions.provider !== PRISM_PROVIDER || refusal) return
-          if (useDownloadStore.getState().pausedDownloads.has(download.id))
-            return
-          const result = await verifyPrismDownload(
-            download.id,
-            prismSetupDeps(serviceHub)
-          )
-          if (result.outcome === 'rejected')
-            toast.error(t('hub:prismModelRejected'), {
-              description: result.reason,
-            })
-        })
-        .catch((error) => {
-          console.error('[DownloadManagement] resume failed:', error)
-        })
-    },
-    [
-      imageCatalog,
-      huggingfaceToken,
-      resumeParams,
-      clearPausedDownload,
-      markResumableDownload,
-      serviceHub,
-      t,
-    ]
+    (download: { id: string; name: string }) =>
+      resumeDownload(download, { serviceHub, t }),
+    [serviceHub, t]
   )
 
   // Shared with the composer's reply widget, which offers the same Cancel on
@@ -941,8 +863,15 @@ export function DownloadManagement() {
     const rows: DownloadRowProps[] = []
 
     for (const download of downloadProcesses) {
+      // An engine build reads as the engine and its release, not its task id.
+      const engine = engineDownloadLabel(download.id)
       rows.push({
         ...download,
+        ...(engine && {
+          kind: 'engine' as const,
+          name: engine.name,
+          detail: engine.version,
+        }),
         paused: pausedDownloads.has(download.id),
         pausable: isPausableDownload(download.id),
         onPause: () => handlePauseDownload(download),
@@ -960,9 +889,14 @@ export function DownloadManagement() {
     handleCancelDownload,
   ])
 
+  const visibleItems = useMemo(
+    () => (hidePanel ? [] : panelItems),
+    [hidePanel, panelItems]
+  )
+
   return (
     <DownloadPanel
-      items={panelItems}
+      items={visibleItems}
       onCollapsedChange={onPanelCollapsedChange}
     />
   )

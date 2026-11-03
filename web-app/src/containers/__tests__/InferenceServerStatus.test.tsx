@@ -1,9 +1,14 @@
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useAppState } from '@/hooks/useAppState'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { useMlxEngineInstallStore } from '@/services/engine-builds/mlx'
+import {
+  describeModelLoadFailure,
+  runModelLoadFailureAction,
+} from '@/utils/switchModel'
 import {
   InferenceServerStatusLine,
   InferenceServerStatusStrip,
@@ -25,6 +30,7 @@ vi.mock('@/utils/switchModel', () => ({
     persistent: false,
   })),
   switchToModel: vi.fn(),
+  runModelLoadFailureAction: vi.fn(async () => {}),
 }))
 
 vi.mock('@/hooks/useServiceHub', () => ({
@@ -104,6 +110,50 @@ describe('InferenceServerStatusStrip', () => {
     expect(
       screen.getByRole('button', { name: 'common:inferenceStatus.retry' })
     ).toBeInTheDocument()
+  })
+
+  it('offers the fix a failure names in place of a plain retry', () => {
+    const action = {
+      kind: 'install-mlx-engine' as const,
+      label: 'model-errors:mlxEngineMissingAction',
+    }
+    const describeFailure = vi.mocked(describeModelLoadFailure)
+    const original = describeFailure.getMockImplementation()
+    describeFailure.mockReturnValue({
+      title: 'MLX engine is not installed',
+      description: 'It is a one-time download.',
+      persistent: true,
+      action,
+    })
+    useModelLoad.setState({
+      modelLoadError: { code: 'BINARY_NOT_FOUND' } as never,
+      modelLoadErrorModelId: MODEL,
+    })
+    seed({}, 'mlx')
+
+    const { rerender } = render(<InferenceServerStatusStrip />)
+    expect(
+      screen.queryByRole('button', { name: 'common:inferenceStatus.retry' })
+    ).not.toBeInTheDocument()
+    screen
+      .getByRole('button', { name: 'model-errors:mlxEngineMissingAction' })
+      .click()
+    expect(runModelLoadFailureAction).toHaveBeenCalledWith(action, {
+      modelId: MODEL,
+      providerName: 'mlx',
+      serviceHub: {},
+    })
+
+    // While the engine installs, the button waits for it.
+    act(() => useMlxEngineInstallStore.setState({ installing: true }))
+    rerender(<InferenceServerStatusStrip />)
+    expect(
+      screen.getByRole('button', {
+        name: 'model-errors:mlxEngineMissingAction',
+      })
+    ).toBeDisabled()
+    act(() => useMlxEngineInstallStore.setState({ installing: false }))
+    if (original) describeFailure.mockImplementation(original)
   })
 
   it('offers the logs of a failed TensorRT-LLM load, and only for that engine', () => {

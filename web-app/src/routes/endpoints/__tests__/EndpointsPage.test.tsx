@@ -11,6 +11,7 @@ import { EndpointsPage } from '../index'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useEndpointCheckStore } from '@/stores/endpoint-check-store'
 import { useMediaCatalog } from '@/stores/media-catalog-store'
+import { useProviderKeyStatusStore } from '@/stores/provider-key-status-store'
 
 const {
   navigate,
@@ -242,13 +243,11 @@ const setProviders = vi.fn()
 
 const mockStore = (list: ProviderObject[] = providers) => {
   storeProviders.current = list
-  vi.mocked(useModelProvider).mockReturnValue({
-    providers: list,
-    addProvider,
-    updateProvider,
-    setProviders,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } as any)
+  const state = { providers: list, addProvider, updateProvider, setProviders }
+  // The page reads the whole store; the collision notice passes a selector.
+  vi.mocked(useModelProvider).mockImplementation(((
+    selector?: (s: typeof state) => unknown
+  ) => (selector ? selector(state) : state)) as never)
 }
 
 const card = (title: string) => screen.getByRole('article', { name: title })
@@ -258,6 +257,7 @@ describe('EndpointsPage', () => {
     vi.clearAllMocks()
     searchState.current = {}
     useEndpointCheckStore.setState({ results: {}, checking: {} })
+    useProviderKeyStatusStore.setState({ statuses: {} })
     // No media catalog from the core unless a case says otherwise.
     useMediaCatalog.setState({ available: false, status: 'ready' })
     mockStore()
@@ -342,6 +342,11 @@ describe('EndpointsPage', () => {
   })
 
   it('adds an endpoint, then registers it and asks it for its models', async () => {
+    checkProviderEndpoint.mockResolvedValueOnce({
+      ok: true,
+      latencyMs: 3,
+      modelCount: 1,
+    })
     render(<EndpointsPage />)
 
     fireEvent.click(screen.getByText('endpoints:add'))
@@ -357,6 +362,15 @@ describe('EndpointsPage', () => {
     })
     fireEvent.click(screen.getByText('endpoints:dialog.save'))
 
+    // The server is asked, with the address and key as typed, before saving.
+    await waitFor(() => expect(addProvider).toHaveBeenCalled())
+    expect(checkProviderEndpoint).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'lan-vllm',
+        base_url: 'http://192.168.1.30:8000/v1',
+        api_key: 'sk-new',
+      })
+    )
     const added = addProvider.mock.calls[0][0]
     expect(added).toMatchObject({
       provider: 'lan-vllm',
@@ -411,6 +425,140 @@ describe('EndpointsPage', () => {
     expect(addProvider).not.toHaveBeenCalled()
   })
 
+  const fillNewEndpoint = (baseUrl: string, apiKey = '') => {
+    fireEvent.click(screen.getByText('endpoints:add'))
+    fireEvent.change(
+      screen.getByPlaceholderText('endpoints:dialog.namePlaceholder'),
+      { target: { value: 'lan-vllm' } }
+    )
+    fireEvent.change(screen.getByLabelText('endpoints:dialog.baseUrl'), {
+      target: { value: baseUrl },
+    })
+    fireEvent.change(screen.getByLabelText('endpoints:dialog.apiKey'), {
+      target: { value: apiKey },
+    })
+    fireEvent.click(screen.getByText('endpoints:dialog.save'))
+  }
+
+  it("refuses the app's own Local API Server as an endpoint", async () => {
+    render(<EndpointsPage />)
+
+    fillNewEndpoint('http://127.0.0.1:1337/v1')
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'endpoints:dialog.ownServer'
+    )
+    expect(checkProviderEndpoint).not.toHaveBeenCalled()
+    expect(addProvider).not.toHaveBeenCalled()
+    expect(registerRemoteProvider).not.toHaveBeenCalled()
+  })
+
+  it('keeps an endpoint whose server refuses the key out, and says why', async () => {
+    checkProviderEndpoint.mockResolvedValueOnce({
+      ok: false,
+      latencyMs: 12,
+      modelCount: 0,
+      httpStatus: 401,
+      message:
+        'Authentication failed: an API key is required or invalid for Lan-vllm.',
+    })
+    render(<EndpointsPage />)
+
+    fillNewEndpoint('http://192.168.1.30:8000/v1', 'invalid-qa-test-key')
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'endpoints:dialog.keyRejected:Lan-vllm Authentication failed: an API key is required or invalid for Lan-vllm.'
+    )
+    expect(addProvider).not.toHaveBeenCalled()
+    expect(saveProviderApiKey).not.toHaveBeenCalled()
+    // Still open, so the key can be corrected.
+    expect(screen.getByText('endpoints:dialog.addTitle')).toBeInTheDocument()
+  })
+
+  it('saves a refused key anyway when asked, as not verified', async () => {
+    const refusal = {
+      ok: false,
+      latencyMs: 12,
+      modelCount: 0,
+      httpStatus: 401,
+      message: 'Authentication failed for Lan-vllm.',
+    }
+    checkProviderEndpoint
+      .mockResolvedValueOnce(refusal)
+      .mockResolvedValueOnce(refusal)
+    render(<EndpointsPage />)
+
+    fillNewEndpoint('http://192.168.1.30:8000/v1', 'sk-gateway')
+    fireEvent.click(await screen.findByText('endpoints:dialog.saveAnyway'))
+
+    await waitFor(() => expect(addProvider).toHaveBeenCalled())
+    expect(saveProviderApiKey).toHaveBeenCalledWith(
+      expect.objectContaining({ apiKey: 'sk-gateway' })
+    )
+    expect(
+      useProviderKeyStatusStore.getState().statuses['lan-vllm']
+    ).toMatchObject({
+      state: 'unverified',
+      message:
+        'endpoints:dialog.keyRejected:Lan-vllm Authentication failed for Lan-vllm.',
+    })
+  })
+
+  it('saves a key the server answers 403, as not verified rather than refused', async () => {
+    checkProviderEndpoint.mockResolvedValueOnce({
+      ok: false,
+      latencyMs: 12,
+      modelCount: 0,
+      httpStatus: 403,
+      message: 'Access forbidden: check your API key permissions for Lan-vllm.',
+      responseBody: '{"error":{"message":"models route disabled"}}',
+    })
+    render(<EndpointsPage />)
+
+    fillNewEndpoint('http://192.168.1.30:8000/v1', 'sk-scoped')
+
+    await waitFor(() => expect(addProvider).toHaveBeenCalled())
+    expect(
+      useProviderKeyStatusStore.getState().statuses['lan-vllm']
+    ).toMatchObject({
+      state: 'unverified',
+      message: 'HTTP 403: models route disabled',
+    })
+  })
+
+  it('saves an endpoint it could not reach, its key marked not verified', async () => {
+    checkProviderEndpoint.mockResolvedValueOnce({
+      ok: false,
+      latencyMs: 8000,
+      modelCount: 0,
+      message: 'Cannot connect to Lan-vllm at http://192.168.1.30:8000/v1.',
+    })
+    render(<EndpointsPage />)
+
+    fillNewEndpoint('http://192.168.1.30:8000/v1', 'sk-new')
+
+    await waitFor(() => expect(addProvider).toHaveBeenCalled())
+    expect(
+      useProviderKeyStatusStore.getState().statuses['lan-vllm']
+    ).toMatchObject({
+      state: 'unverified',
+      message: 'Cannot connect to Lan-vllm at http://192.168.1.30:8000/v1.',
+    })
+  })
+
+  it('reads a saved key the server could not confirm as not verified, not connected', () => {
+    useProviderKeyStatusStore
+      .getState()
+      .setStatus('my-server', 'sk-lan', 'unverified', 'Cannot connect')
+    render(<EndpointsPage />)
+
+    const status = within(card('My-server')).getByRole('status')
+    expect(status).toHaveTextContent(
+      'endpoints:status.unverified · Cannot connect'
+    )
+    expect(status).not.toHaveTextContent('endpoints:status.connected')
+  })
+
   it('configures an endpoint: the name stays, the address and key change', async () => {
     useEndpointCheckStore
       .getState()
@@ -432,6 +580,7 @@ describe('EndpointsPage', () => {
     })
     fireEvent.click(screen.getByText('endpoints:dialog.save'))
 
+    await waitFor(() => expect(updateProvider).toHaveBeenCalledTimes(2))
     const [urlName, urlPatch] = updateProvider.mock.calls[0]
     expect(urlName).toBe('my-server')
     expect(urlPatch.base_url).toBe('http://192.168.1.21:8000/v1')

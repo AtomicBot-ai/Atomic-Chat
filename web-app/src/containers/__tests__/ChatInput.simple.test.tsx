@@ -7,7 +7,9 @@ import {
   within,
 } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { useLayoutEffect } from 'react'
 import ChatInput from '../ChatInput'
+import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 import { useChatAttachments } from '@/hooks/useChatAttachments'
 import { useAttachments } from '@/hooks/useAttachments'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -16,9 +18,12 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { modelStopKey, useAppState } from '@/hooks/useAppState'
 import { usePrompt } from '@/hooks/usePrompt'
+import { useAgentMode } from '@/hooks/useAgentMode'
 import { useAgentRun } from '@/hooks/useAgentRun'
 import { useThreads } from '@/hooks/useThreads'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { useVoiceInput } from '@/hooks/useVoiceInput'
+import { useThreadManagementStore } from '@/hooks/useThreadManagement'
 import { useDeferredFirstSend } from '@/stores/deferred-first-send-store'
 import { seedServiceHub } from '@/test/service-hub'
 import type { ServiceHub } from '@/services'
@@ -122,7 +127,8 @@ vi.mock('@/hooks/useAgentSkills', () => ({
 
 vi.mock('@/hooks/useAgentMode', () => {
   const state = {
-    approvalModes: {},
+    approvalModes: {} as Record<string, string>,
+    workspaces: {} as Record<string, unknown>,
     setApprovalMode: vi.fn(),
   }
   const useAgentMode = (selector: (value: typeof state) => unknown) =>
@@ -339,6 +345,68 @@ describe('ChatInput', () => {
     unmount()
   })
 
+  describe('while the voice model is starting', () => {
+    const KEY = 'voice-starting-thread'
+
+    /** Owns the microphone for this composer; `cancel` spies on the real one. */
+    function startVoiceHere() {
+      const previousThreadId = useThreads.getState().currentThreadId
+      const realCancel = useVoiceInput.getState().cancel
+      const cancel = vi.fn(() => realCancel())
+      useThreads.setState({ currentThreadId: KEY })
+      useVoiceInput.setState({ phase: 'starting', ownerKey: KEY, cancel })
+      return {
+        cancel,
+        restore: () => {
+          useVoiceInput.setState({ cancel: realCancel })
+          useVoiceInput.getState().reset()
+          useThreads.setState({ currentThreadId: previousThreadId })
+        },
+      }
+    }
+
+    it('does not tell the user to speak before the microphone is open', () => {
+      const voice = startVoiceHere()
+      try {
+        const { unmount } = render(<ChatInput />)
+        const input = screen.getByTestId('chat-input')
+        expect(input).toHaveAttribute(
+          'placeholder',
+          'common:voiceInput.startingPlaceholder'
+        )
+
+        act(() =>
+          useVoiceInput.setState({ phase: 'listening', sessionId: 'session-1' })
+        )
+        expect(input).toHaveAttribute(
+          'placeholder',
+          'common:voiceInput.placeholder'
+        )
+        unmount()
+      } finally {
+        voice.restore()
+      }
+    })
+
+    it('stops the start when the composer goes away', () => {
+      // Left running, the start opened the microphone once the model was up,
+      // for a composer that no longer existed.
+      const voice = startVoiceHere()
+      try {
+        const { unmount } = render(<ChatInput />)
+        expect(voice.cancel).not.toHaveBeenCalled()
+        unmount()
+        expect(voice.cancel).toHaveBeenCalledTimes(1)
+        const after = useVoiceInput.getState()
+        expect(after.phase).toBe('idle')
+        expect(after.ownerKey).toBeNull()
+        expect(after.lastOutcome).toBe('cancelled')
+      } finally {
+        voice.restore()
+      }
+    })
+  })
+
   it('shows Send once there is text, and Stop while a reply streams', async () => {
     const { rerender, unmount } = render(<ChatInput />)
     const input = screen.getByTestId('chat-input')
@@ -362,6 +430,27 @@ describe('ChatInput', () => {
     expect(
       within(control).getByRole('button').getAttribute('data-variant')
     ).toBe('destructive')
+    unmount()
+  })
+
+  it('names the icon-only Send and Stop buttons for assistive tech', () => {
+    const { rerender, unmount } = render(<ChatInput />)
+
+    fireEvent.change(screen.getByTestId('chat-input'), {
+      target: { value: 'Hello' },
+    })
+    expect(
+      within(screen.getByTestId('send-control')).getByRole('button', {
+        name: 'chat:sendMessage',
+      })
+    ).toBeEnabled()
+
+    rerender(<ChatInput chatStatus="streaming" />)
+    expect(
+      within(screen.getByTestId('send-control')).getByRole('button', {
+        name: 'common:stop',
+      })
+    ).toBeInTheDocument()
     unmount()
   })
 
@@ -428,6 +517,120 @@ describe('ChatInput', () => {
       expect(screen.queryByTestId('send-control')).not.toBeInTheDocument()
     )
     unmount()
+  })
+
+  it('keeps an unsent draft with its own composer instead of every chat', () => {
+    const previousThreadId = useThreads.getState().currentThreadId
+    try {
+      // A draft typed in a project composer and left unsent...
+      act(() => useThreads.setState({ currentThreadId: undefined }))
+      const project = render(<ChatInput initialMessage projectId="project-1" />)
+      fireEvent.change(screen.getByTestId('chat-input'), {
+        target: { value: 'Unsent project question' },
+      })
+      project.unmount()
+
+      // ...stays out of two unrelated chats, which keep their own drafts,
+      // also when one composer stays mounted while the chat changes.
+      act(() => useThreads.setState({ currentThreadId: 'thread-a' }))
+      const chat = render(<ChatInput />)
+      const input = screen.getByTestId('chat-input')
+      expect(input).toHaveValue('')
+      fireEvent.change(input, { target: { value: 'Reply for A' } })
+      act(() => useThreads.setState({ currentThreadId: 'thread-b' }))
+      expect(input).toHaveValue('')
+      act(() => useThreads.setState({ currentThreadId: 'thread-a' }))
+      expect(input).toHaveValue('Reply for A')
+      chat.unmount()
+
+      // ...and is there again when the project is opened again.
+      act(() => useThreads.setState({ currentThreadId: undefined }))
+      const back = render(<ChatInput initialMessage projectId="project-1" />)
+      expect(screen.getByTestId('chat-input')).toHaveValue(
+        'Unsent project question'
+      )
+      back.unmount()
+    } finally {
+      useThreads.setState({ currentThreadId: previousThreadId })
+      usePrompt.setState({ prompt: '', draftKey: null, drafts: {} })
+    }
+  })
+
+  // The thread page sets `currentThreadId` in its own effect, after the
+  // composer has committed. These read the textarea in a layout effect of a
+  // later sibling: the composer's first commit, before any re-render.
+  const firstCommits: string[] = []
+  function FirstCommit({ threadId }: { threadId: string }) {
+    useLayoutEffect(() => {
+      const input = screen.getByTestId('chat-input') as HTMLTextAreaElement
+      firstCommits.push(`${threadId}: ${input.value}`)
+    }, [threadId])
+    return null
+  }
+  const threadPage = (threadId: string) => (
+    <>
+      <ChatInput threadId={threadId} />
+      <FirstCommit threadId={threadId} />
+    </>
+  )
+
+  it("commits the next chat's own draft on T1 → T2, not T1's", () => {
+    const previousThreadId = useThreads.getState().currentThreadId
+    firstCommits.length = 0
+    try {
+      act(() => useThreads.setState({ currentThreadId: 'thread-1' }))
+      const view = render(threadPage('thread-1'))
+      fireEvent.change(screen.getByTestId('chat-input'), {
+        target: { value: 'Reply for T1' },
+      })
+
+      // T2's route renders while the global current thread is still T1.
+      view.rerender(threadPage('thread-2'))
+      expect(firstCommits.at(-1)).toBe('thread-2: ')
+      fireEvent.change(screen.getByTestId('chat-input'), {
+        target: { value: 'Reply for T2' },
+      })
+      act(() => useThreads.setState({ currentThreadId: 'thread-2' }))
+
+      // And back: T1's draft is there on the first commit, T2's is kept.
+      view.rerender(threadPage('thread-1'))
+      expect(firstCommits.at(-1)).toBe('thread-1: Reply for T1')
+      expect(usePrompt.getState().getDraft('thread-2')).toBe('Reply for T2')
+      view.unmount()
+    } finally {
+      useThreads.setState({ currentThreadId: previousThreadId })
+      usePrompt.setState({ prompt: '', draftKey: null, drafts: {} })
+    }
+  })
+
+  it("opens a chat from Home with that chat's draft, and typing there leaves Home's alone", () => {
+    const previousThreadId = useThreads.getState().currentThreadId
+    firstCommits.length = 0
+    try {
+      act(() => useThreads.setState({ currentThreadId: undefined }))
+      const home = render(<ChatInput initialMessage />)
+      fireEvent.change(screen.getByTestId('chat-input'), {
+        target: { value: 'Home draft' },
+      })
+      home.unmount()
+
+      // Home cleared the current thread; the page sets it only later.
+      const chat = render(threadPage('thread-1'))
+      expect(firstCommits.at(-1)).toBe('thread-1: ')
+      fireEvent.change(screen.getByTestId('chat-input'), {
+        target: { value: 'Typed before the page caught up' },
+      })
+      expect(usePrompt.getState().getDraft('thread-1')).toBe(
+        'Typed before the page caught up'
+      )
+      expect(usePrompt.getState().getDraft(TEMPORARY_CHAT_ID)).toBe(
+        'Home draft'
+      )
+      chat.unmount()
+    } finally {
+      useThreads.setState({ currentThreadId: previousThreadId })
+      usePrompt.setState({ prompt: '', draftKey: null, drafts: {} })
+    }
   })
 
   it('keeps a slash-selected skill inline at the caret and sends that text with metadata', async () => {
@@ -657,10 +860,108 @@ describe('ChatInput', () => {
       prompt: 'Keep working even if I leave this screen',
       downloadModelIds: [modelId],
     })
+    // New Chat sends it itself while mounted, so the root stands down for it…
+    const queueId = useDeferredFirstSend.getState().queued!.id
+    expect(useDeferredFirstSend.getState().claimedId).toBe(queueId)
     expect(screen.getByTestId('chat-input')).toHaveValue(
       'Keep working even if I leave this screen'
     )
     unmount()
+    // …and hands it back on leaving, still queued.
+    expect(useDeferredFirstSend.getState().claimedId).toBeNull()
+    expect(useDeferredFirstSend.getState().queued?.id).toBe(queueId)
+  })
+
+  it('hands a project first download to the root queue across navigation', async () => {
+    const modelId = 'LiquidAI/LFM2.5-2.6B-Q4_K_M'
+    useModelProvider.setState({
+      providers: [],
+      selectedProvider: '',
+      selectedModel: null,
+    })
+    const project = { id: 'qa-project', name: 'QA project', updated_at: 1 }
+    useThreadManagementStore.setState({ folders: [project] })
+    const { unmount } = render(
+      <ChatInput initialMessage projectId={project.id} />
+    )
+
+    fireEvent.change(screen.getByTestId('chat-input'), {
+      target: { value: 'Keep working even if I leave this screen' },
+    })
+    fireEvent.click(
+      document.querySelector('[data-test-id="send-message-button"]')!
+    )
+    await screen.findByTestId('reply-model-gate')
+
+    act(() => {
+      mocks.replyGateProps!.onResolved({
+        outcome: 'download_in_flight',
+        branch: 'none',
+        decidedInMs: 1,
+        openedAtMs: Date.now() - 1,
+        downloadModelIds: [modelId],
+      })
+    })
+
+    expect(useDeferredFirstSend.getState().queued).toMatchObject({
+      project,
+      composerKey: 'project:qa-project',
+      prompt: 'Keep working even if I leave this screen',
+      downloadModelIds: [modelId],
+    })
+    // New Chat sends it itself while mounted, so the root stands down for it…
+    const queueId = useDeferredFirstSend.getState().queued!.id
+    expect(useDeferredFirstSend.getState().claimedId).toBe(queueId)
+    expect(screen.getByTestId('chat-input')).toHaveValue(
+      'Keep working even if I leave this screen'
+    )
+    unmount()
+    // …and hands it back on leaving, still queued.
+    expect(useDeferredFirstSend.getState().claimedId).toBeNull()
+    expect(useDeferredFirstSend.getState().queued?.id).toBe(queueId)
+  })
+
+  it('queues the approval mode and workspace New Chat showed at Send with the message', async () => {
+    const agent = useAgentMode.getState() as unknown as {
+      approvalModes: Record<string, string>
+      workspaces: Record<string, unknown>
+    }
+    const workspace = { externalRoots: [{ rootId: 'r1', path: '/w' }] }
+    agent.approvalModes[TEMPORARY_CHAT_ID] = 'skip'
+    agent.workspaces[TEMPORARY_CHAT_ID] = workspace
+    try {
+      useModelProvider.setState({
+        providers: [],
+        selectedProvider: '',
+        selectedModel: null,
+      })
+      const { unmount } = render(<ChatInput initialMessage />)
+      fireEvent.change(screen.getByTestId('chat-input'), {
+        target: { value: 'Run it with full access' },
+      })
+      fireEvent.click(
+        document.querySelector('[data-test-id="send-message-button"]')!
+      )
+      await screen.findByTestId('reply-model-gate')
+      act(() => {
+        mocks.replyGateProps!.onResolved({
+          outcome: 'download_in_flight',
+          branch: 'none',
+          decidedInMs: 1,
+          openedAtMs: Date.now() - 1,
+          downloadModelIds: ['owner/model'],
+        })
+      })
+
+      expect(useDeferredFirstSend.getState().queued?.agentState).toEqual({
+        approvalMode: 'skip',
+        workspace,
+      })
+      unmount()
+    } finally {
+      delete agent.approvalModes[TEMPORARY_CHAT_ID]
+      delete agent.workspaces[TEMPORARY_CHAT_ID]
+    }
   })
 
   it('drops the held message when the widget is dismissed', async () => {

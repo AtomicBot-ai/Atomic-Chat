@@ -26,6 +26,8 @@ export interface ModelLoadErrorToastOptions {
   /** Raw engine output, hidden behind the toggle. */
   details?: string
   duration?: number
+  /** The fix the failure offers, as the toast's button. */
+  action?: { label: string; onClick: () => void }
 }
 
 export function showModelLoadErrorToast(
@@ -46,6 +48,7 @@ function renderToast(
     style: expanded
       ? ({ '--width': EXPANDED_WIDTH } as CSSProperties)
       : undefined,
+    action: options.action,
     description: (
       <ModelLoadErrorBody
         description={options.description}

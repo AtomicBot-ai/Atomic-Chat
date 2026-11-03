@@ -1,0 +1,51 @@
+{
+  "stepOf": "Étape {{index}} / {{count}}",
+  "back": "Retour",
+  "skipSetup": "Passer la configuration",
+  "continue": "Continuer",
+  "welcome": {
+    "logo": "Logo Atomic Chat",
+    "title": "Découvrez Atomic Chat.",
+    "lead": "Votre IA privée et locale.",
+    "leadDetail": "Le moyen le plus simple d’exécuter des modèles ouverts sur n’importe quel matériel.",
+    "start": "Commencer la configuration"
+  },
+  "download": {
+    "label": "Téléchargement du modèle",
+    "progress": "Téléchargement de {{name}}",
+    "ready": "{{name}} est prêt",
+    "onDevice": "Disponible sur cet appareil",
+    "queued": "En file d’attente",
+    "interrupted": "Téléchargement interrompu",
+    "withQueued": "{{readout}} · {{count}} en attente",
+    "pause": "Suspendre le téléchargement",
+    "resume": "Reprendre le téléchargement"
+  },
+  "model": {
+    "title": "Choisissez votre premier modèle.",
+    "onDevice": "Sur cet appareil",
+    "recommended": "Recommandé pour cet appareil",
+    "huggingFace": "Hugging Face",
+    "choose": "Choisir un modèle",
+    "downloaded": "Téléchargé",
+    "foundIn": "Trouvé dans {{source}}",
+    "readyHere": "Prêt sur cet appareil",
+    "size": "{{size}} à télécharger",
+    "aboutMemory": "environ {{size}} GB de mémoire",
+    "memory": "{{size}} GB de mémoire",
+    "freeStorage": "{{size}} GB d’espace libre",
+    "use": "Utiliser {{name}}",
+    "continueWithout": "Continuer sans modèle",
+    "noRecommendations": "Les recommandations nécessitent une connexion Internet. Vous pourrez ajouter un modèle plus tard depuis Modèles.",
+    "tagline": {
+      "code": "Écrit, explique et corrige du code",
+      "reasoning": "Résout les problèmes difficiles étape par étape",
+      "agent": "Utilise des outils et mène à bien des tâches en plusieurs étapes",
+      "vision": "Discute d’images comme de texte",
+      "small": "Réponses rapides avec une faible empreinte mémoire",
+      "sparse": "Un grand modèle qui répond à la vitesse d’un petit",
+      "large": "Des réponses plus approfondies pour les machines qui ont de la mémoire à revendre",
+      "general": "Discussion et rédaction polyvalentes"
+    }
+  }
+}

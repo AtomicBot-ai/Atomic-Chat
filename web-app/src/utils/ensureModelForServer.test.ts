@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useModelProvider } from '@/hooks/useModelProvider'
 
+import { EMBEDDING_MODEL_ID } from '@/constants/models'
+
 import {
+  ensureModelForServer,
   findServingProvider,
   resolveServerModels,
 } from './ensureModelForServer'
@@ -89,5 +92,58 @@ describe('the provider that serves a loaded model', () => {
     await expect(
       resolveServerModels(['qwen', 'deleted.gguf'], service)
     ).resolves.toEqual([{ model: 'qwen', provider: 'llamacpp-upstream' }])
+  })
+})
+
+describe('the chat model the server already has', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    useModelProvider.setState({
+      selectedModel: null,
+      selectedProvider: null,
+      providers: [
+        {
+          provider: 'llamacpp-upstream',
+          active: true,
+          models: [{ id: EMBEDDING_MODEL_ID, embedding: true }, { id: 'qwen' }],
+        } as unknown as ModelProvider,
+      ],
+    })
+  })
+
+  const service = (loaded: string[]) => ({
+    getActiveModels: vi.fn(async () => loaded),
+    stopModel: vi.fn(async () => undefined),
+    startModel: vi.fn(async () => undefined),
+  })
+
+  it('is never the embedding session project indexing loaded: a chat model is started instead', async () => {
+    const models = service([EMBEDDING_MODEL_ID])
+
+    const result = await ensureModelForServer({ modelsService: models })
+
+    expect(result).toEqual({
+      status: 'loaded',
+      modelId: 'qwen',
+      providerName: 'llamacpp-upstream',
+    })
+    expect(models.startModel).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'llamacpp-upstream' }),
+      'qwen',
+      true
+    )
+  })
+
+  it('is a loaded chat model even when the embedding session is listed first', async () => {
+    const models = service([EMBEDDING_MODEL_ID, 'qwen'])
+
+    await expect(
+      ensureModelForServer({ modelsService: models })
+    ).resolves.toEqual({
+      status: 'already_loaded',
+      modelId: 'qwen',
+      providerName: 'llamacpp-upstream',
+    })
+    expect(models.startModel).not.toHaveBeenCalled()
   })
 })

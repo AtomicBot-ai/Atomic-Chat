@@ -16,7 +16,7 @@
   "modelInfo": "Model information",
   "downloadFailed": "Failed to start download",
   "tools": "工具",
-  "searchPlaceholder": "在 Hugging Face 上搜尋模型...",
+  "searchPlaceholder": "搜尋模型…",
   "recTitle": "推薦",
   "allModelsTitle": "所有模型",
   "recEverydayUse": "日常使用",

@@ -99,7 +99,13 @@ vi.mock('@/utils/localApiServerControl', () => ({
 // One stable object: a fresh literal per render would re-run every effect that
 // depends on the hub, which is not how the real store behaves.
 const serviceHubStub = {
-  providers: () => ({ updateSettings: vi.fn().mockResolvedValue(undefined) }),
+  providers: () => ({
+    updateSettings: vi.fn().mockResolvedValue(undefined),
+    // Connect asks the provider for its models with the key first.
+    checkProviderEndpoint: vi
+      .fn()
+      .mockResolvedValue({ ok: true, latencyMs: 1, modelCount: 2 }),
+  }),
   auth: () => auth,
 }
 
@@ -440,7 +446,7 @@ describe('CloudPage', () => {
     ).toBeInTheDocument()
   })
 
-  it('writes the key to both the settings entry and the mirror', () => {
+  it('writes the key to both the settings entry and the mirror', async () => {
     searchState.current = { provider: 'openai' }
     render(<CloudPage />)
 
@@ -449,6 +455,7 @@ describe('CloudPage', () => {
     })
     fireEvent.click(screen.getByText('cloud:connection.connect'))
 
+    await waitFor(() => expect(saveProviderApiKey).toHaveBeenCalled())
     const call = vi.mocked(saveProviderApiKey).mock.calls[0][0]
     expect(call.apiKey).toBe('sk-live')
     expect(call.provider.provider).toBe('openai')
@@ -747,6 +754,51 @@ describe('CloudPage guide and catalog', () => {
     expect(within(configuration()).getByRole('status')).toHaveTextContent(
       'gpt-5.4cloud:browser.modelConnect'
     )
+  })
+
+  /**
+   * The pane a page too narrow for both shows. Which one is visible is CSS
+   * (a container query) that jsdom does not apply; the layout suite measures
+   * it in Chromium.
+   */
+  const pane = () =>
+    document.querySelector('[data-pane]')?.getAttribute('data-pane')
+
+  it('opens on the catalog from the sidebar, and on the configuration from a link naming a provider', () => {
+    const { unmount } = render(<CloudPage />)
+    expect(pane()).toBe('catalog')
+    unmount()
+
+    searchState.current = { provider: 'openrouter' }
+    render(<CloudPage />)
+    expect(pane()).toBe('configuration')
+  })
+
+  it('shows a picked provider in place of the catalog, and Back returns to it', () => {
+    render(<CloudPage />)
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'cloud:browser.configure:OpenRouter' })
+    )
+    expect(pane()).toBe('configuration')
+    expect(navigate).toHaveBeenLastCalledWith({
+      to: '/cloud/',
+      search: { provider: 'openrouter' },
+      replace: true,
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'cloud:browser.back' }))
+    expect(pane()).toBe('catalog')
+  })
+
+  it('lands on the catalog when the guide is left', () => {
+    useGeneralSetting.setState({ cloudGuideDone: false })
+    searchState.current = { provider: 'openrouter' }
+    render(<CloudPage />)
+
+    fireEvent.click(screen.getByText('cloud:guide.browse'))
+    expect(guide()).not.toBeInTheDocument()
+    expect(pane()).toBe('catalog')
   })
 
   it('says so when nothing matches', () => {

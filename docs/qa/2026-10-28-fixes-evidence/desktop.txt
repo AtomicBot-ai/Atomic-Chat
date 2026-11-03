@@ -1,0 +1,36 @@
+Changed desktop scenarios: 26 passed, 1 optional LAN test skipped across the final affected-file runs.
+Real app and pinned core; isolated homes and profiles.
+Installed Hermes/OpenClaude use local scripted HTTP; live-model uses real llama.cpp b11804 and Qwen3.5-9B IQ4_XS.
+
+ ✓ desktop/local-chat.spec.ts (2 tests) 40568ms
+   ✓ a chat with a local model > loads the model through the core, streams the reply and keeps the thread across a restart  8958ms
+   ✓ a local model whose backend dies while loading > tells the user why, offers a retry, and leaves no session or process behind  20353ms
+ ✓ desktop/local-api.spec.ts (2 tests) 27467ms
+   ✓ the local API server > is closed until the user starts it, then serves authenticated clients, then closes again  2828ms
+   ✓ the local API server when the core dies > is listening again, on the same address and key, without the user doing anything  8383ms
+ ✓ desktop/mcp-tool.spec.ts (2 tests) 19795ms
+   ✓ an MCP tool in a chat > is offered to the model and its result reaches the model  7165ms
+   ✓ an MCP tool in a chat > waits for the user once they have chosen to be asked, and a refusal keeps the call from the server  6416ms
+ ✓ desktop/context-growth.spec.ts (3 tests) 14353ms
+   ✓ a request that overflows the context window > grows the context, reloads the model and answers without being asked  3584ms
+   ✓ an overflow the app cannot grow out of > explains that the context is fitted to the device  2164ms
+ ✓ desktop/integration-auth.spec.ts (3 tests) 15136ms
+   ✓ configured client authentication > hermes_agent authenticates after setup, rotation and key removal  7908ms
+   ✓ configured client authentication > openclaude authenticates after setup, rotation and key removal  2098ms
+   ✓ configured client authentication > passes the current Zed key to a fresh CLI process  1051ms
+ ✓ desktop/model-load-cancel.spec.ts (1 test) 7345ms
+   ✓ cancelling a model load > cancels a model that is still loading from the snackbar, leaves no process behind, and loads it on the next try  3275ms
+ ✓ desktop/remote-access.spec.ts (5 tests | 1 skipped) 82353ms
+   ✓ remote access with an API key > starts remote access from Settings, shows the public URL with a QR code, serves the API through it, and stops the tunnel  5243ms
+   ✓ remote access without an API key > asks before exposing an API without a key, and generates one when told to  3155ms
+   ✓ remote access that cannot start > says why remote access could not start when the tunnel never registers  34599ms
+   ✓ remote access in a build without the tunnel program > says the tunnel program is missing  2715ms
+ ✓ desktop/launch-integration.spec.ts (4 tests) 23495ms
+   ✓ running a coding agent from the Integrations page > points the agent at the local API through its own profile, and does the same thing twice  7993ms
+   ✓ running ZCode from the Integrations page > writes ZCode's provider file for the running model, keeps the user's own provider, and does it the same way twice  5008ms
+ ✓ desktop/live-model.spec.ts (2 tests) 21800ms
+   ✓ a chat with a real local model > cancels real engine loading without leaving a process, session or journal entry  8553ms
+   ✓ a chat with a real local model > loads it with the argv the core builds and gets an answer  9008ms
+ ✓ desktop/onboarding.spec.ts (3 tests) 38481ms
+   ✓ first launch on a clean profile > offers onboarding, lets the user skip it, and stays skipped after a restart  6900ms
+   ✓ a first run interrupted by a relaunch > comes back to the step it was on, then lets the user leave  13707ms

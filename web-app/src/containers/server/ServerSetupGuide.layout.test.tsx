@@ -30,6 +30,7 @@ vi.mock('@/hooks/useServiceHub', async (importOriginal) => ({
 }))
 vi.mock('@/lib/integration-agent-detection', () => ({
   detectIntegrationAgentsOnce: vi.fn(),
+  detectIntegrationAgent: vi.fn(),
 }))
 vi.mock('@tanstack/react-router', () => ({
   Link: ({
@@ -40,6 +41,7 @@ vi.mock('@tanstack/react-router', () => ({
     className?: string
   }) => <a className={className}>{children}</a>,
   useNavigate: () => vi.fn(),
+  useRouter: () => ({ state: { location: { pathname: '/api' } } }),
 }))
 
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
@@ -107,7 +109,7 @@ describe('Overview setup guide and agents', () => {
       const configure = screen.getByRole('button', {
         name: /Configure & start/,
       })
-      expect(configure.getBoundingClientRect().height).toBeCloseTo(36, 0)
+      expect(configure.getBoundingClientRect().height).toBeCloseTo(28, 0)
       expectFits(configure, page)
     }
   )

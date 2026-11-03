@@ -3,22 +3,20 @@ import { useEffect } from 'react'
 import { create } from 'zustand'
 
 /**
- * Who currently wants the bottom-right update corner.
+ * Who currently wants the update banner's place in the corner column.
  *
- * - `download` — an engine archive is transferring (`<BackendUpdater />`).
- *   Transient and self-resolving, so it outranks the offers: hiding live
- *   progress behind an offer that stays up until dismissed would make a
- *   multi-minute download look like nothing was happening.
  * - `app` — a new app version is available (ATO-533).
  * - `engine` — a new inference-engine build is available (ATO-528/531).
  *
- * ATO-533 requires that the app and engine offers never stack in the same
- * corner, and all three of these render at `bottom-3 right-3`.
+ * ATO-533 requires that the app and engine offers never stack: one update
+ * offer at a time, the app's first. An engine build being downloaded is a row
+ * of the download panel, which sits beside the offer rather than instead of
+ * it (`corner/cornerStack`).
  */
-export type UpdateBannerSlot = 'download' | 'app' | 'engine'
+export type UpdateBannerSlot = 'app' | 'engine'
 
 /// Highest priority first. The active slot is the first claimed one.
-const SLOT_PRIORITY: UpdateBannerSlot[] = ['download', 'app', 'engine']
+const SLOT_PRIORITY: UpdateBannerSlot[] = ['app', 'engine']
 
 interface UpdateBannerState {
   claimed: Record<UpdateBannerSlot, boolean>
@@ -28,7 +26,7 @@ interface UpdateBannerState {
 }
 
 export const useUpdateBannerSlots = create<UpdateBannerState>((set) => ({
-  claimed: { download: false, app: false, engine: false },
+  claimed: { app: false, engine: false },
   setSlotVisible: (slot, visible) =>
     set((state) =>
       state.claimed[slot] === visible

@@ -1,0 +1,63 @@
+[
+  {
+    "key": "device",
+    "title": "Device",
+    "description": "Where the model runs: the Hexagon NPU, the Adreno GPU, the CPU, or NPU and GPU together (hybrid). Model default takes the device the model was downloaded for. AI Hub bundles run on the NPU only. Applies from the next model load.",
+    "controllerType": "dropdown",
+    "controllerProps": {
+      "value": "",
+      "options": [
+        { "value": "", "name": "Model default" },
+        { "value": "npu", "name": "NPU" },
+        { "value": "gpu", "name": "GPU" },
+        { "value": "cpu", "name": "CPU" },
+        { "value": "hybrid", "name": "Hybrid (NPU + GPU)" }
+      ]
+    }
+  },
+  {
+    "key": "ctx_len",
+    "title": "Context Length",
+    "description": "Maximum prompt plus reply length in tokens. 0 takes the model's own length; a larger value is cut to what the model allows. Applies from the next model load.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 0,
+      "placeholder": "0",
+      "type": "number",
+      "min": 0,
+      "max": 1048576,
+      "textAlign": "right"
+    }
+  },
+  {
+    "key": "power_mode",
+    "title": "NPU Power Mode",
+    "description": "How hard the NPU is driven. Burst is Qualcomm's default and the fastest; the saver modes trade speed for battery. Ignored on the GPU and the CPU. Applies from the next model load.",
+    "controllerType": "dropdown",
+    "controllerProps": {
+      "value": "burst",
+      "options": [
+        { "value": "burst", "name": "Burst" },
+        { "value": "sustained_high_performance", "name": "Sustained high performance" },
+        { "value": "high_performance", "name": "High performance" },
+        { "value": "balanced", "name": "Balanced" },
+        { "value": "low_balanced", "name": "Low balanced" },
+        { "value": "high_power_saver", "name": "High power saver" },
+        { "value": "power_saver", "name": "Power saver" },
+        { "value": "low_power_saver", "name": "Low power saver" }
+      ]
+    }
+  },
+  {
+    "key": "timeout",
+    "title": "Timeout for GenieX",
+    "description": "How long a GenieX model may take to load, in seconds: opening the file, creating the model on its device (the NPU compiles on the first run) and starting the host's server.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 600,
+      "placeholder": "e.g 600",
+      "type": "number",
+      "textAlign": "right"
+    }
+  }
+]

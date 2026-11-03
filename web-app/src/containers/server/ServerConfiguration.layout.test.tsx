@@ -69,8 +69,8 @@ describe('Server configuration form', () => {
       )
       for (const name of ['Generate key', 'Discard', 'Save changes']) {
         const button = screen.getByRole('button', { name })
-        // One line of label in the 36 px control, not a wrapped one.
-        expect(button.getBoundingClientRect().height).toBeCloseTo(36, 0)
+        // One line of label in the 28 px control, not a wrapped one.
+        expect(button.getBoundingClientRect().height).toBeCloseTo(28, 0)
         expectFits(button, page)
       }
     }

@@ -165,6 +165,12 @@ pub struct AppState {
     pub mcp_server_pids: Arc<Mutex<HashMap<String, HashMap<u64, u32>>>>,
     /// Remote provider configurations (e.g., Anthropic, OpenAI, etc.)
     pub provider_configs: Arc<Mutex<HashMap<String, ProviderConfig>>>,
+    /// The provider the webview selected to serve each model id on the Local API Server, as last
+    /// sent by `set_server_model_selection`; `None` until it is sent. On desktop the core routes by
+    /// it and gets it again before a recovered server starts. Mobile's proxy does not read it.
+    pub server_model_selection: Arc<
+        Mutex<Option<Vec<crate::core::server::remote_provider_commands::ServedModelSelection>>>,
+    >,
     /// ChatGPT subscription session. Unlike `provider_configs`, this one owns
     /// durable secrets and persists them itself — they never cross IPC.
     pub chatgpt_auth: Arc<crate::core::auth::state::ChatGptAuthState>,

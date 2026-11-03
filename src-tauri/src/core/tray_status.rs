@@ -1,5 +1,5 @@
-//! Live status rows for the macOS menu-bar tray: server / URL row, current model,
-//! RAM caption and a segmented memory bar.
+//! Live status rows for the macOS menu-bar tray: server / URL row, current model and
+//! the runtime it runs on, RAM caption and a segmented memory bar.
 //!
 //! The menu rows themselves are created in [`crate::core::setup::setup_tray`]; handles
 //! to the mutable rows are stashed in [`crate::core::state::AppState::tray_handles`] so
@@ -24,9 +24,9 @@ use tauri::{
 /// The Pico-style layout splits the server block into a status row
 /// (`Server Running` / `Server Stopped`) and a separate, copy-icon-prefixed URL
 /// row, with an actionable "Stop Server" button beneath. The model block uses
-/// a disabled "Model" header above its value to mirror Pico's section labels;
-/// the RAM block uses a text caption above a segmented bar so the bar — not
-/// the longest text — drives the menu width.
+/// disabled "Model" and "Runtime" headers above their values to mirror Pico's
+/// section labels; the RAM block uses a text caption above a segmented bar so
+/// the bar — not the longest text — drives the menu width.
 #[cfg(desktop)]
 pub struct TrayHandles {
     pub server: IconMenuItem<Wry>,
@@ -35,8 +35,15 @@ pub struct TrayHandles {
     pub stop_button: MenuItem<Wry>,
     /// Disabled "Model" header (always shows the literal label).
     pub model_label: MenuItem<Wry>,
-    /// Mutable model name displayed beneath the header.
+    /// Mutable model name displayed beneath the header. Clicking it opens the
+    /// app on Server → Engine & model with the model picker open.
     pub model_value: MenuItem<Wry>,
+    /// Disabled "Runtime" header (always shows the literal label).
+    pub runtime_label: MenuItem<Wry>,
+    /// The inference engine the loaded model runs on and its active build
+    /// ("llama.cpp · b11463"). Clicking it opens the same page with the engine
+    /// picker open.
+    pub runtime_value: MenuItem<Wry>,
     pub ram_text: MenuItem<Wry>,
     pub ram_bar: IconMenuItem<Wry>,
     /// Last known server URL (kept so the URL row click works even when the
@@ -56,6 +63,10 @@ pub struct TrayStatusPayload {
     pub server_running: bool,
     pub server_url: String,
     pub model_label: String,
+    /// Defaulted so a frontend that predates the runtime row still updates the
+    /// rest of the menu instead of failing to deserialize.
+    #[serde(default)]
+    pub runtime_label: String,
     pub ram_used_mb: u64,
     pub ram_total_mb: u64,
     pub ram_percent: u8,
@@ -116,7 +127,7 @@ const SEGMENT_GAP_PT: u32 = 2;
 #[cfg(desktop)]
 const SEGMENT_RADIUS_PT: f32 = 1.5;
 
-/// Maximum length, in characters, allowed for the URL and model rows before
+/// Maximum length, in characters, allowed for the URL, model and runtime rows before
 /// the value is truncated with an ellipsis. Sized so the resulting text does
 /// not exceed the bar width and keep menu width stable.
 #[cfg(desktop)]
@@ -530,6 +541,19 @@ pub async fn update_tray_status(app: AppHandle, payload: TrayStatusPayload) -> R
         .set_text(&model_value)
         .map_err(|e| e.to_string())?;
 
+    // Runtime row, the same way. Both value rows stay enabled with nothing
+    // loaded: their click opens the page where an engine and model are picked,
+    // which is exactly where the user goes from an empty menu.
+    let runtime_value = if payload.runtime_label.trim().is_empty() {
+        "—".to_string()
+    } else {
+        truncate_tail(&payload.runtime_label, ROW_MAX_CHARS)
+    };
+    handles
+        .runtime_value
+        .set_text(&runtime_value)
+        .map_err(|e| e.to_string())?;
+
     // RAM caption above the bar — kept verbose ("X.X / Y.Y GB · NN%") since the
     // segmented bar alone does not communicate absolute capacity.
     let used_gb = payload.ram_used_mb as f64 / 1024.0;
@@ -624,5 +648,39 @@ pub fn write_clipboard(text: &str) -> Result<(), String> {
         }
         child.wait().map_err(|e| format!("wait clip: {e}"))?;
         Ok(())
+    }
+}
+
+#[cfg(all(test, desktop))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn payload_without_runtime_label_still_deserializes() {
+        let payload: TrayStatusPayload = serde_json::from_value(serde_json::json!({
+            "server_running": true,
+            "server_url": "http://127.0.0.1:1337/v1",
+            "model_label": "qwen3.5-4b",
+            "ram_used_mb": 8192,
+            "ram_total_mb": 16384,
+            "ram_percent": 50,
+        }))
+        .expect("payload from an older frontend");
+        assert_eq!(payload.runtime_label, "");
+    }
+
+    #[test]
+    fn payload_carries_the_runtime_label() {
+        let payload: TrayStatusPayload = serde_json::from_value(serde_json::json!({
+            "server_running": false,
+            "server_url": "",
+            "model_label": "",
+            "runtime_label": "llama.cpp · b11463",
+            "ram_used_mb": 0,
+            "ram_total_mb": 0,
+            "ram_percent": 0,
+        }))
+        .expect("payload with a runtime label");
+        assert_eq!(payload.runtime_label, "llama.cpp · b11463");
     }
 }

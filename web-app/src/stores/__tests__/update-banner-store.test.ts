@@ -2,8 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { activeUpdateBannerSlot } from '@/stores/update-banner-store'
 
-const claims = (...slots: ('download' | 'app' | 'engine')[]) => ({
-  download: slots.includes('download'),
+const claims = (...slots: ('app' | 'engine')[]) => ({
   app: slots.includes('app'),
   engine: slots.includes('engine'),
 })
@@ -20,14 +19,5 @@ describe('activeUpdateBannerSlot', () => {
 
   it('never stacks the app and engine offers (ATO-533)', () => {
     expect(activeUpdateBannerSlot(claims('app', 'engine'))).toBe('app')
-  })
-
-  it('lets a running transfer outrank both offers', () => {
-    expect(activeUpdateBannerSlot(claims('download', 'app', 'engine'))).toBe(
-      'download'
-    )
-    expect(activeUpdateBannerSlot(claims('download', 'engine'))).toBe(
-      'download'
-    )
   })
 })

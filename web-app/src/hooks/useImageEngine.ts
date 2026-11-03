@@ -2,6 +2,7 @@ import { useCallback } from 'react'
 
 import type { DiffusionEngineInstall } from '@/services/diffusion/types'
 import {
+  HOST_CHECK_ATTEMPTS,
   useImageGenerationStore,
   type EngineInstallProgress,
 } from '@/stores/image-generation-store'
@@ -13,8 +14,15 @@ export type ImageEngineState = {
   /** Null when this host has no supported build (Intel Mac, unsupported Linux). */
   hostBackendId: string | null
   hostBackendReason: string | null
+  /** The check itself failed (no manifest, or no answer from the core), so Retry may help. */
+  hostBackendCheckFailed: 'manifest' | 'core' | null
+  /** The check's attempt in progress, or the last one made, of `hostBackendAttempts`. */
+  hostBackendAttempt: number
+  hostBackendAttempts: number
   /** Compatibility is still being detected. */
   resolvingHostBackend: boolean
+  /** Run the host check again, re-reading the manifest. */
+  retryHostBackend: () => Promise<void>
   /** More than one engine can serve this host, so the override dropdown is worth showing. */
   engineChoices: Array<'sd-cpp' | 'diffusers'>
   progress: EngineInstallProgress
@@ -39,8 +47,17 @@ export function useImageEngine(): ImageEngineState {
   const hostBackendReason = useImageGenerationStore(
     (state) => state.hostBackendReason
   )
+  const hostBackendCheckFailed = useImageGenerationStore(
+    (state) => state.hostBackendCheckFailed
+  )
+  const hostBackendAttempt = useImageGenerationStore(
+    (state) => state.hostBackendAttempt
+  )
   const hostBackendResolved = useImageGenerationStore(
     (state) => state.hostBackendResolved
+  )
+  const refreshHostBackend = useImageGenerationStore(
+    (state) => state.refreshHostBackend
   )
   const progress = useImageGenerationStore((state) => state.engineInstall)
   const installEngine = useImageGenerationStore((state) => state.installEngine)
@@ -66,13 +83,21 @@ export function useImageEngine(): ImageEngineState {
     () => installEngine({ force: true }),
     [installEngine]
   )
+  const retryHostBackend = useCallback(
+    () => refreshHostBackend({ force: true }),
+    [refreshHostBackend]
+  )
 
   return {
     install,
     installed: install.state === 'installed',
     hostBackendId,
     hostBackendReason,
+    hostBackendCheckFailed,
+    hostBackendAttempt,
+    hostBackendAttempts: HOST_CHECK_ATTEMPTS,
     resolvingHostBackend: !hostBackendResolved && hostBackendId === null,
+    retryHostBackend,
     engineChoices,
     progress,
     installing: progress.inFlight,

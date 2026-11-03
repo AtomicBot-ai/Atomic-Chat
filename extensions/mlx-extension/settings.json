@@ -2,7 +2,7 @@
   {
     "key": "version_backend",
     "title": "Version & Backend",
-    "description": "Current DFlash MLX server version. Updated with each app release.",
+    "description": "The MLX server build in use. It downloads on demand, apart from the app.",
     "controllerType": "input",
     "controllerProps": {
       "value": "detecting...",

@@ -1,6 +1,8 @@
 export const route = {
   // home as new chat or thread
   home: '/',
+  // the first-run flow, full window
+  onboarding: '/onboarding',
   appLogs: '/logs',
   project: '/project',
   projectDetail: '/project/$projectId',
@@ -39,6 +41,9 @@ export const route = {
   images: {
     index: '/images/',
     workflow: '/images/$workflow',
+  },
+  audios: {
+    index: '/audios/',
   },
   videos: {
     index: '/videos/',

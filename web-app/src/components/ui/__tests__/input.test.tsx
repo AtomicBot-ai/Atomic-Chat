@@ -66,7 +66,7 @@ describe('Input', () => {
     render(<Input />)
 
     const input = screen.getByRole('textbox')
-    expect(input).toHaveClass('h-9')
+    expect(input).toHaveClass('h-[var(--control-height,1.75rem)]')
     expect(input).toHaveClass('w-full')
     expect(input).toHaveClass('rounded-md')
     expect(input).toHaveClass('border')

@@ -7,7 +7,8 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 }))
 
 const toastError = vi.hoisted(() => vi.fn())
-vi.mock('sonner', () => ({ toast: { error: toastError, info: vi.fn() } }))
+const toastInfo = vi.hoisted(() => vi.fn())
+vi.mock('sonner', () => ({ toast: { error: toastError, info: toastInfo } }))
 
 const voiceInputEnabled = vi.hoisted(() => ({ current: true }))
 vi.mock('@/lib/platform/const', () => ({
@@ -185,6 +186,34 @@ describe('VoiceInputToggle', () => {
     })
 
     expect(stopSession).toHaveBeenCalledWith('session-1')
+  })
+
+  it('stops while the voice model is still starting', async () => {
+    // Loading the model took 85 s in QA. The press used to be dropped while
+    // the button said "Stop and insert", and recording began once it loaded.
+    useVoiceInput.setState({ phase: 'starting', ownerKey: 'thread-1' })
+    renderToggle()
+
+    const button = screen.getByRole('button', {
+      name: 'common:voiceInput.stopStarting',
+    })
+    expect(button).toHaveAttribute('aria-pressed', 'true')
+    expect(button).not.toBeDisabled()
+
+    await act(async () => {
+      await userEvent.click(button)
+    })
+
+    expect(toastInfo).toHaveBeenCalledWith(
+      'common:voiceInput.stoppedBeforeReady'
+    )
+    const state = useVoiceInput.getState()
+    expect(state.phase).toBe('idle')
+    expect(state.ownerKey).toBeNull()
+    expect(stopSession).not.toHaveBeenCalled()
+    expect(
+      screen.getByRole('button', { name: 'common:voiceInput.start' })
+    ).toHaveAttribute('aria-pressed', 'false')
   })
 
   it('reports a failed start and does not stay pending', async () => {

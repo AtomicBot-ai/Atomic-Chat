@@ -54,7 +54,10 @@ vi.mock('@/hooks/useLocalApiServer', () => ({
   }),
 }))
 vi.mock('@/hooks/useAppState', () => ({
-  useAppState: () => ({ serverStatus: 'running', setServerStatus: vi.fn() }),
+  useAppState: Object.assign(
+    () => ({ serverStatus: 'running', setServerStatus: vi.fn() }),
+    { subscribe: vi.fn(() => vi.fn()) }
+  ),
 }))
 vi.mock('@/hooks/useProxyConfig', () => ({
   useProxyConfig: {

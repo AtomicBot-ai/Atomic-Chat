@@ -42,6 +42,16 @@ const pickAttachmentIconSrc = (params: {
     case 'xls':
     case 'xlsx':
       return `${ATTACHMENT_ICON_BASE}/xls.svg`
+    case 'mp3':
+    case 'mpeg':
+    case 'wav':
+      return `${ATTACHMENT_ICON_BASE}/audio.svg`
+    case 'mp4':
+    case 'm4v':
+    case 'mov':
+    case 'quicktime':
+    case 'webm':
+      return `${ATTACHMENT_ICON_BASE}/video.svg`
     default:
       return `${ATTACHMENT_ICON_BASE}/default.svg`
   }
@@ -54,6 +64,10 @@ export type AttachmentChipProps = {
   size?: number
   error?: string
   isProcessing?: boolean
+  /** A line under the file's meta in the tooltip. */
+  note?: string
+  /** Opens the attachment's preview; the chip is clickable only with it. */
+  onOpen?: () => void
   onRemove?: () => void
   onRetry?: () => void
   className?: string
@@ -66,6 +80,8 @@ export const AttachmentChip = ({
   size,
   error,
   isProcessing = false,
+  note,
+  onOpen,
   onRemove,
   onRetry,
   className,
@@ -76,16 +92,34 @@ export const AttachmentChip = ({
   const fileIconSrc = pickAttachmentIconSrc({ name, fileType, mimeType })
   const showRemove = !isProcessing && Boolean(onRemove)
   const showRetry = hasError && Boolean(onRetry)
+  const canOpen = !isProcessing && !hasError && Boolean(onOpen)
 
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <div
+          role={canOpen ? 'button' : undefined}
+          tabIndex={canOpen ? 0 : undefined}
+          aria-label={canOpen ? name : undefined}
+          onClick={canOpen ? () => onOpen?.() : undefined}
+          onKeyDown={
+            canOpen
+              ? (e) => {
+                  if (e.target !== e.currentTarget) return
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    onOpen?.()
+                  }
+                }
+              : undefined
+          }
           className={cn(
             'group/chip relative flex items-center gap-3 pl-2 py-1.5 rounded-2xl w-[220px] transition-colors',
             showRemove ? 'pr-7' : 'pr-3',
             !hasError && 'bg-muted/50 hover:bg-muted',
             hasError && 'bg-destructive/10 hover:bg-destructive/15',
+            canOpen &&
+              'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
             className
           )}
         >
@@ -170,6 +204,7 @@ export const AttachmentChip = ({
             {name}
           </div>
           <div className="opacity-70">{meta || 'document'}</div>
+          {note && <div className="opacity-70 mt-1 max-w-52">{note}</div>}
           {hasError && (
             <div className="text-destructive mt-1 max-w-52 break-words">
               {error}

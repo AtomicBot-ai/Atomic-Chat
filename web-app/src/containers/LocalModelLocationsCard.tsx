@@ -9,6 +9,7 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useLocalScanFolder } from '@/hooks/useLocalScanFolder'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
+import { useTranslation } from '@/i18n/react-i18next-compat'
 import { extractModelErrorMessage } from '@/lib/modelErrorMessage'
 import { importScannedModel } from '@/lib/scanned-model-import'
 import {
@@ -31,6 +32,7 @@ function formatLabel(format: LocalModelCandidate['format']): string {
 
 // Settings → "Detected model locations": toggle auto-scan, manage folders, scan + import.
 export default function LocalModelLocationsCard() {
+  const { t } = useTranslation()
   const serviceHub = useServiceHub()
   const scanEnabled = useGeneralSetting((s) => s.scanLocalModels)
   const setScanEnabled = useGeneralSetting((s) => s.setScanLocalModels)
@@ -63,13 +65,13 @@ export default function LocalModelLocationsCard() {
       setScanned(true)
     } catch (error) {
       console.error('Local model scan failed:', error)
-      toast.error('Scan failed', {
+      toast.error(t('settings:localModelLocations.scanFailed'), {
         description: extractModelErrorMessage(error),
       })
     } finally {
       setScanning(false)
     }
-  }, [])
+  }, [t])
 
   const handleImport = useCallback(
     async (cand: LocalModelCandidate) => {
@@ -78,33 +80,35 @@ export default function LocalModelLocationsCard() {
       try {
         await importScannedModel(cand, serviceHub)
         setCandidates((prev) => prev.filter((c) => c.id !== cand.id))
-        toast.success('Model imported', { description: cand.displayName })
+        toast.success(t('settings:localModelLocations.imported'), {
+          description: cand.displayName,
+        })
       } catch (error) {
-        toast.error('Import failed', {
+        toast.error(t('settings:localModelLocations.importFailed'), {
           description: extractModelErrorMessage(error),
         })
       } finally {
         setImportingId(null)
       }
     },
-    [importingId, serviceHub]
+    [importingId, serviceHub, t]
   )
 
   return (
-    <Card title="Detected model locations">
+    <Card title={t('settings:localModelLocations.title')}>
       <CardItem
-        title="Scan for local models"
-        description="Find models already downloaded by Ollama, LM Studio, the Hugging Face cache, Unsloth, GPT4All, Jan, Msty or llama.cpp, and import them without re-downloading."
+        title={t('settings:localModelLocations.scanTitle')}
+        description={t('settings:localModelLocations.scanDesc')}
         actions={
           <Switch checked={scanEnabled} onCheckedChange={setScanEnabled} />
         }
       />
 
       <CardItem
-        title="Scan folders"
+        title={t('settings:localModelLocations.foldersTitle')}
         align="start"
         column
-        description="Add extra folders to search for GGUF or MLX models. Default app locations are always checked."
+        description={t('settings:localModelLocations.foldersDesc')}
         actions={
           <div className="mt-3 flex w-full flex-col gap-2">
             {folders.length > 0 && (
@@ -124,7 +128,7 @@ export default function LocalModelLocationsCard() {
                       type="button"
                       onClick={() => removeFolder(folder)}
                       className="shrink-0 rounded-sm p-0.5 text-muted-foreground hover:text-foreground"
-                      title="Remove folder"
+                      title={t('settings:localModelLocations.removeFolder')}
                     >
                       <IconX size={14} />
                     </button>
@@ -135,7 +139,7 @@ export default function LocalModelLocationsCard() {
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" onClick={handleAddFolder}>
                 <IconFolderPlus size={14} className="text-muted-foreground" />
-                <span>Add folder</span>
+                <span>{t('settings:localModelLocations.addFolder')}</span>
               </Button>
               <Button
                 variant="secondary"
@@ -147,7 +151,11 @@ export default function LocalModelLocationsCard() {
                   size={14}
                   className={scanning ? 'animate-spin' : ''}
                 />
-                <span>{scanning ? 'Scanning…' : 'Scan now'}</span>
+                <span>
+                  {scanning
+                    ? t('settings:localModelLocations.scanning')
+                    : t('settings:localModelLocations.scanNow')}
+                </span>
               </Button>
             </div>
           </div>
@@ -158,14 +166,16 @@ export default function LocalModelLocationsCard() {
         <CardItem
           title={
             candidates.length > 0
-              ? `Found ${candidates.length} model${candidates.length === 1 ? '' : 's'}`
-              : 'No new local models found'
+              ? t('settings:localModelLocations.found', {
+                  count: candidates.length,
+                })
+              : t('settings:localModelLocations.noneFound')
           }
           align="start"
           column
           description={
             candidates.length === 0
-              ? 'Everything detected is already imported, or no compatible models were found.'
+              ? t('settings:localModelLocations.noneFoundDesc')
               : undefined
           }
           actions={
@@ -197,7 +207,13 @@ export default function LocalModelLocationsCard() {
                             {formatLabel(cand.format)}
                           </span>
                           {size && <span>{size}</span>}
-                          {!cand.runnable && <span>requires base model</span>}
+                          {!cand.runnable && (
+                            <span>
+                              {t(
+                                'settings:localModelLocations.requiresBaseModel'
+                              )}
+                            </span>
+                          )}
                         </div>
                       </div>
                       <Button
@@ -207,7 +223,9 @@ export default function LocalModelLocationsCard() {
                         onClick={() => handleImport(cand)}
                         className="shrink-0"
                       >
-                        {isImporting ? 'Importing…' : 'Import'}
+                        {isImporting
+                          ? t('settings:localModelLocations.importing')
+                          : t('settings:localModelLocations.import')}
                       </Button>
                     </div>
                   )

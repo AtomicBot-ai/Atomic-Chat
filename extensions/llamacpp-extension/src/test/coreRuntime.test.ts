@@ -65,6 +65,10 @@ describe('TurboQuant runtime in the core', () => {
   it('hands the settings over, then loads through the core with the per-model overrides', async () => {
     const calls = core({
       'GET /sessions': () => ({ sessions: [] }),
+      // A pack is on disk, so the load downloads nothing first.
+      'GET /backends/llamacpp': () => ({
+        backends: [{ version: 'b1-1.0.0', backend: 'macos-arm64', path: '/p', active: false }],
+      }),
       'POST /settings/llamacpp/import': () => ({ status: 'imported', applied: [], conflicts: [], revision: 1 }),
       'GET /settings/llamacpp': () => ({ provider: 'llamacpp', revision: 2, values: { ctx_size: 4096 } }),
       'POST /settings/llamacpp/acknowledge': () => ({}),
@@ -78,6 +82,7 @@ describe('TurboQuant runtime in the core', () => {
     )
     expect(calls.map((c) => `${c.method} ${c.path}`)).toEqual([
       'GET /sessions',
+      'GET /backends/llamacpp',
       'POST /settings/llamacpp/import',
       'GET /settings/llamacpp',
       'POST /settings/llamacpp/acknowledge',

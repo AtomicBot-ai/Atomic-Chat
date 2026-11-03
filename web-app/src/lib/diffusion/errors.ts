@@ -59,6 +59,8 @@ const ROUTES: Record<
   INVALID_OUTPUT: ['retry', 'pickSmallerQuant'],
   JOB_BUSY: ['retry', null],
   JOB_NOT_FOUND: [null, null],
+  // The core that ran the job is gone; the model has to load again anyway.
+  ENGINE_STOPPED: ['retry', 'pickSmallerQuant'],
   QUEUE_FULL: ['retry', null],
   CANCELLED: [null, null],
   DISK_FULL: ['openOutputFolder', null],

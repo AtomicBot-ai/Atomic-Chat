@@ -11,10 +11,19 @@
  * test read the fallback font's widths.
  */
 import '@/index.css'
-import { afterEach, beforeAll } from 'vitest'
+import { afterEach, beforeAll, beforeEach } from 'vitest'
 import { cleanup } from '@testing-library/react'
 
 import { DEFAULT_FONT_SIZE, setFontSize, setTheme } from './layout'
+import i18n from '@/i18n/setup'
+
+// Files get fresh modules but share the browser origin. Clear persisted
+// stores before the test module imports and hydrates them.
+localStorage.clear()
+sessionStorage.clear()
+i18n.changeLanguage('en')
+
+beforeEach(() => i18n.changeLanguage('en'))
 
 setFontSize(DEFAULT_FONT_SIZE)
 setTheme('light')
@@ -33,6 +42,8 @@ beforeAll(async () => {
 
 afterEach(() => {
   cleanup()
+  localStorage.clear()
+  sessionStorage.clear()
   setFontSize(DEFAULT_FONT_SIZE)
   setTheme('light')
 })

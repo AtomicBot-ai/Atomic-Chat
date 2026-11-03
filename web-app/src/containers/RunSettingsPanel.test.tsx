@@ -128,6 +128,38 @@ describe('RunSettingsPanel', () => {
     expect(onClose).toHaveBeenCalled()
   })
 
+  it('shows the initial of an assistant without an avatar, in the trigger and the list', async () => {
+    useAssistant.setState({
+      assistants: [
+        ...useAssistant.getState().assistants,
+        {
+          id: 'qa',
+          name: 'RC 2.2.0 QA Assistant',
+          instructions: '',
+          parameters: {},
+        } as unknown as Assistant,
+      ],
+      defaultAssistantId: 'qa',
+    })
+    seedModel('llamacpp')
+    render(<RunSettingsPanel onClose={onClose} />)
+
+    const trigger = screen.getByRole('button', {
+      name: /RC 2\.2\.0 QA Assistant/,
+    })
+    expect(
+      trigger.querySelector('[data-slot="avatar-fallback"]')
+    ).toHaveTextContent(/^R$/)
+
+    await userEvent.setup().click(trigger)
+    const item = await screen.findByRole('menuitem', {
+      name: /RC 2\.2\.0 QA Assistant/,
+    })
+    expect(
+      item.querySelector('[data-slot="avatar-fallback"]')
+    ).toHaveTextContent(/^R$/)
+  })
+
   it('creates an assistant from the dropdown and makes it the active one', async () => {
     const createAssistant = vi.fn().mockResolvedValue(undefined)
     seedServiceHub({

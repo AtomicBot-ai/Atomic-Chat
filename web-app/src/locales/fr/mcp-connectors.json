@@ -1,0 +1,101 @@
+{
+  "title": "Connecteurs",
+  "addServer": "Ajouter un serveur",
+  "importConfig": "Importer une configuration",
+  "connectSection": "Connecteurs MCP",
+  "connectSectionDesc": "Connectez de nouveaux serveurs MCP et gérez ceux que vous avez déjà.",
+  "findMore": "Trouvez plus de serveurs MCP sur",
+  "advancedSection": "Avancé",
+  "setUp": "Configurer",
+  "connected": "Connecté",
+  "statusError": "Erreur",
+  "statusInactive": "Inactif",
+  "statusConnecting": "Connexion…",
+  "statusFailed": "Connexion impossible",
+  "statusErrorLabel": "Erreur du serveur MCP : {{error}}",
+  "activation": {
+    "failed": "Impossible de démarrer {{name}}",
+    "retry": "Réessayer",
+    "edit": "Modifier"
+  },
+  "by": "Par {{name}}",
+  "featuredBadge": "En vedette",
+  "officialBadge": "Officiel",
+  "serverActions": "Actions du serveur",
+  "enableConnector": "Activer {{name}}",
+  "editJson": "Modifier le JSON",
+  "tools": "Outils",
+  "logs": {
+    "show": "Afficher les journaux",
+    "hide": "Masquer les journaux"
+  },
+  "oauth": {
+    "signIn": "Se connecter",
+    "cancel": "Annuler",
+    "failed": "Échec de la connexion",
+    "comingSoon": "La connexion via le navigateur arrive bientôt"
+  },
+  "secretDialog": {
+    "title": "Connecter {{name}}",
+    "desc": "Ce connecteur a besoin d'une clé pour fonctionner. Elle est stockée localement dans votre configuration MCP.",
+    "connect": "Connecter",
+    "getKey": "Obtenir votre clé API"
+  },
+  "secrets": {
+    "firecrawlApiKey": "Clé API Firecrawl",
+    "perplexityApiKey": "Clé API Perplexity",
+    "zapierToken": "Jeton MCP Zapier",
+    "resendApiKey": "Clé API Resend"
+  },
+  "toast": {
+    "connected": "{{name}} connecté"
+  },
+  "descriptions": {
+    "exa": "Recherche web et exploration de pages conçues pour l'IA. Fonctionne immédiatement, sans clé.",
+    "github": "Travaillez avec les dépôts, les tickets, les pull requests et le code.",
+    "linear": "Trouvez, créez et mettez à jour des tickets, des projets et des commentaires.",
+    "notion": "Recherchez, lisez et mettez à jour les pages et bases de données de votre espace de travail.",
+    "sentry": "Analysez les erreurs, les traces et les performances des applications.",
+    "atlassian": "Travaillez avec les tickets Jira, les pages Confluence et les connaissances de l'équipe.",
+    "atomicmail": "Donnez à votre agent sa propre boîte de réception : lire, envoyer et gérer des e-mails. Aucune clé requise.",
+    "stripe": "Consultez et gérez les clients, paiements, abonnements et factures.",
+    "supabase": "Interrogez votre base de données, gérez vos projets et consultez la documentation Supabase.",
+    "cloudflare": "Gérez Workers, DNS, le stockage et l'observabilité de votre compte.",
+    "posthog": "Interrogez l'analytique produit, les feature flags, les erreurs et les données de session.",
+    "paypal": "Créez des factures, suivez commandes et paiements, et gérez les litiges.",
+    "trello": "Consultez et mettez à jour les tableaux, listes et cartes.",
+    "granola": "Recherchez et lisez vos notes et transcriptions de réunion.",
+    "calcom": "Gérez les réservations, les types d'événements et les disponibilités.",
+    "airtable": "Consultez, créez et mettez à jour les enregistrements de vos bases.",
+    "webflow": "Gérez les sites, les collections CMS et les pages.",
+    "firecrawl": "Scrapez, explorez, recherchez et convertissez des pages web en données prêtes pour les LLM.",
+    "perplexity": "Recherche web en temps réel avec des réponses sourcées par Perplexity.",
+    "zapier": "Exécutez des actions dans des milliers d'applications via votre serveur MCP Zapier.",
+    "resend": "Envoyez des e-mails transactionnels via l'API Resend.",
+    "shopify-dev": "Documentation développeur et schémas GraphQL de Shopify pour créer des applications."
+  },
+  "taglines": {
+    "exa": "Recherche web",
+    "atomicmail": "E-mail",
+    "linear": "Tickets et projets",
+    "notion": "Pages et bases de données",
+    "sentry": "Suivi des erreurs",
+    "atlassian": "Jira et Confluence",
+    "stripe": "Paiements",
+    "supabase": "Base de données",
+    "cloudflare": "Edge et DNS",
+    "posthog": "Analytique produit",
+    "paypal": "Paiements",
+    "trello": "Tableaux",
+    "granola": "Notes de réunion",
+    "calcom": "Planification",
+    "airtable": "Bases et enregistrements",
+    "webflow": "Sites et CMS",
+    "firecrawl": "Scraping web",
+    "perplexity": "Recherche sur le web",
+    "zapier": "Automatisations d'applications",
+    "resend": "E-mail transactionnel",
+    "shopify-dev": "Documentation dev Shopify",
+    "github": "Dépôts et pull requests"
+  }
+}

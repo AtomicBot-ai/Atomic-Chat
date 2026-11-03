@@ -18,6 +18,7 @@ Local AI app and inference engine for agents. Run open-weight LLMs locally — p
 </p>
 
 ---
+
 ### 📦 Download
 
 <p align="left"><b>Desktop</b></p>
@@ -25,6 +26,13 @@ Local AI app and inference engine for agents. Run open-weight LLMs locally — p
   <a href="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v2.0.0/Atomic.Chat_2.0.0_universal.dmg"><img src="https://img.shields.io/badge/macOS-Universal-000000?style=for-the-badge&logo=apple&logoColor=white" height="46" alt="Download for macOS" /></a>&nbsp;
   <a href="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v2.0.0/Atomic.Chat_2.0.0_x64-setup.exe"><img src="https://img.shields.io/badge/Windows-x64-0078D4?style=for-the-badge&logo=windows11&logoColor=white" height="46" alt="Download for Windows" /></a>&nbsp;
   <a href="https://github.com/AtomicBot-ai/Atomic-Chat/releases/download/v2.0.0/Atomic.Chat_2.0.0_amd64.AppImage"><img src="https://img.shields.io/badge/Linux-AppImage-FCC624?style=for-the-badge&logo=linux&logoColor=black" height="46" alt="Download for Linux" /></a>
+</p>
+
+<p align="left"><b>Linux packages</b> — from the Atomic Chat repository, updated by your package manager (<a href="#-running-on-linux">how to install</a>)</p>
+<p align="left">
+  <a href="#-running-on-linux"><img src="https://img.shields.io/badge/Debian_%2F_Ubuntu-apt-A81D33?style=for-the-badge&logo=debian&logoColor=white" height="46" alt="Install on Debian or Ubuntu with apt" /></a>&nbsp;
+  <a href="#-running-on-linux"><img src="https://img.shields.io/badge/Fedora-dnf-51A2DA?style=for-the-badge&logo=fedora&logoColor=white" height="46" alt="Install on Fedora with dnf" /></a>&nbsp;
+  <a href="#-running-on-linux"><img src="https://img.shields.io/badge/Arch-AUR-1793D1?style=for-the-badge&logo=archlinux&logoColor=white" height="46" alt="Install on Arch Linux from the AUR" /></a>
 </p>
 
 <p align="left"><b>Mobile</b></p>
@@ -108,11 +116,31 @@ Bound to `127.0.0.1` by default; set `host: 0.0.0.0` to expose it on your LAN. W
 
 ### ⚙️ Inference Engines
 
-Three engines under the hood, all exposed through one OpenAI-compatible API at `http://localhost:1337/v1`:
+Twelve engines under the hood, all exposed through one OpenAI-compatible API at `http://localhost:1337/v1`. Each shows up as a provider only where it can run; the ones that need a download install from **Settings → Providers** in one click.
 
-- **[atomic-llama-cpp-turboquant](https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant)** — our `llama.cpp` fork with TurboQuant KV-cache optimizations (`turbo3` / `turbo4`) for faster, lower-memory quantized inference. Now a selectable second provider ("Atomic Llama.cpp Turboquant") on **all three desktops** — macOS, Windows, and Linux — CPU and GPU (CUDA / Vulkan).
-- **Upstream [llama.cpp](https://github.com/ggml-org/llama.cpp)** — official `ggml-org` build, the default engine on Windows and Linux for the widest hardware coverage and MTP support.
-- **[MLX-VLM](https://github.com/Blaizzy/mlx-vlm)** — Apple Silicon-native engine for vision-language models, running on the Neural Engine and unified memory. Faster than llama.cpp on M-series chips for supported models.
+**Text and vision models**
+
+| Engine                                                                                         | What it runs                                                                                                                                                     | Where                                                           |
+| ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| **Upstream [llama.cpp](https://github.com/ggml-org/llama.cpp)**                                | GGUF models; the official `ggml-org` build, with MTP. The default engine on Windows and Linux for the widest hardware coverage.                                  | macOS, Windows, Linux — CPU, Metal, CUDA, Vulkan                |
+| **[atomic-llama-cpp-turboquant](https://github.com/AtomicBot-ai/atomic-llama-cpp-turboquant)** | GGUF models on our `llama.cpp` fork with TurboQuant KV cache (`turbo3` / `turbo4`) for faster, lower-memory quantized inference ("Atomic Llama.cpp Turboquant"). | macOS, Windows, Linux — CPU, Metal, CUDA, Vulkan                |
+| **[PrismML llama.cpp](https://github.com/PrismML-Eng/llama.cpp)**                              | PrismML's Bonsai models, whose 1- and 2-bit tensor types the other llama.cpp builds don't load.                                                                  | macOS, Windows x64, Linux x64 — CPU, Metal, CUDA, Vulkan, ROCm  |
+| **[MLX-VLM](https://github.com/Blaizzy/mlx-vlm)**                                              | MLX models, vision-language included, with DFlash, EAGLE-3 and MTP. Faster than llama.cpp on M-series chips for supported models.                                | macOS on Apple Silicon                                          |
+| **[Apple Foundation Models](https://developer.apple.com/documentation/foundationmodels)**      | Apple's on-device model, nothing to download.                                                                                                                    | macOS 26+ with Apple Intelligence enabled                       |
+| **[Foundry Local](https://github.com/microsoft/Foundry-Local)**                                | Microsoft's ONNX models on the CPU, GPU or NPU.                                                                                                                  | Windows x64 and arm64, macOS 15+ on Apple Silicon, Linux        |
+| **[LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM)**                                   | Google's on-device `.litertlm` models (Gemma and others), with the Intel NPU through OpenVINO on Windows.                                                        | macOS 12+ on Apple Silicon, Windows x64, Linux                  |
+| **[GenieX](https://github.com/qualcomm/GenieX)**                                               | Qualcomm's runtime for Snapdragon: GGUF models on the Hexagon NPU, Adreno GPU or CPU, and Qualcomm AI Hub bundles on the NPU.                                    | Windows on Snapdragon X (X Elite, X Plus, X, X2 Elite, X2 Plus) |
+| **[TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM)**                                     | NVIDIA's high-throughput server for Hugging Face checkpoints.                                                                                                    | Linux, and Windows x64 through WSL 2 — NVIDIA GPU               |
+| **[vLLM](https://github.com/vllm-project/vllm)**                                               | Hugging Face checkpoints on vLLM's server.                                                                                                                       | Linux, and Windows x64 through WSL 2 — NVIDIA GPU               |
+| **[SGLang](https://github.com/sgl-project/sglang)**                                            | Hugging Face checkpoints on SGLang's server.                                                                                                                     | Linux, and Windows x64 through WSL 2 — NVIDIA GPU               |
+
+TensorRT-LLM, vLLM and SGLang run in a container that Atomic Chat sets up and manages itself; on Windows it lives in Atomic Chat's own WSL distribution.
+
+**Images and video**
+
+| Engine                                                                                                                                         | What it runs                                                                                        | Where                                                                   |
+| ---------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| **[stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp)** ([our build](https://github.com/AtomicBot-ai/stable-diffusion.cpp)) | Images (FLUX, Qwen-Image, Z-Image, Krea) and video (Wan 2.2, LTX-2), in the Images and Videos tabs. | macOS on Apple Silicon, Windows, Linux — CPU, Metal, CUDA, Vulkan, ROCm |
 
 Speculative-decoding features available across backends:
 
@@ -132,16 +160,16 @@ Atomic Chat runs an OpenAI-compatible server at `http://localhost:1337/v1`, so *
 
 A few projects already ship first-class support with their own setup docs:
 
-| Tool | What it is | Setup |
-| --- | --- | --- |
-| **[OpenCode](https://opencode.ai/)** | Open-source TUI coding agent. Add Atomic Chat as a local provider in `opencode.json`. | [Setup&nbsp;guide&nbsp;→](https://opencode.ai/docs/providers/#atomic-chat) |
-| **[Goose](https://github.com/block/goose)** | Open-source extensible AI agent (CLI, desktop, API). | [Setup&nbsp;guide&nbsp;→](https://goose-docs.ai/docs/getting-started/providers/#local-llms) |
-| **[nanobot](https://github.com/HKUDS/nanobot)** | Ultra-lightweight personal AI agent with chat channels, MCP, and WebUI. | [Repo&nbsp;→](https://github.com/HKUDS/nanobot) |
-| **[nanoclaw](https://github.com/qwibitai/nanoclaw)** | Containerized agent runtime that calls Atomic Chat as an MCP tool. | [Skill&nbsp;guide&nbsp;→](https://github.com/qwibitai/nanoclaw/blob/main/.claude/skills/add-atomic-chat-tool/SKILL.md) |
-| **[OpenClaude](https://github.com/Gitlawb/openclaude)** | Open-source coding-agent CLI for cloud and local models. Lists Atomic Chat as a supported provider. | [Providers&nbsp;list&nbsp;→](https://github.com/Gitlawb/openclaude#supported-providers) |
-| **[Kilo Code](https://kilo.ai/)** | Open-source AI coding agent for VS Code, JetBrains, and CLI. Ships with first-class Atomic Chat provider support and auto-discovery. | [Setup&nbsp;guide&nbsp;→](https://kilo.ai/docs/ai-providers/atomic-chat) |
-| **[Hermes Desktop](https://github.com/fathah/hermes-desktop)** | Native desktop companion for Hermes Agent. Includes an Atomic Chat local preset at `http://localhost:1337/v1`. | [Repo&nbsp;→](https://github.com/fathah/hermes-desktop) |
-| **[Hermes Workspace](https://github.com/outsourc-e/hermes-workspace)** | Local-first agent workspace built on Nous Research's Hermes. Uses Atomic Chat as its inference backend. | [Repo&nbsp;→](https://github.com/outsourc-e/hermes-workspace) |
+| Tool                                                                   | What it is                                                                                                                           | Setup                                                                                                                  |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| **[OpenCode](https://opencode.ai/)**                                   | Open-source TUI coding agent. Add Atomic Chat as a local provider in `opencode.json`.                                                | [Setup&nbsp;guide&nbsp;→](https://opencode.ai/docs/providers/#atomic-chat)                                             |
+| **[Goose](https://github.com/block/goose)**                            | Open-source extensible AI agent (CLI, desktop, API).                                                                                 | [Setup&nbsp;guide&nbsp;→](https://goose-docs.ai/docs/getting-started/providers/#local-llms)                            |
+| **[nanobot](https://github.com/HKUDS/nanobot)**                        | Ultra-lightweight personal AI agent with chat channels, MCP, and WebUI.                                                              | [Repo&nbsp;→](https://github.com/HKUDS/nanobot)                                                                        |
+| **[nanoclaw](https://github.com/qwibitai/nanoclaw)**                   | Containerized agent runtime that calls Atomic Chat as an MCP tool.                                                                   | [Skill&nbsp;guide&nbsp;→](https://github.com/qwibitai/nanoclaw/blob/main/.claude/skills/add-atomic-chat-tool/SKILL.md) |
+| **[OpenClaude](https://github.com/Gitlawb/openclaude)**                | Open-source coding-agent CLI for cloud and local models. Lists Atomic Chat as a supported provider.                                  | [Providers&nbsp;list&nbsp;→](https://github.com/Gitlawb/openclaude#supported-providers)                                |
+| **[Kilo Code](https://kilo.ai/)**                                      | Open-source AI coding agent for VS Code, JetBrains, and CLI. Ships with first-class Atomic Chat provider support and auto-discovery. | [Setup&nbsp;guide&nbsp;→](https://kilo.ai/docs/ai-providers/atomic-chat)                                               |
+| **[Hermes Desktop](https://github.com/fathah/hermes-desktop)**         | Native desktop companion for Hermes Agent. Includes an Atomic Chat local preset at `http://localhost:1337/v1`.                       | [Repo&nbsp;→](https://github.com/fathah/hermes-desktop)                                                                |
+| **[Hermes Workspace](https://github.com/outsourc-e/hermes-workspace)** | Local-first agent workspace built on Nous Research's Hermes. Uses Atomic Chat as its inference backend.                              | [Repo&nbsp;→](https://github.com/outsourc-e/hermes-workspace)                                                          |
 
 > Built something that runs on Atomic Chat? [Open a PR](https://github.com/AtomicBot-ai/Atomic-Chat/pulls) and we'll add it here.
 
@@ -190,7 +218,8 @@ yarn dev
 
 - **macOS**: 13.6+ (8GB RAM for 3B models, 16GB for 7B, 32GB for 13B)
 - **Windows**: 10/11 x64 (same RAM recommendations as macOS)
-- **Linux**: x86_64, glibc ≥ 2.35 (Ubuntu 22.04+, Debian 12+, Fedora 40+, Arch, Mint, Pop!_OS — same RAM recommendations as macOS). Optional: a Vulkan loader (`vulkan-1` package, or `mesa-vulkan-drivers` / proprietary NVIDIA driver) for GPU acceleration.
+- **Windows on Arm**: 11 arm64 on a Snapdragon X — the upstream llama.cpp engine (CPU, or the Adreno GPU through OpenCL), Foundry Local, and GenieX on the Hexagon NPU
+- **Linux**: x86_64 with glibc ≥ 2.35 (Ubuntu 22.04+, Debian 12+, Fedora 40+, Arch, Mint, Pop!_OS), or arm64 with glibc ≥ 2.38 (Ubuntu 24.04+, Debian 13+, Fedora 40+, Arch) — same RAM recommendations as macOS. Optional: a Vulkan loader (`vulkan-1` package, or `mesa-vulkan-drivers` / proprietary NVIDIA driver) for GPU acceleration.
 - **iOS**: download from App Store
 - **Android**: download from Google Play
 
@@ -198,7 +227,43 @@ yarn dev
 
 ### 🐧 Running on Linux
 
-Atomic Chat ships as a single self-contained `.AppImage` — no installer, no root:
+Install it from the Atomic Chat package repository, and your package manager updates it with the rest of
+the system. The packages put the app in `/opt/atomic-chat` with an `atomic-chat` command, a menu entry, and
+the system's WebKitGTK; the built-in updater stays off. On arm64 they need glibc 2.38 or newer, which the
+bundled llama.cpp engine is built against there. The repository and the rpm packages are signed with
+the Atomic Chat packages key in [`packaging/atomic-chat.asc`](packaging/atomic-chat.asc), fingerprint
+`1047 F119 58C6 442D D472  E497 E4C3 D361 FB7F F123`.
+
+**Debian, Ubuntu** — Debian 12+ / Ubuntu 22.04+ on x86-64, Debian 13+ / Ubuntu 24.04+ on arm64:
+
+<!-- install:apt -->
+
+```sh
+curl -fsSL https://atomic-chat-packages.fsn1.your-objectstorage.com/atomic-chat.gpg | sudo tee /usr/share/keyrings/atomic-chat-app.gpg >/dev/null
+echo "deb [signed-by=/usr/share/keyrings/atomic-chat-app.gpg] https://atomic-chat-packages.fsn1.your-objectstorage.com/deb stable main" \
+  | sudo tee /etc/apt/sources.list.d/atomic-chat-app.list
+sudo apt update && sudo apt install atomic-chat
+```
+
+**Fedora** 40+ (x86-64, aarch64):
+
+<!-- install:dnf -->
+
+```sh
+sudo curl -fsSL -o /etc/yum.repos.d/atomic-chat-app.repo https://atomic-chat-packages.fsn1.your-objectstorage.com/rpm/atomic-chat.repo
+sudo dnf install atomic-chat
+```
+
+**Arch Linux** (x86-64, aarch64): `yay -S atomic-chat-bin`, or any other AUR helper.
+
+Then start Atomic Chat from the app menu, or run `atomic-chat`.
+
+Updates come with `sudo apt upgrade`, `sudo dnf upgrade` or `yay -Syu`. `sudo apt remove atomic-chat`,
+`sudo dnf remove atomic-chat` or `sudo pacman -R atomic-chat-bin` removes the app and leaves your chats and
+models. The repository keeps the last three releases; every release also carries its `.deb` and `.rpm` files
+on the [releases page](https://github.com/AtomicBot-ai/Atomic-Chat/releases).
+
+Or run the self-contained `.AppImage` — no installer, no root, and it updates itself:
 
 ```bash
 chmod +x Atomic.Chat_*_amd64.AppImage
@@ -206,6 +271,12 @@ chmod +x Atomic.Chat_*_amd64.AppImage
 ```
 
 If prompted about FUSE on first launch: `sudo apt install fuse libfuse2` (Debian/Ubuntu) or `sudo dnf install fuse fuse-libs` (Fedora). GPU acceleration (Vulkan) is auto-detected on first launch; only GGUF models run on Linux.
+
+When your bar has a tray (Omarchy, Waybar's `tray` module, KDE), closing the window keeps Atomic Chat and its local API on `:1337` running in the tray; use **Quit** in the tray menu to stop it. Launching the app again brings the window back. Without a tray (GNOME with no indicator extension), closing the window quits as usual.
+
+**Window rules (Hyprland, Sway).** Match the Wayland app id (Hyprland `class`) `chat.atomic.app`, e.g. `^chat\.atomic\.app$`. Under X11/XWayland the window class is still `Atomic-Chat`.
+
+**Packaging.** A distro package (AUR, a pacman repo, Flatpak) that owns updates should place an empty `atomic-chat-package-managed` file next to the `.AppImage` (or, for an extracted AppImage, next to `usr/bin/Atomic-Chat`), or start the app with `ATOMIC_CHAT_PACKAGE_MANAGED=1`. Prefer the file: the "launch at startup" entry runs the AppImage or binary directly, so it does not see a variable set in a launcher script. The built-in updater then never checks for, offers or installs updates, and Settings points users to their package manager.
 
 ---
 
@@ -224,7 +295,7 @@ If something isn't working:
 Atomic Chat is built by a small core team and **140+ contributors** — including everyone who shaped the project from its earliest days. Pull requests are welcome in both repositories:
 
 - **[Atomic-Chat](https://github.com/AtomicBot-ai/Atomic-Chat)** (this repo) — the desktop and mobile app: UI, chats, assistants, projects, MCP, integrations, settings. See [CONTRIBUTING.md](CONTRIBUTING.md) to get started.
-- **[atomic-chat-core](https://github.com/AtomicBot-ai/atomic-chat-core)** — the core that manages the engines (llama.cpp, MLX, Foundation Models): backend and model management, cloud providers, the router and the OpenAI-compatible server. See its [AGENTS.md](https://github.com/AtomicBot-ai/atomic-chat-core/blob/main/AGENTS.md) to get started.
+- **[atomic-chat-core](https://github.com/AtomicBot-ai/atomic-chat-core)** — the core that manages the engines (llama.cpp, MLX, Foundation Models, Foundry Local, LiteRT-LM, GenieX, TensorRT-LLM, vLLM, SGLang, stable-diffusion.cpp): backend and model management, cloud providers, the router and the OpenAI-compatible server. See its [AGENTS.md](https://github.com/AtomicBot-ai/atomic-chat-core/blob/main/AGENTS.md) to get started.
 
 Not sure where a change belongs? Open an issue in either repo and we'll point you the right way.
 
@@ -390,6 +461,9 @@ Built on the shoulders of giants:
 
 - [llama.cpp](https://github.com/ggml-org/llama.cpp)
 - [MLX-VLM](https://github.com/Blaizzy/mlx-vlm)
+- [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp)
+- [Foundry Local](https://github.com/microsoft/Foundry-Local), [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM), [GenieX](https://github.com/qualcomm/GenieX)
+- [TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM), [vLLM](https://github.com/vllm-project/vllm), [SGLang](https://github.com/sgl-project/sglang)
 - [Tauri](https://tauri.app/)
 - [Scalar](https://github.com/scalar/scalar)
 

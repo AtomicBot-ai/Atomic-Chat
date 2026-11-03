@@ -23,6 +23,7 @@ import { ImageGalleryGrid } from './ImageGalleryGrid'
 import { ImageGenerationPlaceholder } from './ImageGenerationPlaceholder'
 import { ImagePromptForm } from './ImagePromptForm'
 import { ImageSetupCard } from './ImageSetupCard'
+import { MediaStudioFrame } from './MediaStudio'
 import { ImageViewer } from './ImageViewer'
 
 /** In Upscale "make it smaller" is the scale, not the form's width and height. */
@@ -221,10 +222,7 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
   }
 
   return (
-    <div
-      className="grid h-svh w-full grid-cols-[minmax(340px,400px)_1fr] grid-rows-[minmax(0,1fr)] overflow-hidden"
-      data-testid="image-generation-page"
-    >
+    <MediaStudioFrame testId="image-generation-page">
       <aside className="col-start-1 row-start-1 flex min-h-0 min-w-0 flex-col border-r border-border">
         {studioReady ? (
           <ImagePromptForm
@@ -262,9 +260,15 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
             />
           </div>
         ) : (
-          <>
+          // The media pane: the viewer is as tall as the picture and its
+          // actions (capped at three fifths of this pane, in `cqh`), and the
+          // gallery takes the rest.
+          <div
+            className="flex min-h-0 min-w-0 flex-1 flex-col [container-type:size]"
+            data-testid="image-media-pane"
+          >
             <div
-              className="min-h-0 min-w-0 flex-[3] overflow-hidden"
+              className="min-w-0 shrink-0 overflow-hidden"
               data-testid="image-viewer-section"
             >
               {showLivePreview ? (
@@ -283,7 +287,7 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
                 />
               )}
             </div>
-            <div className="flex min-h-0 flex-[2] flex-col border-t border-border/60">
+            <div className="flex min-h-0 flex-1 flex-col border-t border-border/60">
               <div className="flex shrink-0 items-center gap-2 px-6 py-2 text-xs text-muted-foreground">
                 <IconPhoto size={14} />
                 {/* A bare number: the i18n layer has no plural forms. */}
@@ -319,7 +323,7 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
                 />
               </div>
             </div>
-          </>
+          </div>
         )}
         {!catalog && !gallery.initialized && (
           <div className="absolute bottom-4 left-6 flex items-center gap-2 text-xs text-muted-foreground">
@@ -328,7 +332,7 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
           </div>
         )}
       </section>
-    </div>
+    </MediaStudioFrame>
   )
 })
 

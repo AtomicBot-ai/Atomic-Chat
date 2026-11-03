@@ -1,0 +1,32 @@
+out `min-w-0` on the way down, or a fixed width larger than its column.
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |layout (chromium)| src/containers/server/ServerSetupGuide.layout.test.tsx [ src/containers/server/ServerSetupGuide.layout.test.tsx ]
+Error: Failed to import test file /Users/misha/Work/Atomic-code/Atomic-Chat/web-app/src/containers/server/ServerSetupGuide.layout.test.tsx
+Caused by: SyntaxError: The requested module '/.vite/vitest-layout/vitest/207b877e13437b35b3fbae5c20219eecd6c828f1/deps/@tanstack_react-router.js?v=518924f4' does not provide an export named 'useRouter'
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |layout (chromium)| src/containers/images/ImageSetupCard.layout.test.tsx > image setup card geometry > keeps the button and the card still through the install (form column, 20px, light)
+ FAIL  |layout (chromium)| src/containers/images/ImageSetupCard.layout.test.tsx > image setup card geometry > keeps the button and the card still through the install (form column, 20px, dark)
+AssertionError: <div> [data-testid="frame"] is 7 px wider inside than out (scrollWidth 347, clientWidth 340): a child does not shrink — a nowrap title without `min-w-0` on the way down, or a fixed width larger than its column.
+ ❯ Module.expectNoHorizontalOverflow src/test/layout.ts:132:13
+    130|       el.scrollWidth > el.clientWidth + tolerance + reach
+    131|     ) {
+    132|       expect.fail(
+       |             ^
+    133|         `${describe(el)} is ${px(el.scrollWidth - el.clientWidth)} wid…
+    134|           `(scrollWidth ${el.scrollWidth}, clientWidth ${el.clientWidt…
+ ❯ src/containers/images/ImageSetupCard.layout.test.tsx:83:10
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+
+ Test Files  2 failed | 1 passed (3)
+      Tests  2 failed | 14 passed (16)
+   Start at  15:19:37
+   Duration  8.65s (transform 0ms, setup 1.87s, collect 6.37s, tests 5.41s, environment 0ms, prepare 4.87s)
+

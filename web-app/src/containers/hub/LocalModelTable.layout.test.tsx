@@ -233,13 +233,16 @@ describe('LocalModelTable layout', () => {
   }
 
   // The table answers to its own width: columns give way, the rest share it.
+  // The steps are in em, so the widths follow the default font size (they
+  // were measured at 16px).
+  const fontScale = parseFloat(DEFAULT_FONT_SIZE) / 16
   for (const [width, columns] of [
     [1200, 7],
     [1000, 6],
     [800, 5],
     [600, 4],
     [480, 3],
-  ] as const) {
+  ].map(([at16, count]) => [Math.round(at16 * fontScale), count])) {
     it(`keeps ${columns} columns at ${width}px`, async () => {
       renderTable(width)
       await settle()

@@ -42,7 +42,7 @@ vi.mock('@tanstack/react-router', () => ({
     <a href={to}>{children}</a>
   ),
 }))
-vi.mock('@/lib/notifications', () => ({ notifyWhenAway: vi.fn() }))
+vi.mock('@/lib/notifications', () => ({ notifyUnlessWatching: vi.fn() }))
 vi.mock('@/lib/telemetry-queue', () => ({ queuedCapture: vi.fn() }))
 vi.mock('@/lib/clipboard', () => ({ copyToClipboard: vi.fn(async () => true) }))
 vi.mock('@/containers/images/ImageModelSelector', () => ({

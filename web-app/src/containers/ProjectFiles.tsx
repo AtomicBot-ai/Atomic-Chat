@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { FileText, Trash2, UploadIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -13,11 +13,13 @@ import { useServiceHub } from '@/hooks/useServiceHub'
 import { createDocumentAttachment, type Attachment } from '@/types/attachment'
 import { useAttachments } from '@/hooks/useAttachments'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { useProjectUploads } from '@/stores/project-upload-store'
 import { EMBEDDING_MODEL_ID } from '@/constants/models'
 import { ExtensionTypeEnum, FileStat, VectorDBExtension } from '@janhq/core'
 import { ExtensionManager } from '@/lib/extension'
 import { formatAttachmentError } from '@/lib/attachmentProcessing'
 import { IconLoader2, IconPaperclip } from '@tabler/icons-react'
+import { RemoveProjectFileDialog } from '@/containers/dialogs/RemoveProjectFileDialog'
 
 type ProjectFilesProps = {
   projectId: string
@@ -32,6 +34,10 @@ type ProjectFile = {
   size?: number
   chunk_count: number
 }
+
+/** What the row, its action and the confirmation call the file. */
+const displayNameOf = (file: ProjectFile): string =>
+  file.name || file.path?.split(/[\\/]/).pop() || file.id
 
 function formatBytes(bytes?: number): string {
   if (!bytes || bytes <= 0) return ''
@@ -203,15 +209,22 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
   const [files, setFiles] = useState<ProjectFile[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [uploading, setUploading] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
+  // The file whose removal waits for the user's confirmation (AC-14): one
+  // click on the row action used to drop the indexed copy at once.
+  const [pendingRemoval, setPendingRemoval] = useState<ProjectFile | null>(null)
   // ATO — #289: ingesting a file downloads the embedding model on first use,
   // which takes a while. Two ingests of the same file derive the same download
   // task id, so the second one *supersedes* (cancels) the first — and with an
   // unreachable host in the way the pair never converged, which is what the
   // report describes as an endless spinner. `files` only lists what is already
-  // indexed, so it cannot deduplicate an upload still in flight; this can.
-  const inFlightPaths = useRef<Set<string>>(new Set())
+  // indexed, so it cannot deduplicate an upload still in flight; the in-flight
+  // paths can. They live in a store, not here, so the indicator and the list
+  // refresh survive leaving the page mid-ingest (AC-09).
+  const uploading = useProjectUploads(
+    (s) => (s.inFlight[projectId]?.length ?? 0) > 0
+  )
+  const uploadRevision = useProjectUploads((s) => s.revision[projectId] ?? 0)
   // The first upload in an install downloads the embedding model before any
   // file is indexed. That download reports through the global download store
   // under the model id, so the Files section can say what it is waiting on
@@ -271,9 +284,11 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
     }
   }, [attachmentsEnabled, projectId])
 
+  // Also re-read when an ingest for this project settles — including one that
+  // was started before the page was left and came back to.
   useEffect(() => {
     loadProjectFiles()
-  }, [loadProjectFiles])
+  }, [loadProjectFiles, uploadRevision])
 
   const processFilePaths = useCallback(
     async (paths: string[]) => {
@@ -336,11 +351,14 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
       const existingPaths = new Set(
         files.filter((f) => f.path).map((f) => f.path)
       )
+      const inFlightPaths = new Set(
+        useProjectUploads.getState().inFlight[projectId] ?? []
+      )
       const duplicates: string[] = []
       const newAttachments = preparedAttachments.filter((att) => {
         if (
           existingPaths.has(att.path) ||
-          (att.path && inFlightPaths.current.has(att.path))
+          (att.path && inFlightPaths.has(att.path))
         ) {
           duplicates.push(att.name)
           return false
@@ -359,10 +377,12 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
 
       if (newAttachments.length === 0) return
 
-      for (const att of newAttachments) {
-        if (att.path) inFlightPaths.current.add(att.path)
-      }
-      setUploading(true)
+      const ingestPaths = newAttachments.flatMap((att) =>
+        att.path ? [att.path] : []
+      )
+      const { begin, finish } = useProjectUploads.getState()
+      begin(projectId, ingestPaths)
+      let indexed = false
       try {
         for (const att of newAttachments) {
           const result = await serviceHub
@@ -371,11 +391,11 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
           if (!result.id) {
             throw new Error('Failed to ingest file')
           }
+          indexed = true
         }
         toast.success(
           t('common:toast.fileUploaded.title') ?? 'File uploaded successfully'
         )
-        await loadProjectFiles()
       } catch (error) {
         console.error('Failed to upload file:', error)
         toast.error(
@@ -386,13 +406,12 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
           }
         )
       } finally {
-        for (const att of newAttachments) {
-          if (att.path) inFlightPaths.current.delete(att.path)
-        }
-        setUploading(false)
+        // Settling bumps the project's revision when a file was indexed, and
+        // whichever Files section is mounted for it then re-reads the list.
+        finish(projectId, ingestPaths, indexed)
       }
     },
-    [files, loadProjectFiles, maxFileSizeMB, projectId, serviceHub, t]
+    [files, maxFileSizeMB, projectId, serviceHub, t]
   )
 
   const handleUpload = async () => {
@@ -496,15 +515,20 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
     }
   }
 
-  const handleDeleteFile = async (fileId: string) => {
+  const handleDeleteFile = async (file: ProjectFile) => {
     try {
       const ext = ExtensionManager.getInstance().get<VectorDBExtension>(
         ExtensionTypeEnum.VectorDB
       )
       if (ext?.deleteFileForProject) {
-        await ext.deleteFileForProject(projectId, fileId)
+        await ext.deleteFileForProject(projectId, file.id)
         toast.success(
-          t('common:toast.fileDeleted.title') ?? 'File deleted successfully'
+          t('common:toast.fileDeleted.title') ?? 'File deleted successfully',
+          {
+            description: t('common:toast.fileDeleted.description', {
+              fileName: displayNameOf(file),
+            }),
+          }
         )
         await loadProjectFiles()
       }
@@ -645,14 +669,29 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
                     ` · ${t('common:files.chunksCount', { count: file.chunk_count })}`}
                 </p>
               </div>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                className="opacity-0 group-hover:opacity-100 transition-opacity"
-                onClick={() => handleDeleteFile(file.id)}
-              >
-                <Trash2 className="size-3.5 text-muted-foreground hover:text-destructive" />
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    // Shown on hover, and whenever it has keyboard focus.
+                    className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+                    aria-label={t('common:files.removeFromProject', {
+                      fileName: displayNameOf(file),
+                    })}
+                    onClick={() => setPendingRemoval(file)}
+                  >
+                    <Trash2 className="size-3.5 text-muted-foreground hover:text-destructive" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className="text-xs">
+                    {t('common:files.removeFromProject', {
+                      fileName: displayNameOf(file),
+                    })}
+                  </p>
+                </TooltipContent>
+              </Tooltip>
             </div>
           ))}
 
@@ -680,6 +719,18 @@ export default function ProjectFiles({ projectId, lng }: ProjectFilesProps) {
           </div>
         </div>
       )}
+
+      <RemoveProjectFileDialog
+        fileName={pendingRemoval ? displayNameOf(pendingRemoval) : null}
+        onOpenChange={(open) => {
+          if (!open) setPendingRemoval(null)
+        }}
+        onConfirm={() => {
+          const file = pendingRemoval
+          setPendingRemoval(null)
+          if (file) void handleDeleteFile(file)
+        }}
+      />
     </div>
   )
 }

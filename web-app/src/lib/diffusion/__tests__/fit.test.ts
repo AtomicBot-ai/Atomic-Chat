@@ -8,10 +8,12 @@ import {
   ACTIVATION_BYTES_PER_MEGAPIXEL,
   autoOffload,
   estimateDiffusionFit,
+  estimateFootprintBytes,
   estimateResidentBytes,
   fitForQuant,
   pickDefaultQuant,
   recommendedQuant,
+  UNIFIED_RESERVE_BYTES,
 } from '../fit'
 
 const GIB = 1024 ** 3
@@ -106,12 +108,52 @@ describe('estimateDiffusionFit', () => {
 
   it('applies the measured Metal ceiling on macOS', () => {
     // 10 GiB resident (8.2 + 0.3 + 1.5): 62.5 % of a 16 GiB PC budget, but
-    // 73.5 % of the 13.6 GiB a Mac will actually hand out.
-    const onPc = estimateDiffusionFit(input(8.2), pc(16 * 1024))
-    const onMac = estimateDiffusionFit(input(8.2), mac(16 * 1024))
+    // 73.5 % of the 13.6 GiB a Mac will actually hand out. A 1 GiB text
+    // encoder keeps the RAM side (11 GiB of 13.9) from being the worse one.
+    const small = { ...input(8.2), teBytes: 1 * GIB }
+    const onPc = estimateDiffusionFit(small, pc(16 * 1024))
+    const onMac = estimateDiffusionFit(small, mac(16 * 1024))
     expect(onPc.fit).toBe('ok')
     expect(onMac.fit).toBe('maybe')
     expect(onMac.budgetBytes).toBeCloseTo(16 * 1024 * MIB * 0.85, -3)
+  })
+
+  it('counts a CPU-side text encoder against the RAM it shares on a Mac', () => {
+    // QA 2026-10-23, an 8 GB MacBook Air with Z-Image Q3_K_M at 1024²: Metal's
+    // side is 4.19 + 0.34 + 1.5 GiB of 6.8 GiB (84 %, maybe), but with the
+    // 2.5 GB text encoder the model needs ~8.6 GB of the ~6.3 GB RAM left.
+    const zImageQ3 = {
+      transformerBytes: 4_186_161_216,
+      vaeBytes: 335_304_388,
+      teBytes: 2_497_281_120,
+      teOnCpu: true,
+      width: 1024,
+      height: 1024,
+    }
+    const result = estimateDiffusionFit(zImageQ3, mac(8 * 1024))
+    expect(result).toMatchObject({ fit: 'no', policy: 'group' })
+    expect(result.residentBytes).toBe(estimateFootprintBytes(zImageQ3))
+    expect(result.budgetBytes).toBe(8 * 1024 * MIB - UNIFIED_RESERVE_BYTES)
+    expect(result.reason).toContain('text encoder')
+    // Still a "no" at 512²: the weights alone are past the RAM it has.
+    expect(
+      estimateDiffusionFit({ ...zImageQ3, width: 512, height: 512 }, mac(8 * 1024)).fit
+    ).toBe('no')
+    // The recommended Q4_K_M on a 16 GB Mac: 9.5 GB of 14.9 GB, fine.
+    expect(
+      estimateDiffusionFit(
+        { ...zImageQ3, transformerBytes: 5_017_613_376 },
+        mac(16 * 1024)
+      ).fit
+    ).toBe('ok')
+  })
+
+  it('leaves a GPU of its own and a GPU-side text encoder to the one budget', () => {
+    expect(estimateDiffusionFit(input(5), pc(8 * 1024)).fit).toBe(
+      estimateDiffusionFit(input(5), { ...pc(8 * 1024), systemRamMib: 1 }).fit
+    )
+    const macTeOnGpu = estimateDiffusionFit(input(2, false), mac(16 * 1024))
+    expect(macTeOnGpu.residentBytes).toBe(estimateResidentBytes(input(2, false)))
   })
 
   it('answers maybe/group when the hardware is not known yet', () => {
@@ -171,6 +213,20 @@ describe('fitForQuant', () => {
     })
     expect(result.residentBytes).toBeCloseTo(8.8 * GIB, -6)
     expect(result.fit).toBe('maybe')
+  })
+
+  it('prices the size a request asks for instead of the default', () => {
+    const quant = family.transformer.quants[3]
+    const atDefault = fitForQuant(family, quant, pc(12 * 1024), { teOnCpu: true })
+    const at512 = fitForQuant(family, quant, pc(12 * 1024), {
+      teOnCpu: true,
+      width: 512,
+      height: 512,
+    })
+    expect(atDefault.residentBytes - at512.residentBytes).toBeCloseTo(
+      0.75 * ACTIVATION_BYTES_PER_MEGAPIXEL,
+      -6
+    )
   })
 })
 

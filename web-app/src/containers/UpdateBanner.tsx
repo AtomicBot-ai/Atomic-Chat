@@ -1,9 +1,16 @@
 import type { ReactNode } from 'react'
-import { createPortal } from 'react-dom'
 
-import { IconDownload, IconX } from '@tabler/icons-react'
+import { IconRefresh } from '@tabler/icons-react'
 
-import { Button } from '@/components/ui/button'
+import {
+  CORNER_ACTION,
+  CORNER_CARD,
+  CORNER_PRIMARY_ACTION,
+  CornerCardHeader,
+  CornerMini,
+} from '@/containers/corner/CornerCard'
+import { CORNER_ORDER, CornerSlot } from '@/containers/corner/cornerStack'
+import { useAutoCollapse } from '@/containers/corner/useAutoCollapse'
 import { cn } from '@/lib/utils'
 
 /// One line of the changelog preview: a bold headline and an optional muted
@@ -54,26 +61,35 @@ export interface UpdateBannerProps {
   progress?: number
   /// `false` hides "Remind me later" and the × — for an update that has
   /// started and cannot be stopped, where hiding the banner would only hide
-  /// its progress.
+  /// its progress. The card still folds into its pill, which shows it.
   dismissible?: boolean
   dismissLabel: string
   onDismiss: () => void
+  /// The header's fold control.
+  collapseLabel: string
+  /// The folded pill's readout, e.g. "llama.cpp b10909". Defaults to
+  /// `toVersion`; replaced by the percent while the update downloads.
+  miniLabel?: string
   /// Test hook / DOM anchor. Also used to tell the two banners apart.
   testId?: string
   className?: string
 }
 
 /**
- * Bottom-right update toast shared by the app-version banner (ATO-533) and the
+ * Bottom-right update card shared by the app-version banner (ATO-533) and the
  * inference-engine banner (ATO-528/531).
  *
  * Purely presentational: every decision about *whether* to offer an update,
  * what it costs and what happens on accept lives in the owning container. The
  * only thing this file owns is that both banners look like one family — the
- * whole reason the two issues asked for a shared component.
+ * whole reason the two issues asked for a shared component — and like the
+ * download panel they stack with (`corner/CornerCard`): the same width,
+ * corners, palette and type, the title in the header and the offer in a strip.
  *
- * Mounting is coordinated through `update-banner-store` so the app and engine
- * banners never stack in the same corner.
+ * Like every corner card it folds into a pill three seconds after it appears
+ * (`useAutoCollapse`); the pill keeps the version on offer, or the progress
+ * once the update runs, and opens the card again. Mounting is coordinated
+ * through `update-banner-store` so the app and engine offers never both show.
  */
 export function UpdateBanner({
   title,
@@ -96,167 +112,182 @@ export function UpdateBanner({
   dismissible = true,
   dismissLabel,
   onDismiss,
+  collapseLabel,
+  miniLabel,
   testId,
   className,
 }: UpdateBannerProps) {
+  const { collapsed, expand, collapse, holdProps } = useAutoCollapse(true)
   const showExpanded = expanded && expandedContent != null
   const hasHighlights = !showExpanded && !!highlights && highlights.length > 0
+  const running = busy && progress != null
 
-  const banner = (
-    <div
-      role="status"
-      aria-live="polite"
-      data-testid={testId}
-      className={cn(
-        'fixed z-40 bottom-[calc(1rem+var(--download-panel-offset,0px))] right-2 w-[min(24rem,calc(100vw-1rem))]',
-        'transition-[bottom] duration-200',
-        'rounded-xl border bg-background shadow-md',
-        className
-      )}
-    >
-      {dismissible ? (
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          aria-label={dismissLabel}
-          onClick={onDismiss}
-          className="absolute right-1.5 top-1.5 text-muted-foreground"
-        >
-          <IconX size={14} />
-        </Button>
-      ) : null}
-
-      <div className="flex items-start gap-2.5 px-4 pt-4 pr-9">
-        <IconDownload
-          size={18}
-          className="mt-0.5 shrink-0 text-muted-foreground"
+  if (collapsed) {
+    const percent = running
+      ? Math.round(Math.min(Math.max(progress, 0), 1) * 100)
+      : null
+    return (
+      <CornerSlot order={CORNER_ORDER.update}>
+        <CornerMini
+          icon={<IconRefresh size={15} aria-hidden />}
+          text={percent !== null ? `${percent}%` : (miniLabel ?? toVersion)}
+          progress={running ? progress : null}
+          label={title}
+          onClick={expand}
+          testId={testId ? `${testId}-mini` : undefined}
         />
-        <div className="min-w-0 flex-1">
-          <div className="text-sm font-medium leading-5">{title}</div>
-          <div className="mt-0.5 text-xs leading-5 text-muted-foreground break-words">
-            {fromVersion ? (
-              <>
-                <span>{fromVersion}</span>
-                <span aria-hidden="true"> → </span>
-              </>
-            ) : null}
-            <span className="font-semibold text-foreground">{toVersion}</span>
-          </div>
-          {subtitle ? (
-            <div className="mt-0.5 text-[11px] leading-4 text-muted-foreground break-words">
-              {subtitle}
-            </div>
-          ) : null}
-        </div>
-      </div>
+      </CornerSlot>
+    )
+  }
 
-      {showExpanded && (
-        <div className="px-4 pt-3">
-          <div
-            data-testid={testId ? `${testId}-notes` : undefined}
-            className="max-h-40 overflow-y-auto rounded-lg bg-muted/60 px-3 py-2.5 text-[11px] leading-4 text-muted-foreground"
-          >
-            {expandedContent}
+  return (
+    <CornerSlot order={CORNER_ORDER.update}>
+      <div
+        role="status"
+        aria-live="polite"
+        data-testid={testId}
+        className={cn(CORNER_CARD, className)}
+        {...holdProps}
+      >
+        <CornerCardHeader
+          title={title}
+          collapseLabel={collapseLabel}
+          onCollapse={collapse}
+          dismissLabel={dismissLabel}
+          onDismiss={dismissible ? onDismiss : undefined}
+        />
+
+        <div className="bg-[var(--dl-row)] px-4 py-3">
+          <div className="flex items-start gap-3">
+            <span className="flex shrink-0 pt-px text-[var(--dl-strong)]">
+              <IconRefresh size={18} aria-hidden />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs leading-[18px] break-words text-[var(--dl-text)]">
+                {fromVersion ? (
+                  <>
+                    <span>{fromVersion}</span>
+                    <span aria-hidden="true"> → </span>
+                  </>
+                ) : null}
+                <span className="font-semibold text-[var(--dl-title)]">
+                  {toVersion}
+                </span>
+              </p>
+              {subtitle ? (
+                <p className="mt-0.5 text-[11px] leading-4 break-words tabular-nums text-[var(--dl-text)]">
+                  {subtitle}
+                </p>
+              ) : null}
+            </div>
           </div>
-          {expandedAction ? (
-            <div className="mt-1 flex justify-end">
-              <Button
-                variant="link"
-                size="xs"
-                onClick={expandedAction.onClick}
-                className="h-auto px-0 text-[11px] font-normal text-muted-foreground underline underline-offset-2 hover:text-foreground"
+
+          {showExpanded && (
+            <div className="mt-3">
+              <div
+                data-testid={testId ? `${testId}-notes` : undefined}
+                className="max-h-40 overflow-y-auto rounded-lg border border-[var(--dl-divider)] bg-[var(--dl-panel-bg)] px-3 py-2.5 text-[11px] leading-4 text-[var(--dl-text)]"
               >
-                {expandedAction.label}
-              </Button>
-            </div>
-          ) : null}
-        </div>
-      )}
-
-      {hasHighlights && (
-        <div className="px-4 pt-3">
-          <div className="rounded-lg bg-muted/60 px-3 py-2.5">
-            <ul className="flex flex-col gap-1.5">
-              {highlights.map((item, index) => (
-                <li
-                  key={`${index}-${item.headline}`}
-                  className="flex gap-1.5 text-[11px] leading-4"
-                >
-                  <span
-                    aria-hidden="true"
-                    className="mt-[3px] size-1 shrink-0 rounded-full bg-muted-foreground/60"
-                  />
-                  <span className="min-w-0">
-                    <span className="font-medium text-foreground">
-                      {item.headline}
-                    </span>
-                    {item.detail ? (
-                      <span className="text-muted-foreground">
-                        {' '}
-                        {item.detail}
-                      </span>
-                    ) : null}
-                  </span>
-                </li>
-              ))}
-            </ul>
-            {remainingLabel ? (
-              <div className="mt-1.5 pl-[10px] text-[11px] leading-4 text-muted-foreground">
-                {remainingLabel}
+                {expandedContent}
               </div>
-            ) : null}
-          </div>
-        </div>
-      )}
+              {expandedAction ? (
+                <div className="mt-1 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={expandedAction.onClick}
+                    className="cursor-pointer text-[11px] text-[var(--dl-text)] underline underline-offset-2 hover:text-[var(--dl-title)]"
+                  >
+                    {expandedAction.label}
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          )}
 
-      {/* Wraps rather than overflowing: three labels of unknown length share
-          one row, and a longer translation would otherwise push "Update" off
-          the card. When they do not fit, the action pair drops to its own
-          right-aligned line and the link keeps the one above it. */}
-      <div className="flex flex-wrap items-center justify-end gap-1 px-2 pb-2 pt-3">
-        {secondaryAction ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={secondaryAction.onClick}
-            className="mr-auto min-w-0 max-w-full text-muted-foreground"
-          >
-            <span className="truncate">{secondaryAction.label}</span>
-          </Button>
-        ) : null}
-        <div className="flex items-center gap-1">
-          {dismissible ? (
-            <Button variant="ghost" size="sm" onClick={onRemindLater}>
-              {remindLaterLabel}
-            </Button>
-          ) : null}
-          {busy && progress != null ? (
-            <UpdateProgressButton
-              progress={progress}
-              label={busyLabel ?? updateLabel}
-            />
-          ) : (
-            <Button size="sm" onClick={onUpdate} disabled={busy}>
-              {busy ? (busyLabel ?? updateLabel) : updateLabel}
-            </Button>
+          {hasHighlights && (
+            <div className="mt-2.5 pl-[30px]">
+              <ul className="flex flex-col gap-1.5">
+                {highlights.map((item, index) => (
+                  <li
+                    key={`${index}-${item.headline}`}
+                    className="flex gap-1.5 text-[11px] leading-4"
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="mt-[6px] size-1 shrink-0 rounded-full bg-[var(--dl-progress)]"
+                    />
+                    <span className="min-w-0">
+                      <span className="font-medium text-[var(--dl-title)]">
+                        {item.headline}
+                      </span>
+                      {item.detail ? (
+                        <span className="text-[var(--dl-text)]">
+                          {' '}
+                          {item.detail}
+                        </span>
+                      ) : null}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {remainingLabel ? (
+                <div className="mt-1.5 pl-[10px] text-[11px] leading-4 text-[var(--dl-text)]">
+                  {remainingLabel}
+                </div>
+              ) : null}
+            </div>
           )}
         </div>
-      </div>
-    </div>
-  )
 
-  // The Welcome cards establish their own stacking contexts. Rendering the
-  // fixed banner beside them allowed a card border to paint over the banner.
-  // The body is the app-wide overlay layer and keeps this notification above
-  // route content regardless of which page is open.
-  return typeof document === 'undefined'
-    ? banner
-    : createPortal(banner, document.body)
+        {/* Wraps rather than overflowing: three labels of unknown length share
+            one row, and a longer translation would otherwise push "Update" off
+            the card. When they do not fit, the action pair drops to its own
+            right-aligned line and the link keeps the one above it. */}
+        <div className="flex flex-wrap items-center justify-end gap-1 border-t border-[var(--dl-divider)] px-2 py-2">
+          {secondaryAction ? (
+            <button
+              type="button"
+              onClick={secondaryAction.onClick}
+              className={cn(CORNER_ACTION, 'mr-auto max-w-full')}
+            >
+              <span className="truncate">{secondaryAction.label}</span>
+            </button>
+          ) : null}
+          <div className="flex items-center gap-1">
+            {dismissible ? (
+              <button
+                type="button"
+                className={CORNER_ACTION}
+                onClick={onRemindLater}
+              >
+                {remindLaterLabel}
+              </button>
+            ) : null}
+            {running ? (
+              <UpdateProgressButton
+                progress={progress}
+                label={busyLabel ?? updateLabel}
+              />
+            ) : (
+              <button
+                type="button"
+                className={CORNER_PRIMARY_ACTION}
+                onClick={onUpdate}
+                disabled={busy}
+              >
+                {busy ? (busyLabel ?? updateLabel) : updateLabel}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </CornerSlot>
+  )
 }
 
 /**
  * The "Update" pill once pressed: the same size and shape, filling with the
- * primary colour as the update downloads. The label is drawn twice — muted on
+ * strip's teal as the update downloads. The label is drawn twice — muted on
  * the track, inverted on the fill, clipped to the same edge — so it stays
  * legible wherever the edge happens to cross it.
  */
@@ -279,14 +310,16 @@ function UpdateProgressButton({
       aria-valuenow={percent}
       aria-valuetext={label}
       data-slot="update-progress"
-      className="relative h-8 min-w-28 overflow-hidden rounded-full bg-primary/15 text-sm font-medium"
+      className="relative h-7 min-w-24 overflow-hidden rounded-full bg-[var(--dl-track)] text-xs font-medium"
     >
-      <div className={cn(labelClassName, 'text-foreground')}>{label}</div>
+      <div className={cn(labelClassName, 'text-[var(--dl-strong)]')}>
+        {label}
+      </div>
       <div
         aria-hidden="true"
         className={cn(
           labelClassName,
-          'absolute inset-0 bg-primary text-primary-foreground transition-[clip-path] duration-300 ease-out'
+          'absolute inset-0 bg-[var(--dl-progress)] text-[var(--dl-badge-text)] transition-[clip-path] duration-300 ease-out motion-reduce:transition-none'
         )}
         style={{ clipPath: `inset(0 ${100 - percent}% 0 0)` }}
       >

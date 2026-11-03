@@ -38,6 +38,11 @@ export type ImageArtifactState = {
   complete: boolean
   /** True while the transformer or a side file is being fetched. */
   downloading: boolean
+  /**
+   * The download stopped part way — paused, or cut off by a quit and brought
+   * back after the relaunch — and waits for `resume`.
+   */
+  paused: boolean
   /** 0..1 */
   progress: number
   currentBytes: number
@@ -52,6 +57,8 @@ export type ImageArtifactState = {
   /** An unload is in flight for this artifact. */
   unloading: boolean
   download: () => Promise<void>
+  /** Continue a paused download from the bytes already on disk. */
+  resume: () => Promise<void>
   cancelDownload: () => Promise<void>
   remove: () => Promise<void>
   load: () => Promise<void>
@@ -88,6 +95,8 @@ export function useImageArtifact(id: string): ImageArtifactState {
     (state) => state.refreshModelFiles
   )
   const downloads = useDownloadStore((state) => state.downloads)
+  const taskId = diffusionDownloadTaskId(id)
+  const paused = useDownloadStore((state) => state.pausedDownloads.has(taskId))
   const huggingfaceToken = useGeneralSetting((state) => state.huggingfaceToken)
   const { profile } = useHardwareTier()
   const workflow = useImageForm((state) => state.workflow)
@@ -125,7 +134,7 @@ export function useImageArtifact(id: string): ImageArtifactState {
 
   const totalBytes = workflowPlan?.totalBytes ?? 0
 
-  const progressEntry = downloads[diffusionDownloadTaskId(id)]
+  const progressEntry = downloads[taskId]
   const downloading = Boolean(progressEntry)
 
   const download = useCallback(async () => {
@@ -148,6 +157,16 @@ export function useImageArtifact(id: string): ImageArtifactState {
     }
   }, [family, quant, huggingfaceToken, refreshModelFiles, t, workflow])
 
+  // The panel's Resume does the same for this checkpoint: the transfer picks up
+  // from the partial files (`download` always asks the downloader to resume).
+  const resume = useCallback(async () => {
+    const { clearPausedDownload, markResumableDownload } =
+      useDownloadStore.getState()
+    clearPausedDownload(taskId)
+    markResumableDownload(taskId)
+    await download()
+  }, [taskId, download])
+
   const cancelDownload = useCallback(async () => {
     try {
       await cancelArtifactDownload(id)
@@ -169,6 +188,7 @@ export function useImageArtifact(id: string): ImageArtifactState {
       ? workflowPlan.missingBytes === 0
       : (installed?.complete ?? false),
     downloading,
+    paused: downloading && paused,
     progress: progressEntry?.progress ?? 0,
     currentBytes: progressEntry?.current ?? 0,
     downloadTotalBytes: progressEntry?.total || totalBytes,
@@ -182,6 +202,7 @@ export function useImageArtifact(id: string): ImageArtifactState {
     loading: loadingArtifactId === id,
     unloading: unloadingArtifactId === id,
     download,
+    resume,
     cancelDownload,
     remove,
     load,

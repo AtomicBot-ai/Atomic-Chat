@@ -1,3 +1,4 @@
+import '@/test/telemetry-ready'
 import { renderHook, act } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { events } from '@janhq/core'
@@ -49,7 +50,7 @@ const switchBackendThroughCore = vi.hoisted(() => vi.fn())
 vi.mock('@/services/engines/update', () => ({ switchBackendThroughCore }))
 
 vi.mock('posthog-js', () => ({
-  default: { capture: vi.fn(), has_opted_in_capturing: () => true },
+  default: { capture: vi.fn() },
 }))
 
 vi.mock('@/lib/extension', () => ({
@@ -617,7 +618,9 @@ describe('useBackendUpdater', () => {
     it('fails with the core’s reason when it could not read this engine’s source', async () => {
       engineVersions.mockResolvedValue({
         engines: [
-          versions({ error: { code: 'UPSTREAM_ERROR', message: 'manifest unreachable' } }),
+          versions({
+            error: { code: 'UPSTREAM_ERROR', message: 'manifest unreachable' },
+          }),
         ],
       })
       const { result } = renderHook(() => useBackendUpdater())

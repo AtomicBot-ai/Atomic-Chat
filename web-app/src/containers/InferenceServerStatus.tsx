@@ -28,13 +28,21 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { type InferenceStatusPhase } from '@/lib/inference-status'
 import { prettyModelName } from '@/lib/model-display-name'
 import { cn } from '@/lib/utils'
-import { describeModelLoadFailure, switchToModel } from '@/utils/switchModel'
+import { useMlxEngineInstallStore } from '@/services/engine-builds/mlx'
+import {
+  describeModelLoadFailure,
+  runModelLoadFailureAction,
+  switchToModel,
+  type ModelLoadFailureAction,
+} from '@/utils/switchModel'
 
 type Wording = {
   /** One line saying what is happening. */
   headline: string
   /** What the user can or cannot do about it right now. */
   detail?: string
+  /** The fix a failure offers, in place of a plain retry. */
+  action?: ModelLoadFailureAction
 }
 
 /** The failure's own wording, shared with the toast the same load raises. */
@@ -64,7 +72,11 @@ const useWording = (
           modelLoadError,
           selectedProvider
         )
-        return { headline: failure.title, detail: failure.description }
+        return {
+          headline: failure.title,
+          detail: failure.description,
+          action: failure.action,
+        }
       }
       case 'ready':
         return { headline: t('common:inferenceStatus.ready', { model }) }
@@ -91,9 +103,11 @@ export function InferenceServerStatusStrip({
   const serviceHub = useServiceHub()
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
   const loadingModel = useAppState((state) => state.loadingModel)
+  const engineInstalling = useMlxEngineInstallStore((state) => state.installing)
   const navigate = useNavigate()
 
   if (status.phase !== 'failed') return null
+  const { action } = wording
 
   return (
     <div
@@ -116,7 +130,25 @@ export function InferenceServerStatusStrip({
           <p className="text-muted-foreground mt-0.5">{wording.detail}</p>
         )}
       </div>
-      {status.modelId && (
+      {status.modelId && action && (
+        // The fix the failure names (installing the engine), then the load.
+        <Button
+          variant="link"
+          size="sm"
+          className="h-auto shrink-0 p-0 text-xs"
+          disabled={loadingModel || engineInstalling}
+          onClick={() => {
+            void runModelLoadFailureAction(action, {
+              modelId: status.modelId as string,
+              providerName: selectedProvider,
+              serviceHub,
+            })
+          }}
+        >
+          {action.label}
+        </Button>
+      )}
+      {status.modelId && !action && (
         <Button
           variant="link"
           size="sm"
