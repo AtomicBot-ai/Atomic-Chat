@@ -1269,8 +1269,8 @@ fn configure_hermes_at(
     let env_path = hermes_dir.join(".env");
 
     // The installer runs with `-SkipSetup`, so on a fresh install (notably
-    // Windows) no config.yaml exists yet. Seed a default skeleton so the patch
-    // logic below has the anchors it expects, instead of failing outright.
+    // Windows) no config.yaml exists yet. Seed a default skeleton instead of
+    // failing outright.
     if !config_path.exists() {
         std::fs::create_dir_all(hermes_dir)
             .map_err(|e| format!("Failed to create Hermes home directory: {}", e))?;
@@ -1281,32 +1281,10 @@ fn configure_hermes_at(
     let content = std::fs::read_to_string(&config_path)
         .map_err(|e| format!("Failed to read config.yaml: {}", e))?;
 
-    // --- Patch model section (first occurrence of each key) ---
-    let mut did_default = false;
-    let mut did_provider = false;
-    let mut did_base_url = false;
-
-    let patched: Vec<String> = content
-        .lines()
-        .map(|line| {
-            let trimmed = line.trim();
-            if !did_default && trimmed.starts_with("default:") {
-                did_default = true;
-                return replace_yaml_scalar_value(line, &model);
-            }
-            if !did_provider && trimmed.starts_with("provider:") {
-                did_provider = true;
-                return replace_yaml_scalar_value(line, "custom:atomic-chat");
-            }
-            if !did_base_url && trimmed.starts_with("base_url:") {
-                did_base_url = true;
-                return replace_yaml_scalar_value(line, &api_url);
-            }
-            line.to_string()
-        })
-        .collect();
-
-    let after_model_patch = patched.join("\n");
+    // --- Patch the top-level model section only ---
+    // `custom:atomic-chat` selects our named entry below, which carries the key.
+    let after_model_patch =
+        patch_hermes_model_section(&content, &model, "custom:atomic-chat", &api_url);
 
     // --- Upsert only our entry in custom_providers (preserves user's other providers) ---
     // Hermes Agent rejects any model whose context window is below 64K, so the
@@ -1369,7 +1347,10 @@ fn configure_hermes_at(
 
 #[tauri::command]
 pub fn clear_hermes_agent_config() -> Result<(), String> {
-    let hermes_dir = resolve_hermes_dir()?;
+    clear_hermes_at(&resolve_hermes_dir()?)
+}
+
+fn clear_hermes_at(hermes_dir: &Path) -> Result<(), String> {
     let config_path = hermes_dir.join("config.yaml");
 
     if !config_path.exists() {
@@ -1379,31 +1360,14 @@ pub fn clear_hermes_agent_config() -> Result<(), String> {
     let content = std::fs::read_to_string(&config_path)
         .map_err(|e| format!("Failed to read config.yaml: {}", e))?;
 
-    let mut did_default = false;
-    let mut did_provider = false;
-    let mut did_base_url = false;
-
-    let patched: Vec<String> = content
-        .lines()
-        .map(|line| {
-            let trimmed = line.trim();
-            if !did_default && trimmed.starts_with("default:") {
-                did_default = true;
-                return replace_yaml_scalar_value(line, "anthropic/claude-opus-4.6");
-            }
-            if !did_provider && trimmed.starts_with("provider:") {
-                did_provider = true;
-                return replace_yaml_scalar_value(line, "auto");
-            }
-            if !did_base_url && trimmed.starts_with("base_url:") {
-                did_base_url = true;
-                return replace_yaml_scalar_value(line, "https://openrouter.ai/api/v1");
-            }
-            line.to_string()
-        })
-        .collect();
-
-    let after_model_patch = patched.join("\n");
+    // Restore the defaults in the top-level model section only, as Connect
+    // never writes anywhere else.
+    let after_model_patch = patch_hermes_model_section(
+        &content,
+        "anthropic/claude-opus-4.6",
+        "auto",
+        "https://openrouter.ai/api/v1",
+    );
 
     // Remove only our entry from custom_providers (preserves user's other providers)
     let after_cp = remove_atomic_provider(&after_model_patch);
@@ -1454,6 +1418,166 @@ fn replace_yaml_scalar_value(line: &str, new_value: &str) -> String {
     }
 }
 
+/// Drop a trailing `# comment` (YAML only starts one at the beginning of a
+/// line or after whitespace).
+fn strip_yaml_comment(text: &str) -> &str {
+    let mut after_space = true;
+    for (i, c) in text.char_indices() {
+        if c == '#' && after_space {
+            return &text[..i];
+        }
+        after_space = c.is_whitespace();
+    }
+    text
+}
+
+/// The key and the comment-free value of a top-level (column-0) mapping line.
+fn top_level_yaml_key(line: &str) -> Option<(&str, &str)> {
+    if !is_top_level_yaml_key(line) {
+        return None;
+    }
+    let (key, value) = line.split_once(':')?;
+    Some((key.trim(), strip_yaml_comment(value).trim()))
+}
+
+fn yaml_indent(line: &str) -> usize {
+    line.len() - line.trim_start().len()
+}
+
+fn is_blank_or_yaml_comment(line: &str) -> bool {
+    let t = line.trim();
+    t.is_empty() || t.starts_with('#')
+}
+
+fn with_trailing_newline(text: String) -> String {
+    if text.ends_with('\n') {
+        text
+    } else {
+        format!("{}\n", text)
+    }
+}
+
+/// Point the top-level `model:` section of Hermes' `config.yaml` at the given
+/// route, and touch nothing outside it.
+///
+/// Hermes takes its chat route from `model.default` (`model.model` is an
+/// alias), `model.provider` and `model.base_url` alone; a section it cannot
+/// read leaves it on its built-in default, an empty model on provider `auto`,
+/// which falls through to OpenRouter ("No models provided"). The same keys
+/// recur under `auxiliary:`, `delegation:`, `cron:`, `moa:`, `tts:` and
+/// others, so only direct children of the top-level `model:` key are ours. A
+/// missing key is added at the section's indent, a nested value under a
+/// replaced key is dropped, a scalar `model: <id>` (also valid Hermes) becomes
+/// a block, and a file with no `model:` at all gets one appended. Mirrors
+/// `patchModelSection` in atomic-chat-core.
+fn patch_hermes_model_section(
+    content: &str,
+    model: &str,
+    provider: &str,
+    base_url: &str,
+) -> String {
+    let mut lines: Vec<String> = content.lines().map(str::to_string).collect();
+    let wanted = [
+        ("default", model),
+        ("provider", provider),
+        ("base_url", base_url),
+    ];
+    let block = |indent: &str| -> Vec<String> {
+        wanted
+            .iter()
+            .map(|(key, value)| format!("{}{}: {}", indent, key, value))
+            .collect()
+    };
+
+    let header = lines
+        .iter()
+        .enumerate()
+        .find_map(|(i, line)| match top_level_yaml_key(line) {
+            Some(("model", value)) => Some((i, !value.is_empty())),
+            _ => None,
+        });
+    let Some((header_idx, is_scalar)) = header else {
+        while lines.last().is_some_and(|l| l.trim().is_empty()) {
+            lines.pop();
+        }
+        lines.push("model:".to_string());
+        lines.extend(block("  "));
+        return with_trailing_newline(lines.join("\n"));
+    };
+
+    // The section runs to the next column-0 key; comments and blank lines in
+    // it are kept.
+    let end = (header_idx + 1..lines.len())
+        .find(|&i| is_top_level_yaml_key(&lines[i]))
+        .unwrap_or(lines.len());
+
+    if is_scalar {
+        // Anything still indented under a scalar `model: <id>` is that
+        // scalar's continuation.
+        let mut replacement = vec!["model:".to_string()];
+        replacement.extend(block("  "));
+        replacement.extend(
+            lines[header_idx + 1..end]
+                .iter()
+                .filter(|l| is_blank_or_yaml_comment(l))
+                .cloned(),
+        );
+        lines.splice(header_idx..end, replacement);
+        return with_trailing_newline(lines.join("\n"));
+    }
+
+    let mut section: Vec<String> = lines[header_idx + 1..end].to_vec();
+    let child_indent = section
+        .iter()
+        .find(|l| !is_blank_or_yaml_comment(l))
+        .map_or_else(|| "  ".to_string(), |l| l[..yaml_indent(l)].to_string());
+    let mut missing: Vec<String> = Vec::new();
+    for (key, value) in wanted {
+        let at = section.iter().position(|l| {
+            !is_blank_or_yaml_comment(l)
+                && yaml_indent(l) == child_indent.len()
+                && l.trim()
+                    .strip_prefix(key)
+                    .is_some_and(|rest| rest.trim_start().starts_with(':'))
+        });
+        let Some(at) = at else {
+            missing.push(format!("{}{}: {}", child_indent, key, value));
+            continue;
+        };
+        section[at] = replace_yaml_scalar_value(&section[at], value);
+        // A nested value (a mapping-valued `default`, a wrapped scalar) would
+        // dangle under the new one.
+        let mut i = at + 1;
+        while i < section.len() {
+            if is_blank_or_yaml_comment(&section[i]) {
+                i += 1;
+            } else if yaml_indent(&section[i]) > child_indent.len() {
+                section.remove(i);
+            } else {
+                break;
+            }
+        }
+    }
+    lines.splice(header_idx + 1..end, missing.into_iter().chain(section));
+    with_trailing_newline(lines.join("\n"))
+}
+
+/// True when the top-level `custom_providers:` holds an inline list with
+/// entries. It cannot be spliced line by line, and rebuilding the block
+/// around it would add a second `custom_providers:` key, which makes Hermes
+/// reject the whole file and run on its defaults; such a file is left alone.
+fn has_inline_custom_providers(content: &str) -> bool {
+    content
+        .lines()
+        .find_map(|line| match top_level_yaml_key(line) {
+            Some(("custom_providers", value)) => Some(value),
+            _ => None,
+        })
+        .is_some_and(|value| {
+            !value.is_empty() && value.split_whitespace().collect::<String>() != "[]"
+        })
+}
+
 const ATOMIC_PROVIDER_NAME: &str = "atomic-chat";
 
 /// Default per-request timeout (seconds) seeded for Hermes' `custom` provider.
@@ -1466,10 +1590,11 @@ const HERMES_REQUEST_TIMEOUT_SECONDS: u32 = 180;
 /// The installer is spawned with `-SkipSetup`/`--skip-setup`, which skips the
 /// interactive wizard that would otherwise create `~/.hermes/config.yaml`. On
 /// Windows the install script writes no config at all, so `configure_*` had
-/// nothing to patch. This skeleton carries exactly the anchors the patch logic
-/// expects (`default`/`provider`/`base_url` model keys + `custom_providers`);
-/// `configure_hermes_agent` then rewrites them to point at the local server.
-/// Values mirror the Hermes defaults restored by `clear_hermes_agent_config`.
+/// nothing to patch. This skeleton mirrors the `model:` block of Hermes' own
+/// `cli-config.yaml.example`, which the macOS/Linux installer copies in
+/// instead; `configure_hermes_agent` then rewrites it to point at the local
+/// server. Values mirror the Hermes defaults restored by
+/// `clear_hermes_agent_config`.
 const HERMES_DEFAULT_CONFIG: &str = "model:
   default: anthropic/claude-opus-4.6
   provider: auto
@@ -1562,7 +1687,7 @@ pub(crate) fn split_custom_providers(
     for line in content.lines() {
         match phase {
             Phase::Before => {
-                let t = line.trim();
+                let t = strip_yaml_comment(line).trim();
                 if t == "custom_providers:"
                     || t == "custom_providers: []"
                     || t == "custom_providers:[]"
@@ -1671,6 +1796,10 @@ fn upsert_atomic_provider(
     context_length: u32,
     api_key: Option<&str>,
 ) -> String {
+    if has_inline_custom_providers(content) {
+        return with_trailing_newline(content.to_string());
+    }
+
     let (before, mut entries, after) = split_custom_providers(content);
 
     entries.retain(|e| !entry_is_ours(e));
@@ -1695,6 +1824,10 @@ fn upsert_atomic_provider(
 /// Remove only the `atomic-chat` entry from `custom_providers`,
 /// leaving all other user entries intact.
 fn remove_atomic_provider(content: &str) -> String {
+    if has_inline_custom_providers(content) {
+        return with_trailing_newline(content.to_string());
+    }
+
     let (before, mut entries, after) = split_custom_providers(content);
     entries.retain(|e| !entry_is_ours(e));
     rebuild_custom_providers(&before, &entries, &after)
@@ -1719,14 +1852,16 @@ fn upsert_provider_request_timeout(content: &str, provider_id: &str, seconds: u3
     let prov_key_line = format!("  {}:", provider_id);
     let field_line = format!("    request_timeout_seconds: {}", seconds);
 
-    // Locate a top-level `providers:` mapping (also tolerate an empty `{}` form).
-    let providers_idx = lines.iter().position(|l| {
-        let t = l.trim_end();
-        is_top_level_yaml_key(l)
-            && (t == "providers:" || t == "providers: {}" || t == "providers:{}")
-    });
+    // Locate the top-level `providers:` key, whatever follows it on the line.
+    let providers = lines
+        .iter()
+        .enumerate()
+        .find_map(|(i, l)| match top_level_yaml_key(l) {
+            Some(("providers", value)) => Some((i, value.split_whitespace().collect::<String>())),
+            _ => None,
+        });
 
-    match providers_idx {
+    match providers {
         None => {
             while lines.last().map_or(false, |l| l.trim().is_empty()) {
                 lines.pop();
@@ -1735,8 +1870,12 @@ fn upsert_provider_request_timeout(content: &str, provider_id: &str, seconds: u3
             lines.push(prov_key_line);
             lines.push(field_line);
         }
-        Some(pidx) => {
-            if lines[pidx].trim_end() != "providers:" {
+        // Hermes' YAML loader rejects a duplicate key and then runs on its
+        // defaults: an inline map we cannot edit line by line is left as it
+        // is rather than shadowed by a second `providers:`.
+        Some((_, value)) if !value.is_empty() && value != "{}" => {}
+        Some((pidx, value)) => {
+            if !value.is_empty() {
                 lines[pidx] = "providers:".to_string();
             }
 
@@ -7457,5 +7596,307 @@ mod integration_auth_tests {
         }
         assert!(ensure_zed_stopped(false).is_ok());
         assert!(ensure_zed_stopped(true).unwrap_err().contains("Quit Zed"));
+    }
+}
+
+#[cfg(test)]
+mod hermes_config_tests {
+    use super::*;
+
+    const URL: &str = "http://127.0.0.1:1337/v1";
+    const MODEL: &str = "unsloth/Qwen3_5-4B-GGUF-Qwen3_5-4B-IQ4_XS";
+    const PROVIDER: &str = "custom:atomic-chat";
+
+    /// The head of Hermes' shipped `cli-config.yaml.example` (v0.22.6), which
+    /// its installer copies in.
+    const UPSTREAM_EXAMPLE: &str = r##"# Hermes Agent CLI Configuration
+_config_version: 52
+
+database:
+  journal_mode: "wal"  # Supported values: "wal", "delete"
+
+plugins:
+  clone_timeout_seconds: 300
+
+model:
+  # Default model to use (can be overridden with --model flag)
+  default: "anthropic/claude-opus-4.6"
+
+  # Inference provider selection:
+  #   "custom"       - Any other OpenAI-compatible endpoint. Set base_url below.
+  provider: "auto"
+
+  # api_key: "your-key-here"  # Uncomment to set here instead of .env
+  base_url: "https://openrouter.ai/api/v1"
+
+  # Azure Foundry keyless auth example:
+  # provider: "azure-foundry"
+  # default: "gpt-4o"          # Deployment/model name
+# providers:
+#   my-proxy:
+#     base_url: "https://llm.internal.example.com/v1"
+
+compression:
+  enabled: true
+"##;
+
+    /// Hermes reads config.yaml with ruamel, which rejects duplicate keys;
+    /// serde_yaml does the same.
+    fn hermes_view(text: &str) -> serde_yaml::Value {
+        serde_yaml::from_str(text).unwrap_or_else(|e| panic!("unreadable config ({e}):\n{text}"))
+    }
+
+    fn patch(content: &str) -> String {
+        patch_hermes_model_section(content, MODEL, PROVIDER, URL)
+    }
+
+    fn ours(indent: &str) -> String {
+        format!("{indent}default: {MODEL}\n{indent}provider: {PROVIDER}\n{indent}base_url: {URL}\n")
+    }
+
+    #[test]
+    fn hermes_view_rejects_duplicate_keys_like_hermes() {
+        assert!(serde_yaml::from_str::<serde_yaml::Value>("a: 1\na: 2\n").is_err());
+    }
+
+    #[test]
+    fn hermes_patch_keeps_the_upstream_example_byte_for_byte_but_the_route() {
+        let expected = UPSTREAM_EXAMPLE
+            .replace(
+                "  default: \"anthropic/claude-opus-4.6\"",
+                &format!("  default: {MODEL}"),
+            )
+            .replace("  provider: \"auto\"", &format!("  provider: {PROVIDER}"))
+            .replace(
+                "  base_url: \"https://openrouter.ai/api/v1\"",
+                &format!("  base_url: {URL}"),
+            );
+        assert_eq!(patch(UPSTREAM_EXAMPLE), expected);
+    }
+
+    #[test]
+    fn hermes_patch_leaves_the_same_keys_alone_in_every_other_block() {
+        // The old first-match patch rewrote auxiliary and moa here (breaking
+        // the YAML) and left model on an empty default and provider auto:
+        // either way Hermes sent an empty model to OpenRouter.
+        let before = "auxiliary:\n  vision:\n    provider: auto\n    model: \"\"\n    base_url: \"\"\n\
+                      cron:\n  provider: \"\"\n\
+                      moa:\n  presets:\n    default:\n      aggregator: {provider: openrouter, model: x}\n";
+        let after =
+            "delegation:\n  provider: openrouter\n  base_url: https://openrouter.ai/api/v1\n";
+        let out = patch(&format!(
+            "{before}model:\n  default: \"\"\n  provider: auto\n  base_url: \"\"\n{after}"
+        ));
+        assert_eq!(out, format!("{before}model:\n{}{after}", ours("  ")));
+    }
+
+    #[test]
+    fn hermes_patch_turns_a_scalar_model_into_a_block() {
+        for scalar in [
+            "anthropic/claude-opus-4.6",
+            "\"\"",
+            "{}",
+            "'' # picked by setup",
+        ] {
+            let out = patch(&format!(
+                "model: {scalar}\ndelegation:\n  provider: openrouter\n"
+            ));
+            assert_eq!(
+                out,
+                format!(
+                    "model:\n{}delegation:\n  provider: openrouter\n",
+                    ours("  ")
+                ),
+                "{scalar}"
+            );
+        }
+    }
+
+    #[test]
+    fn hermes_patch_appends_a_model_section_to_a_config_without_one() {
+        let out = patch("_config_version: 52\ntts:\n  provider: edge\n\n");
+        assert_eq!(
+            out,
+            format!(
+                "_config_version: 52\ntts:\n  provider: edge\nmodel:\n{}",
+                ours("  ")
+            )
+        );
+    }
+
+    #[test]
+    fn hermes_patch_adds_missing_keys_at_the_block_indent_and_drops_a_nested_default() {
+        let out = patch(
+            "model:\n    # picked in the wizard\n    default:\n      model: old\n      provider: openrouter\n    \
+             api_mode: chat_completions\n    model: alias\n",
+        );
+        assert_eq!(
+            out,
+            format!(
+                "model:\n    provider: {PROVIDER}\n    base_url: {URL}\n    # picked in the wizard\n    \
+                 default: {MODEL}\n    api_mode: chat_completions\n    model: alias\n"
+            )
+        );
+        // `default` wins over the `model` alias in Hermes, so the stale alias
+        // is harmless.
+        let view = hermes_view(&out);
+        assert_eq!(view["model"]["default"].as_str(), Some(MODEL));
+        assert_eq!(view["model"]["provider"].as_str(), Some(PROVIDER));
+        assert_eq!(view["model"]["base_url"].as_str(), Some(URL));
+    }
+
+    #[test]
+    fn hermes_patch_fills_an_empty_model_block() {
+        assert_eq!(
+            patch("model:\nother: 1\n"),
+            format!("model:\n{}other: 1\n", ours("  "))
+        );
+    }
+
+    #[test]
+    fn hermes_custom_providers_are_found_behind_a_trailing_comment() {
+        for line in [
+            "custom_providers: []",
+            "custom_providers:[]",
+            "  custom_providers: []",
+            "custom_providers: []  # bridges",
+        ] {
+            let (before, entries, _) = split_custom_providers(&format!("a: 1\n{line}\nb: 2\n"));
+            assert!(entries.is_empty(), "{line}");
+            assert_eq!(before, vec!["a: 1"], "{line}");
+        }
+        let (_, entries, after) =
+            split_custom_providers("custom_providers:  # bridges\n- name: one\ntools: {}\n");
+        assert_eq!(entries, vec![vec!["- name: one"]]);
+        assert_eq!(after, vec!["tools: {}"]);
+    }
+
+    #[test]
+    fn hermes_inline_custom_providers_are_left_alone_rather_than_duplicated() {
+        let inline = "custom_providers: [{name: bridge, base_url: \"http://localhost:9000\"}]\n";
+        assert_eq!(
+            upsert_atomic_provider(inline, "http://u", "m", 64, None),
+            inline
+        );
+        assert_eq!(remove_atomic_provider(inline), inline);
+    }
+
+    #[test]
+    fn hermes_provider_timeout_rewrites_an_empty_inline_map_into_a_block() {
+        assert_eq!(
+            upsert_provider_request_timeout("a: 1\nproviders: {}\nb: 2\n", "custom", 180),
+            "a: 1\nproviders:\n  custom:\n    request_timeout_seconds: 180\nb: 2\n"
+        );
+    }
+
+    #[test]
+    fn hermes_provider_timeout_never_adds_a_second_providers_key() {
+        assert_eq!(
+            upsert_provider_request_timeout(
+                "providers:  # named endpoints\n  x: {}\n",
+                "custom",
+                180
+            ),
+            "providers:  # named endpoints\n  custom:\n    request_timeout_seconds: 180\n  x: {}\n"
+        );
+        let inline = "providers: {openai: {request_timeout_seconds: 60}}\n";
+        assert_eq!(
+            upsert_provider_request_timeout(inline, "custom", 180),
+            inline
+        );
+    }
+
+    #[test]
+    fn hermes_connect_patches_only_the_top_level_model_block() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join("config.yaml");
+        fs::write(
+            &config,
+            "model:\n  default: old\n  provider: auto\n  base_url: https://x\n\
+             other:\n  default: untouched\ncustom_providers: []\n",
+        )
+        .unwrap();
+        configure_hermes_at(dir.path(), URL.into(), "m".into(), None, None).unwrap();
+        let out = fs::read_to_string(&config).unwrap();
+        assert!(out.contains("  default: m\n"), "{out}");
+        assert!(out.contains("  default: untouched\n"), "{out}");
+    }
+
+    #[test]
+    fn hermes_connect_routes_to_the_local_endpoint_from_every_shape_idempotently() {
+        let shapes = [
+            UPSTREAM_EXAMPLE,
+            // A model: block after other blocks with the same keys.
+            "auxiliary:\n  vision:\n    provider: auto\n    base_url: \"\"\ndelegation:\n  default: fast\n\
+             \x20 provider: openrouter\nmodel:\n  default: \"\"\n  provider: auto\n",
+            "model: anthropic/claude-opus-4.6\ncron:\n  provider: \"\"\n",
+            "_config_version: 52\nmemory:\n  provider: \"\"\n",
+            "model:  # main chat\n  default: x\ncustom_providers: []  # none\n\
+             providers:  # named\n  x:\n    base_url: http://x\n",
+        ];
+        for seed in shapes {
+            let dir = tempfile::tempdir().unwrap();
+            let config = dir.path().join("config.yaml");
+            fs::write(&config, seed).unwrap();
+            let connect = || {
+                configure_hermes_at(
+                    dir.path(),
+                    URL.into(),
+                    MODEL.into(),
+                    Some("sk-test".into()),
+                    None,
+                )
+                .unwrap();
+                fs::read_to_string(&config).unwrap()
+            };
+
+            let first = connect();
+            let view = hermes_view(&first);
+            assert_eq!(view["model"]["default"].as_str(), Some(MODEL), "{first}");
+            assert_eq!(
+                view["model"]["provider"].as_str(),
+                Some(PROVIDER),
+                "{first}"
+            );
+            assert_eq!(view["model"]["base_url"].as_str(), Some(URL), "{first}");
+            let entries = view["custom_providers"].as_sequence().unwrap();
+            assert_eq!(entries.len(), 1, "{first}");
+            assert_eq!(entries[0]["name"].as_str(), Some(ATOMIC_PROVIDER_NAME));
+            assert_eq!(entries[0]["base_url"].as_str(), Some(URL));
+            assert_eq!(entries[0]["api_key"].as_str(), Some("sk-test"));
+            assert_eq!(entries[0]["model"].as_str(), Some(MODEL));
+            assert_eq!(
+                entries[0]["models"][MODEL]["context_length"].as_u64(),
+                Some(65536)
+            );
+            assert_eq!(
+                view["providers"]["custom"]["request_timeout_seconds"].as_u64(),
+                Some(180),
+                "{first}"
+            );
+
+            assert_eq!(connect(), first);
+        }
+    }
+
+    #[test]
+    fn hermes_disconnect_restores_only_the_model_block_and_our_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join("config.yaml");
+        let seed = "auxiliary:\n  vision:\n    provider: auto\n    base_url: \"\"\n\
+                    model:\n  default: anthropic/claude-opus-4.6\n  provider: auto\n  \
+                    base_url: https://openrouter.ai/api/v1\n\
+                    custom_providers:\n- name: personal\n  base_url: https://example.com/v1\n\
+                    delegation:\n  provider: openrouter\n";
+        fs::write(&config, seed).unwrap();
+
+        configure_hermes_at(dir.path(), URL.into(), MODEL.into(), None, None).unwrap();
+        clear_hermes_at(dir.path()).unwrap();
+
+        // The provider timeout Connect seeded stays, as it did before.
+        assert_eq!(
+            fs::read_to_string(&config).unwrap(),
+            format!("{seed}providers:\n  custom:\n    request_timeout_seconds: 180\n")
+        );
     }
 }
