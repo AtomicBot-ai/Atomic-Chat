@@ -155,9 +155,9 @@ export async function writeAgentConfig(
         apiUrl,
         model,
         apiKey,
-        // Hermes Agent refuses to start below a 64K context window, so we
-        // configure 64K (the minimum it accepts).
-        contextLength: 65536,
+        // Hermes refuses a window below 64K: the writer falls back to that
+        // floor when the served window is unknown.
+        contextLength,
       })
       break
     case 'pi':

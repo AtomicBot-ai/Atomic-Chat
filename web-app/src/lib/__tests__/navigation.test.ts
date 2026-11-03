@@ -18,7 +18,6 @@ describe('navigationSection', () => {
     ['/settings/https-proxy', 'server'],
     ['/settings/local-api-server', 'server'],
     ['/settings/remote-lan', 'server'],
-    ['/settings/hermes-agent', 'server'],
     ['/hub/', 'models'],
     ['/hub', 'models'],
     ['/downloads', 'models'],

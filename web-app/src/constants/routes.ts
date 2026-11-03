@@ -24,7 +24,6 @@ export const route = {
     remote_lan: '/settings/remote-lan',
     hardware: '/settings/hardware',
     assistant: '/settings/assistant',
-    hermes_agent: '/settings/hermes-agent',
   },
   cloud: {
     index: '/cloud/',

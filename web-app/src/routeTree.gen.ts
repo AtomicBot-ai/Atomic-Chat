@@ -34,7 +34,6 @@ import { Route as SettingsMcpServersRouteImport } from './routes/settings/mcp-se
 import { Route as SettingsLocalApiServerRouteImport } from './routes/settings/local-api-server'
 import { Route as SettingsInterfaceRouteImport } from './routes/settings/interface'
 import { Route as SettingsHttpsProxyRouteImport } from './routes/settings/https-proxy'
-import { Route as SettingsHermesAgentRouteImport } from './routes/settings/hermes-agent'
 import { Route as SettingsHardwareRouteImport } from './routes/settings/hardware'
 import { Route as SettingsGeneralRouteImport } from './routes/settings/general'
 import { Route as SettingsExtensionsRouteImport } from './routes/settings/extensions'
@@ -175,11 +174,6 @@ const SettingsHttpsProxyRoute = SettingsHttpsProxyRouteImport.update({
   path: '/settings/https-proxy',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SettingsHermesAgentRoute = SettingsHermesAgentRouteImport.update({
-  id: '/settings/hermes-agent',
-  path: '/settings/hermes-agent',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const SettingsHardwareRoute = SettingsHardwareRouteImport.update({
   id: '/settings/hardware',
   path: '/settings/hardware',
@@ -270,7 +264,6 @@ export interface FileRoutesByFullPath {
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/hardware': typeof SettingsHardwareRoute
-  '/settings/hermes-agent': typeof SettingsHermesAgentRoute
   '/settings/https-proxy': typeof SettingsHttpsProxyRoute
   '/settings/interface': typeof SettingsInterfaceRoute
   '/settings/local-api-server': typeof SettingsLocalApiServerRoute
@@ -312,7 +305,6 @@ export interface FileRoutesByTo {
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/hardware': typeof SettingsHardwareRoute
-  '/settings/hermes-agent': typeof SettingsHermesAgentRoute
   '/settings/https-proxy': typeof SettingsHttpsProxyRoute
   '/settings/interface': typeof SettingsInterfaceRoute
   '/settings/local-api-server': typeof SettingsLocalApiServerRoute
@@ -355,7 +347,6 @@ export interface FileRoutesById {
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/hardware': typeof SettingsHardwareRoute
-  '/settings/hermes-agent': typeof SettingsHermesAgentRoute
   '/settings/https-proxy': typeof SettingsHttpsProxyRoute
   '/settings/interface': typeof SettingsInterfaceRoute
   '/settings/local-api-server': typeof SettingsLocalApiServerRoute
@@ -399,7 +390,6 @@ export interface FileRouteTypes {
     | '/settings/extensions'
     | '/settings/general'
     | '/settings/hardware'
-    | '/settings/hermes-agent'
     | '/settings/https-proxy'
     | '/settings/interface'
     | '/settings/local-api-server'
@@ -441,7 +431,6 @@ export interface FileRouteTypes {
     | '/settings/extensions'
     | '/settings/general'
     | '/settings/hardware'
-    | '/settings/hermes-agent'
     | '/settings/https-proxy'
     | '/settings/interface'
     | '/settings/local-api-server'
@@ -483,7 +472,6 @@ export interface FileRouteTypes {
     | '/settings/extensions'
     | '/settings/general'
     | '/settings/hardware'
-    | '/settings/hermes-agent'
     | '/settings/https-proxy'
     | '/settings/interface'
     | '/settings/local-api-server'
@@ -526,7 +514,6 @@ export interface RootRouteChildren {
   SettingsExtensionsRoute: typeof SettingsExtensionsRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
   SettingsHardwareRoute: typeof SettingsHardwareRoute
-  SettingsHermesAgentRoute: typeof SettingsHermesAgentRoute
   SettingsHttpsProxyRoute: typeof SettingsHttpsProxyRoute
   SettingsInterfaceRoute: typeof SettingsInterfaceRoute
   SettingsLocalApiServerRoute: typeof SettingsLocalApiServerRoute
@@ -728,13 +715,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsHttpsProxyRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/settings/hermes-agent': {
-      id: '/settings/hermes-agent'
-      path: '/settings/hermes-agent'
-      fullPath: '/settings/hermes-agent'
-      preLoaderRoute: typeof SettingsHermesAgentRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/settings/hardware': {
       id: '/settings/hardware'
       path: '/settings/hardware'
@@ -854,7 +834,6 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsExtensionsRoute: SettingsExtensionsRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,
   SettingsHardwareRoute: SettingsHardwareRoute,
-  SettingsHermesAgentRoute: SettingsHermesAgentRoute,
   SettingsHttpsProxyRoute: SettingsHttpsProxyRoute,
   SettingsInterfaceRoute: SettingsInterfaceRoute,
   SettingsLocalApiServerRoute: SettingsLocalApiServerRoute,

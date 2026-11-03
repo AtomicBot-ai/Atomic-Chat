@@ -107,12 +107,20 @@ export async function installIntegrationAgent(
   }
 }
 
+/** What the command that starts an agent depends on beyond its config. */
+type TerminalContext = {
+  /** The window the served model was loaded with, when known. */
+  contextLength?: number
+  /** An OpenClaw Gateway owns `~/.openclaw` (it refuses `openclaw chat`). */
+  openclawGateway?: boolean
+}
+
 /** The shell command that starts a terminal agent pointed at the server. */
 function terminalCommand(
   agent: IntegrationAgent,
   model: string | null,
   { serverHost, serverPort, apiPrefix, apiKey }: AgentServerSettings,
-  contextLength?: number
+  { contextLength, openclawGateway = false }: TerminalContext = {}
 ): string {
   // Off-PATH installs (custom path, or OpenClaw's app-managed prefix) have to
   // be spawned by absolute path; everything else keeps the bare binary name.
@@ -123,14 +131,15 @@ function terminalCommand(
     useLaunchStore.getState().binPath[agent.id]
   )
   // OpenClaw's bare `openclaw` entry is the Crestodian setup/repair helper
-  // (deterministic commands), not a chat. `openclaw chat` runs the embedded
-  // local agent runtime, so the user lands straight in a conversation with the
-  // configured model (no gateway needed). Goose's bare `goose` only prints
-  // help; `goose session` starts an interactive chat. OpenHands reads our env
-  // overrides only when launched with `--override-with-envs`. Everything else
-  // runs its bare detect binary.
-  if (agent.id === 'openclaw') return `${launcher} chat`
-  if (agent.id === 'openhands') return `${launcher} --override-with-envs`
+  // (deterministic commands), not a chat. `openclaw chat` (`tui --local`)
+  // runs the embedded agent runtime, so the user lands straight in a
+  // conversation with the configured model — but it refuses to start while a
+  // Gateway owns the state directory, the usual state after onboarding. Then
+  // `openclaw tui` joins that Gateway, which hot-reloads the config we wrote.
+  // Goose's bare `goose` only prints help; `goose session` starts an
+  // interactive chat. Everything else runs its bare detect binary.
+  if (agent.id === 'openclaw')
+    return `${launcher} ${openclawGateway ? 'tui' : 'chat'}`
   if (agent.id === 'dsh') {
     // DeepSeek Harness is a browser app, not a terminal chat: a bare `dsh` has
     // no profile to hand its arguments to and only prints the launcher's own
@@ -145,12 +154,16 @@ function terminalCommand(
     // selects; named on the command line, ours wins.
     return quotedAgentCommand(binary, ['--model', `atomic/${model}`], {})
   }
+  // Goose, OpenHands, Poolside and Muse Code take their endpoint from the
+  // environment only. It is set for this one run rather than for the user, so
+  // the agent started any other way keeps its own settings (a cloud key, a
+  // provider of its own).
+  const apiUrl = `http://${agentConnectHost(serverHost)}:${serverPort}${apiPrefix}`
   if (agent.id === 'goose') {
     // Goose reads its provider from the environment: given to this session
     // only, never saved for the whole user. OPENAI_BASE_URL carries the API
     // prefix; with the window and output cap it compacts before the server
     // refuses.
-    const apiUrl = `http://${agentConnectHost(serverHost)}:${serverPort}${apiPrefix}`
     return quotedAgentCommand(binary, ['session'], {
       GOOSE_PROVIDER: 'openai',
       GOOSE_MODEL: model ?? '',
@@ -166,8 +179,16 @@ function terminalCommand(
         : {}),
     })
   }
+  if (agent.id === 'openhands') {
+    // OpenHands reads these only with `--override-with-envs`; litellm needs
+    // the `openai/` prefix to send a custom model to a custom base URL.
+    return quotedAgentCommand(binary, ['--override-with-envs'], {
+      LLM_MODEL: `openai/${model ?? ''}`,
+      LLM_BASE_URL: apiUrl,
+      LLM_API_KEY: apiKey || 'atomic',
+    })
+  }
   if (agent.id === 'muse') {
-    const apiUrl = `http://${agentConnectHost(serverHost)}:${serverPort}${apiPrefix}`
     return quotedAgentCommand(
       binary,
       [
@@ -194,11 +215,15 @@ function terminalCommand(
     return quotedAgentCommand(binary, ['--model', `atomic-chat/${model}`], {})
   }
   if (agent.id === 'poolside') {
-    const apiUrl = `http://${agentConnectHost(serverHost)}:${serverPort}${apiPrefix}`
+    // Poolside's docs keep `/v1` in the standalone base URL, and the window
+    // sets when it compacts.
     return quotedAgentCommand(binary, [], {
-      POOLSIDE_STANDALONE_BASE_URL: apiUrl.replace(/\/v1\/?$/, ''),
+      POOLSIDE_STANDALONE_BASE_URL: apiUrl,
       POOLSIDE_API_KEY: apiKey || 'atomic',
       POOLSIDE_STANDALONE_MODEL: model ?? '',
+      ...(contextLength
+        ? { POOLSIDE_STANDALONE_CONTEXT_LENGTH: String(contextLength) }
+        : {}),
     })
   }
   return launcher
@@ -287,8 +312,9 @@ function terminalInfo(
 /** Opens the agent's own window or terminal; what it did, `null` if nothing. */
 async function openAgent(
   agent: IntegrationAgent,
-  { t, model, server }: OpenOptions
+  options: OpenOptions
 ): Promise<TerminalOutcome | null> {
+  const { t, model, server } = options
   // Zed is a desktop editor, not a terminal agent: its AI agent lives in its
   // own window. Launch the app directly (no terminal) — the config written
   // before points its `openai_compatible` "Atomic Chat" provider at the local
@@ -317,35 +343,33 @@ async function openAgent(
     }
     return app.launched ? 'opened' : null
   }
-  // OpenClaw also ships a desktop app (macOS `OpenClaw.app`, Windows Hub), and
-  // it reads the very config written before — its Gateway owns the file and
-  // hot-reloads it. So when the app is installed it *is* the destination, and
-  // dropping the user into a terminal TUI would land them in the wrong window.
+  // OpenClaw's macOS app reads the very config written before — its Gateway
+  // owns the file and hot-reloads it — so when it is installed it *is* the
+  // destination. Otherwise the terminal CLI, joined to a Gateway when one
+  // runs. The Windows Hub is never the destination: its Gateway reads a
+  // config of its own (in WSL or the packaged Gateway), not the one we wrote.
+  let openclawGateway = false
   if (agent.id === 'openclaw') {
-    const app = await invoke<{ installed: boolean; launched: boolean }>(
+    const app = await invoke<{ launched: boolean; gatewayRunning?: boolean }>(
       'launch_openclaw_app'
     )
     if (app.launched) return 'opened'
-    if (app.installed) {
-      // Windows Hub installs per-user with no documented path or AUMID to
-      // launch it by, so hand the user the one instruction we can give
-      // confidently instead of guessing at a shortcut.
-      toast.info(t('launch:toast.openclawAppReady'), {
-        description: t('launch:toast.openclawAppReadyDesc'),
-        duration: 10000,
-      })
-      return null
-    }
+    openclawGateway = app.gatewayRunning === true
   }
   if (refuseWslOnlyAgent(agent, t)) return null
-  // The window the served model was loaded with, for the agent told it at
-  // launch rather than in its config.
+  // Goose and Poolside are told the window at launch rather than in a
+  // config; nothing else asks for it there.
   const contextLength =
-    agent.id === 'goose' ? await servedContextLength() : undefined
+    agent.id === 'goose' || agent.id === 'poolside'
+      ? (options.contextLength ?? (await servedContextLength()))
+      : undefined
   const outcome = await invoke<TerminalOutcome | undefined>(
     'open_agent_terminal',
     {
-      command: terminalCommand(agent, model, server, contextLength),
+      command: terminalCommand(agent, model, server, {
+        contextLength,
+        openclawGateway,
+      }),
       proxy: buildProxyPayload(),
       agent: terminalInfo(agent, model, server),
     }
@@ -363,6 +387,8 @@ type OpenOptions = {
   /** The model the agent's config was written for. */
   model: string | null
   server: AgentServerSettings
+  /** The window the served model was loaded with; read when not given. */
+  contextLength?: number
 }
 
 /**

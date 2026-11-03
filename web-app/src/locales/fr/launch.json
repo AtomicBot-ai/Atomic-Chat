@@ -74,8 +74,6 @@
     "configuredDesc": "{{name}} utilise désormais votre serveur local — ouverture d'un terminal.",
     "configuredDescEditor": "{{name}} utilise désormais votre serveur local — ouverture de l'éditeur.",
     "configuredDescOpenclaw": "{{name}} utilise désormais votre serveur local. Sa passerelle (Gateway) recharge la configuration d'elle-même — si une discussion est encore liée à un autre modèle, exécutez /model default dans celle-ci.",
-    "openclawAppReady": "Ouvrez OpenClaw Companion",
-    "openclawAppReadyDesc": "Votre configuration est à jour. Ouvrez OpenClaw Companion depuis la zone de notification ou le menu Démarrer pour utiliser le modèle Atomic Chat.",
     "configuredDescCodex": "{{name}} utilise désormais votre serveur local via son propre profil — ouverture d'un terminal. La commande `codex` seule et l'application ChatGPT conservent vos paramètres ; exécutez `codex --profile atomic-chat` pour utiliser vous-même le modèle local.",
     "configuredDescCodexKeyed": "{{name}} utilise désormais votre serveur local via son propre profil — ouverture d'un terminal. La commande `codex` seule et l'application ChatGPT conservent vos paramètres. Pour utiliser vous-même le modèle local, définissez ATOMIC_CHAT_API_KEY avec la clé API de ce serveur, puis exécutez `codex --profile atomic-chat`.",
     "configuredDescZcode": "{{name}} utilise désormais votre serveur local et prend en compte la modification automatiquement — choisissez Atomic Chat dans son menu de modèles si une discussion utilise encore un autre modèle.",

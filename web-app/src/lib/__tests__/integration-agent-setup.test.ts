@@ -68,15 +68,20 @@ describe('integration agent setup', () => {
     })
   })
 
-  it('leaves the key out when the server has none, and keeps Hermes at its 64K floor', async () => {
+  it('leaves the key out when the server has none, and tells Hermes the served window', async () => {
     await expect(
-      writeAgentConfig(agent('hermes'), 'gemma-4', { ...SERVER, apiKey: '' })
+      writeAgentConfig(
+        agent('hermes'),
+        'gemma-4',
+        { ...SERVER, apiKey: '' },
+        { contextLength: 131072 }
+      )
     ).resolves.toBeUndefined()
     expect(invoke).toHaveBeenCalledWith('configure_hermes_agent', {
       apiUrl: 'http://127.0.0.1:1337/v1',
       model: 'gemma-4',
       apiKey: undefined,
-      contextLength: 65536,
+      contextLength: 131072,
     })
   })
 
