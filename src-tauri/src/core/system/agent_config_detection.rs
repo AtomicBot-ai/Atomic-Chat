@@ -125,13 +125,15 @@ impl AgentConfigPaths {
 }
 
 /// Ids of the agents whose config already points at Atomic Chat, in the
-/// Launch page's catalog order.
+/// Launch page's catalog order. An agent configured through an environment
+/// URL counts only when that URL is this server's: a local host on `port`.
 ///
 /// `user_env` reads a persistent User-scope env var (Windows `HKCU\Environment`,
 /// where `setx` writes); off Windows it returns `None`.
 pub(crate) fn detect_configured_agents_in(
     paths: &AgentConfigPaths,
     user_env: &dyn Fn(&str) -> Option<String>,
+    port: u16,
 ) -> Vec<String> {
     let home = paths.home.as_path();
     let rc = paths
@@ -140,7 +142,10 @@ pub(crate) fn detect_configured_agents_in(
         .and_then(read_text)
         .unwrap_or_default();
     let block = |marker: &str| shell_block_vars(&rc, marker);
-    let user_env_is_local = |name: &str| user_env(name).is_some_and(|v| is_local_url(&v));
+    let user_env_is_local = |name: &str| user_env(name).is_some_and(|v| is_local_url(&v, port));
+    let var_is_local = |vars: &HashMap<String, String>, name: &str| var_is_local(vars, name, port);
+    // Claude Code is matched on the exact address the app serves (host and port, or loopback
+    // with the port): its base URL is the one setting a user's own gateway also uses.
     let is_our_server = |url: &str| paths.server.is_url(url);
 
     let checks: [(&str, bool); 19] = [
@@ -254,13 +259,13 @@ pub(crate) fn detect_configured_agents_in(
 /// Ids of the integration agents whose own config on disk already points at
 /// Atomic Chat (written by our `configure_*` commands, possibly by an older
 /// release). Read-only; never fails — anything unreadable counts as not
-/// configured.
+/// configured. `port` is the Local API Server's.
 #[tauri::command]
-pub async fn detect_configured_agents() -> Vec<String> {
+pub async fn detect_configured_agents(port: u16) -> Vec<String> {
     // Path resolution may spawn a login shell (dsh) or PowerShell (Hermes,
     // Atomic Agent on Windows), so keep it off the async runtime.
-    let found = tokio::task::spawn_blocking(|| match AgentConfigPaths::resolve() {
-        Some(paths) => detect_configured_agents_in(&paths, &read_user_env),
+    let found = tokio::task::spawn_blocking(move || match AgentConfigPaths::resolve() {
+        Some(paths) => detect_configured_agents_in(&paths, &read_user_env, port),
         None => Vec::new(),
     })
     .await
@@ -417,14 +422,16 @@ fn unquote(v: &str) -> &str {
     v
 }
 
-fn var_is_local(vars: &HashMap<String, String>, name: &str) -> bool {
-    vars.get(name).is_some_and(|v| is_local_url(v))
+fn var_is_local(vars: &HashMap<String, String>, name: &str, port: u16) -> bool {
+    vars.get(name).is_some_and(|v| is_local_url(v, port))
 }
 
-/// Whether `raw` points at this machine or the local network: `localhost`,
+/// Whether `raw` points at this server: `port` (the scheme's default when the
+/// URL names none) on this machine or the local network — `localhost`,
 /// loopback, `0.0.0.0`, private / link-local IPv4, or loopback / unique-local /
-/// link-local IPv6. A scheme-less `host:port` is accepted too.
-pub(crate) fn is_local_url(raw: &str) -> bool {
+/// link-local IPv6. A scheme-less `host:port` is accepted too. Another local
+/// server (Ollama on 11434, a LiteLLM proxy) is the user's own, not ours.
+pub(crate) fn is_local_url(raw: &str, port: u16) -> bool {
     let raw = raw.trim();
     if raw.is_empty() {
         return false;
@@ -436,6 +443,9 @@ pub(crate) fn is_local_url(raw: &str) -> bool {
     let Some(parsed) = parsed else {
         return false;
     };
+    if parsed.port_or_known_default() != Some(port) {
+        return false;
+    }
     match parsed.host() {
         Some(url::Host::Domain(d)) => {
             let d = d.trim_end_matches('.').to_ascii_lowercase();
@@ -472,7 +482,7 @@ mod tests {
     }
 
     fn detect(home: &Path, rc: Option<&Path>) -> Vec<String> {
-        detect_configured_agents_in(&AgentConfigPaths::under_home(home, rc), &no_user_env)
+        detect_configured_agents_in(&AgentConfigPaths::under_home(home, rc), &no_user_env, 1337)
     }
 
     #[test]
@@ -635,6 +645,13 @@ mod tests {
         );
         assert!(detect(home.path(), None).is_empty());
 
+        // Another local proxy on its own port is the user's, not ours.
+        write(
+            &settings,
+            r#"{"env":{"ANTHROPIC_BASE_URL":"http://localhost:4000"}}"#,
+        );
+        assert!(detect(home.path(), None).is_empty());
+
         write(&settings, r#"{"model":"opus"}"#);
         assert!(detect(home.path(), None).is_empty());
     }
@@ -683,8 +700,11 @@ mod tests {
             ("META_API_KEY", "sk-real-meta-key"),
         ]);
         let lookup = |name: &str| env.get(name).map(|v| v.to_string());
-        let found =
-            detect_configured_agents_in(&AgentConfigPaths::under_home(home.path(), None), &lookup);
+        let found = detect_configured_agents_in(
+            &AgentConfigPaths::under_home(home.path(), None),
+            &lookup,
+            1337,
+        );
         assert_eq!(found, vec!["poolside", "goose"]);
     }
 
@@ -784,25 +804,33 @@ mod tests {
             "http://10.0.0.5:1337",
             "http://172.16.3.4:1337",
             "http://192.168.1.20:1337/v1",
-            "http://169.254.10.1",
+            "http://169.254.10.1:1337",
             "http://[::1]:1337",
             "http://[fd00::1]:1337",
             "http://api.localhost:1337",
             "localhost:1337",
             "127.0.0.1:1337",
         ] {
-            assert!(is_local_url(url), "{url} should be local");
+            assert!(is_local_url(url, 1337), "{url} should be ours");
         }
         for url in [
             "",
             "https://api.anthropic.com",
             "https://llm-gateway.corp.example.com",
-            "http://8.8.8.8",
-            "http://172.32.0.1",
-            "http://[2001:db8::1]",
+            "http://8.8.8.8:1337",
+            "http://172.32.0.1:1337",
+            "http://[2001:db8::1]:1337",
             "not a url",
+            // Local, but another server's port.
+            "http://localhost:11434/v1",
+            "http://127.0.0.1:4000",
+            "http://169.254.10.1",
+            "localhost",
         ] {
-            assert!(!is_local_url(url), "{url} should not be local");
+            assert!(!is_local_url(url, 1337), "{url} should not be ours");
         }
+        // The scheme's default port is the port when the URL names none.
+        assert!(is_local_url("http://localhost", 80));
+        assert!(is_local_url("https://127.0.0.1/v1", 443));
     }
 }

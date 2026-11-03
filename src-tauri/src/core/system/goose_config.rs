@@ -103,11 +103,12 @@ pub(crate) fn remove_legacy_shell_blocks(home: &Path) -> Result<Vec<PathBuf>, St
 pub(crate) fn legacy_user_vars(
     read: &dyn Fn(&str) -> Option<String>,
     api_key: Option<&str>,
+    port: u16,
 ) -> Vec<&'static str> {
     let ours = read("GOOSE_PROVIDER").as_deref().map(str::trim) == Some("openai")
         && read("OPENAI_BASE_PATH").as_deref().map(str::trim) == Some(LEGACY_BASE_PATH)
         && read("OPENAI_HOST")
-            .is_some_and(|host| super::agent_config_detection::is_local_url(&host));
+            .is_some_and(|host| super::agent_config_detection::is_local_url(&host, port));
     if !ours {
         return Vec::new();
     }
@@ -165,7 +166,12 @@ pub(crate) fn remove_legacy(api_key: Option<&str>) -> Result<(), String> {
     }
     #[cfg(windows)]
     {
-        let names = legacy_user_vars(&super::agent_config_detection::read_user_env, api_key);
+        let port = crate::core::server::state_file::read_state().port;
+        let names = legacy_user_vars(
+            &super::agent_config_detection::read_user_env,
+            api_key,
+            port,
+        );
         if !names.is_empty() {
             remove_user_vars(&names)?;
             log::info!("Removed the Goose user variables an earlier release set: {names:?}");
@@ -249,7 +255,7 @@ mod tests {
         let read = |name: &str| ours.get(name).map(|v| v.to_string());
         // A key that is neither the placeholder nor the server's stays.
         assert_eq!(
-            legacy_user_vars(&read, Some("sk-server")),
+            legacy_user_vars(&read, Some("sk-server"), 1337),
             vec![
                 "GOOSE_PROVIDER",
                 "GOOSE_MODEL",
@@ -257,7 +263,7 @@ mod tests {
                 "OPENAI_BASE_PATH"
             ]
         );
-        assert_eq!(legacy_user_vars(&read, Some("sk-real-openai")).len(), 5);
+        assert_eq!(legacy_user_vars(&read, Some("sk-real-openai"), 1337).len(), 5);
 
         // The user's own Goose on a remote OpenAI host is not ours at all.
         let theirs: HashMap<&str, &str> = HashMap::from([
@@ -267,6 +273,6 @@ mod tests {
             ("OPENAI_API_KEY", "atomic"),
         ]);
         let read = |name: &str| theirs.get(name).map(|v| v.to_string());
-        assert!(legacy_user_vars(&read, None).is_empty());
+        assert!(legacy_user_vars(&read, None, 1337).is_empty());
     }
 }
