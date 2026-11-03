@@ -211,7 +211,9 @@
     "disconnectTitle": "Disconnect {{name}}?",
     "cancel": "Cancel",
     "disconnectFailed": "Could not disconnect {{name}}",
-    "empty": "No tools connected yet."
+    "empty": "No tools connected yet.",
+    "modelSwitched": "Connected tools now use {{model}}",
+    "modelSwitchedDesc": "Restart a tool that is already running to switch it over."
   },
   "guide": {
     "label": "Server setup",

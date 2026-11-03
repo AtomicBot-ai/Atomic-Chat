@@ -165,6 +165,11 @@ vi.mock('@/utils/ensureModelForServer', () => ({
   resolveServerModels: mocks.resolveServerModels,
 }))
 
+// The connected agents' sync has its own tests; here it only must not need a real store.
+vi.mock('@/utils/connectedAgentsModel', () => ({
+  syncConnectedAgentsWithServedModel: () => () => {},
+}))
+
 // The served-model selection has its own tests; here it only must not need a real store.
 vi.mock('@/utils/serverModelSelection', () => ({
   syncServedModelSelection: () => () => {},

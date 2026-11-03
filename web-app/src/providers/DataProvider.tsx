@@ -68,6 +68,7 @@ import {
   loadServedModel,
   servedModel,
 } from '@/utils/servedModel'
+import { syncConnectedAgentsWithServedModel } from '@/utils/connectedAgentsModel'
 import type { ServiceHub } from '@/services'
 import { reconcileLaunchAtStartup } from '@/lib/launchAtStartup'
 import { ModelFactory } from '@/lib/model-factory'
@@ -512,6 +513,9 @@ export function DataProvider() {
 
   // The server sends each model id to the provider its page shows (AC-03).
   useEffect(() => syncServedModelSelection(), [])
+
+  // Connected agents follow the model the server serves (B02).
+  useEffect(() => syncConnectedAgentsWithServedModel(), [])
 
   // The core's media catalog, asked again while the core is still starting.
   const mediaCatalog = useMediaCatalog((state) => state.catalog)
