@@ -2,7 +2,7 @@
   "comparator": "agent-config-files",
   "expected": {
     "files": {
-      ".zshenv": "export EDITOR=nvim\n# Atomic Chat - Muse Code Config\nexport META_API_KEY='sk-atomic-fixture-key'\n\n# Atomic Chat - Muse Code Config\n"
+      ".zshenv": "export EDITOR=nvim\nexport META_UNRELATED='clobbered'\n"
     },
     "ok": true
   },

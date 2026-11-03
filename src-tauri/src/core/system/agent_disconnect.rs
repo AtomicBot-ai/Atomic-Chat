@@ -118,34 +118,36 @@ fn disconnect_dsh() -> Result<(), String> {
     super::commands::disconnect_dsh_at(&super::commands::dsh_home_dir()?)
 }
 
-/// hermes: nothing to undo yet.
+/// hermes: restore the `model:` keys Connect replaced, drop our provider entry
+/// and what Connect created.
 fn disconnect_hermes() -> Result<(), String> {
-    Ok(())
+    super::commands::disconnect_hermes_at(&super::commands::resolve_hermes_dir()?)
 }
 
-/// openclaw: nothing to undo yet.
+/// openclaw: restore the keys Connect overwrote and drop our provider.
 fn disconnect_openclaw() -> Result<(), String> {
-    Ok(())
+    super::commands::disconnect_openclaw()
 }
 
-/// atomic-agent: nothing to undo yet.
+/// atomic-agent: restore the active providers and drop our entry.
 fn disconnect_atomic_agent() -> Result<(), String> {
-    Ok(())
+    super::commands::disconnect_atomic_agent()
 }
 
-/// openhands: nothing to undo yet.
+/// openhands: remove what an older release persisted (it now gets its
+/// environment at launch only).
 fn disconnect_openhands() -> Result<(), String> {
-    Ok(())
+    super::commands::remove_legacy_env_agent_config("openhands", None)
 }
 
-/// poolside: nothing to undo yet.
+/// poolside: as OpenHands.
 fn disconnect_poolside() -> Result<(), String> {
-    Ok(())
+    super::commands::remove_legacy_env_agent_config("poolside", None)
 }
 
-/// muse: nothing to undo yet.
+/// muse: as OpenHands.
 fn disconnect_muse() -> Result<(), String> {
-    Ok(())
+    super::commands::remove_legacy_env_agent_config("muse", None)
 }
 
 /// zed: drop our provider; restore the agent's default model while it is ours.

@@ -17,6 +17,8 @@ use crate::core::process_env::sanitize_std_command;
 use crate::core::process_env::{strip_appimage_std_command, APPIMAGE_RUNTIME_ENV_VARS};
 use crate::core::state::AppState;
 
+use super::json_key_backup;
+
 fn is_safe_to_delete(path: &std::path::Path) -> bool {
     let count = path.components().count();
     count >= 3
@@ -828,6 +830,44 @@ pub fn configure_hermes_agent(
     )
 }
 
+/// The window written when the served one is unknown: Hermes refuses any
+/// model below 64K (`MINIMUM_CONTEXT_LENGTH` in `agent/model_metadata.py`),
+/// so a value is required. A known window is written as it is — Connect
+/// serves Hermes at least this much.
+const HERMES_MIN_CONTEXT_LENGTH: u32 = 65536;
+
+/// The top-level `model:` keys Connect writes, in the order a new section
+/// lists them.
+///
+/// Bare `custom` with `model.base_url` and `model.api_key` is the one route
+/// that needs nothing outside this section: Hermes trusts `model.base_url`
+/// while `model.provider` is `custom`, and takes the key from `model.api_key`
+/// (`_resolve_openrouter_runtime` in `hermes_cli/runtime_provider_backends.py`).
+/// A named `custom:atomic-chat` route would also need our `custom_providers`
+/// entry, which cannot be written into an inline `custom_providers: [...]`
+/// list. `context_length` sizes compaction for this route only (Hermes drops
+/// it when another model or endpoint runs).
+fn hermes_route(
+    model: &str,
+    api_url: &str,
+    key: &str,
+    context_length: u32,
+) -> Vec<(&'static str, String)> {
+    vec![
+        ("default", model.to_string()),
+        ("provider", "custom".to_string()),
+        ("base_url", api_url.to_string()),
+        ("api_key", key.to_string()),
+        ("context_length", context_length.to_string()),
+    ]
+}
+
+/// The server key as a YAML scalar (a JSON string is one, quotes and all), or
+/// a placeholder: our server takes any key when it has none.
+fn hermes_key_scalar(api_key: Option<&str>) -> String {
+    serde_json::json!(api_key.filter(|key| !key.is_empty()).unwrap_or("atomic")).to_string()
+}
+
 fn configure_hermes_at(
     hermes_dir: &Path,
     api_url: String,
@@ -839,55 +879,35 @@ fn configure_hermes_at(
     let env_path = hermes_dir.join(".env");
 
     // The installer runs with `-SkipSetup`, so on a fresh install (notably
-    // Windows) no config.yaml exists yet. Seed a default skeleton instead of
-    // failing outright.
-    if !config_path.exists() {
-        std::fs::create_dir_all(hermes_dir)
-            .map_err(|e| format!("Failed to create Hermes home directory: {}", e))?;
-        std::fs::write(&config_path, HERMES_DEFAULT_CONFIG)
-            .map_err(|e| format!("Failed to create config.yaml: {}", e))?;
-    }
+    // Windows) no config.yaml exists yet; Hermes fills every key we do not
+    // write with its own defaults.
+    let content = match std::fs::read_to_string(&config_path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(format!("Failed to read config.yaml: {}", e)),
+    };
+    let previous = read_hermes_backup(&config_path);
 
-    let content = std::fs::read_to_string(&config_path)
-        .map_err(|e| format!("Failed to read config.yaml: {}", e))?;
+    let ctx = context_length.unwrap_or(HERMES_MIN_CONTEXT_LENGTH);
+    let key = hermes_key_scalar(api_key.as_deref());
+    let route = hermes_route(&model, &api_url, &key, ctx);
 
-    // --- Patch the top-level model section only ---
-    // `custom:atomic-chat` selects our named entry below, which carries the key.
-    let after_model_patch =
-        patch_hermes_model_section(&content, &model, "custom:atomic-chat", &api_url);
-
-    // --- Upsert only our entry in custom_providers (preserves user's other providers) ---
-    // Hermes Agent rejects any model whose context window is below 64K, so the
-    // fallback must satisfy that floor too (the UI passes 65536 explicitly).
-    let ctx = context_length.unwrap_or(65536);
-    let after_cp = upsert_atomic_provider(
-        &after_model_patch,
-        &api_url,
-        &model,
-        ctx,
-        api_key.as_deref(),
-    );
-
+    let after_model = patch_hermes_model_section(&content, &route);
+    // Our named entry too, so `hermes model` lists the endpoint and the
+    // detection on the next start finds it. Other entries are left as they
+    // are.
+    let (after_cp, added_list) = upsert_atomic_provider(&after_model, &api_url, &model, ctx, &key);
     // Seed a per-request timeout for the underlying `custom` transport.
     // Hermes reads `providers.<id>.request_timeout_seconds`
     // (run_agent.py::get_provider_request_timeout); without it the legacy
     // 1800s default applies. Any value the user already set is preserved.
-    let after_timeout =
+    let (final_content, mut created) =
         upsert_provider_request_timeout(&after_cp, "custom", HERMES_REQUEST_TIMEOUT_SECONDS);
-
-    let final_content = if content.ends_with('\n') && !after_timeout.ends_with('\n') {
-        format!("{}\n", after_timeout)
-    } else {
-        after_timeout
-    };
-
-    std::fs::write(&config_path, &final_content)
-        .map_err(|e| format!("Failed to write config.yaml: {}", e))?;
+    if added_list {
+        created.push("custom_providers".to_string());
+    }
 
     // --- Ensure NO_PROXY is set in .env to bypass system proxy for localhost ---
-    let no_proxy_line = "NO_PROXY=localhost,127.0.0.1,0.0.0.0";
-    let no_proxy_lower = "export no_proxy=localhost,127.0.0.1,0.0.0.0";
-
     if env_path.exists() {
         let env_content = std::fs::read_to_string(&env_path)
             .map_err(|e| format!("Failed to read .env: {}", e))?;
@@ -899,81 +919,400 @@ fn configure_hermes_at(
             };
             let patched = format!(
                 "{}{}\n{}\n{}",
-                env_content, separator, no_proxy_line, no_proxy_lower
+                env_content, separator, HERMES_NO_PROXY_LINE, HERMES_NO_PROXY_EXPORT_LINE
             );
             std::fs::write(&env_path, patched)
                 .map_err(|e| format!("Failed to write .env: {}", e))?;
+            created.push("env.no_proxy".to_string());
         }
     }
 
-    log::info!(
-        "Hermes Agent configured: model={}, base_url={}, context_length={}",
-        model,
-        api_url,
-        ctx
-    );
-    Ok(())
-}
-
-#[tauri::command]
-pub fn clear_hermes_agent_config() -> Result<(), String> {
-    clear_hermes_at(&resolve_hermes_dir()?)
-}
-
-fn clear_hermes_at(hermes_dir: &Path) -> Result<(), String> {
-    let config_path = hermes_dir.join("config.yaml");
-
-    if !config_path.exists() {
-        return Ok(());
+    let backup = hermes_backup(&content, &route, previous.as_ref(), created);
+    if let Some(parent) = config_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create Hermes home directory: {}", e))?;
     }
-
-    let content = std::fs::read_to_string(&config_path)
-        .map_err(|e| format!("Failed to read config.yaml: {}", e))?;
-
-    // Restore the defaults in the top-level model section only, as Connect
-    // never writes anywhere else.
-    let after_model_patch = patch_hermes_model_section(
-        &content,
-        "anthropic/claude-opus-4.6",
-        "auto",
-        "https://openrouter.ai/api/v1",
-    );
-
-    // Remove only our entry from custom_providers (preserves user's other providers)
-    let after_cp = remove_atomic_provider(&after_model_patch);
-
-    let final_content = if content.ends_with('\n') && !after_cp.ends_with('\n') {
-        format!("{}\n", after_cp)
-    } else {
-        after_cp
-    };
-
     std::fs::write(&config_path, &final_content)
         .map_err(|e| format!("Failed to write config.yaml: {}", e))?;
+    json_key_backup::write_text(&config_path, &render_hermes_backup(&backup))?;
 
-    // Remove NO_PROXY lines from .env
-    let env_path = hermes_dir.join(".env");
-    if env_path.exists() {
-        let env_content = std::fs::read_to_string(&env_path)
-            .map_err(|e| format!("Failed to read .env: {}", e))?;
-        let cleaned: String = env_content
-            .lines()
-            .filter(|line| {
-                let trimmed = line.trim();
-                !trimmed.starts_with("NO_PROXY=") && !trimmed.starts_with("no_proxy=")
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        let cleaned = if cleaned.ends_with('\n') {
-            cleaned
-        } else {
-            format!("{}\n", cleaned)
-        };
-        std::fs::write(&env_path, cleaned).map_err(|e| format!("Failed to write .env: {}", e))?;
+    log::info!(
+        "Hermes Agent configured: model={}, base_url={}, context_length={}, dir={}",
+        model,
+        api_url,
+        ctx,
+        hermes_dir.display()
+    );
+    Ok(())
+}
+
+/// Disconnect from the Settings page's old "Reset" too: it restores the route
+/// Connect replaced instead of inventing one.
+#[tauri::command]
+pub fn clear_hermes_agent_config() -> Result<(), String> {
+    disconnect_hermes_at(&resolve_hermes_dir()?)
+}
+
+/// Undo Connect: put back the `model:` keys it replaced (each one only while it
+/// still holds our value), drop our `custom_providers` entry and whatever
+/// Connect created (an empty `custom_providers` list, the request timeout, the
+/// `.env` NO_PROXY lines). A config connected by an older release, which kept
+/// no backup, loses our route keys so Hermes falls back to its own defaults.
+pub(crate) fn disconnect_hermes_at(hermes_dir: &Path) -> Result<(), String> {
+    let config_path = hermes_dir.join("config.yaml");
+    let content = match std::fs::read_to_string(&config_path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return json_key_backup::discard(&config_path)
+        }
+        Err(e) => return Err(format!("Failed to read config.yaml: {}", e)),
+    };
+    let backup = read_hermes_backup(&config_path).unwrap_or_else(|| hermes_legacy_backup(&content));
+    let restored = restore_hermes_config(&content, &backup);
+    if restored != content {
+        std::fs::write(&config_path, &restored)
+            .map_err(|e| format!("Failed to write config.yaml: {}", e))?;
     }
 
-    log::info!("Hermes Agent config reset to defaults");
+    let env_path = hermes_dir.join(".env");
+    if backup.created.iter().any(|c| c == "env.no_proxy") {
+        if let Ok(env_content) = std::fs::read_to_string(&env_path) {
+            let cleaned = remove_hermes_no_proxy(&env_content);
+            if cleaned != env_content {
+                std::fs::write(&env_path, cleaned)
+                    .map_err(|e| format!("Failed to write .env: {}", e))?;
+            }
+        }
+    }
+
+    json_key_backup::discard(&config_path)?;
+    log::info!("Hermes Agent disconnected: {}", hermes_dir.display());
     Ok(())
+}
+
+const HERMES_NO_PROXY_LINE: &str = "NO_PROXY=localhost,127.0.0.1,0.0.0.0";
+const HERMES_NO_PROXY_EXPORT_LINE: &str = "export no_proxy=localhost,127.0.0.1,0.0.0.0";
+
+/// `.env` without the two lines Connect appended (and the blank line before
+/// them, when they are still the file's tail).
+fn remove_hermes_no_proxy(content: &str) -> String {
+    let tail = format!(
+        "\n{}\n{}",
+        HERMES_NO_PROXY_LINE, HERMES_NO_PROXY_EXPORT_LINE
+    );
+    for suffix in [format!("{tail}\n"), tail.clone()] {
+        if let Some(rest) = content.strip_suffix(&suffix) {
+            return rest.to_string();
+        }
+    }
+    content
+        .split_inclusive('\n')
+        .filter(|line| {
+            let line = line.trim_end_matches(['\r', '\n']);
+            line != HERMES_NO_PROXY_LINE && line != HERMES_NO_PROXY_EXPORT_LINE
+        })
+        .collect()
+}
+
+/// What Connect changed in a Hermes `config.yaml`, kept in
+/// `config.yaml.atomic-chat-backup.json`.
+#[derive(Clone, Debug, Default, PartialEq)]
+struct HermesBackup {
+    /// The top-level `model:` line before Connect: `None` when there was no
+    /// section, the line itself when it was a scalar (`model: <id>`) or a block.
+    header: Option<String>,
+    /// Per key Connect wrote: the lines it replaced (`None`: the key was
+    /// absent) and the value it wrote.
+    keys: Vec<HermesKeyBackup>,
+    /// What Connect added that was not there at all: `custom_providers`,
+    /// `providers`, `providers:{}`, `providers.custom`,
+    /// `providers.custom.request_timeout_seconds`, `env.no_proxy`.
+    created: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct HermesKeyBackup {
+    key: String,
+    before: Option<Vec<String>>,
+    ours: String,
+}
+
+fn render_hermes_backup(backup: &HermesBackup) -> String {
+    let mut keys = serde_json::Map::new();
+    for entry in &backup.keys {
+        let mut obj = serde_json::Map::new();
+        if let Some(before) = &entry.before {
+            obj.insert("before".to_string(), serde_json::json!(before));
+        }
+        obj.insert("ours".to_string(), serde_json::json!(entry.ours));
+        keys.insert(entry.key.clone(), serde_json::Value::Object(obj));
+    }
+    let mut model = serde_json::Map::new();
+    if let Some(header) = &backup.header {
+        model.insert("header".to_string(), serde_json::json!(header));
+    }
+    model.insert("keys".to_string(), serde_json::Value::Object(keys));
+    let mut created = backup.created.clone();
+    created.sort();
+    created.dedup();
+    let root = serde_json::json!({ "created": created, "model": model });
+    serde_json::to_string_pretty(&root).unwrap_or_default() + "\n"
+}
+
+fn parse_hermes_backup(text: &str) -> Option<HermesBackup> {
+    let root: serde_json::Value = serde_json::from_str(text).ok()?;
+    let model = root.get("model")?;
+    let keys = model
+        .get("keys")?
+        .as_object()?
+        .iter()
+        .map(|(key, entry)| {
+            let before = match entry.get("before") {
+                None => None,
+                Some(lines) => Some(
+                    lines
+                        .as_array()?
+                        .iter()
+                        .map(|l| l.as_str().map(str::to_string))
+                        .collect::<Option<Vec<_>>>()?,
+                ),
+            };
+            Some(HermesKeyBackup {
+                key: key.clone(),
+                before,
+                ours: entry.get("ours")?.as_str()?.to_string(),
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let created = root
+        .get("created")?
+        .as_array()?
+        .iter()
+        .map(|c| c.as_str().map(str::to_string))
+        .collect::<Option<Vec<_>>>()?;
+    Some(HermesBackup {
+        header: model
+            .get("header")
+            .and_then(|h| h.as_str())
+            .map(str::to_string),
+        keys,
+        created,
+    })
+}
+
+fn read_hermes_backup(config_path: &Path) -> Option<HermesBackup> {
+    let path = json_key_backup::backup_path(config_path);
+    let text = std::fs::read_to_string(&path).ok()?;
+    let parsed = parse_hermes_backup(&text);
+    if parsed.is_none() {
+        log::warn!("Ignoring an unreadable {}", path.display());
+    }
+    parsed
+}
+
+/// The backup of a Connect that wrote `route` over `content`. A key an earlier
+/// Connect already recorded keeps that record's original while it still holds
+/// the value that Connect wrote; otherwise the user changed it since, and the
+/// current lines are the ones to return to.
+fn hermes_backup(
+    content: &str,
+    route: &[(&'static str, String)],
+    previous: Option<&HermesBackup>,
+    created: Vec<String>,
+) -> HermesBackup {
+    let lines: Vec<String> = content.lines().map(str::to_string).collect();
+    let section = hermes_model_section(&lines);
+    let still_ours = |prev: &HermesBackup| {
+        prev.keys.iter().all(|entry| {
+            hermes_model_value(&lines, section.as_ref(), &entry.key)
+                .is_some_and(|value| hermes_value_is_ours(&entry.key, &value, &entry.ours))
+        })
+    };
+    let header = match previous {
+        Some(prev) if still_ours(prev) => prev.header.clone(),
+        _ => section.as_ref().map(|s| lines[s.header].clone()),
+    };
+    let keys = route
+        .iter()
+        .map(|(key, ours)| {
+            let earlier = previous.and_then(|prev| prev.keys.iter().find(|e| e.key == *key));
+            let current = hermes_model_value(&lines, section.as_ref(), key);
+            let before = match earlier {
+                Some(entry)
+                    if current
+                        .as_deref()
+                        .is_some_and(|v| hermes_value_is_ours(key, v, &entry.ours)) =>
+                {
+                    entry.before.clone()
+                }
+                _ => section
+                    .as_ref()
+                    .and_then(|s| hermes_child_span(&lines, s, key))
+                    .map(|(start, end)| {
+                        lines[start..end]
+                            .iter()
+                            .filter(|l| !is_blank_or_yaml_comment(l))
+                            .cloned()
+                            .collect()
+                    }),
+            };
+            HermesKeyBackup {
+                key: key.to_string(),
+                before,
+                ours: ours.clone(),
+            }
+        })
+        .collect();
+    let mut all_created = previous.map(|p| p.created.clone()).unwrap_or_default();
+    all_created.extend(created);
+    all_created.sort();
+    all_created.dedup();
+    HermesBackup {
+        header,
+        keys,
+        created: all_created,
+    }
+}
+
+/// A backup for a config an older release connected, which kept none: when
+/// the route is still ours (our named provider, or bare `custom` on our
+/// entry's endpoint), its keys are dropped so Hermes falls back to its
+/// defaults. Our entry goes either way.
+fn hermes_legacy_backup(content: &str) -> HermesBackup {
+    let lines: Vec<String> = content.lines().map(str::to_string).collect();
+    let section = hermes_model_section(&lines);
+    let value = |key: &str| hermes_model_value(&lines, section.as_ref(), key);
+    let (_, entries, _) = split_custom_providers(content);
+    let entry_url = entries.iter().find(|e| entry_is_ours(e)).and_then(|entry| {
+        entry.iter().find_map(|l| {
+            l.trim()
+                .strip_prefix("base_url:")
+                .map(|v| unquote_yaml(strip_yaml_comment(v).trim()).to_string())
+        })
+    });
+    let provider = value("provider");
+    let base_url = value("base_url");
+    let ours = provider.as_deref() == Some(HERMES_LEGACY_PROVIDER)
+        || (provider.as_deref() == Some("custom") && base_url.is_some() && base_url == entry_url);
+    let keys = if ours {
+        ["default", "provider", "base_url"]
+            .into_iter()
+            .filter_map(|key| {
+                value(key).map(|ours| HermesKeyBackup {
+                    key: key.to_string(),
+                    before: None,
+                    ours,
+                })
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+    HermesBackup {
+        header: None,
+        keys,
+        created: Vec::new(),
+    }
+}
+
+/// The provider older releases wrote: our named `custom_providers` entry.
+const HERMES_LEGACY_PROVIDER: &str = "custom:atomic-chat";
+
+/// Whether `current` is the value Connect wrote. Hermes may persist the bare
+/// `custom` route under the name of the entry that owns its endpoint, which is
+/// ours.
+fn hermes_value_is_ours(key: &str, current: &str, ours: &str) -> bool {
+    let current = unquote_yaml(current);
+    current == unquote_yaml(ours)
+        || (key == "provider" && ours == "custom" && current == HERMES_LEGACY_PROVIDER)
+}
+
+/// `value` without one pair of surrounding quotes.
+fn unquote_yaml(value: &str) -> &str {
+    for quote in ['"', '\''] {
+        if value.len() >= 2 && value.starts_with(quote) && value.ends_with(quote) {
+            return &value[1..value.len() - 1];
+        }
+    }
+    value
+}
+
+/// Undo what `backup` says Connect did to `content`.
+fn restore_hermes_config(content: &str, backup: &HermesBackup) -> String {
+    let mut lines: Vec<String> = content.lines().map(str::to_string).collect();
+
+    if let Some(section) = hermes_model_section(&lines) {
+        let mut section = section;
+        for entry in &backup.keys {
+            let Some((start, end)) = hermes_child_span(&lines, &section, &entry.key) else {
+                continue;
+            };
+            let current = hermes_scalar(&lines[start]);
+            if !hermes_value_is_ours(&entry.key, &current, &entry.ours) {
+                continue;
+            }
+            // Comments interleaved with a nested value stay where they are.
+            let comments: Vec<String> = lines[start + 1..end]
+                .iter()
+                .filter(|l| is_blank_or_yaml_comment(l))
+                .cloned()
+                .collect();
+            let replacement: Vec<String> = entry
+                .before
+                .clone()
+                .unwrap_or_default()
+                .into_iter()
+                .chain(comments)
+                .collect();
+            let removed = end - start;
+            let added = replacement.len();
+            lines.splice(start..end, replacement);
+            section.end = section.end + added - removed;
+        }
+        let has_children = lines[section.header + 1..section.end]
+            .iter()
+            .any(|l| !is_blank_or_yaml_comment(l));
+        if !has_children {
+            match &backup.header {
+                // There was no section: drop the one Connect added.
+                None => {
+                    let body_is_blank = lines[section.header + 1..section.end]
+                        .iter()
+                        .all(|l| l.trim().is_empty());
+                    let end = if body_is_blank {
+                        section.end
+                    } else {
+                        section.header + 1
+                    };
+                    lines.drain(section.header..end);
+                }
+                Some(header) => lines[section.header] = header.clone(),
+            }
+        }
+    }
+
+    let mut text = with_trailing_newline(lines.join("\n"));
+    if lines.is_empty() {
+        text = String::new();
+    }
+    text = remove_atomic_provider(&text);
+    if backup.created.iter().any(|c| c == "custom_providers") {
+        text = text
+            .split_inclusive('\n')
+            .filter(|l| l.trim_end() != "custom_providers: []")
+            .collect();
+    }
+    text = remove_provider_request_timeout(
+        &text,
+        "custom",
+        HERMES_REQUEST_TIMEOUT_SECONDS,
+        &backup.created,
+    );
+    if text.trim().is_empty() {
+        String::new()
+    } else {
+        text
+    }
 }
 
 /// Replace the scalar value of a `key: value` YAML line, preserving the leading
@@ -1027,6 +1366,96 @@ fn with_trailing_newline(text: String) -> String {
     }
 }
 
+/// The top-level `model:` section of a Hermes `config.yaml`: its header line,
+/// where it ends (the next column-0 key), and whether the header carries a
+/// scalar (`model: <id>`, also valid Hermes).
+struct HermesSection {
+    header: usize,
+    end: usize,
+    is_scalar: bool,
+}
+
+fn hermes_model_section(lines: &[String]) -> Option<HermesSection> {
+    let (header, is_scalar) =
+        lines
+            .iter()
+            .enumerate()
+            .find_map(|(i, line)| match top_level_yaml_key(line) {
+                Some(("model", value)) => Some((i, !value.is_empty())),
+                _ => None,
+            })?;
+    // The section runs to the next column-0 key; comments and blank lines in
+    // it are kept.
+    let end = (header + 1..lines.len())
+        .find(|&i| is_top_level_yaml_key(&lines[i]))
+        .unwrap_or(lines.len());
+    Some(HermesSection {
+        header,
+        end,
+        is_scalar,
+    })
+}
+
+/// The indent of the section's direct children (two spaces when it has none).
+fn hermes_child_indent(lines: &[String], section: &HermesSection) -> String {
+    lines[section.header + 1..section.end]
+        .iter()
+        .find(|l| !is_blank_or_yaml_comment(l))
+        .map_or_else(|| "  ".to_string(), |l| l[..yaml_indent(l)].to_string())
+}
+
+/// The lines of the direct child `key` of a block section: its own line and
+/// the more-indented lines of a nested value after it (with any comments
+/// between those).
+fn hermes_child_span(
+    lines: &[String],
+    section: &HermesSection,
+    key: &str,
+) -> Option<(usize, usize)> {
+    if section.is_scalar {
+        return None;
+    }
+    let indent = hermes_child_indent(lines, section).len();
+    let start = (section.header + 1..section.end).find(|&i| {
+        let l = &lines[i];
+        !is_blank_or_yaml_comment(l)
+            && yaml_indent(l) == indent
+            && l.trim()
+                .strip_prefix(key)
+                .is_some_and(|rest| rest.trim_start().starts_with(':'))
+    })?;
+    let mut end = start + 1;
+    let mut i = start + 1;
+    while i < section.end {
+        if is_blank_or_yaml_comment(&lines[i]) {
+            i += 1;
+        } else if yaml_indent(&lines[i]) > indent {
+            i += 1;
+            end = i;
+        } else {
+            break;
+        }
+    }
+    Some((start, end))
+}
+
+/// The value text of a `key: value` line, without its comment (quotes kept).
+fn hermes_scalar(line: &str) -> String {
+    line.split_once(':')
+        .map(|(_, value)| strip_yaml_comment(value).trim().to_string())
+        .unwrap_or_default()
+}
+
+/// The value of the direct child `key` of the `model:` section.
+fn hermes_model_value(
+    lines: &[String],
+    section: Option<&HermesSection>,
+    key: &str,
+) -> Option<String> {
+    let (start, _) = hermes_child_span(lines, section?, key)?;
+    Some(hermes_scalar(&lines[start]))
+}
+
 /// Point the top-level `model:` section of Hermes' `config.yaml` at the given
 /// route, and touch nothing outside it.
 ///
@@ -1040,18 +1469,8 @@ fn with_trailing_newline(text: String) -> String {
 /// replaced key is dropped, a scalar `model: <id>` (also valid Hermes) becomes
 /// a block, and a file with no `model:` at all gets one appended. Mirrors
 /// `patchModelSection` in atomic-chat-core.
-fn patch_hermes_model_section(
-    content: &str,
-    model: &str,
-    provider: &str,
-    base_url: &str,
-) -> String {
+fn patch_hermes_model_section(content: &str, wanted: &[(&str, String)]) -> String {
     let mut lines: Vec<String> = content.lines().map(str::to_string).collect();
-    let wanted = [
-        ("default", model),
-        ("provider", provider),
-        ("base_url", base_url),
-    ];
     let block = |indent: &str| -> Vec<String> {
         wanted
             .iter()
@@ -1059,14 +1478,12 @@ fn patch_hermes_model_section(
             .collect()
     };
 
-    let header = lines
-        .iter()
-        .enumerate()
-        .find_map(|(i, line)| match top_level_yaml_key(line) {
-            Some(("model", value)) => Some((i, !value.is_empty())),
-            _ => None,
-        });
-    let Some((header_idx, is_scalar)) = header else {
+    let Some(HermesSection {
+        header: header_idx,
+        end,
+        is_scalar,
+    }) = hermes_model_section(&lines)
+    else {
         while lines.last().is_some_and(|l| l.trim().is_empty()) {
             lines.pop();
         }
@@ -1074,12 +1491,6 @@ fn patch_hermes_model_section(
         lines.extend(block("  "));
         return with_trailing_newline(lines.join("\n"));
     };
-
-    // The section runs to the next column-0 key; comments and blank lines in
-    // it are kept.
-    let end = (header_idx + 1..lines.len())
-        .find(|&i| is_top_level_yaml_key(&lines[i]))
-        .unwrap_or(lines.len());
 
     if is_scalar {
         // Anything still indented under a scalar `model: <id>` is that
@@ -1155,27 +1566,19 @@ const ATOMIC_PROVIDER_NAME: &str = "atomic-chat";
 /// lets a wedged local turn fail fast without waiting half an hour.
 const HERMES_REQUEST_TIMEOUT_SECONDS: u32 = 180;
 
-/// Minimal Hermes `config.yaml` skeleton seeded when none exists yet.
+/// Resolve the directory whose `config.yaml` the `hermes` CLI reads, mirroring
+/// Hermes' own resolution (`hermes_constants.py::get_hermes_home()` and the
+/// sticky-profile step of `hermes_cli/main.py::_apply_profile_override`):
 ///
-/// The installer is spawned with `-SkipSetup`/`--skip-setup`, which skips the
-/// interactive wizard that would otherwise create `~/.hermes/config.yaml`. On
-/// Windows the install script writes no config at all, so `configure_*` had
-/// nothing to patch. This skeleton mirrors the `model:` block of Hermes' own
-/// `cli-config.yaml.example`, which the macOS/Linux installer copies in
-/// instead; `configure_hermes_agent` then rewrites it to point at the local
-/// server. Values mirror the Hermes defaults restored by
-/// `clear_hermes_agent_config`.
-const HERMES_DEFAULT_CONFIG: &str = "model:
-  default: anthropic/claude-opus-4.6
-  provider: auto
-  base_url: https://openrouter.ai/api/v1
-custom_providers: []
-";
-
-/// Resolve the Hermes Agent home directory, mirroring the resolution order of
-/// Hermes' own `hermes_constants.py::get_hermes_home()`: an explicit
-/// `HERMES_HOME` env var wins, else the platform-native default
-/// (`%LOCALAPPDATA%\hermes` on Windows, `~/.hermes` elsewhere).
+/// - `HERMES_HOME`, with `~` and `$NAME`/`${NAME}`/`%NAME%` expanded, else the
+///   platform default (`%LOCALAPPDATA%\\hermes` on Windows, `~/.hermes`
+///   elsewhere), is the root;
+/// - a `HERMES_HOME` that names a profile (`<root>/profiles/<name>`) is used
+///   as it is;
+/// - otherwise `hermes profile use <name>` leaves `<root>/active_profile`, and
+///   every `hermes` started without `-p` runs that profile from
+///   `<root>/profiles/<name>`. Writing the root's config then would configure
+///   a profile the user does not run.
 ///
 /// On Windows the native installer (`install.ps1`) sets `HERMES_HOME` via
 /// `[Environment]::SetEnvironmentVariable(..., "User")` -- a registry write
@@ -1187,21 +1590,104 @@ custom_providers: []
 /// exact gap) avoids ever writing to a config file the `hermes` CLI won't
 /// read.
 pub(crate) fn resolve_hermes_dir() -> Result<std::path::PathBuf, String> {
-    if cfg!(windows) {
-        if let Some(home) = read_windows_user_env("HERMES_HOME").filter(|s| !s.is_empty()) {
-            return Ok(std::path::PathBuf::from(home));
-        }
-        if let Ok(home) = std::env::var("HERMES_HOME") {
-            if !home.is_empty() {
-                return Ok(std::path::PathBuf::from(home));
-            }
-        }
-        let local_appdata = std::env::var("LOCALAPPDATA").map_err(|e| e.to_string())?;
-        Ok(std::path::PathBuf::from(local_appdata).join("hermes"))
+    let home = PathBuf::from(agent_home_dir()?);
+    let var = |name: &str| std::env::var(name).ok().filter(|v| !v.trim().is_empty());
+    let raw = if cfg!(windows) {
+        read_windows_user_env("HERMES_HOME")
+            .filter(|v| !v.trim().is_empty())
+            .or_else(|| var("HERMES_HOME"))
     } else {
-        let home_dir = std::env::var("HOME").map_err(|e| e.to_string())?;
-        Ok(std::path::PathBuf::from(home_dir).join(".hermes"))
+        var("HERMES_HOME")
+    };
+    let env_home = raw.map(|raw| expand_hermes_home(raw.trim(), &var, &home));
+    Ok(hermes_config_dir(
+        &hermes_native_home(&var, &home),
+        env_home,
+    ))
+}
+
+/// Hermes' platform default home.
+fn hermes_native_home(var: &dyn Fn(&str) -> Option<String>, home: &Path) -> PathBuf {
+    if cfg!(windows) {
+        var("LOCALAPPDATA")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join("AppData").join("Local"))
+            .join("hermes")
+    } else {
+        home.join(".hermes")
     }
+}
+
+/// `HERMES_HOME` as Hermes reads it (`os.path.expanduser(os.path.expandvars(...))`):
+/// `$NAME`, `${NAME}` and `%NAME%` take the variable's value (an unset one
+/// stays as written), then a leading `~` is the user's home.
+fn expand_hermes_home(raw: &str, var: &dyn Fn(&str) -> Option<String>, home: &Path) -> PathBuf {
+    let is_name = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    let mut out = String::new();
+    let mut rest = raw;
+    while let Some(c) = rest.chars().next() {
+        let (name, len) = if let Some(after) = rest.strip_prefix("${") {
+            match after.find('}') {
+                Some(close) => (Some(&after[..close]), close + 3),
+                None => (None, 1),
+            }
+        } else if let Some(after) = rest.strip_prefix('$') {
+            let len = after.find(|c: char| !is_name(c)).unwrap_or(after.len());
+            if len == 0 {
+                (None, 1)
+            } else {
+                (Some(&after[..len]), len + 1)
+            }
+        } else if let Some(after) = rest.strip_prefix('%') {
+            match after.find('%') {
+                Some(close) if close > 0 => (Some(&after[..close]), close + 2),
+                _ => (None, 1),
+            }
+        } else {
+            (None, c.len_utf8())
+        };
+        match name.and_then(|n| var(n)) {
+            Some(value) => out.push_str(&value),
+            None => out.push_str(&rest[..len]),
+        }
+        rest = &rest[len..];
+    }
+    if out == "~" {
+        return home.to_path_buf();
+    }
+    match out.strip_prefix("~/").or_else(|| out.strip_prefix("~\\")) {
+        Some(tail) => home.join(tail),
+        None => PathBuf::from(out),
+    }
+}
+
+/// Where Hermes reads `config.yaml` from, given its platform default home and
+/// the expanded `HERMES_HOME` (see [`resolve_hermes_dir`]).
+fn hermes_config_dir(native: &Path, env_home: Option<PathBuf>) -> PathBuf {
+    let is_profile =
+        |p: &Path| p.parent().and_then(|parent| parent.file_name()) == Some("profiles".as_ref());
+    if let Some(env) = env_home.as_deref() {
+        if is_profile(env) {
+            return env.to_path_buf();
+        }
+    }
+    // The root holding `active_profile`: the platform default for anything
+    // under it, else `HERMES_HOME` itself (Docker and custom roots).
+    let root = match env_home.as_deref() {
+        Some(env) if !env.starts_with(native) => env.to_path_buf(),
+        _ => native.to_path_buf(),
+    };
+    let base = env_home.unwrap_or_else(|| native.to_path_buf());
+    let active = std::fs::read_to_string(root.join("active_profile"))
+        .map(|name| name.trim_start_matches('\u{feff}').trim().to_lowercase())
+        .unwrap_or_default();
+    if !active.is_empty() && active != "default" {
+        let profile = base.join("profiles").join(&active);
+        if profile.is_dir() {
+            return profile;
+        }
+    }
+    base
 }
 
 /// Read a single User-scope Windows environment variable fresh from the
@@ -1341,17 +1827,21 @@ fn rebuild_custom_providers(
 }
 
 /// Add or update only the `atomic-chat` entry in `custom_providers`,
-/// leaving all other user entries (Telegram, WhatsApp, etc.) intact.
+/// leaving all other user entries (Telegram, WhatsApp, etc.) intact. Also
+/// says whether the `custom_providers` key itself was added.
 fn upsert_atomic_provider(
     content: &str,
     api_url: &str,
     model: &str,
     context_length: u32,
-    api_key: Option<&str>,
-) -> String {
+    key: &str,
+) -> (String, bool) {
     if has_inline_custom_providers(content) {
-        return with_trailing_newline(content.to_string());
+        return (with_trailing_newline(content.to_string()), false);
     }
+    let had_key = content
+        .lines()
+        .any(|line| matches!(top_level_yaml_key(line), Some(("custom_providers", _))));
 
     let (before, mut entries, after) = split_custom_providers(content);
 
@@ -1360,28 +1850,30 @@ fn upsert_atomic_provider(
     entries.push(vec![
         format!("- name: {}", ATOMIC_PROVIDER_NAME),
         format!("  base_url: {}", api_url),
-        // JSON strings are valid YAML scalars, including quotes and newlines.
-        format!(
-            "  api_key: {}",
-            serde_json::json!(api_key.filter(|key| !key.is_empty()).unwrap_or("atomic"))
-        ),
+        format!("  api_key: {}", key),
         format!("  model: {}", model),
         "  models:".to_string(),
         format!("    {}:", model),
         format!("      context_length: {}", context_length),
     ]);
 
-    rebuild_custom_providers(&before, &entries, &after)
+    (
+        rebuild_custom_providers(&before, &entries, &after),
+        !had_key,
+    )
 }
 
 /// Remove only the `atomic-chat` entry from `custom_providers`,
-/// leaving all other user entries intact.
+/// leaving all other user entries intact. A file without our entry is
+/// returned as it is.
 fn remove_atomic_provider(content: &str) -> String {
     if has_inline_custom_providers(content) {
-        return with_trailing_newline(content.to_string());
+        return content.to_string();
     }
-
     let (before, mut entries, after) = split_custom_providers(content);
+    if !entries.iter().any(|e| entry_is_ours(e)) {
+        return content.to_string();
+    }
     entries.retain(|e| !entry_is_ours(e));
     rebuild_custom_providers(&before, &entries, &after)
 }
@@ -1398,12 +1890,22 @@ fn is_top_level_yaml_key(line: &str) -> bool {
 /// Ensure `providers.<provider_id>.request_timeout_seconds: <seconds>` exists in
 /// the Hermes config, creating the `providers:` map and the provider sub-block
 /// as needed. A value the user has already set under that provider is left
-/// untouched (we only fill the gap, never clobber).
-fn upsert_provider_request_timeout(content: &str, provider_id: &str, seconds: u32) -> String {
+/// untouched (we only fill the gap, never clobber). Also returns what it
+/// created, for Disconnect: `providers` (the key), `providers:{}` (an empty
+/// inline map turned into a block), `providers.<id>` and
+/// `providers.<id>.request_timeout_seconds`.
+fn upsert_provider_request_timeout(
+    content: &str,
+    provider_id: &str,
+    seconds: u32,
+) -> (String, Vec<String>) {
     let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+    let mut created: Vec<String> = Vec::new();
 
     let prov_key_line = format!("  {}:", provider_id);
     let field_line = format!("    request_timeout_seconds: {}", seconds);
+    let provider_label = format!("providers.{}", provider_id);
+    let field_label = format!("providers.{}.request_timeout_seconds", provider_id);
 
     // Locate the top-level `providers:` key, whatever follows it on the line.
     let providers = lines
@@ -1422,6 +1924,7 @@ fn upsert_provider_request_timeout(content: &str, provider_id: &str, seconds: u3
             lines.push("providers:".to_string());
             lines.push(prov_key_line);
             lines.push(field_line);
+            created.extend(["providers".to_string(), provider_label, field_label]);
         }
         // Hermes' YAML loader rejects a duplicate key and then runs on its
         // defaults: an inline map we cannot edit line by line is left as it
@@ -1430,6 +1933,7 @@ fn upsert_provider_request_timeout(content: &str, provider_id: &str, seconds: u3
         Some((pidx, value)) => {
             if !value.is_empty() {
                 lines[pidx] = "providers:".to_string();
+                created.push("providers:{}".to_string());
             }
 
             // Extent of the providers block: until the next top-level key.
@@ -1448,22 +1952,10 @@ fn upsert_provider_request_timeout(content: &str, provider_id: &str, seconds: u3
                 None => {
                     lines.insert(pidx + 1, field_line);
                     lines.insert(pidx + 1, prov_key_line);
+                    created.extend([provider_label, field_label]);
                 }
                 Some(pk) => {
-                    // Extent of this provider's sub-block: until the next key at
-                    // indent <= 2 (a sibling provider) or the block end.
-                    let mut sub_end = block_end;
-                    for i in (pk + 1)..block_end {
-                        let l = &lines[i];
-                        if l.trim().is_empty() {
-                            continue;
-                        }
-                        let indent = l.len() - l.trim_start().len();
-                        if indent <= 2 {
-                            sub_end = i;
-                            break;
-                        }
-                    }
+                    let sub_end = provider_sub_block_end(&lines, pk, block_end);
                     let has_field = (pk + 1..sub_end).any(|i| {
                         lines[i]
                             .trim_start()
@@ -1471,18 +1963,88 @@ fn upsert_provider_request_timeout(content: &str, provider_id: &str, seconds: u3
                     });
                     if !has_field {
                         lines.insert(pk + 1, field_line);
+                        created.push(field_label);
                     }
                 }
             }
         }
     }
 
-    let out = lines.join("\n");
-    if out.ends_with('\n') {
-        out
-    } else {
-        format!("{}\n", out)
+    (with_trailing_newline(lines.join("\n")), created)
+}
+
+/// End of a provider's sub-block inside `providers:`: the next key at indent
+/// <= 2 (a sibling provider) or the block end.
+fn provider_sub_block_end(lines: &[String], provider_idx: usize, block_end: usize) -> usize {
+    (provider_idx + 1..block_end)
+        .find(|&i| {
+            let l = &lines[i];
+            !l.trim().is_empty() && yaml_indent(l) <= 2
+        })
+        .unwrap_or(block_end)
+}
+
+/// Remove what [`upsert_provider_request_timeout`] created, as long as the
+/// timeout still holds the value it wrote.
+fn remove_provider_request_timeout(
+    content: &str,
+    provider_id: &str,
+    seconds: u32,
+    created: &[String],
+) -> String {
+    let made = |label: &str| created.iter().any(|c| c == label);
+    let provider_label = format!("providers.{}", provider_id);
+    let field_label = format!("providers.{}.request_timeout_seconds", provider_id);
+    if !made(&field_label) {
+        return content.to_string();
     }
+    let mut lines: Vec<String> = content.lines().map(str::to_string).collect();
+    let Some(pidx) = lines
+        .iter()
+        .position(|l| matches!(top_level_yaml_key(l), Some(("providers", ""))))
+    else {
+        return content.to_string();
+    };
+    let block_end = |lines: &[String]| {
+        (pidx + 1..lines.len())
+            .find(|&i| is_top_level_yaml_key(&lines[i]))
+            .unwrap_or(lines.len())
+    };
+    let prov_key_line = format!("  {}:", provider_id);
+    let Some(pk) = (pidx + 1..block_end(&lines)).find(|&i| lines[i].trim_end() == prov_key_line)
+    else {
+        return content.to_string();
+    };
+    let sub_end = provider_sub_block_end(&lines, pk, block_end(&lines));
+    let Some(field) = (pk + 1..sub_end).find(|&i| {
+        lines[i]
+            .trim()
+            .strip_prefix("request_timeout_seconds:")
+            .is_some_and(|v| strip_yaml_comment(v).trim() == seconds.to_string())
+    }) else {
+        return content.to_string();
+    };
+    lines.remove(field);
+
+    let sub_end = provider_sub_block_end(&lines, pk, block_end(&lines));
+    if made(&provider_label) && lines[pk + 1..sub_end].iter().all(|l| l.trim().is_empty()) {
+        lines.remove(pk);
+    }
+    let end = block_end(&lines);
+    if lines[pidx + 1..end]
+        .iter()
+        .all(|l| is_blank_or_yaml_comment(l))
+    {
+        if made("providers") {
+            lines.remove(pidx);
+        } else if made("providers:{}") {
+            lines[pidx] = "providers: {}".to_string();
+        }
+    }
+    if lines.is_empty() {
+        return String::new();
+    }
+    with_trailing_newline(lines.join("\n"))
 }
 
 // ---------------------------------------------------------------------------
@@ -4359,42 +4921,51 @@ pub fn launch_zcode(path: Option<String>) -> ZcodeAppStatus {
     }
 }
 
-/// Whether OpenClaw's desktop app is installed, and whether we brought it up.
+/// Whether OpenClaw's desktop app is installed, whether we brought it up, and
+/// whether a Gateway owns the CLI's state directory.
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenclawAppStatus {
     /// The desktop app is present on this machine.
     pub installed: bool,
-    /// We were able to bring it to the front. False with `installed: true` means
-    /// the user has to open it themselves.
+    /// We were able to bring it to the front.
     pub launched: bool,
+    /// A Gateway runs for `~/.openclaw`: `openclaw chat` (the embedded runtime,
+    /// `tui --local`) refuses to start then, and `openclaw tui` joins it.
+    pub gateway_running: bool,
 }
 
-/// Report (and on macOS, open) OpenClaw's desktop app.
+/// Report (and on macOS, open) OpenClaw's desktop app, and whether its Gateway
+/// runs.
 ///
-/// The app and the CLI share `~/.openclaw/openclaw.json`, and the Gateway
-/// watches that file and hot-reloads it, so `configure_openclaw` is the whole
-/// integration for app users too — this only saves them from going to find the
-/// app afterwards, the way `launch_zed` does for Zed.
+/// The macOS app and the CLI share `~/.openclaw/openclaw.json`, and the
+/// Gateway watches that file and hot-reloads it, so `configure_openclaw` is the
+/// whole integration for app users too — this only saves them from going to
+/// find the app afterwards, the way `launch_zed` does for Zed.
 ///
-/// macOS ships `OpenClaw.app`, which `open -a` addresses by path. Windows Hub
-/// ("OpenClaw Companion") installs per-user with no documented install path or
-/// AUMID to launch it by, so there we only *detect* it — via its state
-/// directory, which is the one location the docs pin down — and let the UI point
-/// the user at the tray icon. Guessing a Start-menu path would break silently on
-/// every install that does not match the guess.
+/// The Windows Hub ("OpenClaw Companion") is deliberately not a destination:
+/// its Gateway runs in WSL (or as a packaged native Gateway) with a state
+/// directory and config of its own, not the `%USERPROFILE%\.openclaw` file we
+/// write, so it would answer with the user's previous model. The terminal CLI
+/// reads our file, so Windows always gets the terminal.
 #[tauri::command]
 pub fn launch_openclaw_app() -> OpenclawAppStatus {
+    let home = agent_home_dir().ok();
+    let gateway_running = home
+        .as_deref()
+        .is_some_and(|home| openclaw_gateway_running(&openclaw_state_dir(home)));
+
     #[cfg(target_os = "macos")]
     {
         let mut candidates = vec![PathBuf::from("/Applications/OpenClaw.app")];
-        if let Ok(home) = agent_home_dir() {
+        if let Some(home) = &home {
             candidates.push(PathBuf::from(home).join("Applications/OpenClaw.app"));
         }
         let Some(app) = candidates.into_iter().find(|p| p.exists()) else {
             return OpenclawAppStatus {
                 installed: false,
                 launched: false,
+                gateway_running,
             };
         };
         let launched = std::process::Command::new("open")
@@ -4410,22 +4981,7 @@ pub fn launch_openclaw_app() -> OpenclawAppStatus {
         return OpenclawAppStatus {
             installed: true,
             launched,
-        };
-    }
-
-    #[cfg(windows)]
-    {
-        // `%LOCALAPPDATA%\OpenClawTray` is the Hub's own state directory (its
-        // setup logs live under it), so its presence is a reliable marker even
-        // though the install root is not.
-        let installed = std::env::var("LOCALAPPDATA")
-            .ok()
-            .filter(|p| !p.is_empty())
-            .map(|local| PathBuf::from(local).join("OpenClawTray"))
-            .is_some_and(|dir| dir.is_dir());
-        return OpenclawAppStatus {
-            installed,
-            launched: false,
+            gateway_running,
         };
     }
 
@@ -4433,12 +4989,106 @@ pub fn launch_openclaw_app() -> OpenclawAppStatus {
     OpenclawAppStatus {
         installed: false,
         launched: false,
+        gateway_running,
     }
+}
+
+/// OpenClaw's state directory: `$OPENCLAW_STATE_DIR` (`~` expanded), else
+/// `~/.openclaw` (`resolveStateDir` in `src/config/state-dir.ts`).
+fn openclaw_state_dir(home: &str) -> PathBuf {
+    match std::env::var("OPENCLAW_STATE_DIR")
+        .ok()
+        .map(|dir| dir.trim().to_string())
+        .filter(|dir| !dir.is_empty())
+    {
+        Some(dir) if dir == "~" => PathBuf::from(home),
+        Some(dir) => match dir.strip_prefix("~/").or_else(|| dir.strip_prefix("~\\")) {
+            Some(rest) => PathBuf::from(home).join(rest),
+            None => PathBuf::from(dir),
+        },
+        None => PathBuf::from(home).join(".openclaw"),
+    }
+}
+
+/// Whether a Gateway owns `state_dir`. A running Gateway records itself in
+/// `<state dir>/tmp/openclaw-<uid>/gateway.*.lock` (`resolveGatewayLockDir` in
+/// `src/config/paths.ts`; builds up to 2026.6.33 used the process temp
+/// directory instead), a JSON payload naming its role and listening port —
+/// the same files `openclaw chat` checks before refusing. A lock left behind
+/// by a dead Gateway names a port nothing listens on, so the port is probed
+/// too.
+fn openclaw_gateway_running(state_dir: &Path) -> bool {
+    #[cfg(unix)]
+    let lock_dir = format!("openclaw-{}", unsafe { libc::getuid() });
+    #[cfg(not(unix))]
+    let lock_dir = "openclaw".to_string();
+    let dirs = [
+        state_dir.join("tmp").join(&lock_dir),
+        std::env::temp_dir().join(&lock_dir),
+    ];
+    openclaw_gateway_ports(&dirs)
+        .into_iter()
+        .any(loopback_port_is_listening)
+}
+
+/// The ports Gateway locks in `dirs` say a Gateway listens on.
+fn openclaw_gateway_ports(dirs: &[PathBuf]) -> Vec<u16> {
+    let mut ports = Vec::new();
+    for dir in dirs {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if !(name.starts_with("gateway.") && name.ends_with(".lock")) {
+                continue;
+            }
+            let Some(payload) = std::fs::read_to_string(entry.path())
+                .ok()
+                .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+            else {
+                continue;
+            };
+            let role = payload.get("role").and_then(|r| r.as_str());
+            if role.is_some_and(|role| role != "gateway") {
+                continue;
+            }
+            if let Some(port) = payload
+                .get("port")
+                .and_then(|p| p.as_u64())
+                .and_then(|p| u16::try_from(p).ok())
+                .filter(|p| *p > 0)
+            {
+                ports.push(port);
+            }
+        }
+    }
+    ports
+}
+
+fn loopback_port_is_listening(port: u16) -> bool {
+    std::net::TcpStream::connect_timeout(
+        &std::net::SocketAddr::from(([127, 0, 0, 1], port)),
+        std::time::Duration::from_millis(300),
+    )
+    .is_ok()
 }
 
 /// Provider id we own inside `openclaw.json`. Model refs are `<provider>/<id>`,
 /// so this is also the prefix of every ref we write.
 pub(crate) const OPENCLAW_PROVIDER_ID: &str = "atomic";
+
+/// Per-request budget on our provider (`models.providers.atomic.timeoutSeconds`):
+/// it covers connecting, the response headers and streaming the body, and
+/// raises the ~120 s idle watchdog for this provider only — a long prompt on a
+/// slow machine needs more before the first token. Unlike
+/// `agents.defaults.timeoutSeconds`, it leaves every other model alone.
+const OPENCLAW_PROVIDER_TIMEOUT_SECONDS: u32 = 600;
+
+/// `agents.defaults.timeoutSeconds` older releases seeded, which capped every
+/// model's attempt (cloud ones included; OpenClaw's own default is 48 hours).
+const OPENCLAW_LEGACY_AGENT_TIMEOUT_SECONDS: u64 = 240;
 
 /// Whether an `agents.defaults.modelPolicy.allow` list already permits
 /// `model_ref`. OpenClaw matches exact refs plus trailing prefix wildcards
@@ -4452,17 +5102,72 @@ fn model_policy_allows(list: &[serde_json::Value], model_ref: &str) -> bool {
         })
 }
 
+/// The output cap written next to a known window: a quarter of it, at most
+/// 8192 tokens, so the prompt keeps most of the window.
+pub(crate) fn output_cap_for(context_length: u32) -> u32 {
+    (context_length / 4).min(8192)
+}
+
+/// The keys Connect may overwrite besides our own provider entry; Disconnect
+/// puts back each one that still holds our value.
+fn openclaw_tracked_paths(model_ref: &str) -> Vec<Vec<String>> {
+    use json_key_backup::path_of;
+    vec![
+        path_of(&["models", "mode"]),
+        path_of(&["gateway", "mode"]),
+        path_of(&["gateway", "auth", "mode"]),
+        path_of(&["agents", "defaults", "model", "primary"]),
+        path_of(&["agents", "defaults", "models", model_ref]),
+        path_of(&["agents", "defaults", "modelPolicy", "allow"]),
+    ]
+}
+
+/// Bring a parsed `openclaw.json` into the shape the merge works on, without
+/// changing what it means: a plain-string `agents.defaults.model` becomes
+/// `{ "primary": <it> }` (both forms are accepted, but only the object has
+/// room for the fallbacks OpenClaw writes itself), and the
+/// `agents.defaults.timeoutSeconds: 240` older releases seeded goes.
+fn openclaw_normalize(root: &mut serde_json::Value) {
+    let Some(defaults) = root
+        .get_mut("agents")
+        .and_then(|a| a.get_mut("defaults"))
+        .and_then(|d| d.as_object_mut())
+    else {
+        return;
+    };
+    if defaults.get("timeoutSeconds").and_then(|t| t.as_u64())
+        == Some(OPENCLAW_LEGACY_AGENT_TIMEOUT_SECONDS)
+    {
+        defaults.remove("timeoutSeconds");
+    }
+    if let Some(primary) = defaults
+        .get("model")
+        .and_then(|m| m.as_str())
+        .map(str::to_string)
+    {
+        defaults.insert(
+            "model".to_string(),
+            serde_json::json!({ "primary": primary }),
+        );
+    }
+}
+
 /// Apply Atomic Chat's provider, primary model and policy edits to a parsed
-/// `openclaw.json`, returning the updated document.
+/// (and normalised) `openclaw.json`, returning the updated document.
 ///
 /// Split out from [`configure_openclaw`] so the merge rules — which of the
 /// user's keys we overwrite, which we only seed, and how an existing
 /// `modelPolicy.allow` is widened — are testable without touching the disk.
+/// `gateway_secret_in_env` is whether `OPENCLAW_GATEWAY_TOKEN` or
+/// `OPENCLAW_GATEWAY_PASSWORD` is set, which configures Gateway auth as much
+/// as a token in the file does.
 fn openclaw_patch_config(
     mut root: serde_json::Value,
     api_url: &str,
     model: &str,
     api_key: Option<&str>,
+    context_length: Option<u32>,
+    gateway_secret_in_env: bool,
 ) -> Result<serde_json::Value, String> {
     let obj = root
         .as_object_mut()
@@ -4490,20 +5195,24 @@ fn openclaw_patch_config(
     // The catalog entry's `id` is the bare model id our /v1 server reports;
     // OpenClaw builds the model ref as `<providerId>/<id>` (= `model_ref`), so
     // prefixing here would double it to `atomic/atomic/...` and break lookup.
+    // A known window lets OpenClaw compact before the server refuses; an
+    // unknown one is left to OpenClaw's own default rather than invented.
+    let mut model_entry = serde_json::json!({ "id": model, "name": model });
+    if let Some(ctx) = context_length {
+        model_entry["contextWindow"] = serde_json::json!(ctx);
+        model_entry["maxTokens"] = serde_json::json!(output_cap_for(ctx));
+    }
     providers_obj.insert(
         OPENCLAW_PROVIDER_ID.to_string(),
         serde_json::json!({
             "baseUrl": api_url,
             "apiKey": key_val,
             "api": "openai-completions",
-            "models": [ { "id": model, "name": model } ],
+            "timeoutSeconds": OPENCLAW_PROVIDER_TIMEOUT_SECONDS,
+            "models": [model_entry],
         }),
     );
 
-    // OpenClaw's local gateway (ws://127.0.0.1:18789) refuses to open its
-    // websocket without connection auth. For our loopback-only setup, seed
-    // "none" (private-ingress open auth) so the agent is reachable with no
-    // token/password. Preserve any auth mode the user set deliberately.
     let gateway = obj
         .entry("gateway")
         .or_insert_with(|| serde_json::json!({}));
@@ -4516,15 +5225,26 @@ fn openclaw_patch_config(
     gateway_obj
         .entry("mode")
         .or_insert_with(|| serde_json::json!("local"));
-    let auth = gateway_obj
-        .entry("auth")
-        .or_insert_with(|| serde_json::json!({}));
-    let auth_obj = auth
-        .as_object_mut()
-        .ok_or_else(|| "gateway.auth is not a JSON object".to_string())?;
-    auth_obj
-        .entry("mode")
-        .or_insert_with(|| serde_json::json!("none"));
+    // The local Gateway (ws://127.0.0.1:18789) refuses its websocket without
+    // connection auth, and with no mode set it expects a token. When there is
+    // no token or password to expect (in the file or the environment), seed
+    // "none" (private-ingress open auth) so it is reachable at all; a
+    // configured secret means token auth is in use, and "none" would switch it
+    // off.
+    let auth_is_set = gateway_obj.get("auth").is_some_and(|auth| {
+        ["mode", "token", "password"].iter().any(|key| {
+            auth.get(key)
+                .is_some_and(|v| !v.is_null() && v.as_str().map_or(true, |s| !s.is_empty()))
+        })
+    });
+    if !auth_is_set && !gateway_secret_in_env {
+        let auth = gateway_obj
+            .entry("auth")
+            .or_insert_with(|| serde_json::json!({}));
+        auth.as_object_mut()
+            .ok_or_else(|| "gateway.auth is not a JSON object".to_string())?
+            .insert("mode".to_string(), serde_json::json!("none"));
+    }
 
     let agents = obj.entry("agents").or_insert_with(|| serde_json::json!({}));
     let agents_obj = agents
@@ -4536,17 +5256,9 @@ fn openclaw_patch_config(
     let defaults_obj = defaults
         .as_object_mut()
         .ok_or_else(|| "agents.defaults is not a JSON object".to_string())?;
-    // Small local models can exceed OpenClaw's short default request timeout
-    // once wrapped in the agent system prompt + tools. Seed a generous default
-    // (preserving any value the user already set).
-    defaults_obj
-        .entry("timeoutSeconds")
-        .or_insert_with(|| serde_json::json!(240));
-    // Point the agent at our model via `model.primary`. Preserve sibling
-    // `model.*` keys and normalize a plain string (both forms are accepted, but
-    // only the object form has room for the fallbacks OpenClaw writes itself).
-    // Run is explicit "use this", so we overwrite primary to keep it synced with
-    // the active model.
+    // Point the agent at our model via `model.primary`, preserving sibling
+    // `model.*` keys. Run is explicit "use this", so we overwrite primary to
+    // keep it synced with the active model.
     let model_entry = defaults_obj
         .entry("model")
         .or_insert_with(|| serde_json::json!({}));
@@ -4593,6 +5305,61 @@ fn openclaw_patch_config(
     Ok(root)
 }
 
+/// Undo [`openclaw_patch_config`]: put back the keys `backup` recorded (those
+/// still holding our value), drop our provider, and drop a primary model that
+/// would now name a provider that is gone. With no backup (a connection an
+/// older release made) the edits that are recognisably ours go: the
+/// `atomic/*` policy wildcard, empty `atomic/...` settings rows and the 240 s
+/// agent timeout.
+fn openclaw_unpatch_config(
+    mut root: serde_json::Value,
+    backup: Option<&json_key_backup::Backup>,
+) -> serde_json::Value {
+    use json_key_backup::{get, path_of, remove};
+    let ours = |value: &str| value.starts_with(&format!("{}/", OPENCLAW_PROVIDER_ID));
+    match backup {
+        Some(backup) => {
+            json_key_backup::restore(&mut root, &backup.keys);
+        }
+        None => {
+            if let Some(defaults) = root
+                .get_mut("agents")
+                .and_then(|a| a.get_mut("defaults"))
+                .and_then(|d| d.as_object_mut())
+            {
+                if defaults.get("timeoutSeconds").and_then(|t| t.as_u64())
+                    == Some(OPENCLAW_LEGACY_AGENT_TIMEOUT_SECONDS)
+                {
+                    defaults.remove("timeoutSeconds");
+                }
+                if let Some(settings) = defaults.get_mut("models").and_then(|m| m.as_object_mut()) {
+                    settings.retain(|key, value| !(ours(key) && *value == serde_json::json!({})));
+                }
+                if let Some(allow) = defaults
+                    .get_mut("modelPolicy")
+                    .and_then(|p| p.get_mut("allow"))
+                    .and_then(|a| a.as_array_mut())
+                {
+                    let wildcard = format!("{}/*", OPENCLAW_PROVIDER_ID);
+                    allow.retain(|entry| entry.as_str() != Some(wildcard.as_str()));
+                }
+            }
+        }
+    }
+    remove(
+        &mut root,
+        &path_of(&["models", "providers", OPENCLAW_PROVIDER_ID]),
+    );
+    let primary = path_of(&["agents", "defaults", "model", "primary"]);
+    if get(&root, &primary)
+        .and_then(|p| p.as_str())
+        .is_some_and(ours)
+    {
+        remove(&mut root, &primary);
+    }
+    root
+}
+
 /// `openclaw.json` location: `$OPENCLAW_CONFIG_PATH` when set, else
 /// `~/.openclaw/openclaw.json`.
 pub(crate) fn openclaw_config_path(home: &str) -> PathBuf {
@@ -4603,12 +5370,34 @@ pub(crate) fn openclaw_config_path(home: &str) -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(home).join(".openclaw").join("openclaw.json"))
 }
 
+/// Parse `openclaw.json` the way OpenClaw does: as JSON5 (comments, unquoted
+/// keys, trailing commas), or we would reject configs OpenClaw happily accepts
+/// (ATO-87). json5 deserializes into the same serde_json::Value, and we always
+/// re-serialize as strict JSON on write, which normalizes (and silently drops
+/// comments from) the file.
+fn read_openclaw_config(config_path: &Path) -> Result<Option<serde_json::Value>, String> {
+    if !config_path.exists() {
+        return Ok(None);
+    }
+    let text = std::fs::read_to_string(config_path).map_err(|e| e.to_string())?;
+    if text.trim().is_empty() {
+        return Ok(Some(serde_json::json!({})));
+    }
+    json5::from_str(&text).map(Some).map_err(|e| {
+        format!(
+            "Could not parse {}: {}. Fix the reported location and try again.",
+            config_path.display(),
+            e
+        )
+    })
+}
+
 /// Configure OpenClaw by upserting `models.providers.atomic`, the agent's
 /// primary model, and its per-model settings entry in `~/.openclaw/openclaw.json`.
 ///
-/// The desktop apps (macOS `OpenClaw.app`, Windows Hub) read the same file
-/// through the same Gateway, and the Gateway watches it and hot-reloads, so
-/// this one write covers both the CLI and the app with no restart.
+/// The macOS app reads the same file through the same Gateway, and the
+/// Gateway watches it and hot-reloads, so this one write covers both the CLI
+/// and the app with no restart.
 #[tauri::command]
 pub fn configure_openclaw(
     api_url: String,
@@ -4618,42 +5407,81 @@ pub fn configure_openclaw(
     // the agent is told so it compacts before the server refuses.
     context_length: Option<u32>,
 ) -> Result<(), String> {
-    let _ = context_length;
     let home = agent_home_dir()?;
-    let config_path = openclaw_config_path(&home);
+    let gateway_secret_in_env = ["OPENCLAW_GATEWAY_TOKEN", "OPENCLAW_GATEWAY_PASSWORD"]
+        .iter()
+        .any(|name| std::env::var(name).is_ok_and(|v| !v.trim().is_empty()));
+    configure_openclaw_at(
+        &openclaw_config_path(&home),
+        &api_url,
+        &model,
+        api_key.as_deref(),
+        context_length,
+        gateway_secret_in_env,
+    )
+}
 
+fn configure_openclaw_at(
+    config_path: &Path,
+    api_url: &str,
+    model: &str,
+    api_key: Option<&str>,
+    context_length: Option<u32>,
+    gateway_secret_in_env: bool,
+) -> Result<(), String> {
     if let Some(parent) = config_path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("Failed to create {}: {}", parent.display(), e))?;
     }
 
-    // OpenClaw reads this file as JSON5 (comments, unquoted keys, trailing
-    // commas), so we must parse with the same leniency or we reject configs
-    // OpenClaw happily accepts (ATO-87). json5 deserializes into the same
-    // serde_json::Value, and we always re-serialize as strict JSON on write,
-    // which normalizes (and silently drops comments from) the file.
-    let root: serde_json::Value = if config_path.exists() {
-        let text = std::fs::read_to_string(&config_path).map_err(|e| e.to_string())?;
-        if text.trim().is_empty() {
-            serde_json::json!({})
-        } else {
-            json5::from_str(&text).map_err(|e| {
-                format!(
-                    "Could not parse {}: {}. Fix the reported location and try again.",
-                    config_path.display(),
-                    e
-                )
-            })?
-        }
-    } else {
-        serde_json::json!({})
+    let mut base = read_openclaw_config(config_path)?.unwrap_or_else(|| serde_json::json!({}));
+    openclaw_normalize(&mut base);
+    let patched = openclaw_patch_config(
+        base.clone(),
+        api_url,
+        model,
+        api_key,
+        context_length,
+        gateway_secret_in_env,
+    )?;
+    let previous = json_key_backup::read(config_path).unwrap_or_default();
+    let model_ref = format!("{}/{}", OPENCLAW_PROVIDER_ID, model);
+    let backup = json_key_backup::Backup {
+        keys: json_key_backup::track(
+            &base,
+            &patched,
+            &openclaw_tracked_paths(&model_ref),
+            &previous.keys,
+        ),
+        seeded: Vec::new(),
     };
 
-    let root = openclaw_patch_config(root, &api_url, &model, api_key.as_deref())?;
-    let pretty = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
-    std::fs::write(&config_path, pretty + "\n")
+    let pretty = serde_json::to_string_pretty(&patched).map_err(|e| e.to_string())?;
+    std::fs::write(config_path, pretty + "\n")
         .map_err(|e| format!("Failed to write {}: {}", config_path.display(), e))?;
+    json_key_backup::write(config_path, &backup)?;
     log::info!("OpenClaw configured: baseUrl={}, model={}", api_url, model);
+    Ok(())
+}
+
+/// Disconnect OpenClaw (see [`openclaw_unpatch_config`]).
+pub(crate) fn disconnect_openclaw() -> Result<(), String> {
+    disconnect_openclaw_at(&openclaw_config_path(&agent_home_dir()?))
+}
+
+fn disconnect_openclaw_at(config_path: &Path) -> Result<(), String> {
+    let Some(root) = read_openclaw_config(config_path)? else {
+        return json_key_backup::discard(config_path);
+    };
+    let backup = json_key_backup::read(config_path);
+    let restored = openclaw_unpatch_config(root.clone(), backup.as_ref());
+    if restored != root {
+        let pretty = serde_json::to_string_pretty(&restored).map_err(|e| e.to_string())?;
+        std::fs::write(config_path, pretty + "\n")
+            .map_err(|e| format!("Failed to write {}: {}", config_path.display(), e))?;
+    }
+    json_key_backup::discard(config_path)?;
+    log::info!("OpenClaw disconnected: {}", config_path.display());
     Ok(())
 }
 
@@ -5340,74 +6168,215 @@ pub async fn configure_goose(
     Ok(())
 }
 
-/// Environment variables OpenHands reads for BYOK. See `copilot_env_vars` for
-/// why this is shared with the CLI.
-pub fn openhands_env_vars(
-    api_url: &str,
-    model: &str,
-    api_key: Option<&str>,
-) -> Vec<(String, String)> {
-    let key_val = api_key.filter(|k| !k.is_empty()).unwrap_or("atomic");
-
-    let mut env_vars: Vec<(String, String)> = Vec::with_capacity(3);
-    // The litellm `openai/` prefix is required for a custom OpenAI-compatible
-    // base_url.
-    env_vars.push(("LLM_MODEL".to_string(), format!("openai/{}", model)));
-    env_vars.push(("LLM_BASE_URL".to_string(), api_url.to_string()));
-    env_vars.push(("LLM_API_KEY".to_string(), key_val.to_string()));
-    env_vars
+/// What an older release persisted for an agent that now gets its environment
+/// at launch only (OpenHands, Poolside, Muse Code): the marker that opens and
+/// closes its shell-rc block, and the User-scope variables `setx` wrote on
+/// Windows.
+struct LegacyEnvAgent {
+    marker: &'static str,
+    vars: &'static [&'static str],
+    /// The variable holding the server key: `atomic` (our placeholder) or the
+    /// server's own key there marks the whole set as ours.
+    key_var: &'static str,
+    /// The variable holding our endpoint, when the agent has one.
+    url_var: Option<&'static str>,
 }
 
-/// Configure OpenHands via its BYOK environment variables. The CLI reads env
-/// overrides only when launched with `--override-with-envs`, using `LLM_API_KEY`
-/// / `LLM_BASE_URL` / `LLM_MODEL`. We persist them to the user's shell rc
-/// (Windows: `setx`). The litellm `openai/` prefix on the model id is required
-/// for a custom OpenAI-compatible base_url; `LLM_BASE_URL` carries the `/v1`
-/// suffix (`endpointWithPrefix` is true).
+fn legacy_env_agent(agent_id: &str) -> Option<LegacyEnvAgent> {
+    match agent_id {
+        "openhands" => Some(LegacyEnvAgent {
+            marker: "# Atomic Chat - OpenHands Config",
+            vars: &["LLM_MODEL", "LLM_BASE_URL", "LLM_API_KEY"],
+            key_var: "LLM_API_KEY",
+            url_var: Some("LLM_BASE_URL"),
+        }),
+        "poolside" => Some(LegacyEnvAgent {
+            marker: "# Atomic Chat - Poolside Config",
+            vars: &[
+                "POOLSIDE_STANDALONE_BASE_URL",
+                "POOLSIDE_API_KEY",
+                "POOLSIDE_STANDALONE_MODEL",
+            ],
+            key_var: "POOLSIDE_API_KEY",
+            url_var: Some("POOLSIDE_STANDALONE_BASE_URL"),
+        }),
+        "muse" => Some(LegacyEnvAgent {
+            marker: "# Atomic Chat - Muse Code Config",
+            vars: &["META_API_KEY"],
+            key_var: "META_API_KEY",
+            url_var: None,
+        }),
+        _ => None,
+    }
+}
+
+/// `content` without the region between (and including) the paired `marker`
+/// lines — exactly the block `write_marked_env_to_shell` appended. Every
+/// other line stays, the user's own exports of the same variables included.
+pub(crate) fn remove_marked_env_block(content: &str, marker: &str) -> String {
+    if !content.split('\n').any(|line| line.starts_with(marker)) {
+        return content.to_string();
+    }
+    let mut in_block = false;
+    content
+        .split('\n')
+        .filter(|line| {
+            if line.starts_with(marker) {
+                in_block = !in_block;
+                return false;
+            }
+            !in_block
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// The shell rc files older releases may have written an env block to: the
+/// one `detect_shell_env_file` picks depends on `$SHELL`, which may have
+/// changed since.
+fn legacy_shell_env_files(home: &Path) -> [PathBuf; 3] {
+    [
+        home.join(".zshenv"),
+        home.join(".bash_profile"),
+        home.join(".bashrc"),
+    ]
+}
+
+/// Remove the shell-rc block of `agent` from every rc file under `home`.
+fn remove_legacy_env_blocks(home: &Path, agent: &LegacyEnvAgent) -> Result<(), String> {
+    for path in legacy_shell_env_files(home) {
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let cleaned = remove_marked_env_block(&content, agent.marker);
+        if cleaned != content {
+            std::fs::write(&path, cleaned)
+                .map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;
+            log::info!("Removed the {} block from {}", agent.marker, path.display());
+        }
+    }
+    Ok(())
+}
+
+/// Whether the User-scope variables `values` (one per `agent.vars`) are the
+/// set an older release wrote: its key is our placeholder or this server's
+/// key, or its endpoint is this server's (with or without the `/v1` older
+/// Poolside setups dropped).
+fn legacy_env_values_are_ours(
+    agent: &LegacyEnvAgent,
+    value: &dyn Fn(&str) -> Option<String>,
+    server_key: Option<&str>,
+    api_url: Option<&str>,
+) -> bool {
+    let key = value(agent.key_var);
+    let key_is_ours = key
+        .as_deref()
+        .is_some_and(|k| k == "atomic" || server_key.is_some_and(|s| !s.is_empty() && s == k));
+    let url_is_ours = match (agent.url_var.and_then(|v| value(v)), api_url) {
+        (Some(url), Some(api_url)) => {
+            let api_url = api_url.trim_end_matches('/');
+            let url = url.trim_end_matches('/');
+            url == api_url || Some(url) == api_url.strip_suffix("/v1")
+        }
+        _ => false,
+    };
+    key_is_ours || url_is_ours
+}
+
+/// Remove what an older Atomic Chat release persisted for `agent_id`, which
+/// now gets its environment inline at launch: its marked shell-rc block, and on
+/// Windows the User-scope variables `setx` wrote, when they are recognisably
+/// ours (see [`legacy_env_values_are_ours`]). A user's own lines and values
+/// are never touched. `server_key` and `api_url` describe the server being
+/// connected (none on Disconnect, where only our placeholder key identifies
+/// them).
+pub(crate) fn remove_legacy_env_agent_config(
+    agent_id: &str,
+    server: Option<(&str, Option<&str>)>,
+) -> Result<(), String> {
+    let Some(agent) = legacy_env_agent(agent_id) else {
+        return Ok(());
+    };
+    if cfg!(windows) {
+        let ours = legacy_env_values_are_ours(
+            &agent,
+            &|name| read_windows_user_env(name),
+            server.and_then(|(_, key)| key),
+            server.map(|(url, _)| url),
+        );
+        if ours {
+            remove_windows_user_env(agent.vars)?;
+        }
+        return Ok(());
+    }
+    remove_legacy_env_blocks(Path::new(&agent_home_dir()?), &agent)
+}
+
+/// Delete User-scope environment variables the way `setx` set them, through
+/// .NET so the change is broadcast to new processes.
+#[cfg(windows)]
+fn remove_windows_user_env(names: &[&str]) -> Result<(), String> {
+    use std::os::windows::process::CommandExt;
+    let script = names
+        .iter()
+        .map(|name| {
+            format!(
+                "[Environment]::SetEnvironmentVariable('{}', $null, 'User')",
+                name
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("; ");
+    let mut cmd = std::process::Command::new("powershell");
+    cmd.args(["-NoProfile", "-Command", &script]);
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    let output = cmd
+        .output()
+        .map_err(|e| format!("Failed to clear {}: {}", names.join(", "), e))?;
+    if !output.status.success() {
+        return Err(format!(
+            "Failed to clear {}: {}",
+            names.join(", "),
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    log::info!("Removed {} from the user environment", names.join(", "));
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn remove_windows_user_env(_names: &[&str]) -> Result<(), String> {
+    Ok(())
+}
+
+/// Connect for an agent that takes its endpoint from the environment only:
+/// nothing is persisted any more — the terminal Atomic Chat opens passes the
+/// variables inline (`integration-agent-run.ts`), and a user-wide variable or
+/// rc export would capture every other use of the agent (a cloud key replaced
+/// by our placeholder, a dead localhost after Atomic Chat quits). What an
+/// older release persisted is removed; failing to is not worth failing
+/// Connect over.
+fn connect_env_agent(agent_id: &str, name: &str, api_url: &str, api_key: Option<&str>) {
+    if let Err(e) = remove_legacy_env_agent_config(agent_id, Some((api_url, api_key))) {
+        log::warn!("Could not remove the environment an older release saved for {name}: {e}");
+    }
+    log::info!("{name} connected: base_url={api_url}, environment passed at launch");
+}
+
+/// Configure OpenHands: its CLI reads `LLM_MODEL` (with litellm's `openai/`
+/// prefix, required for a custom OpenAI-compatible base URL), `LLM_BASE_URL`
+/// (with `/v1`) and `LLM_API_KEY` only when launched with
+/// `--override-with-envs`, which is how the terminal starts it. See
+/// [`connect_env_agent`].
 #[tauri::command]
 pub fn configure_openhands(
     api_url: String,
     model: String,
     api_key: Option<String>,
-    // The window the served model was loaded with, when the app knows it;
-    // the agent is told so it compacts before the server refuses.
     context_length: Option<u32>,
 ) -> Result<(), String> {
-    let _ = context_length;
-    let env_vars = openhands_env_vars(&api_url, &model, api_key.as_deref());
-
-    const MARKER: &str = "# Atomic Chat - OpenHands Config";
-
-    if cfg!(target_os = "windows") {
-        for (key, value) in &env_vars {
-            let output = std::process::Command::new("setx")
-                .arg(key)
-                .arg(value)
-                .output()
-                .map_err(|e| e.to_string())?;
-            if !output.status.success() {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                return Err(format!("Failed to set env var {}: {}", key, stderr));
-            }
-        }
-        log::info!(
-            "OpenHands configured (Windows env): base_url={}, model={}",
-            api_url,
-            model
-        );
-        return Ok(());
-    }
-
-    let home = agent_home_dir()?;
-    let is_macos = cfg!(target_os = "macos");
-    let (_shell, env_file_path) = detect_shell_env_file(&home, is_macos);
-    write_marked_env_to_shell(&env_file_path, MARKER, "LLM_", &env_vars)?;
-    log::info!(
-        "OpenHands configured: base_url={}, model={}, rc={}",
-        api_url,
-        model,
-        env_file_path
-    );
+    let _ = (model, context_length);
+    connect_env_agent("openhands", "OpenHands", &api_url, api_key.as_deref());
     Ok(())
 }
 
@@ -5446,145 +6415,38 @@ pub fn configure_kilo(
     Ok(())
 }
 
-/// Poolside standalone mode expects a base URL WITHOUT the `/v1` suffix.
-fn poolside_standalone_base_url(api_url: &str) -> String {
-    let trimmed = api_url.trim().trim_end_matches('/');
-    trimmed
-        .strip_suffix("/v1")
-        .unwrap_or(trimmed)
-        .trim_end_matches('/')
-        .to_string()
-}
-
-/// Configure Poolside CLI via its standalone OpenAI-compatible environment
-/// variables. Poolside has no provider config file for BYOK — it reads
-/// `POOLSIDE_STANDALONE_*` from the environment at launch — so we persist them
-/// to the user's shell rc (Windows: `setx`). The auto-opened terminal also
-/// passes them inline so the session works without re-sourcing the rc file.
-/// Environment variables Poolside reads in standalone mode. See
-/// `copilot_env_vars` for why this is shared with the CLI.
-pub fn poolside_env_vars(
-    api_url: &str,
-    model: &str,
-    api_key: Option<&str>,
-) -> Vec<(String, String)> {
-    let key_val = api_key.filter(|k| !k.is_empty()).unwrap_or("atomic");
-    let standalone_base = poolside_standalone_base_url(api_url);
-
-    let mut env_vars: Vec<(String, String)> = Vec::with_capacity(3);
-    env_vars.push(("POOLSIDE_STANDALONE_BASE_URL".to_string(), standalone_base));
-    env_vars.push(("POOLSIDE_API_KEY".to_string(), key_val.to_string()));
-    env_vars.push(("POOLSIDE_STANDALONE_MODEL".to_string(), model.to_string()));
-    env_vars
-}
-
+/// Configure Poolside CLI, whose standalone mode reads
+/// `POOLSIDE_STANDALONE_BASE_URL` (with `/v1`, per its docs),
+/// `POOLSIDE_API_KEY`, `POOLSIDE_STANDALONE_MODEL` and
+/// `POOLSIDE_STANDALONE_CONTEXT_LENGTH` from the environment; the terminal
+/// passes them. See [`connect_env_agent`].
 #[tauri::command]
 pub fn configure_poolside(
     api_url: String,
     model: String,
     api_key: Option<String>,
-    // The window the served model was loaded with, when the app knows it;
-    // the agent is told so it compacts before the server refuses.
     context_length: Option<u32>,
 ) -> Result<(), String> {
-    let _ = context_length;
-    let standalone_base = poolside_standalone_base_url(&api_url);
-    let env_vars = poolside_env_vars(&api_url, &model, api_key.as_deref());
-
-    const MARKER: &str = "# Atomic Chat - Poolside Config";
-
-    if cfg!(target_os = "windows") {
-        for (key, value) in &env_vars {
-            let output = std::process::Command::new("setx")
-                .arg(key)
-                .arg(value)
-                .output()
-                .map_err(|e| e.to_string())?;
-            if !output.status.success() {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                return Err(format!("Failed to set env var {}: {}", key, stderr));
-            }
-        }
-        log::info!(
-            "Poolside configured (Windows env): base_url={}, model={}",
-            standalone_base,
-            model
-        );
-        return Ok(());
-    }
-
-    let home = agent_home_dir()?;
-    let is_macos = cfg!(target_os = "macos");
-    let (_shell, env_file_path) = detect_shell_env_file(&home, is_macos);
-    write_marked_env_to_shell(&env_file_path, MARKER, "POOLSIDE_", &env_vars)?;
-    log::info!(
-        "Poolside configured: base_url={}, model={}, rc={}",
-        standalone_base,
-        model,
-        env_file_path
-    );
+    let _ = (model, context_length);
+    connect_env_agent("poolside", "Poolside", &api_url, api_key.as_deref());
     Ok(())
 }
 
-/// Environment Muse Code needs before it will talk to a non-Meta endpoint.
-///
-/// Muse Code is the one agent here with no writable endpoint configuration:
+/// Configure Muse Code. It has no writable endpoint configuration:
 /// `~/.config/muse/settings.json` holds UI, tool and MCP preferences, while the
 /// provider is chosen per invocation with `--provider meta --base-url <url>
-/// --model <id>` (see `cli::integrations::dynamic_run_args`). The credential is
-/// the only piece that persists, and Muse only checks that `META_API_KEY` is
-/// present -- the upstream call goes to whatever `--base-url` points at -- so
-/// the local server's own key satisfies both ends.
-pub fn muse_env_vars(_api_url: &str, _model: &str, api_key: Option<&str>) -> Vec<(String, String)> {
-    let key_val = api_key.filter(|k| !k.is_empty()).unwrap_or("atomic");
-    vec![("META_API_KEY".to_string(), key_val.to_string())]
-}
-
-/// Configure Muse Code by persisting `META_API_KEY`.
-///
-/// `api_url` and `model` are accepted for symmetry with the other
-/// `configure_*` commands the Launch page invokes, but Muse takes both as
-/// launch flags rather than configuration, so only the key is written here.
+/// --model <id>`, and Muse only checks that `META_API_KEY` is present -- the
+/// call goes wherever `--base-url` points. The terminal passes all of it. See
+/// [`connect_env_agent`].
 #[tauri::command]
 pub fn configure_muse(
     api_url: String,
     model: String,
     api_key: Option<String>,
-    // The window the served model was loaded with, when the app knows it;
-    // the agent is told so it compacts before the server refuses.
     context_length: Option<u32>,
 ) -> Result<(), String> {
-    let _ = context_length;
-    let env_vars = muse_env_vars(&api_url, &model, api_key.as_deref());
-
-    const MARKER: &str = "# Atomic Chat - Muse Code Config";
-
-    if cfg!(target_os = "windows") {
-        for (key, value) in &env_vars {
-            let output = std::process::Command::new("setx")
-                .arg(key)
-                .arg(value)
-                .output()
-                .map_err(|e| e.to_string())?;
-            if !output.status.success() {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                return Err(format!("Failed to set env var {}: {}", key, stderr));
-            }
-        }
-        log::info!("Muse Code configured (Windows env): base_url={}", api_url);
-        return Ok(());
-    }
-
-    let home = agent_home_dir()?;
-    let is_macos = cfg!(target_os = "macos");
-    let (_shell, env_file_path) = detect_shell_env_file(&home, is_macos);
-    write_marked_env_to_shell(&env_file_path, MARKER, "META_", &env_vars)?;
-    log::info!(
-        "Muse Code configured: base_url={}, model={}, rc={}",
-        api_url,
-        model,
-        env_file_path
-    );
+    let _ = (model, context_length);
+    connect_env_agent("muse", "Muse Code", &api_url, api_key.as_deref());
     Ok(())
 }
 
@@ -5824,14 +6686,15 @@ fn atomic_agent_embedding_base_url(
 /// real state directory. Everything outside `llm` is left byte-for-byte alone;
 /// inside `llm`, only our own provider entry and `activeTextProvider` are
 /// rewritten (plus `activeEmbeddingProvider` when it is absent or dangling,
-/// which the agent would otherwise refuse to load). Unknown keys survive
-/// because Atomic Agent's parser carries unknown top-level keys through
-/// verbatim.
+/// which the agent would otherwise refuse to load, and `fallback` when there
+/// is none). Unknown keys survive because Atomic Agent's parser carries
+/// unknown top-level keys through verbatim.
 fn atomic_agent_patch_config(
     mut root: serde_json::Value,
     api_url: &str,
     model: &str,
     api_key: Option<&str>,
+    context_length: Option<u32>,
 ) -> Result<serde_json::Value, String> {
     // The agent's `parseOptionalString` rejects `""` outright rather than
     // treating it as absent, so an empty model would take the whole file down
@@ -5896,7 +6759,7 @@ fn atomic_agent_patch_config(
             .filter(|v| v.is_number())
             .unwrap_or_else(|| serde_json::json!(ATOMIC_AGENT_REQUEST_TIMEOUT_MS));
 
-        let entry = serde_json::json!({
+        let mut entry = serde_json::json!({
             "id": ATOMIC_AGENT_PROVIDER_ID,
             "kind": "openai-compatible",
             "baseUrl": api_url,
@@ -5905,6 +6768,17 @@ fn atomic_agent_patch_config(
             "supportsTools": true,
             "requestTimeoutMs": timeout,
         });
+        // `userModels` outranks the bundled catalog in the agent's
+        // `resolveModel`; without it a local model is assumed to hold 128K
+        // and is never compacted before the server refuses. An unknown window
+        // is left to the agent rather than invented.
+        if let Some(ctx) = context_length {
+            entry["userModels"] = serde_json::json!([{
+                "id": model.trim(),
+                "kind": "chat",
+                "contextWindow": ctx,
+            }]);
+        }
         match existing {
             Some(i) => providers[i] = entry,
             None => providers.push(entry),
@@ -5935,8 +6809,92 @@ fn atomic_agent_patch_config(
             serde_json::json!(ATOMIC_AGENT_LOCAL_PROVIDER_ID),
         );
     }
+    // With no `fallback` block the agent appends its `llama-server` provider
+    // to every chain (`appendLocal` defaults to true), so any failure of ours —
+    // a 404 for a model the server stopped serving included — is retried
+    // against `local-llama` on :8080, where nothing listens, and reported as
+    // "The local model isn't running". A chain the user configured is theirs.
+    if llm.get("fallback").map_or(true, serde_json::Value::is_null) {
+        llm.insert(
+            "fallback".to_string(),
+            serde_json::json!({ "appendLocal": false }),
+        );
+    }
 
     Ok(root)
+}
+
+/// The `llm` keys Connect may overwrite besides our provider entry.
+fn atomic_agent_tracked_paths() -> Vec<Vec<String>> {
+    use json_key_backup::path_of;
+    vec![
+        path_of(&["llm", "activeTextProvider"]),
+        path_of(&["llm", "activeEmbeddingProvider"]),
+        path_of(&["llm", "fallback"]),
+    ]
+}
+
+/// Undo [`atomic_agent_patch_config`] on `root`: put back the `llm` keys
+/// `backup` recorded (those still holding our value) and drop our provider
+/// entry. The `local-llama` entry Connect seeded goes only when nothing else
+/// is left, so the agent synthesizes its own defaults again; otherwise it is
+/// what the active providers fall back to. Every reference to our provider
+/// that would be left dangling — which the agent refuses to load — is
+/// cleared, whether a backup exists (a connection by an older release keeps
+/// none) or not.
+fn atomic_agent_unpatch_config(
+    mut root: serde_json::Value,
+    backup: Option<&json_key_backup::Backup>,
+) -> serde_json::Value {
+    use json_key_backup::{path_of, remove};
+    if let Some(backup) = backup {
+        json_key_backup::restore(&mut root, &backup.keys);
+    }
+    let Some(llm) = root.get_mut("llm").and_then(|l| l.as_object_mut()) else {
+        return root;
+    };
+    let Some(providers) = llm.get_mut("providers").and_then(|p| p.as_array_mut()) else {
+        return root;
+    };
+    providers.retain(|p| p.get("id").and_then(|v| v.as_str()) != Some(ATOMIC_AGENT_PROVIDER_ID));
+    let seeded = backup.map(|b| b.seeded.as_slice()).unwrap_or_default();
+    if providers.len() == 1 && seeded.contains(&providers[0]) {
+        providers.clear();
+    }
+    let remaining: Vec<String> = providers
+        .iter()
+        .filter_map(|p| p.get("id").and_then(|v| v.as_str()).map(str::to_string))
+        .collect();
+    if remaining.is_empty() {
+        llm.remove("providers");
+    }
+    for key in ["activeTextProvider", "activeEmbeddingProvider"] {
+        if llm.get(key).and_then(|v| v.as_str()) != Some(ATOMIC_AGENT_PROVIDER_ID) {
+            continue;
+        }
+        // The agent's default is `local-llama`, which it synthesizes when
+        // there is no provider list at all.
+        if remaining.is_empty()
+            || remaining
+                .iter()
+                .any(|id| id == ATOMIC_AGENT_LOCAL_PROVIDER_ID)
+        {
+            llm.remove(key);
+        } else {
+            llm.insert(key.to_string(), serde_json::json!(remaining[0]));
+        }
+    }
+    if let Some(chain) = llm
+        .get_mut("fallback")
+        .and_then(|f| f.get_mut("chain"))
+        .and_then(|c| c.as_array_mut())
+    {
+        chain.retain(|id| id.as_str() != Some(ATOMIC_AGENT_PROVIDER_ID));
+    }
+    if llm.is_empty() {
+        remove(&mut root, &path_of(&["llm"]));
+    }
+    root
 }
 
 /// Whether `providers` already carries an entry with this id.
@@ -5944,6 +6902,24 @@ fn atomic_agent_lists(providers: &[serde_json::Value], id: &str) -> bool {
     providers
         .iter()
         .any(|p| p.get("id").and_then(|v| v.as_str()) == Some(id))
+}
+
+fn read_atomic_agent_config(path: &Path) -> Result<Option<serde_json::Value>, String> {
+    if !path.exists() {
+        return Ok(None);
+    }
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+    if text.trim().is_empty() {
+        return Ok(Some(serde_json::json!({})));
+    }
+    serde_json::from_str(&text).map(Some).map_err(|e| {
+        format!(
+            "Could not parse {}: {}. Fix or remove the file and try again.",
+            path.display(),
+            e
+        )
+    })
 }
 
 /// Configure Atomic Agent by upserting an `atomic-chat` provider in its user
@@ -5963,41 +6939,89 @@ pub fn configure_atomic_agent(
     // the agent is told so it compacts before the server refuses.
     context_length: Option<u32>,
 ) -> Result<(), String> {
-    let _ = context_length;
-    let state_dir = resolve_atomic_agent_state_dir()?;
-    let path = state_dir.join("config.json");
+    configure_atomic_agent_at(
+        &resolve_atomic_agent_state_dir()?,
+        &api_url,
+        &model,
+        api_key.as_deref(),
+        context_length,
+    )
+}
 
-    let root: serde_json::Value = if path.exists() {
-        let text = std::fs::read_to_string(&path)
-            .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
-        if text.trim().is_empty() {
-            serde_json::json!({})
-        } else {
-            serde_json::from_str(&text).map_err(|e| {
-                format!(
-                    "Could not parse {}: {}. Fix or remove the file and try again.",
-                    path.display(),
-                    e
-                )
-            })?
+fn configure_atomic_agent_at(
+    state_dir: &Path,
+    api_url: &str,
+    model: &str,
+    api_key: Option<&str>,
+    context_length: Option<u32>,
+) -> Result<(), String> {
+    let path = state_dir.join("config.json");
+    let root = read_atomic_agent_config(&path)?.unwrap_or_else(|| serde_json::json!({}));
+    let patched = atomic_agent_patch_config(root.clone(), api_url, model, api_key, context_length)?;
+
+    let previous = json_key_backup::read(&path).unwrap_or_default();
+    let ids = |value: &serde_json::Value| -> Vec<serde_json::Value> {
+        json_key_backup::get(value, &json_key_backup::path_of(&["llm", "providers"]))
+            .and_then(|p| p.as_array())
+            .cloned()
+            .unwrap_or_default()
+    };
+    // The `local-llama` entry this Connect added, or an earlier one did.
+    let before = ids(&root);
+    let mut seeded = previous.seeded.clone();
+    for entry in ids(&patched) {
+        let id = entry.get("id").and_then(|v| v.as_str());
+        if id == Some(ATOMIC_AGENT_LOCAL_PROVIDER_ID)
+            && !before.contains(&entry)
+            && !seeded.contains(&entry)
+        {
+            seeded.push(entry);
         }
-    } else {
-        serde_json::json!({})
+    }
+    let backup = json_key_backup::Backup {
+        keys: json_key_backup::track(
+            &root,
+            &patched,
+            &atomic_agent_tracked_paths(),
+            &previous.keys,
+        ),
+        seeded,
     };
 
-    let patched = atomic_agent_patch_config(root, &api_url, &model, api_key.as_deref())?;
-
-    std::fs::create_dir_all(&state_dir)
+    std::fs::create_dir_all(state_dir)
         .map_err(|e| format!("Failed to create {}: {}", state_dir.display(), e))?;
     let pretty = serde_json::to_string_pretty(&patched).map_err(|e| e.to_string())?;
     std::fs::write(&path, pretty + "\n")
         .map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;
+    json_key_backup::write(&path, &backup)?;
 
     log::info!(
         "Atomic Agent configured: baseUrl={}, model={}",
         api_url,
         model
     );
+    Ok(())
+}
+
+/// Disconnect Atomic Agent (see [`atomic_agent_unpatch_config`]).
+pub(crate) fn disconnect_atomic_agent() -> Result<(), String> {
+    disconnect_atomic_agent_at(&resolve_atomic_agent_state_dir()?)
+}
+
+fn disconnect_atomic_agent_at(state_dir: &Path) -> Result<(), String> {
+    let path = state_dir.join("config.json");
+    let Some(root) = read_atomic_agent_config(&path)? else {
+        return json_key_backup::discard(&path);
+    };
+    let backup = json_key_backup::read(&path);
+    let restored = atomic_agent_unpatch_config(root.clone(), backup.as_ref());
+    if restored != root {
+        let pretty = serde_json::to_string_pretty(&restored).map_err(|e| e.to_string())?;
+        std::fs::write(&path, pretty + "\n")
+            .map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;
+    }
+    json_key_backup::discard(&path)?;
+    log::info!("Atomic Agent disconnected: {}", path.display());
     Ok(())
 }
 
@@ -7209,7 +8233,8 @@ mod atomic_agent_tests {
     const URL: &str = "http://127.0.0.1:1337/v1";
 
     fn patch(input: serde_json::Value) -> serde_json::Value {
-        atomic_agent_patch_config(input, URL, "qwen3-4b", Some("")).expect("merge must succeed")
+        atomic_agent_patch_config(input, URL, "qwen3-4b", Some(""), None)
+            .expect("merge must succeed")
     }
 
     fn provider<'a>(root: &'a serde_json::Value, id: &str) -> &'a serde_json::Value {
@@ -7352,7 +8377,7 @@ mod atomic_agent_tests {
     /// a model no server has.
     #[test]
     fn writes_the_model_trimmed() {
-        let out = atomic_agent_patch_config(serde_json::json!({}), URL, "  qwen3-4b\n", None)
+        let out = atomic_agent_patch_config(serde_json::json!({}), URL, "  qwen3-4b\n", None, None)
             .expect("merge must succeed");
         assert_eq!(
             provider(&out, ATOMIC_AGENT_PROVIDER_ID)["defaultChatModel"],
@@ -7397,7 +8422,7 @@ mod atomic_agent_tests {
         let mut tuned = first.clone();
         tuned["llm"]["providers"][1]["requestTimeoutMs"] = serde_json::json!(60_000);
 
-        let out = atomic_agent_patch_config(tuned, URL, "gemma-4-12b", Some("sk-local"))
+        let out = atomic_agent_patch_config(tuned, URL, "gemma-4-12b", Some("sk-local"), None)
             .expect("merge must succeed");
         let providers = out["llm"]["providers"].as_array().unwrap();
         assert_eq!(providers.len(), 2, "one entry per provider id");
@@ -7477,12 +8502,141 @@ mod atomic_agent_tests {
     /// start. Fail before writing instead.
     #[test]
     fn refuses_to_write_an_empty_model() {
-        assert!(atomic_agent_patch_config(serde_json::json!({}), URL, "  ", None).is_err());
+        assert!(atomic_agent_patch_config(serde_json::json!({}), URL, "  ", None, None).is_err());
+    }
+
+    /// With no `fallback` block the agent retries every failure of ours on
+    /// its own `local-llama` (:8080) and reports "The local model isn't
+    /// running"; a block the user wrote is theirs.
+    #[test]
+    fn turns_off_the_local_fallback_only_when_none_is_configured() {
+        let out = patch(serde_json::json!({}));
+        assert_eq!(
+            out["llm"]["fallback"],
+            serde_json::json!({ "appendLocal": false })
+        );
+
+        let chain = serde_json::json!({ "chain": ["openrouter"], "appendLocal": true });
+        let out = patch(serde_json::json!({ "llm": { "fallback": chain.clone() } }));
+        assert_eq!(out["llm"]["fallback"], chain);
+    }
+
+    #[test]
+    fn tells_the_agent_the_served_window_when_known() {
+        let out =
+            atomic_agent_patch_config(serde_json::json!({}), URL, "qwen3-4b", None, Some(32768))
+                .unwrap();
+        assert_eq!(
+            provider(&out, ATOMIC_AGENT_PROVIDER_ID)["userModels"],
+            serde_json::json!([{ "id": "qwen3-4b", "kind": "chat", "contextWindow": 32768 }])
+        );
+        let out = patch(serde_json::json!({}));
+        assert!(provider(&out, ATOMIC_AGENT_PROVIDER_ID)
+            .get("userModels")
+            .is_none());
+    }
+
+    fn connect_at(dir: &Path, model: &str) {
+        configure_atomic_agent_at(dir, URL, model, None, Some(65536)).unwrap();
+    }
+
+    fn read_config(dir: &Path) -> serde_json::Value {
+        serde_json::from_str(&fs::read_to_string(dir.join("config.json")).unwrap()).unwrap()
+    }
+
+    /// Connect twice, then Disconnect: the user's providers and selections
+    /// are what they were, and a file Connect created is empty again.
+    #[test]
+    fn disconnect_restores_what_connect_overwrote() {
+        let dir = tempfile::tempdir().unwrap();
+        let seed = serde_json::json!({
+            "llm": {
+                "activeTextProvider": "openrouter",
+                "activeEmbeddingProvider": "local-llama",
+                "providers": [
+                    { "id": "local-llama", "kind": "llama-server", "url": "http://127.0.0.1:8080" },
+                    { "id": "openrouter", "kind": "openrouter", "apiKey": "sk-or" }
+                ]
+            },
+            "ui": { "theme": "dark" }
+        });
+        fs::write(dir.path().join("config.json"), seed.to_string()).unwrap();
+        connect_at(dir.path(), "qwen3-4b");
+        connect_at(dir.path(), "gemma-4");
+        assert_eq!(
+            read_config(dir.path())["llm"]["activeTextProvider"],
+            ATOMIC_AGENT_PROVIDER_ID
+        );
+        disconnect_atomic_agent_at(dir.path()).unwrap();
+        assert_eq!(read_config(dir.path()), seed);
+        assert!(!json_key_backup::backup_path(&dir.path().join("config.json")).exists());
+
+        let fresh = tempfile::tempdir().unwrap();
+        connect_at(fresh.path(), "qwen3-4b");
+        disconnect_atomic_agent_at(fresh.path()).unwrap();
+        assert_eq!(read_config(fresh.path()), serde_json::json!({}));
+        // Never connected: nothing to do.
+        disconnect_atomic_agent_at(&fresh.path().join("missing")).unwrap();
+    }
+
+    /// No provider may be left naming ours (the agent rejects the whole
+    /// file), whether the user picked it again after Connect or an older
+    /// release connected without a backup.
+    #[test]
+    fn disconnect_leaves_no_reference_to_our_provider() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("config.json"),
+            serde_json::json!({ "llm": {
+                "activeTextProvider": ATOMIC_AGENT_PROVIDER_ID,
+                "activeEmbeddingProvider": "local-llama",
+                "fallback": { "chain": [ATOMIC_AGENT_PROVIDER_ID, "openrouter"] },
+                "providers": [
+                    { "id": "local-llama", "kind": "llama-server" },
+                    { "id": "openrouter", "kind": "openrouter" },
+                    { "id": ATOMIC_AGENT_PROVIDER_ID, "kind": "openai-compatible" }
+                ]
+            } })
+            .to_string(),
+        )
+        .unwrap();
+        disconnect_atomic_agent_at(dir.path()).unwrap();
+        assert_eq!(
+            read_config(dir.path()),
+            serde_json::json!({ "llm": {
+                "activeEmbeddingProvider": "local-llama",
+                "fallback": { "chain": ["openrouter"] },
+                "providers": [
+                    { "id": "local-llama", "kind": "llama-server" },
+                    { "id": "openrouter", "kind": "openrouter" }
+                ]
+            } })
+        );
+
+        // Without `local-llama` the next provider takes over.
+        fs::write(
+            dir.path().join("config.json"),
+            serde_json::json!({ "llm": {
+                "activeTextProvider": ATOMIC_AGENT_PROVIDER_ID,
+                "activeEmbeddingProvider": "openrouter",
+                "providers": [
+                    { "id": "openrouter", "kind": "openrouter" },
+                    { "id": ATOMIC_AGENT_PROVIDER_ID, "kind": "openai-compatible" }
+                ]
+            } })
+            .to_string(),
+        )
+        .unwrap();
+        disconnect_atomic_agent_at(dir.path()).unwrap();
+        assert_eq!(
+            read_config(dir.path())["llm"]["activeTextProvider"],
+            "openrouter"
+        );
     }
 
     #[test]
     fn rejects_a_config_file_that_is_not_an_object() {
-        assert!(atomic_agent_patch_config(serde_json::json!([]), URL, "m", None).is_err());
+        assert!(atomic_agent_patch_config(serde_json::json!([]), URL, "m", None, None).is_err());
     }
 }
 
@@ -7496,7 +8650,8 @@ mod openclaw_tests {
     const OC_URL: &str = "http://127.0.0.1:1337/v1";
 
     fn patch_openclaw(root: serde_json::Value) -> serde_json::Value {
-        openclaw_patch_config(root, OC_URL, "gemma-4", Some("atomic")).expect("patch must succeed")
+        openclaw_patch_config(root, OC_URL, "gemma-4", Some("atomic"), None, false)
+            .expect("patch must succeed")
     }
 
     #[test]
@@ -7618,6 +8773,215 @@ mod openclaw_tests {
         }));
         assert_eq!(out["gateway"]["mode"], "remote");
         assert_eq!(out["gateway"]["auth"]["mode"], "token");
+    }
+
+    /// A known window is written with an output cap; an unknown one is left
+    /// to OpenClaw. The request budget sits on our provider, not on every
+    /// model the agent runs.
+    #[test]
+    fn openclaw_tells_the_model_entry_the_served_window() {
+        let out = openclaw_patch_config(
+            serde_json::json!({}),
+            OC_URL,
+            "gemma-4",
+            None,
+            Some(32768),
+            false,
+        )
+        .unwrap();
+        let provider = &out["models"]["providers"]["atomic"];
+        assert_eq!(provider["models"][0]["contextWindow"], 32768);
+        assert_eq!(provider["models"][0]["maxTokens"], 8192);
+        assert_eq!(
+            provider["timeoutSeconds"],
+            OPENCLAW_PROVIDER_TIMEOUT_SECONDS
+        );
+        assert!(out["agents"]["defaults"].get("timeoutSeconds").is_none());
+
+        let small =
+            openclaw_patch_config(serde_json::json!({}), OC_URL, "m", None, Some(16384), false)
+                .unwrap();
+        assert_eq!(
+            small["models"]["providers"]["atomic"]["models"][0]["maxTokens"],
+            4096
+        );
+
+        let unknown = patch_openclaw(serde_json::json!({}));
+        let entry = &unknown["models"]["providers"]["atomic"]["models"][0];
+        assert!(entry.get("contextWindow").is_none() && entry.get("maxTokens").is_none());
+    }
+
+    /// The 240 s every model's attempt was capped at by older releases goes;
+    /// a value the user chose stays.
+    #[test]
+    fn openclaw_drops_only_the_agent_timeout_older_releases_seeded() {
+        let mut root = serde_json::json!({ "agents": { "defaults": { "timeoutSeconds": 240 } } });
+        openclaw_normalize(&mut root);
+        assert!(root["agents"]["defaults"].get("timeoutSeconds").is_none());
+        let mut root = serde_json::json!({ "agents": { "defaults": { "timeoutSeconds": 900 } } });
+        openclaw_normalize(&mut root);
+        assert_eq!(root["agents"]["defaults"]["timeoutSeconds"], 900);
+    }
+
+    /// "none" is seeded only when the Gateway has no secret to expect: with a
+    /// token configured it would switch token auth off.
+    #[test]
+    fn openclaw_seeds_open_gateway_auth_only_without_a_secret() {
+        let with_token = patch_openclaw(serde_json::json!({
+            "gateway": { "auth": { "token": "t0k3n" } }
+        }));
+        assert!(with_token["gateway"]["auth"].get("mode").is_none());
+        assert_eq!(with_token["gateway"]["auth"]["token"], "t0k3n");
+
+        let with_ref = patch_openclaw(serde_json::json!({
+            "gateway": { "auth": { "password": { "source": "env", "id": "PW" } } }
+        }));
+        assert!(with_ref["gateway"]["auth"].get("mode").is_none());
+
+        let env_secret =
+            openclaw_patch_config(serde_json::json!({}), OC_URL, "m", None, None, true).unwrap();
+        assert!(env_secret["gateway"].get("auth").is_none());
+    }
+
+    fn write_openclaw(path: &Path, value: &serde_json::Value) {
+        fs::write(path, serde_json::to_string_pretty(value).unwrap() + "\n").unwrap();
+    }
+
+    fn read_openclaw(path: &Path) -> serde_json::Value {
+        serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap()
+    }
+
+    /// Connect twice (another model the second time), then Disconnect: the
+    /// file is what it was, the string model included.
+    #[test]
+    fn openclaw_disconnect_restores_what_connect_overwrote() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join("openclaw.json");
+        let seed = serde_json::json!({
+            "agents": { "defaults": {
+                "model": "anthropic/claude-opus-4-6",
+                "modelPolicy": { "allow": ["anthropic/*"] },
+                "models": { "anthropic/claude-opus-4-6": { "alias": "opus" } }
+            } },
+            "gateway": { "mode": "remote", "remote": { "url": "wss://x" } },
+            "models": { "providers": { "anthropic": { "apiKey": "sk-ant" } } }
+        });
+        write_openclaw(&config, &seed);
+        configure_openclaw_at(&config, OC_URL, "gemma-4", None, Some(32768), false).unwrap();
+        configure_openclaw_at(&config, OC_URL, "qwen-3", None, None, false).unwrap();
+        let connected = read_openclaw(&config);
+        assert_eq!(
+            connected["agents"]["defaults"]["model"]["primary"],
+            "atomic/qwen-3"
+        );
+        assert!(json_key_backup::backup_path(&config).exists());
+
+        disconnect_openclaw_at(&config).unwrap();
+        let mut expected = seed.clone();
+        // The plain string is restored in its equivalent object form.
+        expected["agents"]["defaults"]["model"] =
+            serde_json::json!({ "primary": "anthropic/claude-opus-4-6" });
+        assert_eq!(read_openclaw(&config), expected);
+        assert!(!json_key_backup::backup_path(&config).exists());
+
+        // From nothing back to nothing.
+        let fresh = dir.path().join("fresh.json");
+        configure_openclaw_at(&fresh, OC_URL, "gemma-4", None, None, false).unwrap();
+        disconnect_openclaw_at(&fresh).unwrap();
+        assert_eq!(read_openclaw(&fresh), serde_json::json!({}));
+        // Never connected: nothing to do.
+        disconnect_openclaw_at(&dir.path().join("missing.json")).unwrap();
+    }
+
+    #[test]
+    fn openclaw_disconnect_leaves_what_the_user_changed_after_connect() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join("openclaw.json");
+        write_openclaw(
+            &config,
+            &serde_json::json!({ "agents": { "defaults": {
+            "model": { "primary": "openai/gpt-5.4" } } } }),
+        );
+        configure_openclaw_at(&config, OC_URL, "gemma-4", None, None, false).unwrap();
+        let mut edited = read_openclaw(&config);
+        edited["agents"]["defaults"]["model"]["primary"] = serde_json::json!("google/gemini-3");
+        edited["gateway"]["mode"] = serde_json::json!("remote");
+        write_openclaw(&config, &edited);
+
+        disconnect_openclaw_at(&config).unwrap();
+        let out = read_openclaw(&config);
+        assert_eq!(
+            out["agents"]["defaults"]["model"]["primary"],
+            "google/gemini-3"
+        );
+        assert_eq!(out["gateway"]["mode"], "remote");
+        assert!(out["models"].get("providers").is_none());
+    }
+
+    /// A connection made by an older release kept no backup; what is
+    /// recognisably ours goes, and the primary model no longer names a
+    /// provider that is gone.
+    #[test]
+    fn openclaw_disconnect_of_an_older_connection() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join("openclaw.json");
+        write_openclaw(
+            &config,
+            &serde_json::json!({
+                "agents": { "defaults": {
+                    "model": { "primary": "atomic/gemma-4", "fallbacks": ["openai/gpt-5.4"] },
+                    "models": { "atomic/gemma-4": {}, "openai/gpt-5.4": {} },
+                    "modelPolicy": { "allow": ["openai/*", "atomic/*"] },
+                    "timeoutSeconds": 240
+                } },
+                "models": { "mode": "merge", "providers": { "atomic": { "baseUrl": OC_URL } } }
+            }),
+        );
+        disconnect_openclaw_at(&config).unwrap();
+        assert_eq!(
+            read_openclaw(&config),
+            serde_json::json!({
+                "agents": { "defaults": {
+                    "model": { "fallbacks": ["openai/gpt-5.4"] },
+                    "models": { "openai/gpt-5.4": {} },
+                    "modelPolicy": { "allow": ["openai/*"] }
+                } },
+                "models": { "mode": "merge" }
+            })
+        );
+    }
+
+    #[test]
+    fn openclaw_gateway_is_running_only_when_its_lock_names_a_live_port() {
+        let dir = tempfile::tempdir().unwrap();
+        let locks = dir.path().join("tmp").join("openclaw-501");
+        fs::create_dir_all(&locks).unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let live = listener.local_addr().unwrap().port();
+        let dead = {
+            let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            closed.local_addr().unwrap().port()
+        };
+        let lock = |payload: serde_json::Value| {
+            fs::write(locks.join("gateway.state.lock"), payload.to_string()).unwrap();
+            openclaw_gateway_ports(&[locks.clone()])
+                .into_iter()
+                .any(loopback_port_is_listening)
+        };
+        assert!(!lock(
+            serde_json::json!({ "pid": 1, "role": "gateway", "port": dead })
+        ));
+        assert!(!lock(
+            serde_json::json!({ "pid": 1, "role": "agent-embedded", "port": live })
+        ));
+        assert!(!lock(serde_json::json!({ "pid": 1, "role": "gateway" })));
+        assert!(lock(
+            serde_json::json!({ "pid": 1, "role": "gateway", "port": live })
+        ));
+        assert!(lock(serde_json::json!({ "pid": 1, "port": live })));
+        fs::write(locks.join("gateway.state.lock"), "not json").unwrap();
+        assert!(openclaw_gateway_ports(&[locks.clone()]).is_empty());
+        assert!(openclaw_gateway_ports(&[dir.path().join("missing")]).is_empty());
     }
 
     #[test]
@@ -8567,35 +9931,6 @@ mod integration_auth_tests {
     use super::*;
 
     #[test]
-    fn hermes_selects_its_keyed_provider_and_rotates_without_stale_credentials() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(dir.path().join("config.yaml"), format!("{}custom_providers:\n- name: personal\n  base_url: https://example.com/v1\n  api_key: personal-key\n", HERMES_DEFAULT_CONFIG.replace("custom_providers: []\n", ""))).unwrap();
-        for key in [Some("first'key#quoted"), Some("rotated"), None, Some("")] {
-            configure_hermes_at(
-                dir.path(),
-                "http://localhost:1337/v1".into(),
-                "test/model".into(),
-                key.map(str::to_string),
-                None,
-            )
-            .unwrap();
-            let text = fs::read_to_string(dir.path().join("config.yaml")).unwrap();
-            let doc: serde_yaml::Value = serde_yaml::from_str(&text).unwrap();
-            assert_eq!(
-                doc["model"]["provider"].as_str(),
-                Some("custom:atomic-chat")
-            );
-            let providers = doc["custom_providers"].as_sequence().unwrap();
-            assert_eq!(providers.len(), 2);
-            assert_eq!(providers[0]["api_key"].as_str(), Some("personal-key"));
-            assert_eq!(
-                providers[1]["api_key"].as_str(),
-                Some(key.filter(|k| !k.is_empty()).unwrap_or("atomic"))
-            );
-        }
-    }
-
-    #[test]
     fn zed_launch_paths_inherit_current_key_and_refuse_reusing_a_running_editor() {
         for cli in [true, false] {
             for key in [None, Some(""), Some("current-key"), Some("rotated'key")] {
@@ -8621,7 +9956,7 @@ mod hermes_config_tests {
 
     const URL: &str = "http://127.0.0.1:1337/v1";
     const MODEL: &str = "unsloth/Qwen3_5-4B-GGUF-Qwen3_5-4B-IQ4_XS";
-    const PROVIDER: &str = "custom:atomic-chat";
+    const PROVIDER: &str = "custom";
 
     /// The head of Hermes' shipped `cli-config.yaml.example` (v0.22.6), which
     /// its installer copies in.
@@ -8663,7 +9998,14 @@ compression:
     }
 
     fn patch(content: &str) -> String {
-        patch_hermes_model_section(content, MODEL, PROVIDER, URL)
+        patch_hermes_model_section(
+            content,
+            &[
+                ("default", MODEL.to_string()),
+                ("provider", PROVIDER.to_string()),
+                ("base_url", URL.to_string()),
+            ],
+        )
     }
 
     fn ours(indent: &str) -> String {
@@ -8791,35 +10133,70 @@ compression:
     fn hermes_inline_custom_providers_are_left_alone_rather_than_duplicated() {
         let inline = "custom_providers: [{name: bridge, base_url: \"http://localhost:9000\"}]\n";
         assert_eq!(
-            upsert_atomic_provider(inline, "http://u", "m", 64, None),
-            inline
+            upsert_atomic_provider(inline, "http://u", "m", 64, "\"atomic\""),
+            (inline.to_string(), false)
         );
         assert_eq!(remove_atomic_provider(inline), inline);
     }
 
     #[test]
+    fn hermes_removing_our_entry_from_a_file_without_one_changes_nothing() {
+        for text in ["a: 1\n", "custom_providers:\n- name: keep\n", ""] {
+            assert_eq!(remove_atomic_provider(text), text);
+        }
+    }
+
+    #[test]
     fn hermes_provider_timeout_rewrites_an_empty_inline_map_into_a_block() {
+        let (out, created) =
+            upsert_provider_request_timeout("a: 1\nproviders: {}\nb: 2\n", "custom", 180);
         assert_eq!(
-            upsert_provider_request_timeout("a: 1\nproviders: {}\nb: 2\n", "custom", 180),
+            out,
             "a: 1\nproviders:\n  custom:\n    request_timeout_seconds: 180\nb: 2\n"
+        );
+        assert_eq!(
+            remove_provider_request_timeout(&out, "custom", 180, &created),
+            "a: 1\nproviders: {}\nb: 2\n"
         );
     }
 
     #[test]
     fn hermes_provider_timeout_never_adds_a_second_providers_key() {
+        let seed = "providers:  # named endpoints\n  x: {}\n";
+        let (out, created) = upsert_provider_request_timeout(seed, "custom", 180);
         assert_eq!(
-            upsert_provider_request_timeout(
-                "providers:  # named endpoints\n  x: {}\n",
-                "custom",
-                180
-            ),
+            out,
             "providers:  # named endpoints\n  custom:\n    request_timeout_seconds: 180\n  x: {}\n"
+        );
+        assert_eq!(
+            remove_provider_request_timeout(&out, "custom", 180, &created),
+            seed
         );
         let inline = "providers: {openai: {request_timeout_seconds: 60}}\n";
         assert_eq!(
             upsert_provider_request_timeout(inline, "custom", 180),
-            inline
+            (inline.to_string(), vec![])
         );
+    }
+
+    #[test]
+    fn hermes_provider_timeout_removal_keeps_what_the_user_owns() {
+        // A timeout the user set is never recorded as ours.
+        let seed = "providers:\n  custom:\n    request_timeout_seconds: 60\n";
+        let (out, created) = upsert_provider_request_timeout(seed, "custom", 180);
+        assert_eq!((out.as_str(), created.len()), (seed, 0));
+        // Ours, retuned by the user after Connect, stays theirs.
+        let (_, created) = upsert_provider_request_timeout("", "custom", 180);
+        let tuned = "providers:\n  custom:\n    request_timeout_seconds: 900\n";
+        assert_eq!(
+            remove_provider_request_timeout(tuned, "custom", 180, &created),
+            tuned
+        );
+    }
+
+    fn connect(dir: &Path, key: Option<&str>, ctx: Option<u32>) -> String {
+        configure_hermes_at(dir, URL.into(), MODEL.into(), key.map(str::to_string), ctx).unwrap();
+        fs::read_to_string(dir.join("config.yaml")).unwrap()
     }
 
     #[test]
@@ -8849,32 +10226,27 @@ compression:
             "_config_version: 52\nmemory:\n  provider: \"\"\n",
             "model:  # main chat\n  default: x\ncustom_providers: []  # none\n\
              providers:  # named\n  x:\n    base_url: http://x\n",
+            "",
         ];
         for seed in shapes {
             let dir = tempfile::tempdir().unwrap();
-            let config = dir.path().join("config.yaml");
-            fs::write(&config, seed).unwrap();
-            let connect = || {
-                configure_hermes_at(
-                    dir.path(),
-                    URL.into(),
-                    MODEL.into(),
-                    Some("sk-test".into()),
-                    None,
-                )
-                .unwrap();
-                fs::read_to_string(&config).unwrap()
-            };
+            fs::write(dir.path().join("config.yaml"), seed).unwrap();
 
-            let first = connect();
+            let first = connect(dir.path(), Some("sk-test"), Some(32768));
             let view = hermes_view(&first);
             assert_eq!(view["model"]["default"].as_str(), Some(MODEL), "{first}");
             assert_eq!(
                 view["model"]["provider"].as_str(),
-                Some(PROVIDER),
+                Some("custom"),
                 "{first}"
             );
             assert_eq!(view["model"]["base_url"].as_str(), Some(URL), "{first}");
+            assert_eq!(
+                view["model"]["api_key"].as_str(),
+                Some("sk-test"),
+                "{first}"
+            );
+            assert_eq!(view["model"]["context_length"].as_u64(), Some(32768));
             let entries = view["custom_providers"].as_sequence().unwrap();
             assert_eq!(entries.len(), 1, "{first}");
             assert_eq!(entries[0]["name"].as_str(), Some(ATOMIC_PROVIDER_NAME));
@@ -8883,7 +10255,7 @@ compression:
             assert_eq!(entries[0]["model"].as_str(), Some(MODEL));
             assert_eq!(
                 entries[0]["models"][MODEL]["context_length"].as_u64(),
-                Some(65536)
+                Some(32768)
             );
             assert_eq!(
                 view["providers"]["custom"]["request_timeout_seconds"].as_u64(),
@@ -8891,28 +10263,438 @@ compression:
                 "{first}"
             );
 
-            assert_eq!(connect(), first);
+            assert_eq!(connect(dir.path(), Some("sk-test"), Some(32768)), first);
+        }
+    }
+
+    /// Hermes cannot run below a 64K window, so an unknown one is written as
+    /// that floor; a known one is written as served (Connect guarantees the
+    /// floor), never raised to it.
+    #[test]
+    fn hermes_writes_the_served_window_and_the_floor_only_when_unknown() {
+        let dir = tempfile::tempdir().unwrap();
+        let view = hermes_view(&connect(dir.path(), None, None));
+        assert_eq!(view["model"]["context_length"].as_u64(), Some(65536));
+        let view = hermes_view(&connect(dir.path(), None, Some(131072)));
+        assert_eq!(view["model"]["context_length"].as_u64(), Some(131072));
+        assert_eq!(view["model"]["api_key"].as_str(), Some("atomic"));
+    }
+
+    /// The route lives in the `model:` section alone, so it works when the
+    /// user keeps their bridges in an inline list we cannot add an entry to.
+    #[test]
+    fn hermes_route_does_not_depend_on_our_entry() {
+        let dir = tempfile::tempdir().unwrap();
+        let inline = "custom_providers: [{name: bridge, base_url: \"http://localhost:9000\"}]\n";
+        fs::write(dir.path().join("config.yaml"), inline).unwrap();
+        let out = connect(dir.path(), Some("sk-test"), None);
+        let view = hermes_view(&out);
+        assert_eq!(view["model"]["provider"].as_str(), Some("custom"));
+        assert_eq!(view["model"]["api_key"].as_str(), Some("sk-test"));
+        assert_eq!(view["custom_providers"].as_sequence().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn hermes_rotates_the_key_without_touching_other_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("config.yaml"),
+            "custom_providers:\n- name: personal\n  base_url: https://example.com/v1\n  api_key: personal-key\n",
+        )
+        .unwrap();
+        for key in [Some("first'key#quoted"), Some("rotated"), None, Some("")] {
+            let doc = hermes_view(&connect(dir.path(), key, None));
+            let expected = key.filter(|k| !k.is_empty()).unwrap_or("atomic");
+            assert_eq!(doc["model"]["api_key"].as_str(), Some(expected));
+            let providers = doc["custom_providers"].as_sequence().unwrap();
+            assert_eq!(providers.len(), 2);
+            assert_eq!(providers[0]["api_key"].as_str(), Some("personal-key"));
+            assert_eq!(providers[1]["api_key"].as_str(), Some(expected));
+        }
+    }
+
+    /// Disconnect returns the file to what it was, whatever shape the route had
+    /// — not to an OpenRouter default — and however many times Connect ran.
+    #[test]
+    fn hermes_disconnect_restores_the_file_connect_found() {
+        let shapes = [
+            UPSTREAM_EXAMPLE,
+            "auxiliary:\n  vision:\n    provider: auto\n    base_url: \"\"\n\
+             model:\n  default: anthropic/claude-opus-4.6\n  provider: auto\n  \
+             base_url: https://openrouter.ai/api/v1\n  api_key: sk-or-mine  # personal\n\
+             custom_providers:\n- name: personal\n  base_url: https://example.com/v1\n\
+             delegation:\n  provider: openrouter\n",
+            "model: anthropic/claude-opus-4.6\ncron:\n  provider: \"\"\n",
+            "_config_version: 52\nmemory:\n  provider: \"\"\n",
+            "model:\n  default:\n    nested: value\n  provider: nous\nproviders: {}\n",
+            "providers:\n  custom:\n    api_mode: chat\ncustom_providers: []\n",
+            "",
+        ];
+        for seed in shapes {
+            let dir = tempfile::tempdir().unwrap();
+            let config = dir.path().join("config.yaml");
+            fs::write(&config, seed).unwrap();
+            connect(dir.path(), Some("sk-test"), Some(65536));
+            connect(dir.path(), None, Some(131072));
+            disconnect_hermes_at(dir.path()).unwrap();
+            assert_eq!(fs::read_to_string(&config).unwrap(), seed, "{seed}");
+            assert!(!json_key_backup::backup_path(&config).exists());
         }
     }
 
     #[test]
-    fn hermes_disconnect_restores_only_the_model_block_and_our_entry() {
+    fn hermes_disconnect_leaves_what_the_user_changed_after_connect() {
         let dir = tempfile::tempdir().unwrap();
         let config = dir.path().join("config.yaml");
-        let seed = "auxiliary:\n  vision:\n    provider: auto\n    base_url: \"\"\n\
-                    model:\n  default: anthropic/claude-opus-4.6\n  provider: auto\n  \
-                    base_url: https://openrouter.ai/api/v1\n\
-                    custom_providers:\n- name: personal\n  base_url: https://example.com/v1\n\
-                    delegation:\n  provider: openrouter\n";
-        fs::write(&config, seed).unwrap();
+        fs::write(
+            &config,
+            "model:\n  default: old\n  provider: openrouter\n  base_url: https://openrouter.ai/api/v1\n",
+        )
+        .unwrap();
+        let connected = connect(dir.path(), None, None);
+        // `hermes model` picked another model on our endpoint.
+        fs::write(
+            &config,
+            connected.replace(&format!("  default: {MODEL}"), "  default: other-model"),
+        )
+        .unwrap();
+        disconnect_hermes_at(dir.path()).unwrap();
+        let out = fs::read_to_string(&config).unwrap();
+        assert!(out.contains("  default: other-model\n"), "{out}");
+        assert!(out.contains("  provider: openrouter\n"), "{out}");
+        assert!(!out.contains("atomic-chat"), "{out}");
+    }
 
-        configure_hermes_at(dir.path(), URL.into(), MODEL.into(), None, None).unwrap();
-        clear_hermes_at(dir.path()).unwrap();
-
-        // The provider timeout Connect seeded stays, as it did before.
+    #[test]
+    fn hermes_disconnect_of_an_older_connection_drops_our_route() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join("config.yaml");
+        fs::write(
+            &config,
+            "model:\n  default: m\n  provider: custom:atomic-chat\n  base_url: http://127.0.0.1:1337/v1\n  \
+             streaming: false\ncustom_providers:\n- name: personal\n  base_url: https://example.com/v1\n\
+             - name: atomic-chat\n  base_url: http://127.0.0.1:1337/v1\n  model: m\n",
+        )
+        .unwrap();
+        disconnect_hermes_at(dir.path()).unwrap();
         assert_eq!(
             fs::read_to_string(&config).unwrap(),
-            format!("{seed}providers:\n  custom:\n    request_timeout_seconds: 180\n")
+            "model:\n  streaming: false\ncustom_providers:\n- name: personal\n  base_url: https://example.com/v1\n"
         );
+        // Nothing of ours, nothing to do.
+        let untouched = "model:\n  default: x\n  provider: openrouter\n";
+        fs::write(&config, untouched).unwrap();
+        disconnect_hermes_at(dir.path()).unwrap();
+        assert_eq!(fs::read_to_string(&config).unwrap(), untouched);
+        // No config at all.
+        let empty = tempfile::tempdir().unwrap();
+        disconnect_hermes_at(empty.path()).unwrap();
+        assert!(!empty.path().join("config.yaml").exists());
+    }
+
+    #[test]
+    fn hermes_disconnect_removes_only_the_no_proxy_lines_connect_added() {
+        let dir = tempfile::tempdir().unwrap();
+        let env = dir.path().join(".env");
+        fs::write(&env, "OPENROUTER_API_KEY=x\n").unwrap();
+        connect(dir.path(), None, None);
+        assert!(fs::read_to_string(&env).unwrap().contains("NO_PROXY="));
+        disconnect_hermes_at(dir.path()).unwrap();
+        assert_eq!(fs::read_to_string(&env).unwrap(), "OPENROUTER_API_KEY=x\n");
+
+        // A NO_PROXY the user set is theirs.
+        let own = "NO_PROXY=corp.example\n";
+        fs::write(&env, own).unwrap();
+        connect(dir.path(), None, None);
+        disconnect_hermes_at(dir.path()).unwrap();
+        assert_eq!(fs::read_to_string(&env).unwrap(), own);
+    }
+
+    #[test]
+    fn hermes_home_expands_like_hermes() {
+        let home = Path::new("/Users/tester");
+        let var = |name: &str| match name {
+            "DATA" => Some("/srv/data".to_string()),
+            "LOCALAPPDATA" => Some("C:\\Users\\t\\AppData\\Local".to_string()),
+            _ => None,
+        };
+        assert_eq!(expand_hermes_home("~", &var, home), home);
+        assert_eq!(
+            expand_hermes_home("~/hermes-x", &var, home),
+            home.join("hermes-x")
+        );
+        assert_eq!(
+            expand_hermes_home("$DATA/hermes", &var, home),
+            PathBuf::from("/srv/data/hermes")
+        );
+        assert_eq!(
+            expand_hermes_home("${DATA}/h", &var, home),
+            PathBuf::from("/srv/data/h")
+        );
+        assert_eq!(
+            expand_hermes_home("%LOCALAPPDATA%\\hermes", &var, home),
+            PathBuf::from("C:\\Users\\t\\AppData\\Local\\hermes")
+        );
+        // An unset variable stays as written, as in Python's expandvars.
+        assert_eq!(
+            expand_hermes_home("$UNSET/x%NOPE%", &var, home),
+            PathBuf::from("$UNSET/x%NOPE%")
+        );
+    }
+
+    #[test]
+    fn hermes_writes_to_the_profile_hermes_runs() {
+        let root = tempfile::tempdir().unwrap();
+        let native = root.path().join(".hermes");
+        fs::create_dir_all(native.join("profiles").join("work")).unwrap();
+        assert_eq!(hermes_config_dir(&native, None), native);
+
+        // `hermes profile use work` is sticky for every `hermes` without -p.
+        fs::write(native.join("active_profile"), "work\n").unwrap();
+        assert_eq!(
+            hermes_config_dir(&native, None),
+            native.join("profiles").join("work")
+        );
+        // A profile that no longer exists is not written into being.
+        fs::write(native.join("active_profile"), "gone\n").unwrap();
+        assert_eq!(hermes_config_dir(&native, None), native);
+        fs::write(native.join("active_profile"), "default\n").unwrap();
+        assert_eq!(hermes_config_dir(&native, None), native);
+
+        // HERMES_HOME naming a profile is that profile.
+        let pinned = native.join("profiles").join("coder");
+        assert_eq!(hermes_config_dir(&native, Some(pinned.clone())), pinned);
+
+        // A custom root keeps its own profiles and sticky profile.
+        let custom = root.path().join("opt-data");
+        fs::create_dir_all(custom.join("profiles").join("ops")).unwrap();
+        assert_eq!(hermes_config_dir(&native, Some(custom.clone())), custom);
+        fs::write(custom.join("active_profile"), "ops").unwrap();
+        assert_eq!(
+            hermes_config_dir(&native, Some(custom.clone())),
+            custom.join("profiles").join("ops")
+        );
+    }
+}
+
+/// OpenHands, Poolside and Muse Code get their environment at launch only;
+/// Connect and Disconnect remove what older releases persisted, and nothing
+/// the user wrote.
+#[cfg(test)]
+mod legacy_env_agent_tests {
+    use super::*;
+
+    const OLD_POOLSIDE: &str = "# Atomic Chat - Poolside Config\n\
+        export POOLSIDE_STANDALONE_BASE_URL='http://127.0.0.1:1337'\n\
+        export POOLSIDE_API_KEY='atomic'\n\
+        export POOLSIDE_STANDALONE_MODEL='qwen'\n\
+        \n\
+        # Atomic Chat - Poolside Config\n";
+
+    #[test]
+    fn only_the_marked_block_goes() {
+        let user = "export PATH=\"$HOME/bin:$PATH\"\nexport POOLSIDE_API_KEY='my-cloud-key'\n";
+        let rc = format!("{user}{OLD_POOLSIDE}export META_API_KEY='meta-real'\n");
+        assert_eq!(
+            remove_marked_env_block(&rc, "# Atomic Chat - Poolside Config"),
+            format!("{user}export META_API_KEY='meta-real'\n")
+        );
+        // Another agent's block and a file without ours are left alone.
+        assert_eq!(
+            remove_marked_env_block(&rc, "# Atomic Chat - Muse Code Config"),
+            rc
+        );
+    }
+
+    #[test]
+    fn every_rc_file_an_older_release_may_have_used_is_cleaned() {
+        let home = tempfile::tempdir().unwrap();
+        for name in [".zshenv", ".bash_profile", ".bashrc"] {
+            fs::write(home.path().join(name), format!("# mine\n{OLD_POOLSIDE}")).unwrap();
+        }
+        let agent = legacy_env_agent("poolside").unwrap();
+        remove_legacy_env_blocks(home.path(), &agent).unwrap();
+        for name in [".zshenv", ".bash_profile", ".bashrc"] {
+            assert_eq!(
+                fs::read_to_string(home.path().join(name)).unwrap(),
+                "# mine\n"
+            );
+        }
+        // Missing files are not created.
+        let empty = tempfile::tempdir().unwrap();
+        remove_legacy_env_blocks(empty.path(), &agent).unwrap();
+        assert_eq!(fs::read_dir(empty.path()).unwrap().count(), 0);
+    }
+
+    /// On Windows `setx` left plain user variables: they are ours only when
+    /// the key is our placeholder or this server's key, or the endpoint is
+    /// this server's.
+    #[test]
+    fn user_variables_are_ours_only_when_recognisably_so() {
+        let agent = legacy_env_agent("openhands").unwrap();
+        let values = |pairs: &'static [(&'static str, &'static str)]| {
+            move |name: &str| {
+                pairs
+                    .iter()
+                    .find(|(k, _)| *k == name)
+                    .map(|(_, v)| v.to_string())
+            }
+        };
+        let url = Some("http://127.0.0.1:1337/v1");
+        let placeholder = values(&[("LLM_API_KEY", "atomic"), ("LLM_BASE_URL", "http://h:1/v1")]);
+        assert!(legacy_env_values_are_ours(&agent, &placeholder, None, None));
+        let server_key = values(&[
+            ("LLM_API_KEY", "sk-server"),
+            ("LLM_BASE_URL", "http://h:1/v1"),
+        ]);
+        assert!(legacy_env_values_are_ours(
+            &agent,
+            &server_key,
+            Some("sk-server"),
+            url
+        ));
+        assert!(!legacy_env_values_are_ours(&agent, &server_key, None, None));
+        let same_url = values(&[
+            ("LLM_API_KEY", "x"),
+            ("LLM_BASE_URL", "http://127.0.0.1:1337/v1/"),
+        ]);
+        assert!(legacy_env_values_are_ours(
+            &agent,
+            &same_url,
+            Some("sk"),
+            url
+        ));
+        // The user's own local setup on another server.
+        let own = values(&[
+            ("LLM_API_KEY", "ollama"),
+            ("LLM_BASE_URL", "http://localhost:11434/v1"),
+        ]);
+        assert!(!legacy_env_values_are_ours(&agent, &own, Some("sk"), url));
+
+        // Older Poolside setups stored the endpoint without `/v1`.
+        let pool = legacy_env_agent("poolside").unwrap();
+        let old = values(&[
+            ("POOLSIDE_API_KEY", "x"),
+            ("POOLSIDE_STANDALONE_BASE_URL", "http://127.0.0.1:1337"),
+        ]);
+        assert!(legacy_env_values_are_ours(&pool, &old, None, url));
+
+        let muse = legacy_env_agent("muse").unwrap();
+        let meta = values(&[("META_API_KEY", "meta-real")]);
+        assert!(!legacy_env_values_are_ours(&muse, &meta, Some("sk"), url));
+        assert!(legacy_env_agent("goose").is_none());
+    }
+}
+
+/// The golden agent-config fixtures atomic-chat-core replays against its own
+/// writers (`test/contract/agent-config.test.ts`), replayed against these: the
+/// desktop and the `atomic-chat launch` CLI must leave the same bytes behind,
+/// backups included.
+#[cfg(test)]
+mod agent_config_fixture_tests {
+    use super::*;
+
+    fn tree(dir: &Path) -> std::collections::BTreeMap<String, String> {
+        let mut out = std::collections::BTreeMap::new();
+        let mut stack = vec![dir.to_path_buf()];
+        while let Some(current) = stack.pop() {
+            for entry in fs::read_dir(&current).unwrap().flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    stack.push(path);
+                } else {
+                    let rel = path
+                        .strip_prefix(dir)
+                        .unwrap()
+                        .to_string_lossy()
+                        .replace('\\', "/");
+                    out.insert(rel, fs::read_to_string(&path).unwrap());
+                }
+            }
+        }
+        out
+    }
+
+    fn run(home: &Path, agent: &str, run: &serde_json::Value) -> Result<(), String> {
+        let url = run["api_url"].as_str().unwrap();
+        let model = run["model"].as_str().unwrap();
+        let key = run["api_key"].as_str();
+        match agent {
+            "hermes" => configure_hermes_at(
+                &home.join(".hermes"),
+                url.into(),
+                model.into(),
+                key.map(str::to_string),
+                None,
+            ),
+            "openclaw" => configure_openclaw_at(
+                &home.join(".openclaw").join("openclaw.json"),
+                url,
+                model,
+                key,
+                None,
+                false,
+            ),
+            "atomic-agent" => {
+                configure_atomic_agent_at(&home.join(".atomic-agent"), url, model, key, None)
+            }
+            _ => remove_legacy_env_blocks(home, &legacy_env_agent(agent).unwrap()),
+        }
+    }
+
+    #[test]
+    fn rust_writers_leave_what_the_core_writers_leave() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../tests/fixtures/core-contracts/agent-config");
+        let mut replayed = 0;
+        let mut mismatches = Vec::new();
+        for entry in fs::read_dir(&root).unwrap().flatten() {
+            let fixture: serde_json::Value =
+                serde_json::from_str(&fs::read_to_string(entry.path()).unwrap()).unwrap();
+            let agent = fixture["input"]["agent"].as_str().unwrap_or_default();
+            if ![
+                "hermes",
+                "openclaw",
+                "atomic-agent",
+                "openhands",
+                "poolside",
+                "muse",
+            ]
+            .contains(&agent)
+            {
+                continue;
+            }
+            let home = tempfile::tempdir().unwrap();
+            for (path, text) in fixture["input"]["seed_files"].as_object().unwrap() {
+                let target = home.path().join(path);
+                fs::create_dir_all(target.parent().unwrap()).unwrap();
+                fs::write(target, text.as_str().unwrap()).unwrap();
+            }
+            for prior in fixture["input"]["prior_runs"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default()
+            {
+                run(home.path(), agent, &prior).unwrap();
+            }
+            let ok = run(home.path(), agent, &fixture["input"]).is_ok();
+            let expected: std::collections::BTreeMap<String, String> = fixture["expected"]["files"]
+                .as_object()
+                .unwrap()
+                .iter()
+                .map(|(k, v)| (k.clone(), v.as_str().unwrap().to_string()))
+                .collect();
+            let name = fixture["name"].as_str().unwrap();
+            if ok != fixture["expected"]["ok"].as_bool().unwrap() || tree(home.path()) != expected {
+                mismatches.push(format!(
+                    "{name}:\n{:#?}\n--- expected ---\n{:#?}",
+                    tree(home.path()),
+                    expected
+                ));
+            }
+            replayed += 1;
+        }
+        assert_eq!(replayed, 45);
+        assert!(mismatches.is_empty(), "{}", mismatches.join("\n====\n"));
     }
 }
