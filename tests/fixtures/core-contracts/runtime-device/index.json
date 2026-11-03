@@ -33,7 +33,7 @@
     "blank_and_whitespace_lines_ignored"
   ],
   "comparator": "runtime-device-exact",
-  "note": "lines are fed one by one (trailing whitespace trimmed, as the process reader does) then snapshot() is taken; compare every RuntimeDeviceInfo field and is_inconclusive exactly. gpu_buffer_bytes is an integer truncated from f64 * unit.",
+  "note": "lines are fed one by one (trailing whitespace trimmed, as the process reader does) then snapshot() is taken; compare every RuntimeDeviceInfo field and is_inconclusive exactly. gpu_buffer_bytes is an integer truncated from f64 * unit. Since 2026-10-15 the two device_init_error cases for a CUDA build without a device and for a backend library that does not load carry what llama.cpp really prints (`ggml_cuda_init: failed to initialize CUDA: <reason>`, `load_backend: failed to load <path>: <error>`), checked by the engine contract probe; the app's lines matched markers no build prints.",
   "source": {
     "commit": "ccf5427336d989578234220a7993580aed51ea21",
     "file": "src-tauri/plugins/tauri-plugin-llamacpp-upstream/src/runtime_device.rs"
