@@ -41,6 +41,11 @@ title: "Start the Local API Server at launch without a model"
   [Raise the Local API Server for a resident image or video model](2026-09-25-raise-the-local-api-server-for-a-resident-image-or-video-model.md),
   [Turn the served models off with the server](2026-10-20-turn-the-served-models-off-with-the-server.md)
 
+Superseded in part by
+[2026-11-03-start-the-local-api-server-at-launch-with-its-last-model.md](2026-11-03-start-the-local-api-server-at-launch-with-its-last-model.md):
+the launch now loads the model the server served last, when there is one to
+load, before it starts the server. The rest stands.
+
 <!--
 Supersedes: the startup clauses of 2026-08-19-do-not-preload-a-model-on-startup.md
 and 2026-09-25-raise-the-local-api-server-for-a-resident-image-or-video-model.md

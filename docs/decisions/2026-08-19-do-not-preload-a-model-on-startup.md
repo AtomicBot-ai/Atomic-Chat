@@ -33,3 +33,9 @@ title: "Do not preload a model on startup"
   `web-app/src/main.tsx`, `web-app/src/containers/DropdownModelProvider.tsx`,
   `web-app/src/routes/settings/general.tsx`,
   [launch-at-startup companion decision](2026-08-19-leave-launch-at-startup-off-for-new-installs.md)
+
+Superseded in part by
+[2026-11-03-start-the-local-api-server-at-launch-with-its-last-model.md](2026-11-03-start-the-local-api-server-at-launch-with-its-last-model.md):
+with "Start automatically" on, the launch loads the model the Local API Server
+served last, whatever "Preload last used model" says. The composer still opens
+with no selection.

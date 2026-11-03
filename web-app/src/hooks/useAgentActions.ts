@@ -16,16 +16,7 @@ import {
 import { writeAgentConfig } from '@/lib/integration-agent-setup'
 import { useLaunchSettings } from '@/stores/launch-settings-store'
 import { useLaunchStore, type RunPhase } from '@/stores/launch-store'
-
-/** The model the server serves now, else the one it will start with. */
-export function servedModelId(): string | null {
-  const server = useLocalApiServer.getState()
-  return (
-    server.lastServerModels[0]?.model ??
-    server.defaultModelLocalApiServer?.model ??
-    null
-  )
-}
+import { ensureServedModelRunning, servedModelId } from '@/utils/servedModel'
 
 function setRunState(id: string, busy: boolean, phase: RunPhase) {
   const { setBusy, setPhase } = useLaunchStore.getState()
@@ -37,9 +28,10 @@ function setRunState(id: string, busy: boolean, phase: RunPhase) {
  * The actions an agent's card and its Connections row take, sharing the
  * launch store's busy state with All integrations:
  * - `install` installs the agent's binary;
- * - `connect` starts the Local API Server when it is stopped, points the
- *   agent's config at what the server serves, and opens the agent — the Run
- *   All integrations has always done.
+ * - `connect` starts the Local API Server when it is stopped, or loads the
+ *   model a running one serves when it has none, points the agent's config
+ *   at that model, and opens the agent — the Run All integrations has always
+ *   done.
  */
 export function useAgentActions() {
   const { t } = useTranslation()
@@ -71,8 +63,10 @@ export function useAgentActions() {
       setRunState(agent.id, true, 'connecting')
       try {
         // A start that fails says why in its own toast.
+        const serverWasRunning =
+          useAppState.getState().serverStatus === 'running'
         if (
-          useAppState.getState().serverStatus !== 'running' &&
+          !serverWasRunning &&
           !(await startLocalApiServerAndSettle(start, { ensureModel: true }))
         )
           return
@@ -81,6 +75,10 @@ export function useAgentActions() {
           toast.error(t('launch:noRunningModelToast', { name: agent.name }))
           return
         }
+        // A server can run without the model it serves (a launch that could
+        // not load it): the agent would get 503 for it on every request, so
+        // it is loaded first, as Start loads it. Start above already did.
+        if (serverWasRunning) await ensureServedModelRunning()
         const server = useLocalApiServer.getState()
         await writeAgentConfig(agent, model, server)
         useServerSetup.getState().markAgentConfigured(agent.id)

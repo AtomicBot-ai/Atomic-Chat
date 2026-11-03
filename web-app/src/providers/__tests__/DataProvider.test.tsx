@@ -26,6 +26,16 @@ const mocks = vi.hoisted(() => ({
   setSettings: vi.fn(),
   setThreads: vi.fn(),
   resumeServedHelperModels: vi.fn(),
+  ensureModelForServer: vi.fn(),
+  resolveServerModels: vi.fn(),
+  setLastServerModels: vi.fn(),
+  syncActiveModelsFromEngines: vi.fn(),
+  getProviderByName: vi.fn(),
+  lastServerModels: [] as { model: string; provider: string }[],
+  defaultModelLocalApiServer: null as {
+    model: string
+    provider: string
+  } | null,
   enableOnStartup: true,
   localApiServerFeature: true,
   windowLabel: 'main',
@@ -75,7 +85,7 @@ vi.mock('@/hooks/useModelProvider', () => {
     providers: [],
     selectedModel: null,
     selectedProvider: 'llamacpp-upstream',
-    getProviderByName: vi.fn(),
+    getProviderByName: mocks.getProviderByName,
     setProviders: mocks.setProviders,
     updateProvider: vi.fn(),
     clearDeletedModel: mocks.clearDeletedModel,
@@ -143,8 +153,16 @@ vi.mock('@/hooks/useLocalApiServer', () => ({
       verboseLogs: false,
       proxyTimeout: 120,
       setServerPort: mocks.setServerPort,
+      lastServerModels: mocks.lastServerModels,
+      defaultModelLocalApiServer: mocks.defaultModelLocalApiServer,
+      setLastServerModels: mocks.setLastServerModels,
     }),
   },
+}))
+
+vi.mock('@/utils/ensureModelForServer', () => ({
+  ensureModelForServer: mocks.ensureModelForServer,
+  resolveServerModels: mocks.resolveServerModels,
 }))
 
 // The served-model selection has its own tests; here it only must not need a real store.
@@ -171,6 +189,7 @@ vi.mock('@/utils/registerRemoteProvider', () => ({
 
 vi.mock('@/utils/activeModelsSync', () => ({
   hydrateActiveModelsForRunningServer: vi.fn(),
+  syncActiveModelsFromEngines: mocks.syncActiveModelsFromEngines,
 }))
 
 vi.mock('@/utils/switchModel', () => ({
@@ -222,6 +241,9 @@ describe('DataProvider', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.enableOnStartup = true
+    mocks.lastServerModels = []
+    mocks.defaultModelLocalApiServer = null
+    mocks.getProviderByName.mockReturnValue(undefined)
     mocks.localApiServerFeature = true
     mocks.windowLabel = 'main'
     localStorage.clear()
@@ -294,11 +316,14 @@ describe('DataProvider', () => {
 
   it('reconciles the real port when opening a window onto an existing listener', async () => {
     getServerStatus.mockResolvedValue(true)
+    // A server already up keeps what it serves: re-attaching loads nothing.
+    mocks.lastServerModels = [{ model: 'qwen', provider: 'llamacpp-upstream' }]
     const startServer = vi.fn().mockResolvedValue(6768)
     const previous = window.core?.api?.startServer
     if (window.core?.api) window.core.api.startServer = startServer
     const { unmount } = render(<DataProvider />)
     await waitFor(() => expect(mocks.setServerPort).toHaveBeenCalledWith(6768))
+    expect(mocks.ensureModelForServer).not.toHaveBeenCalled()
     if (window.core?.api) window.core.api.startServer = previous
     unmount()
   })
@@ -312,7 +337,93 @@ describe('DataProvider', () => {
       }
     }
 
-    it('starts the server with no model running, and loads none for it', async () => {
+    const QWEN = { model: 'qwen', provider: 'llamacpp-upstream' }
+    const llamacpp = (ids: string[]) =>
+      ({
+        provider: 'llamacpp-upstream',
+        active: true,
+        models: ids.map((id) => ({ id })),
+      }) as unknown as ModelProvider
+
+    it('loads the model the server served last, then starts the server with it', async () => {
+      mocks.lastServerModels = [QWEN]
+      mocks.getProviderByName.mockImplementation((name: string) =>
+        name === 'llamacpp-upstream' ? llamacpp(['qwen']) : undefined
+      )
+      // Nothing runs at launch; the load leaves Qwen running.
+      getActiveModels.mockResolvedValueOnce([]).mockResolvedValue(['qwen'])
+      mocks.ensureModelForServer.mockResolvedValue({
+        status: 'loaded',
+        modelId: 'qwen',
+        providerName: 'llamacpp-upstream',
+      })
+      mocks.resolveServerModels.mockResolvedValue([QWEN])
+      const startServer = vi.fn().mockResolvedValue(1337)
+      const restore = withStartServer(startServer)
+      const { unmount } = render(<DataProvider />)
+
+      await waitFor(() =>
+        expect(mocks.setServerStatus).toHaveBeenLastCalledWith('running')
+      )
+      // The way Start loads it: the served model, then the record of it.
+      expect(mocks.ensureModelForServer).toHaveBeenCalledOnce()
+      expect(mocks.ensureModelForServer.mock.calls[0]?.[0]).toMatchObject({
+        modelOverride: QWEN,
+      })
+      expect(mocks.setLastServerModels).toHaveBeenCalledWith([QWEN])
+      expect(mocks.syncActiveModelsFromEngines).toHaveBeenCalledWith(['qwen'])
+      expect(
+        mocks.ensureModelForServer.mock.invocationCallOrder[0]
+      ).toBeLessThan(startServer.mock.invocationCallOrder[0] ?? 0)
+      expect(mocks.setServerStatus.mock.calls).toEqual([
+        ['pending'],
+        ['running'],
+      ])
+      expect(mocks.resumeServedHelperModels).toHaveBeenCalledOnce()
+      expect(mocks.switchToModel).not.toHaveBeenCalled()
+      restore()
+      unmount()
+    })
+
+    it('still starts the server when the model will not load', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      mocks.lastServerModels = [QWEN]
+      mocks.getProviderByName.mockReturnValue(llamacpp(['qwen']))
+      mocks.ensureModelForServer.mockRejectedValue(new Error('out of memory'))
+      const startServer = vi.fn().mockResolvedValue(1337)
+      const restore = withStartServer(startServer)
+      const { unmount } = render(<DataProvider />)
+
+      await waitFor(() =>
+        expect(mocks.setServerStatus).toHaveBeenLastCalledWith('running')
+      )
+      expect(startServer).toHaveBeenCalledOnce()
+      expect(mocks.setLastServerModels).not.toHaveBeenCalled()
+      warn.mockRestore()
+      restore()
+      unmount()
+    })
+
+    it('loads no other model in place of a served one since deleted, nor a cloud one', async () => {
+      mocks.lastServerModels = [QWEN]
+      mocks.defaultModelLocalApiServer = { model: 'gpt-5', provider: 'openai' }
+      mocks.getProviderByName.mockReturnValue(llamacpp(['gemma']))
+      const startServer = vi.fn().mockResolvedValue(1337)
+      const restore = withStartServer(startServer)
+      const first = render(<DataProvider />)
+      await waitFor(() => expect(startServer).toHaveBeenCalledOnce())
+      first.unmount()
+
+      sessionStorage.clear()
+      mocks.lastServerModels = []
+      const second = render(<DataProvider />)
+      await waitFor(() => expect(startServer).toHaveBeenCalledTimes(2))
+      expect(mocks.ensureModelForServer).not.toHaveBeenCalled()
+      restore()
+      second.unmount()
+    })
+
+    it('starts the server with no model running, and loads none when it has none to load', async () => {
       const startServer = vi.fn().mockResolvedValue(1337)
       const restore = withStartServer(startServer)
       const { unmount } = render(<DataProvider />)

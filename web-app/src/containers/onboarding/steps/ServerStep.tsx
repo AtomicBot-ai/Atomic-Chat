@@ -12,8 +12,9 @@ import { ChoiceCard } from './ChoiceCard'
 import type { StepProps } from './types'
 
 /**
- * The launch starts the server with nothing loaded (ADR 2026-10-21), and a
- * server already up does not load the run's model when it lands. The
+ * A first run's launch starts the server with nothing loaded: it has served
+ * no model yet (ADRs 2026-10-21, 2026-11-03). A server already up does not
+ * load the run's model when it lands. The
  * endpoint hints end on Start, which loads it, so the endpoint handoff leaves
  * that server stopped, as the prototype's does. One serving a model already
  * is left alone; the Start hint then says it runs.

@@ -2,15 +2,15 @@ import { act, renderHook } from '@testing-library/react'
 import { toast } from 'sonner'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { start, settle, writeConfig, installAgent, openAgent } = vi.hoisted(
-  () => ({
+const { start, settle, writeConfig, installAgent, openAgent, ensureRunning } =
+  vi.hoisted(() => ({
     start: vi.fn(),
     settle: vi.fn(),
     writeConfig: vi.fn(),
     installAgent: vi.fn(),
     openAgent: vi.fn(),
-  })
-)
+    ensureRunning: vi.fn(),
+  }))
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } }))
 vi.mock('@/i18n/react-i18next-compat', () => ({
@@ -35,6 +35,10 @@ vi.mock('@/lib/integration-agent-run', () => ({
 vi.mock('@/lib/integration-agent-detection', () => ({
   detectIntegrationAgent: vi.fn(),
 }))
+vi.mock('@/utils/servedModel', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/utils/servedModel')>()),
+  ensureServedModelRunning: ensureRunning,
+}))
 
 import { INTEGRATION_AGENTS } from '@/constants/integrations'
 import { useAppState } from '@/hooks/useAppState'
@@ -51,6 +55,7 @@ describe('useAgentActions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     settle.mockResolvedValue(true)
+    ensureRunning.mockResolvedValue(undefined)
     writeConfig.mockResolvedValue(undefined)
     installAgent.mockResolvedValue(true)
     openAgent.mockResolvedValue(true)
@@ -73,6 +78,11 @@ describe('useAgentActions', () => {
     await act(() => result.current.connect(agent('codex')))
 
     expect(settle).not.toHaveBeenCalled()
+    // A running server gets its model loaded before the config names it.
+    expect(ensureRunning).toHaveBeenCalledOnce()
+    expect(ensureRunning.mock.invocationCallOrder[0]).toBeLessThan(
+      writeConfig.mock.invocationCallOrder[0] ?? 0
+    )
     expect(writeConfig).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'codex' }),
       'qwen3.5-4b',
@@ -97,6 +107,8 @@ describe('useAgentActions', () => {
 
     await act(() => result.current.connect(agent('codex')))
     expect(settle).toHaveBeenCalledWith(start, { ensureModel: true })
+    // Start loaded the model itself.
+    expect(ensureRunning).not.toHaveBeenCalled()
     expect(openAgent).toHaveBeenCalledTimes(1)
     expect(useServerSetup.getState().configuredAgents).toEqual([
       expect.objectContaining({ id: 'codex' }),
@@ -132,6 +144,22 @@ describe('useAgentActions', () => {
       busy: { [needsModel.id]: false },
       phase: { [needsModel.id]: undefined },
     })
+  })
+
+  it('writes no config when the served model will not load', async () => {
+    ensureRunning.mockRejectedValueOnce(new Error('out of memory'))
+    const { result } = renderHook(() => useAgentActions())
+
+    await act(() => result.current.connect(agent('codex')))
+
+    expect(toast.error).toHaveBeenCalledWith(
+      'launch:toast.configureFailed:{"name":"Codex CLI"}',
+      { description: 'out of memory' }
+    )
+    expect(writeConfig).not.toHaveBeenCalled()
+    expect(openAgent).not.toHaveBeenCalled()
+    expect(useServerSetup.getState().configuredAgents).toEqual([])
+    expect(useLaunchStore.getState().busy.codex).toBe(false)
   })
 
   it('reports a config write that fails, and frees the card', async () => {
