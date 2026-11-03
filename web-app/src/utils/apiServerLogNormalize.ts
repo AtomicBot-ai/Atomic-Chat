@@ -120,6 +120,7 @@ export function normalizeFinishedPatch(
       ttftMs: pickNumber(raw, ['ttft_ms', 'ttftMs']),
       durationMs: pickNumber(raw, ['duration_ms', 'durationMs']),
       promptTokens: pickNumber(raw, ['prompt_tokens', 'promptTokens']),
+      cachedTokens: pickNumber(raw, ['cached_tokens', 'cachedTokens']),
       completionTokens: pickNumber(raw, ['completion_tokens', 'completionTokens']),
       totalTokens: pickNumber(raw, ['total_tokens', 'totalTokens']),
       tokensEstimated: pickBool(raw, ['tokens_estimated', 'tokensEstimated']),
@@ -129,6 +130,7 @@ export function normalizeFinishedPatch(
         'predictedPerSecond',
       ]),
       finishReason: pickString(raw, ['finish_reason', 'finishReason']),
+      contextLength: pickNumber(raw, ['ctx_len', 'ctxLen', 'contextLength']),
       replyPreview: truncatePreview(
         pickString(raw, ['reply_preview', 'replyPreview'])
       ),

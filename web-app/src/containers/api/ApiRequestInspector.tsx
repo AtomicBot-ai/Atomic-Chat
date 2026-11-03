@@ -1,4 +1,3 @@
-import { useServedContextLength } from '@/containers/server/useServedContextLength'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import type { ApiLogEntry, ApiRequestEntry } from '@/types/apiServerLog'
@@ -78,12 +77,6 @@ export function ApiRequestInspector({
 }) {
   const { t } = useTranslation()
   const apiPrefix = useLocalApiServer((state) => state.apiPrefix)
-  // The window of the session serving this model now, from the engine that
-  // holds it: a model id alone names a copy in every llama.cpp provider, and
-  // the first one's setting is not what the request ran with (QA B09).
-  const contextLength = useServedContextLength(
-    entry?.kind === 'request' ? (entry.model ?? null) : null
-  )
 
   if (!entry) {
     return (
@@ -178,6 +171,11 @@ export function ApiRequestInspector({
           value={tokenValue(request.promptTokens)}
         />
         <StatField
+          label={t('api:detail.cachedTokens')}
+          value={tokenValue(request.cachedTokens)}
+          hint={t('api:detail.cachedTokensHint')}
+        />
+        <StatField
           label={t('api:detail.completionTokens')}
           value={tokenValue(request.completionTokens, request.tokensEstimated)}
           hint={request.tokensEstimated ? t('api:detail.estimated') : undefined}
@@ -186,9 +184,13 @@ export function ApiRequestInspector({
           label={t('api:detail.totalTokens')}
           value={tokenValue(request.totalTokens)}
         />
+        {/* The window the request ran with, kept with it by the server: the
+            model may have been reloaded with another one, or unloaded (QA B04). */}
         <StatField
           label={t('api:detail.context')}
-          value={contextLength ? formatCount(contextLength) : '–'}
+          value={
+            request.contextLength ? formatCount(request.contextLength) : '–'
+          }
         />
         <StatField
           label={t('api:detail.firstToken')}

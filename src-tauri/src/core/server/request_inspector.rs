@@ -132,6 +132,8 @@ pub struct FinishFields {
     /// Whole exchange, including the streamed body.
     pub duration_ms: Option<u64>,
     pub prompt_tokens: Option<u64>,
+    /// The part of the prompt the engine reused from its cache (the core reports it).
+    pub cached_tokens: Option<u64>,
     pub completion_tokens: Option<u64>,
     pub total_tokens: Option<u64>,
     /// True when `completion_tokens` was counted from streamed deltas rather
@@ -145,6 +147,9 @@ pub struct FinishFields {
     /// PRIVACY: model output text. See the module docs.
     pub reply_preview: Option<String>,
     pub reply_chars: Option<u64>,
+    /// The context window of the session that served the request, as it was then (the core reports
+    /// it), so the log keeps it after the model is reloaded with another window (QA B04).
+    pub ctx_len: Option<u64>,
 }
 
 impl std::fmt::Debug for FinishFields {
@@ -179,6 +184,7 @@ impl FinishFields {
             ttft_ms,
             duration_ms,
             prompt_tokens,
+            cached_tokens,
             completion_tokens,
             total_tokens,
             prompt_per_second,
@@ -186,6 +192,7 @@ impl FinishFields {
             finish_reason,
             reply_preview,
             reply_chars,
+            ctx_len,
         );
         self.aborted |= other.aborted;
         self.tokens_estimated |= other.tokens_estimated;
@@ -599,6 +606,7 @@ fn finish_fields_from_core(finish: &serde_json::Value) -> FinishFields {
         ttft_ms: number("ttft_ms"),
         duration_ms: number("duration_ms"),
         prompt_tokens: number("prompt_tokens"),
+        cached_tokens: number("cached_tokens"),
         completion_tokens: number("completion_tokens"),
         total_tokens: number("total_tokens"),
         tokens_estimated: f("tokens_estimated").and_then(|v| v.as_bool()).unwrap_or(false),
@@ -607,6 +615,7 @@ fn finish_fields_from_core(finish: &serde_json::Value) -> FinishFields {
         finish_reason: f("finish_reason").and_then(|v| v.as_str()).map(str::to_string),
         reply_preview: f("reply_preview").and_then(|v| v.as_str()).map(str::to_string),
         reply_chars: number("reply_chars"),
+        ctx_len: number("ctx_len"),
     }
 }
 
@@ -1888,7 +1897,8 @@ mod core_ingest_tests {
                 "status": 200, "error_kind": null, "aborted": false, "headers_ms": 10, "ttft_ms": 30,
                 "duration_ms": 900, "prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5,
                 "tokens_estimated": false, "prompt_per_second": null, "predicted_per_second": 41.5,
-                "finish_reason": "stop", "reply_preview": "Hello", "reply_chars": 5
+                "finish_reason": "stop", "reply_preview": "Hello", "reply_chars": 5,
+                "cached_tokens": 1, "ctx_len": 65536
             }
         }));
 
@@ -1899,12 +1909,15 @@ mod core_ingest_tests {
         assert_eq!(record.started.prompt_preview.as_deref(), Some("hi"));
         assert_eq!(record.finish.reply_preview.as_deref(), Some("Hello"));
         assert_eq!(record.finish.predicted_per_second, Some(41.5));
+        assert_eq!((record.finish.cached_tokens, record.finish.ctx_len), (Some(1), Some(65536)));
 
         let seen = seen.lock().unwrap();
         let channels: Vec<_> = seen.iter().map(|(c, _)| *c).collect();
         assert_eq!(channels, vec![API_INSPECTOR_STARTED, API_INSPECTOR_PROGRESS, API_INSPECTOR_FINISHED]);
         assert!(seen.iter().all(|(_, payload)| payload["seq"] == json!(7)));
         assert_eq!(seen[2].1["total_tokens"], json!(5));
+        assert_eq!(seen[2].1["cached_tokens"], json!(1));
+        assert_eq!(seen[2].1["ctx_len"], json!(65536));
     }
 
     #[test]
@@ -1977,7 +1990,8 @@ mod core_ingest_tests {
             "status": 200, "error_kind": null, "aborted": false, "headers_ms": 1190, "ttft_ms": null,
             "duration_ms": 1200, "prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20,
             "tokens_estimated": false, "prompt_per_second": 16.6, "predicted_per_second": 44.4,
-            "finish_reason": "stop", "reply_preview": "should never be kept", "reply_chars": 31
+            "finish_reason": "stop", "reply_preview": "should never be kept", "reply_chars": 31,
+            "ctx_len": 32768
         });
         inspector.ingest_core_event(&event);
 
@@ -1994,6 +2008,7 @@ mod core_ingest_tests {
         );
         assert_eq!(record.finish.predicted_per_second, Some(44.4));
         assert_eq!(record.finish.finish_reason.as_deref(), Some("stop"));
+        assert_eq!(record.finish.ctx_len, Some(32768));
         assert!(record.finish.reply_preview.is_none());
         assert!(record.started.prompt_preview.is_none());
 

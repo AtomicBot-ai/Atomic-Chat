@@ -77,6 +77,8 @@
     "started": "Started",
     "duration": "Duration",
     "promptTokens": "Prompt tokens",
+    "cachedTokens": "Cached tokens",
+    "cachedTokensHint": "Prompt tokens the engine reused from its cache instead of processing them again",
     "completionTokens": "Completion tokens",
     "totalTokens": "Total tokens",
     "context": "Context",

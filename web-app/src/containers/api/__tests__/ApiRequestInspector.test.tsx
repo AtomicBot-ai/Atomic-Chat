@@ -1,13 +1,9 @@
 import { render, screen } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import type { ApiRequestEntry } from '@/types/apiServerLog'
 
 import { ApiRequestInspector } from '../ApiRequestInspector'
-
-const { contextLength } = vi.hoisted(() => ({
-  contextLength: { value: undefined as number | undefined },
-}))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -16,10 +12,6 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 vi.mock('@/hooks/useLocalApiServer', () => ({
   useLocalApiServer: (selector: (s: { apiPrefix: string }) => unknown) =>
     selector({ apiPrefix: '/v1' }),
-}))
-
-vi.mock('@/containers/server/useServedContextLength', () => ({
-  useServedContextLength: () => contextLength.value,
 }))
 
 function request(overrides: Partial<ApiRequestEntry> = {}): ApiRequestEntry {
@@ -39,6 +31,7 @@ function request(overrides: Partial<ApiRequestEntry> = {}): ApiRequestEntry {
     completionTokens: 150,
     totalTokens: 178,
     finishReason: 'length',
+    contextLength: 4096,
     promptPreview: 'What is Unsloth?',
     replyPreview: 'Hello! Red, blue, and green.',
     ...overrides,
@@ -46,10 +39,6 @@ function request(overrides: Partial<ApiRequestEntry> = {}): ApiRequestEntry {
 }
 
 describe('ApiRequestInspector', () => {
-  beforeEach(() => {
-    contextLength.value = 4096
-  })
-
   it('renders the full stat grid for a completed request', () => {
     render(<ApiRequestInspector entry={request()} hasSelection />)
     expect(screen.getByText('POST /v1/chat/completions')).toBeInTheDocument()
@@ -112,11 +101,35 @@ describe('ApiRequestInspector', () => {
     expect(screen.getByText('~150')).toBeInTheDocument()
   })
 
-  it('falls back to a dash when the context length is unknown', () => {
-    contextLength.value = undefined
-    render(<ApiRequestInspector entry={request()} hasSelection />)
-    expect(screen.getByText('api:detail.context')).toBeInTheDocument()
-    expect(screen.getAllByText('–').length).toBeGreaterThanOrEqual(1)
+  it('falls back to a dash when the request carries no context length', () => {
+    render(
+      <ApiRequestInspector
+        entry={request({ contextLength: undefined, cachedTokens: 12 })}
+        hasSelection
+      />
+    )
+    const value = (label: string) =>
+      screen.getByText(label).nextElementSibling?.textContent
+    expect(value('api:detail.context')).toBe('–')
+    expect(value('api:detail.cachedTokens')).toBe('12')
+  })
+
+  it('shows the window the request ran with, not the one its model has now (QA B04)', () => {
+    const { rerender } = render(
+      <ApiRequestInspector
+        entry={request({ id: 'a', contextLength: 16384 })}
+        hasSelection
+      />
+    )
+    expect(screen.getByText('16 384')).toBeInTheDocument()
+    rerender(
+      <ApiRequestInspector
+        entry={request({ id: 'b', contextLength: 65536 })}
+        hasSelection
+      />
+    )
+    expect(screen.getByText('65 536')).toBeInTheDocument()
+    expect(screen.queryByText('16 384')).toBeNull()
   })
 
   it('previews a reasoning-only reply', () => {

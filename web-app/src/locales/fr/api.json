@@ -77,6 +77,8 @@
     "started": "Début",
     "duration": "Durée",
     "promptTokens": "Jetons du prompt",
+    "cachedTokens": "Jetons en cache",
+    "cachedTokensHint": "Jetons du prompt que le moteur a repris de son cache au lieu de les traiter à nouveau",
     "completionTokens": "Jetons de complétion",
     "totalTokens": "Total des jetons",
     "context": "Contexte",
