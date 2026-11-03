@@ -2943,8 +2943,9 @@ pub fn configure_mimo(
 }
 
 /// Configure Factory.ai Droid by upserting our entry in the `customModels`
-/// array of `~/.factory/settings.json` (strict JSON, other models preserved).
-/// Droid speaks OpenAI Chat Completions via `generic-chat-completion-api`, so
+/// array of `~/.factory/settings.json` (strict JSON, other models preserved)
+/// and making it the default for new sessions; see `droid_config`. Droid
+/// speaks OpenAI Chat Completions via `generic-chat-completion-api`, so
 /// `api_url` carries the `/v1` suffix.
 #[tauri::command]
 pub fn configure_droid(
@@ -2955,83 +2956,15 @@ pub fn configure_droid(
     // the agent is told so it compacts before the server refuses.
     context_length: Option<u32>,
 ) -> Result<(), String> {
-    let _ = context_length;
-    const DISPLAY_NAME: &str = "Atomic Chat";
-
     let home = agent_home_dir()?;
-    let dir = PathBuf::from(&home).join(".factory");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create ~/.factory: {}", e))?;
-    let path = dir.join("settings.json");
-
-    let mut root: serde_json::Value = if path.exists() {
-        let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-        if text.trim().is_empty() {
-            serde_json::json!({})
-        } else {
-            serde_json::from_str(&text).map_err(|e| {
-                format!(
-                    "Could not parse {}: {}. Fix or remove the file and try again.",
-                    path.display(),
-                    e
-                )
-            })?
-        }
-    } else {
-        serde_json::json!({})
-    };
-
-    let obj = root
-        .as_object_mut()
-        .ok_or_else(|| "settings.json is not a JSON object".to_string())?;
-
-    let custom_models = obj
-        .entry("customModels")
-        .or_insert_with(|| serde_json::json!([]));
-    if !custom_models.is_array() {
-        *custom_models = serde_json::json!([]);
-    }
-    let arr = custom_models.as_array_mut().unwrap();
-
-    // Droid rejects an empty apiKey, so use a non-empty placeholder when the
-    // local server runs without a key.
-    let key_val = api_key
-        .as_deref()
-        .filter(|k| !k.is_empty())
-        .unwrap_or("atomic");
-
-    let entry = serde_json::json!({
-        "model": model,
-        "displayName": DISPLAY_NAME,
-        "baseUrl": api_url,
-        "apiKey": key_val,
-        "provider": "generic-chat-completion-api",
-        "maxOutputTokens": 16384
-    });
-
-    // Upsert by displayName (our managed marker); preserve any other models.
-    let idx = arr
-        .iter()
-        .position(|m| m.get("displayName").and_then(|v| v.as_str()) == Some(DISPLAY_NAME));
-    let idx = match idx {
-        Some(i) => {
-            arr[i] = entry;
-            i
-        }
-        None => {
-            arr.push(entry);
-            arr.len() - 1
-        }
-    };
-
-    // Select our model as the default so the session opens on it without a
-    // manual `/model` pick. Droid's custom selector is
-    // `custom:<displayName with spaces->dashes>-<index>`.
-    let selector = format!("custom:{}-{}", DISPLAY_NAME.replace(' ', "-"), idx);
-    obj.insert("model".to_string(), serde_json::json!(selector));
-
-    let pretty = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
-    std::fs::write(&path, pretty + "\n")
-        .map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;
+    let path = super::droid_config::settings_path(Path::new(&home));
+    let selector = super::droid_config::configure_in(
+        &path,
+        &api_url,
+        &model,
+        api_key.as_deref(),
+        context_length,
+    )?;
     log::info!(
         "Droid configured: baseUrl={}, model={}, selector={}",
         api_url,
@@ -4699,12 +4632,10 @@ fn write_marked_env_to_shell(
     Ok(())
 }
 
-/// Environment variables Copilot CLI reads for BYOK.
-///
-/// Shared by `configure_copilot`, which persists them to the user's shell rc,
-/// and by `atomic-chat-cli launch`, which must also set them directly on the
-/// spawned child: a freshly written rc file is not live in a process that is
-/// already running.
+/// Environment variables Copilot CLI reads for BYOK — what earlier releases
+/// persisted to the user's shell rc (`setx` on Windows) and the old
+/// `atomic-chat-cli launch` set on the child. `configure_copilot` now writes
+/// `providers.json` instead and removes these.
 pub fn copilot_env_vars(
     api_url: &str,
     model: &str,
@@ -4721,11 +4652,10 @@ pub fn copilot_env_vars(
     env_vars
 }
 
-/// Configure GitHub Copilot CLI to use the local Atomic Chat server via its BYOK
-/// environment variables. Copilot has no provider config file — it reads these
-/// from the environment at launch — so we persist them to the user's shell rc
-/// (Windows: `setx`). The auto-opened terminal then sources them. `COPILOT_OFFLINE`
-/// is on so no GitHub sign-in is required and traffic stays on the local provider.
+/// Configure GitHub Copilot CLI: an `atomic-chat` provider and model in its
+/// `providers.json`, which the Launch page starts with
+/// `copilot --model atomic-chat/<model>`. The variables earlier releases
+/// persisted user-wide are removed; see `copilot_config`.
 #[tauri::command]
 pub fn configure_copilot(
     api_url: String,
@@ -4735,40 +4665,13 @@ pub fn configure_copilot(
     // the agent is told so it compacts before the server refuses.
     context_length: Option<u32>,
 ) -> Result<(), String> {
-    let _ = context_length;
-    let env_vars = copilot_env_vars(&api_url, &model, api_key.as_deref());
-
-    const MARKER: &str = "# Atomic Chat - Copilot CLI Config";
-
-    if cfg!(target_os = "windows") {
-        for (key, value) in &env_vars {
-            let output = std::process::Command::new("setx")
-                .arg(key)
-                .arg(value)
-                .output()
-                .map_err(|e| e.to_string())?;
-            if !output.status.success() {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                return Err(format!("Failed to set env var {}: {}", key, stderr));
-            }
-        }
-        log::info!(
-            "Copilot configured (Windows env): base_url={}, model={}",
-            api_url,
-            model
-        );
-        return Ok(());
-    }
-
-    let home = agent_home_dir()?;
-    let is_macos = cfg!(target_os = "macos");
-    let (_shell, env_file_path) = detect_shell_env_file(&home, is_macos);
-    write_marked_env_to_shell(&env_file_path, MARKER, "COPILOT_", &env_vars)?;
+    let path =
+        super::copilot_config::configure(&api_url, &model, api_key.as_deref(), context_length)?;
     log::info!(
-        "Copilot configured: base_url={}, model={}, rc={}",
+        "Copilot configured: base_url={}, model={}, providers={}",
         api_url,
         model,
-        env_file_path
+        path.display()
     );
     Ok(())
 }
@@ -4821,11 +4724,9 @@ pub(crate) const DSH_ROUTE_ID: &str = "atomic";
 /// Models page derives `<ROUTE>_API_KEY` for routes it creates, so matching
 /// that derivation keeps our route editable — and deletable — from inside dsh.
 const DSH_KEY_ENV: &str = "ATOMIC_API_KEY";
-/// A route the pi-ai catalog does not ship falls back to `defaultContextWindow`
-/// 262144 / `defaultMaxTokens` 32768, a wild over-claim for a local model that
-/// surfaces as a mid-turn provider rejection. Declare something sane instead.
-const DSH_CONTEXT_WINDOW: u64 = 65536;
-const DSH_MAX_TOKENS: u64 = 8192;
+/// The section of the legacy `settings.yaml` (and the profile entry) holding
+/// the default model for new sessions.
+const DSH_DEFAULT_MODEL_SECTION: &str = "agent-default-model";
 
 fn ykey(s: &str) -> serde_yaml::Value {
     serde_yaml::Value::String(s.to_string())
@@ -4876,13 +4777,28 @@ fn dsh_child_mapping<'a>(
 /// MISSING_CREDENTIAL when the field is present but resolves to nothing, so the
 /// keyless path omits the field rather than writing an empty string, leaving a
 /// plainly unauthenticated route.
-fn dsh_route_node(api_url: &str, model: &str, with_key: bool) -> serde_yaml::Value {
+///
+/// A model the pi-ai catalog does not ship falls back to `defaultContextWindow`
+/// 262144 / `defaultMaxTokens` 32768. With the served window known, the model
+/// declares it, and a reply of a quarter of it (8192 at most); unknown, dsh's
+/// defaults stand.
+fn dsh_route_node(
+    api_url: &str,
+    model: &str,
+    with_key: bool,
+    context: Option<u32>,
+) -> serde_yaml::Value {
     use serde_yaml::{Mapping, Value};
 
     let mut model_entry = Mapping::new();
     model_entry.insert(ykey("id"), Value::String(model.to_string()));
-    model_entry.insert(ykey("contextWindow"), Value::from(DSH_CONTEXT_WINDOW));
-    model_entry.insert(ykey("maxTokens"), Value::from(DSH_MAX_TOKENS));
+    if let Some(context) = context.filter(|c| *c > 0) {
+        model_entry.insert(ykey("contextWindow"), Value::from(context));
+        model_entry.insert(
+            ykey("maxTokens"),
+            Value::from(super::agent_files::output_cap(context)),
+        );
+    }
 
     let mut route = Mapping::new();
     route.insert(
@@ -4917,22 +4833,11 @@ fn apply_dsh_provider(
     api_url: &str,
     model: &str,
     with_key: bool,
+    context: Option<u32>,
 ) -> Result<(), String> {
     use serde_yaml::{Mapping, Value};
 
-    // An invalid route does not merely fail to help: dsh rejects the entire
-    // `llm-pi-ai` section, taking the user's other providers down with it. So
-    // refuse to write one, before touching the tree.
-    if api_url.trim().is_empty() {
-        return Err("No local server URL. Start the local API server and try again.".to_string());
-    }
-    if model.trim().is_empty() {
-        return Err(
-            "No model selected. DeepSeek Harness rejects a provider with an empty model \
-             list, which would also disable any other provider configured in that section."
-                .to_string(),
-        );
-    }
+    dsh_validate_route(api_url, model)?;
 
     // An empty, whitespace-only, or comment-only document parses to Null rather
     // than erroring (unlike serde_json, which rejects ""), so one heal covers
@@ -4946,7 +4851,27 @@ fn apply_dsh_provider(
 
     let section = dsh_child_mapping(root_map, DSH_SECTION, DSH_SECTION)?;
     let providers = dsh_child_mapping(section, "providers", &format!("{}.providers", DSH_SECTION))?;
-    providers.insert(ykey(DSH_ROUTE_ID), dsh_route_node(api_url, model, with_key));
+    providers.insert(
+        ykey(DSH_ROUTE_ID),
+        dsh_route_node(api_url, model, with_key, context),
+    );
+    Ok(())
+}
+
+/// An invalid route does not merely fail to help: dsh rejects the entire
+/// `llm-pi-ai` section, taking the user's other providers down with it. So
+/// refuse to write one, before touching anything.
+fn dsh_validate_route(api_url: &str, model: &str) -> Result<(), String> {
+    if api_url.trim().is_empty() {
+        return Err("No local server URL. Start the local API server and try again.".to_string());
+    }
+    if model.trim().is_empty() {
+        return Err(
+            "No model selected. DeepSeek Harness rejects a provider with an empty model \
+             list, which would also disable any other provider configured in that section."
+                .to_string(),
+        );
+    }
     Ok(())
 }
 
@@ -5095,61 +5020,54 @@ fn configure_dsh_at(
     api_url: &str,
     model: &str,
     api_key: Option<&str>,
+    context: Option<u32>,
 ) -> Result<(), String> {
     let key = api_key.map(str::trim).filter(|k| !k.is_empty());
 
-    // Validate the credential before writing settings.yaml, so an unusable key
-    // cannot leave a route pointing at a reference we then failed to store.
+    // Validate everything before writing anything, so an unusable key cannot
+    // leave a route pointing at a reference we then failed to store.
+    dsh_validate_route(api_url, model)?;
     if let Some(k) = key {
         dsh_validate_env_value(DSH_KEY_ENV, k)?;
     }
 
+    // A `settings.yaml` that is still there is read live by dsh before 0.2,
+    // and merged once into the profile by 0.2+ — over what we write there. Keep
+    // it in step; never create one, and never touch `settings.yaml.imported`.
     let settings_path = home.join("settings.yaml");
-
-    // Parse before creating anything, so a malformed file leaves no debris.
-    let text = match std::fs::read_to_string(&settings_path) {
-        Ok(t) => t,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
-        Err(e) if e.kind() == std::io::ErrorKind::InvalidData => {
-            return Err(format!(
-                "{} is not valid UTF-8. Fix or remove the file and try again.",
-                settings_path.display()
-            ))
-        }
-        Err(e) => return Err(format!("Failed to read {}: {}", settings_path.display(), e)),
+    let legacy = match super::agent_files::read_text(&settings_path)? {
+        Some(text) => Some(dsh_legacy_settings(
+            &settings_path,
+            &text,
+            api_url,
+            model,
+            key.is_some(),
+            context,
+        )?),
+        None => None,
     };
-    let mut root: serde_yaml::Value = serde_yaml::from_str(&text).map_err(|e| {
-        format!(
-            "Could not parse {}: {}. Fix or remove the file and try again.",
-            settings_path.display(),
-            e
-        )
-    })?;
 
-    apply_dsh_provider(&mut root, api_url, model, key.is_some())?;
+    let route = dsh_route_node(api_url, model, key.is_some(), context);
+    let profile = super::dsh_config::configure_profile(home, DSH_ROUTE_ID, route, model)?;
 
-    let mut serialized = serde_yaml::to_string(&root)
-        .map_err(|e| format!("Failed to serialize {}: {}", settings_path.display(), e))?;
-    if !serialized.ends_with('\n') {
-        serialized.push('\n');
-    }
-
-    std::fs::create_dir_all(home)
-        .map_err(|e| format!("Failed to create {}: {}", home.display(), e))?;
-
-    // The round trip below drops comments and expands anchors, so keep one copy
-    // of whatever the user had before we first touched it. Only ever written
-    // once, so a later run cannot overwrite the true pre-Atomic state.
-    if !text.is_empty() {
+    if let Some((text, serialized, previous_default)) = legacy {
+        // The round trip drops comments and expands anchors, so keep one copy
+        // of whatever the user had before we first touched it. Only ever
+        // written once, so a later run cannot overwrite the pre-Atomic state.
         let backup = home.join("settings.yaml.atomic-backup");
-        if !backup.exists() {
+        if !text.is_empty() && !backup.exists() {
             let _ = std::fs::write(&backup, &text);
         }
+        write_atomically(&settings_path, serialized.as_bytes())?;
+        if let Some(previous) = previous_default {
+            super::agent_files::write_sidecar(
+                &settings_path,
+                &serde_json::json!({ "previous": { "defaultModel": previous } }),
+            )?;
+        }
     }
 
-    write_atomically(&settings_path, serialized.as_bytes())?;
-
-    // The secret itself never enters settings.yaml. dsh resolves the reference
+    // The secret itself never enters a config file. dsh resolves the reference
     // from, in order: the inherited environment, `$DSH_HOME/.credentials.yaml`,
     // the invoking directory's `.env`, then `$DSH_HOME/.env` — we write the
     // last, lowest-precedence layer, so anything the user sets deliberately
@@ -5163,22 +5081,59 @@ fn configure_dsh_at(
     }
 
     log::info!(
-        "DeepSeek Harness configured: baseURL={}, model={}, home={}, key={}",
+        "DeepSeek Harness configured: baseURL={}, model={}, profile={}, key={}",
         api_url,
         model,
-        home.display(),
+        profile.display(),
         if key.is_some() { "yes" } else { "no" }
     );
     Ok(())
 }
 
-/// Point DeepSeek Harness (`dsh`) at the local Atomic Chat server by upserting
-/// the `llm-pi-ai.providers.atomic` route in `$DSH_HOME/settings.yaml`
-/// (default `~/.dsh`). dsh re-reads that document live, so no restart is needed.
-///
-/// NOTE: the parse/re-serialize round trip drops YAML comments and expands
-/// anchors and aliases — the same trade `configure_zed` makes for JSONC, which
-/// is why the previous contents are backed up alongside on the first write.
+/// The legacy `settings.yaml` with our route, and our default model when the
+/// file names one (which a 0.2+ import would otherwise lay over ours): the
+/// original text, the new text, and — the first time — the default it had.
+fn dsh_legacy_settings(
+    path: &Path,
+    text: &str,
+    api_url: &str,
+    model: &str,
+    keyed: bool,
+    context: Option<u32>,
+) -> Result<(String, String, Option<serde_json::Value>), String> {
+    let mut root: serde_yaml::Value = serde_yaml::from_str(text).map_err(|e| {
+        format!(
+            "Could not parse {}: {}. Fix or remove the file and try again.",
+            path.display(),
+            e
+        )
+    })?;
+    apply_dsh_provider(&mut root, api_url, model, keyed, context)?;
+    let mut previous_default = None;
+    let ours = super::dsh_config::default_selection(DSH_ROUTE_ID, model);
+    if let Some(map) = root.as_mapping_mut() {
+        if let Some(current) = map.get(DSH_DEFAULT_MODEL_SECTION).cloned() {
+            let already_ours =
+                current.get("provider").and_then(|p| p.as_str()) == Some(DSH_ROUTE_ID);
+            if !already_ours {
+                previous_default = Some(serde_json::to_value(&current).map_err(|e| e.to_string())?);
+            }
+            map.insert(ykey(DSH_DEFAULT_MODEL_SECTION), ours);
+        }
+    }
+    let mut serialized = serde_yaml::to_string(&root)
+        .map_err(|e| format!("Failed to serialize {}: {}", path.display(), e))?;
+    if !serialized.ends_with('\n') {
+        serialized.push('\n');
+    }
+    Ok((text.to_string(), serialized, previous_default))
+}
+
+/// Point DeepSeek Harness (`dsh`) at the local Atomic Chat server: the
+/// `atomic` route and the default model in the `web` profile's
+/// `cordis.patch.yml` (see `dsh_config`), the key in `$DSH_HOME/.env`, and —
+/// while an older dsh still reads it — the route in `$DSH_HOME/settings.yaml`.
+/// dsh picks the changes up without a restart.
 #[tauri::command]
 pub fn configure_dsh(
     api_url: String,
@@ -5188,9 +5143,63 @@ pub fn configure_dsh(
     // the agent is told so it compacts before the server refuses.
     context_length: Option<u32>,
 ) -> Result<(), String> {
-    let _ = context_length;
     let home = dsh_home_dir()?;
-    configure_dsh_at(&home, &api_url, &model, api_key.as_deref())
+    configure_dsh_at(&home, &api_url, &model, api_key.as_deref(), context_length)
+}
+
+/// Undo {@link configure_dsh_at}: our route and default leave the profile (the
+/// previous default comes back), the legacy `settings.yaml` loses our route,
+/// and our key leaves `.env`.
+pub(crate) fn disconnect_dsh_at(home: &Path) -> Result<(), String> {
+    super::dsh_config::disconnect_profile(home, DSH_ROUTE_ID)?;
+
+    let settings_path = home.join("settings.yaml");
+    if let Some(text) = super::agent_files::read_text(&settings_path)? {
+        let mut root: serde_yaml::Value = serde_yaml::from_str(&text).map_err(|e| {
+            format!(
+                "Could not parse {}: {}. Fix or remove the file and try again.",
+                settings_path.display(),
+                e
+            )
+        })?;
+        let mut changed = false;
+        if let Some(providers) = root
+            .get_mut(DSH_SECTION)
+            .and_then(|s| s.get_mut("providers"))
+            .and_then(|p| p.as_mapping_mut())
+        {
+            changed |= providers.remove(DSH_ROUTE_ID).is_some();
+        }
+        if let Some(map) = root.as_mapping_mut() {
+            let ours = map
+                .get(DSH_DEFAULT_MODEL_SECTION)
+                .and_then(|d| d.get("provider"))
+                .and_then(|p| p.as_str())
+                == Some(DSH_ROUTE_ID);
+            if ours {
+                let previous = super::agent_files::read_sidecar(&settings_path)
+                    .and_then(|b| b.get("previous")?.get("defaultModel").cloned());
+                match previous {
+                    Some(previous) => {
+                        let value = serde_yaml::to_value(&previous).map_err(|e| e.to_string())?;
+                        map.insert(ykey(DSH_DEFAULT_MODEL_SECTION), value);
+                    }
+                    None => {
+                        map.remove(DSH_DEFAULT_MODEL_SECTION);
+                    }
+                }
+                changed = true;
+            }
+        }
+        if changed {
+            let serialized = serde_yaml::to_string(&root)
+                .map_err(|e| format!("Failed to serialize {}: {}", settings_path.display(), e))?;
+            write_atomically(&settings_path, serialized.as_bytes())?;
+        }
+    }
+    super::agent_files::remove_sidecar(&settings_path)?;
+
+    dsh_write_managed_env(&home.join(".env"), &[])
 }
 
 /// Goose gets its settings at launch, in the environment of the one
@@ -5464,12 +5473,11 @@ pub fn configure_muse(
 }
 
 /// Configure Cline CLI by RUNNING its official non-interactive setup command
-/// (`cline auth ...`) rather than writing a config file. Cline has no clean
-/// user-facing config file and no base-URL env var; its on-disk state
-/// (`~/.cline/globalState.json`) is a brittle legacy format that must not be
-/// hand-written. The `cline auth` path is exactly what `ollama launch cline`
-/// invokes under the hood. `cline` is guaranteed on PATH by the time this runs
-/// (handleRun installs the agent before configuring).
+/// (`cline auth ...`), the path `ollama launch cline` takes too, rather than
+/// writing the provider ourselves. `cline auth` has no flag for the context
+/// window, so that is set on the entry it saved afterwards, and what it
+/// replaced is kept for Disconnect; see `cline_config`. `cline` is guaranteed
+/// on PATH by the time this runs (handleRun installs the agent first).
 #[tauri::command]
 pub fn configure_cline(
     api_url: String,
@@ -5479,7 +5487,9 @@ pub fn configure_cline(
     // the agent is told so it compacts before the server refuses.
     context_length: Option<u32>,
 ) -> Result<(), String> {
-    let _ = context_length;
+    // What Disconnect restores, read before `cline auth` rewrites it.
+    let providers_path = super::cline_config::resolve_providers_path()?;
+    let snapshot = super::cline_config::snapshot(&providers_path)?;
     // Cline rejects an empty apikey (and an empty modelid; model is always set
     // because requiresModel is true), so fall back to a non-empty placeholder
     // when the local server runs without a key.
@@ -5545,6 +5555,8 @@ pub fn configure_cline(
         return Err(format!("`cline auth` failed: {}", detail));
     }
 
+    // `cline auth` has no flag for the window; set it on the entry it saved.
+    super::cline_config::finish(&providers_path, snapshot, &api_url, &model, context_length)?;
     log::info!("Cline configured: baseUrl={}, model={}", api_url, model);
     Ok(())
 }
@@ -6544,7 +6556,7 @@ mod dsh_tests {
     #[test]
     fn empty_document_becomes_a_complete_section() {
         let mut root = parse("");
-        apply_dsh_provider(&mut root, URL, "qwen3-4b", false).unwrap();
+        apply_dsh_provider(&mut root, URL, "qwen3-4b", false, Some(32768)).unwrap();
 
         let r = route(&root);
         assert_eq!(r.get("api").unwrap().as_str(), Some("openai-completions"));
@@ -6555,21 +6567,26 @@ mod dsh_tests {
         let models = r.get("models").unwrap().as_sequence().unwrap();
         assert_eq!(models.len(), 1);
         assert_eq!(models[0].get("id").unwrap().as_str(), Some("qwen3-4b"));
+        // The served window, and a reply of a quarter of it (8192 at most).
         assert_eq!(
             models[0].get("contextWindow").unwrap().as_u64(),
-            Some(DSH_CONTEXT_WINDOW)
+            Some(32768)
         );
-        assert_eq!(
-            models[0].get("maxTokens").unwrap().as_u64(),
-            Some(DSH_MAX_TOKENS)
-        );
+        assert_eq!(models[0].get("maxTokens").unwrap().as_u64(), Some(8192));
+
+        // Unknown, dsh keeps its own defaults.
+        let mut root = parse("");
+        apply_dsh_provider(&mut root, URL, "qwen3-4b", false, None).unwrap();
+        let models = route(&root).get("models").unwrap().as_sequence().unwrap();
+        assert!(models[0].get("contextWindow").is_none());
+        assert!(models[0].get("maxTokens").is_none());
     }
 
     #[test]
     fn preserves_other_plugin_sections() {
         let mut root =
             parse("web-app:\n  port: 3080\nsession-persistence-jsonl:\n  root: /tmp/x\n");
-        apply_dsh_provider(&mut root, URL, "m", false).unwrap();
+        apply_dsh_provider(&mut root, URL, "m", false, None).unwrap();
 
         assert_eq!(
             root.get("web-app").unwrap().get("port").unwrap().as_u64(),
@@ -6594,7 +6611,7 @@ mod dsh_tests {
              openai:\n      apiKeyEnv: OPENAI_API_KEY\n    \
              mygateway:\n      baseURL: https://gw.example/v1\n",
         );
-        apply_dsh_provider(&mut root, URL, "m", false).unwrap();
+        apply_dsh_provider(&mut root, URL, "m", false, None).unwrap();
 
         let providers = root.get(DSH_SECTION).unwrap().get("providers").unwrap();
         assert_eq!(
@@ -6631,7 +6648,7 @@ mod dsh_tests {
              baseURL: http://127.0.0.1:9999/v1\n      \
              leftoverJunk: true\n",
         );
-        apply_dsh_provider(&mut root, URL, "m", false).unwrap();
+        apply_dsh_provider(&mut root, URL, "m", false, None).unwrap();
 
         let r = route(&root);
         assert!(
@@ -6645,14 +6662,14 @@ mod dsh_tests {
     #[test]
     fn api_key_env_tracks_whether_a_key_exists() {
         let mut keyed = parse("");
-        apply_dsh_provider(&mut keyed, URL, "m", true).unwrap();
+        apply_dsh_provider(&mut keyed, URL, "m", true, None).unwrap();
         assert_eq!(
             route(&keyed).get("apiKeyEnv").unwrap().as_str(),
             Some(DSH_KEY_ENV)
         );
 
         let mut keyless = parse("");
-        apply_dsh_provider(&mut keyless, URL, "m", false).unwrap();
+        apply_dsh_provider(&mut keyless, URL, "m", false, None).unwrap();
         assert!(route(&keyless).get("apiKeyEnv").is_none());
     }
 
@@ -6661,7 +6678,7 @@ mod dsh_tests {
         // Both parse to Null, which is a hole to fill rather than data to protect.
         for fixture in ["llm-pi-ai:\n", "llm-pi-ai:\n  providers:\n"] {
             let mut root = parse(fixture);
-            apply_dsh_provider(&mut root, URL, "m", false).unwrap();
+            apply_dsh_provider(&mut root, URL, "m", false, None).unwrap();
             assert_eq!(route(&root).get("baseURL").unwrap().as_str(), Some(URL));
         }
     }
@@ -6674,7 +6691,7 @@ mod dsh_tests {
         ] {
             let mut root = parse(fixture);
             let before = root.clone();
-            assert!(apply_dsh_provider(&mut root, URL, "m", false).is_err());
+            assert!(apply_dsh_provider(&mut root, URL, "m", false, None).is_err());
             assert_eq!(root, before, "a refused write must not mutate the tree");
         }
     }
@@ -6682,7 +6699,7 @@ mod dsh_tests {
     #[test]
     fn refuses_a_non_mapping_root() {
         let mut root = parse("- a\n- b\n");
-        assert!(apply_dsh_provider(&mut root, URL, "m", false).is_err());
+        assert!(apply_dsh_provider(&mut root, URL, "m", false, None).is_err());
     }
 
     /// An invalid route makes dsh reject the whole `llm-pi-ai` section, so this
@@ -6692,8 +6709,8 @@ mod dsh_tests {
     fn refuses_an_empty_model_or_url() {
         let mut root = parse("");
         let before = root.clone();
-        assert!(apply_dsh_provider(&mut root, URL, "   ", false).is_err());
-        assert!(apply_dsh_provider(&mut root, "", "m", false).is_err());
+        assert!(apply_dsh_provider(&mut root, URL, "   ", false, None).is_err());
+        assert!(apply_dsh_provider(&mut root, "", "m", false, None).is_err());
         assert_eq!(root, before);
     }
 
@@ -6703,7 +6720,7 @@ mod dsh_tests {
     fn model_ids_that_look_like_other_types_round_trip() {
         for id in ["yes", "no", "7", "1.0", "null", "on"] {
             let mut root = parse("");
-            apply_dsh_provider(&mut root, URL, id, false).unwrap();
+            apply_dsh_provider(&mut root, URL, id, false, None).unwrap();
             let reparsed = parse(&serde_yaml::to_string(&root).unwrap());
             let models = route(&reparsed)
                 .get("models")
@@ -6718,9 +6735,9 @@ mod dsh_tests {
     fn is_idempotent() {
         let fixture = "other:\n  a: 1\nllm-pi-ai:\n  providers:\n    openai: {}\n";
         let mut once = parse(fixture);
-        apply_dsh_provider(&mut once, URL, "m", true).unwrap();
+        apply_dsh_provider(&mut once, URL, "m", true, None).unwrap();
         let mut twice = once.clone();
-        apply_dsh_provider(&mut twice, URL, "m", true).unwrap();
+        apply_dsh_provider(&mut twice, URL, "m", true, None).unwrap();
         assert_eq!(
             serde_yaml::to_string(&once).unwrap(),
             serde_yaml::to_string(&twice).unwrap()
@@ -6761,6 +6778,121 @@ mod dsh_tests {
             assert!(err.contains(DSH_KEY_ENV));
             assert!(!err.contains(bad), "the error must never echo the value");
         }
+    }
+
+    fn profile_rows(home: &Path) -> serde_yaml::Value {
+        let text =
+            std::fs::read_to_string(super::super::dsh_config::profile_patch_path(home)).unwrap();
+        serde_yaml::from_str(&text).unwrap()
+    }
+
+    #[test]
+    fn configure_writes_the_profile_and_never_creates_settings_yaml() {
+        let home = tempfile::tempdir().unwrap();
+        configure_dsh_at(home.path(), URL, "qwen3", Some("sk-1"), Some(16384)).unwrap();
+        let rows = profile_rows(home.path());
+        let route = &rows[0]["config"]["providers"][DSH_ROUTE_ID];
+        assert_eq!(route["baseURL"].as_str(), Some(URL));
+        assert_eq!(route["apiKeyEnv"].as_str(), Some(DSH_KEY_ENV));
+        assert_eq!(route["models"][0]["contextWindow"].as_u64(), Some(16384));
+        assert_eq!(route["models"][0]["maxTokens"].as_u64(), Some(4096));
+        assert_eq!(rows[1]["id"].as_str(), Some(DSH_DEFAULT_MODEL_SECTION));
+        assert_eq!(rows[1]["config"]["model"].as_str(), Some("qwen3"));
+        assert!(!home.path().join("settings.yaml").exists());
+        let env = std::fs::read_to_string(home.path().join(".env")).unwrap();
+        assert!(env.contains("ATOMIC_API_KEY=sk-1"));
+
+        disconnect_dsh_at(home.path()).unwrap();
+        assert_eq!(
+            profile_rows(home.path()),
+            serde_yaml::Value::Sequence(vec![])
+        );
+        assert!(!std::fs::read_to_string(home.path().join(".env"))
+            .unwrap()
+            .contains("sk-1"));
+        // A second Disconnect, or one with nothing connected, is a no-op.
+        disconnect_dsh_at(home.path()).unwrap();
+        disconnect_dsh_at(&home.path().join("never")).unwrap();
+    }
+
+    /// Byte-identical to the core writer's `dsh.test.ts` ("replaces the empty
+    /// list of a new profile"), so either side can rewrite the other's rows.
+    #[test]
+    fn the_profile_rows_match_the_core_writer() {
+        let home = tempfile::tempdir().unwrap();
+        let template =
+            "# Your patch layer for this dsh profile, applied after every bundle layer:\n\
+# a top-level YAML array of loader patch entries (id-targeted config\n\
+# overrides, disables, and insert lists; `!!js` expressions allowed).\n";
+        let path = super::super::dsh_config::profile_patch_path(home.path());
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, format!("{template}[]\n")).unwrap();
+        configure_dsh_at(
+            home.path(),
+            URL,
+            "AtomicChat/Qwen3.5-9B-GGUF",
+            Some("sk"),
+            Some(32768),
+        )
+        .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            format!(
+                "{template}- id: llm-pi-ai\n  name: '@deepseek-ai/dsh-llm-pi-ai'\n  config:\n    \
+                 providers:\n      atomic:\n        displayName: Atomic Chat\n        \
+                 api: openai-completions\n        baseURL: {URL}\n        \
+                 apiKeyEnv: ATOMIC_API_KEY\n        models:\n        \
+                 - id: AtomicChat/Qwen3.5-9B-GGUF\n          contextWindow: 32768\n          \
+                 maxTokens: 8192\n\
+                 - id: agent-default-model\n  name: '@deepseek-ai/dsh-agent-default-model'\n  \
+                 config:\n    provider: atomic\n    model: AtomicChat/Qwen3.5-9B-GGUF\n"
+            )
+        );
+    }
+
+    #[test]
+    fn a_legacy_settings_yaml_is_kept_in_step_and_restored() {
+        let home = tempfile::tempdir().unwrap();
+        let settings = home.path().join("settings.yaml");
+        let imported = home.path().join("settings.yaml.imported");
+        std::fs::write(
+            &settings,
+            "agent-default-model:\n  provider: deepseek-official\n  model: deepseek-flash\n",
+        )
+        .unwrap();
+        std::fs::write(&imported, "llm-pi-ai: {}\n").unwrap();
+        configure_dsh_at(home.path(), URL, "qwen3", None, None).unwrap();
+        configure_dsh_at(home.path(), URL, "qwen3", None, None).unwrap();
+        let root = parse(&std::fs::read_to_string(&settings).unwrap());
+        assert_eq!(route(&root).get("baseURL").unwrap().as_str(), Some(URL));
+        assert_eq!(
+            root[DSH_DEFAULT_MODEL_SECTION]["provider"].as_str(),
+            Some(DSH_ROUTE_ID)
+        );
+        assert_eq!(
+            std::fs::read_to_string(&imported).unwrap(),
+            "llm-pi-ai: {}\n"
+        );
+
+        disconnect_dsh_at(home.path()).unwrap();
+        let root = parse(&std::fs::read_to_string(&settings).unwrap());
+        assert!(root[DSH_SECTION]["providers"].get(DSH_ROUTE_ID).is_none());
+        assert_eq!(
+            root[DSH_DEFAULT_MODEL_SECTION]["provider"].as_str(),
+            Some("deepseek-official")
+        );
+        assert_eq!(
+            std::fs::read_to_string(&imported).unwrap(),
+            "llm-pi-ai: {}\n"
+        );
+    }
+
+    #[test]
+    fn an_invalid_route_writes_nothing() {
+        let home = tempfile::tempdir().unwrap();
+        assert!(configure_dsh_at(home.path(), URL, " ", None, None).is_err());
+        assert!(configure_dsh_at(home.path(), URL, "m", Some("has space"), None).is_err());
+        assert!(std::fs::read_dir(home.path()).unwrap().next().is_none());
     }
 }
 

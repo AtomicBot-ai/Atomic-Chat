@@ -1,10 +1,15 @@
 pub mod agent_config_detection;
 pub mod agent_disconnect;
+pub mod agent_files;
 pub mod agent_terminal;
 pub mod agent_user_env;
 pub mod claude_config;
+pub mod cline_config;
 pub mod codex_config;
 pub mod commands;
+pub mod copilot_config;
+pub mod droid_config;
+pub mod dsh_config;
 pub mod goose_config;
 pub mod opencode_family;
 pub mod page_cache;

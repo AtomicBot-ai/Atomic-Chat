@@ -95,24 +95,27 @@ fn disconnect_goose() -> Result<(), String> {
     super::goose_config::remove_legacy(None)
 }
 
-/// cline: nothing to undo yet.
+/// cline: the provider entry and `lastUsedProvider` from before Connect.
 fn disconnect_cline() -> Result<(), String> {
-    Ok(())
+    super::cline_config::disconnect_in(&super::cline_config::resolve_providers_path()?)
 }
 
-/// droid: nothing to undo yet.
+/// droid: our `customModels` entry, and the default model from before.
 fn disconnect_droid() -> Result<(), String> {
-    Ok(())
+    let home = super::commands::agent_home_dir()?;
+    super::droid_config::disconnect_in(&super::droid_config::settings_path(std::path::Path::new(
+        &home,
+    )))
 }
 
-/// copilot: nothing to undo yet.
+/// copilot: our `providers.json` entries, and what earlier releases set.
 fn disconnect_copilot() -> Result<(), String> {
-    Ok(())
+    super::copilot_config::disconnect()
 }
 
-/// dsh: nothing to undo yet.
+/// dsh: our route, the default model from before, and our key.
 fn disconnect_dsh() -> Result<(), String> {
-    Ok(())
+    super::commands::disconnect_dsh_at(&super::commands::dsh_home_dir()?)
 }
 
 /// hermes: nothing to undo yet.

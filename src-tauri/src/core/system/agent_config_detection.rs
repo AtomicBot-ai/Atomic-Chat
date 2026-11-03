@@ -69,6 +69,8 @@ pub(crate) struct AgentConfigPaths {
     pub codex_home: PathBuf,
     /// Kilo Code, OpenCode, MiMo Code and pi.
     pub family: FamilyPaths,
+    /// Copilot's `providers.json`.
+    pub copilot_providers: PathBuf,
 }
 
 impl AgentConfigPaths {
@@ -90,6 +92,7 @@ impl AgentConfigPaths {
             server: OurServer::new("127.0.0.1", 1337),
             codex_home: home.join(".codex"),
             family: FamilyPaths::resolve_with(home, &|_| None),
+            copilot_providers: home.join(".copilot").join("providers.json"),
         }
     }
 
@@ -119,6 +122,8 @@ impl AgentConfigPaths {
             server: OurServer::from_app_state(),
             codex_home: resolve_codex_home().unwrap_or_else(|_| home.join(".codex")),
             family: FamilyPaths::resolve_with(&home, &|name| std::env::var(name).ok()),
+            copilot_providers: super::copilot_config::resolve_providers_path()
+                .unwrap_or_else(|_| home.join(".copilot").join("providers.json")),
             home,
         })
     }
@@ -192,8 +197,14 @@ pub(crate) fn detect_configured_agents_in(
         ),
         (
             "copilot",
-            block(COPILOT_SHELL_MARKER)
-                .is_some_and(|vars| var_is_local(&vars, "COPILOT_PROVIDER_BASE_URL"))
+            json_file(&paths.copilot_providers).is_some_and(|v| {
+                array_has(&v, &["providers"], |p| {
+                    str_at(p, "name") == Some(super::copilot_config::PROVIDER_NAME)
+                })
+            })
+                // What earlier releases persisted, until a Connect removes it.
+                || block(COPILOT_SHELL_MARKER)
+                    .is_some_and(|vars| var_is_local(&vars, "COPILOT_PROVIDER_BASE_URL"))
                 || user_env_is_local("COPILOT_PROVIDER_BASE_URL"),
         ),
         (
@@ -364,16 +375,19 @@ fn openclaude_configured(paths: &AgentConfigPaths) -> bool {
         .is_some_and(|v| startup_profile_is_ours(&v, Some(&paths.server)))
 }
 
-/// `llm-pi-ai.providers.atomic` in `$DSH_HOME/settings.yaml`.
+/// Our route in the `web` profile's patch layer (dsh 0.2+), or
+/// `llm-pi-ai.providers.atomic` in the `$DSH_HOME/settings.yaml` older dsh
+/// reads.
 fn dsh_configured(dsh_home: &Path) -> bool {
-    read_text(&dsh_home.join("settings.yaml"))
-        .and_then(|text| serde_yaml::from_str::<serde_yaml::Value>(&text).ok())
-        .is_some_and(|root| {
-            root.get(DSH_SECTION)
-                .and_then(|s| s.get("providers"))
-                .and_then(|p| p.get(DSH_ROUTE_ID))
-                .is_some_and(serde_yaml::Value::is_mapping)
-        })
+    super::dsh_config::profile_has_route(dsh_home, DSH_ROUTE_ID)
+        || read_text(&dsh_home.join("settings.yaml"))
+            .and_then(|text| serde_yaml::from_str::<serde_yaml::Value>(&text).ok())
+            .is_some_and(|root| {
+                root.get(DSH_SECTION)
+                    .and_then(|s| s.get("providers"))
+                    .and_then(|p| p.get(DSH_ROUTE_ID))
+                    .is_some_and(serde_yaml::Value::is_mapping)
+            })
 }
 
 /// Our provider rule in ZCode's `provider_config.json`.
@@ -573,6 +587,30 @@ mod tests {
             ),
         );
         assert_eq!(detect(home.path(), None), vec!["codex"]);
+    }
+
+    #[test]
+    fn detects_copilot_providers_and_the_dsh_profile() {
+        let home = tempfile::tempdir().unwrap();
+        let h = home.path();
+        write(
+            &h.join(".copilot/providers.json"),
+            r#"{"providers":[{"name":"ollama","baseUrl":"http://localhost:11434/v1"}]}"#,
+        );
+        write(
+            &h.join(".dsh/profiles/web/cordis.patch.yml"),
+            "# mine\n- id: llm-pi-ai\n  config:\n    providers:\n      gw: {}\n",
+        );
+        assert!(detect(h, None).is_empty());
+        write(
+            &h.join(".copilot/providers.json"),
+            r#"{"providers":[{"name":"atomic-chat","baseUrl":"http://127.0.0.1:1337/v1"}]}"#,
+        );
+        write(
+            &h.join(".dsh/profiles/web/cordis.patch.yml"),
+            "- id: llm-pi-ai\n  config:\n    providers:\n      atomic:\n        baseURL: http://127.0.0.1:1337/v1\n",
+        );
+        assert_eq!(detect(h, None), vec!["dsh", "copilot"]);
     }
 
     #[test]
