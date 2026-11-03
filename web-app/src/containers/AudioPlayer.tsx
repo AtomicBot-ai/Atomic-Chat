@@ -37,7 +37,12 @@ type AudioPlayerProps = {
   loop?: boolean
   /** Told whenever playback starts or stops. */
   onPlayingChange?: (playing: boolean) => void
+  /** The clip's length in seconds when the caller knows it: shown until the file says. */
+  durationHint?: number
 }
+
+/** A load shorter than this shows no spinner: switching clips must not flicker. */
+const SPINNER_DELAY_MS = 300
 
 export function AudioPlayer({
   src,
@@ -46,17 +51,22 @@ export function AudioPlayer({
   className,
   loop = false,
   onPlayingChange,
+  durationHint,
 }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null)
   const isDraggingRef = useRef(false)
+  const loadedSrcRef = useRef<string | undefined>(undefined)
   const [isPlaying, setIsPlaying] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
-  const [duration, setDuration] = useState(0)
+  const [duration, setDuration] = useState(durationHint ?? 0)
   const [rate, setRate] = useState(1)
   // True while the clip is being prepared (data: → Blob conversion) or while
   // the media element is still buffering, so the user sees real progress on
   // large files instead of a dead button.
   const [isLoading, setIsLoading] = useState(true)
+  // The spinner waits a moment: a local clip is ready in tens of milliseconds,
+  // and a spinner for that long only makes every switch look slow (QA 2.3.2).
+  const [slowLoad, setSlowLoad] = useState(false)
   // Some files (e.g. a large/edge-encoded FLAC) can't be decoded by WebKit even
   // though the model still receives them. Show a graceful fallback instead of a
   // dead 0:00/0:00 player.
@@ -132,6 +142,10 @@ export function AudioPlayer({
     el.addEventListener('playing', onReady)
     el.addEventListener('waiting', onWaiting)
     el.addEventListener('error', onError)
+    // The element starts loading as it mounts, so it may be further along
+    // than the listeners just added have heard.
+    if (el.readyState >= HTMLMediaElement.HAVE_METADATA) onMeta()
+    if (el.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) onReady()
 
     return () => {
       el.removeEventListener('timeupdate', onTime)
@@ -153,12 +167,30 @@ export function AudioPlayer({
   }, [isPlaying, onPlayingChange])
 
   useEffect(() => {
-    const el = audioRef.current
-    if (el && playbackSrc) {
-      setIsLoading(true)
-      setHasError(false)
-      el.load()
+    if (!isLoading) {
+      setSlowLoad(false)
+      return
     }
+    const timer = setTimeout(() => setSlowLoad(true), SPINNER_DELAY_MS)
+    return () => clearTimeout(timer)
+  }, [isLoading])
+
+  useEffect(() => {
+    const el = audioRef.current
+    if (!el || !playbackSrc) return
+    // The first source is loaded by the element itself as it mounts with it;
+    // calling load() again would only restart that load.
+    if (
+      loadedSrcRef.current === undefined &&
+      el.getAttribute('src') === playbackSrc
+    ) {
+      loadedSrcRef.current = playbackSrc
+      return
+    }
+    loadedSrcRef.current = playbackSrc
+    setIsLoading(true)
+    setHasError(false)
+    el.load()
   }, [playbackSrc])
 
   const togglePlay = useCallback(() => {
@@ -221,11 +253,13 @@ export function AudioPlayer({
         <button
           type="button"
           onClick={togglePlay}
-          disabled={!playbackSrc || (isLoading && !isPlaying)}
+          // play() before the data is in starts as soon as it is.
+          disabled={!playbackSrc}
           aria-label={isPlaying ? 'Pause' : 'Play'}
+          aria-busy={isLoading && !isPlaying}
           className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition hover:opacity-90 disabled:opacity-50"
         >
-          {isLoading && !isPlaying ? (
+          {isLoading && slowLoad && !isPlaying ? (
             <IconLoader2 size={16} className="animate-spin" />
           ) : isPlaying ? (
             <IconPlayerPauseFilled size={16} />

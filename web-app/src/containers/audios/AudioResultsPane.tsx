@@ -119,6 +119,7 @@ const AudioViewer = memo(function AudioViewer({
               key={item.id}
               src={src}
               mediaType="audio/wav"
+              durationHint={item.audioMs / 1000}
               loop={loop}
               onPlayingChange={setPlaying}
               className="w-full"
