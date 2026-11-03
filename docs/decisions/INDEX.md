@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-502 records, 2026-05-19 → 2026-10-29.
+505 records, 2026-05-19 → 2026-10-29.
 
 ---
 
@@ -239,12 +239,13 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Ship `janhq/llama.cpp` cudart DLLs with every Windows CUDA backend](2026-05-22-ship-janhq-llama-cpp-cudart-dlls-with-every-windows-cuda-backend.md)
 - **2026-05-19** — [Windows uses upstream `ggml-org/llama.cpp`, not the TurboQuant fork](2026-05-19-windows-uses-upstream-ggml-org-llama-cpp-not-the-turboquant-fork.md)
 
-## Models, Hub & downloads (49)
+## Models, Hub & downloads (50)
 
 - **2026-10-26** — [Count a task's finished files on resume, and reopen a connection that only trickles](2026-10-26-count-finished-files-on-resume-and-reopen-trickling-connections.md)
 - **2026-10-22** — [Run LiteRT-LM through the core; download its models from Hugging Face in the app](2026-10-22-run-litert-lm-through-the-core-and-download-its-models-in-the-app.md)
 - **2026-10-22** — [Step the Hub toolbar down by its own width, search first](2026-10-22-step-the-hub-toolbar-down-by-its-own-width.md)
 - **2026-10-22** — [Name Downloads rows by their model, with the quant apart](2026-10-22-name-downloads-rows-by-model-with-the-quant-apart.md)
+- **2026-10-21** — [Say what a linked safetensors checkpoint runs on where no managed engine is offered](2026-10-21-say-what-a-linked-safetensors-checkpoint-runs-on.md)
 - **2026-10-21** — [Bring interrupted model downloads back after a relaunch, paused](2026-10-21-bring-interrupted-model-downloads-back-after-a-relaunch.md)
 - **2026-10-21** — [List and remove download leftovers on the Downloads page](2026-10-21-list-and-remove-download-leftovers-on-the-downloads-page.md)
 - **2026-10-16** — [Run Foundry Local through the core; download its models in the app](2026-10-16-run-foundry-local-through-the-core-and-download-its-models-in-the-app.md)
@@ -329,12 +330,13 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-10** — [Throttle crashloop `model_load` failure spam client-side; confirm `model_load.status` / api 404-noise are already-fixed-pending-rollout, not code bugs (ATO-130: ATO-133 + ATO-131 + ATO-132)](2026-06-10-throttle-crashloop-model-load-failure-spam-client-side-confirm.md)
 - **2026-06-09** — [Add zero-PII Sentry crash/error tracking to both the React frontend and the Rust/Tauri desktop, gated behind `productAnalytic` (ATO-113)](2026-06-09-add-zero-pii-sentry-crash-error-tracking-to-both-the-react.md)
 
-## Packaging, installers, autostart & platform policy (30)
+## Packaging, installers, autostart & platform policy (31)
 
 - **2026-10-29** — [Host the Microsoft Store installer in its own bucket](2026-10-29-host-the-microsoft-store-installer-in-its-own-bucket.md) — `msstore.yml` copies each published release's `*_x64_msstore.exe` to `atomic-chat-downloads` on Hetzner (immutable, versioned, no redirect) for the Partner Center package URL.
 - **2026-10-27** — [Ship only upstream llama.cpp in the installer](2026-10-27-ship-only-upstream-llama-cpp-in-the-installer.md) — MLX and TurboQuant install through the core on demand; no `jan-cli` copy, Install CLI copies `atomic-chat-core`. Supersedes the file-name part of the 2026-09-15 jan-cli record and the installer parts of the 2026-10-07 MLX and 2026-06-23 TurboQuant records.
 - **2026-10-26** — [Ship deb, rpm and AUR packages from the AppImage build](2026-10-26-ship-deb-rpm-and-aur-packages-from-the-appimage-build.md) — nfpm packs Tauri's deb tree under `/opt/atomic-chat` with dependencies read from its ELF files; signed apt/dnf repository in its own bucket and `atomic-chat-bin` on the AUR follow a published release.
 - **2026-10-22** — [Sign every Windows PE file through Tauri's signCommand and ship a Microsoft Store installer](2026-10-22-sign-every-windows-pe-via-tauri-signcommand-and-ship-an-msstore-installer.md) — x64 installers fully signed; `*_x64_msstore.exe` embeds the offline WebView2 installer; ARM64 and the publisher name stay as they were.
+- **2026-10-21** — [Register the atomic-chat:// link scheme on Windows and Linux](2026-10-21-register-the-atomic-chat-link-scheme-on-windows-and-linux.md) — the scheme lives in the per-platform configs; macOS keeps `Info.plist`, e2e builds never register.
 - **2026-10-21** — [Give the Linux window a stable app id](2026-10-21-give-the-linux-window-a-stable-app-id.md) — Wayland `app_id` / Hyprland class is `chat.atomic.app`, matched by the desktop entry's `StartupWMClass`.
 - **2026-10-21** — [Close the Linux window to the tray](2026-10-21-close-the-linux-window-to-the-tray.md) — under a bar with a tray, closing hides the window instead of stopping `:1337`; tray "Quit" exits; without a StatusNotifier host closing still quits.
 - **2026-10-21** — [Let a package manager own updates](2026-10-21-let-a-package-manager-own-updates.md) — a marker file beside the AppImage or binary, or `ATOMIC_CHAT_PACKAGE_MANAGED=1`, turns the updater off, including its startup check and the updater service's plugin fallback.
@@ -370,7 +372,7 @@ decision is reversed, add a new one that says which record it supersedes.
 ## UI / UX (2)
 - **2026-10-20** — [Show hosted providers on Cloud and the user's own servers on Custom Endpoint](2026-10-20-show-hosted-providers-on-cloud-and-own-servers-on-custom-endpoint.md)
 - **2026-10-20** — [List everything downloaded on a Downloads page](2026-10-20-list-everything-downloaded-on-a-downloads-page.md)
-## UI / UX (132)
+## UI / UX (133)
 - **2026-10-29** — [Leave the first run's downloads to the download panel after setup](2026-10-29-leave-the-first-runs-downloads-to-the-download-panel-after-setup.md) — the handoff panel shows only an interrupted download, the model ready or the way back; supersedes in part 2026-10-22.
 - **2026-10-28** — [Deliver the wait screen's model-ready email reminder](2026-10-28-deliver-model-ready-email-reminders.md) — supersedes hiding the form on 2026-10-27.
 - **2026-10-28** — [Preserve a project’s first queued send across navigation](2026-10-28-preserve-project-first-send-across-navigation.md)
@@ -551,7 +553,7 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-09-30** — [TensorRT-LLM is a Linux-only extension that decides its own visibility](2026-09-30-tensorrt-llm-is-a-linux-only-extension-that-decides-its-own-visibility.md)
 - **2026-09-30** — [Run Agent turns on TensorRT-LLM through its session gateway](2026-09-30-run-agent-turns-on-tensorrt-llm-through-its-session-gateway.md)
 
-## Other (21)
+## Other (22)
 
 - **2026-10-28** — [Bound support writes and preserve retry identity](2026-10-28-bound-support-writes-and-preserve-retry-identity.md)
 

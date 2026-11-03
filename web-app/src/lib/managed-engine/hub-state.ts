@@ -71,3 +71,25 @@ export function managedHubState(input: {
   if (plan.blockers.length > 0) return { ...base, state: 'blocked', blockers: plan.blockers }
   return { ...base, state: 'not-installed' }
 }
+
+/**
+ * Why a linked safetensors checkpoint has nothing to download here: no managed engine is offered.
+ * `tooOld` is the first engine, in registry order, whose provider is shown but whose plan says the
+ * card predates Ampere, with the core's numbers; otherwise none is offered at all (macOS, no
+ * NVIDIA card).
+ */
+export type UnservedCheckpoint<E> = {
+  tooOld?: { engine: E; required: string; actual: string }
+}
+
+export function unservedCheckpoint<E>(
+  hubs: ReadonlyArray<{ engine: E; hub: ManagedHubState }>
+): UnservedCheckpoint<E> {
+  for (const { engine, hub } of hubs) {
+    const blocker = hub.blockers.find((entry) => entry.reason === COMPUTE_CAPABILITY_TOO_LOW)
+    const required = blocker?.params?.required
+    const actual = blocker?.params?.actual
+    if (required && actual) return { tooOld: { engine, required, actual } }
+  }
+  return {}
+}

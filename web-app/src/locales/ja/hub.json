@@ -50,6 +50,7 @@
   "basedOnDevice": "{{device}} に基づく: {{memory}}",
   "noFittingPicks": "このデバイスに収まるおすすめモデルはありません。デバイスフィルターをオフにするとすべて表示されます。",
   "downloadOptions": "ダウンロードオプション",
+  "safetensorsNeedsNvidia": "このモデルには、NVIDIA RTX 30 シリーズ以降のグラフィックカードを搭載した Windows または Linux が必要です。",
   "details": "詳細",
   "selectModel": "モデルを選択すると詳細が表示されます",
   "openOnWeb": "ウェブで開く",

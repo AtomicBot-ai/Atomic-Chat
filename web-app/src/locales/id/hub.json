@@ -37,6 +37,7 @@
   "basedOnDevice": "Berdasarkan {{device}}: {{memory}}",
   "noFittingPicks": "Tidak ada model rekomendasi yang muat di perangkat ini. Matikan filter untuk melihat semuanya.",
   "downloadOptions": "Opsi unduhan",
+  "safetensorsNeedsNvidia": "Model ini membutuhkan Windows atau Linux dengan kartu grafis NVIDIA seri RTX 30 atau yang lebih baru.",
   "details": "Detail",
   "selectModel": "Pilih model untuk melihat detailnya",
   "openOnWeb": "Buka di web",

@@ -47,6 +47,23 @@ test('the e2e build tests the shipped windows: it overrides none, and isolates t
   assert.match(modules, /#\[cfg\(feature = "e2e"\)\]\npub mod e2e;/)
 })
 
+test('the e2e build inherits the atomic-chat:// scheme but never registers itself as its handler', () => {
+  // The Windows and Linux configs declare the scheme (macOS has it in
+  // Info.plist); a build registers the running binary as the user's handler at
+  // startup. A test binary refuses to start without its root, so it must not.
+  const plist = readFileSync(new URL('../src-tauri/Info.plist', import.meta.url), 'utf8')
+  assert.match(plist, /<key>CFBundleURLSchemes<\/key>\s*<array>\s*<string>atomic-chat<\/string>/)
+  for (const name of ['tauri.windows.conf.json', 'tauri.linux.conf.json']) {
+    assert.deepEqual(read(name).plugins['deep-link'].desktop.schemes, ['atomic-chat'])
+  }
+  assert.equal(e2e.plugins['deep-link'], undefined)
+  const lib = readFileSync(new URL('../src-tauri/src/lib.rs', import.meta.url), 'utf8')
+  assert.match(
+    lib,
+    /#\[cfg\(all\(\s*feature = "deep-link",\s*not\(feature = "e2e"\),\s*any\(windows, target_os = "linux"\)\s*\)\)\]\s+\{[^}]*register_all\(\)/
+  )
+})
+
 test('the e2e build cannot reach the release update feed', () => {
   for (const endpoint of e2e.plugins.updater.endpoints) {
     assert.match(endpoint, /^https:\/\/127\.0\.0\.1:9\//)
