@@ -52,6 +52,8 @@ pub(crate) struct AgentConfigPaths {
     pub shell_env_file: Option<PathBuf>,
     pub hermes_dir: Option<PathBuf>,
     pub zcode_dir: PathBuf,
+    /// Zed's config directory (`%APPDATA%\Zed` on Windows).
+    pub zed_dir: Option<PathBuf>,
     pub atomic_agent_dir: Option<PathBuf>,
     pub dsh_home: Option<PathBuf>,
     pub openclaw_config: PathBuf,
@@ -69,6 +71,7 @@ impl AgentConfigPaths {
             shell_env_file: shell_env_file.map(Path::to_path_buf),
             hermes_dir: Some(home.join(".hermes")),
             zcode_dir: zcode_config_dir(home, None),
+            zed_dir: Some(home.join(".config").join("zed")),
             atomic_agent_dir: Some(home.join(".atomic-agent")),
             dsh_home: Some(home.join(".dsh")),
             openclaw_config: home.join(".openclaw").join("openclaw.json"),
@@ -92,6 +95,7 @@ impl AgentConfigPaths {
             shell_env_file,
             hermes_dir: resolve_hermes_dir().ok(),
             zcode_dir: zcode_config_dir(&home, zcode_env.as_deref()),
+            zed_dir: super::commands::zed_config_dir().ok(),
             atomic_agent_dir: resolve_atomic_agent_state_dir().ok(),
             dsh_home: dsh_home_dir().ok(),
             openclaw_config: openclaw_config_path(&home_str),
@@ -148,12 +152,16 @@ pub(crate) fn detect_configured_agents_in(
         ("dsh", paths.dsh_home.as_deref().is_some_and(dsh_configured)),
         (
             "zed",
-            json_file(&home.join(".config").join("zed").join("settings.json")).is_some_and(|v| {
-                has_object(
-                    &v,
-                    &["language_models", "openai_compatible", ZED_PROVIDER_ID],
-                )
-            }),
+            paths
+                .zed_dir
+                .as_deref()
+                .and_then(|dir| json_file(&dir.join("settings.json")))
+                .is_some_and(|v| {
+                    has_object(
+                        &v,
+                        &["language_models", "openai_compatible", ZED_PROVIDER_ID],
+                    )
+                }),
         ),
         ("zcode", zcode_configured(&paths.zcode_dir)),
         (
@@ -564,6 +572,25 @@ mod tests {
 "#,
         );
         assert_eq!(detect(home.path(), None), vec!["zed"]);
+    }
+
+    /// On Windows Zed reads `%APPDATA%\Zed`; a provider left in
+    /// `~/.config/zed` by an older release is not a connection Zed sees.
+    #[test]
+    fn zed_is_read_where_zed_keeps_its_settings() {
+        let home = tempfile::tempdir().unwrap();
+        let zed_dir = home.path().join("AppData/Roaming/Zed");
+        let ours = r#"{"language_models":{"openai_compatible":{"Atomic Chat":{}}}}"#;
+        write(&home.path().join(".config/zed/settings.json"), ours);
+        let mut paths = AgentConfigPaths::under_home(home.path(), None);
+        paths.zed_dir = Some(zed_dir.clone());
+        assert!(detect_configured_agents_in(&paths, &no_user_env).is_empty());
+
+        write(&zed_dir.join("settings.json"), ours);
+        assert_eq!(
+            detect_configured_agents_in(&paths, &no_user_env),
+            vec!["zed"]
+        );
     }
 
     #[test]

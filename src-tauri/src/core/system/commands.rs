@@ -2658,7 +2658,10 @@ fn output_indicates_network_failure(output: &str) -> bool {
 ///
 /// ZCode is a desktop app that never touches `PATH` outside Linux, so its
 /// candidates are the app executables its installers write
-/// ([`zcode_app_candidates`]).
+/// ([`zcode_app_candidates`]). The editors are found through their app
+/// bundles and install folders when their command-line launcher is not on
+/// `PATH` ([`editor_launcher_candidates`]): Zed's DMG links no `zed`, VS Code
+/// and JetBrains IDEs link theirs only on request, and Xcode has none.
 ///
 /// Returns an empty vector for every other agent: they all install onto `PATH`,
 /// and guessing locations for them would only produce false positives.
@@ -2666,6 +2669,16 @@ pub fn off_path_candidates(bin: &str) -> Vec<PathBuf> {
     match bin {
         "openclaw" => openclaw_off_path_candidates(),
         "zcode" => zcode_app_candidates(),
+        "zed" | "code" | "idea" | "xcode" => match agent_home_dir() {
+            Ok(home) => editor_launcher_candidates(
+                bin,
+                HostOs::current(),
+                Path::new(&home),
+                Path::new("/Applications"),
+                &process_env,
+            ),
+            Err(_) => Vec::new(),
+        },
         _ => Vec::new(),
     }
 }
@@ -3491,60 +3504,163 @@ pub fn configure_droid(
     Ok(())
 }
 
+/// The desktop OS a path resolver answers for. Production passes
+/// [`HostOs::current`]; tests pass each one, so every OS's rules run anywhere.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum HostOs {
+    Macos,
+    Windows,
+    Linux,
+}
+
+impl HostOs {
+    pub(crate) fn current() -> Self {
+        if cfg!(target_os = "macos") {
+            HostOs::Macos
+        } else if cfg!(windows) {
+            HostOs::Windows
+        } else {
+            HostOs::Linux
+        }
+    }
+}
+
+/// Reads an environment variable for a path resolver; blank counts as unset.
+pub(crate) type EnvLookup<'a> = &'a dyn Fn(&str) -> Option<String>;
+
+/// The [`EnvLookup`] production uses: this process's environment.
+pub(crate) fn process_env(name: &str) -> Option<String> {
+    std::env::var(name).ok().filter(|v| !v.trim().is_empty())
+}
+
+/// Sidecar next to an editor's config file that holds what a Connect replaced
+/// there (`{ "<key path>": <previous value> }`), so Disconnect can put it back.
+fn editor_sidecar_path(config: &Path) -> PathBuf {
+    let mut name = config.file_name().unwrap_or_default().to_os_string();
+    name.push(".atomic-chat-backup.json");
+    config.with_file_name(name)
+}
+
+/// Remember the value a Connect is about to replace at `key`, or forget an
+/// older one when there is none. Called only while the value is the user's.
+fn editor_sidecar_remember(
+    config: &Path,
+    key: &str,
+    previous: Option<&serde_json::Value>,
+) -> Result<(), String> {
+    let sidecar = editor_sidecar_path(config);
+    let Some(previous) = previous else {
+        editor_sidecar_forget(config);
+        return Ok(());
+    };
+    let mut text = serde_json::to_string_pretty(&serde_json::json!({ key: previous }))
+        .map_err(|e| e.to_string())?;
+    text.push('\n');
+    std::fs::write(&sidecar, text)
+        .map_err(|e| format!("Failed to write {}: {}", sidecar.display(), e))
+}
+
+/// The value remembered for `key`, if the sidecar has one.
+fn editor_sidecar_recall(config: &Path, key: &str) -> Option<serde_json::Value> {
+    let text = std::fs::read_to_string(editor_sidecar_path(config)).ok()?;
+    serde_json::from_str::<serde_json::Value>(&text)
+        .ok()?
+        .get(key)
+        .cloned()
+}
+
+fn editor_sidecar_forget(config: &Path) {
+    let _ = std::fs::remove_file(editor_sidecar_path(config));
+}
+
 /// Display name (and provider id) of the custom provider we register in Zed.
 pub(crate) const ZED_PROVIDER_ID: &str = "Atomic Chat";
+/// Zed requires a `max_tokens` for every model. With the served window
+/// unknown, write what earlier releases always wrote.
+const ZED_FALLBACK_CONTEXT: u32 = 32768;
+const ZED_MAX_OUTPUT_TOKENS: u32 = 8192;
+/// Sidecar key for the agent model a Connect replaced.
+const ZED_DEFAULT_MODEL_KEY: &str = "agent.default_model";
 
-/// Configure Zed by upserting a custom OpenAI-compatible provider named
-/// "Atomic Chat" under `language_models.openai_compatible` in
-/// `~/.config/zed/settings.json`, and (when a model is running) selecting it as
-/// the agent's default model.
-///
-/// We deliberately use Zed's built-in `openai_compatible` mechanism rather than
-/// the native `atomic_chat` provider: `openai_compatible` ships in every stock
-/// Zed release, so the integration works without building a custom Zed. The
-/// tradeoff is that stock Zed can't auto-discover models (we list the running
-/// one) and marks the provider "authenticated" only once a key is present — so
-/// we also seed the `ATOMIC_CHAT_API_KEY` env var on launch (see `launch_zed`).
-///
-/// Zed reads `settings.json` as JSONC (comments, trailing commas), so we parse
-/// leniently with json5 and re-serialize as strict JSON — any comments are
-/// dropped on write, every other setting is preserved.
-#[tauri::command]
-pub fn configure_zed(
-    api_url: String,
-    model: Option<String>,
-    // Accepted for call-site symmetry with the other agents. Zed reads the
-    // provider key from its keychain / the ATOMIC_CHAT_API_KEY env var, not
-    // from settings.json, so we don't persist it here.
-    api_key: Option<String>,
-    // The window the served model was loaded with, when the app knows it;
-    // the agent is told so it compacts before the server refuses.
+/// Zed's config directory, resolved the way Zed's own `paths::config_dir`
+/// does: `%APPDATA%\Zed` on Windows, `$XDG_CONFIG_HOME/zed` (else
+/// `~/.config/zed`) on Linux, `~/.config/zed` on macOS.
+pub(crate) fn zed_config_dir_for(os: HostOs, home: &Path, env: EnvLookup) -> PathBuf {
+    match os {
+        HostOs::Windows => env("APPDATA")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join("AppData").join("Roaming"))
+            .join("Zed"),
+        HostOs::Linux => env("XDG_CONFIG_HOME")
+            .filter(|dir| dir.starts_with('/'))
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join(".config"))
+            .join("zed"),
+        HostOs::Macos => home.join(".config").join("zed"),
+    }
+}
+
+/// [`zed_config_dir_for`] on this machine.
+pub(crate) fn zed_config_dir() -> Result<PathBuf, String> {
+    let home = agent_home_dir()?;
+    Ok(zed_config_dir_for(
+        HostOs::current(),
+        Path::new(&home),
+        &process_env,
+    ))
+}
+
+/// `max_tokens` and `max_output_tokens` for the served model: its real window
+/// and a quarter of it for output (at most 8192), so Zed compacts in time.
+fn zed_model_limits(context_length: Option<u32>) -> (u32, u32) {
+    let context = context_length
+        .filter(|c| *c > 0)
+        .unwrap_or(ZED_FALLBACK_CONTEXT);
+    (context, (context / 4).clamp(1, ZED_MAX_OUTPUT_TOKENS))
+}
+
+fn zed_selection_is_ours(selection: Option<&serde_json::Value>) -> bool {
+    selection.is_some_and(|s| s.get("provider").and_then(|p| p.as_str()) == Some(ZED_PROVIDER_ID))
+}
+
+/// Read Zed's `settings.json` the way Zed does (JSONC). `None` when it is
+/// missing or blank.
+fn read_zed_settings(path: &Path) -> Result<Option<serde_json::Value>, String> {
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(format!("Failed to read {}: {}", path.display(), e)),
+    };
+    if text.trim().is_empty() {
+        return Ok(None);
+    }
+    json5::from_str(&text).map(Some).map_err(|e| {
+        format!(
+            "Could not parse {}: {}. Fix the reported location and try again.",
+            path.display(),
+            e
+        )
+    })
+}
+
+fn write_zed_settings(path: &Path, root: &serde_json::Value) -> Result<(), String> {
+    let pretty = serde_json::to_string_pretty(root).map_err(|e| e.to_string())?;
+    std::fs::write(path, pretty + "\n")
+        .map_err(|e| format!("Failed to write {}: {}", path.display(), e))
+}
+
+/// Filesystem half of [`configure_zed`], on a resolved Zed config directory.
+fn configure_zed_in(
+    dir: &Path,
+    api_url: &str,
+    model: Option<&str>,
     context_length: Option<u32>,
 ) -> Result<(), String> {
-    let _ = context_length;
-    let _ = api_key;
-    let home = agent_home_dir()?;
-    let dir = PathBuf::from(&home).join(".config").join("zed");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create ~/.config/zed: {}", e))?;
+    std::fs::create_dir_all(dir)
+        .map_err(|e| format!("Failed to create {}: {}", dir.display(), e))?;
     let path = dir.join("settings.json");
 
-    let mut root: serde_json::Value = if path.exists() {
-        let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-        if text.trim().is_empty() {
-            serde_json::json!({})
-        } else {
-            json5::from_str(&text).map_err(|e| {
-                format!(
-                    "Could not parse {}: {}. Fix the reported location and try again.",
-                    path.display(),
-                    e
-                )
-            })?
-        }
-    } else {
-        serde_json::json!({})
-    };
-
+    let mut root = read_zed_settings(&path)?.unwrap_or_else(|| serde_json::json!({}));
     let obj = root
         .as_object_mut()
         .ok_or_else(|| "settings.json is not a JSON object".to_string())?;
@@ -3569,16 +3685,20 @@ pub fn configure_zed(
     // Stock Zed has no model auto-discovery for openai_compatible providers, so
     // we advertise the currently-running model. If none is running we still
     // register the provider (empty model list) so it appears in Zed's UI.
+    let model = model.filter(|m| !m.is_empty());
     let mut available_models = Vec::new();
-    if let Some(model) = model.as_deref().filter(|m| !m.is_empty()) {
+    if let Some(model) = model {
+        let (max_tokens, max_output_tokens) = zed_model_limits(context_length);
         available_models.push(serde_json::json!({
             "name": model,
             "display_name": model,
-            "max_tokens": 32768,
-            "max_output_tokens": 8192,
+            "max_tokens": max_tokens,
+            "max_output_tokens": max_output_tokens,
             "capabilities": {
                 "tools": true,
-                "images": true,
+                // Zed's own default: the app does not know whether the served
+                // model takes images, and a text-only one rejects them.
+                "images": false,
                 "parallel_tool_calls": false,
                 "prompt_cache_key": false
             }
@@ -3595,32 +3715,229 @@ pub fn configure_zed(
 
     // Select our model as the agent's default so Zed opens on it without a
     // manual pick. For openai_compatible providers the provider id is the map
-    // key we just used (ZED_PROVIDER_ID).
-    if let Some(model) = model.as_deref().filter(|m| !m.is_empty()) {
+    // key we just used (ZED_PROVIDER_ID). The user's own pick is kept aside
+    // for Disconnect.
+    if let Some(model) = model {
         let agent = obj.entry("agent").or_insert_with(|| serde_json::json!({}));
         if !agent.is_object() {
             *agent = serde_json::json!({});
         }
-        agent.as_object_mut().unwrap().insert(
+        let agent = agent.as_object_mut().unwrap();
+        let previous = agent.get("default_model");
+        if !zed_selection_is_ours(previous) {
+            editor_sidecar_remember(&path, ZED_DEFAULT_MODEL_KEY, previous)?;
+        }
+        agent.insert(
             "default_model".to_string(),
             serde_json::json!({ "provider": ZED_PROVIDER_ID, "model": model }),
         );
     }
 
-    let pretty = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
-    std::fs::write(&path, pretty + "\n")
-        .map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;
-    log::info!("Zed configured: api_url={}, model={:?}", api_url, model);
+    write_zed_settings(&path, &root)?;
+    log::info!(
+        "Zed configured: api_url={}, model={:?}, file={}",
+        api_url,
+        model,
+        path.display()
+    );
     Ok(())
+}
+
+/// Configure Zed by upserting a custom OpenAI-compatible provider named
+/// "Atomic Chat" under `language_models.openai_compatible` in Zed's
+/// `settings.json` ([`zed_config_dir`]), and (when a model is running)
+/// selecting it as the agent's default model.
+///
+/// `openai_compatible` ships in every stock Zed release. Its tradeoffs: Zed
+/// can't auto-discover models (we list the running one with its real window),
+/// and it marks the provider "authenticated" only once a key is present — so
+/// we also seed the `ATOMIC_CHAT_API_KEY` env var on launch (see `launch_zed`).
+///
+/// Zed reads `settings.json` as JSONC (comments, trailing commas), so we parse
+/// leniently with json5 and re-serialize as strict JSON — any comments are
+/// dropped on write, every other setting is preserved.
+#[tauri::command]
+pub fn configure_zed(
+    api_url: String,
+    model: Option<String>,
+    // Accepted for call-site symmetry with the other agents. Zed reads the
+    // provider key from its keychain / the ATOMIC_CHAT_API_KEY env var, not
+    // from settings.json, so we don't persist it here.
+    api_key: Option<String>,
+    // The window the served model was loaded with, when the app knows it;
+    // the agent is told so it compacts before the server refuses.
+    context_length: Option<u32>,
+) -> Result<(), String> {
+    let _ = api_key;
+    configure_zed_in(
+        &zed_config_dir()?,
+        &api_url,
+        model.as_deref(),
+        context_length,
+    )
+}
+
+/// Undo [`configure_zed_in`]: drop our provider and, while the agent still
+/// defaults to it, put back the model the user had before (or no default).
+/// A default the user changed since is theirs and stays.
+pub(crate) fn disconnect_zed_in(dir: &Path) -> Result<(), String> {
+    let path = dir.join("settings.json");
+    let Some(mut root) = read_zed_settings(&path)? else {
+        editor_sidecar_forget(&path);
+        return Ok(());
+    };
+    let mut changed = false;
+    if let Some(obj) = root.as_object_mut() {
+        if let Some(language_models) = obj
+            .get_mut("language_models")
+            .and_then(|v| v.as_object_mut())
+        {
+            if let Some(compatible) = language_models
+                .get_mut("openai_compatible")
+                .and_then(|v| v.as_object_mut())
+            {
+                if compatible.remove(ZED_PROVIDER_ID).is_some() {
+                    changed = true;
+                    if compatible.is_empty() {
+                        language_models.remove("openai_compatible");
+                    }
+                }
+            }
+            if changed && language_models.is_empty() {
+                obj.remove("language_models");
+            }
+        }
+        if let Some(agent) = obj.get_mut("agent").and_then(|v| v.as_object_mut()) {
+            if zed_selection_is_ours(agent.get("default_model")) {
+                match editor_sidecar_recall(&path, ZED_DEFAULT_MODEL_KEY) {
+                    Some(previous) => agent.insert("default_model".to_string(), previous),
+                    None => agent.remove("default_model"),
+                };
+                changed = true;
+                if agent.is_empty() {
+                    obj.remove("agent");
+                }
+            }
+        }
+    }
+    if changed {
+        write_zed_settings(&path, &root)?;
+        log::info!("Zed disconnected from Atomic Chat: {}", path.display());
+    }
+    editor_sidecar_forget(&path);
+    Ok(())
+}
+
+/// Where Zed's installers put its `zed` CLI when it is not on `PATH`: the
+/// macOS app bundle (the DMG install never links one), `~/.local/bin` (the
+/// install script's link, often not on `PATH`), the Linux tarball, and the
+/// Windows installer's `bin` folder (per user, or for all users).
+fn zed_cli_candidates(os: HostOs, home: &Path, env: EnvLookup) -> Vec<PathBuf> {
+    match os {
+        HostOs::Macos => {
+            let mut out = vec![home.join(".local").join("bin").join("zed")];
+            for root in [PathBuf::from("/Applications"), home.join("Applications")] {
+                for app in ["Zed.app", "Zed Preview.app"] {
+                    out.push(root.join(app).join("Contents").join("MacOS").join("cli"));
+                }
+            }
+            out
+        }
+        HostOs::Linux => vec![
+            home.join(".local").join("bin").join("zed"),
+            home.join(".local").join("zed.app").join("bin").join("zed"),
+            home.join(".local")
+                .join("zed-preview.app")
+                .join("bin")
+                .join("zed"),
+        ],
+        HostOs::Windows => zed_windows_install_dirs(home, env)
+            .into_iter()
+            .map(|dir| dir.join("bin").join("zed.exe"))
+            .collect(),
+    }
+}
+
+/// Zed's editor executables, started directly when no CLI can be run.
+fn zed_app_candidates(os: HostOs, home: &Path, env: EnvLookup) -> Vec<PathBuf> {
+    match os {
+        HostOs::Macos => [PathBuf::from("/Applications"), home.join("Applications")]
+            .into_iter()
+            .map(|root| {
+                root.join("Zed.app")
+                    .join("Contents")
+                    .join("MacOS")
+                    .join("zed")
+            })
+            .collect(),
+        HostOs::Linux => Vec::new(),
+        HostOs::Windows => zed_windows_install_dirs(home, env)
+            .into_iter()
+            .map(|dir| dir.join("Zed.exe"))
+            .collect(),
+    }
+}
+
+/// The Inno Setup installer's `{autopf}\Zed`: per user unless run elevated.
+fn zed_windows_install_dirs(home: &Path, env: EnvLookup) -> Vec<PathBuf> {
+    let local = env("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home.join("AppData").join("Local"));
+    let mut out = vec![local.join("Programs").join("Zed")];
+    if let Some(program_files) = env("ProgramFiles") {
+        out.push(PathBuf::from(program_files).join("Zed"));
+    }
+    out
+}
+
+/// Whether a Zed launcher is the editor itself (started as is) rather than
+/// the `zed` CLI (started with `--foreground` so the editor inherits our env).
+fn zed_is_app_binary(path: &Path) -> bool {
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    let parent = path
+        .parent()
+        .and_then(|p| p.file_name())
+        .map(|n| n.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+    match name.as_str() {
+        "zed-editor" => true,
+        "zed" => parent == "macos",
+        "zed.exe" => parent != "bin",
+        _ => false,
+    }
+}
+
+/// What `launch_zed` tries, in order: the launcher detection found, the `zed`
+/// on `PATH`, then every known install location.
+fn zed_launch_candidates(
+    os: HostOs,
+    home: &Path,
+    env: EnvLookup,
+    detected: Option<&Path>,
+) -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = detected.into_iter().map(Path::to_path_buf).collect();
+    out.push(PathBuf::from("zed"));
+    for candidate in zed_cli_candidates(os, home, env)
+        .into_iter()
+        .chain(zed_app_candidates(os, home, env))
+    {
+        if candidate.is_file() && !out.contains(&candidate) {
+            out.push(candidate);
+        }
+    }
+    out
 }
 
 /// Launch the Zed editor GUI.
 ///
 /// Unlike the CLI agents we spawn in a terminal, Zed is a desktop editor whose
-/// agent lives in its own window, so we start the app directly. Prefer the
-/// `zed` CLI (resolved against the user's login-shell PATH so GUI builds find
-/// the `~/.local/bin` shim the installer drops); on macOS fall back to
-/// the native app executable when the CLI shim isn't present.
+/// agent lives in its own window, so we start the app directly: through the
+/// launcher detection found (`path`), else the `zed` CLI on the user's PATH
+/// (login-shell PATH on macOS/Linux, the registry's on Windows), else the
+/// CLI or editor executable at Zed's install locations.
 ///
 /// We seed `ATOMIC_CHAT_API_KEY` so the custom openai_compatible provider is
 /// authenticated without the user pasting a key: stock Zed reads the provider
@@ -3628,47 +3945,41 @@ pub fn configure_zed(
 /// as authenticated. A running editor cannot inherit a changed key; ask the
 /// user to quit it before reopening, preserving any unsaved work.
 #[tauri::command]
-pub fn launch_zed(api_key: Option<String>) -> Result<(), String> {
+pub fn launch_zed(api_key: Option<String>, path: Option<String>) -> Result<(), String> {
     let processes = sysinfo::System::new_with_specifics(
         sysinfo::RefreshKind::nothing().with_processes(sysinfo::ProcessRefreshKind::nothing()),
     );
     ensure_zed_stopped(processes.processes().values().any(|process| {
+        // Linux packages name the editor process `zed-editor`.
         matches!(
             process.name().to_string_lossy().to_lowercase().as_str(),
-            "zed" | "zed.exe"
+            "zed" | "zed.exe" | "zed-editor"
         )
     }))?;
 
-    let mut cmd = zed_launch_command(Path::new("zed"), api_key.as_deref(), true);
-    apply_login_path(&mut cmd);
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-    }
-    if cmd.spawn().is_ok() {
-        log::info!("Launched Zed via `zed` CLI");
-        return Ok(());
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        for bundle in [
-            PathBuf::from("/Applications/Zed.app"),
-            PathBuf::from(agent_home_dir()?).join("Applications/Zed.app"),
-        ] {
-            let binary = bundle.join("Contents/MacOS/zed");
-            if binary.is_file() {
-                zed_launch_command(&binary, api_key.as_deref(), false)
-                    .spawn()
-                    .map_err(|e| format!("Failed to launch Zed: {}", e))?;
-                log::info!("Launched Zed via its native executable");
-                return Ok(());
-            }
+    let home = agent_home_dir()?;
+    let detected = path.map(PathBuf::from).filter(|p| p.is_file());
+    for launcher in zed_launch_candidates(
+        HostOs::current(),
+        Path::new(&home),
+        &process_env,
+        detected.as_deref(),
+    ) {
+        let mut cmd =
+            zed_launch_command(&launcher, api_key.as_deref(), !zed_is_app_binary(&launcher));
+        apply_login_path(&mut cmd);
+        apply_runtime_path(&mut cmd);
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        }
+        if cmd.spawn().is_ok() {
+            log::info!("Launched Zed via {}", launcher.display());
+            return Ok(());
         }
     }
 
-    #[allow(unreachable_code)]
     Err("Could not launch Zed. Is it installed and on your PATH?".to_string())
 }
 
@@ -3715,11 +4026,10 @@ const ZCODE_PROVIDER_NAME: &str = "Atomic Chat";
 /// ZCode only admits a provider whose API key is non-blank; the local server
 /// ignores it when auth is off.
 const ZCODE_KEY_PLACEHOLDER: &str = "atomic";
-/// ZCode assumes 200K of context for any model it does not recognise — a wild
-/// over-claim for a local model, which then never compacts and overflows mid-
-/// turn. Declare what `DSH_CONTEXT_WINDOW` declares for the same reason.
-const ZCODE_CONTEXT_WINDOW: u64 = 65536;
-const ZCODE_MAX_OUTPUT_TOKENS: u64 = 8192;
+/// Output cap per turn; with the served window known, a quarter of it at most.
+const ZCODE_MAX_OUTPUT_TOKENS: u32 = 8192;
+/// Sidecar key for the default model selection a Connect replaced.
+const ZCODE_SELECTION_KEY: &str = "config.defaultModelSelection";
 /// ZCode's default request mapping for `openai-chat-completions` sends
 /// `thinking`, `enable_thinking`, `reasoning_effort` and `reasoning`, none of
 /// which llama-server reads, so its reasoning toggle would do nothing. llama-server
@@ -3795,11 +4105,16 @@ fn zcode_object<'a>(
 /// Only entries whose `providerId` is ours are replaced; every other provider,
 /// rule and key is carried over untouched. Split out from
 /// [`configure_zcode_in`] so the merge rules are testable without the disk.
+///
+/// `context_length` is the served window: written as the model's
+/// `contextWindow` so ZCode compacts in time. Unknown, ZCode's own default
+/// stands.
 fn zcode_patch_provider_config(
     existing: Option<serde_json::Value>,
     api_url: &str,
     model: &str,
     api_key: Option<&str>,
+    context_length: Option<u32>,
 ) -> Result<serde_json::Value, String> {
     let model = model.trim();
     if model.is_empty() {
@@ -3892,20 +4207,28 @@ fn zcode_patch_provider_config(
         "config.modelConfigRules.providerModelRules",
     )?;
     rules.retain(|rule| rule["providerId"] != ZCODE_PROVIDER_ID);
+    let context_length = context_length.filter(|c| *c > 0);
+    let mut properties = serde_json::Map::new();
+    if let Some(context) = context_length {
+        properties.insert("contextWindow".to_string(), serde_json::json!(context));
+    }
+    // A model id that happens to match one of ZCode's built-in vision patterns
+    // would otherwise inherit image input a text-only GGUF cannot take.
+    properties.insert(
+        "inputFormat".to_string(),
+        serde_json::json!({ "supportsImage": false }),
+    );
+    let max_output = context_length.map_or(ZCODE_MAX_OUTPUT_TOKENS, |c| {
+        (c / 4).clamp(1, ZCODE_MAX_OUTPUT_TOKENS)
+    });
     rules.push(serde_json::json!({
         "providerId": ZCODE_PROVIDER_ID,
         "modelId": model,
         "config": {
-            "properties": {
-                "contextWindow": ZCODE_CONTEXT_WINDOW,
-                // A model id that happens to match one of ZCode's built-in
-                // vision patterns would otherwise inherit image input a
-                // text-only GGUF cannot take.
-                "inputFormat": { "supportsImage": false }
-            },
+            "properties": properties,
             "optionSpecs": {
                 "maxOutputTokens": {
-                    "max": ZCODE_MAX_OUTPUT_TOKENS,
+                    "max": max_output,
                     "map": ZCODE_MAX_TOKENS_MAP
                 },
                 "reasoningLevel": {
@@ -3928,6 +4251,64 @@ fn zcode_patch_provider_config(
     );
 
     Ok(root)
+}
+
+fn zcode_selection_is_ours(selection: Option<&serde_json::Value>) -> bool {
+    selection.is_some_and(|s| s["providerId"] == ZCODE_PROVIDER_ID)
+}
+
+/// Undo [`zcode_patch_provider_config`] in place: drop our provider, its place
+/// in `providerOrder` and our model rules, and while the default selection is
+/// still ours, put back `previous` (the user's selection before Connect) or
+/// remove it. Returns whether anything changed.
+fn zcode_unpatch_provider_config(
+    root: &mut serde_json::Value,
+    previous: Option<serde_json::Value>,
+) -> Result<bool, String> {
+    let Some(root_obj) = root.as_object_mut() else {
+        return Ok(false);
+    };
+    match root_obj.get("schemaVersion").and_then(|v| v.as_u64()) {
+        Some(1) => {}
+        _ => {
+            return Err(
+                "ZCode's provider_config.json is in a format this version of Atomic Chat does \
+                 not know. Remove the Atomic Chat provider in ZCode's Model Settings."
+                    .to_string(),
+            )
+        }
+    }
+    let Some(config) = root_obj.get_mut("config").and_then(|v| v.as_object_mut()) else {
+        return Ok(false);
+    };
+    let mut changed = false;
+    let mut drop_ours = |list: Option<&mut serde_json::Value>| {
+        if let Some(list) = list.and_then(|v| v.as_array_mut()) {
+            let before = list.len();
+            list.retain(|item| {
+                item["providerId"] != ZCODE_PROVIDER_ID && *item != ZCODE_PROVIDER_ID
+            });
+            changed |= list.len() != before;
+        }
+    };
+    drop_ours(
+        config
+            .get_mut("providerConfigRules")
+            .and_then(|v| v.get_mut("providerRules")),
+    );
+    drop_ours(config.get_mut("providerOrder"));
+    if let Some(model_rules) = config.get_mut("modelConfigRules") {
+        drop_ours(model_rules.get_mut("providerModelRules"));
+        drop_ours(model_rules.get_mut("manualProviderModelRules"));
+    }
+    if zcode_selection_is_ours(config.get("defaultModelSelection")) {
+        match previous {
+            Some(previous) => config.insert("defaultModelSelection".to_string(), previous),
+            None => config.remove("defaultModelSelection"),
+        };
+        changed = true;
+    }
+    Ok(changed)
 }
 
 /// ZCode's lock around a config file (`packages/shared/src/node/atomicFileLock.ts`):
@@ -4038,6 +4419,7 @@ fn configure_zcode_in(
     api_url: &str,
     model: &str,
     api_key: Option<&str>,
+    context_length: Option<u32>,
 ) -> Result<(), String> {
     let path = dir.join("provider_config.json");
 
@@ -4077,9 +4459,17 @@ fn configure_zcode_in(
         )
     };
 
-    let patched = zcode_patch_provider_config(existing, api_url, model, api_key)?;
+    let previous = existing
+        .as_ref()
+        .and_then(|root| root.pointer("/config/defaultModelSelection"))
+        .cloned();
+    let patched = zcode_patch_provider_config(existing, api_url, model, api_key, context_length)?;
     let mut serialized = serde_json::to_string_pretty(&patched).map_err(|e| e.to_string())?;
     serialized.push('\n');
+    // The user's own default model, kept aside for Disconnect.
+    if !zcode_selection_is_ours(previous.as_ref()) {
+        editor_sidecar_remember(&path, ZCODE_SELECTION_KEY, previous.as_ref())?;
+    }
 
     // A file ZCode cannot validate costs the user every custom provider they
     // have, so keep the pre-Atomic version once. It holds their API keys too,
@@ -4115,43 +4505,178 @@ pub fn configure_zcode(
     // the agent is told so it compacts before the server refuses.
     context_length: Option<u32>,
 ) -> Result<(), String> {
-    let _ = context_length;
+    configure_zcode_in(
+        &resolve_zcode_config_dir()?,
+        &api_url,
+        &model,
+        api_key.as_deref(),
+        context_length,
+    )
+}
+
+/// [`zcode_config_dir`] on this machine.
+pub(crate) fn resolve_zcode_config_dir() -> Result<PathBuf, String> {
     let home = agent_home_dir()?;
     let env_base = std::env::var("ZCODE_DATA_BASE_DIR").ok();
-    let dir = zcode_config_dir(Path::new(&home), env_base.as_deref());
-    configure_zcode_in(&dir, &api_url, &model, api_key.as_deref())
+    Ok(zcode_config_dir(Path::new(&home), env_base.as_deref()))
+}
+
+/// Undo [`configure_zcode_in`] under ZCode's lock: see
+/// [`zcode_unpatch_provider_config`]. Nothing of ours there is a success.
+pub(crate) fn disconnect_zcode_in(dir: &Path) -> Result<(), String> {
+    let path = dir.join("provider_config.json");
+    if !path.exists() {
+        editor_sidecar_forget(&path);
+        return Ok(());
+    }
+    let _lock = acquire_zcode_lock(&path, ZCODE_LOCK_MAX_WAIT, ZCODE_LOCK_STALE_AFTER)?;
+    let text = std::fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+    if !text.trim().is_empty() {
+        let mut root = serde_json::from_str::<serde_json::Value>(&text).map_err(|e| {
+            format!(
+                "Could not parse {}: {}. Fix or remove it, then disconnect again.",
+                path.display(),
+                e
+            )
+        })?;
+        let previous = editor_sidecar_recall(&path, ZCODE_SELECTION_KEY);
+        if zcode_unpatch_provider_config(&mut root, previous)? {
+            let mut serialized = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
+            serialized.push('\n');
+            write_atomically(&path, serialized.as_bytes())?;
+            restrict_to_owner(&path);
+            log::info!("ZCode disconnected from Atomic Chat: {}", path.display());
+        }
+    }
+    editor_sidecar_forget(&path);
+    Ok(())
 }
 
 /// Where each ZCode installer puts the desktop app's executable. The app puts
 /// nothing on `PATH` except on Linux, where the deb/rpm packages also link
 /// `/usr/bin/zcode`, so without these the Launch page reports ZCode missing.
+/// Covers the "ZCode Preview" flavor, AppImages in the usual download folders
+/// and, on Windows, a folder the user picked in the installer.
 fn zcode_app_candidates() -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    #[cfg(target_os = "macos")]
-    {
-        out.push(PathBuf::from(
-            "/Applications/ZCode.app/Contents/MacOS/ZCode",
-        ));
-        if let Ok(home) = agent_home_dir() {
-            out.push(PathBuf::from(home).join("Applications/ZCode.app/Contents/MacOS/ZCode"));
-        }
-    }
+    let Ok(home) = agent_home_dir() else {
+        return Vec::new();
+    };
+    #[allow(unused_mut)]
+    let mut out = zcode_app_candidates_for(HostOs::current(), Path::new(&home), &process_env);
     #[cfg(windows)]
-    {
-        // NSIS installs per user under `%LOCALAPPDATA%\Programs` and for all
-        // users under `%ProgramFiles%`; both are the installer's defaults.
-        for (var, sub) in [
-            ("LOCALAPPDATA", "Programs\\ZCode"),
-            ("ProgramFiles", "ZCode"),
-        ] {
-            if let Some(root) = std::env::var(var).ok().filter(|v| !v.is_empty()) {
-                out.push(PathBuf::from(root).join(sub).join("ZCode.exe"));
+    out.extend(zcode_registered_executables());
+    out
+}
+
+/// [`zcode_app_candidates`] without the registry, for any OS.
+fn zcode_app_candidates_for(os: HostOs, home: &Path, env: EnvLookup) -> Vec<PathBuf> {
+    const FLAVORS: [(&str, &str); 2] = [("ZCode", "zcode"), ("ZCode Preview", "zcode-preview")];
+    let mut out = Vec::new();
+    match os {
+        HostOs::Macos => {
+            for root in [PathBuf::from("/Applications"), home.join("Applications")] {
+                for (product, _) in FLAVORS {
+                    out.push(
+                        root.join(format!("{product}.app"))
+                            .join("Contents")
+                            .join("MacOS")
+                            .join(product),
+                    );
+                }
             }
         }
+        HostOs::Windows => {
+            // NSIS installs per user under `%LOCALAPPDATA%\Programs` and for
+            // all users under `%ProgramFiles%`; both are the installer's
+            // defaults.
+            let roots = [
+                env("LOCALAPPDATA").map(|root| PathBuf::from(root).join("Programs")),
+                env("ProgramFiles").map(PathBuf::from),
+            ];
+            for root in roots.into_iter().flatten() {
+                for (product, _) in FLAVORS {
+                    out.push(root.join(product).join(format!("{product}.exe")));
+                }
+            }
+        }
+        HostOs::Linux => {
+            for (product, exe) in FLAVORS {
+                out.push(PathBuf::from("/opt").join(product).join(exe));
+                if exe != "zcode" {
+                    out.push(PathBuf::from("/usr/bin").join(exe));
+                }
+            }
+            out.extend(zcode_appimages(&[
+                home.join("Applications"),
+                home.join("AppImages"),
+                home.join("Downloads"),
+                home.join(".local").join("bin"),
+            ]));
+        }
     }
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        out.push(PathBuf::from("/opt/ZCode/zcode"));
+    out
+}
+
+/// `ZCode*.AppImage` files directly in `dirs`, newest first.
+fn zcode_appimages(dirs: &[PathBuf]) -> Vec<PathBuf> {
+    let mut found: Vec<(std::time::SystemTime, PathBuf)> = dirs
+        .iter()
+        .filter_map(|dir| std::fs::read_dir(dir).ok())
+        .flat_map(|entries| entries.flatten())
+        .filter(|entry| {
+            let name = entry.file_name().to_string_lossy().to_lowercase();
+            name.starts_with("zcode") && name.ends_with(".appimage")
+        })
+        .filter_map(|entry| {
+            let modified = entry.metadata().ok()?.modified().ok()?;
+            Some((modified, entry.path()))
+        })
+        .collect();
+    found.sort_by(|a, b| b.0.cmp(&a.0));
+    found.into_iter().map(|(_, path)| path).collect()
+}
+
+/// The executable an uninstall entry's `DisplayIcon` names
+/// (`"C:\…\ZCode.exe",0` as electron-builder writes it).
+#[cfg_attr(not(windows), allow(dead_code))]
+fn exe_from_display_icon(icon: &str) -> Option<PathBuf> {
+    let icon = icon.trim();
+    let icon = match icon.rsplit_once(',') {
+        Some((path, index)) if index.trim().parse::<i32>().is_ok() => path,
+        _ => icon,
+    };
+    let path = icon.trim().trim_matches('"');
+    (!path.is_empty()).then(|| PathBuf::from(path))
+}
+
+/// ZCode installs registered in the Windows uninstall list, which is where a
+/// folder picked in the installer (`allowToChangeInstallationDirectory`)
+/// is recorded.
+#[cfg(windows)]
+fn zcode_registered_executables() -> Vec<PathBuf> {
+    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+    use winreg::RegKey;
+
+    const UNINSTALL: &str = "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall";
+    let mut out = Vec::new();
+    for hive in [HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE] {
+        let Ok(uninstall) = RegKey::predef(hive).open_subkey(UNINSTALL) else {
+            continue;
+        };
+        for key_name in uninstall.enum_keys().flatten() {
+            let Ok(entry) = uninstall.open_subkey(&key_name) else {
+                continue;
+            };
+            let name: String = entry.get_value("DisplayName").unwrap_or_default();
+            if !name.starts_with("ZCode") {
+                continue;
+            }
+            let icon: String = entry.get_value("DisplayIcon").unwrap_or_default();
+            if let Some(exe) = exe_from_display_icon(&icon) {
+                out.push(exe);
+            }
+        }
     }
     out
 }
@@ -6171,34 +6696,246 @@ pub fn open_agent_terminal(command: String, proxy: Option<ProxyEnv>) -> Result<(
     Ok(())
 }
 
+/// Launchers JetBrains IDEs ship, IntelliJ IDEA first: the executable in each
+/// macOS bundle, `<name>64.exe` on Windows, and the names Toolbox gives its
+/// shell scripts.
+const JETBRAINS_LAUNCHERS: [&str; 10] = [
+    "idea",
+    "pycharm",
+    "webstorm",
+    "phpstorm",
+    "rubymine",
+    "clion",
+    "goland",
+    "rider",
+    "datagrip",
+    "rustrover",
+];
+
+/// Where an editor's launcher lives when it is not on `PATH`, keyed by its
+/// detect binary (`integrations.ts`). `system_apps` is macOS's
+/// `/Applications`; tests point it, `home` and `env` at a temp dir.
+fn editor_launcher_candidates(
+    bin: &str,
+    os: HostOs,
+    home: &Path,
+    system_apps: &Path,
+    env: EnvLookup,
+) -> Vec<PathBuf> {
+    let mac_roots = [system_apps.to_path_buf(), home.join("Applications")];
+    let local = env("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home.join("AppData").join("Local"));
+    let program_files = env("ProgramFiles").map(PathBuf::from);
+    match (bin, os) {
+        ("zed", _) => zed_cli_candidates(os, home, env)
+            .into_iter()
+            .chain(zed_app_candidates(os, home, env))
+            .collect(),
+        ("code", HostOs::Macos) => mac_roots
+            .iter()
+            .map(|root| {
+                root.join("Visual Studio Code.app")
+                    .join("Contents")
+                    .join("Resources")
+                    .join("app")
+                    .join("bin")
+                    .join("code")
+            })
+            .collect(),
+        // The user installer's default, then the system installer's.
+        ("code", HostOs::Windows) => [Some(local.join("Programs")), program_files]
+            .into_iter()
+            .flatten()
+            .map(|root| root.join("Microsoft VS Code").join("Code.exe"))
+            .collect(),
+        ("idea", HostOs::Macos) => {
+            let mut out = app_bundle_executables(&mac_roots, |_| true, &JETBRAINS_LAUNCHERS);
+            out.extend(files_named(
+                &home
+                    .join("Library")
+                    .join("Application Support")
+                    .join("JetBrains")
+                    .join("Toolbox")
+                    .join("scripts"),
+                JETBRAINS_LAUNCHERS.iter().map(|name| name.to_string()),
+            ));
+            out
+        }
+        ("idea", HostOs::Windows) => {
+            // Toolbox's shell scripts, then the IDEs Toolbox 2 installs under
+            // `%LOCALAPPDATA%\Programs\<IDE>` and the standalone installers
+            // put under `%ProgramFiles%\JetBrains\<IDE> <version>`.
+            let mut out = files_named(
+                &local.join("JetBrains").join("Toolbox").join("scripts"),
+                JETBRAINS_LAUNCHERS.iter().map(|name| format!("{name}.cmd")),
+            );
+            let roots: Vec<PathBuf> = [
+                Some(local.join("Programs")),
+                program_files.map(|root| root.join("JetBrains")),
+            ]
+            .into_iter()
+            .flatten()
+            .collect();
+            for name in JETBRAINS_LAUNCHERS {
+                out.extend(files_one_level_down(
+                    &roots,
+                    &Path::new("bin").join(format!("{name}64.exe")),
+                ));
+            }
+            out
+        }
+        ("idea", HostOs::Linux) => files_named(
+            &home
+                .join(".local")
+                .join("share")
+                .join("JetBrains")
+                .join("Toolbox")
+                .join("scripts"),
+            JETBRAINS_LAUNCHERS.iter().map(|name| name.to_string()),
+        ),
+        // Every Xcode the user keeps (`Xcode.app`, `Xcode-beta.app`, …);
+        // `/usr/bin/xed` is a shim present without Xcode, so it proves nothing.
+        ("xcode", HostOs::Macos) => {
+            app_bundle_executables(&mac_roots, |name| name.starts_with("Xcode"), &["Xcode"])
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// `<bundle>.app/Contents/MacOS/<exe>` for the app bundles directly in `roots`
+/// whose name passes `wanted`: by `exes` preference, then shortest bundle name
+/// first (`Xcode.app` before `Xcode-beta.app`).
+fn app_bundle_executables(
+    roots: &[PathBuf],
+    wanted: impl Fn(&str) -> bool,
+    exes: &[&str],
+) -> Vec<PathBuf> {
+    let mut bundles: Vec<PathBuf> = roots
+        .iter()
+        .filter_map(|root| std::fs::read_dir(root).ok())
+        .flat_map(|entries| entries.flatten())
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension().is_some_and(|ext| ext == "app")
+                && path
+                    .file_stem()
+                    .is_some_and(|stem| wanted(&stem.to_string_lossy()))
+        })
+        .collect();
+    bundles.sort_by_key(|bundle| {
+        let name = bundle.file_name().unwrap_or_default().to_os_string();
+        (name.len(), name)
+    });
+    let mut out = Vec::new();
+    for exe in exes {
+        for bundle in &bundles {
+            let candidate = bundle.join("Contents").join("MacOS").join(exe);
+            if candidate.is_file() && !out.contains(&candidate) {
+                out.push(candidate);
+            }
+        }
+    }
+    out
+}
+
+/// The files among `names` that exist in `dir`, in `names` order.
+fn files_named(dir: &Path, names: impl Iterator<Item = String>) -> Vec<PathBuf> {
+    names
+        .map(|name| dir.join(name))
+        .filter(|path| path.is_file())
+        .collect()
+}
+
+/// `<root>/<any folder>/<rel>` files, for installs whose folder carries a
+/// product name or version.
+fn files_one_level_down(roots: &[PathBuf], rel: &Path) -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = roots
+        .iter()
+        .filter_map(|root| std::fs::read_dir(root).ok())
+        .flat_map(|entries| entries.flatten())
+        .map(|entry| entry.path().join(rel))
+        .filter(|path| path.is_file())
+        .collect();
+    out.sort();
+    out
+}
+
+/// The `.app` bundle a path sits in, at any depth.
+fn enclosing_app_bundle(path: &Path) -> Option<PathBuf> {
+    path.ancestors()
+        .skip(1)
+        .find(|dir| dir.extension().is_some_and(|ext| ext == "app"))
+        .map(Path::to_path_buf)
+}
+
+/// The first `<dir>/<name>.<ext>` along `path`, trying `exts` in order in
+/// each folder — how cmd.exe resolves a bare `code` to `code.cmd`, which
+/// `Command::new` does not (it only appends `.exe`).
+fn find_launcher_in_path(name: &str, path: &std::ffi::OsStr, exts: &[&str]) -> Option<PathBuf> {
+    std::env::split_paths(path).find_map(|dir| {
+        exts.iter()
+            .map(|ext| dir.join(format!("{name}.{ext}")))
+            .find(|candidate| candidate.is_file())
+    })
+}
+
+/// How to start an editor launcher: an app inside a macOS bundle through
+/// LaunchServices (which also just focuses a running one), a Windows
+/// `.cmd`/`.bat` script (VS Code's `bin\code.cmd`, Toolbox's scripts) through
+/// `cmd /C`, anything else directly.
+fn editor_command(os: HostOs, launcher: &Path) -> std::process::Command {
+    use std::process::Command;
+    if os == HostOs::Macos {
+        if let Some(bundle) = enclosing_app_bundle(launcher) {
+            let mut cmd = Command::new("open");
+            cmd.arg("-a").arg(bundle);
+            return cmd;
+        }
+    }
+    let script = launcher
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("cmd") || ext.eq_ignore_ascii_case("bat"));
+    if os == HostOs::Windows && script {
+        let mut cmd = Command::new("cmd");
+        cmd.arg("/C").arg(launcher);
+        return cmd;
+    }
+    Command::new(launcher)
+}
+
 /// Launch a GUI editor for the "IDEs & Editors" integrations (VS Code,
 /// JetBrains, Xcode).
 ///
 /// Unlike the CLI coding agents, these editors have no writable provider config
-/// — VS Code stores Copilot BYOK in secret storage, and JetBrains/Xcode keep
-/// the provider in IDE settings — so this command only *opens* the editor. The
-/// connection details still have to be pasted into the editor's own UI (the
-/// card shows those manual steps and a "Copy settings" button).
+/// — VS Code keeps custom endpoints in its own model settings, and
+/// JetBrains/Xcode keep the provider in IDE settings — so this command only
+/// *opens* the editor. The connection details still have to be pasted into the
+/// editor's own UI (the card shows those manual steps and a "Copy settings"
+/// button).
 ///
-/// Resolution order: try the editor's command-line launcher(s) on the user's
-/// login-shell PATH first (so custom installs are respected), then fall back to
+/// Resolution order: the editor's command-line launcher(s) on the user's PATH
+/// first (so custom installs are respected; on Windows the registry's PATH,
+/// re-read so a fresh install counts, and `.cmd` launchers run through
+/// `cmd /C`), then its install locations ([`editor_launcher_candidates`]), then
 /// the macOS app launcher (`open -a`). Returns an error if nothing was found.
 #[tauri::command]
 pub fn launch_editor(editor_id: String) -> Result<(), String> {
-    use std::process::{Command, Stdio};
+    use std::process::Stdio;
 
     // Spawn a detached GUI process, returning whether it started. A missing
     // binary makes `spawn` fail, which is how we fall through to the next
     // candidate / the platform launcher.
-    fn try_spawn(program: &str, args: &[&str]) -> bool {
-        let mut cmd = Command::new(program);
-        cmd.args(args)
-            .stdin(Stdio::null())
+    fn try_spawn(mut cmd: std::process::Command) -> bool {
+        cmd.stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
         // Find user-installed launchers (`code`, `idea`, …) even when Atomic
-        // Chat was started from Finder/Dock with a minimal PATH. No-op on Windows.
+        // Chat was started from Finder/Dock with a minimal PATH, and on
+        // Windows give the editor the PATH a fresh install wrote.
         apply_login_path(&mut cmd);
+        apply_runtime_path(&mut cmd);
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
@@ -6207,42 +6944,65 @@ pub fn launch_editor(editor_id: String) -> Result<(), String> {
         cmd.spawn().is_ok()
     }
 
-    // (CLI launchers to try in order, macOS .app name to fall back to).
-    let (clis, mac_app): (&[&str], Option<&str>) = match editor_id.as_str() {
-        "vscode" => (&["code"], Some("Visual Studio Code")),
+    // (CLI launchers to try in order, detect binary, macOS .app name).
+    let (clis, detect_bin, mac_app): (&[&str], &str, Option<&str>) = match editor_id.as_str() {
+        "vscode" => (&["code"], "code", Some("Visual Studio Code")),
         // JetBrains Toolbox installs a different launcher per IDE; try the
         // common ones so any installed JetBrains IDE opens.
-        "jetbrains" => (
-            &[
-                "idea",
-                "pycharm",
-                "webstorm",
-                "phpstorm",
-                "rubymine",
-                "clion",
-                "goland",
-                "rider",
-                "datagrip",
-                "rustrover",
-            ],
-            Some("IntelliJ IDEA"),
-        ),
+        "jetbrains" => (&JETBRAINS_LAUNCHERS, "idea", Some("IntelliJ IDEA")),
         // Xcode is macOS-only and ships no general-purpose launcher binary
         // (`xed` needs a file argument), so we open the app directly.
-        "xcode" => (&[], Some("Xcode")),
+        "xcode" => (&[], "xcode", Some("Xcode")),
         other => return Err(format!("Unknown editor: {}", other)),
     };
 
+    let os = HostOs::current();
+    let search_path = {
+        #[cfg(windows)]
+        let fresh = refresh_windows_path().map(std::ffi::OsString::from);
+        #[cfg(not(windows))]
+        let fresh: Option<std::ffi::OsString> = None;
+        fresh.or_else(|| std::env::var_os("PATH"))
+    };
     for cli in clis {
-        if try_spawn(cli, &[]) {
-            log::info!("Launched editor '{}' via '{}'", editor_id, cli);
+        let launcher = if os == HostOs::Windows {
+            search_path
+                .as_deref()
+                .and_then(|path| find_launcher_in_path(cli, path, &["exe", "cmd", "bat"]))
+        } else {
+            Some(PathBuf::from(cli))
+        };
+        if let Some(launcher) = launcher {
+            if try_spawn(editor_command(os, &launcher)) {
+                log::info!(
+                    "Launched editor '{}' via '{}'",
+                    editor_id,
+                    launcher.display()
+                );
+                return Ok(());
+            }
+        }
+    }
+
+    for launcher in off_path_candidates(detect_bin)
+        .into_iter()
+        .filter(|path| path.is_file())
+    {
+        if try_spawn(editor_command(os, &launcher)) {
+            log::info!(
+                "Launched editor '{}' via '{}'",
+                editor_id,
+                launcher.display()
+            );
             return Ok(());
         }
     }
 
     #[cfg(target_os = "macos")]
     if let Some(app) = mac_app {
-        if try_spawn("open", &["-a", app]) {
+        let mut cmd = std::process::Command::new("open");
+        cmd.args(["-a", app]);
+        if try_spawn(cmd) {
             log::info!("Launched editor '{}' via 'open -a {}'", editor_id, app);
             return Ok(());
         }
@@ -7196,8 +7956,9 @@ mod openclaw_tests {
         assert_eq!(parse_version("not a version"), None);
     }
 
-    /// Only OpenClaw's launcher and ZCode's desktop app live off PATH; guessing
-    /// paths for the other agents would only produce false positives.
+    /// Only OpenClaw's launcher, ZCode's desktop app and the editors live off
+    /// PATH; guessing paths for the other agents would only produce false
+    /// positives.
     #[test]
     fn off_path_candidates_cover_only_openclaw_and_zcode() {
         assert!(off_path_candidates("claude").is_empty());
@@ -7226,7 +7987,7 @@ mod zcode_tests {
     const URL: &str = "http://127.0.0.1:1337/v1";
 
     fn patch(existing: Option<serde_json::Value>, model: &str) -> serde_json::Value {
-        zcode_patch_provider_config(existing, URL, model, None).expect("patch must succeed")
+        zcode_patch_provider_config(existing, URL, model, None, None).expect("patch must succeed")
     }
 
     fn providers(root: &serde_json::Value) -> &Vec<serde_json::Value> {
@@ -7297,9 +8058,11 @@ mod zcode_tests {
         assert!(model_rules(&out, "manualProviderModelRules").is_empty());
         let rule = &model_rules(&out, "providerModelRules")[0];
         assert_eq!(rule["modelId"], "qwen3-4b");
+        // With the served window unknown, ZCode's own default stands.
+        assert!(rule["config"]["properties"].get("contextWindow").is_none());
         assert_eq!(
-            rule["config"]["properties"]["contextWindow"],
-            ZCODE_CONTEXT_WINDOW
+            rule["config"]["optionSpecs"]["maxOutputTokens"]["max"],
+            8192
         );
         assert_eq!(
             rule["config"]["optionSpecs"]["reasoningLevel"]["map"],
@@ -7319,7 +8082,7 @@ mod zcode_tests {
 
     #[test]
     fn uses_the_server_key_when_there_is_one() {
-        let out = zcode_patch_provider_config(None, URL, "m", Some(" sk-local ")).unwrap();
+        let out = zcode_patch_provider_config(None, URL, "m", Some(" sk-local "), None).unwrap();
         assert_eq!(providers(&out)[0]["config"]["access"]["apiKey"], "sk-local");
     }
 
@@ -7394,11 +8157,11 @@ mod zcode_tests {
             json!({ "schemaVersion": 1, "config": { "providerOrder": "atomic-chat" } }),
         ] {
             assert!(
-                zcode_patch_provider_config(Some(bad.clone()), URL, "m", None).is_err(),
+                zcode_patch_provider_config(Some(bad.clone()), URL, "m", None, None).is_err(),
                 "{bad} must be refused"
             );
         }
-        assert!(zcode_patch_provider_config(None, URL, "  ", None).is_err());
+        assert!(zcode_patch_provider_config(None, URL, "  ", None, None).is_err());
     }
 
     #[test]
@@ -7428,7 +8191,7 @@ mod zcode_tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("config.json"), "{}").unwrap();
 
-        let err = configure_zcode_in(dir.path(), URL, "m", None).unwrap_err();
+        let err = configure_zcode_in(dir.path(), URL, "m", None, None).unwrap_err();
         assert!(err.contains("Open ZCode once"), "{err}");
         assert!(!dir.path().join("provider_config.json").exists());
 
@@ -7438,7 +8201,7 @@ mod zcode_tests {
             user_file().to_string(),
         )
         .unwrap();
-        configure_zcode_in(dir.path(), URL, "m", None).unwrap();
+        configure_zcode_in(dir.path(), URL, "m", None, None).unwrap();
     }
 
     #[test]
@@ -7448,8 +8211,8 @@ mod zcode_tests {
         let original = user_file().to_string();
         std::fs::write(&path, &original).unwrap();
 
-        configure_zcode_in(dir.path(), URL, "qwen3-4b", None).unwrap();
-        configure_zcode_in(dir.path(), URL, "gemma-4", None).unwrap();
+        configure_zcode_in(dir.path(), URL, "qwen3-4b", None, None).unwrap();
+        configure_zcode_in(dir.path(), URL, "gemma-4", None, None).unwrap();
 
         let written: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
@@ -7477,7 +8240,7 @@ mod zcode_tests {
         let path = dir.path().join("provider_config.json");
         std::fs::write(&path, "{ not json").unwrap();
 
-        assert!(configure_zcode_in(dir.path(), URL, "m", None).is_err());
+        assert!(configure_zcode_in(dir.path(), URL, "m", None, None).is_err());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "{ not json");
     }
 
@@ -7510,6 +8273,497 @@ mod zcode_tests {
             Some(PathBuf::from("/Applications/ZCode.app"))
         );
         assert_eq!(macos_app_bundle(Path::new("/usr/bin/zcode")), None);
+    }
+
+    #[test]
+    fn writes_the_served_window_and_a_quarter_of_it_for_output() {
+        for (context, max_output) in [(65536, 8192), (16384, 4096), (8192, 2048)] {
+            let out = zcode_patch_provider_config(None, URL, "m", None, Some(context)).unwrap();
+            let rule = &model_rules(&out, "providerModelRules")[0]["config"];
+            assert_eq!(rule["properties"]["contextWindow"], context);
+            assert_eq!(rule["optionSpecs"]["maxOutputTokens"]["max"], max_output);
+        }
+        // A reconnect with another window rewrites it.
+        let first = patch(None, "m");
+        let again = zcode_patch_provider_config(Some(first), URL, "m", None, Some(32768)).unwrap();
+        let rules = model_rules(&again, "providerModelRules");
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0]["config"]["properties"]["contextWindow"], 32768);
+    }
+
+    fn read(dir: &Path) -> serde_json::Value {
+        serde_json::from_str(&std::fs::read_to_string(dir.join("provider_config.json")).unwrap())
+            .unwrap()
+    }
+
+    #[test]
+    fn disconnect_removes_ours_and_restores_the_users_default_model() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("provider_config.json");
+        std::fs::write(&path, user_file().to_string()).unwrap();
+
+        configure_zcode_in(dir.path(), URL, "qwen3-4b", None, Some(32768)).unwrap();
+        // A second Connect must not overwrite the remembered selection with ours.
+        configure_zcode_in(dir.path(), URL, "gemma-4", None, None).unwrap();
+        assert!(dir
+            .path()
+            .join("provider_config.json.atomic-chat-backup.json")
+            .exists());
+
+        disconnect_zcode_in(dir.path()).unwrap();
+        let after = read(dir.path());
+        assert_eq!(after["config"], user_file()["config"]);
+        assert!(!dir
+            .path()
+            .join("provider_config.json.atomic-chat-backup.json")
+            .exists());
+        assert!(!dir.path().join("provider_config.json.lock").exists());
+
+        // Nothing of ours left: a second Disconnect is a no-op success.
+        let text = std::fs::read_to_string(&path).unwrap();
+        disconnect_zcode_in(dir.path()).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+    }
+
+    #[test]
+    fn disconnect_keeps_a_default_the_user_picked_after_connect() {
+        let dir = tempfile::tempdir().unwrap();
+        configure_zcode_in(dir.path(), URL, "qwen3-4b", None, None).unwrap();
+        let mut picked = read(dir.path());
+        picked["config"]["defaultModelSelection"] =
+            json!({ "providerId": "new-provider", "modelId": "glm-5" });
+        std::fs::write(dir.path().join("provider_config.json"), picked.to_string()).unwrap();
+
+        disconnect_zcode_in(dir.path()).unwrap();
+        let after = read(dir.path());
+        assert_eq!(
+            after["config"]["defaultModelSelection"],
+            json!({ "providerId": "new-provider", "modelId": "glm-5" })
+        );
+        assert!(ours(providers(&after)).is_empty());
+        assert!(ours(model_rules(&after, "providerModelRules")).is_empty());
+    }
+
+    #[test]
+    fn disconnect_without_a_previous_default_removes_the_selection() {
+        let dir = tempfile::tempdir().unwrap();
+        configure_zcode_in(dir.path(), URL, "qwen3-4b", None, None).unwrap();
+        disconnect_zcode_in(dir.path()).unwrap();
+        let after = read(dir.path());
+        assert!(after["config"].get("defaultModelSelection").is_none());
+        assert!(providers(&after).is_empty());
+    }
+
+    #[test]
+    fn disconnect_of_a_zcode_never_connected_touches_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        disconnect_zcode_in(dir.path()).unwrap();
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+
+        let path = dir.path().join("provider_config.json");
+        let text = user_file().to_string();
+        std::fs::write(&path, &text).unwrap();
+        disconnect_zcode_in(dir.path()).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+    }
+
+    #[test]
+    fn app_candidates_cover_preview_builds_and_each_installer() {
+        let env = |name: &str| match name {
+            "LOCALAPPDATA" => Some(r"C:\Users\u\AppData\Local".to_string()),
+            "ProgramFiles" => Some(r"C:\Program Files".to_string()),
+            _ => None,
+        };
+        let home = Path::new("/Users/u");
+        let mac = zcode_app_candidates_for(HostOs::Macos, home, &env);
+        assert!(mac.contains(&PathBuf::from(
+            "/Applications/ZCode Preview.app/Contents/MacOS/ZCode Preview"
+        )));
+        assert!(mac.contains(&home.join("Applications/ZCode.app/Contents/MacOS/ZCode")));
+
+        let win = zcode_app_candidates_for(HostOs::Windows, home, &env);
+        assert!(win.contains(
+            &PathBuf::from(r"C:\Users\u\AppData\Local")
+                .join("Programs")
+                .join("ZCode")
+                .join("ZCode.exe")
+        ));
+        assert!(win.contains(
+            &PathBuf::from(r"C:\Program Files")
+                .join("ZCode Preview")
+                .join("ZCode Preview.exe")
+        ));
+
+        let linux_home = tempfile::tempdir().unwrap();
+        let downloads = linux_home.path().join("Downloads");
+        std::fs::create_dir_all(&downloads).unwrap();
+        std::fs::write(downloads.join("ZCode-1.4.0-linux-x86_64.AppImage"), "").unwrap();
+        std::fs::write(downloads.join("Other-1.0.AppImage"), "").unwrap();
+        let linux = zcode_app_candidates_for(HostOs::Linux, linux_home.path(), &env);
+        assert!(linux.contains(&PathBuf::from("/opt/ZCode Preview/zcode-preview")));
+        assert!(linux.contains(&PathBuf::from("/usr/bin/zcode-preview")));
+        assert!(linux.contains(&downloads.join("ZCode-1.4.0-linux-x86_64.AppImage")));
+        assert!(!linux.contains(&downloads.join("Other-1.0.AppImage")));
+    }
+
+    #[test]
+    fn reads_the_executable_from_an_uninstall_display_icon() {
+        assert_eq!(
+            exe_from_display_icon(r#""D:\Tools\ZCode\ZCode.exe",0"#),
+            Some(PathBuf::from(r"D:\Tools\ZCode\ZCode.exe"))
+        );
+        assert_eq!(
+            exe_from_display_icon(r"D:\Tools\ZCode\ZCode.exe"),
+            Some(PathBuf::from(r"D:\Tools\ZCode\ZCode.exe"))
+        );
+        assert_eq!(exe_from_display_icon("  "), None);
+    }
+}
+
+#[cfg(test)]
+mod editor_tests {
+    use super::*;
+    use serde_json::json;
+
+    const URL: &str = "http://127.0.0.1:1337/v1";
+
+    fn env_of(vars: &[(&str, &str)]) -> impl Fn(&str) -> Option<String> {
+        let vars: Vec<(String, String)> = vars
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        move |name| vars.iter().find(|(k, _)| k == name).map(|(_, v)| v.clone())
+    }
+
+    fn settings(dir: &Path) -> serde_json::Value {
+        serde_json::from_str(&std::fs::read_to_string(dir.join("settings.json")).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn zed_config_dir_matches_zed_on_each_os() {
+        let home = Path::new("/home/u");
+        let none = env_of(&[]);
+        assert_eq!(
+            zed_config_dir_for(HostOs::Macos, home, &none),
+            home.join(".config").join("zed")
+        );
+        // Linux honours an absolute XDG_CONFIG_HOME, as Zed (via `dirs`) does.
+        assert_eq!(
+            zed_config_dir_for(HostOs::Linux, home, &env_of(&[("XDG_CONFIG_HOME", "/xdg")])),
+            PathBuf::from("/xdg").join("zed")
+        );
+        assert_eq!(
+            zed_config_dir_for(HostOs::Linux, home, &env_of(&[("XDG_CONFIG_HOME", "rel")])),
+            home.join(".config").join("zed")
+        );
+        assert_eq!(
+            zed_config_dir_for(HostOs::Linux, home, &none),
+            home.join(".config").join("zed")
+        );
+        // Windows: Roaming AppData, never `%USERPROFILE%\.config`.
+        let win_home = Path::new(r"C:\Users\u");
+        assert_eq!(
+            zed_config_dir_for(
+                HostOs::Windows,
+                win_home,
+                &env_of(&[("APPDATA", r"C:\Users\u\AppData\Roaming")])
+            ),
+            PathBuf::from(r"C:\Users\u\AppData\Roaming").join("Zed")
+        );
+        assert_eq!(
+            zed_config_dir_for(HostOs::Windows, win_home, &none),
+            win_home.join("AppData").join("Roaming").join("Zed")
+        );
+    }
+
+    #[test]
+    fn zed_gets_the_served_window_and_no_image_input() {
+        let dir = tempfile::tempdir().unwrap();
+        configure_zed_in(dir.path(), URL, Some("qwen"), Some(16384)).unwrap();
+        let model = &settings(dir.path())["language_models"]["openai_compatible"][ZED_PROVIDER_ID]
+            ["available_models"][0];
+        assert_eq!(model["max_tokens"], 16384);
+        assert_eq!(model["max_output_tokens"], 4096);
+        assert_eq!(model["capabilities"]["images"], false);
+        assert_eq!(model["capabilities"]["tools"], true);
+
+        // Every Connect rewrites the window; unknown falls back to what Zed
+        // always got (it requires a value).
+        configure_zed_in(dir.path(), URL, Some("qwen"), Some(131072)).unwrap();
+        let model = &settings(dir.path())["language_models"]["openai_compatible"][ZED_PROVIDER_ID]
+            ["available_models"][0];
+        assert_eq!(model["max_tokens"], 131072);
+        assert_eq!(model["max_output_tokens"], 8192);
+        configure_zed_in(dir.path(), URL, Some("qwen"), None).unwrap();
+        let model = &settings(dir.path())["language_models"]["openai_compatible"][ZED_PROVIDER_ID]
+            ["available_models"][0];
+        assert_eq!(model["max_tokens"], 32768);
+        assert_eq!(model["max_output_tokens"], 8192);
+    }
+
+    #[test]
+    fn zed_disconnect_restores_the_users_default_model() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("settings.json"),
+            r#"{
+  // mine
+  "theme": "One Dark",
+  "language_models": { "ollama": { "api_url": "http://localhost:11434" } },
+  "agent": { "version": "2", "default_model": { "provider": "ollama", "model": "llama3.2" } },
+}"#,
+        )
+        .unwrap();
+
+        configure_zed_in(dir.path(), URL, Some("qwen"), Some(32768)).unwrap();
+        configure_zed_in(dir.path(), URL, Some("gemma"), Some(32768)).unwrap();
+        assert_eq!(
+            settings(dir.path())["agent"]["default_model"],
+            json!({ "provider": ZED_PROVIDER_ID, "model": "gemma" })
+        );
+
+        disconnect_zed_in(dir.path()).unwrap();
+        assert_eq!(
+            settings(dir.path()),
+            json!({
+                "theme": "One Dark",
+                "language_models": { "ollama": { "api_url": "http://localhost:11434" } },
+                "agent": { "version": "2", "default_model": { "provider": "ollama", "model": "llama3.2" } }
+            })
+        );
+        assert!(!dir
+            .path()
+            .join("settings.json.atomic-chat-backup.json")
+            .exists());
+    }
+
+    #[test]
+    fn zed_disconnect_leaves_a_default_the_user_picked_since() {
+        let dir = tempfile::tempdir().unwrap();
+        configure_zed_in(dir.path(), URL, Some("qwen"), None).unwrap();
+        let mut root = settings(dir.path());
+        root["agent"]["default_model"] = json!({ "provider": "anthropic", "model": "claude" });
+        std::fs::write(dir.path().join("settings.json"), root.to_string()).unwrap();
+
+        disconnect_zed_in(dir.path()).unwrap();
+        assert_eq!(
+            settings(dir.path()),
+            json!({ "agent": { "default_model": { "provider": "anthropic", "model": "claude" } } })
+        );
+    }
+
+    #[test]
+    fn zed_disconnect_without_a_previous_default_drops_ours_entirely() {
+        let dir = tempfile::tempdir().unwrap();
+        configure_zed_in(dir.path(), URL, Some("qwen"), None).unwrap();
+        disconnect_zed_in(dir.path()).unwrap();
+        assert_eq!(settings(dir.path()), json!({}));
+    }
+
+    #[test]
+    fn zed_disconnect_of_nothing_is_a_no_op() {
+        let dir = tempfile::tempdir().unwrap();
+        disconnect_zed_in(dir.path()).unwrap();
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+
+        let text = "{\n  // mine\n  \"theme\": \"One Dark\",\n}\n";
+        std::fs::write(dir.path().join("settings.json"), text).unwrap();
+        disconnect_zed_in(dir.path()).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("settings.json")).unwrap(),
+            text
+        );
+    }
+
+    #[test]
+    fn zed_launchers_cover_every_installer() {
+        let env = env_of(&[
+            ("LOCALAPPDATA", r"C:\Users\u\AppData\Local"),
+            ("ProgramFiles", r"C:\Program Files"),
+        ]);
+        let home = Path::new("/Users/u");
+        let mac = zed_cli_candidates(HostOs::Macos, home, &env);
+        assert!(mac.contains(&home.join(".local/bin/zed")));
+        assert!(mac.contains(&PathBuf::from("/Applications/Zed.app/Contents/MacOS/cli")));
+        assert!(mac.contains(&home.join("Applications/Zed.app/Contents/MacOS/cli")));
+
+        let linux = zed_cli_candidates(HostOs::Linux, Path::new("/home/u"), &env);
+        assert!(linux.contains(&PathBuf::from("/home/u/.local/zed.app/bin/zed")));
+
+        let local = PathBuf::from(r"C:\Users\u\AppData\Local");
+        let win_cli = zed_cli_candidates(HostOs::Windows, home, &env);
+        assert_eq!(
+            win_cli[0],
+            local
+                .join("Programs")
+                .join("Zed")
+                .join("bin")
+                .join("zed.exe")
+        );
+        let win_app = zed_app_candidates(HostOs::Windows, home, &env);
+        assert_eq!(
+            win_app[0],
+            local.join("Programs").join("Zed").join("Zed.exe")
+        );
+    }
+
+    #[test]
+    fn zed_is_started_as_an_app_or_through_its_cli() {
+        for app in [
+            "/Applications/Zed.app/Contents/MacOS/zed",
+            "/home/u/.local/zed.app/libexec/zed-editor",
+            r"C:\Users\u\AppData\Local\Programs\Zed\Zed.exe",
+        ] {
+            let path = PathBuf::from(app.replace('\\', "/"));
+            assert!(zed_is_app_binary(&path), "{app}");
+        }
+        for cli in [
+            "/Applications/Zed.app/Contents/MacOS/cli",
+            "/Users/u/.local/bin/zed",
+            "zed",
+            "C:/Users/u/AppData/Local/Programs/Zed/bin/zed.exe",
+        ] {
+            assert!(!zed_is_app_binary(Path::new(cli)), "{cli}");
+        }
+    }
+
+    #[test]
+    fn zed_launch_tries_the_detected_launcher_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let detected = dir.path().join("zed");
+        std::fs::write(&detected, "").unwrap();
+        let none = env_of(&[]);
+        let order = zed_launch_candidates(HostOs::Linux, dir.path(), &none, Some(&detected));
+        assert_eq!(order[0], detected);
+        assert_eq!(order[1], PathBuf::from("zed"));
+        // Install locations that do not exist are not tried.
+        assert_eq!(order.len(), 2);
+    }
+
+    fn touch(path: &Path) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, "").unwrap();
+    }
+
+    #[test]
+    fn macos_editors_are_found_through_their_app_bundles() {
+        let root = tempfile::tempdir().unwrap();
+        let apps = root.path().join("Applications");
+        let home = root.path().join("home");
+        touch(&apps.join("Visual Studio Code.app/Contents/Resources/app/bin/code"));
+        touch(&apps.join("Xcode-beta.app/Contents/MacOS/Xcode"));
+        touch(&apps.join("Xcode.app/Contents/MacOS/Xcode"));
+        touch(&apps.join("PyCharm CE.app/Contents/MacOS/pycharm"));
+        touch(&home.join("Applications/IntelliJ IDEA Ultimate.app/Contents/MacOS/idea"));
+        let none = env_of(&[]);
+        let found = |bin| {
+            editor_launcher_candidates(bin, HostOs::Macos, &home, &apps, &none)
+                .into_iter()
+                .filter(|p| p.is_file())
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(
+            found("code"),
+            vec![apps.join("Visual Studio Code.app/Contents/Resources/app/bin/code")]
+        );
+        assert_eq!(
+            found("xcode"),
+            vec![
+                apps.join("Xcode.app/Contents/MacOS/Xcode"),
+                apps.join("Xcode-beta.app/Contents/MacOS/Xcode"),
+            ]
+        );
+        // IntelliJ IDEA wins over other JetBrains IDEs wherever it is.
+        assert_eq!(
+            found("idea"),
+            vec![
+                home.join("Applications/IntelliJ IDEA Ultimate.app/Contents/MacOS/idea"),
+                apps.join("PyCharm CE.app/Contents/MacOS/pycharm"),
+            ]
+        );
+        assert!(found("zcode-unknown").is_empty());
+    }
+
+    #[test]
+    fn windows_editors_are_found_in_their_install_folders() {
+        let root = tempfile::tempdir().unwrap();
+        let local = root.path().join("Local");
+        let program_files = root.path().join("Program Files");
+        touch(&program_files.join("Microsoft VS Code/Code.exe"));
+        touch(&program_files.join("JetBrains/IntelliJ IDEA 2026.2/bin/idea64.exe"));
+        touch(&local.join("Programs/PyCharm/bin/pycharm64.exe"));
+        touch(&local.join("JetBrains/Toolbox/scripts/webstorm.cmd"));
+        let env = env_of(&[
+            ("LOCALAPPDATA", local.to_str().unwrap()),
+            ("ProgramFiles", program_files.to_str().unwrap()),
+        ]);
+        let found = |bin| {
+            editor_launcher_candidates(bin, HostOs::Windows, root.path(), root.path(), &env)
+                .into_iter()
+                .filter(|p| p.is_file())
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(
+            found("code"),
+            vec![program_files.join("Microsoft VS Code/Code.exe")]
+        );
+        assert_eq!(
+            found("idea"),
+            vec![
+                local.join("JetBrains/Toolbox/scripts/webstorm.cmd"),
+                program_files.join("JetBrains/IntelliJ IDEA 2026.2/bin/idea64.exe"),
+                local.join("Programs/PyCharm/bin/pycharm64.exe"),
+            ]
+        );
+        // Xcode does not exist off macOS.
+        assert!(found("xcode").is_empty());
+    }
+
+    #[test]
+    fn a_bare_launcher_name_resolves_to_its_cmd_script_on_path() {
+        let root = tempfile::tempdir().unwrap();
+        let first = root.path().join("first");
+        let second = root.path().join("second");
+        touch(&second.join("code.cmd"));
+        touch(&second.join("code"));
+        let path = std::env::join_paths([&first, &second]).unwrap();
+        assert_eq!(
+            find_launcher_in_path("code", &path, &["exe", "cmd", "bat"]),
+            Some(second.join("code.cmd"))
+        );
+        assert_eq!(find_launcher_in_path("idea", &path, &["exe", "cmd"]), None);
+    }
+
+    #[test]
+    fn editor_launchers_start_the_right_way_on_each_os() {
+        let program = |cmd: &std::process::Command| {
+            std::iter::once(cmd.get_program())
+                .chain(cmd.get_args())
+                .map(|s| s.to_string_lossy().into_owned())
+                .collect::<Vec<_>>()
+        };
+        let script = Path::new("C:/Toolbox/scripts/idea.cmd");
+        assert_eq!(
+            program(&editor_command(HostOs::Windows, script)),
+            vec!["cmd", "/C", "C:/Toolbox/scripts/idea.cmd"]
+        );
+        let exe = Path::new("C:/VS Code/Code.exe");
+        assert_eq!(
+            program(&editor_command(HostOs::Windows, exe)),
+            vec!["C:/VS Code/Code.exe"]
+        );
+        let bundled =
+            Path::new("/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code");
+        assert_eq!(
+            program(&editor_command(HostOs::Macos, bundled)),
+            vec!["open", "-a", "/Applications/Visual Studio Code.app"]
+        );
+        assert_eq!(
+            program(&editor_command(HostOs::Macos, Path::new("code"))),
+            vec!["code"]
+        );
     }
 }
 

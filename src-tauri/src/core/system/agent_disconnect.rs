@@ -127,12 +127,12 @@ fn disconnect_muse() -> Result<(), String> {
     Ok(())
 }
 
-/// zed: nothing to undo yet.
+/// zed: drop our provider; restore the agent's default model while it is ours.
 fn disconnect_zed() -> Result<(), String> {
-    Ok(())
+    super::commands::disconnect_zed_in(&super::commands::zed_config_dir()?)
 }
 
-/// zcode: nothing to undo yet.
+/// zcode: drop our provider and rules; restore the default model while it is ours.
 fn disconnect_zcode() -> Result<(), String> {
-    Ok(())
+    super::commands::disconnect_zcode_in(&super::commands::resolve_zcode_config_dir()?)
 }
