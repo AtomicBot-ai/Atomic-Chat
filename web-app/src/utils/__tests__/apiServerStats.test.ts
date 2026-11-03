@@ -138,6 +138,10 @@ describe('formatters', () => {
     expect(formatMs(346)).toBe('346 ms')
     expect(formatMs(3500)).toBe('3.5 s')
     expect(formatMs(125_000)).toBe('2m 5s')
+    // QA B10: a streaming request crossing a minute showed "2m 60s".
+    expect(formatMs(179_600)).toBe('3m 0s')
+    expect(formatMs(59_960)).toBe('1m 0s')
+    expect(formatMs(59_940)).toBe('59.9 s')
     expect(formatMs(null)).toBe('–')
     expect(formatMs(undefined)).toBe('–')
   })

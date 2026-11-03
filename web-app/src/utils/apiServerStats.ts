@@ -101,10 +101,11 @@ export function computeApiServerStats(
 export function formatMs(value?: number | null): string {
   if (value === undefined || value === null || !Number.isFinite(value)) return '–'
   if (value < 1000) return `${Math.round(value)} ms`
-  if (value < 60_000) return `${(value / 1000).toFixed(1)} s`
-  const minutes = Math.floor(value / 60_000)
-  const seconds = Math.round((value % 60_000) / 1000)
-  return `${minutes}m ${seconds}s`
+  // Rounded once, then split: rounding the seconds alone showed 179.6 s as "2m 60s".
+  const tenths = Math.round(value / 100)
+  if (tenths < 600) return `${(tenths / 10).toFixed(1)} s`
+  const total = Math.round(value / 1000)
+  return `${Math.floor(total / 60)}m ${total % 60}s`
 }
 
 export function formatTokensPerSecond(value?: number | null): string {
