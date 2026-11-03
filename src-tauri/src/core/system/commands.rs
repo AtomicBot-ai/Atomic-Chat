@@ -6019,7 +6019,6 @@ pub async fn open_agent_terminal(
     if command.is_empty() {
         return Err("Empty terminal command".to_string());
     }
-
     // An end-to-end build must not open terminal windows on the desktop of
     // whoever runs the tests; it writes down what it would have run instead.
     #[cfg(feature = "e2e")]
@@ -6040,14 +6039,15 @@ pub async fn open_agent_terminal(
 
     #[cfg(target_os = "windows")]
     {
-        // `start "<title>" cmd /K <cmd>` opens a fresh console that stays open so the
-        // interactive agent keeps running. The first quoted argument is the window title.
-        // The new console inherits this command's environment, so the proxy env
-        // applied below reaches the interactive agent.
+        use std::os::windows::process::CommandExt;
+        // `start "<title>" cmd /K <cmd>` opens a fresh console that stays open
+        // so the interactive agent keeps running. The new console inherits this
+        // command's environment, so the proxy env applied below reaches the
+        // interactive agent. The line is passed raw: Rust's argument quoting
+        // (`\"`) means nothing to cmd.exe and broke quoted launcher paths.
         let title = agent
             .as_ref()
-            .map(|a| super::agent_terminal::windows_title(&a.agent_name))
-            .unwrap_or_default();
+            .map(|a| super::agent_terminal::windows_title(&a.agent_name));
         let command = match agent.as_ref() {
             Some(a) => format!(
                 "echo {}& {}",
@@ -6057,7 +6057,11 @@ pub async fn open_agent_terminal(
             None => command,
         };
         let mut cmd = std::process::Command::new("cmd");
-        cmd.args(["/C", "start", &title, "cmd", "/K", &command]);
+        cmd.raw_arg(windows_terminal_args(title.as_deref(), &command));
+        // Start in the user's home, not in Atomic Chat's install folder.
+        if let Some(home) = agent_home_dir().ok().filter(|h| Path::new(h).is_dir()) {
+            cmd.current_dir(home);
+        }
         // The launched console inherits this `cmd`'s environment, so refresh the
         // PATH from the registry (+ npm global prefix) here — otherwise a console
         // started from a GUI launched before Node/npm was installed inherits a
@@ -6068,7 +6072,8 @@ pub async fn open_agent_terminal(
         }
         cmd.spawn()
             .map_err(|e| format!("Failed to open terminal: {}", e))?;
-        log::info!("Opened cmd with command: {}", command);
+        // The line can carry the server key: log that it opened, not what it runs.
+        log::info!("Opened cmd for an agent terminal");
         return Ok(TerminalOutcome::Opened);
     }
 
@@ -6299,6 +6304,37 @@ fn editor_command(os: HostOs, launcher: &Path) -> std::process::Command {
         return cmd;
     }
     Command::new(launcher)
+}
+
+/// The arguments after `cmd` that open a titled console running `command`:
+/// `/C start "<title>" cmd /K "<command>"`.
+///
+/// Two cmd.exe parsers read the line. The inner `cmd /K` strips the outer
+/// pair of quotes around `command`, so `command` keeps its own quoting (a
+/// quoted absolute launcher path followed by arguments). The outer `cmd /C`
+/// sees the same text first, where a `&`, `|`, `<`, `>`, `^`, `(` or `)` that
+/// falls outside its idea of quotes would split or redirect the line; those
+/// are `^`-escaped for it, and reach the inner one as plain characters.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn windows_terminal_args(title: Option<&str>, command: &str) -> String {
+    let title: String = title
+        .unwrap_or("")
+        .chars()
+        .filter(|c| !matches!(c, '"' | '%') && !c.is_control())
+        .take(120)
+        .collect();
+    let wrapped = format!("\"{}\"", command);
+    let mut escaped = String::with_capacity(wrapped.len() + 8);
+    let mut quoted = false;
+    for c in wrapped.chars() {
+        if c == '"' {
+            quoted = !quoted;
+        } else if !quoted && matches!(c, '&' | '|' | '<' | '>' | '^' | '(' | ')') {
+            escaped.push('^');
+        }
+        escaped.push(c);
+    }
+    format!("/C start \"{}\" cmd /K {}", title.trim(), escaped)
 }
 
 /// Launch a GUI editor for the "IDEs & Editors" integrations (VS Code,
@@ -6771,6 +6807,36 @@ mod tests {
         );
         assert_eq!(login_path_from_output("__OCPATH____OCEND__"), None);
         assert_eq!(login_path_from_output("no sentinel"), None);
+    }
+
+    #[test]
+    fn windows_terminal_line_keeps_quoted_launchers_intact() {
+        assert_eq!(
+            windows_terminal_args(Some("Atomic Chat – Codex"), "codex"),
+            r#"/C start "Atomic Chat – Codex" cmd /K "codex""#
+        );
+        // A quoted absolute path with spaces and an argument: the inner
+        // `cmd /K` strips only the outer pair.
+        assert_eq!(
+            windows_terminal_args(
+                Some("Atomic Chat – OpenClaw"),
+                r#""C:\Users\John Smith\.openclaw\bin\openclaw.cmd" chat"#
+            ),
+            r#"/C start "Atomic Chat – OpenClaw" cmd /K ""C:\Users\John Smith\.openclaw\bin\openclaw.cmd" chat""#
+        );
+        // Metacharacters the outer `cmd /C` reads outside quotes are escaped
+        // for it; the inner one sees them inside the launcher's quotes.
+        assert_eq!(
+            windows_terminal_args(None, r#""C:\R&D (x86)\claude.exe""#),
+            r#"/C start "" cmd /K ""C:\R^&D ^(x86^)\claude.exe"""#
+        );
+        assert_eq!(
+            windows_terminal_args(
+                Some(r#"Say "hi" %PATH%"#),
+                "powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand JABlAA=="
+            ),
+            r#"/C start "Say hi PATH" cmd /K "powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand JABlAA==""#
+        );
     }
 }
 

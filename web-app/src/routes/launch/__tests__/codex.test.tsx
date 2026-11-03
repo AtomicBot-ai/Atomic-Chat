@@ -157,4 +157,37 @@ describe('Launch page: Codex CLI', () => {
       duration: 8000,
     })
   })
+
+  it('keeps Run off for a Codex found only inside WSL, and says why', async () => {
+    vi.mocked(invoke).mockImplementation(async (cmd, args) => {
+      const bin = (args as { bin?: string } | undefined)?.bin
+      if (cmd === 'detect_agent_installed') {
+        return {
+          installed: bin === 'codex',
+          viaWsl: bin === 'codex',
+          path: null,
+        }
+      }
+      return undefined
+    })
+    const Component = LaunchRoute.component as React.ComponentType
+    render(<Component />)
+    const card = screen
+      .getAllByTestId('card')
+      .find((c) => within(c).queryByText('Codex CLI'))!
+
+    expect(await within(card).findByText('launch:wslOnlyHint')).toBeTruthy()
+    expect(within(card).getByText('launch:installedViaWsl')).toBeTruthy()
+    const run = within(card).getByRole('button', { name: 'launch:enable' })
+    expect(run).toBeDisabled()
+    fireEvent.click(run)
+    expect(invoke).not.toHaveBeenCalledWith(
+      'configure_codex',
+      expect.anything()
+    )
+    expect(invoke).not.toHaveBeenCalledWith(
+      'open_agent_terminal',
+      expect.anything()
+    )
+  })
 })

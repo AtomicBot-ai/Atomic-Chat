@@ -33,7 +33,13 @@ describe('openIntegrationAgent', () => {
     vi.mocked(osType).mockReturnValue('macos')
     vi.mocked(invoke).mockResolvedValue(undefined)
     vi.mocked(servedContextLength).mockResolvedValue(undefined)
-    useLaunchStore.setState({ opened: {}, connected: {}, binPath: {} })
+    useLaunchStore.setState({
+      opened: {},
+      connected: {},
+      binPath: {},
+      installed: {},
+      viaWsl: {},
+    })
   })
 
   const terminalCommand = () =>
@@ -183,6 +189,31 @@ describe('openIntegrationAgent', () => {
     expect(useLaunchStore.getState().opened).toEqual({})
   })
 
+  it('does not open a Windows console for an agent installed only in WSL', async () => {
+    vi.mocked(osType).mockReturnValue('windows')
+    useLaunchStore.setState({
+      installed: { opencode: true },
+      viaWsl: { opencode: true },
+    })
+
+    const opened = await openIntegrationAgent(agent('opencode'), {
+      t,
+      model: null,
+      server,
+    })
+
+    expect(opened).toBe(false)
+    expect(invoke).not.toHaveBeenCalledWith(
+      'open_agent_terminal',
+      expect.anything()
+    )
+    expect(toast.warning).toHaveBeenCalledWith('launch:toast.wslOnly', {
+      description: 'launch:toast.wslOnlyDesc',
+      duration: 10000,
+    })
+    expect(useLaunchStore.getState().opened).toEqual({})
+  })
+
   it('opens a desktop agent in its own app, not a terminal', async () => {
     await openIntegrationAgent(agent('zed'), { t, model: null, server })
 
@@ -320,8 +351,9 @@ describe('openIntegrationAgent', () => {
           command: string
         }
       ).command
+      // npm's `.ps1` shims only run when the execution policy allows them.
       expect(command).toMatch(
-        /^powershell.exe -NoProfile -EncodedCommand [A-Za-z0-9+/=]+$/
+        /^powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand [A-Za-z0-9+/=]+$/
       )
       const script = Buffer.from(command.split(' ').at(-1)!, 'base64').toString(
         'utf16le'

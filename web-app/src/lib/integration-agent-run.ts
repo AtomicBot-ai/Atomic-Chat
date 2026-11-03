@@ -227,6 +227,9 @@ function quotedAgentCommand(
   }
   // cmd.exe expands %, ! and metacharacters even inside many quoted forms.
   // Only base64 crosses cmd; PowerShell receives UTF-16LE literal arguments.
+  // `& codex` resolves to npm's `codex.ps1` shim first, which the default
+  // execution policy (Restricted on Windows client) refuses to run; Bypass
+  // applies to this one process only.
   const script = [
     ...Object.entries(env).map(([key, value]) => `$env:${key}=${quote(value)}`),
     `& ${command}`,
@@ -235,7 +238,26 @@ function quotedAgentCommand(
     const code = script.charCodeAt(i)
     return String.fromCharCode(code & 255, code >> 8)
   }).join('')
-  return `powershell.exe -NoProfile -EncodedCommand ${btoa(bytes)}`
+  return `powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${btoa(bytes)}`
+}
+
+/**
+ * An agent found only inside WSL cannot be connected from here: its config
+ * is written on Windows and a Windows console starts it, and WSL 2's
+ * localhost is not this PC. Says so in a toast and returns true; returns
+ * false for every other agent.
+ */
+export function refuseWslOnlyAgent(
+  agent: IntegrationAgent,
+  t: Translate
+): boolean {
+  const { installed, viaWsl } = useLaunchStore.getState()
+  if (!(installed[agent.id] && viaWsl[agent.id])) return false
+  toast.warning(t('launch:toast.wslOnly', { name: agent.name }), {
+    description: t('launch:toast.wslOnlyDesc', { name: agent.name }),
+    duration: 10000,
+  })
+  return true
 }
 
 /**
@@ -315,6 +337,7 @@ async function openAgent(
       return null
     }
   }
+  if (refuseWslOnlyAgent(agent, t)) return null
   // The window the served model was loaded with, for the agent told it at
   // launch rather than in its config.
   const contextLength =

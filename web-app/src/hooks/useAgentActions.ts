@@ -16,6 +16,7 @@ import { detectIntegrationAgent } from '@/lib/integration-agent-detection'
 import {
   installIntegrationAgent,
   openIntegrationAgent,
+  refuseWslOnlyAgent,
 } from '@/lib/integration-agent-run'
 import { writeAgentConfig } from '@/lib/integration-agent-setup'
 import { useLaunchSettings } from '@/stores/launch-settings-store'
@@ -67,6 +68,7 @@ export function useAgentActions() {
   const connect = useCallback(
     async (agent: IntegrationAgent) => {
       if (useLaunchStore.getState().busy[agent.id]) return
+      if (refuseWslOnlyAgent(agent, t)) return
       setRunState(agent.id, true, 'connecting')
       try {
         // It may have been removed since detection ran; a terminal would only

@@ -528,6 +528,9 @@ function LaunchPage() {
   const renderAgent = (agent: IntegrationAgent) => {
     const isInstalled = installed[agent.id]
     const isViaWsl = viaWsl[agent.id]
+    // A WSL-only install cannot be connected from Windows (see
+    // `refuseWslOnlyAgent`); Run stays off and the card says why.
+    const wslOnly = Boolean(isInstalled && isViaWsl)
     const isBusy = busy[agent.id]
     const isSpinning = spinning[agent.id]
     const runPhase = phase[agent.id]
@@ -571,7 +574,7 @@ function LaunchPage() {
                 size="sm"
                 className="w-[112px] transform-gpu justify-center gap-1.5 select-none"
                 onClick={() => handleRun(agent)}
-                disabled={isBusy}
+                disabled={isBusy || wslOnly}
               >
                 {runPhase === 'installing' ? (
                   <>
@@ -596,6 +599,11 @@ function LaunchPage() {
         <p className="mt-2 text-sm leading-normal text-muted-foreground">
           {agent.description}
         </p>
+        {wslOnly && (
+          <p className="mt-2 text-[11px] leading-relaxed text-amber-600">
+            {t('launch:wslOnlyHint', { name: agent.name })}
+          </p>
+        )}
 
         <div className="mt-3">
           <button

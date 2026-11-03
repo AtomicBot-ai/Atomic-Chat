@@ -22,7 +22,7 @@ const {
   contextWindow: vi.fn(),
 }))
 
-vi.mock('sonner', () => ({ toast: { error: vi.fn() } }))
+vi.mock('sonner', () => ({ toast: { error: vi.fn(), warning: vi.fn() } }))
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({
     t: (key: string, params?: Record<string, unknown>) =>
@@ -38,7 +38,8 @@ vi.mock('@/hooks/useRemoteAccess', () => ({
 vi.mock('@/lib/integration-agent-setup', () => ({
   writeAgentConfig: writeConfig,
 }))
-vi.mock('@/lib/integration-agent-run', () => ({
+vi.mock('@/lib/integration-agent-run', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/integration-agent-run')>()),
   installIntegrationAgent: installAgent,
   openIntegrationAgent: openAgent,
 }))
@@ -102,8 +103,30 @@ describe('useAgentActions', () => {
       defaultModelLocalApiServer: null,
       lastServerModels: [QWEN],
     })
-    useLaunchStore.setState({ busy: {}, phase: {} })
+    useLaunchStore.setState({ busy: {}, phase: {}, installed: {}, viaWsl: {} })
     useServerSetup.setState({ configuredAgents: [] })
+  })
+
+  it('refuses to connect an agent installed only inside WSL', async () => {
+    useLaunchStore.setState({
+      installed: { codex: true },
+      viaWsl: { codex: true },
+    })
+    const { result } = renderHook(() => useAgentActions())
+
+    await act(() => result.current.connect(agent('codex')))
+
+    expect(toast.warning).toHaveBeenCalledWith(
+      `launch:toast.wslOnly:${JSON.stringify({ name: agent('codex').name })}`,
+      expect.objectContaining({
+        description: `launch:toast.wslOnlyDesc:${JSON.stringify({ name: agent('codex').name })}`,
+      })
+    )
+    // Neither the Windows config nor a Windows console is touched.
+    expect(writeConfig).not.toHaveBeenCalled()
+    expect(openAgent).not.toHaveBeenCalled()
+    expect(useServerSetup.getState().configuredAgents).toEqual([])
+    expect(useLaunchStore.getState().phase.codex).toBeUndefined()
   })
 
   it('connects: points the agent at the served model, then opens it', async () => {
