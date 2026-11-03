@@ -11,6 +11,30 @@
   "editorsDesc": "Code editors that let you chat and code with your local models.",
   "copySettings": "Copy settings",
   "manualSetup": "Manual setup",
+  "editorSteps": {
+    "vscode": {
+      "open": "In VS Code, open the Chat view and run \"Chat: Manage Language Models\" from the Command Palette (or choose Manage Models in the chat's model picker).",
+      "add": "Click \"Add Models\" → \"Custom Endpoint\". Name the group \"Atomic Chat\", enter the server's API key (any text when it has none) and choose the \"Chat Completions\" API type.",
+      "paste": "In the chatLanguageModels.json that opens, replace the new entry with the one Copy settings put on your clipboard, keeping its \"apiKey\" line, and save.",
+      "pick": "Pick the Atomic Chat model in the chat's model picker. Restart VS Code if it does not appear."
+    },
+    "jetbrains": {
+      "open": "Open Settings | Tools | AI Assistant | Providers & API keys.",
+      "provider": "Under Third-party AI providers, choose the OpenAI-compatible provider, paste the copied URL and API key, turn on Tool calling and click Test Connection.",
+      "assign": "Local models are not assigned automatically: under Models Assignment, pick the Atomic Chat model for Core features and Instant helpers, set Context window to the copied value, and click Apply.",
+      "agents": "JetBrains agents can't use local models; use AI Chat and the in-editor features instead."
+    },
+    "xcode": {
+      "open": "Open Xcode → Settings → Intelligence (Xcode 26 or newer).",
+      "add": "Under Chat, click \"Add a Chat Provider\" and choose \"Locally Hosted\".",
+      "port": "Enter the copied port and click Add. Xcode calls /v1/models and /v1/chat/completions on it.",
+      "pick": "Pick the Atomic Chat model in the chat. Restart Xcode if it does not appear."
+    }
+  },
+  "editorWarnings": {
+    "xcodeApiKey": "Xcode's Locally Hosted provider has no API key field, so it can't reach this server while it requires a key. Turn the server's API key off to use Xcode.",
+    "xcodePrefix": "The server's API prefix is {{prefix}}, but Xcode always calls /v1. Set the prefix back to /v1 to use Xcode."
+  },
   "serverNotRunningHint": "Start the local server above first so {{name}} can reach your models.",
   "installed": "Installed",
   "installedViaWsl": "Installed (WSL)",

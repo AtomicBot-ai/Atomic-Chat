@@ -11,6 +11,30 @@
   "editorsDesc": "Des éditeurs de code pour discuter et coder avec vos modèles locaux.",
   "copySettings": "Copier les paramètres",
   "manualSetup": "Configuration manuelle",
+  "editorSteps": {
+    "vscode": {
+      "open": "Dans VS Code, ouvrez la vue Chat et lancez « Chat: Manage Language Models » depuis la palette de commandes (ou choisissez Manage Models dans le sélecteur de modèle du chat).",
+      "add": "Cliquez sur « Add Models » → « Custom Endpoint ». Nommez le groupe « Atomic Chat », saisissez la clé API du serveur (n'importe quel texte s'il n'en a pas) et choisissez le type d'API « Chat Completions ».",
+      "paste": "Dans le chatLanguageModels.json qui s'ouvre, remplacez la nouvelle entrée par celle que « Copier les paramètres » a placée dans le presse-papiers, en gardant sa ligne « apiKey », puis enregistrez.",
+      "pick": "Choisissez le modèle Atomic Chat dans le sélecteur de modèle du chat. Redémarrez VS Code s'il n'apparaît pas."
+    },
+    "jetbrains": {
+      "open": "Ouvrez Settings | Tools | AI Assistant | Providers & API keys.",
+      "provider": "Sous Third-party AI providers, choisissez le fournisseur compatible OpenAI, collez l'URL et la clé API copiées, activez Tool calling et cliquez sur Test Connection.",
+      "assign": "Les modèles locaux ne sont pas attribués automatiquement : dans Models Assignment, choisissez le modèle Atomic Chat pour Core features et Instant helpers, réglez Context window sur la valeur copiée, puis cliquez sur Apply.",
+      "agents": "Les agents JetBrains ne peuvent pas utiliser de modèles locaux ; utilisez AI Chat et les fonctions de l'éditeur."
+    },
+    "xcode": {
+      "open": "Ouvrez Xcode → Settings → Intelligence (Xcode 26 ou plus récent).",
+      "add": "Sous Chat, cliquez sur « Add a Chat Provider » et choisissez « Locally Hosted ».",
+      "port": "Saisissez le port copié et cliquez sur Add. Xcode y appelle /v1/models et /v1/chat/completions.",
+      "pick": "Choisissez le modèle Atomic Chat dans le chat. Redémarrez Xcode s'il n'apparaît pas."
+    }
+  },
+  "editorWarnings": {
+    "xcodeApiKey": "Le fournisseur Locally Hosted de Xcode n'a pas de champ de clé API : il ne peut pas joindre ce serveur tant qu'une clé est exigée. Désactivez la clé API du serveur pour utiliser Xcode.",
+    "xcodePrefix": "Le préfixe d'API du serveur est {{prefix}}, mais Xcode appelle toujours /v1. Remettez le préfixe à /v1 pour utiliser Xcode."
+  },
   "serverNotRunningHint": "Démarrez d'abord le serveur local ci-dessus pour que {{name}} puisse accéder à vos modèles.",
   "installed": "Installé",
   "installedViaWsl": "Installé (WSL)",

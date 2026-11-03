@@ -30,6 +30,10 @@ import {
   installIntegrationAgent,
   openIntegrationAgent,
 } from '@/lib/integration-agent-run'
+import {
+  editorClipboardText,
+  editorWarnings,
+} from '@/lib/integration-editor-setup'
 import { useServerSetup } from '@/hooks/useServerSetup'
 import { LocalApiServerStatusRow } from '@/containers/LocalApiServerStatusRow'
 import { startLocalApiServer } from '@/utils/localApiServerControl'
@@ -345,19 +349,18 @@ function LaunchPage() {
     }
   }, [serverHost, serverPort, apiPrefix, apiKey, activeModel])
 
-  // Copy the Base URL / API key / model block to the clipboard so the user can
-  // paste it into the editor's provider settings (these editors keep the
-  // provider in secret/IDE storage with no writable config file).
+  // Copy what the editor's provider settings ask for to the clipboard (these
+  // editors keep the provider in secret/IDE storage with no writable config
+  // file): VS Code gets a ready `chatLanguageModels.json` entry, Xcode the
+  // port, the rest the Base URL / API key / model block.
   const handleCopySettings = useCallback(
     async (agent: IntegrationAgent) => {
-      const { baseUrl, apiKey: key, model } = editorConnection()
-      const lines = [
-        `Base URL: ${baseUrl}`,
-        `API key: ${key}`,
-        `Model: ${model ?? '(load a model in a chat first)'}`,
-      ]
+      const text = editorClipboardText(agent, {
+        ...editorConnection(),
+        contextLength: await servedContextLength(),
+      })
       try {
-        await navigator.clipboard.writeText(lines.join('\n'))
+        await navigator.clipboard.writeText(text)
         toast.success(t('launch:toast.settingsCopied'), {
           description: t('launch:toast.settingsCopiedDesc', {
             name: agent.name,
@@ -475,6 +478,14 @@ function LaunchPage() {
             {t('launch:serverNotRunningHint', { name: agent.name })}
           </p>
         )}
+        {editorWarnings(agent, { apiKey, apiPrefix }).map((warning) => (
+          <p
+            key={warning.key}
+            className="mt-2 text-[11px] leading-relaxed text-amber-600"
+          >
+            {t(warning.key, warning.values)}
+          </p>
+        ))}
 
         <div className="mt-3">
           <button
@@ -499,7 +510,7 @@ function LaunchPage() {
           {openSteps[agent.id] && (
             <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs leading-relaxed text-muted-foreground">
               {steps.map((step) => (
-                <li key={step}>{step}</li>
+                <li key={step}>{t(step)}</li>
               ))}
             </ol>
           )}

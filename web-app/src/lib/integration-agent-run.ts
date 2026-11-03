@@ -212,10 +212,14 @@ async function openAgent(
 ): Promise<boolean> {
   // Zed is a desktop editor, not a terminal agent: its AI agent lives in its
   // own window. Launch the app directly (no terminal) — the config written
-  // before points its native Atomic Chat provider at the local server, and
-  // the user drives the Agent Panel from there.
+  // before points its `openai_compatible` "Atomic Chat" provider at the local
+  // server, and the user drives the Agent Panel from there. Detection may
+  // have found Zed off PATH (the DMG install links no `zed` CLI).
   if (agent.id === 'zed') {
-    await invoke('launch_zed', { apiKey: server.apiKey || null })
+    await invoke('launch_zed', {
+      apiKey: server.apiKey || null,
+      path: useLaunchStore.getState().binPath[agent.id] ?? null,
+    })
     return true
   }
   // ZCode is a desktop app too, and it is never installed from here: the

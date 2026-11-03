@@ -51,11 +51,27 @@ describe('openIntegrationAgent', () => {
   it('opens a desktop agent in its own app, not a terminal', async () => {
     await openIntegrationAgent(agent('zed'), { t, model: null, server })
 
-    expect(invoke).toHaveBeenCalledWith('launch_zed', { apiKey: server.apiKey })
+    expect(invoke).toHaveBeenCalledWith('launch_zed', {
+      apiKey: server.apiKey,
+      path: null,
+    })
     expect(invoke).not.toHaveBeenCalledWith(
       'open_agent_terminal',
       expect.anything()
     )
+    expect(useLaunchStore.getState().launched).toEqual({ zed: true })
+  })
+
+  it('opens Zed through the launcher detection found off PATH', async () => {
+    const cli = '/Applications/Zed.app/Contents/MacOS/cli'
+    useLaunchStore.setState({ binPath: { zed: cli } })
+
+    await openIntegrationAgent(agent('zed'), { t, model: null, server })
+
+    expect(invoke).toHaveBeenCalledWith('launch_zed', {
+      apiKey: server.apiKey,
+      path: cli,
+    })
     expect(useLaunchStore.getState().launched).toEqual({ zed: true })
   })
 
