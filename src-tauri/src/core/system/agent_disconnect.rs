@@ -42,14 +42,24 @@ fn disconnect_blocking(agent_id: &str) -> Result<(), String> {
     }
 }
 
-/// claude-code: nothing to undo yet.
+/// claude-code: put back the `settings.json` values Connect replaced, and
+/// take out the environment the old Claude Code settings page exported.
 fn disconnect_claude_code() -> Result<(), String> {
-    Ok(())
+    use super::claude_config as cc;
+    let server = cc::OurServer::from_app_state();
+    cc::disconnect_claude_code(&cc::resolve_claude_settings_path()?, &server)?;
+    let home = super::commands::agent_home_dir()?;
+    cc::forget_legacy_claude_code_env(std::path::Path::new(&home), &server)
 }
 
-/// openclaude: nothing to undo yet.
+/// openclaude: put back the active profile and env values Connect replaced,
+/// drop our provider profile, and restore the startup profile file.
 fn disconnect_openclaude() -> Result<(), String> {
-    Ok(())
+    use super::claude_config as cc;
+    cc::disconnect_openclaude(
+        &cc::resolve_openclaude_paths()?,
+        &cc::OurServer::from_app_state(),
+    )
 }
 
 /// kilo: our provider and `model` out of `kilo.jsonc`, the replaced ones back.

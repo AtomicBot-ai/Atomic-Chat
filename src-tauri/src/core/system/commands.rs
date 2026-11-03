@@ -156,32 +156,6 @@ pub(crate) fn detect_shell_env_file(home_dir: &str, is_macos: bool) -> (&'static
     }
 }
 
-// Helper function to write env vars to a shell config file
-fn write_env_to_shell(env_file_path: &str, env_vars: &[(String, String)]) -> Result<(), String> {
-    let marker = "# Jan Local API Server - Claude Code Config";
-    let new_entries: String = env_vars
-        .iter()
-        .map(|(k, v)| format!("export {}='{}'\n", k, v))
-        .collect();
-
-    let existing_content = std::fs::read_to_string(env_file_path).unwrap_or_default();
-    let cleaned: Vec<&str> = existing_content
-        .split('\n')
-        .filter(|line| {
-            // Remove Jan config markers and existing ANTHROPIC env vars to replace them
-            !line.starts_with(marker)
-                && !line.starts_with("# Jan Local API Server")
-                && !line.starts_with("export ANTHROPIC_")
-        })
-        .collect();
-
-    let new_content = format!("{}\n{}\n{}\n", marker, new_entries, marker);
-
-    let final_content = cleaned.join("\n") + &new_content;
-    std::fs::write(env_file_path, &final_content).map_err(|e| e.to_string())?;
-    Ok(())
-}
-
 #[tauri::command]
 pub async fn factory_reset<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
@@ -501,172 +475,6 @@ pub fn is_library_available(library: &str) -> bool {
     }
 }
 
-#[tauri::command]
-pub fn launch_claude_code_with_config(
-    api_url: String,
-    api_key: Option<String>,
-    big_model: Option<String>,
-    medium_model: Option<String>,
-    small_model: Option<String>,
-    custom_env_vars: Vec<serde_json::Value>,
-) -> Result<(), String> {
-    // Clone values for logging before moving
-    let api_url_log = api_url.clone();
-    let big_model_log = big_model.clone();
-    let medium_model_log = medium_model.clone();
-    let small_model_log = small_model.clone();
-
-    let mut env_vars: Vec<(String, String)> = Vec::with_capacity(8);
-    env_vars.push(("ANTHROPIC_BASE_URL".to_string(), api_url));
-
-    env_vars.push((
-        "ANTHROPIC_AUTH_TOKEN".to_string(),
-        api_key.unwrap_or_else(|| "jan".to_string()),
-    ));
-
-    if let Some(model) = big_model {
-        env_vars.push(("ANTHROPIC_DEFAULT_OPUS_MODEL".to_string(), model));
-    }
-
-    if let Some(model) = medium_model {
-        env_vars.push(("ANTHROPIC_DEFAULT_SONNET_MODEL".to_string(), model));
-    }
-
-    if let Some(model) = small_model {
-        env_vars.push(("ANTHROPIC_DEFAULT_HAIKU_MODEL".to_string(), model));
-    }
-
-    // Add custom env vars from the custom CLI section
-    for env in &custom_env_vars {
-        if let (Some(key), Some(value)) = (
-            env.get("key").and_then(|v| v.as_str()),
-            env.get("value").and_then(|v| v.as_str()),
-        ) {
-            env_vars.push((key.to_string(), value.to_string()));
-        }
-    }
-
-    log::info!(
-        "Launching Claude Code with API URL: {}, models: opus={:?}, sonnet={:?}, haiku={:?}, custom_envs={}",
-        api_url_log,
-        big_model_log,
-        medium_model_log,
-        small_model_log,
-        custom_env_vars.len()
-    );
-
-    // Build the command environment
-    // Export environment variables to the user's shell config file
-
-    if cfg!(target_os = "macos") {
-        let home_dir = std::env::var("HOME").map_err(|e| e.to_string())?;
-        let (shell_name, env_file_path) = detect_shell_env_file(&home_dir, true);
-        log::info!(
-            "Detected shell: {}, writing env to: {}",
-            shell_name,
-            env_file_path
-        );
-
-        // Try direct write first
-        match std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .open(&env_file_path)
-        {
-            Ok(_) => {
-                write_env_to_shell(&env_file_path, &env_vars)?;
-                return Ok(());
-            }
-            Err(_) => {
-                // Use admin privileges to write
-                let marker = "# Jan Local API Server - Claude Code Config";
-                let existing_content = std::fs::read_to_string(&env_file_path).unwrap_or_default();
-                let cleaned: Vec<&str> = existing_content
-                    .split('\n')
-                    .filter(|line| {
-                        !line.starts_with(marker)
-                            && !line.starts_with("# Jan Local API Server")
-                            && !line.starts_with("export ANTHROPIC_")
-                    })
-                    .collect();
-
-                let env_content: String = env_vars
-                    .iter()
-                    .map(|(k, v)| format!("export {}='{}'\n", k, v))
-                    .collect();
-
-                let new_block = format!("{}\n{}", marker, env_content);
-
-                let final_content = cleaned.join("\n") + "\n" + &new_block + marker;
-
-                // Write to a temp file first, then use osascript to move it
-                let temp_script_path = format!("{}/.jan_env_update.sh", home_dir);
-                std::fs::write(&temp_script_path, &final_content).map_err(|e| e.to_string())?;
-
-                // Use admin privileges to move the temp file
-                let script = format!(
-                    r#"do shell script "cp '{}' '{}' && rm '{}' && echo 'Env vars written to {}'" with administrator privileges"#,
-                    temp_script_path, env_file_path, temp_script_path, env_file_path
-                );
-
-                std::process::Command::new("osascript")
-                    .arg("-e")
-                    .arg(&script)
-                    .output()
-                    .map_err(|e| e.to_string())?;
-
-                log::info!(
-                    "Env vars written to {} with admin privileges",
-                    env_file_path
-                );
-                return Ok(());
-            }
-        }
-    } else if cfg!(target_os = "linux") {
-        let home_dir = std::env::var("HOME").map_err(|e| e.to_string())?;
-        let (shell_name, env_file_path) = detect_shell_env_file(&home_dir, false);
-        log::info!(
-            "Detected shell: {}, writing env to: {}",
-            shell_name,
-            env_file_path
-        );
-
-        match std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .open(&env_file_path)
-        {
-            Ok(_) => {
-                write_env_to_shell(&env_file_path, &env_vars)?;
-                return Ok(());
-            }
-            Err(_) => {
-                let jan_config_dir = format!("{}/.config/jan", home_dir);
-                let ext = if shell_name == "bash" { "bash" } else { "zsh" };
-                let env_file = format!("{}/claude-code-env.{}", jan_config_dir, ext);
-                return Err(format!("NEED_PERMISSION:{}", env_file));
-            }
-        }
-    } else {
-        // On Windows, set persistent user environment variables using setx
-        for (key, value) in &env_vars {
-            let output = std::process::Command::new("setx")
-                .arg(key)
-                .arg(value)
-                .output()
-                .map_err(|e| e.to_string())?;
-
-            if !output.status.success() {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                return Err(format!("Failed to set env var {}: {}", key, stderr));
-            }
-        }
-
-        log::info!("Environment variables set permanently in Windows registry.");
-        return Ok(());
-    }
-}
-
 #[derive(serde::Serialize)]
 pub struct CliInstallStatus {
     pub installed: bool,
@@ -920,109 +728,6 @@ pub fn uninstall_jan_cli() -> Result<(), String> {
             })?;
         }
         remove_legacy_cli_binary(&install_dir);
-        Ok(())
-    }
-}
-
-/// Build the cleaned shell-file content with all Jan CC env vars stripped out.
-fn build_cleaned_env_content(env_file_path: &str) -> String {
-    let existing_content = std::fs::read_to_string(env_file_path).unwrap_or_default();
-    let cleaned: Vec<&str> = existing_content
-        .split('\n')
-        .filter(|line| {
-            !line.starts_with("# Jan Local API Server - Claude Code Config")
-                && !line.starts_with("# Jan Local API Server")
-                && !line.starts_with("export ANTHROPIC_")
-        })
-        .collect();
-    // Trim trailing blank lines left behind by the removed block
-    cleaned.join("\n").trim_end().to_string() + "\n"
-}
-
-/// Clear all Jan-written Claude Code environment variables from the shell config.
-/// Uses the same write-probe + osascript-fallback logic as `launch_claude_code_with_config`.
-#[tauri::command]
-pub fn clear_claude_code_env() -> Result<(), String> {
-    if cfg!(target_os = "macos") {
-        let home_dir = std::env::var("HOME").map_err(|e| e.to_string())?;
-        let (shell_name, env_file_path) = detect_shell_env_file(&home_dir, true);
-        log::info!(
-            "Clearing CC env from shell: {}, file: {}",
-            shell_name,
-            env_file_path
-        );
-
-        let cleaned = build_cleaned_env_content(&env_file_path);
-
-        match std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .open(&env_file_path)
-        {
-            Ok(_) => {
-                std::fs::write(&env_file_path, &cleaned).map_err(|e| e.to_string())?;
-                return Ok(());
-            }
-            Err(_) => {
-                // Write cleaned content to a temp file, then use osascript to move it
-                let temp_path = format!("{}/.jan_env_clear.sh", home_dir);
-                std::fs::write(&temp_path, &cleaned).map_err(|e| e.to_string())?;
-
-                let script = format!(
-                    r#"do shell script "cp '{}' '{}' && rm '{}'" with administrator privileges"#,
-                    temp_path, env_file_path, temp_path
-                );
-
-                std::process::Command::new("osascript")
-                    .arg("-e")
-                    .arg(&script)
-                    .output()
-                    .map_err(|e| e.to_string())?;
-
-                log::info!(
-                    "CC env cleared from {} with admin privileges",
-                    env_file_path
-                );
-                return Ok(());
-            }
-        }
-    } else if cfg!(target_os = "linux") {
-        let home_dir = std::env::var("HOME").map_err(|e| e.to_string())?;
-        let (shell_name, env_file_path) = detect_shell_env_file(&home_dir, false);
-        log::info!(
-            "Clearing CC env from shell: {}, file: {}",
-            shell_name,
-            env_file_path
-        );
-
-        let cleaned = build_cleaned_env_content(&env_file_path);
-
-        match std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .open(&env_file_path)
-        {
-            Ok(_) => {
-                std::fs::write(&env_file_path, &cleaned).map_err(|e| e.to_string())?;
-                Ok(())
-            }
-            Err(_) => Err(format!("NEED_PERMISSION:{}", env_file_path)),
-        }
-    } else {
-        // Windows: delete the persistent user env vars from the registry
-        let keys = [
-            "ANTHROPIC_BASE_URL",
-            "ANTHROPIC_AUTH_TOKEN",
-            "ANTHROPIC_DEFAULT_OPUS_MODEL",
-            "ANTHROPIC_DEFAULT_SONNET_MODEL",
-            "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-        ];
-        for key in &keys {
-            let _ = std::process::Command::new("reg")
-                .args(["delete", "HKCU\\Environment", "/v", key, "/f"])
-                .output();
-        }
-        log::info!("CC env vars removed from Windows registry.");
         Ok(())
     }
 }
@@ -3160,18 +2865,14 @@ pub fn configure_opencode(
     Ok(())
 }
 
-pub(crate) const OPENCLAUDE_ATOMIC_PROFILE_ID: &str = "provider_atomic_chat";
-
-pub(crate) fn openclaude_global_config_path(home: &str) -> PathBuf {
-    PathBuf::from(home).join(".openclaude.json")
-}
-
-/// Configure OpenClaude by upserting an `atomic-chat` provider profile in the
-/// global config (`~/.openclaude.json`) and syncing the startup profile file
-/// (`~/.openclaude/.openclaude-profile.json`). OpenClaude explicitly does not
-/// read `~/.claude` / `~/.claude.json` (see its README's "OpenClaude config
-/// cutover" section), so there is no legacy path to fall back to. OpenClaude
-/// routes atomic-chat through its OpenAI-compatible shim, including bearer authentication.
+/// Configure OpenClaude by upserting an `atomic-chat` provider profile in its
+/// global config (`~/.openclaude.json`; `$OPENCLAUDE_CONFIG_DIR` and the legacy
+/// `.config.json` are honoured) and syncing the startup profile file
+/// (`.openclaude-profile.json`). OpenClaude explicitly does not read
+/// `~/.claude` / `~/.claude.json` (see its README's "OpenClaude config cutover"
+/// section), so there is no legacy path to fall back to. OpenClaude routes
+/// atomic-chat through its OpenAI-compatible shim, including bearer
+/// authentication. The values replaced are kept for Disconnect (`claude_config`).
 #[tauri::command]
 pub fn configure_openclaude(
     api_url: String,
@@ -3181,95 +2882,21 @@ pub fn configure_openclaude(
     // the agent is told so it compacts before the server refuses.
     context_length: Option<u32>,
 ) -> Result<(), String> {
-    let _ = context_length;
-    configure_openclaude_at(&agent_home_dir()?, api_url, model, api_key)
-}
-
-fn configure_openclaude_at(
-    home: &str,
-    api_url: String,
-    model: String,
-    api_key: Option<String>,
-) -> Result<(), String> {
-    let config_path = openclaude_global_config_path(home);
-    let config_home = PathBuf::from(&home).join(".openclaude");
-    std::fs::create_dir_all(&config_home)
-        .map_err(|e| format!("Failed to create {}: {}", config_home.display(), e))?;
-
-    let mut root: serde_json::Value = if config_path.exists() {
-        let text = std::fs::read_to_string(&config_path).map_err(|e| e.to_string())?;
-        if text.trim().is_empty() {
-            serde_json::json!({})
-        } else {
-            serde_json::from_str(&text).map_err(|e| {
-                format!(
-                    "Could not parse {}: {}. Fix or remove the file and try again.",
-                    config_path.display(),
-                    e
-                )
-            })?
-        }
-    } else {
-        serde_json::json!({})
-    };
-
-    let obj = root
-        .as_object_mut()
-        .ok_or_else(|| format!("{} is not a JSON object", config_path.display()))?;
-
-    let profile_entry = serde_json::json!({
-        "id": OPENCLAUDE_ATOMIC_PROFILE_ID,
-        "name": "Atomic Chat",
-        "provider": "atomic-chat",
-        "apiKey": api_key.as_deref().filter(|key| !key.is_empty()).unwrap_or("atomic"),
-        "baseUrl": api_url,
-        "model": model,
-    });
-
-    let profiles = obj
-        .entry("providerProfiles")
-        .or_insert_with(|| serde_json::json!([]));
-    if !profiles.is_array() {
-        *profiles = serde_json::json!([]);
-    }
-    let arr = profiles.as_array_mut().unwrap();
-    if let Some(index) = arr.iter().position(|entry| {
-        entry.get("id").and_then(|v| v.as_str()) == Some(OPENCLAUDE_ATOMIC_PROFILE_ID)
-            || entry.get("provider").and_then(|v| v.as_str()) == Some("atomic-chat")
-    }) {
-        arr[index] = profile_entry;
-    } else {
-        arr.push(profile_entry);
-    }
-
-    obj.insert(
-        "activeProviderProfileId".to_string(),
-        serde_json::json!(OPENCLAUDE_ATOMIC_PROFILE_ID),
-    );
-
-    let pretty = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
-    std::fs::write(&config_path, pretty + "\n")
-        .map_err(|e| format!("Failed to write {}: {}", config_path.display(), e))?;
-
-    let profile_path = config_home.join(".openclaude-profile.json");
-    let profile_file = serde_json::json!({
-        "profile": "atomic-chat",
-        "env": {
-            "OPENAI_BASE_URL": api_url,
-            "OPENAI_MODEL": model,
-            "OPENAI_API_KEY": api_key.as_deref().filter(|key| !key.is_empty()).unwrap_or("atomic"),
-        },
-        "createdAt": chrono::Utc::now().to_rfc3339(),
-    });
-    let profile_pretty = serde_json::to_string_pretty(&profile_file).map_err(|e| e.to_string())?;
-    std::fs::write(&profile_path, profile_pretty + "\n")
-        .map_err(|e| format!("Failed to write {}: {}", profile_path.display(), e))?;
-
+    let paths = super::claude_config::resolve_openclaude_paths()?;
+    super::claude_config::connect_openclaude(
+        &paths,
+        &api_url,
+        &model,
+        api_key.as_deref(),
+        context_length,
+        &chrono::Utc::now().to_rfc3339(),
+    )?;
     log::info!(
-        "OpenClaude configured: baseURL={}, model={}, config={}",
+        "OpenClaude configured: baseURL={}, model={}, context={:?}, config={}",
         api_url,
         model,
-        config_path.display()
+        context_length,
+        paths.config.display()
     );
     Ok(())
 }
@@ -4971,11 +4598,13 @@ pub fn configure_openclaw(
     Ok(())
 }
 
-/// Configure Claude Code by upserting `~/.claude/settings.json` so it points at
-/// the local Atomic Chat server and uses the active model. Values go into the
-/// `env` block — Claude reads it at startup regardless of how `claude` was
-/// launched, and `ANTHROPIC_MODEL` there overrides any stale top-level `model`.
-/// All other user settings are preserved.
+/// Configure Claude Code by upserting `settings.json` in its config directory
+/// (`$CLAUDE_CONFIG_DIR`, else `~/.claude`) so it points at the local Atomic
+/// Chat server and uses the active model. Values go into the `env` block —
+/// Claude reads it at startup regardless of how `claude` was launched, it wins
+/// over the shell, and `ANTHROPIC_MODEL` there overrides any stale top-level
+/// `model`. The values replaced are kept for Disconnect (`claude_config`); all
+/// other user settings are preserved.
 #[tauri::command]
 pub fn configure_claude_code(
     api_url: String,
@@ -4985,76 +4614,30 @@ pub fn configure_claude_code(
     // the agent is told so it compacts before the server refuses.
     context_length: Option<u32>,
 ) -> Result<(), String> {
-    let _ = context_length;
-    let home = agent_home_dir()?;
-    let dir = PathBuf::from(&home).join(".claude");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create ~/.claude: {}", e))?;
-    let path = dir.join("settings.json");
-
-    let mut root: serde_json::Value = if path.exists() {
-        let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
-        if text.trim().is_empty() {
-            serde_json::json!({})
-        } else {
-            serde_json::from_str(&text).map_err(|e| {
-                format!(
-                    "Could not parse {}: {}. Fix or remove the file and try again.",
-                    path.display(),
-                    e
-                )
-            })?
+    let settings = super::claude_config::resolve_claude_settings_path()?;
+    super::claude_config::connect_claude_code(
+        &settings,
+        &api_url,
+        model.as_deref(),
+        api_key.as_deref(),
+        context_length,
+    )?;
+    // The old Claude Code settings page exported the endpoint for every program.
+    // The settings win over it, but it would outlive a Disconnect.
+    if let Some(server) = super::claude_config::OurServer::from_url(&api_url) {
+        let home = agent_home_dir()?;
+        if let Err(e) =
+            super::claude_config::forget_legacy_claude_code_env(Path::new(&home), &server)
+        {
+            log::warn!("{e}");
         }
-    } else {
-        serde_json::json!({})
-    };
-
-    let obj = root
-        .as_object_mut()
-        .ok_or_else(|| "settings.json is not a JSON object".to_string())?;
-
-    let key_val = api_key
-        .as_deref()
-        .filter(|k| !k.is_empty())
-        .unwrap_or("atomic");
-
-    let env = obj.entry("env").or_insert_with(|| serde_json::json!({}));
-    if !env.is_object() {
-        *env = serde_json::json!({});
     }
-    let env_obj = env.as_object_mut().unwrap();
-    // Claude Code appends its own `/v1`, so `api_url` here is the bare host:port.
-    env_obj.insert("ANTHROPIC_BASE_URL".to_string(), serde_json::json!(api_url));
-    env_obj.insert(
-        "ANTHROPIC_AUTH_TOKEN".to_string(),
-        serde_json::json!(key_val),
-    );
-
-    if let Some(model) = model.as_deref().filter(|m| !m.is_empty()) {
-        // ANTHROPIC_MODEL overrides the `model` setting; the tier aliases make
-        // every Opus/Sonnet/Haiku request route to the single local model too.
-        env_obj.insert("ANTHROPIC_MODEL".to_string(), serde_json::json!(model));
-        env_obj.insert(
-            "ANTHROPIC_DEFAULT_OPUS_MODEL".to_string(),
-            serde_json::json!(model),
-        );
-        env_obj.insert(
-            "ANTHROPIC_DEFAULT_SONNET_MODEL".to_string(),
-            serde_json::json!(model),
-        );
-        env_obj.insert(
-            "ANTHROPIC_DEFAULT_HAIKU_MODEL".to_string(),
-            serde_json::json!(model),
-        );
-        obj.insert("model".to_string(), serde_json::json!(model));
-    }
-
-    let pretty = serde_json::to_string_pretty(&root).map_err(|e| e.to_string())?;
-    std::fs::write(&path, pretty + "\n")
-        .map_err(|e| format!("Failed to write {}: {}", path.display(), e))?;
     log::info!(
-        "Claude Code configured: base_url={}, model={:?}",
+        "Claude Code configured: base_url={}, model={:?}, context={:?}, settings={}",
         api_url,
-        model
+        model,
+        context_length,
+        settings.display()
     );
     Ok(())
 }
@@ -8604,40 +8187,6 @@ mod integration_auth_tests {
                 providers[1]["api_key"].as_str(),
                 Some(key.filter(|k| !k.is_empty()).unwrap_or("atomic"))
             );
-        }
-    }
-
-    #[test]
-    fn openclaude_updates_both_startup_paths_and_preserves_other_profiles() {
-        let dir = tempfile::tempdir().unwrap();
-        let home = dir.path().to_str().unwrap();
-        let config = dir.path().join(".openclaude.json");
-        fs::write(
-            &config,
-            r#"{"providerProfiles":[{"id":"personal","apiKey":"personal-key"}],"theme":"dark"}"#,
-        )
-        .unwrap();
-        for key in [Some("first'key"), Some("rotated"), None, Some("")] {
-            configure_openclaude_at(
-                home,
-                "http://localhost:1337/v1".into(),
-                "test/model".into(),
-                key.map(str::to_string),
-            )
-            .unwrap();
-            let root: serde_json::Value =
-                serde_json::from_str(&fs::read_to_string(&config).unwrap()).unwrap();
-            let startup: serde_json::Value = serde_json::from_str(
-                &fs::read_to_string(dir.path().join(".openclaude/.openclaude-profile.json"))
-                    .unwrap(),
-            )
-            .unwrap();
-            let expected = key.filter(|k| !k.is_empty()).unwrap_or("atomic");
-            assert_eq!(root["providerProfiles"].as_array().unwrap().len(), 2);
-            assert_eq!(root["providerProfiles"][0]["apiKey"], "personal-key");
-            assert_eq!(root["providerProfiles"][1]["apiKey"], expected);
-            assert_eq!(root["theme"], "dark");
-            assert_eq!(startup["env"]["OPENAI_API_KEY"], expected);
         }
     }
 

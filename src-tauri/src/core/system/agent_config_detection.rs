@@ -14,13 +14,16 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use super::claude_config::{
+    resolve_claude_settings_path, resolve_openclaude_paths, startup_profile_is_ours, OurServer,
+    OPENCLAUDE_PROFILE_ID,
+};
 use super::codex_config::{codex_home, profile_is_ours};
 use super::commands::{
-    agent_home_dir, detect_shell_env_file, dsh_home_dir, entry_is_ours,
-    openclaude_global_config_path, openclaw_config_path, resolve_atomic_agent_state_dir,
-    resolve_hermes_dir, split_custom_providers, zcode_config_dir, ATOMIC_AGENT_PROVIDER_ID,
-    DSH_ROUTE_ID, DSH_SECTION, OPENCLAUDE_ATOMIC_PROFILE_ID, OPENCLAW_PROVIDER_ID,
-    ZCODE_PROVIDER_ID, ZED_PROVIDER_ID,
+    agent_home_dir, detect_shell_env_file, dsh_home_dir, entry_is_ours, openclaw_config_path,
+    resolve_atomic_agent_state_dir, resolve_hermes_dir, split_custom_providers, zcode_config_dir,
+    ATOMIC_AGENT_PROVIDER_ID, DSH_ROUTE_ID, DSH_SECTION, OPENCLAW_PROVIDER_ID, ZCODE_PROVIDER_ID,
+    ZED_PROVIDER_ID,
 };
 use super::opencode_family::{opencode_style_configured, pi_configured, FamilyPaths};
 
@@ -39,8 +42,6 @@ const DROID_DISPLAY_NAME: &str = "Atomic Chat";
 /// Provider key `configure_opencode` / `configure_mimo` / `configure_kilo` /
 /// `configure_pi` write under `provider` (`providers` for Pi).
 const ATOMIC_PROVIDER_KEY: &str = "atomic";
-/// `provider` of the OpenClaude profile (and `profile` of its startup file).
-const OPENCLAUDE_PROVIDER: &str = "atomic-chat";
 /// Placeholder `muse_env_vars` stores in `META_API_KEY` when the local server
 /// has no key.
 const MUSE_KEY_PLACEHOLDER: &str = "atomic";
@@ -59,6 +60,11 @@ pub(crate) struct AgentConfigPaths {
     pub dsh_home: Option<PathBuf>,
     pub openclaw_config: PathBuf,
     pub openclaude_config: PathBuf,
+    pub openclaude_profile: PathBuf,
+    /// `settings.json` in `$CLAUDE_CONFIG_DIR`, else `~/.claude`.
+    pub claude_settings: PathBuf,
+    /// The Local API Server's address, which Claude Code's endpoint must match.
+    pub server: OurServer,
     /// `$CODEX_HOME`, else `~/.codex`.
     pub codex_home: PathBuf,
     /// Kilo Code, OpenCode, MiMo Code and pi.
@@ -79,6 +85,9 @@ impl AgentConfigPaths {
             dsh_home: Some(home.join(".dsh")),
             openclaw_config: home.join(".openclaw").join("openclaw.json"),
             openclaude_config: home.join(".openclaude.json"),
+            openclaude_profile: home.join(".openclaude").join(".openclaude-profile.json"),
+            claude_settings: home.join(".claude").join("settings.json"),
+            server: OurServer::new("127.0.0.1", 1337),
             codex_home: home.join(".codex"),
             family: FamilyPaths::resolve_with(home, &|_| None),
         }
@@ -95,6 +104,7 @@ impl AgentConfigPaths {
             Some(PathBuf::from(file))
         };
         let zcode_env = std::env::var("ZCODE_DATA_BASE_DIR").ok();
+        let openclaude = resolve_openclaude_paths().ok()?;
         Some(Self {
             shell_env_file,
             hermes_dir: resolve_hermes_dir().ok(),
@@ -103,7 +113,10 @@ impl AgentConfigPaths {
             atomic_agent_dir: resolve_atomic_agent_state_dir().ok(),
             dsh_home: dsh_home_dir().ok(),
             openclaw_config: openclaw_config_path(&home_str),
-            openclaude_config: openclaude_global_config_path(&home_str),
+            openclaude_config: openclaude.config,
+            openclaude_profile: openclaude.profile,
+            claude_settings: resolve_claude_settings_path().ok()?,
+            server: OurServer::from_app_state(),
             codex_home: codex_home(&home, std::env::var("CODEX_HOME").ok().as_deref()),
             family: FamilyPaths::resolve_with(&home, &|name| std::env::var(name).ok()),
             home,
@@ -128,15 +141,18 @@ pub(crate) fn detect_configured_agents_in(
         .unwrap_or_default();
     let block = |marker: &str| shell_block_vars(&rc, marker);
     let user_env_is_local = |name: &str| user_env(name).is_some_and(|v| is_local_url(&v));
+    let is_our_server = |url: &str| paths.server.is_url(url);
 
     let checks: [(&str, bool); 19] = [
         ("kilo", opencode_style_configured(&paths.family.kilo)),
         (
             "claude-code",
-            claude_code_settings_local(home)
-                || block(LEGACY_CLAUDE_CODE_SHELL_MARKER)
-                    .is_some_and(|vars| var_is_local(&vars, "ANTHROPIC_BASE_URL"))
-                || user_env_is_local("ANTHROPIC_BASE_URL"),
+            claude_code_settings_ours(paths)
+                || block(LEGACY_CLAUDE_CODE_SHELL_MARKER).is_some_and(|vars| {
+                    vars.get("ANTHROPIC_BASE_URL")
+                        .is_some_and(|url| is_our_server(url))
+                })
+                || user_env("ANTHROPIC_BASE_URL").is_some_and(|url| is_our_server(&url)),
         ),
         ("pi", pi_configured(&paths.family.pi_dir)),
         ("codex", codex_configured(&paths.codex_home)),
@@ -279,12 +295,14 @@ fn read_text(path: &Path) -> Option<String> {
 }
 
 /// Parse a JSON / JSONC / JSON5 file. Strict JSON first: it is far faster on the
-/// large files some agents keep (e.g. `~/.openclaude.json`).
+/// large files some agents keep (e.g. `~/.openclaude.json`). A UTF-8
+/// byte-order mark (PowerShell 5 writes one) is skipped.
 fn json_file(path: &Path) -> Option<serde_json::Value> {
     let text = read_text(path)?;
-    serde_json::from_str(&text)
+    let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
+    serde_json::from_str(text)
         .ok()
-        .or_else(|| json5::from_str(&text).ok())
+        .or_else(|| json5::from_str(text).ok())
 }
 
 fn value_at<'a>(root: &'a serde_json::Value, keys: &[&str]) -> Option<&'a serde_json::Value> {
@@ -309,13 +327,14 @@ fn str_at<'a>(v: &'a serde_json::Value, key: &str) -> Option<&'a str> {
     v.get(key).and_then(serde_json::Value::as_str)
 }
 
-/// `~/.claude/settings.json` `env.ANTHROPIC_BASE_URL` on a local / LAN host —
-/// a corporate gateway URL there is the user's own setup, not ours.
-fn claude_code_settings_local(home: &Path) -> bool {
-    json_file(&home.join(".claude").join("settings.json")).is_some_and(|v| {
+/// Claude Code's `settings.json` `env.ANTHROPIC_BASE_URL` on this server (its
+/// host and port, or loopback with its port). A gateway — on the LAN or not —
+/// is the user's own setup, not ours.
+fn claude_code_settings_ours(paths: &AgentConfigPaths) -> bool {
+    json_file(&paths.claude_settings).is_some_and(|v| {
         value_at(&v, &["env", "ANTHROPIC_BASE_URL"])
             .and_then(serde_json::Value::as_str)
-            .is_some_and(is_local_url)
+            .is_some_and(|url| paths.server.is_url(url))
     })
 }
 
@@ -329,21 +348,15 @@ fn codex_configured(codex_home: &Path) -> bool {
         })
 }
 
+/// Our provider profile (by its id: one the user made from OpenClaude's own
+/// Atomic Chat preset is theirs), or a startup profile pointing at this server.
 fn openclaude_configured(paths: &AgentConfigPaths) -> bool {
-    let profile_listed = json_file(&paths.openclaude_config).is_some_and(|v| {
+    json_file(&paths.openclaude_config).is_some_and(|v| {
         array_has(&v, &["providerProfiles"], |p| {
-            str_at(p, "id") == Some(OPENCLAUDE_ATOMIC_PROFILE_ID)
-                || str_at(p, "provider") == Some(OPENCLAUDE_PROVIDER)
+            str_at(p, "id") == Some(OPENCLAUDE_PROFILE_ID)
         })
-    });
-    profile_listed
-        || json_file(
-            &paths
-                .home
-                .join(".openclaude")
-                .join(".openclaude-profile.json"),
-        )
-        .is_some_and(|v| str_at(&v, "profile") == Some(OPENCLAUDE_PROVIDER))
+    }) || json_file(&paths.openclaude_profile)
+        .is_some_and(|v| startup_profile_is_ours(&v, Some(&paths.server)))
 }
 
 /// `llm-pi-ai.providers.atomic` in `$DSH_HOME/settings.yaml`.
@@ -586,21 +599,35 @@ mod tests {
     }
 
     #[test]
-    fn claude_code_counts_only_a_local_base_url() {
+    fn claude_code_counts_only_this_servers_base_url() {
         let home = tempfile::tempdir().unwrap();
         let settings = home.path().join(".claude/settings.json");
 
         write(
             &settings,
-            r#"{"env":{"ANTHROPIC_BASE_URL":"http://localhost:1337","ANTHROPIC_AUTH_TOKEN":"atomic"}}"#,
+            "\u{feff}{\"env\":{\"ANTHROPIC_BASE_URL\":\"http://localhost:1337\",\"ANTHROPIC_AUTH_TOKEN\":\"atomic\"}}",
         );
         assert_eq!(detect(home.path(), None), vec!["claude-code"]);
 
+        // Some other server on the LAN, or ours on another port, is not ours.
+        for url in ["http://192.168.1.20:1337", "http://127.0.0.1:4000"] {
+            write(
+                &settings,
+                &format!(r#"{{"env":{{"ANTHROPIC_BASE_URL":"{url}"}}}}"#),
+            );
+            assert!(detect(home.path(), None).is_empty(), "{url}");
+        }
+        // ... unless the server itself listens on that LAN address.
         write(
             &settings,
             r#"{"env":{"ANTHROPIC_BASE_URL":"http://192.168.1.20:1337"}}"#,
         );
-        assert_eq!(detect(home.path(), None), vec!["claude-code"]);
+        let mut paths = AgentConfigPaths::under_home(home.path(), None);
+        paths.server = OurServer::new("192.168.1.20", 1337);
+        assert_eq!(
+            detect_configured_agents_in(&paths, &no_user_env),
+            vec!["claude-code"]
+        );
 
         write(
             &settings,
@@ -731,6 +758,21 @@ mod tests {
             r#"{"profile":"atomic-chat","env":{"OPENAI_BASE_URL":"http://127.0.0.1:1337/v1"}}"#,
         );
         assert_eq!(detect(home.path(), None), vec!["openclaude"]);
+    }
+
+    #[test]
+    fn openclaude_profiles_of_the_users_own_are_not_ours() {
+        let home = tempfile::tempdir().unwrap();
+        // Made from OpenClaude's own Atomic Chat preset: its id is not ours.
+        write(
+            &home.path().join(".openclaude.json"),
+            r#"{"providerProfiles":[{"id":"provider_x1","provider":"atomic-chat"}]}"#,
+        );
+        write(
+            &home.path().join(".openclaude/.openclaude-profile.json"),
+            r#"{"profile":"atomic-chat","env":{"OPENAI_BASE_URL":"http://192.168.1.9:8080/v1"}}"#,
+        );
+        assert!(detect(home.path(), None).is_empty());
     }
 
     #[test]
