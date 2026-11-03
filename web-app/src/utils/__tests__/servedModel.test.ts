@@ -116,19 +116,24 @@ describe('the served model', () => {
   describe('before an agent is pointed at it', () => {
     it('loads the served model a running server does not hold', async () => {
       useLocalApiServer.setState({ lastServerModels: [QWEN] })
-      const service = engines([])
-      ensureModelForServer.mockResolvedValue({
-        status: 'loaded',
-        modelId: 'qwen',
-        providerName: 'llamacpp-upstream',
+      const running: string[] = []
+      const service = engines(running)
+      ensureModelForServer.mockImplementation(async () => {
+        running.push('qwen')
+        return {
+          status: 'loaded',
+          modelId: 'qwen',
+          providerName: 'llamacpp-upstream',
+        }
       })
-      resolveServerModels.mockResolvedValue([])
+      resolveServerModels.mockResolvedValue([QWEN])
 
       await ensureServedModelRunning(service)
 
       expect(ensureModelForServer).toHaveBeenCalledWith(
         expect.objectContaining({ modelOverride: QWEN })
       )
+      expect(useAppState.getState().activeModels).toEqual(['qwen'])
     })
 
     it('leaves a model that runs, a cloud model and no model alone', async () => {
@@ -144,6 +149,7 @@ describe('the served model', () => {
       await ensureServedModelRunning(engines([]))
 
       expect(ensureModelForServer).not.toHaveBeenCalled()
+      expect(useAppState.getState().activeModels).toEqual([])
     })
 
     it('fails when there turns out to be nothing to load', async () => {

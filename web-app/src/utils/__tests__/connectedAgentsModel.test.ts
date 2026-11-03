@@ -117,7 +117,7 @@ describe('connected agents follow the served model', () => {
     ])
     await settle()
 
-    expect(writeAgentConfig).not.toHaveBeenCalled()
+    expect(writtenAgents()).toEqual([])
     expect(toastInfo).not.toHaveBeenCalled()
   })
 
@@ -134,7 +134,7 @@ describe('connected agents follow the served model', () => {
       .setLastServerModels([{ model: 'gpt-5.2', provider: 'openai' }])
     await settle()
 
-    expect(writeAgentConfig).not.toHaveBeenCalled()
+    expect(writtenAgents()).toEqual([])
     expect(toastInfo).not.toHaveBeenCalled()
   })
 
@@ -145,7 +145,7 @@ describe('connected agents follow the served model', () => {
     server.setLastServerModels([QWEN])
     await settle()
     // Back where the agents already were: nothing to write.
-    expect(writeAgentConfig).not.toHaveBeenCalled()
+    expect(writtenAgents()).toEqual([])
 
     server.setLastServerModels([GEMMA])
     server.setLastServerModels([{ ...GEMMA, provider: 'llamacpp' }])
@@ -173,13 +173,13 @@ describe('connected agents follow the served model', () => {
     stop = syncConnectedAgentsWithServedModel()
     useLocalApiServer.getState().setLastServerModels([GEMMA])
     await settle()
-    expect(writeAgentConfig).not.toHaveBeenCalled()
+    expect(writtenAgents()).toEqual([])
     expect(toastInfo).not.toHaveBeenCalled()
 
     useServerSetup.setState({ configuredAgents: [{ id: 'codex', at: 1 }] })
     stop()
     useLocalApiServer.getState().setLastServerModels([QWEN])
     await settle()
-    expect(writeAgentConfig).not.toHaveBeenCalled()
+    expect(writtenAgents()).toEqual([])
   })
 })

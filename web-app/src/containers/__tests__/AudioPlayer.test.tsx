@@ -72,8 +72,14 @@ describe('AudioPlayer switching clips (QA 2.3.2)', () => {
   })
 
   it('reloads when the same player is given another clip', () => {
-    const { rerender } = render(<AudioPlayer src={SRC} mediaType="audio/wav" />)
+    const { container, rerender } = render(
+      <AudioPlayer src={SRC} mediaType="audio/wav" />
+    )
     rerender(<AudioPlayer src={`${SRC}?next`} mediaType="audio/wav" />)
+    expect(container.querySelector('audio')).toHaveAttribute(
+      'src',
+      `${SRC}?next`
+    )
     expect(load).toHaveBeenCalledTimes(1)
   })
 })
