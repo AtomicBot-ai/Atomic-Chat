@@ -1575,6 +1575,80 @@ pub(crate) fn tool_version_text(tool: &str) -> Option<String> {
 /// same split ("On npm 11.15 and earlier, omit `--allow-scripts=openclaw`").
 const NPM_ALLOW_SCRIPTS_MIN: (u64, u64, u64) = (11, 16, 0);
 
+/// npm-installed agents whose package runs an install script (`npm view
+/// <pkg> scripts`): the script is what links or downloads the binary, and npm
+/// 12 skips unapproved install scripts while still reporting success.
+const NPM_PACKAGES_WITH_INSTALL_SCRIPTS: &[&str] = &[
+    "@anthropic-ai/claude-code",
+    "opencode-ai",
+    "@kilocode/cli",
+    "cline",
+    "droid",
+    "@mimo-ai/cli",
+    "openclaw",
+];
+
+/// The `--allow-scripts` flag an npm global install of `package` needs, given
+/// the npm version on PATH: none for a package without install scripts, and
+/// none when npm predates the flag (it runs every script anyway) or its
+/// version could not be read.
+fn npm_allow_scripts_arg(package: &str, npm: Option<(u64, u64, u64)>) -> Option<String> {
+    let needs_scripts = NPM_PACKAGES_WITH_INSTALL_SCRIPTS.contains(&package);
+    let understood = npm.is_some_and(|v| v >= NPM_ALLOW_SCRIPTS_MIN);
+    (needs_scripts && understood).then(|| format!("--allow-scripts={}", package))
+}
+
+/// Arguments that run `script` in Windows PowerShell for an installer. The
+/// default execution policy (Restricted on Windows client) refuses `.ps1`
+/// files, and an installer script calling `npm` reaches npm's `npm.ps1` shim;
+/// `Bypass` applies to this process only.
+fn powershell_script(script: &str) -> Vec<String> {
+    vec![
+        "-NoProfile".to_string(),
+        "-ExecutionPolicy".to_string(),
+        "Bypass".to_string(),
+        "-Command".to_string(),
+        script.to_string(),
+    ]
+}
+
+const CLAUDE_CODE_DOCS: &str = "https://code.claude.com/docs/en/setup";
+
+/// The installer to try when an agent's own one fails: Claude Code's npm
+/// package, behind its native installer.
+fn agent_install_fallback(
+    agent_id: &str,
+) -> Option<(String, Vec<String>, &'static str, &'static str)> {
+    (agent_id == "claude-code").then(|| {
+        let (program, args) = npm_global_install("@anthropic-ai/claude-code");
+        (program, args, "npm", CLAUDE_CODE_DOCS)
+    })
+}
+
+/// `npm install -g <pkg>`. On Windows `npm` is `npm.cmd` (a batch shim).
+/// Rust's `std::process::Command` spawns via `CreateProcessW`, which only
+/// resolves `.exe` on PATH and refuses to execute `.cmd`/`.bat` directly
+/// (rust-lang/rust#37519). Route through `cmd.exe` so the shim is found and run.
+fn npm_global_install(pkg: &str) -> (String, Vec<String>) {
+    if cfg!(windows) {
+        (
+            "cmd".to_string(),
+            vec![
+                "/C".to_string(),
+                "npm".to_string(),
+                "install".to_string(),
+                "-g".to_string(),
+                pkg.to_string(),
+            ],
+        )
+    } else {
+        (
+            "npm".to_string(),
+            vec!["install".to_string(), "-g".to_string(), pkg.to_string()],
+        )
+    }
+}
+
 /// OpenClaw's published `engines`: `>=22.22.3 <23 || >=24.15.0 <25 || >=25.9.0`.
 /// npm only *warns* on an engines mismatch, so on an unsupported Node the
 /// install "succeeds" and every later `openclaw` invocation fails instead —
@@ -1592,7 +1666,9 @@ fn node_meets_openclaw_engines((major, minor, patch): (u64, u64, u64)) -> bool {
 
 /// Installer spec for an agent: (program, args, prerequisite_binary, docs_url).
 /// Verified against each vendor's official install path:
-///   - Claude Code / Codex / OpenCode / OpenClaw ship as global npm packages.
+///   - Claude Code ships a native installer (npm is its fallback, see
+///     `agent_install_fallback`).
+///   - Codex / OpenCode / OpenClaw ship as global npm packages.
 ///   - Hermes is a Python project installed via its official shell / PowerShell
 ///     bootstrap script (NOT npm).
 ///
@@ -1601,40 +1677,33 @@ fn node_meets_openclaw_engines((major, minor, patch): (u64, u64, u64)) -> bool {
 fn agent_install_spec(
     agent_id: &str,
 ) -> Result<(String, Vec<String>, &'static str, &'static str), String> {
-    let npm = |pkg: &str| {
-        if cfg!(windows) {
-            // On Windows `npm` is `npm.cmd` (a batch shim). Rust's
-            // `std::process::Command` spawns via `CreateProcessW`, which only
-            // resolves `.exe` on PATH and refuses to execute `.cmd`/`.bat`
-            // directly (rust-lang/rust#37519). Route through `cmd.exe` so the
-            // shim is found and run.
-            (
-                "cmd".to_string(),
-                vec![
-                    "/C".to_string(),
-                    "npm".to_string(),
-                    "install".to_string(),
-                    "-g".to_string(),
-                    pkg.to_string(),
-                ],
-            )
-        } else {
-            (
-                "npm".to_string(),
-                vec!["install".to_string(), "-g".to_string(), pkg.to_string()],
-            )
-        }
-    };
+    let npm = npm_global_install;
 
     match agent_id {
         "claude-code" => {
-            let (p, a) = npm("@anthropic-ai/claude-code");
-            Ok((
-                p,
-                a,
-                "npm",
-                "https://docs.anthropic.com/en/docs/claude-code",
-            ))
+            // Anthropic's native installer is the recommended path: npm 12
+            // skips the npm package's postinstall, which is what puts the
+            // binary in place, and the native install updates itself without
+            // npm. It writes `~/.local/bin/claude` (`%USERPROFILE%\.local\bin`)
+            // and leaves PATH alone, which detection covers. npm stays the
+            // fallback (`agent_install_fallback`).
+            let (program, args): (String, Vec<String>) = if cfg!(windows) {
+                (
+                    "powershell".to_string(),
+                    powershell_script("irm https://claude.ai/install.ps1 | iex"),
+                )
+            } else {
+                (
+                    "bash".to_string(),
+                    vec![
+                        "-c".to_string(),
+                        "set -o pipefail; curl -fsSL https://claude.ai/install.sh | bash"
+                            .to_string(),
+                    ],
+                )
+            };
+            let prereq = if cfg!(windows) { "powershell" } else { "curl" };
+            Ok((program, args, prereq, CLAUDE_CODE_DOCS))
         }
         "codex" => {
             let (p, a) = npm("@openai/codex");
@@ -1725,11 +1794,7 @@ fn agent_install_spec(
             let (program, args): (String, Vec<String>) = if cfg!(windows) {
                 (
                     "powershell".to_string(),
-                    vec![
-                        "-NoProfile".to_string(),
-                        "-Command".to_string(),
-                        "$env:CONFIGURE='false'; irm https://github.com/block/goose/releases/download/stable/download_cli.ps1 | iex".to_string(),
-                    ],
+                    powershell_script("$env:CONFIGURE='false'; irm https://github.com/block/goose/releases/download/stable/download_cli.ps1 | iex"),
                 )
             } else {
                 (
@@ -1753,11 +1818,7 @@ fn agent_install_spec(
             let (program, args): (String, Vec<String>) = if cfg!(windows) {
                 (
                     "powershell".to_string(),
-                    vec![
-                        "-NoProfile".to_string(),
-                        "-Command".to_string(),
-                        "irm https://atomicagent.io/install.ps1 | iex".to_string(),
-                    ],
+                    powershell_script("irm https://atomicagent.io/install.ps1 | iex"),
                 )
             } else {
                 (
@@ -1787,11 +1848,7 @@ fn agent_install_spec(
             let (program, args): (String, Vec<String>) = if cfg!(windows) {
                 (
                     "powershell".to_string(),
-                    vec![
-                        "-NoProfile".to_string(),
-                        "-Command".to_string(),
-                        "iex \"& { $(irm https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.ps1) } -SkipSetup -NonInteractive\"".to_string(),
-                    ],
+                    powershell_script("iex \"& { $(irm https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.ps1) } -SkipSetup -NonInteractive\""),
                 )
             } else {
                 (
@@ -1836,11 +1893,7 @@ fn agent_install_spec(
             let (program, args): (String, Vec<String>) = if cfg!(windows) {
                 (
                     "powershell".to_string(),
-                    vec![
-                        "-NoProfile".to_string(),
-                        "-Command".to_string(),
-                        "$env:POOL_INSTALL_ACCEPT_EULA='1'; irm https://downloads.poolside.ai/pool/install.ps1 | iex".to_string(),
-                    ],
+                    powershell_script("$env:POOL_INSTALL_ACCEPT_EULA='1'; irm https://downloads.poolside.ai/pool/install.ps1 | iex"),
                 )
             } else {
                 (
@@ -1864,7 +1917,8 @@ fn agent_install_spec(
                     vec![
                         "install".to_string(),
                         "--id".to_string(),
-                        "Zed.Zed".to_string(),
+                        // `Zed.Zed` is not in the winget catalog.
+                        "ZedIndustries.Zed".to_string(),
                         "-e".to_string(),
                         "--accept-package-agreements".to_string(),
                         "--accept-source-agreements".to_string(),
@@ -1893,16 +1947,18 @@ fn agent_install_spec(
             if cfg!(windows) {
                 return Err(
                     "Muse Code has no native Windows installer. Install it inside WSL with \
-                     'curl -fsSL https://dev.meta.ai/install.sh | sh' and run it from your \
+                     'curl -fsSL https://dev.meta.ai/install.sh | bash' and run it from your \
                      WSL shell: https://developer.meta.com/ai/products/muse-code/"
                         .to_string(),
                 );
             }
+            // The script is bash (`[[ … ]]` throughout); `sh` is dash on
+            // Debian/Ubuntu, where it fails on the first test.
             Ok((
                 "bash".to_string(),
                 vec![
                     "-c".to_string(),
-                    "set -o pipefail; curl -fsSL https://dev.meta.ai/install.sh | sh".to_string(),
+                    "set -o pipefail; curl -fsSL https://dev.meta.ai/install.sh | bash".to_string(),
                 ],
                 "curl",
                 "https://developer.meta.com/ai/products/muse-code/",
@@ -1919,38 +1975,75 @@ fn agent_install_spec(
 /// (`/opt/homebrew/bin`), nvm, Volta, etc. — so `npm`/`node` and the agent
 /// binaries can't be found even when they are installed. Querying the login
 /// shell recovers the real PATH the user sees in their terminal. The result is
-/// cached for the process lifetime (one shell spawn, not one per probe).
+/// cached (one shell spawn, not one per probe) until an install changes it
+/// ([`forget_login_shell_path`]).
 ///
 /// A sentinel wraps the value so rc files that echo to stdout don't corrupt it.
-/// Returns `None` on probe failure; callers then fall back to the inherited PATH.
+/// Returns `None` on probe failure, or when the shell has not answered within
+/// [`LOGIN_SHELL_TIMEOUT`] (an rc file waiting on the network or for input);
+/// callers then fall back to the inherited PATH.
 #[cfg(not(windows))]
 pub(crate) fn login_shell_path() -> Option<String> {
-    use std::sync::OnceLock;
-    static CACHE: OnceLock<Option<String>> = OnceLock::new();
-    CACHE
-        .get_or_init(|| {
-            let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
-            // `-l` sources login files (.zprofile/.bash_profile, where Homebrew
-            // shellenv usually lives); `-i` sources interactive rc files
-            // (.zshrc/.bashrc, where nvm usually lives).
-            let mut command = std::process::Command::new(&shell);
-            command.args(["-lic", "printf '__OCPATH__%s__OCEND__' \"$PATH\""]);
-            sanitize_std_command(&mut command);
-            let out = command.output().ok()?;
-            if !out.status.success() {
-                return None;
-            }
-            let s = String::from_utf8_lossy(&out.stdout);
-            let start = s.find("__OCPATH__")? + "__OCPATH__".len();
-            let end = s[start..].find("__OCEND__")? + start;
-            let path = s[start..end].trim().to_string();
-            if path.is_empty() {
-                None
-            } else {
-                Some(path)
-            }
-        })
-        .clone()
+    let mut cached = LOGIN_SHELL_PATH.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(path) = cached.as_ref() {
+        return path.clone();
+    }
+    let probed = probe_login_shell_path();
+    *cached = Some(probed.clone());
+    probed
+}
+
+#[cfg(not(windows))]
+static LOGIN_SHELL_PATH: std::sync::Mutex<Option<Option<String>>> = std::sync::Mutex::new(None);
+
+/// How long the login shell may take to print its PATH.
+#[cfg(not(windows))]
+const LOGIN_SHELL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+#[cfg(not(windows))]
+fn probe_login_shell_path() -> Option<String> {
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
+    // `-l` sources login files (.zprofile/.bash_profile, where Homebrew
+    // shellenv usually lives); `-i` sources interactive rc files
+    // (.zshrc/.bashrc, where nvm usually lives).
+    let mut command = std::process::Command::new(&shell);
+    command.args(["-lic", "printf '__OCPATH__%s__OCEND__' \"$PATH\""]);
+    sanitize_std_command(&mut command);
+    let Some((status, stdout)) = super::agent_process::output_within(command, LOGIN_SHELL_TIMEOUT)
+    else {
+        log::warn!(
+            "{} did not print its PATH within {}s; using the inherited PATH",
+            shell,
+            LOGIN_SHELL_TIMEOUT.as_secs()
+        );
+        return None;
+    };
+    if !status.success() {
+        return None;
+    }
+    login_path_from_output(&String::from_utf8_lossy(&stdout))
+}
+
+/// The PATH between the probe's sentinels, if it printed one.
+#[cfg(not(windows))]
+fn login_path_from_output(s: &str) -> Option<String> {
+    let start = s.find("__OCPATH__")? + "__OCPATH__".len();
+    let end = s[start..].find("__OCEND__")? + start;
+    let path = s[start..end].trim().to_string();
+    if path.is_empty() {
+        None
+    } else {
+        Some(path)
+    }
+}
+
+/// Read the login-shell PATH again on next use: an installer may have added a
+/// directory to it (Poolside's, Goose's and uv's write a shell rc line).
+pub(crate) fn forget_login_shell_path() {
+    #[cfg(not(windows))]
+    {
+        *LOGIN_SHELL_PATH.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
 }
 
 /// Augment a spawned command's PATH with the user's login-shell PATH so GUI
@@ -1966,6 +2059,26 @@ fn apply_login_path(cmd: &mut std::process::Command) {
 
 #[cfg(windows)]
 fn apply_login_path(_cmd: &mut std::process::Command) {}
+
+/// The PATH a spawned tool lookup should see: the login shell's on
+/// macOS/Linux, the freshly read registry PATH on Windows.
+pub(crate) fn apply_tool_path(cmd: &mut std::process::Command) {
+    apply_login_path(cmd);
+    apply_runtime_path(cmd);
+}
+
+/// A console tool (`setx`, `reg`) started without flashing a console window
+/// over the app on Windows.
+pub(crate) fn hidden_console_command(program: &str) -> std::process::Command {
+    #[allow(unused_mut)]
+    let mut cmd = std::process::Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    cmd
+}
 
 /// Re-read the persisted Windows PATH (User + Machine) from the registry and
 /// merge it with the live process PATH. The GUI snapshots PATH once at startup
@@ -2193,11 +2306,19 @@ fn output_indicates_network_failure(output: &str) -> bool {
 /// `PATH` ([`editor_launcher_candidates`]): Zed's DMG links no `zed`, VS Code
 /// and JetBrains IDEs link theirs only on request, and Xcode has none.
 ///
-/// Returns an empty vector for every other agent: they all install onto `PATH`,
-/// and guessing locations for them would only produce false positives.
+/// Every terminal agent can also sit in a per-user bin directory its installer
+/// wrote without the current PATH knowing yet: `~/.local/bin` (Claude Code's
+/// native installer, Goose, Poolside, Hermes), uv's tool bin directory
+/// (OpenHands) and, on Windows, `%APPDATA%\npm`. npm's configured global bin
+/// directory costs an `npm` run, so only [`resolve_off_path`] asks for it.
+/// Editors and desktop apps get no guesses beyond their own.
 pub fn off_path_candidates(bin: &str) -> Vec<PathBuf> {
     match bin {
-        "openclaw" => openclaw_off_path_candidates(),
+        "openclaw" => {
+            let mut candidates = openclaw_off_path_candidates();
+            candidates.extend(user_bin_candidates(bin, None));
+            candidates
+        }
         "zcode" => zcode_app_candidates(),
         "zed" | "code" | "idea" | "xcode" => match agent_home_dir() {
             Ok(home) => editor_launcher_candidates(
@@ -2209,8 +2330,23 @@ pub fn off_path_candidates(bin: &str) -> Vec<PathBuf> {
             ),
             Err(_) => Vec::new(),
         },
-        _ => Vec::new(),
+        _ => user_bin_candidates(bin, None),
     }
+}
+
+/// A terminal agent's launcher in the per-user bin directories, plus
+/// `npm_bin` when given (see [`super::agent_lookup::terminal_agent_candidates`]).
+fn user_bin_candidates(bin: &str, npm_bin: Option<&Path>) -> Vec<PathBuf> {
+    let Ok(home) = agent_home_dir() else {
+        return Vec::new();
+    };
+    super::agent_lookup::terminal_agent_candidates(
+        bin,
+        Path::new(&home),
+        &|name| std::env::var(name).ok(),
+        npm_bin,
+        cfg!(windows),
+    )
 }
 
 fn openclaw_off_path_candidates() -> Vec<PathBuf> {
@@ -2247,9 +2383,20 @@ fn openclaw_off_path_candidates() -> Vec<PathBuf> {
     out
 }
 
-/// First [`off_path_candidates`] entry that exists on disk.
+/// First [`off_path_candidates`] entry that exists on disk, then (terminal
+/// agents only) the launcher in npm's global bin directory. Blocking: the npm
+/// lookup runs `npm prefix -g` once per session.
 pub fn resolve_off_path(bin: &str) -> Option<PathBuf> {
-    off_path_candidates(bin).into_iter().find(|p| p.is_file())
+    if let Some(found) = off_path_candidates(bin).into_iter().find(|p| p.is_file()) {
+        return Some(found);
+    }
+    if !super::agent_lookup::is_terminal_agent(bin) {
+        return None;
+    }
+    let npm_bin = super::agent_lookup::npm_global_bin()?;
+    user_bin_candidates(bin, Some(&npm_bin))
+        .into_iter()
+        .find(|p| p.is_file())
 }
 
 /// Result of probing whether an external CLI agent is reachable.
@@ -2304,19 +2451,73 @@ async fn detect_on_native_path(bin: &str) -> bool {
 /// npm-global) is in scope. Returns false when WSL is absent or the lookup
 /// fails. The agent binary names come from a fixed catalog, so there is no
 /// shell-injection surface here.
+///
+/// Each probe can boot the WSL VM, so the answers are kept for the session:
+/// which distribution to ask (none when the only ones are Atomic Chat's own
+/// or Docker Desktop's) and, per binary, whether it was there.
 #[cfg(windows)]
 async fn detect_via_wsl(bin: &str) -> bool {
-    use std::os::windows::process::CommandExt;
-    let probe = format!("command -v {}", bin);
-    let mut cmd = std::process::Command::new("wsl.exe");
-    cmd.arg("-e").arg("sh").arg("-lc").arg(&probe);
-    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    use std::collections::HashMap;
+    use std::sync::{Mutex, OnceLock};
+    static DISTRIBUTION: OnceLock<Option<String>> = OnceLock::new();
+    static FOUND: OnceLock<Mutex<HashMap<String, bool>>> = OnceLock::new();
 
+    let bin = bin.to_string();
+    tokio::task::spawn_blocking(move || {
+        let found = FOUND.get_or_init(|| Mutex::new(HashMap::new()));
+        if let Some(known) = found.lock().ok().and_then(|f| f.get(&bin).copied()) {
+            return known;
+        }
+        let present = match DISTRIBUTION.get_or_init(wsl_user_distribution) {
+            Some(distribution) => wsl_has_command(distribution, &bin),
+            None => false,
+        };
+        if let Ok(mut f) = found.lock() {
+            f.insert(bin, present);
+        }
+        present
+    })
+    .await
+    .unwrap_or(false)
+}
+
+/// `wsl.exe` with output in UTF-8 where WSL supports it, and no console window.
+#[cfg(windows)]
+fn wsl_command() -> std::process::Command {
+    use std::os::windows::process::CommandExt;
+    let mut cmd = std::process::Command::new("wsl.exe");
+    cmd.env("WSL_UTF8", "1");
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    cmd
+}
+
+/// The user's WSL distribution to look in. Listing does not start the VM.
+#[cfg(windows)]
+fn wsl_user_distribution() -> Option<String> {
+    let mut cmd = wsl_command();
+    cmd.args(["--list", "--verbose"]);
+    let (status, out) =
+        super::agent_process::output_within(cmd, std::time::Duration::from_secs(10))?;
+    if !status.success() {
+        return None;
+    }
+    super::agent_lookup::pick_wsl_distribution(&super::agent_lookup::decode_wsl_output(&out))
+}
+
+#[cfg(windows)]
+fn wsl_has_command(distribution: &str, bin: &str) -> bool {
+    let mut cmd = wsl_command();
+    cmd.args([
+        "-d",
+        distribution,
+        "-e",
+        "sh",
+        "-lc",
+        &format!("command -v {}", bin),
+    ]);
     matches!(
-        tokio::task::spawn_blocking(move || cmd.output()).await,
-        Ok(Ok(out))
-            if out.status.success()
-                && !String::from_utf8_lossy(&out.stdout).trim().is_empty()
+        super::agent_process::output_within(cmd, std::time::Duration::from_secs(20)),
+        Some((status, out)) if status.success() && !String::from_utf8_lossy(&out).trim().is_empty()
     )
 }
 
@@ -2355,7 +2556,12 @@ pub async fn detect_agent_installed(bin: String, custom_path: Option<String>) ->
     // Prefix installers (the one the macOS OpenClaw app runs during its own
     // onboarding included) never touch PATH, so probe their known locations
     // before declaring the agent missing and offering to install a second copy.
-    if let Some(found) = resolve_off_path(&bin) {
+    let off_path_bin = bin.clone();
+    if let Some(found) = tokio::task::spawn_blocking(move || resolve_off_path(&off_path_bin))
+        .await
+        .ok()
+        .flatten()
+    {
         return AgentDetection {
             installed: true,
             via_wsl: false,
@@ -2399,10 +2605,7 @@ async fn try_bootstrap_npm_via_winget<R: Runtime>(
 ) -> bool {
     // winget itself (App Installer) must be present; it ships on Win10 1809+
     // mainline but not on LTSC / Server / stripped images.
-    if !detect_agent_installed("winget".to_string(), None)
-        .await
-        .installed
-    {
+    if !detect_on_native_path("winget").await {
         let _ = app_handle.emit(
             event,
             "npm not found and winget is unavailable - cannot auto-install Node.js.".to_string(),
@@ -2418,9 +2621,9 @@ async fn try_bootstrap_npm_via_winget<R: Runtime>(
     let app = app_handle.clone();
     let ev = event.to_string();
     let ran = tokio::task::spawn_blocking(move || -> bool {
-        use std::io::{BufRead, BufReader};
+        use super::agent_process::{run_streaming, StreamEnd, INSTALLER_TIMEOUT};
         use std::os::windows::process::CommandExt;
-        use std::process::{Command, Stdio};
+        use std::process::Command;
 
         let mut cmd = Command::new("winget");
         cmd.args([
@@ -2431,33 +2634,34 @@ async fn try_bootstrap_npm_via_winget<R: Runtime>(
             "--silent",
             "--accept-package-agreements",
             "--accept-source-agreements",
-        ])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        ]);
         apply_runtime_path(&mut cmd);
         if let Some(ref proxy) = proxy {
             apply_proxy_env(&mut cmd, proxy);
         }
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
 
-        let mut child = match cmd.spawn() {
-            Ok(c) => c,
+        let log = app.clone();
+        let log_event = ev.clone();
+        match run_streaming(cmd, INSTALLER_TIMEOUT, |line| {
+            let _ = log.emit(&log_event, line);
+        }) {
+            Ok((StreamEnd::Exited(status), _)) => status.success(),
+            Ok((StreamEnd::TimedOut, _)) => {
+                let _ = app.emit(
+                    &ev,
+                    format!(
+                        "winget did not finish within {} minutes and was stopped.",
+                        INSTALLER_TIMEOUT.as_secs() / 60
+                    ),
+                );
+                false
+            }
             Err(e) => {
                 let _ = app.emit(&ev, format!("Failed to spawn winget: {}", e));
-                return false;
-            }
-        };
-        if let Some(stdout) = child.stdout.take() {
-            for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-                let _ = app.emit(&ev, line);
+                false
             }
         }
-        if let Some(stderr) = child.stderr.take() {
-            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
-                let _ = app.emit(&ev, line);
-            }
-        }
-        matches!(child.wait(), Ok(s) if s.success())
     })
     .await
     .unwrap_or(false);
@@ -2470,11 +2674,10 @@ async fn try_bootstrap_npm_via_winget<R: Runtime>(
         return false;
     }
 
-    // winget adds the Node install dir to PATH; `detect_agent_installed`
+    // winget adds the Node install dir to PATH; `detect_on_native_path`
     // re-reads the registry PATH at runtime, so npm is found without a restart.
-    detect_agent_installed("npm".to_string(), None)
-        .await
-        .installed
+    // (Not `detect_agent_installed`: an npm inside WSL cannot run this install.)
+    detect_on_native_path("npm").await
 }
 
 #[cfg(not(windows))]
@@ -2486,45 +2689,157 @@ async fn try_bootstrap_npm_via_winget<R: Runtime>(
     false
 }
 
+/// (program, args, prerequisite binary, docs URL), as `agent_install_spec`
+/// returns it.
+type InstallSpec = (String, Vec<String>, &'static str, &'static str);
+
 /// Install an external agent by spawning its official installer, streaming
 /// stdout/stderr to the UI via the `agent_install_log:<agent_id>` event.
+/// Claude Code's npm package is tried when its native installer cannot run or
+/// fails.
 #[tauri::command]
 pub async fn install_agent<R: Runtime>(
     app_handle: AppHandle<R>,
     agent_id: String,
     proxy: Option<ProxyEnv>,
 ) -> Result<(), String> {
-    let (program, mut args, prereq, docs) = agent_install_spec(&agent_id)?;
+    let primary = agent_install_spec(&agent_id)?;
+    let attempts: Vec<InstallSpec> = std::iter::once(primary)
+        .chain(agent_install_fallback(&agent_id))
+        .collect();
+    let result = install_agent_attempts(&app_handle, &agent_id, attempts, proxy).await;
+    // Whatever the installer got to, it may have created a bin directory or
+    // added a PATH line: detection has to look again instead of answering
+    // from what it cached before.
+    super::agent_lookup::forget_install_lookups();
+    result
+}
 
+async fn install_agent_attempts<R: Runtime>(
+    app_handle: &AppHandle<R>,
+    agent_id: &str,
+    attempts: Vec<InstallSpec>,
+    proxy: Option<ProxyEnv>,
+) -> Result<(), String> {
     let event = format!("agent_install_log:{}", agent_id);
+    let count = attempts.len();
+    let mut last_error = String::new();
+    for (index, (program, args, prereq, docs)) in attempts.into_iter().enumerate() {
+        let has_fallback = index + 1 < count;
+        let attempt = async {
+            let program = installer_program(
+                app_handle,
+                &event,
+                program,
+                prereq,
+                docs,
+                proxy.clone(),
+                !has_fallback,
+            )
+            .await?;
+            let args = installer_args(agent_id, args, prereq, docs).await?;
+            run_installer(app_handle, &event, agent_id, program, args, proxy.clone()).await
+        };
+        match attempt.await {
+            Ok(()) => {
+                log::info!("Agent '{}' installed successfully", agent_id);
+                return Ok(());
+            }
+            Err(e) if has_fallback => {
+                log::warn!(
+                    "Installer for '{}' failed, trying the next one: {}",
+                    agent_id,
+                    e
+                );
+                let _ = app_handle.emit(&event, format!("{} Trying npm instead...", e));
+                last_error = e;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Err(last_error)
+}
 
+/// The program to start for an installer whose prerequisite is `prereq`:
+/// `program` when the prerequisite is on PATH, the app's bundled `uv` when
+/// that is the missing one, and npm after installing Node.js through winget
+/// when `may_bootstrap` (the last installer tried). Otherwise an error that
+/// says what to install.
+async fn installer_program<R: Runtime>(
+    app_handle: &AppHandle<R>,
+    event: &str,
+    program: String,
+    prereq: &'static str,
+    docs: &'static str,
+    proxy: Option<ProxyEnv>,
+    may_bootstrap: bool,
+) -> Result<String, String> {
     // `detect_on_native_path` re-reads the registry PATH at runtime on Windows
     // so a Node/npm installed after the app launched (or present in the registry
     // but not the GUI's snapshotted PATH) is found without an app restart.
-    if !detect_agent_installed(prereq.to_string(), None)
-        .await
-        .installed
-    {
-        // For npm-based agents on Windows, try to auto-install Node.js (which
-        // bundles npm) via winget before giving up, so the Launch flow works on
-        // a fresh machine. Falls back to the actionable error when winget is
-        // unavailable or the install fails.
-        let bootstrapped = prereq == "npm"
-            && try_bootstrap_npm_via_winget(&app_handle, &event, proxy.clone()).await;
-        if !bootstrapped {
-            return Err(format!(
-                "'{}' is required to install this agent but was not found on PATH. \
-                 Install it (Node.js from https://nodejs.org for npm-based agents), \
-                 then restart Atomic Chat and try again: {}",
-                prereq, docs
-            ));
+    if detect_on_native_path(prereq).await {
+        return Ok(program);
+    }
+    // OpenHands installs through `uv tool install`; the app ships uv for its
+    // MCP servers, so a machine without uv on PATH can still install it.
+    if prereq == "uv" {
+        if let Some(uv) = bundled_uv(app_handle) {
+            let _ = app_handle.emit(
+                event,
+                format!("uv not found on PATH; using {}", uv.display()),
+            );
+            return Ok(uv.to_string_lossy().into_owned());
         }
     }
+    // For npm-based agents on Windows, try to auto-install Node.js (which
+    // bundles npm) via winget before giving up, so the Launch flow works on
+    // a fresh machine. Falls back to the actionable error when winget is
+    // unavailable or the install fails.
+    if prereq == "npm"
+        && may_bootstrap
+        && try_bootstrap_npm_via_winget(app_handle, event, proxy).await
+    {
+        return Ok(program);
+    }
+    Err(format!(
+        "'{}' is required to install this agent but was not found on PATH. \
+         Install it (Node.js from https://nodejs.org for npm-based agents), \
+         then restart Atomic Chat and try again: {}",
+        prereq, docs
+    ))
+}
 
-    // OpenClaw pins a narrow set of Node releases and ships its npm install
-    // behind npm's script-approval flag. Both are checked here, after the npm
-    // prerequisite (and any winget bootstrap) has settled, so we read the Node
-    // that will actually run the agent.
+/// The bundled `uv`: next to the app executable (Tauri `externalBin`), or in
+/// the bundled `resources/bin` of a dev build.
+fn bundled_uv<R: Runtime>(app_handle: &AppHandle<R>) -> Option<PathBuf> {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    if let Some(dir) = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(Path::to_path_buf))
+    {
+        dirs.push(dir);
+    }
+    if let Ok(resources) = app_handle.path().resource_dir() {
+        dirs.push(resources.join("resources").join("bin"));
+    }
+    super::agent_lookup::bundled_tool(&dirs, "uv")
+}
+
+/// The installer's arguments once the prerequisite has settled: npm installs
+/// get `--allow-scripts=<pkg>` where npm needs it (see
+/// [`npm_allow_scripts_arg`]), and OpenClaw refuses a Node it does not support.
+async fn installer_args(
+    agent_id: &str,
+    mut args: Vec<String>,
+    prereq: &str,
+    docs: &str,
+) -> Result<Vec<String>, String> {
+    if prereq != "npm" {
+        return Ok(args);
+    }
+    // OpenClaw pins a narrow set of Node releases. Checked after the npm
+    // prerequisite (and any winget bootstrap) has settled, so we read the
+    // Node that will actually run the agent.
     if agent_id == "openclaw" {
         let node = tokio::task::spawn_blocking(|| tool_version("node"))
             .await
@@ -2540,92 +2855,79 @@ pub async fn install_agent<R: Runtime>(
                 version.0, version.1, version.2, docs
             ));
         }
-        let allow_scripts = tokio::task::spawn_blocking(
-            || matches!(tool_version("npm"), Some(v) if v >= NPM_ALLOW_SCRIPTS_MIN),
-        )
-        .await
-        .unwrap_or(false);
-        if allow_scripts {
-            args.push("--allow-scripts=openclaw".to_string());
-        }
     }
+    // The package is the last argument of `npm install -g <pkg>`.
+    let package = args.last().cloned().unwrap_or_default();
+    if NPM_PACKAGES_WITH_INSTALL_SCRIPTS.contains(&package.as_str()) {
+        let npm = tokio::task::spawn_blocking(|| tool_version("npm"))
+            .await
+            .unwrap_or(None);
+        args.extend(npm_allow_scripts_arg(&package, npm));
+    }
+    Ok(args)
+}
 
-    let agent_id_log = agent_id.clone();
+/// Run one installer to its end (or [`super::agent_process::INSTALLER_TIMEOUT`]),
+/// streaming its log, and say why it failed.
+async fn run_installer<R: Runtime>(
+    app_handle: &AppHandle<R>,
+    event: &str,
+    agent_id: &str,
+    program: String,
+    args: Vec<String>,
+    proxy: Option<ProxyEnv>,
+) -> Result<(), String> {
+    use super::agent_process::{run_streaming, StreamEnd, INSTALLER_TIMEOUT};
 
-    let (success, captured) =
-        tokio::task::spawn_blocking(move || -> Result<(bool, String), String> {
-            use std::io::{BufRead, BufReader};
-            use std::process::{Command, Stdio};
-
-            let mut cmd = Command::new(&program);
-            cmd.args(&args)
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped());
-            // Find `npm`/`curl`/`powershell` even when launched from Finder/Dock
-            // with a minimal PATH (macOS/Linux); no-op on Windows.
-            apply_login_path(&mut cmd);
-            // On Windows, augment with the freshly-read registry PATH.
-            apply_runtime_path(&mut cmd);
-            // Forward the app proxy so the installer can reach the network when
-            // the user is behind a region block.
-            if let Some(ref proxy) = proxy {
-                apply_proxy_env(&mut cmd, proxy);
-            }
-
-            #[cfg(windows)]
-            {
-                use std::os::windows::process::CommandExt;
-                cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-            }
-
-            let mut child = cmd
-                .spawn()
-                .map_err(|e| format!("Failed to spawn '{}': {}", program, e))?;
-
-            // Accumulate output (bounded) so we can classify network failures.
-            let mut captured = String::new();
-            if let Some(stdout) = child.stdout.take() {
-                for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-                    if captured.len() < 16_384 {
-                        captured.push_str(&line);
-                        captured.push('\n');
-                    }
-                    let _ = app_handle.emit(&event, line);
-                }
-            }
-            if let Some(stderr) = child.stderr.take() {
-                for line in BufReader::new(stderr).lines().map_while(Result::ok) {
-                    if captured.len() < 16_384 {
-                        captured.push_str(&line);
-                        captured.push('\n');
-                    }
-                    let _ = app_handle.emit(&event, line);
-                }
-            }
-
-            let status = child.wait().map_err(|e| e.to_string())?;
-            Ok((status.success(), captured))
+    let app = app_handle.clone();
+    let ev = event.to_string();
+    let (end, captured) = tokio::task::spawn_blocking(move || {
+        let mut cmd = std::process::Command::new(&program);
+        cmd.args(&args);
+        // Find `npm`/`curl`/`powershell` even when launched from Finder/Dock
+        // with a minimal PATH (macOS/Linux); no-op on Windows.
+        apply_login_path(&mut cmd);
+        // On Windows, augment with the freshly-read registry PATH.
+        apply_runtime_path(&mut cmd);
+        // Forward the app proxy so the installer can reach the network when
+        // the user is behind a region block.
+        if let Some(ref proxy) = proxy {
+            apply_proxy_env(&mut cmd, proxy);
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        }
+        run_streaming(cmd, INSTALLER_TIMEOUT, |line| {
+            let _ = app.emit(&ev, line);
         })
-        .await
-        .map_err(|e| e.to_string())??;
+        .map_err(|e| format!("Failed to spawn '{}': {}", program, e))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
 
-    if success {
-        log::info!("Agent '{}' installed successfully", agent_id_log);
-        Ok(())
-    } else if output_indicates_network_failure(&captured) {
-        Err(format!(
+    match end {
+        StreamEnd::Exited(status) if status.success() => Ok(()),
+        StreamEnd::TimedOut => Err(format!(
+            "The installer for '{}' did not finish within {} minutes and was stopped. \
+             It may be waiting for input or a stalled download; check your network or \
+             proxy and try again. See the install log for details.",
+            agent_id,
+            INSTALLER_TIMEOUT.as_secs() / 60
+        )),
+        StreamEnd::Exited(_) if output_indicates_network_failure(&captured) => Err(format!(
             "The installer for '{}' could not reach the network (DNS/connection \
              failure). If you are behind a region block, configure a proxy in \
              Settings -> HTTPS Proxy and try again. Note: SOCKS proxies may not \
              work for npm/PowerShell-based installers - prefer an HTTP/HTTPS \
              proxy for these. See the install log for details.",
-            agent_id_log
-        ))
-    } else {
-        Err(format!(
+            agent_id
+        )),
+        StreamEnd::Exited(_) => Err(format!(
             "The installer for '{}' exited with a non-zero status. See the install log for details.",
-            agent_id_log
-        ))
+            agent_id
+        )),
     }
 }
 
@@ -6332,7 +6634,15 @@ mod tests {
     #[cfg(not(windows))]
     #[test]
     fn curl_agent_installers_propagate_download_failures() {
-        for agent_id in ["goose", "atomic-agent", "hermes", "poolside", "zed", "muse"] {
+        for agent_id in [
+            "claude-code",
+            "goose",
+            "atomic-agent",
+            "hermes",
+            "poolside",
+            "zed",
+            "muse",
+        ] {
             let (program, arguments, prerequisite, _) =
                 agent_install_spec(agent_id).expect("known install spec");
             assert_eq!(program, "bash", "{agent_id} must support pipefail");
@@ -6345,6 +6655,122 @@ mod tests {
                 "{agent_id} must fail when curl fails: {arguments:?}"
             );
         }
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn bash_installers_are_piped_into_bash() {
+        // Muse's and Claude Code's scripts use bash syntax; `sh` is dash on
+        // Debian/Ubuntu and stops at the first `[[`.
+        for agent_id in ["claude-code", "muse"] {
+            let (_, arguments, _, _) = agent_install_spec(agent_id).expect("known install spec");
+            assert!(
+                arguments[1].ends_with("| bash"),
+                "{agent_id}: {}",
+                arguments[1]
+            );
+        }
+        let (_, claude, _, _) = agent_install_spec("claude-code").unwrap();
+        assert!(claude[1].contains("https://claude.ai/install.sh"));
+    }
+
+    #[test]
+    fn claude_code_falls_back_to_npm_and_nothing_else_does() {
+        let (program, arguments, prerequisite, _) =
+            agent_install_fallback("claude-code").expect("npm fallback");
+        assert_eq!(prerequisite, "npm");
+        assert_eq!(
+            arguments.last().map(String::as_str),
+            Some("@anthropic-ai/claude-code")
+        );
+        assert_eq!(program, if cfg!(windows) { "cmd" } else { "npm" });
+        for agent_id in ["codex", "opencode", "openclaw", "zed", "muse"] {
+            assert!(agent_install_fallback(agent_id).is_none(), "{agent_id}");
+        }
+    }
+
+    #[test]
+    fn npm_installs_ask_for_install_scripts_only_where_needed() {
+        let npm12 = Some((12, 2, 1));
+        for package in [
+            "@anthropic-ai/claude-code",
+            "opencode-ai",
+            "@kilocode/cli",
+            "cline",
+            "droid",
+            "@mimo-ai/cli",
+            "openclaw",
+        ] {
+            assert_eq!(
+                npm_allow_scripts_arg(package, npm12),
+                Some(format!("--allow-scripts={package}"))
+            );
+            // npm before 11.16 runs every script and rejects the flag.
+            assert_eq!(npm_allow_scripts_arg(package, Some((11, 15, 9))), None);
+            assert_eq!(npm_allow_scripts_arg(package, Some((10, 9, 4))), None);
+            assert_eq!(npm_allow_scripts_arg(package, None), None);
+        }
+        assert_eq!(
+            npm_allow_scripts_arg("opencode-ai", Some((11, 16, 0))),
+            Some("--allow-scripts=opencode-ai".to_string())
+        );
+        for package in ["@openai/codex", "@github/copilot", "@gitlawb/openclaude"] {
+            assert_eq!(npm_allow_scripts_arg(package, npm12), None, "{package}");
+        }
+        // Every package the flag is for is one an agent installs with npm.
+        for (agent_id, package) in [
+            ("opencode", "opencode-ai"),
+            ("kilo", "@kilocode/cli"),
+            ("cline", "cline"),
+            ("droid", "droid"),
+            ("mimo", "@mimo-ai/cli"),
+            ("openclaw", "openclaw"),
+        ] {
+            let (_, arguments, prerequisite, _) = agent_install_spec(agent_id).unwrap();
+            assert_eq!(prerequisite, "npm");
+            assert_eq!(arguments.last().map(String::as_str), Some(package));
+        }
+    }
+
+    #[test]
+    fn powershell_installers_bypass_the_execution_policy() {
+        let arguments = powershell_script("irm https://example.invalid/install.ps1 | iex");
+        assert_eq!(
+            arguments[..4],
+            ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
+        );
+        assert_eq!(
+            arguments[4],
+            "irm https://example.invalid/install.ps1 | iex"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_installers_use_the_catalog_ids_and_policy() {
+        let (program, arguments, _, _) = agent_install_spec("zed").unwrap();
+        assert_eq!(program, "winget");
+        assert!(arguments.contains(&"ZedIndustries.Zed".to_string()));
+        for agent_id in ["claude-code", "goose", "atomic-agent", "hermes", "poolside"] {
+            let (program, arguments, _, _) = agent_install_spec(agent_id).unwrap();
+            assert_eq!(program, "powershell", "{agent_id}");
+            assert_eq!(
+                arguments[1..3],
+                ["-ExecutionPolicy", "Bypass"],
+                "{agent_id}"
+            );
+        }
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn login_path_is_read_between_the_sentinels() {
+        assert_eq!(
+            login_path_from_output("motd\n__OCPATH__/opt/homebrew/bin:/usr/bin__OCEND__"),
+            Some("/opt/homebrew/bin:/usr/bin".to_string())
+        );
+        assert_eq!(login_path_from_output("__OCPATH____OCEND__"), None);
+        assert_eq!(login_path_from_output("no sentinel"), None);
     }
 }
 
@@ -7170,13 +7596,23 @@ mod openclaw_tests {
         assert_eq!(parse_version("not a version"), None);
     }
 
-    /// Only OpenClaw's launcher, ZCode's desktop app and the editors live off
-    /// PATH; guessing paths for the other agents would only produce false
-    /// positives.
+    /// Terminal agents are looked for in the per-user bin directories their
+    /// installers write; OpenClaw's launcher, ZCode's desktop app and the
+    /// editors have candidates of their own, tested with them.
     #[test]
-    fn off_path_candidates_cover_only_openclaw_and_zcode() {
-        assert!(off_path_candidates("claude").is_empty());
-        assert!(off_path_candidates("codex").is_empty());
+    fn off_path_candidates_cover_terminal_agents() {
+        let home = PathBuf::from(agent_home_dir().expect("home"));
+        let local_bin = home.join(".local").join("bin");
+        let claude = off_path_candidates("claude");
+        let native = if cfg!(windows) {
+            "claude.exe"
+        } else {
+            "claude"
+        };
+        assert!(claude.contains(&local_bin.join(native)), "{claude:?}");
+        assert!(off_path_candidates("codex")
+            .iter()
+            .all(|p| p.file_stem().is_some_and(|s| s == "codex")));
 
         let candidates = off_path_candidates("openclaw");
         assert!(!candidates.is_empty());
