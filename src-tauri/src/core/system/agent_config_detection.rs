@@ -18,7 +18,7 @@ use super::claude_config::{
     resolve_claude_settings_path, resolve_openclaude_paths, startup_profile_is_ours, OurServer,
     OPENCLAUDE_PROFILE_ID,
 };
-use super::codex_config::{codex_home, profile_is_ours};
+use super::codex_config::{profile_is_ours, resolve_codex_home};
 use super::commands::{
     agent_home_dir, detect_shell_env_file, dsh_home_dir, entry_is_ours, openclaw_config_path,
     resolve_atomic_agent_state_dir, resolve_hermes_dir, split_custom_providers, zcode_config_dir,
@@ -117,7 +117,7 @@ impl AgentConfigPaths {
             openclaude_profile: openclaude.profile,
             claude_settings: resolve_claude_settings_path().ok()?,
             server: OurServer::from_app_state(),
-            codex_home: codex_home(&home, std::env::var("CODEX_HOME").ok().as_deref()),
+            codex_home: resolve_codex_home().unwrap_or_else(|_| home.join(".codex")),
             family: FamilyPaths::resolve_with(&home, &|name| std::env::var(name).ok()),
             home,
         })
@@ -565,7 +565,12 @@ mod tests {
         assert!(detect(home.path(), None).is_empty());
         write(
             &profile,
-            &super::super::codex_config::render_profile("http://127.0.0.1:1337/v1", "qwen3", false),
+            &super::super::codex_config::render_profile(
+                "http://127.0.0.1:1337/v1",
+                "qwen3",
+                false,
+                None,
+            ),
         );
         assert_eq!(detect(home.path(), None), vec!["codex"]);
     }

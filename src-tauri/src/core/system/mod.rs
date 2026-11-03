@@ -1,6 +1,7 @@
 pub mod agent_config_detection;
 pub mod agent_disconnect;
 pub mod agent_terminal;
+pub mod agent_user_env;
 pub mod claude_config;
 pub mod codex_config;
 pub mod commands;

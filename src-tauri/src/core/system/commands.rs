@@ -2828,11 +2828,10 @@ pub async fn configure_codex(
     // the agent is told so it compacts before the server refuses.
     context_length: Option<u32>,
 ) -> Result<(), String> {
-    let _ = context_length;
     let keyed = api_key.as_deref().is_some_and(|k| !k.is_empty());
     let profile = tauri::async_runtime::spawn_blocking({
         let (api_url, model) = (api_url.clone(), model.clone());
-        move || super::codex_config::configure(&api_url, &model, keyed)
+        move || super::codex_config::configure(&api_url, &model, keyed, context_length)
     })
     .await
     .map_err(|e| e.to_string())??;
@@ -4964,52 +4963,11 @@ fn dsh_home_from(dsh_home_env: Option<&str>, user_home: &Path) -> PathBuf {
     }
 }
 
-/// Read `DSH_HOME` from the user's login shell.
-///
-/// An `export DSH_HOME=...` in `~/.zshrc` is invisible to a Finder/Dock-launched
-/// app (which inherits launchd's environment) but very visible to the `dsh` we
-/// spawn through a terminal. Without this probe we would cheerfully write
-/// `~/.dsh/settings.yaml` while dsh reads somewhere else entirely. Same problem
-/// and same fix as {@link login_shell_path}, including the cache — the probe
-/// spawns an interactive login shell and is far too slow to repeat.
-#[cfg(not(windows))]
-fn login_shell_dsh_home() -> Option<String> {
-    use std::sync::OnceLock;
-    static CACHE: OnceLock<Option<String>> = OnceLock::new();
-    CACHE
-        .get_or_init(|| {
-            let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
-            let out = std::process::Command::new(shell)
-                .args(["-lic", "printf '__DSHHOME__%s__DSHEND__' \"$DSH_HOME\""])
-                .output()
-                .ok()?;
-            if !out.status.success() {
-                return None;
-            }
-            let s = String::from_utf8_lossy(&out.stdout);
-            let start = s.find("__DSHHOME__")? + "__DSHHOME__".len();
-            let end = s[start..].find("__DSHEND__")? + start;
-            let value = s[start..end].trim().to_string();
-            if value.is_empty() {
-                None
-            } else {
-                Some(value)
-            }
-        })
-        .clone()
-}
-
-#[cfg(windows)]
-fn login_shell_dsh_home() -> Option<String> {
-    None
-}
-
-/// Resolve dsh's home directory: `$DSH_HOME` when set, else `~/.dsh`.
+/// Resolve dsh's home directory: `$DSH_HOME` as the `dsh` we start will see it
+/// (an `export DSH_HOME=...` in `~/.zshrc` is invisible to a Finder/Dock
+/// launched app), else `~/.dsh`.
 pub(crate) fn dsh_home_dir() -> Result<PathBuf, String> {
-    let from_env = std::env::var("DSH_HOME")
-        .ok()
-        .filter(|v| !v.trim().is_empty())
-        .or_else(login_shell_dsh_home);
+    let from_env = super::agent_user_env::agent_env_var("DSH_HOME");
     let home = agent_home_dir()?;
     Ok(dsh_home_from(from_env.as_deref(), Path::new(&home)))
 }

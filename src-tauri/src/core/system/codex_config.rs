@@ -23,6 +23,7 @@ use std::fs;
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 
+use super::agent_user_env::agent_env_var;
 use super::commands::{
     agent_home_dir, tool_version_text, ATOMIC_MANAGED_BEGIN, ATOMIC_MANAGED_END,
 };
@@ -57,11 +58,14 @@ pub(crate) fn codex_home(home: &Path, codex_home_env: Option<&str>) -> PathBuf {
     }
 }
 
+/// Where the Codex we start will look: `$CODEX_HOME` as its terminal sees it
+/// (the user's login shell, or Windows' User environment, when Atomic Chat's
+/// own environment lacks it), else `~/.codex`.
 pub(crate) fn resolve_codex_home() -> Result<PathBuf, String> {
     let home = agent_home_dir()?;
     Ok(codex_home(
         Path::new(&home),
-        std::env::var("CODEX_HOME").ok().as_deref(),
+        agent_env_var("CODEX_HOME").as_deref(),
     ))
 }
 
@@ -94,10 +98,31 @@ pub(crate) fn toml_string(value: &str) -> String {
     out
 }
 
-pub(crate) fn render_profile(api_url: &str, model: &str, keyed: bool) -> String {
+/// Codex compacts the conversation once it reaches this share of the window.
+fn auto_compact_limit(context: u32) -> u32 {
+    (u64::from(context) * 3 / 4) as u32
+}
+
+/// The profile's exact bytes. With the served window known, Codex is told it
+/// (`model_context_window`, else it assumes 272K for an unknown model) and
+/// compacts at three quarters of it; unknown, neither line is written.
+pub(crate) fn render_profile(
+    api_url: &str,
+    model: &str,
+    keyed: bool,
+    context: Option<u32>,
+) -> String {
     let mut out = String::from(PROFILE_HEADER);
     out.push_str(&format!("model = {}\n", toml_string(model)));
-    out.push_str(&format!("model_provider = \"{PROVIDER_ID}\"\n\n"));
+    out.push_str(&format!("model_provider = \"{PROVIDER_ID}\"\n"));
+    if let Some(context) = context.filter(|c| *c > 0) {
+        out.push_str(&format!("model_context_window = {context}\n"));
+        out.push_str(&format!(
+            "model_auto_compact_token_limit = {}\n",
+            auto_compact_limit(context)
+        ));
+    }
+    out.push('\n');
     out.push_str(&format!("[model_providers.{PROVIDER_ID}]\n"));
     out.push_str("name = \"Atomic Chat\"\n");
     out.push_str(&format!("base_url = {}\n", toml_string(api_url)));
@@ -176,6 +201,7 @@ pub(crate) fn write_profile(
     api_url: &str,
     model: &str,
     keyed: bool,
+    context: Option<u32>,
 ) -> Result<PathBuf, String> {
     let path = profile_path(codex_home);
     if let Some(existing) = read_optional(&path)? {
@@ -186,7 +212,7 @@ pub(crate) fn write_profile(
             ));
         }
     }
-    let contents = render_profile(api_url, model, keyed);
+    let contents = render_profile(api_url, model, keyed, context);
     contents.parse::<toml::Table>().map_err(|e| {
         format!(
             "Atomic Chat built an invalid Codex profile ({})",
@@ -469,6 +495,7 @@ pub(crate) fn configure_in(
     api_url: &str,
     model: &str,
     keyed: bool,
+    context: Option<u32>,
     version: Option<(u64, u64, u64)>,
 ) -> Result<PathBuf, String> {
     if let Some((major, minor, patch)) = version.filter(|v| *v < MIN_CODEX_VERSION) {
@@ -479,15 +506,21 @@ pub(crate) fn configure_in(
     if let Repair::Conflict(why) = repair_legacy_config(codex_home)? {
         return Err(why);
     }
-    write_profile(codex_home, api_url, model, keyed)
+    write_profile(codex_home, api_url, model, keyed, context)
 }
 
-pub(crate) fn configure(api_url: &str, model: &str, keyed: bool) -> Result<PathBuf, String> {
+pub(crate) fn configure(
+    api_url: &str,
+    model: &str,
+    keyed: bool,
+    context: Option<u32>,
+) -> Result<PathBuf, String> {
     configure_in(
         &resolve_codex_home()?,
         api_url,
         model,
         keyed,
+        context,
         installed_codex_version(),
     )
 }
@@ -514,7 +547,7 @@ pub(crate) fn migrate_in(codex_home: &Path) {
             let profile_missing = matches!(read_optional(&profile_path(codex_home)), Ok(None));
             if let (true, Some(model), Some(url)) = (profile_missing, legacy.model, legacy.base_url)
             {
-                match write_profile(codex_home, &url, &model, legacy.keyed) {
+                match write_profile(codex_home, &url, &model, legacy.keyed, None) {
                     Ok(path) => log::info!("Moved them to the Codex profile {}", path.display()),
                     Err(e) => log::warn!("Could not write the Codex profile: {e}"),
                 }
@@ -618,8 +651,30 @@ model_provider = \"atomic\"\n\
 
     #[test]
     fn profile_matches_the_golden_bytes() {
-        assert_eq!(render_profile(URL, MODEL, true), GOLDEN);
-        assert!(!render_profile(URL, MODEL, false).contains("env_key"));
+        assert_eq!(render_profile(URL, MODEL, true, None), GOLDEN);
+        assert!(!render_profile(URL, MODEL, false, None).contains("env_key"));
+    }
+
+    #[test]
+    fn a_known_window_is_written_with_a_compaction_limit() {
+        assert_eq!(
+            render_profile(URL, MODEL, true, Some(16384)),
+            GOLDEN.replace(
+                "model_provider = \"atomic-chat\"\n",
+                "model_provider = \"atomic-chat\"\n\
+                 model_context_window = 16384\n\
+                 model_auto_compact_token_limit = 12288\n"
+            )
+        );
+        let table = render_profile(URL, MODEL, false, Some(65535))
+            .parse::<toml::Table>()
+            .unwrap();
+        assert_eq!(table["model_context_window"].as_integer(), Some(65535));
+        assert_eq!(
+            table["model_auto_compact_token_limit"].as_integer(),
+            Some(49151)
+        );
+        assert!(!render_profile(URL, MODEL, false, Some(0)).contains("model_context_window"));
     }
 
     #[test]
@@ -628,7 +683,7 @@ model_provider = \"atomic\"\n\
             toml_string("a\\b\"c\td\ne\r\u{1}\u{7f}"),
             "\"a\\\\b\\\"c\\td\\ne\\r\\u0001\\u007F\""
         );
-        let profile = render_profile("http://h/v1?q=\"x\"", "line\nbreak", false);
+        let profile = render_profile("http://h/v1?q=\"x\"", "line\nbreak", false, None);
         let table = profile.parse::<toml::Table>().unwrap();
         assert_eq!(table["model"].as_str(), Some("line\nbreak"));
     }
@@ -637,7 +692,7 @@ model_provider = \"atomic\"\n\
     fn configure_writes_only_the_profile() {
         let dir = tempfile::tempdir().unwrap();
         let config = seed(dir.path(), BASE_CONFIG, "model = \"mine\"\n");
-        let path = configure_in(dir.path(), URL, MODEL, true, Some((0, 146, 0))).unwrap();
+        let path = configure_in(dir.path(), URL, MODEL, true, None, Some((0, 146, 0))).unwrap();
         assert_eq!(read(&path), GOLDEN);
         assert_eq!(read(&config), "model = \"mine\"\n");
         assert_eq!(
@@ -645,16 +700,17 @@ model_provider = \"atomic\"\n\
             vec!["atomic-chat.config.toml", BASE_CONFIG]
         );
         // A rerun only rewrites our own file.
-        configure_in(dir.path(), URL, "other", false, None).unwrap();
+        configure_in(dir.path(), URL, "other", false, Some(8192), None).unwrap();
         assert!(read(&path).contains("model = \"other\""));
         assert!(!read(&path).contains("env_key"));
+        assert!(read(&path).contains("model_context_window = 8192\n"));
     }
 
     #[test]
     fn a_profile_that_is_not_ours_is_never_overwritten_or_deleted() {
         let dir = tempfile::tempdir().unwrap();
         let theirs = seed(dir.path(), PROFILE_FILE, "model = \"theirs\"\n");
-        let err = configure_in(dir.path(), URL, MODEL, false, None).unwrap_err();
+        let err = configure_in(dir.path(), URL, MODEL, false, None, None).unwrap_err();
         assert!(err.contains("was not written by Atomic Chat"), "{err}");
         disconnect_in(dir.path()).unwrap();
         assert_eq!(read(&theirs), "model = \"theirs\"\n");
@@ -663,7 +719,7 @@ model_provider = \"atomic\"\n\
     #[test]
     fn too_old_a_codex_is_refused_before_anything_is_written() {
         let dir = tempfile::tempdir().unwrap();
-        let err = configure_in(dir.path(), URL, MODEL, false, Some((0, 133, 9))).unwrap_err();
+        let err = configure_in(dir.path(), URL, MODEL, false, None, Some((0, 133, 9))).unwrap_err();
         assert!(err.contains("0.133.9") && err.contains("0.134"), "{err}");
         assert!(!dir.path().exists() || files(dir.path()).is_empty());
     }
@@ -813,7 +869,7 @@ name = \"Atomic Chat\"\nbase_url = \"http://h/v1\"\n# <<< Atomic Chat (managed) 
     fn configure_repairs_an_old_config_before_writing_the_profile() {
         let dir = tempfile::tempdir().unwrap();
         let config = seed(dir.path(), BASE_CONFIG, BROKEN_V2);
-        configure_in(dir.path(), URL, MODEL, true, None).unwrap();
+        configure_in(dir.path(), URL, MODEL, true, None, None).unwrap();
         assert!(read(&config).parse::<toml::Table>().is_ok());
         assert_eq!(read(&profile_path(dir.path())), GOLDEN);
     }
@@ -823,7 +879,7 @@ name = \"Atomic Chat\"\nbase_url = \"http://h/v1\"\n# <<< Atomic Chat (managed) 
         let dir = tempfile::tempdir().unwrap();
         let broken = format!("{ATOMIC_MANAGED_BEGIN}\nmodel = \"m\"\n");
         seed(dir.path(), BASE_CONFIG, &broken);
-        let err = configure_in(dir.path(), URL, MODEL, false, None).unwrap_err();
+        let err = configure_in(dir.path(), URL, MODEL, false, None, None).unwrap_err();
         assert!(
             err.contains("never closed") && err.contains("by hand"),
             "{err}"
@@ -835,7 +891,7 @@ name = \"Atomic Chat\"\nbase_url = \"http://h/v1\"\n# <<< Atomic Chat (managed) 
     fn disconnect_removes_our_profile_and_our_old_settings() {
         let dir = tempfile::tempdir().unwrap();
         let config = seed(dir.path(), BASE_CONFIG, BROKEN_V2);
-        write_profile(dir.path(), URL, MODEL, false).unwrap();
+        write_profile(dir.path(), URL, MODEL, false, None).unwrap();
         disconnect_in(dir.path()).unwrap();
         assert!(!profile_path(dir.path()).exists());
         assert!(!read(&config).contains("Atomic Chat"));
@@ -851,12 +907,12 @@ name = \"Atomic Chat\"\nbase_url = \"http://h/v1\"\n# <<< Atomic Chat (managed) 
         migrate_in(dir.path());
         assert_eq!(
             read(&profile_path(dir.path())),
-            render_profile(URL, "local-model", true)
+            render_profile(URL, "local-model", true, None)
         );
         // A profile already in place is newer than the old settings.
         let dir = tempfile::tempdir().unwrap();
         seed(dir.path(), BASE_CONFIG, BROKEN_V2);
-        write_profile(dir.path(), "http://new/v1", "new", false).unwrap();
+        write_profile(dir.path(), "http://new/v1", "new", false, None).unwrap();
         migrate_in(dir.path());
         assert!(read(&profile_path(dir.path())).contains("http://new/v1"));
     }
