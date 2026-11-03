@@ -121,6 +121,23 @@ describe('connected agents follow the served model', () => {
     expect(toastInfo).not.toHaveBeenCalled()
   })
 
+  it('leaves the agents on their local model when the chat switches to a cloud model', async () => {
+    useModelProvider.setState({
+      providers: [
+        ...useModelProvider.getState().providers,
+        { provider: 'openai', active: true, models: [{ id: 'gpt-5.2' }] },
+      ] as unknown as ModelProvider[],
+    })
+    stop = syncConnectedAgentsWithServedModel()
+    useLocalApiServer
+      .getState()
+      .setLastServerModels([{ model: 'gpt-5.2', provider: 'openai' }])
+    await settle()
+
+    expect(writeAgentConfig).not.toHaveBeenCalled()
+    expect(toastInfo).not.toHaveBeenCalled()
+  })
+
   it('writes once per model, and drops a write a newer change overtook', async () => {
     stop = syncConnectedAgentsWithServedModel()
     const server = useLocalApiServer.getState()

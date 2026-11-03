@@ -23,7 +23,8 @@ import i18n from '@/i18n/setup'
 import { isEmbeddingOnlyModel } from '@/lib/answerable-model'
 import { writeAgentConfig } from '@/lib/integration-agent-setup'
 import { compactModelDisplayName } from '@/lib/model-display-name'
-import { servedModelId } from '@/utils/servedModel'
+import { isLocalProvider } from '@/utils/registerRemoteProvider'
+import { servedModel, servedModelId } from '@/utils/servedModel'
 
 /** One toast at a time: a newer change replaces the one before. */
 const TOAST_ID = 'connected-agents-model'
@@ -72,8 +73,8 @@ function findChatModel(modelId: string): Model | undefined {
 
 /**
  * Keep the connected agents on the model the server serves: whenever it
- * changes to another chat model a provider lists, point them at it and say
- * so once. The model served at subscription is taken as the one they use.
+ * changes to another local chat model a provider lists, point them at it and
+ * say so once. The model served at subscription is taken as the one they use.
  * Writes run one after another; one overtaken by a newer change is dropped.
  * Returns the unsubscribe.
  */
@@ -102,8 +103,12 @@ export function syncConnectedAgentsWithServedModel(): () => void {
   }
 
   return useLocalApiServer.subscribe((state) => {
-    const model = servedModelId(state)
-    if (!model || model === wanted || !findChatModel(model)) return
+    const served = servedModel(state)
+    const model = served?.model
+    // Only a local model: a chat switched to a cloud model must not send the
+    // agents' traffic to that paid provider unasked.
+    if (!model || !isLocalProvider(served.provider)) return
+    if (model === wanted || !findChatModel(model)) return
     wanted = model
     queue = queue
       .then(() => point(model))

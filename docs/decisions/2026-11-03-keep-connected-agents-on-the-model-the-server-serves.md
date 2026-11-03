@@ -19,8 +19,8 @@ title: "Keep connected agents on the model the server serves"
   server's current host, port, prefix and key
   (`syncConnectedAgentsWithServedModel` in `utils/connectedAgentsModel.ts`,
   subscribed in `DataProvider` next to the served-model selection). Skipped:
-  no model, an id no provider lists, an embedding model, and the model the
-  agents already use. The writes run one after another; one overtaken by a
+  no model, a cloud model, an id no provider lists, an embedding model, and
+  the model the agents already use. The writes run one after another; one overtaken by a
   newer change is dropped, and one that fails is logged for that agent and
   never reaches the switch. One toast per change says the connected tools now
   use the model and that a tool already running needs a restart.
@@ -30,8 +30,9 @@ title: "Keep connected agents on the model the server serves"
   ZCode reload their config by themselves); the toast says so. Every switch
   rewrites the config of every connected agent, including ones the user no
   longer runs; Disconnect in Connections takes an agent out of them. A chat
-  switch to a cloud model points the agents at that cloud model through the
-  server, as Connect would, so their requests then go to that provider. The
+  switch to a cloud model leaves the agents on their local model: following it
+  would send their traffic to a paid provider the user never chose for them.
+  The
   model served when the app starts is taken as the one the agents use: a
   config left stale by an earlier release is corrected at the next change, not
   at launch. A change is seen by the window that made it, with the connected
