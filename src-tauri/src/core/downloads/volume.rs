@@ -46,7 +46,7 @@ pub fn disk_space_info(path: &Path) -> Result<DiskSpaceInfo, String> {
         )),
     };
     match direct {
-        Ok(info) => Ok(info),
+        Ok(info) => Ok(prefer_important_usage(path, info)),
         Err(error) => {
             log::warn!(
                 "Free-space query for {} failed ({error}); falling back to the volume list",
@@ -60,6 +60,30 @@ pub fn disk_space_info(path: &Path) -> Result<DiskSpaceInfo, String> {
             })
         }
     }
+}
+
+/// macOS: `statvfs` does not count purgeable space (system caches, local
+/// Time Machine snapshots) that APFS frees on demand. Finder, and the volume
+/// list through `sysinfo`, report what is available "for important usage",
+/// which does — the figure the preflight used before this module. Take the
+/// larger, so a Mac with large purgeable caches is not refused a download the
+/// system would make room for.
+#[cfg(target_os = "macos")]
+fn prefer_important_usage(path: &Path, info: DiskSpaceInfo) -> DiskSpaceInfo {
+    match from_volume_list(path) {
+        Some(listed) if listed.free_bytes > info.free_bytes => DiskSpaceInfo {
+            free_bytes: listed.free_bytes,
+            fs_name: info.fs_name.or(listed.fs_name),
+            volume_root: info.volume_root.or(listed.volume_root),
+            ..info
+        },
+        _ => info,
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn prefer_important_usage(_path: &Path, info: DiskSpaceInfo) -> DiskSpaceInfo {
+    info
 }
 
 /// Bytes `path` occupies on its volume, or `None` when it does not exist.

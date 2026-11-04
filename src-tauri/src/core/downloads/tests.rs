@@ -2939,6 +2939,23 @@ mod disk_reliability {
         assert!(available_space_for(&target).is_some());
     }
 
+    /// macOS counts purgeable space as available; the answer must never be
+    /// stricter than a plain `statvfs` there (the regression this guards).
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mac_free_space_is_at_least_what_statvfs_reports() {
+        use std::os::unix::ffi::OsStrExt;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let info = disk_space_info(dir.path()).expect("measured");
+        let c_path = std::ffi::CString::new(dir.path().as_os_str().as_bytes()).unwrap();
+        let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
+        assert_eq!(unsafe { libc::statvfs(c_path.as_ptr(), &mut stat) }, 0);
+        #[allow(clippy::unnecessary_cast)]
+        let statvfs_free = (stat.f_bavail as u64).saturating_mul(stat.f_frsize as u64);
+        // Free space moves between the two reads; allow a little slack.
+        assert!(info.free_bytes + 64 * 1024 * 1024 >= statvfs_free, "{} < {}", info.free_bytes, statvfs_free);
+    }
+
     #[test]
     fn disk_space_info_serializes_in_snake_case() {
         let info = DiskSpaceInfo {
