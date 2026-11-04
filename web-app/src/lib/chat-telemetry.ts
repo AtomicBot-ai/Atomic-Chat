@@ -28,16 +28,25 @@ import {
   execBackendForModel,
   classifyChatFailure,
   finalizeChatTurnOnce,
+  lastLoadIdForModel,
   lengthBucket,
   loadBackendFromProvider,
   normalizeModelId,
-  shouldEmitChatFailure,
   sizeBucket,
   toolNameForAnalytics,
   type ChatFailureKind,
 } from '@/lib/telemetry'
 
-export type ChatTurnSource = 'chat' | 'agent' | 'regenerate' | 'edit'
+export type ChatTurnSource =
+  | 'chat'
+  | 'agent'
+  | 'regenerate'
+  | 'edit'
+  /**
+   * A regenerate the app started on its own (engine recovery), kept apart
+   * from `regenerate` so user retries and automatic ones count separately.
+   */
+  | 'auto_retry'
 
 /**
  * Which pipeline actually served the turn. After the chat/agent merge the
@@ -60,7 +69,35 @@ export type ChatOutcome =
 /* turn id correlation                                                 */
 /* ------------------------------------------------------------------ */
 
+/**
+ * What is known about one send while it runs: the ids both events carry, and
+ * the clock the failure events read their timings from.
+ */
+type TurnRecord = {
+  turnId: string
+  threadId: string
+  /**
+   * Fresh for every send, regenerate, edit and retry, and carried by its
+   * request and its response, so attempts count and join on their own.
+   */
+  attemptId: string
+  /** When the send started; null for a turn minted at response time. */
+  startedAtMs: number | null
+  /** When the first generated output reached the chat, if any did. */
+  firstOutputAtMs?: number
+  /** Chat updates from the first output on: the chunks the reply arrived in. */
+  outputChunks: number
+  /** Whether a stream was observed at all, so 0 chunks means "none came". */
+  observed: boolean
+  stopObserving?: () => void
+}
+
+const MAX_TRACKED_TURNS = 200
+
 const activeTurnByThread = new Map<string, string>()
+/** The turn each thread last reported, until its next send. */
+const endedTurnByThread = new Map<string, string>()
+const turnRecords = new Map<string, TurnRecord>()
 
 function randomId(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
@@ -68,32 +105,186 @@ function randomId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 }
 
+/** Insert-or-refresh with oldest-first eviction, like the throttles. */
+function boundedSet<V>(
+  map: Map<string, V>,
+  key: string,
+  value: V,
+  onEvict?: (value: V) => void
+): void {
+  map.delete(key)
+  map.set(key, value)
+  while (map.size > MAX_TRACKED_TURNS) {
+    const oldest = map.keys().next()
+    if (oldest.done) break
+    onEvict?.(map.get(oldest.value) as V)
+    map.delete(oldest.value)
+  }
+}
+
+function stopObserving(record: TurnRecord | undefined): void {
+  record?.stopObserving?.()
+  if (record) record.stopObserving = undefined
+}
+
+function startTurn(threadId: string, startedAtMs: number | null): TurnRecord {
+  // A send that replaces one still in flight takes over its stream.
+  const previous = activeTurnByThread.get(threadId)
+  if (previous) stopObserving(turnRecords.get(previous))
+  const record: TurnRecord = {
+    turnId: randomId(),
+    threadId,
+    attemptId: randomId(),
+    startedAtMs,
+    outputChunks: 0,
+    observed: false,
+  }
+  boundedSet(turnRecords, record.turnId, record, stopObserving)
+  boundedSet(activeTurnByThread, threadId, record.turnId)
+  endedTurnByThread.delete(threadId)
+  return record
+}
+
 /** Mint the turn id for a new send and remember it for the matching response. */
 export function beginChatTurn(threadId: string): string {
-  const turnId = randomId()
-  activeTurnByThread.set(threadId, turnId)
-  if (activeTurnByThread.size > 200) {
-    // Bounded: threads are long-lived but the map only needs the in-flight turn.
-    const oldest = activeTurnByThread.keys().next().value
-    if (oldest !== undefined && oldest !== threadId)
-      activeTurnByThread.delete(oldest)
-  }
-  return turnId
+  return startTurn(threadId, Date.now()).turnId
 }
 
 /**
- * The turn id of the in-flight send for this thread. Falls back to a fresh id
- * so a response arriving without a tracked send (regenerate from a restored
- * session, resumed stream) still emits rather than being silently dropped.
+ * The turn id of the in-flight send for this thread.
+ *
+ * Once that turn is reported this keeps returning it until the next send, so
+ * a second report of the same turn dedupes onto it. It used to mint a fresh
+ * id instead: the AI SDK calls `onError` and then `onFinish({ isError })` for
+ * one failure, and the finish became a phantom turn — a `success` with no
+ * request after every error.
+ *
+ * Only a thread with no tracked send at all (a stream resumed in a restored
+ * session) gets a fresh id, so its response still emits.
  */
 export function currentChatTurn(threadId: string): string {
-  const existing = activeTurnByThread.get(threadId)
-  if (existing) return existing
-  return beginChatTurn(threadId)
+  return (
+    activeTurnByThread.get(threadId) ??
+    endedTurnByThread.get(threadId) ??
+    startTurn(threadId, null).turnId
+  )
 }
 
-export function endChatTurn(threadId: string): void {
+/**
+ * Release the thread's in-flight turn. With `turnId`, only when that is the
+ * in-flight one, so a late report of an older turn cannot end a newer send.
+ */
+export function endChatTurn(threadId: string, turnId?: string): void {
+  const active = activeTurnByThread.get(threadId)
+  if (!active || (turnId !== undefined && turnId !== active)) return
   activeTurnByThread.delete(threadId)
+  boundedSet(endedTurnByThread, threadId, active)
+  stopObserving(turnRecords.get(active))
+}
+
+/* ------------------------------------------------------------------ */
+/* stream observation (failure timings)                                */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Structural slice of the AI SDK `Chat` that the observer reads. The
+ * messages callback is the same hook `useChat` renders from; registered here
+ * without a throttle, it runs once per streamed update.
+ */
+export type ChatStreamLike = {
+  readonly 'lastMessage'?:
+    | (TelemetryMessageLike & { id?: string; role?: string })
+    | undefined
+  '~registerMessagesCallback'?: (
+    onChange: () => void,
+    throttleWaitMs?: number
+  ) => () => void
+}
+
+/** Text, reasoning, a tool call or a file: anything the model generated. */
+function hasGeneratedOutput(message: TelemetryMessageLike): boolean {
+  return (message.parts ?? []).some((part) =>
+    part.type === 'text' || part.type === 'reasoning'
+      ? (part.text ?? '').trim() !== ''
+      : part.type === 'file' ||
+        part.type === 'dynamic-tool' ||
+        part.type.startsWith('tool-')
+  )
+}
+
+/**
+ * Note when the attempt's first output arrives and how many updates follow.
+ *
+ * A failed turn finishes without the `finish` part the transport hangs its
+ * timings and usage on, so `chat_response_received` errors carried null
+ * `ttft_ms`, `tokens_out` and `total_duration_ms`, and a failure before the
+ * first token could not be told from one mid-stream. The first output here is
+ * the same event the transport's `ttft_ms` starts its clock on (the first
+ * text or reasoning delta), seen one hop later.
+ */
+function observeChatStream(record: TurnRecord, stream: ChatStreamLike): void {
+  const register = stream['~registerMessagesCallback']
+  if (typeof register !== 'function') return
+  stopObserving(record)
+  // A message that was already last when the send started is history, not
+  // this attempt's reply (a regenerate starts with the old answer in place).
+  const baselineId = stream.lastMessage?.id
+  try {
+    record.stopObserving = register.call(stream, () => {
+      const last = stream.lastMessage
+      if (!last || last.role !== 'assistant' || last.id === baselineId) return
+      if (record.firstOutputAtMs === undefined) {
+        if (!hasGeneratedOutput(last)) return
+        record.firstOutputAtMs = Date.now()
+      }
+      record.outputChunks += 1
+    })
+    record.observed = true
+  } catch (err) {
+    console.debug('chat stream observation failed:', err)
+  }
+}
+
+export type FailurePhase = 'before_first_token' | 'mid_stream'
+
+/** Did the partial reply hold any output, judged from its shape alone? */
+function shapeShowsOutput(props: Record<string, unknown>): boolean {
+  const len = props.response_len_bucket
+  return (
+    (typeof len === 'string' && len !== 'empty' && len !== 'unknown') ||
+    props.has_reasoning === true ||
+    (typeof props.tool_call_count === 'number' && props.tool_call_count > 0)
+  )
+}
+
+/**
+ * `phase`, and the timings a finished reply would have carried, for a turn
+ * that failed or was stopped. Values the caller already has win; the rest
+ * come from the attempt's own clock, which starts at the send.
+ */
+function failureTiming(
+  record: TurnRecord | undefined,
+  props: Record<string, unknown>,
+  now: number
+): Record<string, unknown> {
+  const started = record?.startedAtMs ?? null
+  const firstOutput = record?.firstOutputAtMs
+  const sawOutput = firstOutput !== undefined || shapeShowsOutput(props)
+  const phase: FailurePhase = sawOutput ? 'mid_stream' : 'before_first_token'
+  const given = (key: string) =>
+    typeof props[key] === 'number' ? (props[key] as number) : null
+  return {
+    phase,
+    ttft_ms:
+      given('ttft_ms') ??
+      (started !== null && firstOutput !== undefined
+        ? Math.max(0, firstOutput - started)
+        : null),
+    total_duration_ms:
+      given('total_duration_ms') ??
+      (started !== null ? Math.max(0, now - started) : null),
+    output_chunk_count: record?.observed ? record.outputChunks : null,
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -406,15 +597,57 @@ export type ChatRequestProps = {
   Partial<ContextTelemetry> &
   Partial<Pick<ToolTelemetry, 'has_rag' | 'has_mcp'>>
 
+/**
+ * The record for a turn id: the one `beginChatTurn` minted, or a new one for
+ * an id that did not come from it, so every request still gets an attempt.
+ */
+function recordFor(turnId: string, threadId: string): TurnRecord {
+  const existing = turnRecords.get(turnId)
+  if (existing) return existing
+  const record: TurnRecord = {
+    turnId,
+    threadId,
+    attemptId: randomId(),
+    startedAtMs: Date.now(),
+    outputChunks: 0,
+    observed: false,
+  }
+  boundedSet(turnRecords, turnId, record, stopObserving)
+  return record
+}
+
+/**
+ * Time the reply to the thread's in-flight send from the thread's AI SDK
+ * `Chat`, so a failure reports when (and whether) output arrived. Call right
+ * after `captureChatRequest`; a thread with no send in flight is ignored.
+ */
+export function observeChatTurn(
+  threadId: string,
+  stream: ChatStreamLike | null | undefined
+): void {
+  try {
+    const turnId = activeTurnByThread.get(threadId)
+    const record = turnId ? turnRecords.get(turnId) : undefined
+    if (record && stream) observeChatStream(record, stream)
+  } catch (err) {
+    console.debug('chat stream observation failed:', err)
+  }
+}
+
 export function captureChatRequest(props: ChatRequestProps): void {
   try {
+    const record = recordFor(props.turn_id, props.thread_id)
     queuedCapture(
       'chat_request_sent',
       compact({
         ...props,
+        attempt_id: record.attemptId,
         model_id: normalizeModelId(props.model_id),
         has_attachments: (props.attachment_count ?? 0) > 0,
         backend: loadBackendFromProvider(props.provider),
+        // Joins the request to the `model_load` that put this model in
+        // memory; null for cloud models and before any load this session.
+        last_load_id: lastLoadIdForModel(props.model_id, props.provider),
       })
     )
   } catch (err) {
@@ -461,28 +694,34 @@ export type ChatResponseProps = {
 /**
  * Emit exactly one `chat_response_received` per turn.
  *
- * Deduped on `turn_id` because `onFinish` fires more than once per message and
- * can race the error path. Failures are additionally throttled per
- * (model, error_kind) so a backend stuck in a retry loop cannot dominate
- * event-weighted metrics — matching how `model_load` failures are handled.
+ * Deduped on `turn_id` only, because `onFinish` fires more than once per
+ * message and can race the error path. Failures used to be throttled per
+ * (model, error_kind) as well, after the turn was already marked reported: a
+ * dropped failure left its request without a response for good, so the error
+ * rate read low exactly where errors repeat. Every request now gets its
+ * response; volume from a stuck device is bounded by its requests, and
+ * failure rates are counted per device anyway. The `model_load` crash-loop
+ * throttle is separate and stays.
  */
 export function captureChatResponse(props: ChatResponseProps): void {
   try {
     const { error, ...rest } = props
     const errorKind: ChatFailureKind | undefined =
-      props.outcome === 'error' ? classifyChatFailure(error) : undefined
+      props.outcome === 'error'
+        ? classifyChatFailure(error, props.provider)
+        : undefined
 
     if (!finalizeChatTurnOnce(props.turn_id)) return
-    if (
-      errorKind !== undefined &&
-      !shouldEmitChatFailure(props.model_id, errorKind)
-    )
-      return
+
+    const record = turnRecords.get(props.turn_id)
+    const failed = props.outcome === 'error' || props.outcome === 'aborted'
 
     queuedCapture(
       'chat_response_received',
       compact({
         ...rest,
+        ...(failed ? failureTiming(record, rest, Date.now()) : {}),
+        attempt_id: record?.attemptId ?? null,
         model_id: normalizeModelId(props.model_id),
         // What computed the answer. Null for remote providers — the whole
         // reason `active_backend`, a device-level super-property, could not be
@@ -497,7 +736,7 @@ export function captureChatResponse(props: ChatResponseProps): void {
   } catch (err) {
     console.debug('chat_response_received telemetry failed:', err)
   } finally {
-    endChatTurn(props.thread_id)
+    endChatTurn(props.thread_id, props.turn_id)
   }
 }
 

@@ -33,10 +33,12 @@ pub fn run() {
           println!("a new app instance was opened with {argv:?} and the deep link event was already triggered");
           // when defining deep link schemes at runtime, you must also check `argv` here
 
-          // Linux closes the window to the tray, so launching the app again
-          // from a launcher is how many users will look for it: show it.
-          #[cfg(target_os = "linux")]
+          // Linux closes the window to the tray, and Windows does while a
+          // reply or a download runs, so launching the app again from a
+          // launcher is how many users will look for it: show it.
+          #[cfg(any(target_os = "linux", target_os = "windows"))]
           if let Some(window) = _app.get_webview_window("main") {
+              #[cfg(target_os = "linux")]
               core::setup::cancel_pending_close();
               let _ = window.unminimize();
               let _ = window.show();
@@ -267,6 +269,7 @@ pub fn run() {
         core::downloads::commands::cancel_download_task,
         core::downloads::commands::test_proxy_connection,
         core::downloads::commands::get_download_free_space,
+        core::downloads::commands::get_disk_space_info,
         // An AI Hub bundle's zip, unpacked under its download's task id (change add-geniex-runtime).
         core::downloads::archive::extract_zip,
         // Custom updater commands (desktop only)
@@ -755,8 +758,15 @@ pub fn run() {
         }
 
         match event {
-            RunEvent::ExitRequested { .. } => {
+            #[cfg_attr(any(target_os = "ios", target_os = "android"), allow(unused_variables))]
+            RunEvent::ExitRequested { code, api, .. } => {
                 log::info!("Application exit requested");
+                // The webview flushes what it still holds on `app-shutting-down`; give it
+                // `EXIT_FLUSH_GRACE` before the teardown in RunEvent::Exit.
+                #[cfg(not(any(target_os = "ios", target_os = "android")))]
+                if setup::defer_exit_for_shutdown_flush(app, code) {
+                    api.prevent_exit();
+                }
             }
             RunEvent::WindowEvent {
                 label,
@@ -777,7 +787,11 @@ pub fn run() {
                 #[cfg(not(any(target_os = "ios", target_os = "android")))]
                 {
                     if let Some(window) = app_handle.get_webview_window("main") {
-                        let _ = window.emit("app-shutting-down", ());
+                        // Already sent at the start of the exit grace, unless this exit skipped
+                        // it (a restart, or macOS terminating the app directly).
+                        if !setup::exit_grace_started() {
+                            let _ = window.emit("app-shutting-down", ());
+                        }
                         let _ = window.hide();
                     }
                 }

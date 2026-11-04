@@ -505,6 +505,23 @@ export function DownloadManagement({
       // ATO-467: a filesystem failure now says which one it was. The generic
       // "download failed" toast told 647 devices nothing they could act on,
       // and disk faults are the single largest failure cause.
+      // A FAT32 drive cannot store a file of 4 GiB or more (`[disk_fs_limit]`);
+      // matched on the tag itself so it never reads as a full disk. Moving the
+      // data folder is the fix, so the toast offers it.
+      if (err.includes('[disk_fs_limit]')) {
+        markResumableDownload(state.modelId)
+        toast.error(t('common:toast.downloadFsLimit.title'), {
+          id: 'download-failed',
+          description: t('common:toast.downloadFsLimit.descriptionFailed'),
+          duration: 30000,
+          action: {
+            label: t('common:toast.downloadWontFit.changeFolder'),
+            onClick: () => navigate({ to: route.settings.general }),
+          },
+        })
+        return
+      }
+
       const diskReason = classifyDownloadFailure(err)
       const diskToastKey: Record<string, string> = {
         disk_full: 'common:toast.downloadDiskFull',

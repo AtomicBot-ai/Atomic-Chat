@@ -4,13 +4,20 @@ import posthog from 'posthog-js'
 import {
   bufferTelemetryUntilReady,
   disableTelemetryQueue,
+  flushTelemetryForShutdown,
   flushTelemetryQueue,
+  markTelemetryIdentityReady,
   queuedCapture,
   resetTelemetryQueueForTests,
 } from '@/lib/telemetry-queue'
 
 vi.mock('posthog-js', () => ({
-  default: { capture: vi.fn(), has_opted_in_capturing: vi.fn() },
+  default: {
+    capture: vi.fn(),
+    has_opted_in_capturing: vi.fn(),
+    _handle_unload: vi.fn(),
+    set_config: vi.fn(),
+  },
 }))
 
 const capture = () => vi.mocked(posthog.capture)
@@ -20,6 +27,8 @@ const optedIn = (value: boolean) =>
 beforeEach(() => {
   vi.mocked(posthog.capture).mockClear()
   vi.mocked(posthog.has_opted_in_capturing).mockReset()
+  vi.mocked(posthog._handle_unload).mockReset()
+  vi.mocked(posthog.set_config).mockReset()
   resetTelemetryQueueForTests()
 })
 
@@ -172,5 +181,70 @@ describe('flushTelemetryQueue', () => {
 
     expect(() => flushTelemetryQueue()).not.toThrow()
     expect(capture()).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('flushTelemetryForShutdown', () => {
+  it('sends what the SDK holds right away and stops batching', () => {
+    flushTelemetryQueue()
+    queuedCapture('chat_response_received', { outcome: 'error' })
+
+    flushTelemetryForShutdown()
+
+    expect(capture().mock.calls.map(([event]) => event)).toEqual([
+      'chat_response_received',
+    ])
+    expect(posthog._handle_unload).toHaveBeenCalledTimes(1)
+    expect(posthog.set_config).toHaveBeenCalledWith({
+      request_batching: false,
+    })
+  })
+
+  it('replays the startup queue once the identity is restored', () => {
+    queuedCapture('onboarding_step_shown', { step: 'welcome' })
+    markTelemetryIdentityReady()
+
+    flushTelemetryForShutdown()
+
+    expect(capture().mock.calls.map(([event]) => event)).toEqual([
+      'onboarding_step_shown',
+    ])
+    // Replayed into the SDK first, then sent with everything else.
+    expect(vi.mocked(posthog.capture).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(posthog._handle_unload).mock.invocationCallOrder[0]
+    )
+  })
+
+  it('keeps the readiness boundary before the identity is restored', () => {
+    queuedCapture('onboarding_step_shown', { step: 'welcome' })
+
+    flushTelemetryForShutdown()
+
+    expect(capture()).not.toHaveBeenCalled()
+    expect(posthog._handle_unload).not.toHaveBeenCalled()
+    // Still held for the regular flush.
+    flushTelemetryQueue()
+    expect(capture().mock.calls.map(([event]) => event)).toEqual([
+      'onboarding_step_shown',
+    ])
+  })
+
+  it('does nothing when analytics is off', () => {
+    queuedCapture('onboarding_step_shown', { step: 'welcome' })
+    disableTelemetryQueue()
+    markTelemetryIdentityReady()
+    flushTelemetryForShutdown()
+    expect(capture().mock.calls).toEqual([])
+    expect(posthog._handle_unload).not.toHaveBeenCalled()
+    expect(posthog.set_config).not.toHaveBeenCalled()
+  })
+
+  it('never throws, even when the SDK does', () => {
+    flushTelemetryQueue()
+    vi.mocked(posthog._handle_unload).mockImplementation(() => {
+      throw new Error('not loaded')
+    })
+    expect(() => flushTelemetryForShutdown()).not.toThrow()
+    expect(posthog.set_config).toHaveBeenCalled()
   })
 })

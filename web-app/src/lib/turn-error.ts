@@ -69,6 +69,20 @@ export function turnErrorOf(
   }
 }
 
+/**
+ * The message without the stored reason its turn failed. A turn that is
+ * resumed in place (the engine came back and the turn continues after its
+ * finished tool calls) must not carry the old reason into its answer: the
+ * stored answer would reload as a failed turn.
+ */
+export function withoutTurnError<T extends MessageLike>(message: T): T {
+  const metadata = message.metadata as Record<string, unknown> | undefined
+  if (!metadata || !(TURN_ERROR_METADATA_KEY in metadata)) return message
+  const rest = { ...metadata }
+  delete rest[TURN_ERROR_METADATA_KEY]
+  return { ...message, metadata: rest }
+}
+
 /** Rebuilds an `Error` the thread page's error matchers classify as before. */
 export function turnErrorToError(stored: PersistedTurnError): Error {
   const error = new Error(stored.message)

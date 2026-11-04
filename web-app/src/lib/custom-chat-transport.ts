@@ -109,6 +109,7 @@ import {
 } from '@/lib/prompt-size'
 import { OUT_OF_CONTEXT_SIZE } from '@/utils/error'
 import { withoutEmptyFailedTurns } from '@/lib/turn-error'
+import { withoutHistoryBefore } from '@/lib/turn-recovery'
 import { canGrowContext } from '@/lib/managed-engine/chat'
 import { isManagedProvider } from '@/lib/managed-engines'
 import { summarizeToolCost } from '@/lib/tool-cost'
@@ -455,6 +456,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
   private serviceHub: ServiceHub | null
   private threadId?: string
   private continueFromContent: string | null = null
+  /**
+   * First message the model is sent for this thread ("Shorten history and
+   * retry"): older ones stay in the thread and on the page, they are only
+   * left out of the request. Lives as long as the thread's chat session.
+   */
+  private historyStartId: string | undefined
   private toolsCacheKey = ''
   private toolsCacheValid = false
   // Invoked-skill bodies, memoized for the transport's (per-thread) lifetime;
@@ -764,6 +771,15 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     this.continueFromContent = content
   }
 
+  /** Leave the messages before `messageId` out of every later request; `undefined` sends them all again. */
+  setHistoryStart(messageId: string | undefined) {
+    this.historyStartId = messageId
+  }
+
+  getHistoryStart(): string | undefined {
+    return this.historyStartId
+  }
+
   /** `chat_template_kwargs` of the last created model (reasoning on/off). */
   private lastChatTemplateKwargs: Record<string, unknown> | undefined
 
@@ -866,6 +882,18 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       if (result.reason === 'fit') {
         throw new Error(
           `${OUT_OF_CONTEXT_SIZE} The prompt needs about ${needed} tokens (${this.lastPromptSize.toolTokens} of them are tool definitions) but the context this device has room for is ${result.from}. Disable some connectors for this chat, shorten the conversation, or turn off "Fit to device memory" in the model settings to set the context by hand.`
+        )
+      }
+      if (
+        result.reason === 'insufficient_memory' ||
+        result.reason === 'reload_failed'
+      ) {
+        const why =
+          result.reason === 'insufficient_memory'
+            ? `a ${result.to ?? minCtxLen}-token context would not fit the free memory`
+            : `the model did not load with a ${result.to ?? minCtxLen}-token context`
+        throw new Error(
+          `${OUT_OF_CONTEXT_SIZE} The prompt needs about ${needed} tokens (${this.lastPromptSize.toolTokens} of them are tool definitions) but the context is ${result.from} and ${why}. Disable some connectors for this chat or shorten the conversation.`
         )
       }
       return
@@ -1116,9 +1144,13 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // See: https://platform.claude.com/docs/en/agents-and-tools/tool-use/implement-tool-use#parallel-tool-use
     // Mixed-engine hygiene: agent-run tool parts never reach a chat request.
     // A failed turn that produced nothing is kept in the thread only to show
-    // why it failed; it is no reply for the model to see.
+    // why it failed; it is no reply for the model to see. Turns before the
+    // history start ("Shorten history and retry") stay in the thread too.
     const sanitizedMessages = stripAgentRunToolParts(
-      withoutEmptyFailedTurns(options.messages)
+      withoutHistoryBefore(
+        withoutEmptyFailedTurns(options.messages),
+        this.historyStartId
+      )
     )
     const messagesToConvert =
       effectiveProviderName === 'anthropic'

@@ -116,6 +116,30 @@ describe('DownloadManagement — the "verifying…" toast', () => {
     }
   )
 
+  // The downloader's `[disk_fs_limit]`: a FAT32 drive with room to spare
+  // still cannot store the file, so it must not read as a full disk.
+  it('explains a FAT32 drive and offers to move the data folder', async () => {
+    renderWithToaster()
+    act(() =>
+      emit(DownloadEvent.onFileDownloadError, {
+        modelId: TASK,
+        downloadType: 'Model',
+        error:
+          'Error: [disk_fs_limit] This file is 6.0 GB, but its drive is formatted as FAT32, which cannot store a file larger than 4 GB.',
+      })
+    )
+    expect(
+      await screen.findByText('common:toast.downloadFsLimit.title')
+    ).toBeVisible()
+    expect(
+      screen.getByText('common:toast.downloadFsLimit.descriptionFailed')
+    ).toBeVisible()
+    expect(
+      screen.getByText('common:toast.downloadWontFit.changeFolder')
+    ).toBeVisible()
+    expect(screen.queryByText('common:toast.downloadDiskFull.title')).toBeNull()
+  })
+
   it.each([
     [
       'a transfer error',

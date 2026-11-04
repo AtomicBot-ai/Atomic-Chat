@@ -97,6 +97,7 @@ import {
 import { ExtensionManager } from '@/lib/extension'
 import { useAttachments } from '@/hooks/useAttachments'
 import { toast } from 'sonner'
+import { isAppShuttingDown, watchAppShutdown } from '@/lib/app-shutdown'
 import { isPlatformTauri } from '@/lib/platform/utils'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
@@ -170,10 +171,6 @@ import {
   type AgentSkillSlashQuery,
 } from '@/containers/agentSkillSlash'
 import { useAgentSkills } from '@/hooks/useAgentSkills'
-import {
-  BACKEND_MISMATCH_PROMPT_EVENT,
-  useBackendMismatch,
-} from '@/hooks/useBackendMismatch'
 import type { AgentSkill } from '@/services/agent/skills'
 
 /** Every extension the paperclip's picker offers: whatever a drop accepts. */
@@ -266,7 +263,6 @@ const ChatInput = memo(function ChatInput({
     (state) => state.tokenCounterCompact
   )
   const maxImageSizePx = useGeneralSetting((state) => state.maxImageSizePx)
-  const { shouldPrompt: shouldPromptBackendMismatch } = useBackendMismatch()
   useTools()
   const router = useRouter()
   const createThread = useThreads((state) => state.createThread)
@@ -534,6 +530,8 @@ const ChatInput = memo(function ChatInput({
     ? activeModels.includes(selectedModel.id)
     : false
 
+  useEffect(() => watchAppShutdown(), [])
+
   // Auto-start local model (llamacpp/mlx) when selected so the indicator and send
   // button reflect its status. Uses the unified switchToModel to ensure only one
   // model runs across all local providers. switchToModel manages loadingModel,
@@ -555,6 +553,9 @@ const ChatInput = memo(function ChatInput({
     let cancelled = false
 
     const ensureLocalModelRunning = async () => {
+      // Quitting: the core no longer takes calls, and a probe or load started
+      // now only fails with CORE_NOT_RUNNING.
+      if (isAppShuttingDown()) return
       try {
         const {
           switchToModel,
@@ -631,7 +632,11 @@ const ChatInput = memo(function ChatInput({
         // file/binary) or is still within its backoff window — this is what
         // turned a failed load into a tight restart loop. Explicit user
         // switches (dropdown/send) don't go through this gate.
-        if (!shouldAttemptAutoStart(selectedProvider, selectedModel.id)) return
+        if (
+          isAppShuttingDown() ||
+          !shouldAttemptAutoStart(selectedProvider, selectedModel.id)
+        )
+          return
         await switchToModel({
           modelId: selectedModel.id,
           providerName: selectedProvider,
@@ -1097,12 +1102,9 @@ const ChatInput = memo(function ChatInput({
 
     setMessage('')
 
-    // A previous model load found that the running backend is not the one the UI
-    // shows (or that a faster one exists). Raise it here, on the first send after
-    // the load, rather than interrupting the load itself. Never blocks the send.
-    if (shouldPromptBackendMismatch) {
-      window.dispatchEvent(new Event(BACKEND_MISMATCH_PROMPT_EVENT))
-    }
+    // A backend mismatch found by the last load is not raised here: its Fix
+    // and Restart would end the request this send starts. The prompt waits
+    // for the turn to finish (`SuboptimalBackendDialog`).
 
     // Use onSubmit prop if available (AI SDK), otherwise create thread and navigate
     if (onSubmit) {
@@ -1474,9 +1476,52 @@ const ChatInput = memo(function ChatInput({
     }
   }, [queuedSend, resumableDownloads])
 
+  // A queued send that will not go out says so. The text stays in the field,
+  // but nothing on screen told the user it was never sent.
+  const tellQueuedSendHeld = useCallback(
+    (reason: 'modelChanged' | 'modelLost' | 'modelStopped') => {
+      const draft = usePrompt.getState().getDraft(composerThreadKeyRef.current)
+      if (!draft.trim()) return
+      toast.info(t(`chat:queuedSend.${reason}`), { id: 'queued-send-held' })
+    },
+    [t]
+  )
+
+  // The model a queued send waits for: the one selected when it was armed,
+  // or, armed with nothing selected (a download, the reply gate), the first
+  // one selected for it. Another selection, or none, will not answer it, so
+  // the send is dropped and the user told. A model that failed to come up
+  // loses its selection (`switchToModel`), so that case lands here too: the
+  // error itself outlives the failure, and would also drop a send that
+  // starts the same model again. Declared before the send below, which
+  // reads the same target in the same commit.
+  const queuedTargetRef = useRef<string | null>(null)
+  const selectionKey = selectedModel
+    ? modelStopKey(selectedProvider, selectedModel.id)
+    : null
+  useEffect(() => {
+    if (!queuedSend) {
+      queuedTargetRef.current = null
+      return
+    }
+    if (queuedTargetRef.current === null) {
+      queuedTargetRef.current = selectionKey
+      return
+    }
+    if (selectionKey === queuedTargetRef.current) return
+    setQueuedSend(null)
+    tellQueuedSendHeld(selectionKey ? 'modelChanged' : 'modelLost')
+  }, [queuedSend, selectionKey, tellQueuedSendHeld])
+
   useEffect(() => {
     if (!queuedSend) return
     if (!canSendToSelectedModel) return
+    // Dropped above in this same commit: the selection is not its model.
+    if (
+      queuedTargetRef.current !== null &&
+      queuedTargetRef.current !== selectionKey
+    )
+      return
 
     setQueuedSend(null)
     setReplyGateOpen(false)
@@ -1502,21 +1547,7 @@ const ChatInput = memo(function ChatInput({
     }
     if (!pending.trim()) return
     void sendMessageRef.current(pending)
-  }, [queuedSend, canSendToSelectedModel])
-
-  // A model that failed to come up will never satisfy the queued send. Drop
-  // the promise rather than leave "starting…" on screen forever; the load
-  // error toast says what happened, and the text is still in the field. The
-  // failure clears the selection (`switchToModel`), so losing it is the
-  // signal: the error itself outlives the failure, and would also drop a send
-  // that starts the same model again. A send armed on a download has no
-  // selection yet, so only the change counts.
-  const hadSelectionRef = useRef(!!selectedModel)
-  useEffect(() => {
-    const lostSelection = hadSelectionRef.current && !selectedModel
-    hadSelectionRef.current = !!selectedModel
-    if (queuedSend && lostSelection) setQueuedSend(null)
-  }, [queuedSend, selectedModel])
+  }, [queuedSend, canSendToSelectedModel, selectionKey])
 
   // Nor will a model the user stops while the send waits — a Cancel on its
   // load, or a Stop (ATO-530). Only the change counts: a send made *to* a
@@ -1526,8 +1557,11 @@ const ChatInput = memo(function ChatInput({
     const becameStopped =
       selectedModelStoppedByUser && !wasStoppedByUserRef.current
     wasStoppedByUserRef.current = selectedModelStoppedByUser
-    if (queuedSend && becameStopped) setQueuedSend(null)
-  }, [queuedSend, selectedModelStoppedByUser])
+    if (queuedSend && becameStopped) {
+      setQueuedSend(null)
+      tellQueuedSendHeld('modelStopped')
+    }
+  }, [queuedSend, selectedModelStoppedByUser, tellQueuedSendHeld])
 
   useEffect(() => {
     const handleFocusIn = () => {

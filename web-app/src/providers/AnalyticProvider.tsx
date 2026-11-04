@@ -21,7 +21,9 @@ import {
 import {
   bufferTelemetryUntilReady,
   disableTelemetryQueue,
+  flushTelemetryForShutdown,
   flushTelemetryQueue,
+  markTelemetryIdentityReady,
 } from '@/lib/telemetry-queue'
 import { restoreInstallDistinctId } from '@/lib/telemetry-identity'
 import {
@@ -48,6 +50,7 @@ const SENTRY_TAG_KEYS = [
   'system_ram_mb',
   'nvidia_driver_version',
   'cuda_runtime_version',
+  'gpu_compute_capability',
   'vulkan_version',
   'active_backend',
   'device_backend_pref',
@@ -84,8 +87,13 @@ function toSentryTags(
  * 2 — ATO-457/459/456/468: startup event buffering, normalized `model_id`,
  * split onboarding / backend-step reasons, subscription events.
  * 3 — explicit startup readiness and recoverable cohort assignment capture.
+ * 4 — Windows reliability: `error_kind` from transport tags and OS error codes
+ * (`engine_unreachable`, `engine_exited`), no per-(model, kind) failure
+ * throttle and no phantom `success` after an error, `attempt_id`, failure
+ * `phase`/timings, `model_load` core diag + `load_id`/`last_load_id`, one
+ * `failure_reason` per disk tag, `gpu_compute_capability`, shutdown flush.
  */
-const TELEMETRY_SCHEMA = 3
+const TELEMETRY_SCHEMA = 4
 
 /**
  * ATO-111: `device_parse_ok` reflects whether `llama-server --list-devices`
@@ -136,7 +144,11 @@ export function AnalyticProvider() {
 
     let unlistenApiServerRequest: (() => void) | undefined
     let unlistenApiServerSummary: (() => void) | undefined
+    let unlistenShutdown: (() => void) | undefined
     let cancelled = false
+    // Flush on exit. Registered up front, not at the end of the startup
+    // chain, so a session that closes during startup still sends what it can.
+    const flushOnExit = () => flushTelemetryForShutdown()
 
     const osPlatform = getAnalyticsPlatform()
 
@@ -179,6 +191,19 @@ export function AnalyticProvider() {
         platform: osPlatform,
         telemetry_schema: TELEMETRY_SCHEMA,
       })
+      window.addEventListener('pagehide', flushOnExit)
+      if (IS_TAURI) {
+        import('@tauri-apps/api/event')
+          .then(({ listen }) => listen('app-shutting-down', flushOnExit))
+          .then((unlisten) => {
+            const detach = createSafeUnlisten(unlisten)
+            if (cancelled) void detach()
+            else unlistenShutdown = detach
+          })
+          .catch((err) => {
+            console.warn('Failed to register the shutdown flush listener:', err)
+          })
+      }
       restoreInstallDistinctId(serviceHub.analytic())
         .catch((err) => {
           console.warn('Failed to restore the analytics distinct id:', err)
@@ -191,6 +216,7 @@ export function AnalyticProvider() {
             platform: osPlatform,
             telemetry_schema: TELEMETRY_SCHEMA,
           })
+          markTelemetryIdentityReady()
           // The onboarding experiment's cohort, on the person and on every
           // event from here on, the replayed startup events included.
           registerOnboardingCohort(posthog)
@@ -306,6 +332,8 @@ export function AnalyticProvider() {
 
     return () => {
       cancelled = true
+      window.removeEventListener('pagehide', flushOnExit)
+      void unlistenShutdown?.()
       void unlistenApiServerRequest?.()
       void unlistenApiServerSummary?.()
     }

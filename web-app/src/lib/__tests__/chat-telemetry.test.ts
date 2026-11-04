@@ -14,9 +14,12 @@ import {
   codeBlockCount,
   contextTelemetry,
   currentChatTurn,
+  endChatTurn,
+  observeChatTurn,
   responseShapeFromMessage,
   toolTelemetry,
 } from '@/lib/chat-telemetry'
+import { rememberLoadId, resetLoadIdsForTests } from '@/lib/telemetry'
 import type { Attachment } from '@/types/attachment'
 
 vi.mock('posthog-js', () => ({
@@ -279,17 +282,80 @@ describe('turn id correlation', () => {
     expect(currentChatTurn(thread)).toMatch(/.+/)
   })
 
-  it('releases the id once the turn is reported', () => {
+  it('keeps a reported turn until the next send, so a repeat report dedupes', () => {
     const thread = `t-${Math.random()}`
     const first = beginChatTurn(thread)
     captureChatResponse({
       turn_id: first,
       thread_id: thread,
       source: 'chat',
+      outcome: 'error',
+      error: 'boom',
+    })
+    // The AI SDK's `onFinish({ isError })` after `onError`: same turn, not a
+    // phantom new one.
+    expect(currentChatTurn(thread)).toBe(first)
+    // A continuation is a second model call with a send of its own, and must
+    // not be deduped away.
+    expect(beginChatTurn(thread)).not.toBe(first)
+  })
+
+  it('does not let a late report of an older turn end a newer send', () => {
+    const thread = `t-${Math.random()}`
+    const older = beginChatTurn(thread)
+    const newer = beginChatTurn(thread)
+    endChatTurn(thread, older)
+    expect(currentChatTurn(thread)).toBe(newer)
+  })
+})
+
+describe('auto_retry', () => {
+  it('marks a retry the app started itself on the request and the reply', () => {
+    const thread = `t-${Math.random()}`
+    const turn = beginChatTurn(thread)
+    captureChatRequest({
+      turn_id: turn,
+      thread_id: thread,
+      source: 'auto_retry',
+    })
+    captureChatResponse({
+      turn_id: turn,
+      thread_id: thread,
+      source: 'auto_retry',
       outcome: 'success',
     })
-    // A continuation is a second model call and must not be deduped away.
-    expect(currentChatTurn(thread)).not.toBe(first)
+    expect(
+      captured().map((c) => (c[1] as Record<string, unknown>).source)
+    ).toEqual(['auto_retry', 'auto_retry'])
+  })
+})
+
+describe('attempt_id', () => {
+  it('is fresh per send and joins the request to its response', () => {
+    const thread = `t-${Math.random()}`
+    const first = beginChatTurn(thread)
+    captureChatRequest({ turn_id: first, thread_id: thread, source: 'chat' })
+    captureChatResponse({
+      turn_id: first,
+      thread_id: thread,
+      source: 'chat',
+      outcome: 'error',
+      error: 'boom',
+    })
+    const retry = beginChatTurn(thread)
+    captureChatRequest({
+      turn_id: retry,
+      thread_id: thread,
+      source: 'regenerate',
+    })
+
+    const [request, response, retryRequest] = captured().map(
+      (c) => c[1] as Record<string, unknown>
+    )
+    expect(request.attempt_id).toEqual(expect.any(String))
+    expect(response.attempt_id).toBe(request.attempt_id)
+    expect(retryRequest.attempt_id).toEqual(expect.any(String))
+    expect(retryRequest.attempt_id).not.toBe(request.attempt_id)
   })
 })
 
@@ -349,7 +415,8 @@ describe('captureChatResponse', () => {
     )
   })
 
-  it('throttles a repeated identical failure', () => {
+  it('reports every failed turn, identical failures included', () => {
+    // A throttled failure used to leave its request with no response at all.
     const thread1 = `t-${Math.random()}`
     const thread2 = `t-${Math.random()}`
     const model = `m-${Math.random()}`
@@ -369,7 +436,196 @@ describe('captureChatResponse', () => {
       model_id: model,
       error: 'ggml out of memory',
     })
-    expect(captured()).toHaveLength(1)
+    expect(captured()).toHaveLength(2)
+  })
+
+  it('reports an error once and never follows it with a success', () => {
+    // The thread page reports `onError`, then the SDK's
+    // `onFinish({ isError: true })` reports again through `currentChatTurn`.
+    const thread = `t-${Math.random()}`
+    beginChatTurn(thread)
+    captureChatResponse({
+      ...base(currentChatTurn(thread), thread),
+      outcome: 'error',
+      error: 'boom',
+    })
+    captureChatResponse(base(currentChatTurn(thread), thread))
+    const responses = captured().filter(
+      (c) => c[0] === 'chat_response_received'
+    )
+    expect(responses).toHaveLength(1)
+    expect((responses[0][1] as Record<string, unknown>).outcome).toBe('error')
+  })
+
+  it('classifies a refused local engine by the provider', () => {
+    const thread = `t-${Math.random()}`
+    captureChatResponse({
+      turn_id: beginChatTurn(thread),
+      thread_id: thread,
+      source: 'chat',
+      outcome: 'error',
+      provider: 'llamacpp-upstream',
+      error: new Error(
+        '[transport:connect_refused] No connection could be made (os error 10061)'
+      ),
+    })
+    expect((captured()[0][1] as Record<string, unknown>).error_kind).toBe(
+      'engine_unreachable'
+    )
+  })
+})
+
+describe('failure timings', () => {
+  type Msg = {
+    id: string
+    role: string
+    parts: { type: string; text?: string }[]
+  }
+
+  /** The slice of the AI SDK `Chat` the observer reads. */
+  function fakeChat(initial?: Msg) {
+    let last = initial
+    const callbacks = new Set<() => void>()
+    return {
+      get 'lastMessage'() {
+        return last
+      },
+      '~registerMessagesCallback': (onChange: () => void) => {
+        callbacks.add(onChange)
+        return () => {
+          callbacks.delete(onChange)
+        }
+      },
+      'write'(message: Msg) {
+        last = message
+        callbacks.forEach((callback) => callback())
+      },
+      'listeners': () => callbacks.size,
+    }
+  }
+
+  const reply = (text: string): Msg => ({
+    id: 'reply',
+    role: 'assistant',
+    parts: [{ type: 'text', text }],
+  })
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(10_000)
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  const send = (thread: string, chat: ReturnType<typeof fakeChat>) => {
+    const turn = beginChatTurn(thread)
+    captureChatRequest({ turn_id: turn, thread_id: thread, source: 'chat' })
+    observeChatTurn(thread, chat)
+    return turn
+  }
+
+  const fail = (thread: string, turn: string) => {
+    captureChatResponse({
+      turn_id: turn,
+      thread_id: thread,
+      source: 'chat',
+      outcome: 'error',
+      error: 'boom',
+    })
+    return captured().find(
+      (c) => c[0] === 'chat_response_received'
+    )![1] as Record<string, unknown>
+  }
+
+  it('marks a failure before any output as before_first_token', () => {
+    const thread = `t-${Math.random()}`
+    const chat = fakeChat({ id: 'user-1', role: 'user', parts: [] })
+    const turn = send(thread, chat)
+    // An empty assistant shell is not output yet.
+    chat.write({ id: 'reply', role: 'assistant', parts: [] })
+    vi.setSystemTime(13_500)
+
+    expect(fail(thread, turn)).toMatchObject({
+      phase: 'before_first_token',
+      ttft_ms: null,
+      total_duration_ms: 3_500,
+      output_chunk_count: 0,
+    })
+    // Stopped observing once reported.
+    expect(chat.listeners()).toBe(0)
+  })
+
+  it('times a failure mid-stream from the send', () => {
+    const thread = `t-${Math.random()}`
+    const chat = fakeChat({ id: 'user-1', role: 'user', parts: [] })
+    const turn = send(thread, chat)
+    vi.setSystemTime(10_800)
+    chat.write(reply('Hel'))
+    vi.setSystemTime(10_900)
+    chat.write(reply('Hello'))
+    chat.write(reply('Hello wor'))
+    vi.setSystemTime(12_000)
+
+    expect(fail(thread, turn)).toMatchObject({
+      phase: 'mid_stream',
+      ttft_ms: 800,
+      total_duration_ms: 2_000,
+      output_chunk_count: 3,
+    })
+  })
+
+  it('ignores the answer that was already on screen when the send started', () => {
+    // A regenerate starts with the old answer still the last message.
+    const thread = `t-${Math.random()}`
+    const old = { ...reply('previous answer'), id: 'old-reply' }
+    const chat = fakeChat(old)
+    const turn = send(thread, chat)
+    chat.write({ ...old })
+
+    expect(fail(thread, turn)).toMatchObject({
+      phase: 'before_first_token',
+      output_chunk_count: 0,
+    })
+  })
+
+  it('keeps timings the caller already has and leaves successes alone', () => {
+    const thread = `t-${Math.random()}`
+    const chat = fakeChat()
+    const turn = send(thread, chat)
+    captureChatResponse({
+      turn_id: turn,
+      thread_id: thread,
+      source: 'chat',
+      outcome: 'success',
+      ttft_ms: 42,
+      total_duration_ms: 99,
+    })
+    const props = captured().find(
+      (c) => c[0] === 'chat_response_received'
+    )![1] as Record<string, unknown>
+    expect(props.ttft_ms).toBe(42)
+    expect(props.total_duration_ms).toBe(99)
+    expect(props.phase).toBeUndefined()
+  })
+
+  it('falls back to the reply shape without an observed stream', () => {
+    const thread = `t-${Math.random()}`
+    const turn = beginChatTurn(thread)
+    captureChatResponse({
+      ...responseShapeFromMessage({
+        parts: [{ type: 'text', text: 'partial' }],
+      }),
+      turn_id: turn,
+      thread_id: thread,
+      source: 'chat',
+      outcome: 'error',
+      error: 'boom',
+    })
+    const props = captured()[0][1] as Record<string, unknown>
+    expect(props.phase).toBe('mid_stream')
+    expect(props.output_chunk_count).toBeNull()
   })
 })
 
@@ -385,6 +641,31 @@ describe('captureChatRequest', () => {
     const props = captured()[0][1] as Record<string, unknown>
     expect(captured()[0][0]).toBe('chat_request_sent')
     expect(props.has_attachments).toBe(true)
+  })
+
+  it('carries the id of the load that put a local model in memory', () => {
+    resetLoadIdsForTests()
+    rememberLoadId('org/model-Q4_K_M', 'load-7')
+    const thread = `t-${Math.random()}`
+    captureChatRequest({
+      turn_id: beginChatTurn(thread),
+      thread_id: thread,
+      source: 'chat',
+      model_id: 'org/model-Q4_K_M',
+      provider: 'llamacpp',
+    })
+    captureChatRequest({
+      turn_id: beginChatTurn(thread),
+      thread_id: thread,
+      source: 'chat',
+      model_id: 'org/model-Q4_K_M',
+      provider: 'openrouter',
+    })
+    const [local, cloud] = captured().map(
+      (c) => c[1] as Record<string, unknown>
+    )
+    expect(local.last_load_id).toBe('load-7')
+    expect(cloud.last_load_id).toBeNull()
   })
 
   it('reports no attachments when none were sent', () => {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   IconBolt,
@@ -26,8 +26,23 @@ import {
   LOCAL_LLAMACPP_EXTENSION_NAME,
   LOCAL_LLAMACPP_PROVIDER,
 } from '@/lib/utils'
+import { heldModels } from '@/lib/model-lifecycle'
+import { isSessionBusy, useChatSessions } from '@/stores/chat-session-store'
 
 const BACKEND_DETECTION_FAILED = 'BACKEND_DETECTION_FAILED'
+
+/**
+ * How long the app has to sit with no chat request before a waiting prompt
+ * shows by itself, for a user who loads a model and does not send.
+ */
+export const BACKEND_PROMPT_IDLE_MS = 10_000
+
+type ChatSessionsState = ReturnType<typeof useChatSessions.getState>
+
+/** A chat turn is being answered somewhere: streaming, or between tool steps. */
+const chatRequestInFlight = (state: ChatSessionsState) =>
+  Object.values(state.sessions).some(isSessionBusy) ||
+  Object.values(state.requestActive).some(Boolean)
 
 const TURBOQUANT_CONFIG: UseBackendUpdaterConfig = {
   extensionName: '@janhq/llamacpp-extension',
@@ -48,18 +63,22 @@ const UPSTREAM_CONFIG: UseBackendUpdaterConfig = {
  * offers the one-click fix.
  *
  * Mounted globally in `__root.tsx`. The mismatch is detected at model load and
- * recorded in `useBackendMismatch`; `ChatInput` dispatches
- * `BACKEND_MISMATCH_PROMPT_EVENT` on the first send afterwards so the message
- * still goes through while the non-blocking prompt appears in the lower-right
- * corner. One provider-agnostic dialog serves both llama.cpp providers — the
- * provider comes from the recorded event, and the fix runs through the
- * already-debugged `useBackendUpdater` detect -> download -> hot-swap path.
+ * recorded in `useBackendMismatch`. It is raised once no chat request is in
+ * flight: when a turn finishes, or after {@link BACKEND_PROMPT_IDLE_MS} with
+ * none — never on the send itself, whose request the Fix (it unloads the
+ * provider's models) or the Restart would end. Both stay unavailable while a
+ * request is in flight. One provider-agnostic dialog serves both llama.cpp
+ * providers — the provider comes from the recorded event, and the fix runs
+ * through the already-debugged `useBackendUpdater` detect -> download ->
+ * hot-swap path.
  */
 const SuboptimalBackendDialog = () => {
   const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [view, setView] = useState<'prompt' | 'working'>('prompt')
-  const { pending, markShown, suppress, dismiss } = useBackendMismatch()
+  const { pending, shouldPrompt, markShown, suppress, dismiss } =
+    useBackendMismatch()
+  const requestInFlight = useChatSessions(chatRequestInFlight)
 
   const config = useMemo<UseBackendUpdaterConfig>(
     () =>
@@ -74,16 +93,58 @@ const SuboptimalBackendDialog = () => {
     downloadRecommendedBackend,
   } = useBackendUpdater(config)
 
+  const openPrompt = useCallback(() => {
+    markShown()
+    setView('prompt')
+    setOpen(true)
+  }, [markShown])
+
+  // Raised when a turn finishes, or once the app has been idle a while. Read
+  // through a ref: `markShown` is a new function every render, and a render
+  // must not restart the idle countdown.
+  const openPromptRef = useRef(openPrompt)
+  openPromptRef.current = openPrompt
+  const wasInFlightRef = useRef(requestInFlight)
+  useEffect(() => {
+    const turnFinished = wasInFlightRef.current && !requestInFlight
+    wasInFlightRef.current = requestInFlight
+    if (open || !shouldPrompt || requestInFlight) return
+    if (turnFinished) {
+      openPromptRef.current()
+      return
+    }
+    const timer = setTimeout(
+      () => openPromptRef.current(),
+      BACKEND_PROMPT_IDLE_MS
+    )
+    return () => clearTimeout(timer)
+  }, [open, shouldPrompt, requestInFlight])
+
+  // An explicit request to show it now; one made mid-turn waits for the turn.
   useEffect(() => {
     const handler = () => {
-      markShown()
-      setView('prompt')
-      setOpen(true)
+      if (!chatRequestInFlight(useChatSessions.getState())) openPrompt()
     }
     window.addEventListener(BACKEND_MISMATCH_PROMPT_EVENT, handler)
     return () =>
       window.removeEventListener(BACKEND_MISMATCH_PROMPT_EVENT, handler)
-  }, [markShown])
+  }, [openPrompt])
+
+  /**
+   * Whether a request would be cut off: a chat turn, or any request on a model
+   * of `provider` (every model for a restart). Read at the click, not only
+   * from the render, so a request sent a moment ago counts.
+   */
+  const refuseWhileInFlight = useCallback(
+    (provider?: string) => {
+      const busy =
+        chatRequestInFlight(useChatSessions.getState()) ||
+        heldModels().some((ref) => !provider || ref.provider === provider)
+      if (busy) toast.info(t('settings:backendMismatch.waitForReply'))
+      return busy
+    },
+    [t]
+  )
 
   useEffect(() => {
     if (view === 'working' && recommendationPhase === 'completed') {
@@ -102,6 +163,7 @@ const SuboptimalBackendDialog = () => {
   }, [suppress, dismiss])
 
   const handleFix = useCallback(async () => {
+    if (refuseWhileInFlight(pending?.provider)) return
     setView('working')
     try {
       const result = await recheckOptimalBackend()
@@ -122,15 +184,23 @@ const SuboptimalBackendDialog = () => {
       }
       setOpen(false)
     }
-  }, [recheckOptimalBackend, downloadRecommendedBackend, dismiss, t])
+  }, [
+    refuseWhileInFlight,
+    pending?.provider,
+    recheckOptimalBackend,
+    downloadRecommendedBackend,
+    dismiss,
+    t,
+  ])
 
   const handleRestart = useCallback(async () => {
+    if (refuseWhileInFlight()) return
     try {
       await window.core?.api?.relaunch()
     } catch (error) {
       console.error('Failed to relaunch:', error)
     }
-  }, [])
+  }, [refuseWhileInFlight])
 
   const busy =
     view === 'working' &&
@@ -261,6 +331,11 @@ const SuboptimalBackendDialog = () => {
                   })}
                 </p>
               )}
+              {requestInFlight && (
+                <p className="mt-2 text-[11px] leading-4 text-muted-foreground">
+                  {t('settings:backendMismatch.waitForReply')}
+                </p>
+              )}
             </div>
             <Button
               variant="ghost"
@@ -290,7 +365,12 @@ const SuboptimalBackendDialog = () => {
               >
                 {t('settings:backendMismatch.later')}
               </Button>
-              <Button size="sm" className="w-24" onClick={handleFix}>
+              <Button
+                size="sm"
+                className="w-24"
+                onClick={handleFix}
+                disabled={requestInFlight}
+              >
                 <IconRocket />
                 {t('settings:backendMismatch.fix')}
               </Button>
@@ -341,10 +421,19 @@ const SuboptimalBackendDialog = () => {
               <p className="mt-1 text-xs leading-5 text-muted-foreground">
                 {t('settings:backendUpdater.restartRequiredDesc')}
               </p>
+              {requestInFlight && (
+                <p className="mt-2 text-[11px] leading-4 text-muted-foreground">
+                  {t('settings:backendMismatch.waitForReply')}
+                </p>
+              )}
             </div>
           </div>
           <div className="flex justify-end border-t bg-muted/20 px-4 py-3">
-            <Button size="sm" onClick={handleRestart}>
+            <Button
+              size="sm"
+              onClick={handleRestart}
+              disabled={requestInFlight}
+            >
               <IconRefresh />
               {t('settings:backendUpdater.restartNow')}
             </Button>

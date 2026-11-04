@@ -514,7 +514,8 @@
     "dontRemind": "Не напоминать",
     "actuallyRunning": "Фактически работает: {{backend}}",
     "actuallyRunningCpuLayers": "Фактически считает процессор: на GPU {{offloaded}} из {{total}} слоёв",
-    "actuallyRunningDevice": "Фактически работает на {{device}}"
+    "actuallyRunningDevice": "Фактически работает на {{device}}",
+    "waitForReply": "Будет доступно, когда текущий ответ закончится."
   },
   "turboquantOptimalPrompt": {
     "title": "Оптимизировать бэкенд Turboquant?",

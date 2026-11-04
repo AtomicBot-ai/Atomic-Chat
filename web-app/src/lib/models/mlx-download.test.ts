@@ -96,6 +96,7 @@ it('checks the entire MLX tree size before saving a new request', async () => {
   expect(preflightDownloadDiskSpace).toHaveBeenCalledWith({
     modelPath: `https://huggingface.co/o/r/resolve/${revision}/model-00001-of-00002.safetensors`,
     modelSize: 15,
+    largestFileBytes: expect.any(Number),
   })
   expect(readAtomicDownloadPlan('request:mlx/full')).toBeUndefined()
 })

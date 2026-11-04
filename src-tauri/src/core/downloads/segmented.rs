@@ -19,7 +19,7 @@
 //! therefore always a single-stream partial, safe to append to from its
 //! length — which is what the single-stream path and older builds assume.
 
-use super::disk::disk_err_to_string;
+use super::disk::{disk_err_to_string, remove_file_best_effort, rename_retrying};
 use super::helpers::{
     build_client_for_item, next_chunk_with_watchdog, request_download_response,
     request_download_response_with_retry, retry_delay, sidecar_path, wait_for_retry,
@@ -74,7 +74,7 @@ async fn write_map(save_path: &Path, map: &SegmentMap) -> Result<(), String> {
     tokio::fs::write(&staging, text)
         .await
         .map_err(|error| disk_err_to_string(&error))?;
-    tokio::fs::rename(&staging, parts_path(save_path))
+    rename_retrying(&staging, &parts_path(save_path))
         .await
         .map_err(|error| disk_err_to_string(&error))
 }
@@ -567,7 +567,7 @@ async fn retire_partial(tmp_path: &Path, save_path: &Path) {
     if let Ok(file) = std::fs::OpenOptions::new().write(true).open(tmp_path) {
         let _ = file.set_len(0);
     }
-    let _ = tokio::fs::remove_file(parts_path(save_path)).await;
+    remove_file_best_effort(&parts_path(save_path)).await;
 }
 
 async fn emit_progress<R: Runtime>(job: &FileJob<'_, R>, transferred: u64, force: bool) {
@@ -816,14 +816,14 @@ pub(super) async fn download<R: Runtime>(job: FileJob<'_, R>) -> Result<Segmente
     }
 
     emit_progress(&job, transferred, true).await;
-    // The final name first, the map after: see the module comment.
-    tokio::fs::rename(&tmp_path, job.save_path)
+    // The final name first, the map after: see the module comment. Both are
+    // retried while another process holds the file (Windows); a sidecar that
+    // outlives the rename is harmless, so failing to delete one is only logged.
+    rename_retrying(&tmp_path, job.save_path)
         .await
         .map_err(|error| disk_err_to_string(&error))?;
-    let _ = tokio::fs::remove_file(&map_path).await;
-    tokio::fs::remove_file(&url_path)
-        .await
-        .map_err(|error| disk_err_to_string(&error))?;
+    remove_file_best_effort(&map_path).await;
+    remove_file_best_effort(&url_path).await;
     log::info!(
         "Finished downloading over several connections: {}",
         item.url

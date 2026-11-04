@@ -34,6 +34,8 @@ export const RESTART_REQUIRED_SETTINGS = new Set([
   'n_cpu_moe',
   'override_tensor_buffer_t',
   'no_kv_offload',
+  // Model-level floor for the fitted window; context growth under fit raises it.
+  'fit_ctx',
 ])
 
 const DEFAULT_VALUES: Record<string, unknown> = Object.fromEntries(

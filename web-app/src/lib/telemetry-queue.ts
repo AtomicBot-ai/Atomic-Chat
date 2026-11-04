@@ -30,17 +30,35 @@ const MAX_QUEUED = 50
 const queue: QueuedEvent[] = []
 let droppedBeforeFlush = 0
 let state: 'buffering' | 'ready' | 'disabled' = 'buffering'
+/**
+ * The install's identity is restored and consent applied; only the
+ * super-properties may still be missing.
+ */
+let identityReady = false
 
 /** Re-arm the readiness boundary when the provider initializes again. */
 export function bufferTelemetryUntilReady(): void {
   state = 'buffering'
+  identityReady = false
 }
 
 /** Do not retain opted-out activity for a later opt-in. */
 export function disableTelemetryQueue(): void {
   state = 'disabled'
+  identityReady = false
   queue.length = 0
   droppedBeforeFlush = 0
+}
+
+/**
+ * Called by AnalyticProvider once the identity is restored and capturing is
+ * opted in, before the slower hardware super-properties. From here a
+ * shutdown may replay the queue: events without those properties beat no
+ * events at all.
+ */
+export function markTelemetryIdentityReady(): void {
+  if (state === 'disabled') return
+  identityReady = true
 }
 
 /**
@@ -111,9 +129,47 @@ export function flushTelemetryQueue(): void {
   })
 }
 
+/**
+ * Send everything held, now: the app is closing or the page is going away.
+ *
+ * posthog-js 1.255.1 batches captures and posts them every 3 s
+ * (`RequestQueue`, `flush_interval_ms`), and nothing in the app ever flushed
+ * it, so the events of a session's last seconds — the failure a user quit
+ * over, above all — were lost whenever the app exited. Rust emits
+ * `app-shutting-down` and gives the webview ~400 ms; the SDK's own `pagehide`
+ * handler is not something a Tauri exit can be relied on to run.
+ *
+ * 1. Replay this module's queue, if the identity is ready to send it under.
+ * 2. `_handle_unload()` — the SDK's own unload path: it drains the batch
+ *    queue and the retry queue with `navigator.sendBeacon`.
+ * 3. `request_batching: false`, so a capture after this point (the response
+ *    to a request cut off by the exit) is sent at once rather than queued
+ *    for a flush that will not come.
+ */
+export function flushTelemetryForShutdown(): void {
+  if (state === 'disabled') return
+  if (state === 'buffering') {
+    // Before the identity is restored a capture lands on a temporary
+    // anonymous id, or is dropped while still opted out: keep the boundary.
+    if (!identityReady) return
+    flushTelemetryQueue()
+  }
+  try {
+    posthog._handle_unload()
+  } catch (err) {
+    console.debug('posthog unload flush failed:', err)
+  }
+  try {
+    posthog.set_config({ request_batching: false })
+  } catch (err) {
+    console.debug('posthog batching switch failed:', err)
+  }
+}
+
 /** Test seam — drops any held events and re-arms the queue. */
 export function resetTelemetryQueueForTests(): void {
   queue.length = 0
   droppedBeforeFlush = 0
   state = 'buffering'
+  identityReady = false
 }

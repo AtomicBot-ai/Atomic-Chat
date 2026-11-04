@@ -102,13 +102,24 @@ export type ModelCatalog = CatalogModel[]
  * report — the choke point has already told the user and cleared the
  * pre-download state it set.
  */
-export interface DownloadRefusal {
-  kind: 'disk_full'
-  /** Bytes the drive would need free: the files plus the downloader's headroom. */
-  needed: number
-  /** Bytes the drive has free. */
-  available: number
-}
+export type DownloadRefusal =
+  | {
+      kind: 'disk_full'
+      /** Bytes the drive would need free: what is left to write plus the downloader's headroom. */
+      needed: number
+      /** Bytes the drive has free. */
+      available: number
+      /** The drive, as the shell names it (`D:\`, a mount point), when known. */
+      volume?: string
+    }
+  | {
+      /** The drive's file system cannot store a file this large (FAT32: under 4 GiB). */
+      kind: 'fs_file_limit'
+      /** Size of the largest file of the download. */
+      fileBytes: number
+      fsName: string
+      volume?: string
+    }
 
 /**
  * What a caller of `pullModelWithMetadata` already knows: the llama.cpp

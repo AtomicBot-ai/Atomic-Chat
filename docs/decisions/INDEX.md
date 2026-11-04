@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-513 records, 2026-05-19 → 2026-11-03.
+518 records, 2026-05-19 → 2026-11-04.
 
 ---
 
@@ -183,8 +183,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-05** — [Port `gemma4_unified` (+ vision fixes) into the `mlx-vlm` fork so Gemma 4 12B loads under MLX (ATO-88, head 1)](2026-06-05-port-gemma4-unified-vision-fixes-into-the-mlx-vlm-fork-so-gemma.md)
 - **2026-06-02** — [Surface MLX KV-cache quantization (TurboQuant / uniform) as a provider setting](2026-06-02-surface-mlx-kv-cache-quantization-turboquant-uniform-as-a.md)
 
-## llama.cpp providers & backend selection (56)
+## llama.cpp providers & backend selection (57)
 
+- **2026-11-04** — [Share one model start, and never stop a model a request is using](2026-11-04-share-one-model-start-and-hold-models-in-use.md) — joined starts, request holds, mismatch prompt after the turn, disk-checked download admission, 127.0.0.1 for engines.
 - **2026-10-26** — [Show the context llama.cpp fitted, not the one the load asked for](2026-10-26-show-the-context-llama-cpp-fitted-not-the-one-asked-for.md)
 - **2026-10-13** — [Bundle the upstream llama.cpp release the pinned core would choose](2026-10-13-bundle-the-upstream-release-the-pinned-core-would-choose.md) — supersedes the bundled-tag rule of 2026-08-12 and the extension baseline of 2026-08-13.
 - **2026-10-08** — [Take engine versions from the core, and update and switch engine builds only through it](2026-10-08-take-engine-versions-from-the-core-and-update-through-it.md) — supersedes the 2026-07-01 hot-swap ordering record; refines 2026-09-14 (offers come from the core).
@@ -243,8 +244,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Ship `janhq/llama.cpp` cudart DLLs with every Windows CUDA backend](2026-05-22-ship-janhq-llama-cpp-cudart-dlls-with-every-windows-cuda-backend.md)
 - **2026-05-19** — [Windows uses upstream `ggml-org/llama.cpp`, not the TurboQuant fork](2026-05-19-windows-uses-upstream-ggml-org-llama-cpp-not-the-turboquant-fork.md)
 
-## Models, Hub & downloads (49)
+## Models, Hub & downloads (50)
 
+- **2026-11-04** — [Retry locked download renames and measure free space at the destination](2026-11-04-retry-locked-download-renames-and-measure-space-at-the-destination.md) — Windows lock retries (~10 s), free space at the destination plus max(512 MiB, 2%), `disk_fs_limit` for FAT32.
 - **2026-10-26** — [Count a task's finished files on resume, and reopen a connection that only trickles](2026-10-26-count-finished-files-on-resume-and-reopen-trickling-connections.md)
 - **2026-10-22** — [Run LiteRT-LM through the core; download its models from Hugging Face in the app](2026-10-22-run-litert-lm-through-the-core-and-download-its-models-in-the-app.md)
 - **2026-10-22** — [Step the Hub toolbar down by its own width, search first](2026-10-22-step-the-hub-toolbar-down-by-its-own-width.md)
@@ -318,8 +320,10 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-07-15** — [Aggregate Local API Server request telemetry into three-minute summaries (ATO-297)](2026-07-15-aggregate-local-api-server-request-telemetry-into-three-minute.md)
 - **2026-06-09** — [Make the Local API Server "Invalid host header" rejection actionable + fix Trusted Hosts field copy (ATO-118, scope I+II)](2026-06-09-make-the-local-api-server-invalid-host-header-rejection.md)
 
-## Telemetry, crash reporting & error handling (15)
+## Telemetry, crash reporting & error handling (17)
 
+- **2026-11-04** — [Classify loopback chat failures by transport kind, and report what the engine says on load](2026-11-04-classify-loopback-failures-by-transport-kind.md) — `[transport:<kind>]` from Rust, `engine_unreachable` / `engine_exited`, no fake `success`, load diag fields; `telemetry_schema` 4.
+- **2026-11-04** — [Recover a failed local turn once, and grow the fitted context on GPU builds](2026-11-04-recover-a-failed-local-turn-once.md) — one auto-retry after a dropped engine without re-running tools; model-level `fit_ctx` growth; shorten history and retry.
 - **2026-10-28** — [Wait for analytics readiness and recover onboarding assignments](2026-10-28-wait-for-analytics-readiness-and-recover-onboarding-assignments.md)
 
 - **2026-10-23** — [Count Local API traffic as a first request in the onboarding experiment](2026-10-23-count-local-api-traffic-as-a-first-request-in-the-onboarding-experiment.md)
@@ -337,7 +341,7 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-10** — [Throttle crashloop `model_load` failure spam client-side; confirm `model_load.status` / api 404-noise are already-fixed-pending-rollout, not code bugs (ATO-130: ATO-133 + ATO-131 + ATO-132)](2026-06-10-throttle-crashloop-model-load-failure-spam-client-side-confirm.md)
 - **2026-06-09** — [Add zero-PII Sentry crash/error tracking to both the React frontend and the Rust/Tauri desktop, gated behind `productAnalytic` (ATO-113)](2026-06-09-add-zero-pii-sentry-crash-error-tracking-to-both-the-react.md)
 
-## Packaging, installers, autostart & platform policy (31)
+## Packaging, installers, autostart & platform policy (32)
 
 - **2026-10-30** — [Correct the Windows publisher without changing installation identity](2026-10-30-correct-windows-publisher-without-changing-install-identity.md)
 
@@ -346,6 +350,7 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-10-26** — [Ship deb, rpm and AUR packages from the AppImage build](2026-10-26-ship-deb-rpm-and-aur-packages-from-the-appimage-build.md) — nfpm packs Tauri's deb tree under `/opt/atomic-chat` with dependencies read from its ELF files; signed apt/dnf repository in its own bucket and `atomic-chat-bin` on the AUR follow a published release.
 - **2026-10-22** — [Sign every Windows PE file through Tauri's signCommand and ship a Microsoft Store installer](2026-10-22-sign-every-windows-pe-via-tauri-signcommand-and-ship-an-msstore-installer.md) — x64 installers fully signed; `*_x64_msstore.exe` embeds the offline WebView2 installer; ARM64 and the publisher name stay as they were.
 - **2026-10-21** — [Give the Linux window a stable app id](2026-10-21-give-the-linux-window-a-stable-app-id.md) — Wayland `app_id` / Hyprland class is `chat.atomic.app`, matched by the desktop entry's `StartupWMClass`.
+- **2026-11-04** — [Close the Windows window to the tray only while a reply or download runs](2026-11-04-close-the-windows-window-to-the-tray-while-busy.md) — idle close still quits; ~400 ms exit grace for the analytics flush; `SetErrorMode` for the core and engines.
 - **2026-10-21** — [Close the Linux window to the tray](2026-10-21-close-the-linux-window-to-the-tray.md) — under a bar with a tray, closing hides the window instead of stopping `:1337`; tray "Quit" exits; without a StatusNotifier host closing still quits.
 - **2026-10-21** — [Let a package manager own updates](2026-10-21-let-a-package-manager-own-updates.md) — a marker file beside the AppImage or binary, or `ATOMIC_CHAT_PACKAGE_MANAGED=1`, turns the updater off, including its startup check and the updater service's plugin fallback.
 - **2026-10-19** — [Reveal files in the file manager from the blocking pool](2026-10-19-reveal-files-from-the-blocking-pool-on-linux.md) — the opener plugin's async reveal blocks on D-Bus inside tokio and aborts the Linux app.
