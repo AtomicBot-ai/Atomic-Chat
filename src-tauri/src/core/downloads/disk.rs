@@ -91,6 +91,7 @@ mod win_codes {
     pub const ERROR_DISK_FULL: i32 = 112;
     pub const ERROR_BUFFER_OVERFLOW: i32 = 111;
     pub const ERROR_FILENAME_EXCED_RANGE: i32 = 206;
+    pub const ERROR_FILE_TOO_LARGE: i32 = 223;
     pub const ERROR_WRITE_PROTECT: i32 = 19;
 }
 
@@ -116,7 +117,9 @@ fn classify_raw_os_error(code: i32) -> Option<DiskFault> {
     // ENOSPC and EDQUOT both mean "the write has nowhere to go" to the user,
     // even though only one of them is the physical disk being full.
     match code {
-        libc::ENOSPC | libc::EDQUOT | libc::EFBIG => Some(DiskFault::Full),
+        libc::ENOSPC | libc::EDQUOT => Some(DiskFault::Full),
+        // A file larger than the file system allows (FAT/FAT32 caps a file at 4 GiB - 1).
+        libc::EFBIG => Some(DiskFault::FsLimit),
         libc::EACCES | libc::EPERM | libc::EROFS => Some(DiskFault::Permission),
         libc::ETXTBSY | libc::EBUSY => Some(DiskFault::FileLocked),
         libc::ENAMETOOLONG => Some(DiskFault::PathTooLong),
@@ -132,6 +135,7 @@ fn classify_raw_os_error(code: i32) -> Option<DiskFault> {
     use win_codes::*;
     match code {
         ERROR_DISK_FULL | ERROR_HANDLE_DISK_FULL => Some(DiskFault::Full),
+        ERROR_FILE_TOO_LARGE => Some(DiskFault::FsLimit),
         ERROR_ACCESS_DENIED | ERROR_WRITE_PROTECT => Some(DiskFault::Permission),
         // The classic Windows failure on multi-gigabyte writes: a realtime
         // antivirus scanner holds the handle while we are still appending.
@@ -566,6 +570,16 @@ mod tests {
         assert_eq!(DiskFault::PathTooLong.tag(), "disk_path_too_long");
         assert_eq!(DiskFault::DeviceLost.tag(), "disk_device_lost");
         assert_eq!(DiskFault::FsLimit.tag(), "disk_fs_limit");
+        #[cfg(unix)]
+        assert_eq!(
+            classify_io_error(&std::io::Error::from_raw_os_error(libc::EFBIG)),
+            DiskFault::FsLimit
+        );
+        #[cfg(windows)]
+        assert_eq!(
+            classify_io_error(&std::io::Error::from_raw_os_error(win_codes::ERROR_FILE_TOO_LARGE)),
+            DiskFault::FsLimit
+        );
         assert_eq!(DiskFault::Other.tag(), "disk_io");
     }
 
