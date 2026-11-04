@@ -106,8 +106,10 @@ export function DownloadPanel({
         data-corner-panel=""
         {...holdProps}
       >
+        {/* A neutral heading: the queue can be all paused, and each row
+            already says whether it is running or paused (AC-03). */}
         <CornerCardHeader
-          title={t('common:downloading')}
+          title={t('common:downloads')}
           count={count}
           collapseLabel={t('common:downloadPanel.collapse')}
           onCollapse={collapse}
