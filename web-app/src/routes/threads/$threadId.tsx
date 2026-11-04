@@ -121,7 +121,23 @@ import {
   contextOverflowMessage,
 } from '@/lib/managed-engine/chat'
 import {
-  DEFAULT_CTX_LEN, growModelContext } from '@/lib/context-size'
+  DEFAULT_CTX_LEN,
+  contextGrowthMode,
+  growModelContext,
+  readModelCtxLen,
+} from '@/lib/context-size'
+import {
+  RECOVERABLE_LOCAL_PROVIDERS,
+  calibratedMessageEstimate,
+  historyTrimBudget,
+  isEngineGoneError,
+  planEngineRecovery,
+  planHistoryTrim,
+  turnUserMessageId,
+  withoutHistoryBefore,
+} from '@/lib/turn-recovery'
+import { waitForEngineReady } from '@/lib/engine-readiness'
+import { DEFAULT_OUTPUT_RESERVE_TOKENS, estimateTokens } from '@/lib/prompt-size'
 import { captureHandledError } from '@/lib/sentry'
 import {
   finishedAssistantMessage,
@@ -189,6 +205,16 @@ type ThreadModel = {
   id: string
   provider: string
 }
+
+/**
+ * Turns, by the id of the user message that started them, that already had
+ * their one automatic retry after the engine went away, and their one
+ * automatic fit-floor growth after an overflow. Module-wide, not per render:
+ * a thread's Chat (and its error) outlives this page, and a page mounted
+ * again on the same failed turn must not retry it a second time.
+ */
+const autoRetriedTurns = new Set<string>()
+const fitGrowthTurns = new Set<string>()
 
 const agentAttachmentsFromMessage = (
   message: ThreadMessage
@@ -349,6 +375,16 @@ function ThreadDetail() {
     useState<UIMessage | null>(null)
   const [isAutoIncreasingContext, setIsAutoIncreasingContext] = useState(false)
   const [contextLimitError, setContextLimitError] = useState<Error | null>(null)
+  // The context could not grow for the failed turn (at the cap, no memory,
+  // the reload failed, or under fit its one automatic growth is spent): the
+  // error card offers to shorten the history instead.
+  const [contextGrowthBlocked, setContextGrowthBlocked] = useState(false)
+  // Engine-gone recovery: `restarting` while the engine is brought back for
+  // the one automatic retry, `failed` when it could not be.
+  const [engineRecovery, setEngineRecovery] = useState<
+    'restarting' | 'failed' | null
+  >(null)
+  const engineRecoveryAbortRef = useRef<AbortController | null>(null)
   // In the session store, per thread: the thread's Chat outlives this page and
   // calls back into whichever render is the latest (ATO-538).
   const isChatRequestActive = useChatSessions(
@@ -1841,9 +1877,37 @@ function ThreadDetail() {
     [threadId, deleteMessage, chatMessages, setChatMessages]
   )
 
-  // Handler for increasing context size
-  const handleContextSizeIncrease = useCallback(async () => {
+  // Handler for increasing context size. `auto` is the reactive path after an
+  // overflow; `manual` is the error card's button.
+  const handleContextSizeIncrease = useCallback(async (
+    trigger: 'auto' | 'manual' = 'auto'
+  ) => {
     if (!selectedModel) return
+
+    const releaseRequest = () => {
+      // No reload will follow. Release the request here because the chat
+      // status is already "error" and its status effect will not run again.
+      setIsAutoIncreasingContext(false)
+      setIsChatRequestActive(false)
+      setPendingContinueMessage(null)
+    }
+
+    // Under fit on a GPU build every growth is a full reload with fewer
+    // layers on the GPU: the automatic one runs once per turn, and when the
+    // retry still overflows the card offers to shorten the history instead.
+    const fitTurn =
+      trigger === 'auto' &&
+      contextGrowthMode(getProviderByName(selectedProvider)) === 'fit_ctx'
+        ? turnUserMessageId(chatMessagesRef.current)
+        : undefined
+    if (fitTurn && fitGrowthTurns.has(fitTurn)) {
+      releaseRequest()
+      setContextGrowthBlocked(true)
+      toast.info(t('chat:turnRecovery.contextGrowthSpent'), {
+        id: `ctx-growth-spent-${selectedProvider}-${selectedModel.id}`,
+      })
+      return
+    }
 
     // The ladder itself lives in `growModelContext` (shared with the chat
     // transport's pre-flight); this reactive path only adds the regenerate.
@@ -1853,11 +1917,10 @@ function ThreadDetail() {
       serviceHub,
     })
     if (!result.ok) {
-      // No reload will follow. Release the request here because the chat
-      // status is already "error" and its status effect will not run again.
-      setIsAutoIncreasingContext(false)
-      setIsChatRequestActive(false)
-      setPendingContinueMessage(null)
+      releaseRequest()
+      if (result.reason !== 'no_model' && result.reason !== 'no_provider') {
+        setContextGrowthBlocked(true)
+      }
       if (result.reason === 'at_max') {
         toast.error('Model reached its maximum context, auto-expand stopped', {
           id: `ctx-at-max-${selectedProvider}-${selectedModel.id}`,
@@ -1866,14 +1929,88 @@ function ThreadDetail() {
         toast.info(t('assistants:contextSizeFitAtMax'), {
           id: `ctx-fit-${selectedProvider}-${selectedModel.id}`,
         })
+      } else if (result.reason === 'insufficient_memory') {
+        toast.info(t('chat:turnRecovery.contextNoMemory'), {
+          id: `ctx-no-memory-${selectedProvider}-${selectedModel.id}`,
+        })
+      } else if (result.reason === 'reload_failed') {
+        toast.error(t('chat:turnRecovery.contextReloadFailed'), {
+          id: `ctx-reload-failed-${selectedProvider}-${selectedModel.id}`,
+        })
       }
       return
     }
+    if (fitTurn) fitGrowthTurns.add(fitTurn)
 
     setTimeout(() => {
       handleRegenerate()
     }, 1000)
-  }, [selectedModel, selectedProvider, serviceHub, handleRegenerate])
+  }, [
+    selectedModel,
+    selectedProvider,
+    serviceHub,
+    handleRegenerate,
+    getProviderByName,
+    setIsChatRequestActive,
+    t,
+  ])
+
+  /**
+   * "Shorten history and retry": leave the oldest turns out of the request
+   * (they stay in the thread and on the page) so the system prompt, the
+   * latest user message with its attachments and as many recent turns as fit
+   * the current window are sent, then answer the failed turn again.
+   */
+  const handleShortenHistoryAndRetry = useCallback(
+    async (failedMessageId: string | undefined) => {
+      const transport = useChatSessions.getState().sessions[threadId]?.transport
+      if (!transport) return
+      const shown = withoutHistoryBefore(
+        chatMessagesRef.current,
+        transport.getHistoryStart()
+      )
+      // The retry answers the failed turn again: it sends the history up to
+      // and including the latest user message.
+      const history = shown.slice(
+        0,
+        shown.findLastIndex((message) => message.role === 'user') + 1
+      )
+      const toolTokens = transport.lastPromptSize?.toolTokens ?? 0
+      const fixedTokens = toolTokens + estimateTokens(systemMessage ?? '')
+      const maxOutputTokens = getSamplingParamsForThread(threadId).params
+        ?.max_output_tokens as number | undefined
+      const plan = planHistoryTrim({
+        messages: history,
+        budgetTokens: historyTrimBudget({
+          windowTokens:
+            readModelCtxLen(useModelProvider.getState().selectedModel) ??
+            DEFAULT_CTX_LEN,
+          reserveTokens: maxOutputTokens ?? DEFAULT_OUTPUT_RESERVE_TOKENS,
+          fixedTokens,
+        }),
+        estimate: calibratedMessageEstimate({
+          messages: history,
+          measuredPromptTokens: transport.lastPromptSize?.measured
+            ? transport.lastPromptSize.promptTokens
+            : undefined,
+          fixedTokens,
+        }),
+      })
+      if (!plan) {
+        toast.info(t('chat:turnRecovery.historyCannotShorten'))
+        return
+      }
+      transport.setHistoryStart(plan.keepFromId)
+      setContextGrowthBlocked(false)
+      toast.info(
+        t('chat:turnRecovery.historyShortened', {
+          count: plan.droppedMessages,
+        })
+      )
+      await handleRegenerate(failedMessageId)
+    },
+    [handleRegenerate, systemMessage, t, threadId]
+  )
 
   // Keep refs in sync so onFinish always calls the latest versions
   handleContextSizeIncreaseRef.current = handleContextSizeIncrease
@@ -1939,6 +2076,8 @@ function ThreadDetail() {
     // #endregion
     if (status === 'streaming' || status === 'submitted') {
       setContextLimitError(null)
+      setContextGrowthBlocked(false)
+      setEngineRecovery((current) => (current === 'failed' ? null : current))
     }
     if (
       isAutoIncreasingContext &&
@@ -1964,6 +2103,96 @@ function ThreadDetail() {
     }
   }, [status]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  /**
+   * The one automatic retry of a local turn whose engine went away: wait
+   * until the engine answers `/health` again (starting it when it is not
+   * running), then answer the turn again. A turn whose earlier steps already
+   * ran tools is resumed after them, so their results are reused instead of
+   * the calls running twice (`planEngineRecovery`).
+   */
+  const recoverEngineAndRetry = useCallback(
+    async (providerId: string, modelId: string) => {
+      engineRecoveryAbortRef.current?.abort()
+      const controller = new AbortController()
+      engineRecoveryAbortRef.current = controller
+      setEngineRecovery('restarting')
+      setIsChatRequestActive(true)
+
+      const readiness = await waitForEngineReady({
+        providerId,
+        modelId,
+        serviceHub,
+        signal: controller.signal,
+      })
+      // Stopped, or the page moved to another thread: nothing more to do here.
+      if (engineRecoveryAbortRef.current !== controller) return
+      engineRecoveryAbortRef.current = null
+      if (!readiness.ok) {
+        console.warn(
+          `[chat] could not bring ${providerId}/${modelId} back for a retry: ${readiness.reason}${readiness.error ? ` (${readiness.error})` : ''}`
+        )
+        setEngineRecovery('failed')
+        setIsChatRequestActive(false)
+        return
+      }
+      setEngineRecovery(null)
+
+      // Planned again on the conversation as it is now: the failed turn was
+      // stored (and held in the Chat as stored) while the engine came back.
+      const plan = planEngineRecovery({
+        messages:
+          useChatSessions.getState().sessions[threadId]?.chat.messages ??
+          chatMessagesRef.current,
+      })
+      if (plan?.kind === 'resume') {
+        chatMessagesRef.current = plan.messages
+        setChatMessages(plan.messages)
+        captureRetryRequest('regenerate')
+        // No message: the Chat continues its last (assistant) message.
+        void sendMessage()
+        return
+      }
+      // `handleRegenerate` marks the request active again when it starts one.
+      setIsChatRequestActive(false)
+      await handleRegenerate(plan?.failedMessageId)
+    },
+    [
+      captureRetryRequest,
+      handleRegenerate,
+      sendMessage,
+      serviceHub,
+      setChatMessages,
+      setIsChatRequestActive,
+      threadId,
+    ]
+  )
+
+  useEffect(() => {
+    if (!error || isAgentRunning || !selectedModel) return
+    if (!RECOVERABLE_LOCAL_PROVIDERS.has(selectedProvider)) return
+    if (resolveThreadExecutionRoute(threadId).route === 'agent-ipc') return
+    if (!isEngineGoneError(error)) return
+    const plan = planEngineRecovery({ messages: chatMessagesRef.current })
+    if (!plan || autoRetriedTurns.has(plan.turnKey)) return
+    autoRetriedTurns.add(plan.turnKey)
+    void recoverEngineAndRetry(selectedProvider, selectedModel.id)
+  }, [error]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A recovery belongs to the thread it started on: leaving the thread
+  // cancels it and releases that thread's composer.
+  useEffect(
+    () => () => {
+      if (engineRecoveryAbortRef.current) {
+        engineRecoveryAbortRef.current.abort()
+        engineRecoveryAbortRef.current = null
+        useChatSessions.getState().setRequestActive(threadId, false)
+      }
+      setEngineRecovery(null)
+      setContextGrowthBlocked(false)
+    },
+    [threadId]
+  )
+
   const threadModel = useMemo(
     () => searchThreadModel ?? thread?.model,
     [searchThreadModel, thread]
@@ -1975,6 +2204,10 @@ function ThreadDetail() {
       sessionData.toolAbort?.abort()
       sessionData.toolAbort = null
       sessionData.tools = []
+      // Stop also cancels an automatic retry waiting on the engine.
+      engineRecoveryAbortRef.current?.abort()
+      engineRecoveryAbortRef.current = null
+      setEngineRecovery(null)
       setIsChatRequestActive(false)
       stop()
       return
@@ -2133,6 +2366,10 @@ function ThreadDetail() {
                       replaces the generic "Working" progress, never joins it. */}
                       {pendingContinueMessage || isAutoIncreasingContext ? (
                         <Shimmer duration={1}>Growing the Mind...</Shimmer>
+                      ) : engineRecovery === 'restarting' ? (
+                        <Shimmer duration={1}>
+                          {t('chat:turnRecovery.engineRestarting')}
+                        </Shimmer>
                       ) : (
                         inputStatus === CHAT_STATUS.SUBMITTED &&
                         !isAgentRunning &&
@@ -2142,6 +2379,7 @@ function ThreadDetail() {
                   )}
                   {shownError &&
                     !isAutoIncreasingContext &&
+                    engineRecovery !== 'restarting' &&
                     (() => {
                       const activeError = shownError
                       const rawMessage = activeError?.message
@@ -2165,6 +2403,15 @@ function ThreadDetail() {
                         !isAccessError &&
                         !isAuthError &&
                         isOutOfMemoryError(activeError)
+                      // The local engine went away under the turn: say so
+                      // instead of showing the (often localized) OS text.
+                      const isEngineGone =
+                        !isContextError &&
+                        !isAccessError &&
+                        !isAuthError &&
+                        !isOomError &&
+                        RECOVERABLE_LOCAL_PROVIDERS.has(selectedProvider) &&
+                        isEngineGoneError(activeError)
                       // ATO-170: replace the raw engine 400 body (e.g. mlx-vlm's
                       // "... but MAX_KV_SIZE is N") with a clear, actionable message
                       // instead of the generic "Error generating response".
@@ -2176,7 +2423,9 @@ function ThreadDetail() {
                             ? AUTHENTICATION_FAILED_TITLE
                             : isOomError
                               ? OUT_OF_MEMORY_TITLE
-                              : 'Error generating response'
+                              : isEngineGone
+                                ? t('chat:turnRecovery.engineGoneTitle')
+                                : 'Error generating response'
                       const body = fixedContext
                         ? contextOverflowMessage(fixedContext)
                         : isContextError
@@ -2187,7 +2436,11 @@ function ThreadDetail() {
                             ? AUTHENTICATION_FAILED_MESSAGE
                             : isOomError
                               ? OUT_OF_MEMORY_MESSAGE
-                              : rawMessage
+                              : isEngineGone
+                                ? engineRecovery === 'failed'
+                                  ? t('chat:turnRecovery.engineRestartFailed')
+                                  : t('chat:turnRecovery.engineGoneMessage')
+                                : rawMessage
                       return (
                         <div className="px-4 py-3 mx-4 my-2 rounded-lg border border-destructive/10 bg-destructive/10">
                           <div className="flex items-start gap-3">
@@ -2223,12 +2476,31 @@ function ThreadDetail() {
                                   <IconAlertCircle className="size-4 mr-2" />
                                   {`Open ${fixedContext.engine.label} settings`}
                                 </Button>
+                              ) : isContextError && contextGrowthBlocked ? (
+                                // The window cannot grow any more: send less
+                                // history instead. The draft, the message and
+                                // its attachments stay as they are.
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="mt-3"
+                                  onClick={() =>
+                                    void handleShortenHistoryAndRetry(
+                                      failedTurnMessageId
+                                    )
+                                  }
+                                >
+                                  <IconRefresh className="size-4 mr-2" />
+                                  {t('chat:turnRecovery.shortenHistory')}
+                                </Button>
                               ) : isContextError ? (
                                 <Button
                                   variant="outline"
                                   size="sm"
                                   className="mt-3"
-                                  onClick={handleContextSizeIncrease}
+                                  onClick={() =>
+                                    void handleContextSizeIncrease('manual')
+                                  }
                                 >
                                   <IconAlertCircle className="size-4 mr-2" />
                                   Increase Context Size
