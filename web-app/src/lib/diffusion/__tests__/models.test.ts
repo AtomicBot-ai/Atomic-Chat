@@ -31,6 +31,7 @@ import {
   parseArtifactId,
   planArtifactDeletion,
   planArtifactDownload,
+  readDiffusionDownloadRequest,
   sharedRepoDir,
 } from '../models'
 
@@ -824,6 +825,36 @@ describe('downloadArtifact', () => {
       taskId: 'diffusion-model-z-image_q4_k_m',
       resume: true,
     })
+  })
+
+  it('plans a first download that asks to keep partial bytes instead of refusing it', async () => {
+    // The model picker's Download always passes `resume`. With no request
+    // recorded yet (a fresh profile, or a partial from before plans were
+    // recorded) it used to fail at once with "no recorded model plan".
+    const plan = await downloadArtifact(zImage, 'q4_k_m', { resume: true })
+
+    expect(transfers).toHaveLength(1)
+    expect(transfers[0]).toMatchObject({
+      taskId: 'diffusion-model-z-image_q4_k_m',
+      resume: true,
+    })
+    expect(plan.missingBytes).toBe(0)
+    expect(
+      readDiffusionDownloadRequest('diffusion-model-z-image_q4_k_m')
+    ).toMatchObject({ quantId: 'q4_k_m' })
+  })
+
+  it('plans afresh when a recorded request has lost its file plan', async () => {
+    await downloadArtifact(zImage, 'q4_k_m')
+    localStorage.removeItem(
+      'atomic_model_download_plan_v1:request:diffusion-model-z-image_q4_k_m'
+    )
+    transfers.length = 0
+
+    await downloadArtifact(zImage, 'q4_k_m', { resume: true })
+
+    expect(transfers).toHaveLength(1)
+    expect(transfers[0].resume).toBe(true)
   })
 
   it('verifies finished copies when an explicit new download is requested', async () => {

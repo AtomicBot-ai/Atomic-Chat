@@ -695,15 +695,16 @@ export async function downloadArtifact(
   try {
     started = true
     const requestId = `request:${taskId}`
+    // `resume` keeps the bytes already on disk; it does not require an earlier
+    // request. Every caller passes it — the model picker's Download as well —
+    // so a first download, or one interrupted before plans were recorded,
+    // has none and plans afresh here. That is safe for the partial files: the
+    // downloader reuses a partial only when its recorded identity matches the
+    // planned file, and restarts it otherwise.
     const saved = opts.resume ? readDiffusionDownloadRequest(taskId) : undefined
-    let prepared = opts.resume
+    let prepared = saved
       ? readAtomicDownloadPlan<TransferItem>(requestId)
       : undefined
-    if (opts.resume && (!saved || !prepared)) {
-      throw new Error(
-        'This download has no recorded model plan. Start a new download; partial files were kept.'
-      )
-    }
     if (saved) {
       family = saved.family
       quantId = saved.quantId
