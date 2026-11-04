@@ -5,7 +5,12 @@ import type { ServiceHub } from '@/services'
 import { captureHandledError } from '@/lib/sentry'
 import {
   isRecoverableModelLoadCode,
+  lastLoadIdForModel,
+  resetLoadIdsForTests,
+  resetModelLoadThrottlesForTests,
+  sanitizeStderrTail,
   shouldCaptureModelLoadSentry,
+  shouldEmitModelLoadFailure,
 } from '@/lib/telemetry'
 import { registerRemoteProvider } from '@/utils/registerRemoteProvider'
 import {
@@ -67,6 +72,12 @@ const { appState, localApiState, modelProviderState, startServer, stopServer } =
       selectedProvider: '',
       selectedModel: null as { id: string } | null,
       selectModelProvider: vi.fn(),
+      // `model_load` reads the provider's fit flag through this; without it
+      // the event threw inside its own try and was never captured.
+      getProviderByName: (name: string) =>
+        (modelProviderState.providers as Array<Record<string, unknown>>).find(
+          (p) => p.provider === name
+        ),
       // Mirrors the store: a partial update replaces the listed fields.
       updateProvider: (name: string, data: Record<string, unknown>) => {
         const list = modelProviderState.providers as Array<
@@ -379,6 +390,91 @@ describe('switchToModel', () => {
     })
     vi.mocked(isRecoverableModelLoadCode).mockReturnValue(true)
     vi.mocked(shouldCaptureModelLoadSentry).mockReturnValue(false)
+  })
+
+  it('reports the core diag of a failed load as properties, not as stderr', async () => {
+    vi.mocked(shouldEmitModelLoadFailure).mockReturnValueOnce(true)
+    const failure = Object.assign(new Error('engine exited'), {
+      code: 'GPU_BACKEND_INCOMPATIBLE',
+      details: [
+        'ggml_cuda_init: no CUDA-capable device is detected',
+        'atomic-core-diag {"exit_code":-1073741795,"signal":null,"stage":"spawn","backend":"cuda-12.4","build":"b6000","fallback_from":"cuda-12.4","fallback_to":"cpu","fallback_ok":false,"empty_stderr":false}',
+      ].join('\n'),
+    })
+    const serviceHub = {
+      app: () => ({ getServerStatus: vi.fn().mockResolvedValue(false) }),
+      models: () => ({
+        getActiveModels: vi.fn().mockResolvedValue([]),
+        stopAllModels: vi.fn().mockResolvedValue(undefined),
+        stopAllModelsExcept: vi.fn().mockResolvedValue(undefined),
+        startModel: vi.fn().mockRejectedValue(failure),
+      }),
+    } as unknown as ServiceHub
+
+    await expect(
+      switchToModel({
+        modelId: 'broken-model',
+        providerName: 'mlx',
+        serviceHub,
+      })
+    ).rejects.toThrow()
+
+    const posthog = (await import('posthog-js')).default
+    const load = vi
+      .mocked(posthog.capture)
+      .mock.calls.find(([event]) => event === 'model_load')?.[1]
+    expect(load).toMatchObject({
+      load_status: 'failed',
+      load_id: expect.any(String),
+      error_code: 'GPU_BACKEND_INCOMPATIBLE',
+      load_failure_kind: 'gpu_backend_incompatible',
+      exit_code: -1073741795,
+      exit_signal: null,
+      startup_stage: 'spawn',
+      ran_backend: 'cuda-12.4',
+      engine_build: 'b6000',
+      fallback_from: 'cuda-12.4',
+      fallback_to: 'cpu',
+      fallback_ok: false,
+      empty_stderr: false,
+    })
+    // The diag line is reported above, not left in the stderr tail.
+    expect(sanitizeStderrTail).toHaveBeenCalledWith(
+      'ggml_cuda_init: no CUDA-capable device is detected'
+    )
+  })
+
+  it('remembers a successful load so the next chat request can join to it', async () => {
+    resetModelLoadThrottlesForTests()
+    resetLoadIdsForTests()
+    const loaded = createLoadedEngines({ 'llamacpp-upstream': [] })
+    const serviceHub = {
+      app: () => ({ getServerStatus: vi.fn().mockResolvedValue(true) }),
+      models: () => ({
+        getActiveModels: vi.fn(loaded.getActiveModels),
+        stopAllModels: vi.fn(loaded.stopAllModels),
+        stopAllModelsExcept: vi.fn(loaded.stopAllModelsExcept),
+        startModel: vi.fn(loaded.startModel),
+      }),
+    } as unknown as ServiceHub
+
+    await switchToModel({
+      modelId: 'shared-model',
+      providerName: 'llamacpp-upstream',
+      serviceHub,
+    })
+
+    const posthog = (await import('posthog-js')).default
+    const load = vi
+      .mocked(posthog.capture)
+      .mock.calls.find(([event]) => event === 'model_load')?.[1] as
+      | Record<string, unknown>
+      | undefined
+    expect(load?.load_status).toBe('success')
+    expect(load?.load_id).toEqual(expect.any(String))
+    expect(lastLoadIdForModel('shared-model', 'llamacpp-upstream')).toBe(
+      load?.load_id
+    )
   })
 
   it('keeps the target engine running and only unloads copies in other providers', async () => {

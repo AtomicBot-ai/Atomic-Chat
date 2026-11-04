@@ -541,6 +541,7 @@ describe('DeferredFirstSendProvider', () => {
       expect(requests).toHaveLength(1)
       expect(requests[0]).toEqual({
         turn_id: expect.any(String),
+        attempt_id: expect.any(String),
         thread_id: 'background-thread',
         source: 'chat',
         engine: 'chat-transport',
@@ -568,6 +569,8 @@ describe('DeferredFirstSendProvider', () => {
         tools_tokens_estimate: null,
         tools_ctx_share: null,
         tools_heavy_servers: 0,
+        // No load ran in this test, so there is nothing to join to.
+        last_load_id: null,
       })
       // Nothing comes back until the reply finishes.
       expect(events('chat_response_received')).toHaveLength(0)
@@ -585,6 +588,7 @@ describe('DeferredFirstSendProvider', () => {
       expect(responses).toHaveLength(1)
       expect(responses[0]).toMatchObject({
         turn_id: requests[0].turn_id,
+        attempt_id: requests[0].attempt_id,
         thread_id: 'background-thread',
         source: 'chat',
         engine: 'chat-transport',

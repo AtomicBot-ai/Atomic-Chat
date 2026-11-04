@@ -65,6 +65,7 @@ import {
   captureChatResponse,
   contextTelemetry,
   currentChatTurn,
+  observeChatTurn,
   responseShapeFromMessage,
   type AttachmentTelemetry,
   type ChatEngine,
@@ -427,10 +428,14 @@ function ThreadDetail() {
   /**
    * A retry reuses the previous turn's prompt and attachments, so only the
    * source changes. Regenerate and edit previously emitted nothing at all,
-   * which left the send count — the funnel's denominator — short.
+   * which left the send count — the funnel's denominator — short. A retry the
+   * app starts by itself passes `auto_retry`, on the request and its reply.
    */
   const captureRetryRequest = useCallback(
-    (source: 'regenerate' | 'edit', routeReason?: RouteReason) => {
+    (
+      source: 'regenerate' | 'edit' | 'auto_retry',
+      routeReason?: RouteReason
+    ) => {
       turnContextRef.current = {
         ...turnContextRef.current,
         source,
@@ -448,6 +453,10 @@ function ThreadDetail() {
         provider: useModelProvider.getState().selectedProvider,
         turn_index: chatMessagesRef.current.length,
       })
+      observeChatTurn(
+        threadId,
+        useChatSessions.getState().sessions[threadId]?.chat
+      )
     },
     [threadId]
   )
@@ -625,7 +634,21 @@ function ThreadDetail() {
         // answer from ever releasing the composer (PR #335). A failed step is
         // terminal too, and the calls it queued are dropped, not run (AC-07).
         sessionData.tools = []
-        captureTurnOutcome('success', message)
+        // A failed step is never a success. `onError` has usually reported it
+        // already, and this dedupes onto that turn; it reports here only when
+        // the SDK skipped `onError` (a thrown non-Error).
+        const stepError = isError
+          ? useChatSessions.getState().sessions[threadId]?.chat.error
+          : undefined
+        captureTurnOutcome(
+          !isError
+            ? 'success'
+            : classifyChatFailure(stepError) === 'aborted'
+              ? 'aborted'
+              : 'error',
+          message,
+          stepError
+        )
       }
 
       // Persist assistant message to backend.
@@ -1555,6 +1578,10 @@ function ThreadDetail() {
             : null,
         tools_heavy_servers: toolCost?.heavyServers.length ?? 0,
       })
+      observeChatTurn(
+        threadId,
+        useChatSessions.getState().sessions[threadId]?.chat
+      )
 
       // Clear attachments after sending
       clearAttachmentsForThread(attachmentsKey)

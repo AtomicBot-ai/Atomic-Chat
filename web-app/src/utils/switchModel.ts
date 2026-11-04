@@ -33,13 +33,16 @@ import {
   modelLoadSource,
   oomSubtype,
   quantFromModelId,
+  rememberLoadId,
   sanitizeStderrTail,
   shouldCaptureModelLoadSentry,
   shouldEmitModelLoadFailure,
   shouldEmitModelLoadSuccess,
   sizeBucket,
+  telemetryId,
   type RuntimeDeviceSnapshot,
 } from '@/lib/telemetry'
+import { loadDiagProps, parseLoadDiag, stripLoadDiag } from '@/lib/load-diag'
 import { queuedCapture } from '@/lib/telemetry-queue'
 import { ExtensionManager } from '@/lib/extension'
 import { captureHandledError } from '@/lib/sentry'
@@ -141,7 +144,12 @@ function emitModelLoad(
     // every `model_load` event in the project.
     if (status === 'success' && !shouldEmitModelLoadSuccess(args.modelId, backend))
       return
+    // One id per emitted load. A success's id rides on the model's later
+    // `chat_request_sent` events as `last_load_id`, so a load joins to the
+    // turns it served — the first one above all.
+    const loadId = telemetryId()
     const props: Record<string, unknown> = {
+      load_id: loadId,
       // NOT `status`. PostHog types a property globally by its observed values,
       // and `api_server_request.status` (an HTTP code) already claimed that
       // name as numeric — so these strings silently read back as null. That is
@@ -196,13 +204,26 @@ function emitModelLoad(
       device_used: settingStr(settings, 'device'),
     }
     if (status === 'failed') {
-      const err = toErrorObject(args.error)
+      const rawErr = toErrorObject(args.error)
+      // The core's `atomic-core-diag {json}` last line: exit code, startup
+      // stage, the backend that actually ran, fallbacks. Reported as its own
+      // properties and removed from everything below, where its JSON would
+      // feed the text heuristics (`"signal"` reads as a crash, `"cuda"` as a
+      // CUDA memory domain) and fill the stderr tail.
+      const diag =
+        parseLoadDiag(rawErr.details) ?? parseLoadDiag(rawErr.message)
+      const err: ErrorObject = {
+        ...rawErr,
+        message: stripLoadDiag(rawErr.message) ?? rawErr.message,
+        details: stripLoadDiag(rawErr.details),
+      }
       const haystack = err.details ?? err.message
       const errorCode = err.code ?? null
       // ATO-133: a model stuck in a load crashloop emits the same failure over
       // and over; drop duplicates within the throttle window so event-weighted
       // metrics aren't dominated by a handful of stuck devices.
       if (!shouldEmitModelLoadFailure(args.modelId, errorCode)) return
+      Object.assign(props, loadDiagProps(diag))
       // The actual OOM flag, from the same predicate the Sentry severity
       // already uses. On macOS a Metal OOM arrives as
       // `LLAMA_CPP_PROCESS_ERROR` with the cause only in the stderr tail —
@@ -226,6 +247,7 @@ function emitModelLoad(
       props.stderr_tail = sanitizeStderrTail(haystack)
     }
     queuedCapture('model_load', props)
+    if (status === 'success') rememberLoadId(args.modelId, loadId)
   } catch (telemetryError) {
     console.debug('model_load telemetry failed:', telemetryError)
   }
