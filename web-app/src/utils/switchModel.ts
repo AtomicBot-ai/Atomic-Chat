@@ -1622,7 +1622,11 @@ export function splitModelLoadError(err: ErrorObject): {
   const newlineAt = raw.indexOf('\n')
   const head = (newlineAt === -1 ? raw : raw.slice(0, newlineAt)).trim()
   const tail = newlineAt === -1 ? '' : raw.slice(newlineAt + 1).trim()
-  const details = err.details?.trim() || tail || undefined
+  // The core's `atomic-core-diag {json}` line is for telemetry, not for people.
+  const details =
+    stripLoadDiag(err.details?.trim())?.trim() ||
+    stripLoadDiag(tail)?.trim() ||
+    undefined
 
   if (head.length <= MAX_SUMMARY_LENGTH) {
     return { summary: head, details: details && clampDetails(details) }

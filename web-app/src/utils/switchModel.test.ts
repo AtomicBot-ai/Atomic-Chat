@@ -1228,6 +1228,20 @@ describe('selectThreadModelIfNone', () => {
 })
 
 describe('splitModelLoadError', () => {
+  it("keeps the core's atomic-core-diag line out of the details people read", () => {
+    const { summary, details } = splitModelLoadError({
+      code: 'GPU_BACKEND_INCOMPATIBLE',
+      message: 'The GPU build does not run on this card or driver.',
+      details:
+        'CUDA error: the provided PTX was compiled with an unsupported toolchain.\n' +
+        'atomic-core-diag {"stage":"load","backend":"win-cuda-13.3-x64"}',
+    })
+    expect(summary).toBe('The GPU build does not run on this card or driver.')
+    expect(details).toBe(
+      'CUDA error: the provided PTX was compiled with an unsupported toolchain.'
+    )
+  })
+
   it('separates the engine reason from the log it dumped after it', () => {
     const { summary, details } = splitModelLoadError({
       code: 'LLAMA_CPP_PROCESS_ERROR',
