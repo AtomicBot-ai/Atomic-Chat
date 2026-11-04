@@ -6,6 +6,7 @@
 //! build refuses to start when the runner did not say where its profile lives.
 //! Nothing in this module exists in a build without the feature.
 
+use crate::core::webview_store::{self, WebviewStorage};
 use sha2::{Digest, Sha256};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -92,10 +93,8 @@ pub fn require_inside_root(data_folder: &Path) {
     }
 }
 
-/// Where the webview's data lives on platforms that take a directory for it.
-pub const WEBVIEW_DATA_DIR: &str = "webview";
-
-/// A WebKit data store of this run's own, named after its root.
+/// The WebKit store and the webview data directory of a run are named after its
+/// root, as `webview_store` does for any root.
 ///
 /// The tests run an unbundled binary. WebKit keys the default store of such a
 /// process by executable name (`~/Library/WebKit/Atomic-Chat`), which every dev
@@ -103,24 +102,7 @@ pub const WEBVIEW_DATA_DIR: &str = "webview";
 /// run reads and rewrites the developer's own webview state (localStorage holds
 /// onboarding, provider and backend settings). Deriving the store from the root
 /// gives each profile a clean webview that still survives a restart.
-pub fn webview_data_store(root: &Path) -> [u8; 16] {
-    let digest = Sha256::digest(root.as_os_str().as_encoded_bytes());
-    let mut store = [0u8; 16];
-    store.copy_from_slice(&digest[..16]);
-    store
-}
-
-/// Stops Tauri from creating the configured windows itself.
-///
-/// `data_store_identifier` in a window config is not carried into the webview
-/// (tauri-runtime 2.10 copies `incognito` but not the identifier), so only a
-/// builder can set it; `create_windows` builds the same windows from the same
-/// config in `setup`.
-pub fn take_over_windows<R: tauri::Runtime>(context: &mut tauri::Context<R>) {
-    for window in &mut context.config_mut().app.windows {
-        window.create = false;
-    }
-}
+pub use crate::core::webview_store::{take_over_windows, webview_data_store};
 
 /// The app identifier of one run: the build's, plus a tag derived from the run's root.
 ///
@@ -141,20 +123,15 @@ pub fn namespace_identifier<R: tauri::Runtime>(context: &mut tauri::Context<R>) 
     context.config_mut().identifier = identifier;
 }
 
-/// Both ways of giving a webview its own storage are set, with no platform
-/// branch: WKWebView takes the data store identifier and has no data directory,
-/// while WebView2 and WebKitGTK take the data directory and ignore the
-/// identifier. Only the macOS half is verified; the other keeps the webview's
-/// data inside the root, where it is deleted with the run.
+/// The configured windows, each with this run's own webview storage. On the
+/// platforms that take a data directory it is inside the root, where it is
+/// deleted with the run.
 pub fn create_windows<R: tauri::Runtime>(app: &tauri::App<R>) -> tauri::Result<()> {
-    let root = data_root();
-    let store = webview_data_store(&root);
+    let storage = WebviewStorage::derived_from(&data_root());
     let (x, y) = window_position(std::env::var(WINDOW_SLOT_ENV).ok().as_deref());
     for window in app.config().app.windows.clone() {
-        let window = tauri::WebviewWindowBuilder::from_config(app.handle(), &window)?
+        let window = webview_store::window_builder(app.handle(), &window, &storage)?
             .position(x, y)
-            .data_store_identifier(store)
-            .data_directory(root.join(WEBVIEW_DATA_DIR))
             // A window fully covered by others gets no animation frames from
             // WebKit. The app hides its splash overlay from one, so on a machine
             // somebody is working on the overlay stays over the whole UI and
@@ -392,7 +369,6 @@ mod tests {
     }
 
     use super::*;
-    use tauri::utils::config::WindowConfig;
 
     #[test]
     fn a_run_without_an_absolute_existing_root_is_refused() {
@@ -480,30 +456,5 @@ mod tests {
         assert_eq!(take_dialog_answer(root.path()), Some(serde_json::json!(["/a", "/b"])));
         assert_eq!(take_dialog_answer(root.path()), None);
         assert_eq!(take_dialog_answer(tempfile::tempdir().unwrap().path()), None);
-    }
-
-    #[test]
-    fn each_root_gets_its_own_stable_webkit_store() {
-        let one = webview_data_store(Path::new("/runs/one"));
-
-        assert_eq!(one, webview_data_store(Path::new("/runs/one")));
-        assert_ne!(one, webview_data_store(Path::new("/runs/two")));
-    }
-
-    #[test]
-    fn tauri_is_told_not_to_create_any_configured_window() {
-        let mut context: tauri::Context<tauri::test::MockRuntime> =
-            tauri::test::mock_context(tauri::test::noop_assets());
-        context.config_mut().app.windows = vec![
-            WindowConfig::default(),
-            WindowConfig {
-                label: "second".into(),
-                ..Default::default()
-            },
-        ];
-
-        take_over_windows(&mut context);
-
-        assert!(context.config().app.windows.iter().all(|window| !window.create));
     }
 }

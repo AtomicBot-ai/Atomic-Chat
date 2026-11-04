@@ -15,14 +15,44 @@
 ### Isolated QA/dev profile
 
 To check the first-run flow without reading or changing your usual profile,
-start the app with an absolute directory in `ATOMIC_CHAT_PROFILE_DIR`. Settings
-then live in `<profile>/settings.json` and data in `<profile>/data`; the legacy
-Atomic Chat/Jan directories are not used in this mode. The app hands
-`<profile>/data` to the core it starts (`--data-folder`).
+quit Atomic Chat and start it with an absolute directory in
+`ATOMIC_CHAT_PROFILE_DIR`. Nothing else needs redirecting (no
+`CFFIXED_USER_HOME` or `HOME`):
+
+- Settings live in `<profile>/settings.json` and data in `<profile>/data`; the
+  legacy Atomic Chat/Jan directories are not used in this mode. The app hands
+  `<profile>/data` to the core it starts (`--data-folder`).
+- The main window's webview storage (localStorage, IndexedDB, cookies, caches)
+  belongs to the profile too. It holds projects, onboarding progress and
+  frontend settings, so a new profile starts with onboarding and with empty
+  Projects and Recents. On Windows and Linux it is `<profile>/webview`. On
+  macOS WebKit keeps it outside the profile, as
+  `~/Library/WebKit/<bundle id or executable name>/WebsiteDataStore/<id>`,
+  where `<id>` is the UUID in `<profile>/webview-store-id`. A profile folder
+  deleted and created again at the same path gets a new, empty store; the old
+  one stays in `~/Library/WebKit` until you delete it.
 
 ```bash
 ATOMIC_CHAT_PROFILE_DIR=/tmp/atomic-chat-clean-flow yarn dev
 ```
+
+What the profile does not cover:
+
+- **One Atomic Chat at a time.** The single-instance lock is named after the
+  bundle identifier, not the profile: a launch while any Atomic Chat runs
+  hands over to it and exits, so quit the usual app first, and two profiles
+  cannot run side by side. The identifier stays the same because the
+  window-state file, the updater session, the MCP lock files and the default
+  WebView2/WebKitGTK folder are all named after it.
+- **Shared with the usual app:** window size and position, the updater
+  session and the MCP lock files (all in the identifier-named app directories),
+  and the operating system's launch-at-login item.
+- **Secondary windows** (App Logs, System Monitor, Local API Server Logs) are
+  opened by the frontend through Tauri's own window API, which cannot set a
+  data store, so they still read the usual webview storage (theme and
+  interface settings).
+- **macOS 13 and earlier** have no per-profile WebKit stores: the main window
+  falls back to the usual webview storage there.
 
 The CLI is the core's and does not read the variable: give it a folder of its
 own (it refuses the app's data folder), for example

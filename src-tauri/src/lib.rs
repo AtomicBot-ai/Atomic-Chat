@@ -474,8 +474,24 @@ pub fn run() {
         core::tray_status::update_tray_status,
     ]);
 
+    // An isolated QA/dev profile (`ATOMIC_CHAT_PROFILE_DIR`) keeps the webview's
+    // storage inside the profile as well: localStorage holds projects,
+    // onboarding progress and frontend settings, which the data folder does not.
+    // A window config cannot carry a data store into the webview, so the
+    // configured windows are built in `setup` instead, as in an end-to-end build.
+    #[cfg(all(desktop, not(feature = "e2e")))]
+    let profile_webview = core::app::commands::isolated_profile_webview_storage();
+
     #[cfg(not(feature = "e2e"))]
-    let context = tauri::generate_context!();
+    let context = {
+        #[cfg_attr(not(desktop), allow(unused_mut))]
+        let mut context = tauri::generate_context!();
+        #[cfg(desktop)]
+        if profile_webview.is_some() {
+            core::webview_store::take_over_windows(&mut context);
+        }
+        context
+    };
     #[cfg(feature = "e2e")]
     let context = {
         let mut context = tauri::generate_context!();
@@ -518,13 +534,18 @@ pub fn run() {
             #[cfg(desktop)]
             tray_handles: Arc::new(std::sync::Mutex::new(None)),
         })
-        .setup(|app| {
+        .setup(move |app| {
             // The same windows from the same config, built here so that each
             // can be given this run's own WebKit data store.
             #[cfg(feature = "e2e")]
             {
                 core::e2e::require_inside_root(&get_jan_data_folder_path(app.handle().clone()));
                 core::e2e::create_windows(app)?;
+            }
+            // Likewise for an isolated profile, with the profile's own storage.
+            #[cfg(all(desktop, not(feature = "e2e")))]
+            if let Some(storage) = &profile_webview {
+                core::webview_store::create_windows(app, storage)?;
             }
 
             let log_dir = get_jan_data_folder_path(app.handle().clone()).join("logs");
