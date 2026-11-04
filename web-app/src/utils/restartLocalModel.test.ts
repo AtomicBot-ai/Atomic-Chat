@@ -4,6 +4,10 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import type { ModelsService } from '@/services/models/types'
 import { createMockServiceHub } from '@/test/service-hub'
 import { restartLocalModel } from '@/utils/restartLocalModel'
+import {
+  activeSettingsRestart,
+  resetSettingsRestartsForTest,
+} from '@/lib/settings-restart'
 
 const syncActiveModelsFromEngines = vi.fn()
 
@@ -15,6 +19,7 @@ vi.mock('@/utils/activeModelsSync', () => ({
 describe('restartLocalModel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    resetSettingsRestartsForTest()
   })
 
   it('waits for unload and reloads with the latest model settings', async () => {
@@ -81,5 +86,34 @@ describe('restartLocalModel', () => {
       restartLocalModel(serviceHub, 'llamacpp-upstream', 'test-model')
     ).rejects.toThrow('process did not stop')
     expect(startModel).not.toHaveBeenCalled()
+  })
+
+  it('marks the restart as a settings change, so a turn it cuts off says so', async () => {
+    const seen: Array<number | undefined> = []
+    const model = { id: 'test-model', settings: {} } as Model
+    const provider = {
+      provider: 'llamacpp-upstream',
+      models: [model],
+    } as ModelProvider
+    useModelProvider.setState({ providers: [provider] })
+    const serviceHub = createMockServiceHub({
+      models: {
+        stopModel: vi.fn(async () => {
+          seen.push(
+            activeSettingsRestart(provider.provider, model.id)?.startedAt
+          )
+          return { success: true }
+        }),
+        startModel: vi.fn(),
+        getActiveModels: vi.fn(async () => [model.id]),
+      } as unknown as ModelsService,
+    })
+
+    await restartLocalModel(serviceHub, provider.provider, model.id)
+
+    expect(seen[0]).toBeTypeOf('number')
+    expect(
+      activeSettingsRestart(provider.provider, model.id)?.settledAt
+    ).toBeTypeOf('number')
   })
 })

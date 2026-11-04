@@ -41,5 +41,13 @@
     "openFailed": "{{name}} se nepodařilo otevřít",
     "openFailedDescription": "Soubor mohl být přesunut nebo smazán.",
     "chipLabel": "Zdroj: {{name}}, úryvek {{passage}}"
+  },
+  "turnRecovery": {
+    "retry": "Zkusit znovu",
+    "details": "Podrobnosti",
+    "genericTitle": "Chyba při generování odpovědi",
+    "genericMessage": "Model nahlásil chybu dřív, než dokončil odpověď. Zkuste to znovu a zpráva se odešle ještě jednou; text chyby najdete v části Podrobnosti.",
+    "settingsRestartTitle": "Model se po změně nastavení restartoval",
+    "settingsRestartMessage": "Změna nastavení restartovala {{model}} během odpovídání. Zkuste to znovu a zpráva se odešle ještě jednou."
   }
 }

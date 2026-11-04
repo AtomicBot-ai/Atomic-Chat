@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createFileRoute, useParams, useSearch, useNavigate } from '@tanstack/react-router'
-import { cn } from '@/lib/utils'
+import { cn, getModelDisplayName } from '@/lib/utils'
 import {
   agentContextWindow,
   agentProviderBlockReason,
@@ -100,27 +100,9 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useAttachments } from '@/hooks/useAttachments'
 import { PromptProgress } from '@/components/PromptProgress'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
-import {
-  OUT_OF_CONTEXT_SIZE,
-  MODEL_ACCESS_DENIED_TITLE,
-  MODEL_ACCESS_DENIED_MESSAGE,
-  AUTHENTICATION_FAILED_TITLE,
-  AUTHENTICATION_FAILED_MESSAGE,
-  CONTEXT_OVERFLOW_TITLE,
-  CONTEXT_OVERFLOW_MESSAGE,
-  OUT_OF_MEMORY_TITLE,
-  OUT_OF_MEMORY_MESSAGE,
-  isModelAccessError,
-  isAuthenticationError,
-  isContextLimitError,
-  isOutOfMemoryError,
-} from '@/utils/error'
+import { OUT_OF_CONTEXT_SIZE, isContextLimitError } from '@/utils/error'
 import { route } from '@/constants/routes'
-import {
-  canGrowContext,
-  contextOverflowGuidance,
-  contextOverflowMessage,
-} from '@/lib/managed-engine/chat'
+import { canGrowContext } from '@/lib/managed-engine/chat'
 import {
   DEFAULT_CTX_LEN,
   contextGrowthMode,
@@ -148,9 +130,12 @@ import {
   stepEndsTurn,
 } from '@/lib/turn-error'
 import { useThreadMessagesSync } from '@/hooks/useThreadMessagesSync'
-import { Button } from '@/components/ui/button'
-import { LinkifiedText } from '@/components/LinkifiedText'
-import { IconAlertCircle, IconRefresh } from '@tabler/icons-react'
+import { TurnErrorCard } from '@/containers/TurnErrorCard'
+import { canBlameSettingsRestart } from '@/lib/turn-error-summary'
+import {
+  blameSettingsRestart,
+  clearSettingsRestart,
+} from '@/lib/settings-restart'
 import {
   approveChatToolCall,
   resolveMcpAutoApprove,
@@ -2263,12 +2248,33 @@ function ThreadDetail() {
   const inputStatus = requestActive ? CHAT_STATUS.SUBMITTED : status
   // A failed turn stored as the last message is what is left of a live error
   // after a relaunch: it shows as the same error card, retried in place (AC-07).
+  const liveTurnError = error ?? contextLimitError
   const { error: shownError, failedMessageId: failedTurnMessageId } =
     resolveTurnError({
-      liveError: error ?? contextLimitError,
+      liveError: liveTurnError,
       messages: chatMessages,
       requestActive,
     })
+  // A turn cut off by a restart that the user's own settings change set off
+  // (context size, Fit, another load option) says so on its card (D7).
+  const settingsRestartModel = useMemo(() => {
+    if (!shownError || !selectedModel) return undefined
+    const blamed = blameSettingsRestart({
+      error: shownError,
+      live: shownError === liveTurnError,
+      failedMessageId: failedTurnMessageId,
+      providerId: selectedProvider,
+      modelId: selectedModel.id,
+      eligible: canBlameSettingsRestart(shownError, selectedProvider),
+    })
+    return blamed ? getModelDisplayName(selectedModel) : undefined
+  }, [
+    shownError,
+    liveTurnError,
+    failedTurnMessageId,
+    selectedProvider,
+    selectedModel,
+  ])
   const lastChatMessage = chatMessages[chatMessages.length - 1]
   const hasActiveAssistantMessage = lastChatMessage?.role === 'assistant'
   const latestUserMessageId = useMemo(() => {
@@ -2409,150 +2415,38 @@ function ThreadDetail() {
                   )}
                   {shownError &&
                     !isAutoIncreasingContext &&
-                    engineRecovery !== 'restarting' &&
-                    (() => {
-                      const activeError = shownError
-                      const rawMessage = activeError?.message
-                      const isContextError = isContextLimitError(activeError)
-                      // A managed engine: the limit, and the setting that raises it; no reload here.
-                      const fixedContext = contextOverflowGuidance(
-                        selectedProvider,
-                        activeError
-                      )
-                      const isAccessError =
-                        !isContextError && isModelAccessError(activeError)
-                      const isAuthError =
-                        !isContextError &&
-                        !isAccessError &&
-                        isAuthenticationError(activeError)
-                      // ATO-197: a fatal Metal/compute failure (GPU OOM) surfaces
-                      // as the opaque "Compute error" / the proxy's
-                      // `insufficient_memory` envelope — show clear OOM guidance.
-                      const isOomError =
-                        !isContextError &&
-                        !isAccessError &&
-                        !isAuthError &&
-                        isOutOfMemoryError(activeError)
-                      // The local engine went away under the turn: say so
-                      // instead of showing the (often localized) OS text.
-                      const isEngineGone =
-                        !isContextError &&
-                        !isAccessError &&
-                        !isAuthError &&
-                        !isOomError &&
-                        RECOVERABLE_LOCAL_PROVIDERS.has(selectedProvider) &&
-                        isEngineGoneError(activeError)
-                      // ATO-170: replace the raw engine 400 body (e.g. mlx-vlm's
-                      // "... but MAX_KV_SIZE is N") with a clear, actionable message
-                      // instead of the generic "Error generating response".
-                      const title = isContextError
-                        ? CONTEXT_OVERFLOW_TITLE
-                        : isAccessError
-                          ? MODEL_ACCESS_DENIED_TITLE
-                          : isAuthError
-                            ? AUTHENTICATION_FAILED_TITLE
-                            : isOomError
-                              ? OUT_OF_MEMORY_TITLE
-                              : isEngineGone
-                                ? t('chat:turnRecovery.engineGoneTitle')
-                                : 'Error generating response'
-                      const body = fixedContext
-                        ? contextOverflowMessage(fixedContext)
-                        : isContextError
-                        ? CONTEXT_OVERFLOW_MESSAGE
-                        : isAccessError
-                          ? MODEL_ACCESS_DENIED_MESSAGE
-                          : isAuthError
-                            ? AUTHENTICATION_FAILED_MESSAGE
-                            : isOomError
-                              ? OUT_OF_MEMORY_MESSAGE
-                              : isEngineGone
-                                ? engineRecovery === 'failed'
-                                  ? t('chat:turnRecovery.engineRestartFailed')
-                                  : t('chat:turnRecovery.engineGoneMessage')
-                                : rawMessage
-                      return (
-                        <div className="px-4 py-3 mx-4 my-2 rounded-lg border border-destructive/10 bg-destructive/10">
-                          <div className="flex items-start gap-3">
-                            <IconAlertCircle className="size-5 text-destructive shrink-0 mt-0.5" />
-                            <div className="flex-1">
-                              <p className="text-sm font-medium text-destructive mb-1">
-                                {title}
-                              </p>
-                              <div className="table table-fixed w-full">
-                                <span
-                                  className="text-sm text-muted-foreground table-cell align-middle"
-                                  style={{ wordWrap: 'break-word' }}
-                                >
-                                  {/* The raw provider message can embed links
-                                  (e.g. the model-policy banner's "Open
-                                  dashboard" / "View agreement"); render them
-                                  clickable instead of as dead text. */}
-                                  <LinkifiedText text={body ?? ''} />
-                                </span>
-                              </div>
-                              {fixedContext ? (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="mt-3"
-                                  onClick={() =>
-                                    void navigate({
-                                      to: route.settings.providers,
-                                      params: { providerName: fixedContext.engine.id },
-                                    })
-                                  }
-                                >
-                                  <IconAlertCircle className="size-4 mr-2" />
-                                  {`Open ${fixedContext.engine.label} settings`}
-                                </Button>
-                              ) : isContextError && contextGrowthBlocked ? (
-                                // The window cannot grow any more: send less
-                                // history instead. The draft, the message and
-                                // its attachments stay as they are.
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="mt-3"
-                                  onClick={() =>
-                                    void handleShortenHistoryAndRetry(
-                                      failedTurnMessageId
-                                    )
-                                  }
-                                >
-                                  <IconRefresh className="size-4 mr-2" />
-                                  {t('chat:turnRecovery.shortenHistory')}
-                                </Button>
-                              ) : isContextError ? (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="mt-3"
-                                  onClick={() =>
-                                    void handleContextSizeIncrease('manual')
-                                  }
-                                >
-                                  <IconAlertCircle className="size-4 mr-2" />
-                                  Increase Context Size
-                                </Button>
-                              ) : (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="mt-3"
-                                  onClick={() =>
-                                    handleRegenerate(failedTurnMessageId)
-                                  }
-                                >
-                                  <IconRefresh className="size-4 mr-2" />
-                                  Retry
-                                </Button>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    })()}
+                    engineRecovery !== 'restarting' && (
+                      <TurnErrorCard
+                        error={shownError}
+                        providerId={selectedProvider}
+                        contextGrowthBlocked={contextGrowthBlocked}
+                        engineRecoveryFailed={engineRecovery === 'failed'}
+                        settingsRestartModel={settingsRestartModel}
+                        onRetry={() => {
+                          // Acted on: a later failure is no longer this
+                          // restart's doing.
+                          if (settingsRestartModel && selectedModel) {
+                            clearSettingsRestart(
+                              selectedProvider,
+                              selectedModel.id
+                            )
+                          }
+                          void handleRegenerate(failedTurnMessageId)
+                        }}
+                        onShortenHistory={() =>
+                          void handleShortenHistoryAndRetry(failedTurnMessageId)
+                        }
+                        onIncreaseContext={() =>
+                          void handleContextSizeIncrease('manual')
+                        }
+                        onOpenEngineSettings={(engineId) =>
+                          void navigate({
+                            to: route.settings.providers,
+                            params: { providerName: engineId },
+                          })
+                        }
+                      />
+                    )}
                 </ConversationContent>
                 <ConversationAutoScroll
                   trigger={requestActive ? latestUserMessageId : undefined}

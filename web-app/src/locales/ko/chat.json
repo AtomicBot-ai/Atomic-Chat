@@ -37,5 +37,13 @@
     "openFailed": "{{name}}을(를) 열 수 없습니다",
     "openFailedDescription": "파일이 이동되었거나 삭제되었을 수 있습니다.",
     "chipLabel": "출처: {{name}}, 구절 {{passage}}"
+  },
+  "turnRecovery": {
+    "retry": "다시 시도",
+    "details": "자세히",
+    "genericTitle": "응답 생성 중 오류가 발생했습니다",
+    "genericMessage": "답변이 끝나기 전에 모델이 오류를 보고했습니다. 다시 시도하면 메시지를 다시 보냅니다. 오류 내용은 '자세히'에서 확인할 수 있습니다.",
+    "settingsRestartTitle": "설정 변경으로 모델이 다시 시작되었습니다",
+    "settingsRestartMessage": "답변하는 동안 설정을 변경해 {{model}}이(가) 다시 시작되었습니다. 다시 시도하면 메시지를 다시 보냅니다."
   }
 }

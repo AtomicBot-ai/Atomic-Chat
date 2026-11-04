@@ -37,5 +37,13 @@
     "openFailed": "Không thể mở {{name}}",
     "openFailedDescription": "Tệp có thể đã bị di chuyển hoặc xóa.",
     "chipLabel": "Nguồn: {{name}}, đoạn {{passage}}"
+  },
+  "turnRecovery": {
+    "retry": "Thử lại",
+    "details": "Chi tiết",
+    "genericTitle": "Lỗi khi tạo phản hồi",
+    "genericMessage": "Mô hình đã báo lỗi trước khi trả lời xong. Hãy thử lại để gửi lại tin nhắn của bạn; nội dung lỗi nằm trong phần Chi tiết.",
+    "settingsRestartTitle": "Mô hình đã khởi động lại sau khi thay đổi cài đặt",
+    "settingsRestartMessage": "Thay đổi cài đặt của bạn đã khởi động lại {{model}} khi đang trả lời. Hãy thử lại để gửi lại tin nhắn của bạn."
   }
 }

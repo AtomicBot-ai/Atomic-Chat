@@ -37,5 +37,13 @@
     "openFailed": "无法打开 {{name}}",
     "openFailedDescription": "文件可能已被移动或删除。",
     "chipLabel": "来源：{{name}}，第 {{passage}} 段"
+  },
+  "turnRecovery": {
+    "retry": "重试",
+    "details": "详细信息",
+    "genericTitle": "生成回复时出错",
+    "genericMessage": "模型在回答完成前报告了错误。点击重试即可重新发送您的消息；错误内容见“详细信息”。",
+    "settingsRestartTitle": "设置更改后模型已重启",
+    "settingsRestartMessage": "您在 {{model}} 回答时更改了设置，导致它重启。点击重试即可重新发送您的消息。"
   }
 }

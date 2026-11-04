@@ -37,5 +37,13 @@
     "openFailed": "Tidak dapat membuka {{name}}",
     "openFailedDescription": "File mungkin telah dipindahkan atau dihapus.",
     "chipLabel": "Sumber: {{name}}, bagian {{passage}}"
+  },
+  "turnRecovery": {
+    "retry": "Coba lagi",
+    "details": "Detail",
+    "genericTitle": "Gagal membuat respons",
+    "genericMessage": "Model melaporkan kesalahan sebelum jawaban selesai. Coba lagi untuk mengirim ulang pesan Anda; pesan kesalahannya ada di Detail.",
+    "settingsRestartTitle": "Model dimulai ulang setelah pengaturan diubah",
+    "settingsRestartMessage": "Perubahan pengaturan Anda memulai ulang {{model}} saat sedang menjawab. Coba lagi untuk mengirim ulang pesan Anda."
   }
 }

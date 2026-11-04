@@ -330,7 +330,13 @@
     "historyCannotShorten": "There is no older history to leave out. Shorten your message or remove attachments, then try again.",
     "contextNoMemory": "There is not enough free memory for a larger context.",
     "contextReloadFailed": "The model did not load with a larger context, so it keeps its current size.",
-    "contextGrowthSpent": "The context already grew once for this message. Shorten the history to go on."
+    "contextGrowthSpent": "The context already grew once for this message. Shorten the history to go on.",
+    "retry": "Retry",
+    "details": "Details",
+    "genericTitle": "Error generating response",
+    "genericMessage": "The model reported an error before the answer finished. Retry to send your message again; what it reported is under Details.",
+    "settingsRestartTitle": "The model restarted after a settings change",
+    "settingsRestartMessage": "Your settings change restarted {{model}} while it was answering. Retry to send your message again."
   },
   "queuedSend": {
     "modelChanged": "Your message wasn't sent: a different model was selected. It's still in the message box.",

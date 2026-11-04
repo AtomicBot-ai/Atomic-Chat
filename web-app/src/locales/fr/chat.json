@@ -331,7 +331,13 @@
     "historyCannotShorten": "Il n'y a pas d'historique plus ancien à laisser de côté. Raccourcissez votre message ou retirez des pièces jointes, puis réessayez.",
     "contextNoMemory": "Il n'y a pas assez de mémoire libre pour un contexte plus grand.",
     "contextReloadFailed": "Le modèle ne s'est pas chargé avec un contexte plus grand ; il garde sa taille actuelle.",
-    "contextGrowthSpent": "Le contexte a déjà été agrandi une fois pour ce message. Raccourcissez l'historique pour continuer."
+    "contextGrowthSpent": "Le contexte a déjà été agrandi une fois pour ce message. Raccourcissez l'historique pour continuer.",
+    "retry": "Réessayer",
+    "details": "Détails",
+    "genericTitle": "Erreur lors de la génération de la réponse",
+    "genericMessage": "Le modèle a signalé une erreur avant la fin de la réponse. Réessayez pour renvoyer votre message ; le message d'erreur se trouve dans Détails.",
+    "settingsRestartTitle": "Le modèle a redémarré après une modification des paramètres",
+    "settingsRestartMessage": "La modification de vos paramètres a redémarré {{model}} pendant qu'il répondait. Réessayez pour renvoyer votre message."
   },
   "queuedSend": {
     "modelChanged": "Votre message n'a pas été envoyé : un autre modèle a été sélectionné. Il est toujours dans la zone de saisie.",

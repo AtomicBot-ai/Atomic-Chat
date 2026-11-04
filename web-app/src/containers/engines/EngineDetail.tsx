@@ -131,6 +131,7 @@ import { DialogAddModel } from '@/containers/dialogs/AddModel'
 import { EngineManager } from '@janhq/core'
 import debounce from 'lodash.debounce'
 import { restartLocalModel } from '@/utils/restartLocalModel'
+import { trackSettingsRestart } from '@/lib/settings-restart'
 
 /** Start, Stop and their spinner share one width, so a row does not jump between states; it fits
  *  the longest translation ("Остановить"). */
@@ -1716,12 +1717,15 @@ export function EngineDetail({
 
         if (activeModel) {
           try {
-            await engine.unload?.(activeModel)
-          } catch (e) {
-            console.warn('Failed to unload before DFlash restart:', e)
-          }
-          try {
-            await serviceHub.models().startModel(provider, activeModel, true)
+            // A chat turn this restart cuts off says the settings change did it.
+            await trackSettingsRestart(providerName, activeModel, async () => {
+              try {
+                await engine.unload?.(activeModel)
+              } catch (e) {
+                console.warn('Failed to unload before DFlash restart:', e)
+              }
+              await serviceHub.models().startModel(provider, activeModel, true)
+            })
           } catch (e) {
             console.error('Failed to reload after DFlash toggle:', e)
             toast.error(errTitle, {

@@ -41,5 +41,13 @@
     "openFailed": "Nie udało się otworzyć {{name}}",
     "openFailedDescription": "Plik mógł zostać przeniesiony lub usunięty.",
     "chipLabel": "Źródło: {{name}}, fragment {{passage}}"
+  },
+  "turnRecovery": {
+    "retry": "Spróbuj ponownie",
+    "details": "Szczegóły",
+    "genericTitle": "Błąd podczas generowania odpowiedzi",
+    "genericMessage": "Model zgłosił błąd, zanim skończył odpowiedź. Spróbuj ponownie, aby wysłać wiadomość jeszcze raz; treść błędu znajdziesz w sekcji Szczegóły.",
+    "settingsRestartTitle": "Model uruchomił się ponownie po zmianie ustawień",
+    "settingsRestartMessage": "Zmiana ustawień ponownie uruchomiła {{model}} w trakcie odpowiadania. Spróbuj ponownie, aby wysłać wiadomość jeszcze raz."
   }
 }
