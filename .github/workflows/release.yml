@@ -1013,6 +1013,20 @@ jobs:
       # core pair, cloudflared, wxc-exec, the mirrored llama.cpp trees) are left
       # alone. The command is the signtool call the installers were signed with
       # before, and it is passed here only, so local builds stay unsigned.
+      - name: Check Windows publisher identity
+        shell: pwsh
+        run: |
+          $baseConfig = Get-Content -Raw src-tauri/tauri.conf.json | ConvertFrom-Json
+          if ($baseConfig.bundle.publisher -cne 'Atomic Mail Systems') {
+            throw "bundle.publisher must be exactly 'Atomic Mail Systems'"
+          }
+          foreach ($path in @('src-tauri/tauri.windows.conf.json', 'src-tauri/tauri.windows.msstore.conf.json', 'src-tauri/tauri.windows-arm64.conf.json')) {
+            $config = Get-Content -Raw $path | ConvertFrom-Json
+            if ($config.bundle.PSObject.Properties['publisher'] -and $config.bundle.publisher -cne 'Atomic Mail Systems') {
+              throw "$path overrides the expected Windows publisher"
+            }
+          }
+
       - name: Build and sign app
         shell: pwsh
         env:

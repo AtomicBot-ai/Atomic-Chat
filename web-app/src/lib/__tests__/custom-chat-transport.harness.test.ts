@@ -987,6 +987,32 @@ describe('CustomChatTransport pre-flight context sizing', () => {
       /exceeds the available context size/
     )
   })
+
+  it.each([
+    ['insufficient_memory', /would not fit the free memory/],
+    ['reload_failed', /did not load with a 32768-token context/],
+  ] as const)(
+    'refuses as a context overflow when the fit floor cannot grow (%s)',
+    async (reason, detail) => {
+      selectCtx(512)
+      contextMocks.growModelContext.mockResolvedValue({
+        ok: false,
+        reason,
+        from: 512,
+        to: 32768,
+      })
+      vi.spyOn(ModelFactory, 'createModel').mockResolvedValue(
+        fakeStreamingModel(idleStream)
+      )
+
+      const failure = send(new CustomChatTransport())
+      // Still read as a context overflow, so the card offers to shorten.
+      await expect(failure).rejects.toThrow(
+        /exceeds the available context size/
+      )
+      await expect(failure).rejects.toThrow(detail)
+    }
+  )
 })
 
 /**

@@ -203,3 +203,48 @@ describe('related chat code surfaces', () => {
     expectWrappedCode(visiblePre(container)[0])
   })
 })
+
+// Design review D4: at Extra Large the 1.6 body leading made 28 px lines and
+// the conversation lost rows to air. The body caps near 24 px there; the
+// smaller sizes keep 1.6 of the text exactly.
+describe('message body leading', () => {
+  it.each([
+    { fontSize: '13px', body: 11.375, leading: 18.2 },
+    { fontSize: '16px', body: 14, leading: 22.4 },
+    { fontSize: '20px', body: 17.5, leading: 24.06 },
+  ])(
+    '$fontSize: $body px body text on $leading px lines',
+    async ({ fontSize, body, leading }) => {
+      await page.viewport(1024, 800)
+      setFontSize(fontSize)
+      const { container } = render(
+        <div className="w-[560px]">
+          <RenderMarkdown
+            content={`${'A sentence that wraps across a few lines of the column. '.repeat(6)}\n\n- **One** item in a list\n- Another item in that list`}
+          />
+        </div>
+      )
+      await waitFor(() => expect(container.querySelector('p')).toBeTruthy())
+      await act(async () => {
+        await settle(container)
+      })
+      const paragraph = container.querySelector('p')!
+      const list = container.querySelector('ul')!
+      for (const el of [paragraph, list]) {
+        const style = getComputedStyle(el)
+        expect(parseFloat(style.fontSize)).toBeCloseTo(body, 1)
+        expect(parseFloat(style.lineHeight)).toBeCloseTo(leading, 1)
+      }
+      // The lines are laid out on that pitch, not just declared.
+      const range = document.createRange()
+      range.selectNodeContents(paragraph)
+      const tops = [
+        ...new Set(
+          [...range.getClientRects()].map((r) => Math.round(r.top * 10) / 10)
+        ),
+      ].sort((a, b) => a - b)
+      expect(tops.length).toBeGreaterThan(2)
+      expect(tops[1] - tops[0]).toBeCloseTo(leading, 0)
+    }
+  )
+})

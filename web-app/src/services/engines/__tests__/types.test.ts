@@ -10,6 +10,7 @@ describe('vendored engine lists', () => {
       'llamacpp',
       'atomic-prism',
       'sd-cpp',
+      'audio-cpp',
       'mlx',
       'foundry-local',
       'litert-lm',
@@ -19,6 +20,12 @@ describe('vendored engine lists', () => {
       'sglang',
     ])
     expect(ENGINE_KINDS['foundry-local']).toBe('engine-build')
+  })
+
+  it('lists audio.cpp as an engine build right after sd.cpp, in the banner’s order too', () => {
+    expect(ENGINE_IDS.indexOf('audio-cpp')).toBe(ENGINE_IDS.indexOf('sd-cpp') + 1)
+    expect(ENGINE_KINDS['audio-cpp']).toBe('engine-build')
+    expect(ENGINE_UPDATE_ORDER.indexOf('audio-cpp')).toBe(ENGINE_UPDATE_ORDER.indexOf('sd-cpp') + 1)
   })
 
   it('lists LiteRT-LM as an engine build right after Foundry Local (change add-litert-lm-runtime)', () => {

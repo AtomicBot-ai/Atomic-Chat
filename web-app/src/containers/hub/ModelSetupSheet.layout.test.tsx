@@ -72,7 +72,9 @@ const families: PrismFamiliesResponse = {
 
 const catalog: PrismCatalog = {
   installed: [],
-  available: [{ version: 'prism-b10234-abcdef0', backend: 'win-cuda-12.4-x64' }],
+  available: [
+    { version: 'prism-b10234-abcdef0', backend: 'win-cuda-12.4-x64' },
+  ],
   recommended: 'prism-b10234-abcdef0/win-cuda-12.4-x64',
   releases: [
     {
@@ -117,6 +119,8 @@ describe('model setup sheet geometry', () => {
           file={file}
           modelName="Bonsai 8B Instruct Long Context Experimental"
           modelId={modelId}
+          includeProjector
+          onIncludeProjectorChange={() => {}}
           onStart={() => {}}
         />
       )

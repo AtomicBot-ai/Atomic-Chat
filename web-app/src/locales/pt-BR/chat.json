@@ -7,6 +7,10 @@
     "empty": "Nenhum Chat Encontrado"
   },
   "sendMessage": "Enviar Mensagem",
+  "replyGate": {
+    "sendHint": "Escolha com o que responder",
+    "sendWith": "Enviar com {{model}}"
+  },
   "newConversation": "Nova Conversa",
   "clearHistory": "Limpar Histórico",
   "activity": {
@@ -40,5 +44,13 @@
     "openFailed": "Não foi possível abrir {{name}}",
     "openFailedDescription": "O arquivo pode ter sido movido ou excluído.",
     "chipLabel": "Fonte: {{name}}, trecho {{passage}}"
+  },
+  "turnRecovery": {
+    "retry": "Tentar novamente",
+    "details": "Detalhes",
+    "genericTitle": "Erro ao gerar a resposta",
+    "genericMessage": "O modelo relatou um erro antes de terminar a resposta. Tente novamente para reenviar sua mensagem; a mensagem de erro está em Detalhes.",
+    "settingsRestartTitle": "O modelo foi reiniciado após uma alteração nas configurações",
+    "settingsRestartMessage": "A alteração nas suas configurações reiniciou {{model}} enquanto ele respondia. Tente novamente para reenviar sua mensagem."
   }
 }

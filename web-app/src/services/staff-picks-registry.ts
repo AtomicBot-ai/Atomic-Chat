@@ -1,3 +1,7 @@
+import {
+  unifiedModelCollection,
+  usesUnifiedModelCatalog,
+} from './unified-model-catalog'
 /**
  * Staff-picks registry — remote configuration loader.
  *
@@ -42,6 +46,8 @@ export type StaffPickFormat = 'gguf' | 'mlx'
 
 export type StaffPick = {
   model_name: string
+  /** Commit selected by the managed catalog; absent in legacy exports. */
+  revision?: string
   title?: string
   summary?: string
   description_key?: string
@@ -59,6 +65,7 @@ export type StaffPick = {
   active?: boolean
 }
 
+/** @deprecated Independent catalog URL; retained for legacy/custom adapters. Production desktop projects models/catalog.json. */
 export const DEFAULT_STAFF_PICKS_URL =
   'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/models/staff-picks.json'
 
@@ -123,6 +130,11 @@ const optionalString = (value: unknown): string | undefined =>
 export const sanitizePick = (raw: unknown): StaffPick | null => {
   if (typeof raw !== 'object' || raw === null) return null
   const r = raw as Record<string, unknown>
+  if (
+    r.revision !== undefined &&
+    (typeof r.revision !== 'string' || !/^[0-9a-f]{40}$/.test(r.revision))
+  )
+    return null
   if (typeof r.model_name !== 'string' || r.model_name.length === 0) return null
 
   const descriptionKey =
@@ -134,8 +146,7 @@ export const sanitizePick = (raw: unknown): StaffPick | null => {
   const platforms = Array.isArray(r.platforms)
     ? (r.platforms.filter(
         (p): p is StaffPickPlatform =>
-          typeof p === 'string' &&
-          ALLOWED_PLATFORMS.has(p as StaffPickPlatform)
+          typeof p === 'string' && ALLOWED_PLATFORMS.has(p as StaffPickPlatform)
       ) as StaffPickPlatform[])
     : undefined
 
@@ -154,6 +165,9 @@ export const sanitizePick = (raw: unknown): StaffPick | null => {
 
   return {
     model_name: r.model_name,
+    ...(typeof r.revision === 'string' && /^[0-9a-f]{40}$/.test(r.revision)
+      ? { revision: r.revision }
+      : {}),
     ...(optionalString(r.title) ? { title: r.title as string } : {}),
     ...(optionalString(r.summary) ? { summary: r.summary as string } : {}),
     ...(descriptionKey ? { description_key: descriptionKey } : {}),
@@ -346,6 +360,20 @@ export type FetchOptions = {
 export const getStaffPicksOrFallback = async (
   options: FetchOptions = {}
 ): Promise<StaffPicksFetchResult> => {
+  if (options.url === undefined && usesUnifiedModelCatalog()) {
+    const result = await unifiedModelCollection('staff-picks', options.force)
+    const manifest = result.data as unknown as StaffPicksManifest
+    return {
+      picks: manifest.picks
+        .map(sanitizePick)
+        .filter((p): p is StaffPick => p !== null),
+      source: result.source,
+      fetchedAt: result.fetchedAt,
+      manifestUpdatedAt: result.updatedAt,
+      ...(result.error ? { error: result.error } : {}),
+    }
+  }
+
   const {
     force = false,
     url = STAFF_PICKS_URL,

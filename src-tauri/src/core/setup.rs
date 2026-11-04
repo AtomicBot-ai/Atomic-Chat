@@ -722,6 +722,108 @@ pub fn cancel_pending_close() {
     CLOSE_GENERATION.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 }
 
+/// What closing the main window does on Windows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub(crate) enum WindowsClose {
+    /// Hide the window; the app keeps running in the tray.
+    HideToTray,
+    /// Quit, as closing the window always did.
+    Quit,
+}
+
+/// Windows hides to the tray only while quitting would lose work: a reply still streaming from a
+/// local engine, or a model download (or archive unpack) still running. An idle close quits as it
+/// always has. Without a tray there is no way back and no "Quit", so a close always quits.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub(crate) fn windows_close_action(
+    tray_present: bool,
+    streams_in_flight: usize,
+    active_downloads: usize,
+) -> WindowsClose {
+    if tray_present && (streams_in_flight > 0 || active_downloads > 0) {
+        WindowsClose::HideToTray
+    } else {
+        WindowsClose::Quit
+    }
+}
+
+/// The one-time notice a busy close on Windows shows, naming what is still running.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub(crate) fn close_to_tray_notice_body(
+    streams_in_flight: usize,
+    active_downloads: usize,
+) -> &'static str {
+    match (streams_in_flight > 0, active_downloads > 0) {
+        (true, true) => {
+            "Atomic Chat keeps finishing your reply and download in the tray. Choose Quit in the tray menu to exit."
+        }
+        (false, true) => {
+            "Atomic Chat keeps finishing your download in the tray. Choose Quit in the tray menu to exit."
+        }
+        _ => {
+            "Atomic Chat keeps finishing your reply in the tray. Choose Quit in the tray menu to exit."
+        }
+    }
+}
+
+/// Model downloads (and AI Hub archive unpacks) running now. The lock is only held for a moment
+/// while one starts, ends or is cancelled; if a close lands in that moment the download counts as
+/// running, since a hidden window is one click from coming back and a quit would lose it.
+#[cfg(target_os = "windows")]
+fn active_download_count<R: Runtime>(app: &tauri::AppHandle<R>) -> usize {
+    match app.state::<AppState>().download_manager.try_lock() {
+        Ok(manager) => manager.cancel_tokens.len(),
+        Err(_) => 1,
+    }
+}
+
+/// How long the webview gets between `app-shutting-down` and teardown, to send what it still
+/// holds (the analytics queue).
+pub const EXIT_FLUSH_GRACE: std::time::Duration = std::time::Duration::from_millis(400);
+
+/// Set once the exit grace has begun; the exit request the grace sends itself then goes through.
+static EXIT_GRACE_STARTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Whether an exit request is held back for the flush grace: the first one only, and never a
+/// restart (Tauri ignores `prevent_exit` for `RESTART_EXIT_CODE`).
+#[cfg_attr(any(target_os = "android", target_os = "ios"), allow(dead_code))]
+fn should_defer_exit(code: Option<i32>, grace_started: &std::sync::atomic::AtomicBool) -> bool {
+    code != Some(tauri::RESTART_EXIT_CODE)
+        && !grace_started.swap(true, std::sync::atomic::Ordering::SeqCst)
+}
+
+/// Whether `app-shutting-down` has already gone out for this exit.
+pub fn exit_grace_started() -> bool {
+    EXIT_GRACE_STARTED.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+/// On the first exit request: stop taking core calls, tell the webview the app is going away,
+/// hide the window and exit for real `EXIT_FLUSH_GRACE` later, off the event loop. Answers
+/// whether the caller must `prevent_exit()` this request. `RunEvent::Exit` then tears down as
+/// before; a restart skips the grace and is announced there.
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub fn defer_exit_for_shutdown_flush<R: Runtime>(
+    app: &tauri::AppHandle<R>,
+    code: Option<i32>,
+) -> bool {
+    if !should_defer_exit(code, &EXIT_GRACE_STARTED) {
+        return false;
+    }
+    crate::core::atomic_core::commands::begin_shutdown(app);
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.emit("app-shutting-down", ());
+        let _ = window.hide();
+    }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(EXIT_FLUSH_GRACE).await;
+        app.exit(code.unwrap_or(0));
+    });
+    true
+}
+
 fn setup_window_theme_listener<R: Runtime>(
     app_handle: tauri::AppHandle<R>,
     window: tauri::WebviewWindow<R>,
@@ -731,7 +833,7 @@ fn setup_window_theme_listener<R: Runtime>(
 
     // The close handler hides the window instead of destroying it, so keep a
     // clone to call `hide()` from inside the event closure.
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
     let window_for_close = window.clone();
 
     window.on_window_event(move |event| match event {
@@ -826,6 +928,83 @@ fn setup_window_theme_listener<R: Runtime>(
                 });
             }
         }
+        // On Windows closing the window used to quit outright, killing a reply that was still
+        // streaming, a model download and the core. While one of those runs (and a tray icon
+        // exists to come back through), closing hides the window to the tray instead and says so
+        // once; the tray's "Open Atomic Chat" or launching the app again shows it, and "Quit"
+        // exits. An idle close still quits — through `app.exit` rather than by destroying the
+        // window, so the webview stays alive for the exit grace (`defer_exit_for_shutdown_flush`).
+        #[cfg(target_os = "windows")]
+        WindowEvent::CloseRequested { api, .. } => {
+            let streams = crate::core::http::streams_in_flight();
+            let downloads = active_download_count(&app_handle_clone);
+            let tray_present = app_handle_clone.tray_by_id("tray").is_some();
+            api.prevent_close();
+            let _ = window_for_close.hide();
+            match windows_close_action(tray_present, streams, downloads) {
+                WindowsClose::HideToTray => {
+                    log::info!(
+                        "Close hides to the tray: {streams} stream(s) and {downloads} download(s) running"
+                    );
+                    crate::core::notifications::show_close_to_tray_notice_once(
+                        &app_handle_clone,
+                        close_to_tray_notice_body(streams, downloads),
+                    );
+                }
+                WindowsClose::Quit => app_handle_clone.exit(0),
+            }
+        }
         _ => {}
     });
+}
+
+#[cfg(test)]
+mod close_and_exit_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    #[test]
+    fn a_windows_close_hides_to_the_tray_only_while_work_would_be_lost() {
+        assert_eq!(windows_close_action(true, 0, 0), WindowsClose::Quit);
+        assert_eq!(windows_close_action(true, 1, 0), WindowsClose::HideToTray);
+        assert_eq!(windows_close_action(true, 0, 2), WindowsClose::HideToTray);
+        assert_eq!(windows_close_action(true, 3, 1), WindowsClose::HideToTray);
+    }
+
+    #[test]
+    fn without_a_tray_a_windows_close_always_quits() {
+        assert_eq!(windows_close_action(false, 0, 0), WindowsClose::Quit);
+        assert_eq!(windows_close_action(false, 1, 1), WindowsClose::Quit);
+    }
+
+    #[test]
+    fn the_close_notice_names_what_is_still_running() {
+        assert!(close_to_tray_notice_body(1, 0).contains("your reply in the tray"));
+        assert!(close_to_tray_notice_body(0, 1).contains("your download in the tray"));
+        assert!(close_to_tray_notice_body(2, 1).contains("your reply and download"));
+        for body in [
+            close_to_tray_notice_body(1, 0),
+            close_to_tray_notice_body(0, 1),
+            close_to_tray_notice_body(1, 1),
+        ] {
+            assert!(body.contains("Quit in the tray menu"), "{body}");
+        }
+    }
+
+    #[test]
+    fn only_the_first_exit_request_is_held_for_the_flush() {
+        let started = AtomicBool::new(false);
+        assert!(should_defer_exit(Some(0), &started));
+        // The request the grace sends itself once the flush time is up.
+        assert!(!should_defer_exit(Some(0), &started));
+        assert!(!should_defer_exit(None, &started));
+    }
+
+    #[test]
+    fn a_restart_is_never_held_and_does_not_use_up_the_grace() {
+        let started = AtomicBool::new(false);
+        assert!(!should_defer_exit(Some(tauri::RESTART_EXIT_CODE), &started));
+        assert!(!started.load(Ordering::SeqCst));
+        assert!(should_defer_exit(None, &started));
+    }
 }

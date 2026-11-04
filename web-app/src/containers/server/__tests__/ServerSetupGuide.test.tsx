@@ -1,25 +1,34 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { control, hub, settle, restart, writeConfig, openAgent } = vi.hoisted(
-  () => ({
-    control: {
-      status: 'stopped' as 'running' | 'stopped' | 'pending',
-      isRunning: false,
-      isModelLoading: false,
-      isBusy: false,
-      start: vi.fn(),
-      stop: vi.fn(),
-      toggle: vi.fn(),
-      refreshStatus: vi.fn(),
-    },
-    hub: { tag: 'hub' },
-    settle: vi.fn(),
-    restart: vi.fn(),
-    writeConfig: vi.fn(),
-    openAgent: vi.fn(),
-  })
-)
+const {
+  control,
+  hub,
+  settle,
+  restart,
+  writeConfig,
+  openAgent,
+  detect,
+  loadedWindow,
+} = vi.hoisted(() => ({
+  control: {
+    status: 'stopped' as 'running' | 'stopped' | 'pending',
+    isRunning: false,
+    isModelLoading: false,
+    isBusy: false,
+    start: vi.fn(),
+    stop: vi.fn(),
+    toggle: vi.fn(),
+    refreshStatus: vi.fn(),
+  },
+  hub: { tag: 'hub' },
+  settle: vi.fn(),
+  restart: vi.fn(),
+  writeConfig: vi.fn(),
+  openAgent: vi.fn(),
+  detect: vi.fn(),
+  loadedWindow: vi.fn(),
+}))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({
@@ -62,6 +71,15 @@ vi.mock('@/lib/integration-agent-setup', async (importOriginal) => ({
 vi.mock('@/lib/integration-agent-run', () => ({
   openIntegrationAgent: openAgent,
 }))
+// The window the engine reports for the loaded model (`/props`).
+vi.mock('@/utils/apiServerCapacity', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/utils/apiServerCapacity')>()),
+  readLoadedContextLength: loadedWindow,
+}))
+// Detection asks the shell; here it answers what the launch store says.
+vi.mock('@/lib/integration-agent-detection', () => ({
+  detectIntegrationAgent: detect,
+}))
 
 import { useAppState } from '@/hooks/useAppState'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
@@ -91,6 +109,11 @@ describe('Server setup guide', () => {
     settle.mockResolvedValue(true)
     restart.mockResolvedValue(true)
     writeConfig.mockResolvedValue(undefined)
+    loadedWindow.mockResolvedValue(undefined)
+    detect.mockImplementation(
+      async (agent: { id: string }) =>
+        useLaunchStore.getState().installed[agent.id] !== false
+    )
     useAppState.setState({ serverStatus: 'stopped' })
     useLocalApiServer.setState({
       serverHost: '127.0.0.1',
@@ -147,7 +170,9 @@ describe('Server setup guide', () => {
     expect(writeConfig).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'codex' }),
       'qwen3.5-4b',
-      expect.objectContaining({ serverPort: 1337, apiKey: 'sk-atomic-key' })
+      expect.objectContaining({ serverPort: 1337, apiKey: 'sk-atomic-key' }),
+      // No engine answered for the window in the test.
+      { contextLength: undefined }
     )
     expect(useServerSetup.getState()).toMatchObject({
       setupDone: true,
@@ -179,6 +204,20 @@ describe('Server setup guide', () => {
       setupDone: true,
       configuredAgents: [expect.objectContaining({ id: 'codex' })],
     })
+  })
+
+  it('asks again before opening: an agent removed since is not opened', async () => {
+    render(<ServerSetupGuide entry={{ path: 'agent', agentId: 'codex' }} />)
+    // Uninstalled while the guide was open.
+    detect.mockResolvedValueOnce(false)
+
+    await configure()
+
+    expect(
+      await screen.findByText(/api:guide\.doneAgentTitle/)
+    ).toBeInTheDocument()
+    expect(writeConfig).toHaveBeenCalledTimes(1)
+    expect(openAgent).not.toHaveBeenCalled()
   })
 
   it('leaves a running server alone when it already serves the chosen model', async () => {
@@ -241,6 +280,40 @@ describe('Server setup guide', () => {
     await screen.findByText(/api:guide\.doneAgentTitle/)
     expect(settle).toHaveBeenCalledTimes(2)
     expect(writeConfig).toHaveBeenCalledTimes(1)
+  })
+
+  it('stops before writing when the model’s window is below the agent’s minimum and cannot grow', async () => {
+    loadedWindow.mockResolvedValue(16384)
+    // "Fit to device memory" sizes the window; there is nothing to turn.
+    useModelProvider.setState({
+      providers: [
+        {
+          provider: 'llamacpp-upstream',
+          active: true,
+          persist: true,
+          settings: [{ key: 'fit', controller_props: { value: true } }],
+          models: [{ id: 'qwen3.5-4b' }],
+        } as unknown as ModelProvider,
+      ],
+    })
+    render(<ServerSetupGuide entry={{ path: 'agent', agentId: 'codex' }} />)
+
+    await configure()
+
+    expect(screen.getByText('api:guide.errorTitle')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'launch:toast.contextTooSmall:{"name":"Codex CLI","minimum":"32K"}. launch:toast.contextTooSmallFit:{"current":"16K"}'
+      )
+    ).toBeInTheDocument()
+    expect(
+      screen
+        .getByText('api:guide.taskConnect:{"name":"Codex CLI"}')
+        .closest('li')
+    ).toHaveClass('failed')
+    expect(writeConfig).not.toHaveBeenCalled()
+    expect(openAgent).not.toHaveBeenCalled()
+    expect(useServerSetup.getState().configuredAgents).toEqual([])
   })
 
   it('prepares an endpoint on the port the user picked', async () => {
@@ -326,6 +399,11 @@ describe('Server setup guide during first-run setup', () => {
     vi.clearAllMocks()
     settle.mockResolvedValue(true)
     writeConfig.mockResolvedValue(undefined)
+    loadedWindow.mockResolvedValue(undefined)
+    detect.mockImplementation(
+      async (agent: { id: string }) =>
+        useLaunchStore.getState().installed[agent.id] !== false
+    )
     useAppState.setState({ serverStatus: 'stopped' })
     useLocalApiServer.setState({
       defaultModelLocalApiServer: null,

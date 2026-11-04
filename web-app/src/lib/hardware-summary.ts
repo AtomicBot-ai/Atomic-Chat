@@ -155,9 +155,14 @@ export async function collectHardwareSuperProps(
   )
   if (nvidia) {
     props.nvidia_driver_version = nvidia.driver_version || null
-    // Exact CUDA runtime string is not exposed by tauri-plugin-hardware;
-    // surface compute capability as a best-effort proxy (see ATO-111).
-    props.cuda_runtime_version = nvidia.nvidia_info?.compute_capability || null
+    // The value is the GPU's compute capability (7.5, 8.6, 12.0), not a CUDA
+    // runtime version: tauri-plugin-hardware does not expose the runtime
+    // (ATO-111). `gpu_compute_capability` names it correctly;
+    // `cuda_runtime_version` carries the same value for one more release so
+    // existing insights keep working — drop it after that.
+    props.gpu_compute_capability =
+      nvidia.nvidia_info?.compute_capability || null
+    props.cuda_runtime_version = props.gpu_compute_capability
   }
   const vk = gpus.find((g) => g.vulkan_info?.api_version)
   if (vk) props.vulkan_version = vk.vulkan_info.api_version

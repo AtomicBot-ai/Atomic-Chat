@@ -9,7 +9,13 @@
 
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import { DownloadEvent, events } from '@janhq/core'
+import {
+  DownloadEvent,
+  events,
+  atomicDownloadFiles,
+  prepareAtomicDownload,
+  type AtomicDownloadSource,
+} from '@janhq/core'
 
 import { useProxyConfig } from '@/hooks/useProxyConfig'
 
@@ -27,6 +33,8 @@ export type TransferItem = {
    * fresh signed link to the same file keeps the bytes already on disk.
    */
   resume_key?: string
+  source?: AtomicDownloadSource
+  purpose?: string
 }
 
 export type TransferProgress = (transferred: number, total: number) => void
@@ -183,25 +191,63 @@ export type TransferOptions = {
   hfToken?: string
 }
 
+const preparingTransfers = new Map<string, AbortController>()
+
+/** Resolve the complete model before splitting execution around shared files. */
+export async function prepareTransferFiles(
+  items: TransferItem[],
+  taskId: string,
+  token?: string
+) {
+  const controller = new AbortController()
+  preparingTransfers.set(taskId, controller)
+  try {
+    const plan = await prepareAtomicDownload(items, {
+      token,
+      signal: controller.signal,
+    })
+    controller.signal.throwIfAborted()
+    return plan
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error('Download cancelled')
+    throw error
+  } finally {
+    preparingTransfers.delete(taskId)
+  }
+}
+
 async function rawTransfer(
   items: TransferItem[],
   taskId: string,
   headers: Record<string, string>,
   options: TransferOptions
 ): Promise<void> {
-  const unlisten = await listen<{ transferred: number; total: number }>(
-    `download-${taskId}`,
-    (event) => options.onProgress?.(event.payload.transferred, event.payload.total)
-  )
+  const controller = new AbortController()
+  preparingTransfers.set(taskId, controller)
+  let unlisten: (() => void) | undefined
   try {
+    items = await atomicDownloadFiles(taskId, items, options.resume ?? false, {
+      token: options.hfToken,
+      signal: controller.signal,
+    })
+    unlisten = await listen<{ transferred: number; total: number }>(
+      `download-${taskId}`,
+      (event) =>
+        options.onProgress?.(event.payload.transferred, event.payload.total)
+    )
+    controller.signal.throwIfAborted()
     await invoke<void>('download_files', {
       items,
       taskId,
       headers,
       resume: options.resume ?? false,
     })
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error('Download cancelled')
+    throw error
   } finally {
-    unlisten()
+    unlisten?.()
+    preparingTransfers.delete(taskId)
   }
 }
 
@@ -233,6 +279,7 @@ export async function transferFiles(
 }
 
 export async function cancelTransfer(taskId: string): Promise<void> {
+  preparingTransfers.get(taskId)?.abort()
   const manager = getDownloadManager()
   if (manager?.cancelDownload) {
     await manager.cancelDownload(taskId)

@@ -7,6 +7,10 @@
     "empty": "No se encontraron chats"
   },
   "sendMessage": "Enviar mensaje",
+  "replyGate": {
+    "sendHint": "Elige con qué responder",
+    "sendWith": "Enviar con {{model}}"
+  },
   "newConversation": "Nueva conversación",
   "clearHistory": "Borrar historial",
   "activity": {
@@ -40,5 +44,13 @@
     "openFailed": "No se pudo abrir {{name}}",
     "openFailedDescription": "Es posible que el archivo se haya movido o eliminado.",
     "chipLabel": "Fuente: {{name}}, fragmento {{passage}}"
+  },
+  "turnRecovery": {
+    "retry": "Reintentar",
+    "details": "Detalles",
+    "genericTitle": "Error al generar la respuesta",
+    "genericMessage": "El modelo informó de un error antes de terminar la respuesta. Reintenta para enviar tu mensaje de nuevo; el mensaje de error está en Detalles.",
+    "settingsRestartTitle": "El modelo se reinició tras un cambio de configuración",
+    "settingsRestartMessage": "Tu cambio de configuración reinició {{model}} mientras respondía. Reintenta para enviar tu mensaje de nuevo."
   }
 }

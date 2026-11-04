@@ -89,6 +89,10 @@ describe('engineReleaseNotesUrl', () => {
     expect(engineReleaseNotesUrl('sd-cpp', 'master-883-137f740-a36f1b1a')).toBe(
       'https://github.com/AtomicBot-ai/stable-diffusion.cpp/releases/tag/master-883-137f740'
     )
+    // audio.cpp's fork releases under upstream's tag too.
+    expect(engineReleaseNotesUrl('audio-cpp', 'v0.9.3-a1b2c3d4')).toBe(
+      'https://github.com/AtomicBot-ai/audio.cpp/releases/tag/v0.9.3'
+    )
     expect(engineReleaseNotesUrl('atomic-prism', 'prism-b9100-1234567')).toBeUndefined()
     expect(engineReleaseNotesUrl('vllm', 'vllm-0.32.0-r1')).toBeUndefined()
   })

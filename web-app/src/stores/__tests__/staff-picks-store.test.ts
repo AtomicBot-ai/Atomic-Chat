@@ -97,7 +97,8 @@ describe('staff-picks-store', () => {
     const state = useStaffPicksStore.getState()
     expect(state.source).toBe('baseline')
     expect(state.error).toBe('kaboom')
-    expect(state.picks).toHaveLength(BASELINE_STAFF_PICKS.length)
+    expect(state.picks.length).toBeGreaterThan(BASELINE_STAFF_PICKS.length)
+    expect(state.picks.some(pick => pick.model_name.includes('Qwen3.8'))).toBe(true)
   })
 
   it('ensureStaffPicksLoaded only refreshes until initialized', async () => {

@@ -15,14 +15,44 @@
 ### Isolated QA/dev profile
 
 To check the first-run flow without reading or changing your usual profile,
-start the app with an absolute directory in `ATOMIC_CHAT_PROFILE_DIR`. Settings
-then live in `<profile>/settings.json` and data in `<profile>/data`; the legacy
-Atomic Chat/Jan directories are not used in this mode. The app hands
-`<profile>/data` to the core it starts (`--data-folder`).
+quit Atomic Chat and start it with an absolute directory in
+`ATOMIC_CHAT_PROFILE_DIR`. Nothing else needs redirecting (no
+`CFFIXED_USER_HOME` or `HOME`):
+
+- Settings live in `<profile>/settings.json` and data in `<profile>/data`; the
+  legacy Atomic Chat/Jan directories are not used in this mode. The app hands
+  `<profile>/data` to the core it starts (`--data-folder`).
+- The main window's webview storage (localStorage, IndexedDB, cookies, caches)
+  belongs to the profile too. It holds projects, onboarding progress and
+  frontend settings, so a new profile starts with onboarding and with empty
+  Projects and Recents. On Windows and Linux it is `<profile>/webview`. On
+  macOS WebKit keeps it outside the profile, as
+  `~/Library/WebKit/<bundle id or executable name>/WebsiteDataStore/<id>`,
+  where `<id>` is the UUID in `<profile>/webview-store-id`. A profile folder
+  deleted and created again at the same path gets a new, empty store; the old
+  one stays in `~/Library/WebKit` until you delete it.
 
 ```bash
 ATOMIC_CHAT_PROFILE_DIR=/tmp/atomic-chat-clean-flow yarn dev
 ```
+
+What the profile does not cover:
+
+- **One Atomic Chat at a time.** The single-instance lock is named after the
+  bundle identifier, not the profile: a launch while any Atomic Chat runs
+  hands over to it and exits, so quit the usual app first, and two profiles
+  cannot run side by side. The identifier stays the same because the
+  window-state file, the updater session, the MCP lock files and the default
+  WebView2/WebKitGTK folder are all named after it.
+- **Shared with the usual app:** window size and position, the updater
+  session and the MCP lock files (all in the identifier-named app directories),
+  and the operating system's launch-at-login item.
+- **Secondary windows** (App Logs, System Monitor, Local API Server Logs) are
+  opened by the frontend through Tauri's own window API, which cannot set a
+  data store, so they still read the usual webview storage (theme and
+  interface settings).
+- **macOS 13 and earlier** have no per-profile WebKit stores: the main window
+  falls back to the usual webview storage there.
 
 The CLI is the core's and does not read the variable: give it a folder of its
 own (it refuses the app's data folder), for example
@@ -93,6 +123,9 @@ Dev (`make dev-windows-cpu` / `yarn dev`) and the installed `Atomic Chat.exe` **
 | `%APPDATA%\Atomic Chat\data\threads\` | Chat history | factory reset, `make clean-windows-all`, uninstaller |
 | `%APPDATA%\Atomic Chat\data\diffusion\backends\` | Downloaded `stable-diffusion.cpp` (`sd-server`) builds, one tree per tag and backend id, sourced from `leejet/stable-diffusion.cpp` via `atomic-chat-conf/backends/sdcpp-manifest.json`. Trees carry an `.atomic-owned` marker. | factory reset, `make clean-windows-all`, uninstaller |
 | `%APPDATA%\Atomic Chat\data\diffusion\models\` | Image-generation checkpoints (`<family>\*.gguf`) and shared side files (`shared\<repo>\`: VAE, text encoders). Deliberately outside `models\` so the hub and the local-model scanner never list them. | factory reset, `make clean-windows-all`, uninstaller |
+| `%APPDATA%\Atomic Chat\data\audio\backends\` | Downloaded `audio.cpp` (`audiocpp_server`) builds, installed by the core from `atomic-chat-conf/backends/audiocpp-manifest.json`, one tree per tag and backend id, with an `.atomic-owned` marker. | factory reset, `make clean-windows-all`, uninstaller |
+| `%APPDATA%\Atomic Chat\data\audio\models\` | Audio models, one GGUF per catalog quant, named by the `audio` collection of `atomic-chat-conf/models/catalog.json`. Outside `models\` for the same reason as the image checkpoints. | factory reset, `make clean-windows-all`, uninstaller |
+| `%APPDATA%\Atomic Chat\data\audios\` | The Audios gallery: `<jobId>.wav` beside its `<jobId>.json` recipe. | factory reset, `make clean-windows-all`, uninstaller |
 | `%APPDATA%\Atomic Chat\data\images\` | Generated images (`<jobId>-<nn>.png` with the recipe in a PNG `tEXt` chunk, `.thumb.png` beside each) and `.flags.json`. Relocatable from Settings → Media. | factory reset, `make clean-windows-all`, uninstaller |
 | `%APPDATA%\Atomic Chat\data\extensions\` | Installed extensions (`@janhq/*`, `llamacpp-extension`, …) | factory reset, `make clean-windows-all`, uninstaller |
 | `%APPDATA%\Atomic Chat\data\logs\app.log` | Application logs (`tauri_plugin_log`) | factory reset, `make clean-windows-all`, uninstaller |

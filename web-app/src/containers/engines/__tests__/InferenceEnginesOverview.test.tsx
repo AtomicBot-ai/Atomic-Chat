@@ -25,7 +25,7 @@ vi.mock('@/lib/platform/const', async (importOriginal) => {
   return {
     PlatformFeatures: new Proxy(actual.PlatformFeatures, {
       get: (target, key) =>
-        key === 'turboquantEngine'
+        key === 'turboquantEngine' || key === 'audioGeneration'
           ? true
           : key === 'mediaGeneration' || key === 'voiceInput'
             ? false
@@ -77,6 +77,69 @@ const versions = (
 
 const statusOf = (provider: string) =>
   within(screen.getByTestId(`engine-row-${provider}`)).getByRole('status')
+
+describe('the audio engine row', () => {
+  const audioVersions = (update?: Partial<EngineVersions['update']>) => ({
+    ...versions('audio-cpp', [engineBuild('v0.9.3', 'downloaded')], {
+      version: 'v0.9.3',
+      variant: 'macos-arm64',
+    }),
+    kind: 'engine-build' as const,
+    active_choice: 'core' as const,
+    ...(update
+      ? {
+          update: {
+            needed: false,
+            target: null,
+            apply: 'swap' as const,
+            ...update,
+          },
+        }
+      : {}),
+  })
+
+  beforeEach(() => {
+    useModelProvider.setState({ providers: [engine('llamacpp-upstream')] })
+  })
+
+  it('is not drawn while the core does not report the engine (core 0.20.5)', () => {
+    act(() =>
+      useEngineVersionsStore.setState({
+        engines: {
+          'llamacpp-upstream': versions('llamacpp-upstream', [], null),
+        },
+        error: null,
+      })
+    )
+
+    render(<InferenceEnginesOverview />)
+
+    expect(screen.getByTestId('engine-row-llamacpp-upstream')).toBeTruthy()
+    expect(screen.queryByTestId('engine-row-audio-cpp')).toBeNull()
+    expect(screen.queryByText('audios:engine.groupTitle')).toBeNull()
+  })
+
+  it('appears once the core reports it, and offers the core’s update', () => {
+    act(() =>
+      useEngineVersionsStore.setState({
+        engines: {
+          'audio-cpp': audioVersions({
+            needed: true,
+            target: { version: 'v0.9.4', variant: 'macos-arm64' },
+          }),
+        },
+        error: null,
+      })
+    )
+
+    render(<InferenceEnginesOverview />)
+
+    const row = screen.getByTestId('engine-row-audio-cpp')
+    expect(row.textContent).toContain('audio.cpp')
+    expect(row.textContent).toContain('audios:engine.rowDescription')
+    expect(within(row).getByRole('status')).toBeTruthy()
+  })
+})
 
 describe('the status of a language engine row', () => {
   beforeEach(() => {

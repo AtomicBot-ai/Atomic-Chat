@@ -8,6 +8,7 @@
 
 import {
   AIEngine,
+  atomicAuxiliaryFile,
   getJanDataFolderPath,
   fs,
   joinPath,
@@ -4220,7 +4221,7 @@ export default class llamacpp_extension extends AIEngine {
       ) {
         await this.import('sentence-transformer-mini', {
           modelPath:
-            'https://huggingface.co/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/all-MiniLM-L6-v2-ggml-model-f16.gguf?download=true',
+            atomicAuxiliaryFile('second-state/All-MiniLM-L6-v2-Embedding-GGUF', 'all-MiniLM-L6-v2-ggml-model-f16.gguf').url,
         })
       }
       // Load specifically in embedding mode

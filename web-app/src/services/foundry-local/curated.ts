@@ -1,3 +1,4 @@
+import { unifiedModelCollection } from '../unified-model-catalog'
 /**
  * Foundry Local's curated model list — `atomic-chat-conf/models/foundry-local-models.json`
  * (openspec change `add-foundry-local`, spec `foundry-local-models`).
@@ -25,6 +26,7 @@ import {
   type FoundryLocalExecutionProvider,
 } from './types'
 
+/** @deprecated Independent catalog URL; retained for legacy/custom adapters. Production desktop projects models/catalog.json. */
 export const DEFAULT_FOUNDRY_LOCAL_MODELS_URL =
   'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/models/foundry-local-models.json'
 
@@ -120,13 +122,15 @@ const BASELINE_LIST = {
 const ID = /^[a-z0-9][a-z0-9._-]*$/
 const PATH = /^[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)*$/
 const SHA256 = /^[0-9a-f]{64}$/
-const ASSET_ID = /^azureml:\/\/registries\/[A-Za-z0-9_.-]+\/models\/[A-Za-z0-9_.-]+\/versions\/[A-Za-z0-9_.-]+$/
+const ASSET_ID =
+  /^azureml:\/\/registries\/[A-Za-z0-9_.-]+\/models\/[A-Za-z0-9_.-]+\/versions\/[A-Za-z0-9_.-]+$/
 
 type Json = Record<string, unknown>
 
 const isObject = (value: unknown): value is Json =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
-const isString = (value: unknown): value is string => typeof value === 'string' && value.length > 0
+const isString = (value: unknown): value is string =>
+  typeof value === 'string' && value.length > 0
 const isPositiveInt = (value: unknown): value is number =>
   typeof value === 'number' && Number.isInteger(value) && value > 0
 const isSafePath = (value: unknown): value is string =>
@@ -137,7 +141,12 @@ const isSafePath = (value: unknown): value is string =>
 function parseFile(raw: unknown): FoundryLocalFile | null {
   if (!isObject(raw)) return null
   const { path, size, sha256 } = raw
-  if (!isSafePath(path) || !isPositiveInt(size) || typeof sha256 !== 'string' || !SHA256.test(sha256)) {
+  if (
+    !isSafePath(path) ||
+    !isPositiveInt(size) ||
+    typeof sha256 !== 'string' ||
+    !SHA256.test(sha256)
+  ) {
     return null
   }
   return { path, size, sha256 }
@@ -147,17 +156,26 @@ function parseSource(raw: unknown): FoundryLocalAzureMlSource | null {
   if (!isObject(raw) || raw.kind !== 'azureml') return null
   const { asset_id, version, path_prefix } = raw
   if (typeof asset_id !== 'string' || !ASSET_ID.test(asset_id)) return null
-  if (!isString(version) || !asset_id.endsWith(`/versions/${version}`)) return null
+  if (!isString(version) || !asset_id.endsWith(`/versions/${version}`))
+    return null
   if (!isSafePath(path_prefix)) return null
   return { kind: 'azureml', asset_id, version, path_prefix }
 }
 
-function parseVariant(raw: unknown, modelContext: number): FoundryLocalVariant | null {
+function parseVariant(
+  raw: unknown,
+  modelContext: number
+): FoundryLocalVariant | null {
   if (!isObject(raw)) return null
-  const { id, device, execution_provider, platforms, files, context_length } = raw
+  const { id, device, execution_provider, platforms, files, context_length } =
+    raw
   if (typeof id !== 'string' || !ID.test(id)) return null
   if (!FOUNDRY_LOCAL_DEVICES.includes(device as FoundryLocalDevice)) return null
-  if (!FOUNDRY_LOCAL_EXECUTION_PROVIDERS.includes(execution_provider as FoundryLocalExecutionProvider)) {
+  if (
+    !FOUNDRY_LOCAL_EXECUTION_PROVIDERS.includes(
+      execution_provider as FoundryLocalExecutionProvider
+    )
+  ) {
     return null
   }
   const source = parseSource(raw.source)
@@ -180,16 +198,38 @@ function parseVariant(raw: unknown, modelContext: number): FoundryLocalVariant |
     platforms: [...new Set(known)],
     source,
     files: parsedFiles as FoundryLocalFile[],
-    ...(isPositiveInt(context_length) && context_length < modelContext ? { context_length } : {}),
+    ...(isPositiveInt(context_length) && context_length < modelContext
+      ? { context_length }
+      : {}),
   }
 }
 
 function parseModel(raw: unknown): FoundryLocalModel | null {
   if (!isObject(raw)) return null
-  const { id, name, description, task, license, context_length, tools, reasoning, variants } = raw
+  const {
+    id,
+    name,
+    description,
+    task,
+    license,
+    context_length,
+    tools,
+    reasoning,
+    variants,
+  } = raw
   if (typeof id !== 'string' || !ID.test(id)) return null
-  if (!isString(name) || !isString(description) || task !== 'chat' || !isString(license)) return null
-  if (!isPositiveInt(context_length) || typeof tools !== 'boolean' || typeof reasoning !== 'boolean') {
+  if (
+    !isString(name) ||
+    !isString(description) ||
+    task !== 'chat' ||
+    !isString(license)
+  )
+    return null
+  if (
+    !isPositiveInt(context_length) ||
+    typeof tools !== 'boolean' ||
+    typeof reasoning !== 'boolean'
+  ) {
     return null
   }
   if (!Array.isArray(variants)) return null
@@ -197,7 +237,17 @@ function parseModel(raw: unknown): FoundryLocalModel | null {
     .map((variant) => parseVariant(variant, context_length))
     .filter((variant): variant is FoundryLocalVariant => variant !== null)
   if (parsed.length === 0) return null
-  return { id, name, description, task, license, context_length, tools, reasoning, variants: parsed }
+  return {
+    id,
+    name,
+    description,
+    task,
+    license,
+    context_length,
+    tools,
+    reasoning,
+    variants: parsed,
+  }
 }
 
 /**
@@ -206,9 +256,11 @@ function parseModel(raw: unknown): FoundryLocalModel | null {
  * skipped, never fatal.
  */
 export function parseFoundryLocalList(raw: unknown): FoundryLocalList {
-  if (!isObject(raw)) throw new Error('The Foundry Local model list is not an object.')
+  if (!isObject(raw))
+    throw new Error('The Foundry Local model list is not an object.')
   const { schema_version, updated_at, resolver, catalog, models } = raw
-  if (!isPositiveInt(schema_version)) throw new Error('The Foundry Local model list has no schema_version.')
+  if (!isPositiveInt(schema_version))
+    throw new Error('The Foundry Local model list has no schema_version.')
   if (schema_version > SUPPORTED_SCHEMA_VERSION) {
     throw new Error(
       `The Foundry Local model list has schema_version ${schema_version}; this app reads ${SUPPORTED_SCHEMA_VERSION}.`
@@ -222,20 +274,32 @@ export function parseFoundryLocalList(raw: unknown): FoundryLocalList {
     !resolver.url_template.includes('{asset_id}') ||
     !Array.isArray(resolver.regions) ||
     resolver.regions.length === 0 ||
-    !resolver.regions.every((region) => typeof region === 'string' && /^[a-z0-9]+$/.test(region))
+    !resolver.regions.every(
+      (region) => typeof region === 'string' && /^[a-z0-9]+$/.test(region)
+    )
   ) {
     throw new Error('The Foundry Local model list has no usable resolver.')
   }
-  if (!isObject(catalog) || typeof catalog.url !== 'string' || !catalog.url.startsWith('https://')) {
+  if (
+    !isObject(catalog) ||
+    typeof catalog.url !== 'string' ||
+    !catalog.url.startsWith('https://')
+  ) {
     throw new Error('The Foundry Local model list has no usable catalog URL.')
   }
-  if (!Array.isArray(models)) throw new Error('The Foundry Local model list has no models array.')
+  if (!Array.isArray(models))
+    throw new Error('The Foundry Local model list has no models array.')
   return {
     schema_version,
     updated_at: typeof updated_at === 'string' ? updated_at : '',
-    resolver: { url_template: resolver.url_template, regions: resolver.regions as string[] },
+    resolver: {
+      url_template: resolver.url_template,
+      regions: resolver.regions as string[],
+    },
     catalog: { url: catalog.url },
-    models: models.map(parseModel).filter((model): model is FoundryLocalModel => model !== null),
+    models: models
+      .map(parseModel)
+      .filter((model): model is FoundryLocalModel => model !== null),
   }
 }
 
@@ -280,9 +344,14 @@ export const indexedDbListCache: FoundryLocalListCache = {
     if (!db) return null
     return new Promise((resolve) => {
       try {
-        const request = db.transaction(CACHE_STORE, 'readonly').objectStore(CACHE_STORE).get(CACHE_KEY)
+        const request = db
+          .transaction(CACHE_STORE, 'readonly')
+          .objectStore(CACHE_STORE)
+          .get(CACHE_KEY)
         request.onsuccess = () => {
-          const entry = request.result as { value: unknown; fetchedAt: number } | undefined
+          const entry = request.result as
+            | { value: unknown; fetchedAt: number }
+            | undefined
           resolve(entry && Number.isFinite(entry.fetchedAt) ? entry : null)
         }
         request.onerror = () => resolve(null)
@@ -297,7 +366,9 @@ export const indexedDbListCache: FoundryLocalListCache = {
     await new Promise<void>((resolve) => {
       try {
         const transaction = db.transaction(CACHE_STORE, 'readwrite')
-        transaction.objectStore(CACHE_STORE).put({ value, fetchedAt }, CACHE_KEY)
+        transaction
+          .objectStore(CACHE_STORE)
+          .put({ value, fetchedAt }, CACHE_KEY)
         transaction.oncomplete = () => resolve()
         transaction.onerror = () => resolve()
         transaction.onabort = () => resolve()
@@ -314,12 +385,21 @@ export const indexedDbListCache: FoundryLocalListCache = {
 async function fetchJsonFrom(url: string): Promise<unknown> {
   if (url.startsWith('file://')) {
     // `file:///C:/…` has the pathname `/C:/…`; a Windows path starts at the drive letter.
-    const path = decodeURIComponent(new URL(url).pathname).replace(/^\/([A-Za-z]:\/)/, '$1')
+    const path = decodeURIComponent(new URL(url).pathname).replace(
+      /^\/([A-Za-z]:\/)/,
+      '$1'
+    )
     return JSON.parse(await invoke<string>('read_file_sync', { args: [path] }))
   }
   const get = async (fetcher: typeof fetch) => {
-    const response = await fetcher(url, { method: 'GET', headers: { Accept: 'application/json' } })
-    if (!response.ok) throw new Error(`Foundry Local model list: ${response.status} ${response.statusText}`)
+    const response = await fetcher(url, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    })
+    if (!response.ok)
+      throw new Error(
+        `Foundry Local model list: ${response.status} ${response.statusText}`
+      )
     return (await response.json()) as unknown
   }
   try {
@@ -333,7 +413,11 @@ async function fetchJsonFrom(url: string): Promise<unknown> {
 
 const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> =>
   new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`Foundry Local model list: no answer in ${ms} ms`)), ms)
+    const timer = setTimeout(
+      () =>
+        reject(new Error(`Foundry Local model list: no answer in ${ms} ms`)),
+      ms
+    )
     promise.then(
       (value) => {
         clearTimeout(timer)
@@ -369,6 +453,19 @@ export interface FoundryLocalListOptions {
 export async function fetchFoundryLocalList(
   options: FoundryLocalListOptions = {}
 ): Promise<FoundryLocalListResult> {
+  if (!options.url && !options.fetchJson && !options.cache) {
+    const result = await unifiedModelCollection(
+      'foundry-local-models',
+      options.force
+    )
+    return {
+      list: parseFoundryLocalList(result.data),
+      source: result.source,
+      fetchedAt: result.fetchedAt,
+      ...(result.error ? { error: result.error } : {}),
+    }
+  }
+
   const cache = options.cache ?? indexedDbListCache
   const fetchJson = options.fetchJson ?? fetchJsonFrom
   const cached = await cache.read()
@@ -380,18 +477,37 @@ export async function fetchFoundryLocalList(
       return null
     }
   })()
-  if (!options.force && cached && accepted && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
+  if (
+    !options.force &&
+    cached &&
+    accepted &&
+    Date.now() - cached.fetchedAt < CACHE_TTL_MS
+  ) {
     return { list: accepted, source: 'cache', fetchedAt: cached.fetchedAt }
   }
   try {
-    const raw = await withTimeout(fetchJson(options.url ?? FOUNDRY_LOCAL_MODELS_URL), FETCH_TIMEOUT_MS)
+    const raw = await withTimeout(
+      fetchJson(options.url ?? FOUNDRY_LOCAL_MODELS_URL),
+      FETCH_TIMEOUT_MS
+    )
     const list = parseFoundryLocalList(raw)
     const fetchedAt = Date.now()
     await cache.write(raw, fetchedAt)
     return { list, source: 'remote', fetchedAt }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    if (accepted && cached) return { list: accepted, source: 'cache', fetchedAt: cached.fetchedAt, error: message }
-    return { list: parseFoundryLocalList(BASELINE_LIST), source: 'baseline', fetchedAt: null, error: message }
+    if (accepted && cached)
+      return {
+        list: accepted,
+        source: 'cache',
+        fetchedAt: cached.fetchedAt,
+        error: message,
+      }
+    return {
+      list: parseFoundryLocalList(BASELINE_LIST),
+      source: 'baseline',
+      fetchedAt: null,
+      error: message,
+    }
   }
 }

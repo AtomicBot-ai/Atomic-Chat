@@ -1,3 +1,4 @@
+// Managed recommendations use the conf catalog. Hub discovery keeps its generated catalog and bundled fallback.
 /**
  * Model-related constants
  */

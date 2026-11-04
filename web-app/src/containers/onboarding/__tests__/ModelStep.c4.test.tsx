@@ -128,6 +128,8 @@ function withOptions({
     device: { name: null, memoryGb: null, freeGb: null },
     tier: 'unified_16',
     tierReady: true,
+    tierFinal: true,
+    tierResolvedMs: 0,
     profile: null,
   }
 }

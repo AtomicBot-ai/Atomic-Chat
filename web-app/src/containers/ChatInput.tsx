@@ -56,7 +56,10 @@ import {
   type ReplyModelGateResolution,
 } from '@/containers/ReplyModelGate'
 import { captureReplyGateReady } from '@/lib/reply-gate-telemetry'
-import { useReplyModelAutoStart } from '@/hooks/useReplyModelAutoStart'
+import {
+  useReplyModelAutoStart,
+  useReplyModelPreview,
+} from '@/hooks/useReplyModelAutoStart'
 import { useDeferredFirstSend } from '@/stores/deferred-first-send-store'
 import { useThreadManagementStore } from '@/hooks/useThreadManagement'
 import { useModelLoad } from '@/hooks/useModelLoad'
@@ -97,6 +100,7 @@ import {
 import { ExtensionManager } from '@/lib/extension'
 import { useAttachments } from '@/hooks/useAttachments'
 import { toast } from 'sonner'
+import { isAppShuttingDown, watchAppShutdown } from '@/lib/app-shutdown'
 import { isPlatformTauri } from '@/lib/platform/utils'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
@@ -170,10 +174,6 @@ import {
   type AgentSkillSlashQuery,
 } from '@/containers/agentSkillSlash'
 import { useAgentSkills } from '@/hooks/useAgentSkills'
-import {
-  BACKEND_MISMATCH_PROMPT_EVENT,
-  useBackendMismatch,
-} from '@/hooks/useBackendMismatch'
 import type { AgentSkill } from '@/services/agent/skills'
 
 /** Every extension the paperclip's picker offers: whatever a drop accepts. */
@@ -183,6 +183,20 @@ const ATTACHABLE_EXTENSIONS = [
   ...VIDEO_EXTENSIONS,
   ...DOCUMENT_EXTENSIONS,
 ]
+
+/**
+ * One action system for the composer toolbar (design review D3). Every icon
+ * action — paperclip, folder, tools, web search, microphone — is the same
+ * ghost `icon-sm` button: 28 px drawn, the control height the 2026-10-27
+ * density pass set, with an invisible 36 px click target (`hit-area-36`).
+ * Neighbours sit 8 px apart, so those targets tile edge to edge without
+ * overlapping. Send is the one filled action, with a 40 px target; the model
+ * pill is a selection, not an action, and keeps its own outlined shape.
+ */
+const COMPOSER_ICON_ACTION = 'relative hit-area-36'
+/** Its 6 px right margin is the 40 px target's reach past the 28 px circle,
+ *  so the target stays inside the slot that animates Send in and out. */
+const COMPOSER_SEND_ACTION = 'relative hit-area-40 rounded-full mr-1.5'
 
 type AttachRouteOptions = {
   /**
@@ -266,7 +280,6 @@ const ChatInput = memo(function ChatInput({
     (state) => state.tokenCounterCompact
   )
   const maxImageSizePx = useGeneralSetting((state) => state.maxImageSizePx)
-  const { shouldPrompt: shouldPromptBackendMismatch } = useBackendMismatch()
   useTools()
   const router = useRouter()
   const createThread = useThreads((state) => state.createThread)
@@ -534,6 +547,8 @@ const ChatInput = memo(function ChatInput({
     ? activeModels.includes(selectedModel.id)
     : false
 
+  useEffect(() => watchAppShutdown(), [])
+
   // Auto-start local model (llamacpp/mlx) when selected so the indicator and send
   // button reflect its status. Uses the unified switchToModel to ensure only one
   // model runs across all local providers. switchToModel manages loadingModel,
@@ -555,6 +570,9 @@ const ChatInput = memo(function ChatInput({
     let cancelled = false
 
     const ensureLocalModelRunning = async () => {
+      // Quitting: the core no longer takes calls, and a probe or load started
+      // now only fails with CORE_NOT_RUNNING.
+      if (isAppShuttingDown()) return
       try {
         const {
           switchToModel,
@@ -631,7 +649,11 @@ const ChatInput = memo(function ChatInput({
         // file/binary) or is still within its backoff window — this is what
         // turned a failed load into a tight restart loop. Explicit user
         // switches (dropdown/send) don't go through this gate.
-        if (!shouldAttemptAutoStart(selectedProvider, selectedModel.id)) return
+        if (
+          isAppShuttingDown() ||
+          !shouldAttemptAutoStart(selectedProvider, selectedModel.id)
+        )
+          return
         await switchToModel({
           modelId: selectedModel.id,
           providerName: selectedProvider,
@@ -714,6 +736,15 @@ const ChatInput = memo(function ChatInput({
    * it now opens the "what do I reply with?" widget.
    */
   const needsReplyModel = !selectedModel
+  /**
+   * What pressing Send would start while nothing is selected — the same pick
+   * `tryAutoStart` makes, read ahead so the button can name it (AC-02). `null`
+   * when nothing resolves: then Send really does open the choice widget.
+   */
+  const replyModelPreview = useReplyModelPreview(needsReplyModel)
+  const needsModelSendLabel = replyModelPreview
+    ? t('chat:replyGate.sendWith', { model: replyModelPreview.option.label })
+    : t('chat:replyGate.sendHint')
 
   /** A model that can answer right now — a loaded local one, or a cloud one. */
   const canSendToSelectedModel = !!selectedModel && !isLocalModelNotReady
@@ -1097,12 +1128,9 @@ const ChatInput = memo(function ChatInput({
 
     setMessage('')
 
-    // A previous model load found that the running backend is not the one the UI
-    // shows (or that a faster one exists). Raise it here, on the first send after
-    // the load, rather than interrupting the load itself. Never blocks the send.
-    if (shouldPromptBackendMismatch) {
-      window.dispatchEvent(new Event(BACKEND_MISMATCH_PROMPT_EVENT))
-    }
+    // A backend mismatch found by the last load is not raised here: its Fix
+    // and Restart would end the request this send starts. The prompt waits
+    // for the turn to finish (`SuboptimalBackendDialog`).
 
     // Use onSubmit prop if available (AI SDK), otherwise create thread and navigate
     if (onSubmit) {
@@ -1474,9 +1502,52 @@ const ChatInput = memo(function ChatInput({
     }
   }, [queuedSend, resumableDownloads])
 
+  // A queued send that will not go out says so. The text stays in the field,
+  // but nothing on screen told the user it was never sent.
+  const tellQueuedSendHeld = useCallback(
+    (reason: 'modelChanged' | 'modelLost' | 'modelStopped') => {
+      const draft = usePrompt.getState().getDraft(composerThreadKeyRef.current)
+      if (!draft.trim()) return
+      toast.info(t(`chat:queuedSend.${reason}`), { id: 'queued-send-held' })
+    },
+    [t]
+  )
+
+  // The model a queued send waits for: the one selected when it was armed,
+  // or, armed with nothing selected (a download, the reply gate), the first
+  // one selected for it. Another selection, or none, will not answer it, so
+  // the send is dropped and the user told. A model that failed to come up
+  // loses its selection (`switchToModel`), so that case lands here too: the
+  // error itself outlives the failure, and would also drop a send that
+  // starts the same model again. Declared before the send below, which
+  // reads the same target in the same commit.
+  const queuedTargetRef = useRef<string | null>(null)
+  const selectionKey = selectedModel
+    ? modelStopKey(selectedProvider, selectedModel.id)
+    : null
+  useEffect(() => {
+    if (!queuedSend) {
+      queuedTargetRef.current = null
+      return
+    }
+    if (queuedTargetRef.current === null) {
+      queuedTargetRef.current = selectionKey
+      return
+    }
+    if (selectionKey === queuedTargetRef.current) return
+    setQueuedSend(null)
+    tellQueuedSendHeld(selectionKey ? 'modelChanged' : 'modelLost')
+  }, [queuedSend, selectionKey, tellQueuedSendHeld])
+
   useEffect(() => {
     if (!queuedSend) return
     if (!canSendToSelectedModel) return
+    // Dropped above in this same commit: the selection is not its model.
+    if (
+      queuedTargetRef.current !== null &&
+      queuedTargetRef.current !== selectionKey
+    )
+      return
 
     setQueuedSend(null)
     setReplyGateOpen(false)
@@ -1502,21 +1573,7 @@ const ChatInput = memo(function ChatInput({
     }
     if (!pending.trim()) return
     void sendMessageRef.current(pending)
-  }, [queuedSend, canSendToSelectedModel])
-
-  // A model that failed to come up will never satisfy the queued send. Drop
-  // the promise rather than leave "starting…" on screen forever; the load
-  // error toast says what happened, and the text is still in the field. The
-  // failure clears the selection (`switchToModel`), so losing it is the
-  // signal: the error itself outlives the failure, and would also drop a send
-  // that starts the same model again. A send armed on a download has no
-  // selection yet, so only the change counts.
-  const hadSelectionRef = useRef(!!selectedModel)
-  useEffect(() => {
-    const lostSelection = hadSelectionRef.current && !selectedModel
-    hadSelectionRef.current = !!selectedModel
-    if (queuedSend && lostSelection) setQueuedSend(null)
-  }, [queuedSend, selectedModel])
+  }, [queuedSend, canSendToSelectedModel, selectionKey])
 
   // Nor will a model the user stops while the send waits — a Cancel on its
   // load, or a Stop (ATO-530). Only the change counts: a send made *to* a
@@ -1526,8 +1583,11 @@ const ChatInput = memo(function ChatInput({
     const becameStopped =
       selectedModelStoppedByUser && !wasStoppedByUserRef.current
     wasStoppedByUserRef.current = selectedModelStoppedByUser
-    if (queuedSend && becameStopped) setQueuedSend(null)
-  }, [queuedSend, selectedModelStoppedByUser])
+    if (queuedSend && becameStopped) {
+      setQueuedSend(null)
+      tellQueuedSendHeld('modelStopped')
+    }
+  }, [queuedSend, selectedModelStoppedByUser, tellQueuedSendHeld])
 
   useEffect(() => {
     const handleFocusIn = () => {
@@ -3139,7 +3199,9 @@ const ChatInput = memo(function ChatInput({
                         size={14}
                         className="animate-spin shrink-0"
                       />
-                      <span className="truncate">
+                      {/* Wraps rather than truncates: at large type the
+                          sentence would lose its end (design review D4). */}
+                      <span className="min-w-0 text-pretty">
                         {embeddingModelStatusText}
                       </span>
                     </div>
@@ -3306,12 +3368,18 @@ const ChatInput = memo(function ChatInput({
               much — enough for the page's scroll container to let the whole
               composer be dragged sideways. */}
           <div
+            data-testid="composer-toolbar"
             className={cn(
-              'absolute z-20 bg-transparent bottom-0 inset-x-0.5 p-2',
+              // The right 8 px are split with the cluster below, which keeps
+              // the last control's click target inside its own box.
+              'absolute z-20 bg-transparent bottom-0 inset-x-0.5 py-2 pl-2 pr-1',
               isStreaming && 'opacity-70'
             )}
           >
-            <div className="flex justify-between items-center w-full">
+            {/* The row's bottom pad lifts every control by the same 2 px; a
+                per-control `mb-1` used to lift only some of them, so the
+                globe and the tools button sat lower than the paperclip. */}
+            <div className="flex justify-between items-center w-full pb-1">
               <div
                 ref={toolbarStartRef}
                 className="px-1 flex items-center gap-1 flex-1 min-w-0"
@@ -3321,7 +3389,7 @@ const ChatInput = memo(function ChatInput({
                 <div
                   ref={toolbarStartContentRef}
                   className={cn(
-                    'px-1 flex items-center w-max gap-1',
+                    'px-1 flex items-center w-max gap-2',
                     isStreaming && 'opacity-50 pointer-events-none'
                   )}
                 >
@@ -3333,9 +3401,9 @@ const ChatInput = memo(function ChatInput({
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
-                        variant="secondary"
+                        variant="ghost"
                         size="icon-sm"
-                        className="rounded-full mr-2 mb-1"
+                        className={COMPOSER_ICON_ACTION}
                         aria-label={t('chat:composer.attachFiles')}
                         data-testid="composer-attach"
                         onClick={() => void handleAttachClick()}
@@ -3343,12 +3411,12 @@ const ChatInput = memo(function ChatInput({
                         {ingestingDocs ? (
                           <IconLoader2
                             size={18}
-                            className="text-secondary-foreground animate-spin"
+                            className="text-muted-foreground animate-spin"
                           />
                         ) : (
                           <IconPaperclip
                             size={18}
-                            className="text-secondary-foreground"
+                            className="text-muted-foreground"
                           />
                         )}
                       </Button>
@@ -3378,8 +3446,8 @@ const ChatInput = memo(function ChatInput({
                       <TooltipTrigger asChild>
                         <Button
                           variant="ghost"
-                          size="icon-xs"
-                          className="mb-1"
+                          size="icon-sm"
+                          className={COMPOSER_ICON_ACTION}
                           aria-label={t('chat:agentWorkspace.addFolder')}
                           onClick={() =>
                             void addExternalAgentFolder(
@@ -3478,7 +3546,8 @@ const ChatInput = memo(function ChatInput({
                       <TooltipTrigger asChild>
                         <Button
                           variant="ghost"
-                          size="icon-xs"
+                          size="icon-sm"
+                          className={COMPOSER_ICON_ACTION}
                           aria-label={t('embeddings')}
                         >
                           <IconCodeCircle2
@@ -3511,67 +3580,65 @@ const ChatInput = memo(function ChatInput({
                         MCPToolComponent={MCPToolComponent}
                       />
                     ) : (
-                      // Use default connectors dropdown
+                      // The tools button is the menu's own trigger, so Enter,
+                      // Space and the arrow keys open it and closing hands
+                      // focus back to it. It used to wrap a trigger <div> of
+                      // its own: a click reached the menu but a key did not,
+                      // and focus came back to an element that cannot hold it.
                       <Tooltip
-                        open={tooltipToolsAvailable}
+                        open={tooltipToolsAvailable && !dropdownToolsAvailable}
                         onOpenChange={setTooltipToolsAvailable}
                       >
-                        <TooltipTrigger
-                          asChild
-                          disabled={dropdownToolsAvailable}
+                        <DropdownPlugins
+                          initialMessage={initialMessage}
+                          projectId={projectId}
+                          skills={IS_TAURI ? agentSkills : undefined}
+                          skillsLoading={agentSkillsLoading}
+                          onToggleSkill={handleAgentSkillToggle}
+                          onOpenChange={(isOpen) => {
+                            setDropdownToolsAvailable(isOpen)
+                            if (isOpen) {
+                              setTooltipToolsAvailable(false)
+                            }
+                          }}
                         >
-                          <Button
-                            variant="ghost"
-                            size="icon-xs"
-                            aria-label={t('plugins')}
-                            onClick={(e) => {
-                              setDropdownToolsAvailable(false)
-                              e.stopPropagation()
-                            }}
-                          >
-                            <DropdownPlugins
-                              initialMessage={initialMessage}
-                              projectId={projectId}
-                              skills={IS_TAURI ? agentSkills : undefined}
-                              skillsLoading={agentSkillsLoading}
-                              onToggleSkill={handleAgentSkillToggle}
-                              onOpenChange={(isOpen) => {
-                                setDropdownToolsAvailable(isOpen)
-                                if (isOpen) {
-                                  setTooltipToolsAvailable(false)
-                                }
-                              }}
-                            >
-                              {(_isOpen, sentConnectors, activeConnectors) => {
-                                // Lit when a connector's tools ride this
-                                // chat; "sent/active" once some are muted.
-                                return (
-                                  <div
+                          {(_isOpen, sentConnectors, activeConnectors) => {
+                            // Lit when a connector's tools ride this chat;
+                            // "sent/active" once some are muted, which needs
+                            // more than the square.
+                            const showCount = activeConnectors > sentConnectors
+                            return (
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size={showCount ? 'sm' : 'icon-sm'}
+                                  className={cn(
+                                    COMPOSER_ICON_ACTION,
+                                    showCount && 'gap-1 has-[>svg]:px-1.5'
+                                  )}
+                                  aria-label={t('plugins')}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <PuzzleIcon
+                                    size={18}
                                     className={cn(
-                                      'p-1 flex items-center justify-center rounded-sm transition-all duration-200 ease-in-out gap-1 cursor-pointer'
+                                      'text-muted-foreground',
+                                      sentConnectors > 0 && 'text-primary'
                                     )}
-                                  >
-                                    <PuzzleIcon
-                                      size={18}
-                                      className={cn(
-                                        'text-muted-foreground',
-                                        sentConnectors > 0 && 'text-primary'
-                                      )}
-                                    />
-                                    {activeConnectors > sentConnectors && (
-                                      <span
-                                        className="text-[10px] text-muted-foreground"
-                                        data-testid="connectors-sent-count"
-                                      >
-                                        {sentConnectors}/{activeConnectors}
-                                      </span>
-                                    )}
-                                  </div>
-                                )
-                              }}
-                            </DropdownPlugins>
-                          </Button>
-                        </TooltipTrigger>
+                                  />
+                                  {showCount && (
+                                    <span
+                                      className="text-[10px] text-muted-foreground"
+                                      data-testid="connectors-sent-count"
+                                    >
+                                      {sentConnectors}/{activeConnectors}
+                                    </span>
+                                  )}
+                                </Button>
+                              </TooltipTrigger>
+                            )
+                          }}
+                        </DropdownPlugins>
                         <TooltipContent>
                           <p>{t('plugins')}</p>
                         </TooltipContent>
@@ -3585,6 +3652,7 @@ const ChatInput = memo(function ChatInput({
                     <WebSearchToggle
                       initialMessage={initialMessage}
                       projectId={projectId}
+                      className={COMPOSER_ICON_ACTION}
                     />
                   )}
                   {/* Agent mode chip — the toolbar face of the global toggle,
@@ -3601,8 +3669,8 @@ const ChatInput = memo(function ChatInput({
                         {compactComposer ? (
                           <Button
                             variant="secondary"
-                            size="icon-xs"
-                            className="mb-1 rounded-full"
+                            size="icon-sm"
+                            className={cn(COMPOSER_ICON_ACTION, 'rounded-full')}
                             aria-label={t('chat:agentMode.turnOff')}
                             onClick={() => setAgentModeEnabled(false)}
                             data-testid="agent-mode-chip"
@@ -3612,7 +3680,7 @@ const ChatInput = memo(function ChatInput({
                         ) : (
                           <div
                             className={cn(
-                              'flex items-center gap-1 rounded-full bg-secondary pl-2 pr-1 py-0.5 mb-1 shrink-0',
+                              'flex items-center gap-1 rounded-full bg-secondary pl-2 pr-1 py-0.5 shrink-0',
                               (agentBlockReason || agentModelBlock) &&
                                 'opacity-60'
                             )}
@@ -3653,7 +3721,7 @@ const ChatInput = memo(function ChatInput({
                 </div>
               </div>
 
-              <div className="flex items-center">
+              <div className="flex items-center pr-1">
                 {/* The model rides with the microphone rather than the
                     attachment cluster: both change how the next message is
                     produced. The pill names the model and, while thinking is
@@ -3662,7 +3730,7 @@ const ChatInput = memo(function ChatInput({
                     model list. */}
                 <div ref={modelPillSlotRef} className="flex shrink-0">
                   <DropdownModelProvider
-                    className="mb-1 mr-2"
+                    className="mr-2"
                     compact={compactModelPill}
                   />
                 </div>
@@ -3677,7 +3745,7 @@ const ChatInput = memo(function ChatInput({
                   threadKey={composerThreadKey}
                   captureAnchor={captureVoiceAnchor}
                   disabled={isStreaming}
-                  className="mb-1"
+                  className={COMPOSER_ICON_ACTION}
                 />
 
                 {/* Send shows once there is something to send, and Stop while
@@ -3708,7 +3776,7 @@ const ChatInput = memo(function ChatInput({
                         <Button
                           variant="destructive"
                           size="icon-sm"
-                          className="rounded-full mr-1 mb-1"
+                          className={COMPOSER_SEND_ACTION}
                           aria-label={t('common:stop')}
                           onClick={() => {
                             if (currentThreadId) stopStreaming(currentThreadId)
@@ -3717,30 +3785,38 @@ const ChatInput = memo(function ChatInput({
                           <IconPlayerStopFilled />
                         </Button>
                       ) : needsReplyModel ? (
-                        // Nothing to answer with yet. The button says so before it is
-                        // pressed — the old behaviour let it look ready and answered
-                        // with a red line afterwards — but stays live, because
-                        // pressing it is how the user gets a model.
+                        // Nothing is selected. When pressing Send would start
+                        // a model, the button says which one and looks like
+                        // Send, because it is: it loads that model and sends
+                        // (ATO-461). Only when nothing resolves does it read
+                        // as a choice — and then pressing it opens the choice.
+                        // A control labelled as a choice must never send
+                        // (AC-02).
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Button
-                              variant="secondary"
+                              variant={
+                                replyModelPreview ? 'default' : 'secondary'
+                              }
                               size="icon-sm"
                               disabled={
                                 !prompt.trim() || isAttachmentPipelineBusy
                               }
                               data-test-id="send-message-button"
                               data-needs-model="true"
-                              aria-label={t('chat:replyGate.sendHint')}
+                              data-reply-model={replyModelPreview?.option.key}
+                              aria-label={needsModelSendLabel}
                               onClick={() => handleSendMessage(prompt)}
-                              className="rounded-full mr-1 mb-1"
+                              className={COMPOSER_SEND_ACTION}
                             >
-                              <ArrowRight />
+                              <ArrowRight
+                                className={cn(
+                                  replyModelPreview && 'text-primary-fg'
+                                )}
+                              />
                             </Button>
                           </TooltipTrigger>
-                          <TooltipContent>
-                            {t('chat:replyGate.sendHint')}
-                          </TooltipContent>
+                          <TooltipContent>{needsModelSendLabel}</TooltipContent>
                         </Tooltip>
                       ) : (
                         <Button
@@ -3754,7 +3830,7 @@ const ChatInput = memo(function ChatInput({
                           data-test-id="send-message-button"
                           aria-label={t('chat:sendMessage')}
                           onClick={() => handleSendMessage(prompt)}
-                          className="rounded-full mr-1 mb-1"
+                          className={COMPOSER_SEND_ACTION}
                         >
                           <ArrowRight className="text-primary-fg" />
                         </Button>

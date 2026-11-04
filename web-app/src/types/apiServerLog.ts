@@ -37,6 +37,8 @@ export type ApiRequestEntry = {
   headersMs?: number
   durationMs?: number
   promptTokens?: number
+  /** The part of the prompt the engine reused from its cache. */
+  cachedTokens?: number
   completionTokens?: number
   totalTokens?: number
   /** Completion tokens were counted from deltas, not reported upstream. */
@@ -44,6 +46,11 @@ export type ApiRequestEntry = {
   promptPerSecond?: number
   predictedPerSecond?: number
   finishReason?: string
+  /**
+   * The context window of the session that served the request, as it was
+   * then: it stays right after the model is reloaded with another window.
+   */
+  contextLength?: number
   httpStatus?: number
   errorKind?: string
   aborted?: boolean

@@ -7,6 +7,8 @@
  */
 
 import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+import { prepareAtomicDownload } from '@janhq/core'
 import { deleteLocalModel } from '@/lib/model-deletion'
 import {
   planPrismSetup,
@@ -42,14 +44,59 @@ export async function loadPrismSetupPlan(
   service: ModelSetupService,
   request: PrismSetupRequest
 ): Promise<PrismSetupPlan> {
-  const [verdict, families, freeBytes, space] = await Promise.all([
+  const families = await service.families()
+  const family = families.families.find(
+    (f) =>
+      f.repo === request.repo &&
+      (!request.revision ||
+        request.revision === 'main' ||
+        f.revision === request.revision) &&
+      f.files.some((file) => file.file === request.file)
+  )
+  const listed = family?.files.find((file) => file.file === request.file)
+  const projector = request.include_projector
+    ? family?.projectors.find((p) => p.default)
+    : undefined
+  const revision = family?.revision ?? request.revision ?? 'main'
+  const prepared = await prepareAtomicDownload(
+    [
+      {
+        url: `https://huggingface.co/${request.repo}/resolve/${revision}/${request.file}`,
+        save_path: 'model.gguf',
+        ...(listed ? { size: listed.size, sha256: listed.sha256 } : {}),
+      },
+      ...(family && projector
+        ? [
+            {
+              url: `https://huggingface.co/${family.repo}/resolve/${family.revision}/${projector.file}`,
+              save_path: 'mmproj.gguf',
+              size: projector.size,
+              sha256: projector.sha256,
+            },
+          ]
+        : []),
+    ],
+    { token: useGeneralSetting.getState().huggingfaceToken }
+  )
+  request = { ...request, revision: prepared.files[0]!.source!.revision }
+  const artifact = (index: number) => {
+    const file = prepared.files[index]
+    return file
+      ? {
+          file: file.source!.path,
+          url: file.url,
+          size: file.size!,
+          ...(file.sha256 ? { sha256: file.sha256 } : {}),
+        }
+      : undefined
+  }
+  const [verdict, freeBytes, space] = await Promise.all([
     service.checkCompatibility({
       repo: request.repo,
       file: request.file,
       ...(request.revision ? { revision: request.revision } : {}),
       inspect_remote: true,
     }),
-    service.families(),
     service.diskAvailable().catch(() => null),
     getDownloadFreeSpace(),
   ])
@@ -65,6 +112,8 @@ export async function loadPrismSetupPlan(
     request,
     verdict,
     families: families.families,
+    preparedModel: artifact(0),
+    preparedProjector: artifact(1),
     catalog,
     freeBytes,
     headroomBytes: space?.headroom ?? 0,
@@ -170,7 +219,10 @@ export function prismSetupDeps(
     hfToken?: string
     resume?: boolean
     /** The build's bytes as they arrive, for the Hub row. */
-    onEngineProgress?: (progress: { transferred: number; total: number }) => void
+    onEngineProgress?: (progress: {
+      transferred: number
+      total: number
+    }) => void
   } = {}
 ): PrismSetupDeps {
   const service = serviceHub.modelSetup()
@@ -183,15 +235,17 @@ export function prismSetupDeps(
       ),
     activateBuild: (pack) => service.activatePrismBuild(pack),
     pull: async (plan) => {
-      const refusal = await serviceHub.models().pullModelWithMetadata(
-        plan.model_id,
-        plan.model.url,
-        plan.projector?.url,
-        options.hfToken,
-        true,
-        options.resume ?? false,
-        prismPullOptions(plan)
-      )
+      const refusal = await serviceHub
+        .models()
+        .pullModelWithMetadata(
+          plan.model_id,
+          plan.model.url,
+          plan.projector?.url,
+          options.hfToken,
+          true,
+          options.resume ?? false,
+          prismPullOptions(plan)
+        )
       if (refusal) return 'refused'
       // A pause resolves the pull too, with the partial file kept.
       return useDownloadStore.getState().pausedDownloads.has(plan.model_id)
@@ -199,7 +253,10 @@ export function prismSetupDeps(
         : 'done'
     },
     check: (modelId) =>
-      service.checkCompatibility({ model_id: modelId, provider: PRISM_PROVIDER }),
+      service.checkCompatibility({
+        model_id: modelId,
+        provider: PRISM_PROVIDER,
+      }),
     remove: (modelId) => deleteLocalModel(serviceHub, modelId, PRISM_PROVIDER),
   }
 }

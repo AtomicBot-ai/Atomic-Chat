@@ -31,7 +31,9 @@ export function describeFinishedDownload(
         body: t(
           id.startsWith('diffusion-backend')
             ? 'common:desktopNotification.mediaEngineReadyBody'
-            : 'common:desktopNotification.chatEngineReadyBody'
+            : /^engine-(?:build|update)-audio-cpp-/.test(id)
+              ? 'audios:notifications.engineReadyBody'
+              : 'common:desktopNotification.chatEngineReadyBody'
         ),
       }
     case 'embedding_model':
@@ -46,6 +48,7 @@ export function describeFinishedDownload(
         }),
       }
     case 'diffusion_model':
+    case 'audio_model':
     case 'model':
       return {
         title: t('common:desktopNotification.modelReadyTitle'),

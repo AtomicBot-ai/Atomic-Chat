@@ -1,0 +1,20 @@
+{
+  "comparator": "agent-config-files",
+  "expected": {
+    "files": {},
+    "ok": true
+  },
+  "input": {
+    "agent": "goose",
+    "api_key": "sk-atomic-fixture-key",
+    "api_url": "http://127.0.0.1:1337",
+    "model": "AtomicChat/Qwen3.5-9B-GGUF",
+    "seed_files": {},
+    "shell": "/bin/zsh"
+  },
+  "name": "goose__writes_nothing",
+  "source": {
+    "commit": "344cc5a42",
+    "file": "src-tauri/src/core/system/opencode_family.rs"
+  }
+}

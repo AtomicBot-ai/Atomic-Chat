@@ -1,5 +1,4 @@
 {
-  "stepOf": "Étape {{index}} / {{count}}",
   "back": "Retour",
   "skipSetup": "Passer la configuration",
   "continue": "Continuer",
@@ -22,7 +21,7 @@
     "resume": "Reprendre le téléchargement"
   },
   "model": {
-    "title": "Choisissez votre premier modèle.",
+    "title": "Choisissez un modèle",
     "onDevice": "Sur cet appareil",
     "recommended": "Recommandé pour cet appareil",
     "huggingFace": "Hugging Face",

@@ -1,18 +1,19 @@
 import { Link } from '@tanstack/react-router'
+import { openUrl } from '@tauri-apps/plugin-opener'
 import { ArrowRight, LoaderCircle, Network, Search } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { route } from '@/constants/routes'
-import { SERVER_AGENTS, type IntegrationAgent } from '@/constants/integrations'
+import { SERVER_AGENTS } from '@/constants/integrations'
 import { AgentIcon } from '@/containers/AgentIcon'
+import { StatusDot } from '@/containers/api/ApiStatusIndicators'
 import {
   pickAgentHint,
   SetupGuideHint,
   useGuideHint,
 } from '@/containers/onboarding/SetupGuideHint'
-import type { StatusTone } from '@/containers/api/ApiStatusIndicators'
 import { useAgentActions } from '@/hooks/useAgentActions'
-import { useAppState } from '@/hooks/useAppState'
+import { useAgentStatus } from '@/hooks/useAgentStatus'
 import { useServerSetup } from '@/hooks/useServerSetup'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { detectIntegrationAgentsOnce } from '@/lib/integration-agent-detection'
@@ -20,43 +21,13 @@ import { isGuidedAgent } from '@/lib/integration-agent-setup'
 import { useLaunchStore } from '@/stores/launch-store'
 
 /**
- * What Atomic Chat knows about an agent: set up through it (the guide or All
- * integrations), installed on this computer, or neither. Launching a window
- * does not establish a live connection; keep reopening available at all times.
- */
-export function useAgentStatus(): (agent: IntegrationAgent) => {
-  label: string
-  tone: StatusTone
-  configured: boolean
-} {
-  const { t } = useTranslation()
-  const configured = useServerSetup((state) => state.configuredAgents)
-  const installed = useLaunchStore((state) => state.installed)
-  const running = useAppState((state) => state.serverStatus === 'running')
-
-  return (agent) => {
-    if (configured.some((entry) => entry.id === agent.id)) {
-      return {
-        label: t('api:agents.configured'),
-        tone: running ? 'ready' : 'idle',
-        configured: true,
-      }
-    }
-    return {
-      label: installed[agent.id]
-        ? t('api:agents.installed')
-        : t('api:agents.notInstalled'),
-      tone: 'idle',
-      configured: false,
-    }
-  }
-}
-
-/**
  * Overview's "Agents & tools": every integration as a card with its one next
  * step. An agent Atomic Chat configures goes Install (when it is missing) →
  * Configure (the setup guide, which opens the agent once done) → Connect
- * (opens it again, starting the server first). Editors set up by hand go to All integrations. Then the
+ * (opens it again, starting the server first). Editors set up by hand go to
+ * All integrations. ZCode, which only its own site installs, links there when
+ * it is missing. A set-up agent shows its state on its action once Atomic
+ * Chat opened it: opened, then connected after its first request. Then the
  * way in for the user's own application.
  */
 export function ServerAgents() {
@@ -149,6 +120,23 @@ export function ServerAgents() {
                       : t('api:agents.connecting')}
                   </span>
                 </button>
+              ) : status.state === 'app_missing' ? (
+                <button
+                  type="button"
+                  className="sp-button"
+                  aria-label={t('api:agents.downloadAgent', {
+                    name: agent.name,
+                  })}
+                  onClick={() =>
+                    void openUrl(agent.downloadUrl ?? agent.docsUrl)
+                  }
+                >
+                  <span className="sp-status">
+                    <StatusDot tone={status.tone} />
+                    {status.label}
+                  </span>
+                  {t('api:agents.download')}
+                </button>
               ) : agent.installable && installed[agent.id] === false ? (
                 <button
                   type="button"
@@ -189,7 +177,14 @@ export function ServerAgents() {
                   }}
                 >
                   {t('api:agents.connect')}
-                  <ArrowRight size={14} />
+                  {status.state === 'opened' || status.state === 'connected' ? (
+                    <span className="sp-status">
+                      <StatusDot tone={status.tone} />
+                      {status.label}
+                    </span>
+                  ) : (
+                    <ArrowRight size={14} />
+                  )}
                 </button>
               )}
             </article>

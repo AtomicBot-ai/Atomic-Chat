@@ -1,9 +1,10 @@
 use super::disk::{
-    check_reported_free_space, disk_err_to_string, ensure_free_space, ensure_path_within_limit,
-    remaining_bytes,
+    check_reported_free_space, disk_err_to_string, ensure_file_fits_file_system, ensure_free_space,
+    ensure_path_within_limit, remove_file_best_effort, rename_retrying, required_free_bytes,
 };
 use super::models::{DownloadEvent, DownloadItem, DownloadStage, ProgressTracker, ProxyConfig};
 use super::segmented;
+use super::volume::allocated_bytes;
 use crate::core::app::commands::get_jan_data_folder_path;
 use futures_util::StreamExt;
 use jan_utils::{canonicalize_existing_prefix, normalize_path};
@@ -317,7 +318,7 @@ impl FinishedFile {
 /// so then it counts only on a resume, and only with no partial of the path
 /// waiting: a `.tmp` next to a finished copy means a fetch over it was under
 /// way, which is never an accident.
-async fn finished_copy_on_disk(
+pub(super) async fn finished_copy_on_disk(
     item: &DownloadItem,
     save_path: &Path,
     expected_size: u64,
@@ -334,6 +335,12 @@ async fn finished_copy_on_disk(
         return Ok(false);
     }
     let Some(expected_sha256) = &item.sha256 else {
+        // HF's small Git files often have no SHA-256. A previous file at
+        // this path is not evidence that it came from the selected commit.
+        if item.url.starts_with("https://huggingface.co/") || item.url.starts_with("https://hf.co/")
+        {
+            return Ok(false);
+        }
         return Ok(resume && !sidecar_path(save_path, "tmp").exists());
     };
     log::info!(
@@ -383,13 +390,35 @@ pub(super) fn bytes_kept_on_resume(
             kept
         };
     }
-    let finished = expected_size > 0
+    let unverifiable_hf = item.sha256.is_none()
+        && (item.url.starts_with("https://huggingface.co/")
+            || item.url.starts_with("https://hf.co/"));
+    let finished = !unverifiable_hf
+        && expected_size > 0
         && std::fs::metadata(save_path)
             .is_ok_and(|meta| meta.is_file() && meta.len() == expected_size);
     if finished {
         expected_size
     } else {
         0
+    }
+}
+
+/// Bytes of the volume the download of this file already holds, for the
+/// free-space check: `kept` (what a resume keeps, [`bytes_kept_on_resume`]),
+/// or all the space its `.tmp` occupies when that is more.
+///
+/// A `.tmp` is reused or truncated before a single new byte is written, so the
+/// space it takes is space this download gets back. That matters for a
+/// multi-connection partial: it is created at full size, which NTFS allocates
+/// at once, so a resume at 10% of a 20 GB file on a drive with 5 GB free fits —
+/// and was refused as `disk_full` while only its written bytes were counted.
+pub(super) fn bytes_held_on_disk(save_path: &Path, kept: u64, expected_size: u64) -> u64 {
+    let held = allocated_bytes(&sidecar_path(save_path, "tmp")).map_or(kept, |tmp| tmp.max(kept));
+    if expected_size > 0 {
+        held.min(expected_size)
+    } else {
+        held
     }
 }
 
@@ -457,12 +486,29 @@ fn validate_content_range(
             )));
         }
         if expected_size > 0 && total != expected_size {
-            return Err(DownloadRequestError::RestartRequired(format!(
-                "Remote file size changed while resuming: expected {expected_size} bytes, server reports {total} bytes"
-            )));
+            return Err(remote_size_changed(expected_size, total));
         }
     }
 
+    Ok(())
+}
+
+fn remote_size_changed(expected: u64, actual: u64) -> DownloadRequestError {
+    DownloadRequestError::Fatal(format!(
+        "Remote file changed: expected {expected} bytes, server reports {actual} bytes. \
+         Partial download was kept. Refresh the model catalog and retry."
+    ))
+}
+
+fn validate_full_response_size(
+    response: &reqwest::Response,
+    expected_size: u64,
+) -> Result<(), DownloadRequestError> {
+    if let Some(actual) = response.content_length() {
+        if expected_size > 0 && actual != expected_size {
+            return Err(remote_size_changed(expected_size, actual));
+        }
+    }
     Ok(())
 }
 
@@ -942,19 +988,30 @@ pub async fn _download_files_internal(
     // the download, and the save path overflows the Windows limit. Checking
     // them here turns a write error at 80% of a 20 GB transfer into an upfront
     // message that names the actual problem.
+    // A third is knowable too: a file larger than its drive's file system can
+    // store at all (FAT32), which used to surface as `disk_full` on a drive
+    // with room to spare.
     let mut already_downloaded = Vec::new();
+    let mut held_on_disk = Vec::new();
     for (item, save_path) in items.iter().zip(&save_paths) {
         ensure_path_within_limit(save_path)?;
-        if resume {
-            let size =
-                expected_download_size(item, file_sizes.get(&item.url).copied().unwrap_or(0));
-            already_downloaded.push(bytes_kept_on_resume(item, save_path, size));
-        }
+        let size = expected_download_size(item, file_sizes.get(&item.url).copied().unwrap_or(0));
+        ensure_file_fits_file_system(save_path, size)?;
+        let kept = if resume {
+            let kept = bytes_kept_on_resume(item, save_path, size);
+            already_downloaded.push(kept);
+            kept
+        } else {
+            0
+        };
+        held_on_disk.push(bytes_held_on_disk(save_path, kept, size));
     }
-    let needed = remaining_bytes(total_size, &already_downloaded);
+    let required = required_free_bytes(total_size, &held_on_disk);
     match &core_location {
-        Some(location) => check_reported_free_space(location.free_bytes, needed)?,
-        None => ensure_free_space(&jan_data_folder, needed)?,
+        Some(location) => check_reported_free_space(location.free_bytes, required)?,
+        // The destination's own volume, asked directly: a model folder can sit
+        // on another drive than the data folder (a junction, a mounted folder).
+        None => ensure_free_space(save_paths.first().unwrap_or(&jan_data_folder), required)?,
     }
 
     // A resume starts from everything it keeps, for every file at once. Each
@@ -1082,7 +1139,7 @@ pub async fn _download_files_internal(
                 "Validation failed ({validation_error}); removing {}",
                 save_path.display()
             );
-            let _ = tokio::fs::remove_file(&save_path).await;
+            remove_file_best_effort(&save_path).await;
 
             // Try to clean up the parent directory if it's empty. `remove_dir`
             // (not `remove_dir_all`) is load-bearing: the directory is shared
@@ -1141,7 +1198,7 @@ async fn download_single_file(
     if finished_copy_on_disk(item, save_path, expected_size, resume, &cancel_token).await? {
         // Partials left from a fetch over it hold nothing it lacks.
         for ext in ["tmp", "url", segmented::PARTS_EXT, "parts.new"] {
-            let _ = tokio::fs::remove_file(sidecar_path(save_path, ext)).await;
+            remove_file_best_effort(&sidecar_path(save_path, ext)).await;
         }
         progress_tracker
             .update_progress(&file_id, expected_size)
@@ -1176,10 +1233,6 @@ async fn download_single_file(
             .await
             .map(|saved| saved == item.resume_identity()) // the same file, by key or URL
             .unwrap_or(false);
-
-    tokio::fs::write(&url_save_path, item.resume_identity())
-        .await
-        .map_err(|error| disk_err_to_string(&error))?;
 
     // Decode URL for better readability in logs
     let decoded_url = url::Url::parse(&item.url)
@@ -1228,10 +1281,10 @@ async fn download_single_file(
             progress_tracker
                 .update_progress(&file_id, downloaded_size)
                 .await;
-            tokio::fs::rename(&tmp_save_path, save_path)
+            rename_retrying(&tmp_save_path, save_path)
                 .await
                 .map_err(|error| disk_err_to_string(&error))?;
-            let _ = tokio::fs::remove_file(&url_save_path).await;
+            remove_file_best_effort(&url_save_path).await;
             log::info!("Completed download was already present for '{}'", item.url);
             return Ok(FinishedFile::downloaded(save_path));
         }
@@ -1353,6 +1406,11 @@ async fn download_single_file(
             .await
             .map_err(|error| disk_err_to_string(&error))?
     };
+    // Publish the identity only after accepting the response and opening
+    // its file. An early failure must not relabel another URL's partial.
+    tokio::fs::write(&url_save_path, item.resume_identity())
+        .await
+        .map_err(|error| disk_err_to_string(&error))?;
     let mut writer = tokio::io::BufWriter::new(file);
     let mut total_transferred = initial_progress;
     let mut retry_count = 0u32;
@@ -1563,6 +1621,10 @@ async fn download_single_file(
         ));
     }
 
+    // Our own handle goes before the rename, so the retry below only ever
+    // waits on other processes.
+    drop(writer);
+
     // Final progress update for this file
     progress_tracker
         .update_progress(&file_id, total_transferred)
@@ -1577,13 +1639,14 @@ async fn download_single_file(
     };
     app.emit(&evt_name, evt).unwrap();
 
-    // rename tmp file to final file
-    tokio::fs::rename(&tmp_save_path, &save_path)
+    // Rename the tmp file to the final file. On Windows the scanner, indexer or
+    // sync client that opens a just-finished file makes this fail for seconds,
+    // so it is retried; the `.url` sidecar left behind by a failed delete is
+    // harmless once the file has its final name, so that is only logged.
+    rename_retrying(&tmp_save_path, save_path)
         .await
         .map_err(|error| disk_err_to_string(&error))?;
-    tokio::fs::remove_file(&url_save_path)
-        .await
-        .map_err(|error| disk_err_to_string(&error))?;
+    remove_file_best_effort(&url_save_path).await;
 
     // Decode URL for better readability in logs
     let decoded_url = url::Url::parse(&item.url)
@@ -1726,10 +1789,20 @@ pub(super) async fn request_download_response(
                 validate_content_range(&resp, start_bytes, expected_size)?;
                 Ok(resp)
             }
-            reqwest::StatusCode::OK | reqwest::StatusCode::RANGE_NOT_SATISFIABLE => {
+            reqwest::StatusCode::OK => {
+                validate_full_response_size(&resp, expected_size)?;
                 let status = resp.status();
                 Err(DownloadRequestError::RestartRequired(format!(
                     "Server did not accept resume offset {start_bytes}: HTTP status {status}"
+                )))
+            }
+            reqwest::StatusCode::RANGE_NOT_SATISFIABLE => {
+                // A complete replacement file can end before the catalog's
+                // old size. Retrying from zero would discard it and repeat
+                // forever; leave the partial intact for an explicit retry.
+                Err(DownloadRequestError::Fatal(format!(
+                    "Server rejected the saved download offset {start_bytes}: HTTP 416. \
+                     Partial download was kept. Refresh the model catalog and retry."
                 )))
             }
             status
@@ -1768,6 +1841,11 @@ pub(super) async fn request_download_response(
                 return Err(DownloadRequestError::Retryable(message));
             }
             return Err(DownloadRequestError::Fatal(message));
+        }
+        if resp.status() == reqwest::StatusCode::PARTIAL_CONTENT {
+            validate_content_range(&resp, 0, expected_size)?;
+        } else {
+            validate_full_response_size(&resp, expected_size)?;
         }
         Ok(resp)
     }

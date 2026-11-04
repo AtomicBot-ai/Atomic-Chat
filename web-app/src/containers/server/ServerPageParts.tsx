@@ -45,7 +45,7 @@ export function ServerPage({
   const heading = title && (
     <div className="sp-section-title">
       <div className="min-w-0">
-        <h1>{title}</h1>
+        <h1 className="font-sans text-xl font-semibold">{title}</h1>
         {description && <p>{description}</p>}
       </div>
       {actions && <div className="sp-actions">{actions}</div>}

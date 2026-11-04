@@ -2,7 +2,8 @@
   "comparator": "agent-config-files",
   "expected": {
     "files": {
-      ".hermes/config.yaml": "model:\n  default: AtomicChat/Qwen3.5-9B-GGUF\n  provider: custom\n  base_url: http://127.0.0.1:1337/v1\ncustom_providers:\n- name: atomic-chat\n  base_url: http://127.0.0.1:1337/v1\n  model: AtomicChat/Qwen3.5-9B-GGUF\n  models:\n    AtomicChat/Qwen3.5-9B-GGUF:\n      context_length: 65536\nproviders:\n  custom:\n    request_timeout_seconds: 180\n"
+      ".hermes/config.yaml": "model:\n  api_key: \"sk-atomic-fixture-key\"\n  context_length: 65536\n  default: AtomicChat/Qwen3.5-9B-GGUF\n  provider: custom\n  base_url: http://127.0.0.1:1337/v1\ncustom_providers:\n- name: atomic-chat\n  base_url: http://127.0.0.1:1337/v1\n  api_key: \"sk-atomic-fixture-key\"\n  model: AtomicChat/Qwen3.5-9B-GGUF\n  models:\n    AtomicChat/Qwen3.5-9B-GGUF:\n      context_length: 65536\nproviders:\n  custom:\n    request_timeout_seconds: 180\n",
+      ".hermes/config.yaml.atomic-chat-backup.json": "{\n  \"created\": [\n    \"custom_providers\",\n    \"providers\",\n    \"providers.custom\",\n    \"providers.custom.request_timeout_seconds\"\n  ],\n  \"model\": {\n    \"header\": \"model:\",\n    \"keys\": {\n      \"api_key\": {\n        \"ours\": \"\\\"sk-atomic-fixture-key\\\"\"\n      },\n      \"base_url\": {\n        \"before\": [\n          \"  base_url: https://example.invalid\"\n        ],\n        \"ours\": \"http://127.0.0.1:1337/v1\"\n      },\n      \"context_length\": {\n        \"ours\": \"65536\"\n      },\n      \"default\": {\n        \"before\": [\n          \"  default: x\"\n        ],\n        \"ours\": \"AtomicChat/Qwen3.5-9B-GGUF\"\n      },\n      \"provider\": {\n        \"before\": [\n          \"  provider: auto\"\n        ],\n        \"ours\": \"custom\"\n      }\n    }\n  }\n}\n"
     },
     "ok": true
   },

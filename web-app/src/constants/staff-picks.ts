@@ -1,3 +1,4 @@
+// Legacy staff-picks payload types remain display adapters; the editable desktop source is models/catalog.json.
 /**
  * Bundled fallback for the staff-picks registry. Mirrors the contents of
  * `atomic-chat-conf/models/staff-picks.json` so Hub can render the curated

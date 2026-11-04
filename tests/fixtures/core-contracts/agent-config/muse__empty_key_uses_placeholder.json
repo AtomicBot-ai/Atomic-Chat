@@ -1,9 +1,7 @@
 {
   "comparator": "agent-config-files",
   "expected": {
-    "files": {
-      ".zshenv": "# Atomic Chat - Muse Code Config\nexport META_API_KEY='atomic'\n\n# Atomic Chat - Muse Code Config\n"
-    },
+    "files": {},
     "ok": true
   },
   "input": {

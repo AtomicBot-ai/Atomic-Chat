@@ -117,6 +117,23 @@ describe('DownloadPanel width', () => {
     expect(screen.getByText('Qwen3-4B-GGUF')).toBeInTheDocument()
   })
 
+  it('does not call a paused-only queue Downloading (AC-03)', () => {
+    render(
+      <DownloadPanel
+        items={[row('LiquidAI/LFM2.5-1.2B-Instruct-GGUF', { paused: true })]}
+      />
+    )
+
+    const region = screen.getByRole('region')
+    expect(within(region).getByText('common:downloads')).toBeInTheDocument()
+    expect(
+      within(region).queryByText('common:downloading')
+    ).not.toBeInTheDocument()
+    expect(
+      within(region).getByText(/common:downloadPanel\.paused/)
+    ).toBeInTheDocument()
+  })
+
   it('collapses to a pill that still counts the downloads and shows how far they are', () => {
     render(<DownloadPanel items={three} />)
 

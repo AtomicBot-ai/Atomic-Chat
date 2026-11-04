@@ -524,6 +524,151 @@ fn test_download_path(name: &str) -> std::path::PathBuf {
         .join(name)
 }
 
+// The catalog still says eight bytes; the publisher now serves six. No
+// response should cause a fallback to a new transfer or truncate a partial.
+#[tokio::test]
+async fn changed_remote_artifact_fails_once_and_keeps_partial_bytes() {
+    for (offset, segmented, same_identity) in [
+        (0, false, true),
+        (3, false, true),
+        (3, true, true),
+        (6, false, true),
+        (3, false, false),
+        (3, true, false),
+    ] {
+        let requests = Arc::new(AtomicUsize::new(0));
+        let count = requests.clone();
+        let service = make_service_fn(move |_| {
+            let count = count.clone();
+            async move {
+                Ok::<_, Infallible>(service_fn(move |request: Request<Body>| {
+                    count.fetch_add(1, Ordering::SeqCst);
+                    async move {
+                        let response = if let Some(range) = request.headers().get(RANGE) {
+                            let from: usize = range
+                                .to_str()
+                                .unwrap()
+                                .trim_start_matches("bytes=")
+                                .split('-')
+                                .next()
+                                .unwrap()
+                                .parse()
+                                .unwrap();
+                            if from >= 6 {
+                                Response::builder()
+                                    .status(StatusCode::RANGE_NOT_SATISFIABLE)
+                                    .header(CONTENT_RANGE, "bytes */6")
+                                    .body(Body::empty())
+                                    .unwrap()
+                            } else {
+                                Response::builder()
+                                    .status(StatusCode::PARTIAL_CONTENT)
+                                    .header(CONTENT_RANGE, format!("bytes {from}-5/6"))
+                                    .body(Body::from(&b"abcdef"[from..]))
+                                    .unwrap()
+                            }
+                        } else {
+                            Response::builder()
+                                .status(StatusCode::OK)
+                                .header(CONTENT_LENGTH, "6")
+                                .body(Body::from("abcdef"))
+                                .unwrap()
+                        };
+                        Ok::<_, Infallible>(response)
+                    }
+                }))
+            }
+        });
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(Server::from_tcp(listener).unwrap().serve(service));
+        let save_path = test_download_path("changed-model.gguf");
+        let item = DownloadItem {
+            url: format!("http://{address}/model.gguf"),
+            save_path: save_path.to_string_lossy().into_owned(),
+            proxy: None,
+            sha256: None,
+            size: Some(8),
+            model_id: None,
+            resume_key: None,
+        };
+        let partial = &b"abcdef"[..offset];
+        let saved_identity = if same_identity {
+            item.resume_identity()
+        } else {
+            "https://example.test/old.gguf"
+        };
+        if offset > 0 {
+            tokio::fs::create_dir_all(save_path.parent().unwrap())
+                .await
+                .unwrap();
+            tokio::fs::write(sidecar_path(&save_path, "tmp"), partial)
+                .await
+                .unwrap();
+            tokio::fs::write(sidecar_path(&save_path, "url"), saved_identity)
+                .await
+                .unwrap();
+            if !same_identity && segmented {
+                tokio::fs::write(sidecar_path(&save_path, "parts"), "old segment map")
+                    .await
+                    .unwrap();
+            }
+        }
+        let tuning = TransferTuning {
+            segmented_min_size: if segmented { 1 } else { u64::MAX },
+            min_segment_size: 1,
+            max_connections: 2,
+            ..TransferTuning::default()
+        };
+        let app = mock_app();
+        let error = download_single_file_with_tuning_for_test(
+            app.handle().clone(),
+            &item,
+            &save_path,
+            8,
+            offset > 0,
+            CancellationToken::new(),
+            tuning,
+        )
+        .await
+        .unwrap_err();
+        assert!(error.contains("Refresh the model catalog"), "{error}");
+        assert_eq!(
+            requests.load(Ordering::SeqCst),
+            1,
+            "offset={offset}, segmented={segmented}"
+        );
+        assert!(!save_path.exists());
+        if offset > 0 {
+            assert_eq!(
+                tokio::fs::read_to_string(sidecar_path(&save_path, "url"))
+                    .await
+                    .unwrap(),
+                saved_identity
+            );
+            if !same_identity && segmented {
+                assert_eq!(
+                    tokio::fs::read_to_string(sidecar_path(&save_path, "parts"))
+                        .await
+                        .unwrap(),
+                    "old segment map"
+                );
+            }
+            assert_eq!(
+                tokio::fs::read(sidecar_path(&save_path, "tmp"))
+                    .await
+                    .unwrap(),
+                partial
+            );
+        } else {
+            assert!(!sidecar_path(&save_path, "tmp").exists());
+        }
+        server.abort();
+        let _ = tokio::fs::remove_dir_all(save_path.parent().unwrap()).await;
+    }
+}
+
 async fn run_interrupted_download_test(
     range_behavior: TestRangeBehavior,
 ) -> (Vec<u8>, usize, std::path::PathBuf) {
@@ -2051,7 +2196,11 @@ async fn the_hugging_face_token_does_not_follow_a_redirect_to_another_host() {
     let response = client.get(&item.url).send().await.unwrap();
 
     assert_eq!(response.text().await.unwrap(), "model");
-    assert_eq!(*hub_seen.lock().unwrap(), vec![true], "the hub gets the token");
+    assert_eq!(
+        *hub_seen.lock().unwrap(),
+        vec![true],
+        "the hub gets the token"
+    );
     assert_eq!(*cdn_seen.lock().unwrap(), vec![false], "the CDN never does");
     hub_server.abort();
     cdn_server.abort();
@@ -2152,6 +2301,45 @@ fn record_progress(
 fn sha256_hex(body: &[u8]) -> String {
     use sha2::Digest;
     hex::encode(sha2::Sha256::digest(body))
+}
+
+#[tokio::test]
+async fn a_finished_hf_file_is_reused_only_after_content_verification() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.json");
+    let bytes = b"{\"version\":1}";
+    tokio::fs::write(&path, bytes).await.unwrap();
+    let mut item = DownloadItem {
+        url: format!(
+            "https://huggingface.co/test/model/resolve/{}/config.json",
+            "a".repeat(40)
+        ),
+        save_path: path.to_string_lossy().into_owned(),
+        size: Some(bytes.len() as u64),
+        sha256: None,
+        proxy: None,
+        model_id: None,
+        resume_key: None,
+    };
+    let cancel = CancellationToken::new();
+    assert!(
+        !finished_copy_on_disk(&item, &path, bytes.len() as u64, true, &cancel)
+            .await
+            .unwrap()
+    );
+    assert_eq!(bytes_kept_on_resume(&item, &path, bytes.len() as u64), 0);
+    item.sha256 = Some(sha256_hex(bytes));
+    assert!(
+        finished_copy_on_disk(&item, &path, bytes.len() as u64, false, &cancel)
+            .await
+            .unwrap()
+    );
+    tokio::fs::write(&path, b"{\"version\":2}").await.unwrap();
+    assert!(
+        !finished_copy_on_disk(&item, &path, bytes.len() as u64, true, &cancel)
+            .await
+            .unwrap()
+    );
 }
 
 #[tokio::test]
@@ -2408,4 +2596,390 @@ async fn a_slow_connection_lands_its_bytes_before_its_range_ends() {
 
     server.handle.abort();
     let _ = tokio::fs::remove_dir_all(save_path.parent().unwrap()).await;
+}
+
+// ===== Windows disk reliability: locked renames, free space, FAT32 =====
+
+mod disk_reliability {
+    use super::super::disk::*;
+    use super::super::helpers::{bytes_held_on_disk, sidecar_path};
+    use super::super::volume::{disk_space_info, nearest_existing_dir, DiskSpaceInfo};
+    use std::io::{Error, ErrorKind};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    const MIB: u64 = 1024 * 1024;
+    const GIB: u64 = 1024 * MIB;
+
+    // ----- Retry classification -----
+
+    #[test]
+    fn windows_lock_and_permission_errors_are_retried() {
+        // ERROR_ACCESS_DENIED, ERROR_SHARING_VIOLATION, ERROR_LOCK_VIOLATION:
+        // what Defender, the indexer and OneDrive cause on a just-finished file.
+        for code in [5, 32, 33] {
+            assert!(
+                is_transient_lock(Some(code), ErrorKind::Other, true),
+                "code {code}"
+            );
+        }
+        assert!(is_transient_lock(None, ErrorKind::PermissionDenied, true));
+        assert!(is_transient_lock(
+            Some(1234),
+            ErrorKind::PermissionDenied,
+            true
+        ));
+    }
+
+    #[test]
+    fn other_windows_errors_fail_at_once() {
+        // Disk full, path not found, path too long: waiting changes nothing.
+        for code in [112, 39, 3, 206] {
+            assert!(
+                !is_transient_lock(Some(code), ErrorKind::Other, true),
+                "code {code}"
+            );
+        }
+        assert!(!is_transient_lock(None, ErrorKind::NotFound, true));
+    }
+
+    #[test]
+    fn nothing_is_retried_off_windows() {
+        assert!(!is_transient_lock(
+            Some(5),
+            ErrorKind::PermissionDenied,
+            false
+        ));
+        assert!(!is_transient_lock(Some(32), ErrorKind::Other, false));
+        #[cfg(not(windows))]
+        assert!(!is_transient_lock_error(&Error::from(
+            ErrorKind::PermissionDenied
+        )));
+    }
+
+    #[test]
+    fn the_default_lock_retry_backs_off_for_about_ten_seconds() {
+        let policy = LockRetry::DEFAULT;
+        let delays: Vec<u64> = (0..8).map(|n| policy.delay(n).as_millis() as u64).collect();
+        assert_eq!(delays, [100, 200, 400, 800, 1600, 2000, 2000, 2000]);
+        // The waits that fit the budget: no retry starts past ten seconds.
+        let mut slept = Duration::ZERO;
+        let mut attempt = 0;
+        while slept + policy.delay(attempt) <= policy.budget {
+            slept += policy.delay(attempt);
+            attempt += 1;
+        }
+        assert!(slept >= Duration::from_secs(8), "slept {slept:?}");
+        assert!(slept <= Duration::from_secs(10), "slept {slept:?}");
+        // A huge attempt number neither overflows nor exceeds the cap.
+        assert_eq!(policy.delay(u32::MAX), policy.max_delay);
+    }
+
+    fn quick_policy() -> LockRetry {
+        LockRetry {
+            budget: Duration::from_millis(40),
+            first_delay: Duration::from_millis(1),
+            max_delay: Duration::from_millis(4),
+        }
+    }
+
+    fn locked() -> Error {
+        Error::other("held by another process")
+    }
+
+    #[tokio::test]
+    async fn a_lock_that_is_released_is_waited_out() {
+        let calls = AtomicUsize::new(0);
+        let result = retry_while_locked(
+            "Renaming",
+            std::path::Path::new("model.gguf.tmp"),
+            quick_policy(),
+            |_| true,
+            || async {
+                if calls.fetch_add(1, Ordering::SeqCst) < 2 {
+                    Err(locked())
+                } else {
+                    Ok(7)
+                }
+            },
+        )
+        .await;
+        assert_eq!(result.unwrap(), 7);
+        assert_eq!(calls.load(Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn a_lock_that_outlasts_the_budget_returns_the_last_error() {
+        let calls = AtomicUsize::new(0);
+        let started = std::time::Instant::now();
+        let result: std::io::Result<()> = retry_while_locked(
+            "Renaming",
+            std::path::Path::new("model.gguf.tmp"),
+            quick_policy(),
+            |_| true,
+            || async {
+                calls.fetch_add(1, Ordering::SeqCst);
+                Err(locked())
+            },
+        )
+        .await;
+        assert_eq!(result.unwrap_err().to_string(), "held by another process");
+        assert!(calls.load(Ordering::SeqCst) > 3);
+        assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[tokio::test]
+    async fn a_permanent_error_is_not_retried() {
+        let calls = AtomicUsize::new(0);
+        let result: std::io::Result<()> = retry_while_locked(
+            "Removing",
+            std::path::Path::new("model.gguf.url"),
+            quick_policy(),
+            |_| false,
+            || async {
+                calls.fetch_add(1, Ordering::SeqCst);
+                Err(Error::from(ErrorKind::NotFound))
+            },
+        )
+        .await;
+        assert_eq!(result.unwrap_err().kind(), ErrorKind::NotFound);
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn the_retrying_rename_and_removes_behave_like_the_plain_ones() {
+        let dir = tempfile::tempdir().unwrap();
+        let tmp = dir.path().join("model.gguf.tmp");
+        let finished = dir.path().join("model.gguf");
+        tokio::fs::write(&tmp, b"weights").await.unwrap();
+        rename_retrying(&tmp, &finished).await.unwrap();
+        assert_eq!(tokio::fs::read(&finished).await.unwrap(), b"weights");
+        assert!(!tmp.exists());
+        // A missing source fails at once, tagged like any other disk error.
+        let error = rename_retrying(&tmp, &finished).await.unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::NotFound);
+        assert!(disk_err_to_string(&error).starts_with("Error: [disk_"));
+
+        remove_file_retrying(&finished).await.unwrap();
+        assert!(!finished.exists());
+        // A sidecar that is already gone is what a best-effort delete wanted.
+        remove_file_best_effort(&finished).await;
+    }
+
+    // ----- Required bytes -----
+
+    #[test]
+    fn headroom_is_two_percent_with_a_floor() {
+        assert_eq!(free_space_headroom(0), FREE_SPACE_HEADROOM);
+        assert_eq!(free_space_headroom(8 * GIB), FREE_SPACE_HEADROOM);
+        // The floor and 2% meet at 25 GiB of download.
+        assert_eq!(free_space_headroom(25 * GIB), FREE_SPACE_HEADROOM);
+        assert_eq!(free_space_headroom(50 * GIB), GIB);
+        assert_eq!(free_space_headroom(u64::MAX), u64::MAX / 100 * 2);
+    }
+
+    #[test]
+    fn required_bytes_are_what_is_left_to_write_plus_headroom() {
+        assert_eq!(
+            required_free_bytes(10 * GIB, &[]),
+            10 * GIB + FREE_SPACE_HEADROOM
+        );
+        // The headroom follows the whole file, not what is left of it.
+        assert_eq!(required_free_bytes(50 * GIB, &[40 * GIB]), 10 * GIB + GIB);
+        assert_eq!(
+            required_free_bytes(10 * GIB, &[4 * GIB, GIB]),
+            5 * GIB + FREE_SPACE_HEADROOM
+        );
+        // Everything on disk already: nothing to check.
+        assert_eq!(required_free_bytes(10 * GIB, &[10 * GIB]), 0);
+        assert_eq!(required_free_bytes(10 * GIB, &[20 * GIB]), 0);
+        assert_eq!(required_free_bytes(0, &[]), 0);
+    }
+
+    #[test]
+    fn a_refusal_names_the_required_and_free_bytes() {
+        let error = check_reported_free_space(Some(3 * GIB), 10 * GIB).unwrap_err();
+        assert!(error.starts_with("Error: [disk_full] "), "got {error}");
+        assert!(
+            error.contains("10.0 GB needed, 3.0 GB available"),
+            "got {error}"
+        );
+        assert!(
+            error.contains(&format!(
+                "required {} bytes, free {} bytes",
+                10 * GIB,
+                3 * GIB
+            )),
+            "got {error}"
+        );
+        assert!(check_reported_free_space(Some(10 * GIB), 10 * GIB).is_ok());
+        assert!(check_reported_free_space(Some(0), 0).is_ok());
+    }
+
+    #[test]
+    fn the_space_a_partial_holds_is_credited_to_its_download() {
+        let dir = tempfile::tempdir().unwrap();
+        let save_path = dir.path().join("model.gguf");
+        // No partial: only what the resume keeps (a finished copy, or nothing).
+        assert_eq!(bytes_held_on_disk(&save_path, 0, 10_000), 0);
+        assert_eq!(bytes_held_on_disk(&save_path, 10_000, 10_000), 10_000);
+
+        // A single-stream partial holds what it has written.
+        let tmp = sidecar_path(&save_path, "tmp");
+        std::fs::write(&tmp, vec![1u8; 6_000]).unwrap();
+        assert_eq!(bytes_held_on_disk(&save_path, 6_000, 10_000), 6_000);
+        // Even one a resume cannot reuse: it is truncated before anything new
+        // is written, so its space comes back to this download.
+        assert_eq!(bytes_held_on_disk(&save_path, 0, 10_000), 6_000);
+        // Never more than the file itself.
+        assert_eq!(bytes_held_on_disk(&save_path, 6_000, 4_000), 4_000);
+        // Unknown size: no clamp.
+        assert_eq!(bytes_held_on_disk(&save_path, 0, 0), 6_000);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_sparse_full_size_partial_holds_only_its_written_bytes_on_unix() {
+        let dir = tempfile::tempdir().unwrap();
+        let save_path = dir.path().join("model.gguf");
+        let tmp = sidecar_path(&save_path, "tmp");
+        // A multi-connection partial: pre-sized, nothing written.
+        let file = std::fs::File::create(&tmp).unwrap();
+        file.set_len(64 * MIB).unwrap();
+        drop(file);
+        // What its segment map says is written is the floor; the sparse file
+        // adds next to nothing on top.
+        let held = bytes_held_on_disk(&save_path, 1_000, 64 * MIB);
+        assert!(held >= 1_000, "held {held}");
+        assert!(
+            held < 64 * MIB,
+            "a sparse partial was counted at full size: {held}"
+        );
+    }
+
+    // ----- The FAT rule -----
+
+    #[test]
+    fn fat_volumes_refuse_files_of_four_gib_and_more() {
+        let four_gib = 4 * GIB;
+        let error = fs_file_limit_error(Some("FAT32"), four_gib).expect("refused");
+        assert!(error.starts_with("Error: [disk_fs_limit] "), "got {error}");
+        assert!(error.contains("FAT32"), "got {error}");
+        assert!(error.contains("NTFS or exFAT"), "got {error}");
+        assert!(fs_file_limit_error(Some("FAT"), 20 * GIB).is_some());
+        assert!(fs_file_limit_error(Some("fat32"), 20 * GIB).is_some());
+        // The largest file FAT32 can hold still fits.
+        assert_eq!(FAT_MAX_FILE_BYTES, four_gib - 1);
+        assert_eq!(fs_file_limit_error(Some("FAT32"), four_gib - 1), None);
+    }
+
+    #[test]
+    fn other_file_systems_take_any_size() {
+        for fs_name in ["NTFS", "exFAT", "ReFS", "apfs", ""] {
+            assert_eq!(
+                fs_file_limit_error(Some(fs_name), 27 * GIB),
+                None,
+                "{fs_name}"
+            );
+        }
+        // Unknown file system: let the download try.
+        assert_eq!(fs_file_limit_error(None, 27 * GIB), None);
+        assert!(!is_fat_file_system("exFAT"));
+        assert!(is_fat_file_system("FAT16"));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn the_fat_preflight_is_a_no_op_off_windows() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(ensure_file_fits_file_system(&dir.path().join("model.gguf"), 27 * GIB).is_ok());
+    }
+
+    // ----- Tags -----
+
+    #[test]
+    fn every_tag_parses_back_to_its_fault() {
+        for fault in DiskFault::ALL {
+            assert_eq!(DiskFault::from_tag(fault.tag()), Some(fault));
+            let message = disk_fault_message(fault, "detail");
+            assert_eq!(disk_fault_in(&message), Some(fault), "{message}");
+        }
+        assert_eq!(
+            DiskFault::from_tag("disk_fs_limit"),
+            Some(DiskFault::FsLimit)
+        );
+    }
+
+    #[test]
+    fn tag_parsing_reads_the_first_known_disk_tag() {
+        assert_eq!(
+            disk_fault_in("Error: [disk_file_locked] os error 32 (failed to flush)"),
+            Some(DiskFault::FileLocked)
+        );
+        let error = std::io::Error::from_raw_os_error(2);
+        assert!(disk_fault_in(&disk_err_to_string(&error)).is_some());
+        // Untagged, unknown or unterminated: no guess.
+        assert_eq!(disk_fault_in("Error: connection refused"), None);
+        assert_eq!(disk_fault_in("Error: [disk_brand_new] detail"), None);
+        assert_eq!(disk_fault_in("Error: [disk_full"), None);
+        assert_eq!(disk_fault_in("[network] no route"), None);
+    }
+
+    // ----- The volume query -----
+
+    #[test]
+    fn a_destination_that_does_not_exist_yet_is_measured_through_its_ancestor() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("llamacpp/models/new-model/model.gguf");
+        assert_eq!(nearest_existing_dir(&target).as_deref(), Some(dir.path()));
+        let info = disk_space_info(&target).expect("measured");
+        assert!(info.total_bytes > 0);
+        assert!(info.free_bytes <= info.total_bytes);
+        // The free-space check reads the same number.
+        assert!(available_space_for(&target).is_some());
+    }
+
+    /// macOS counts purgeable space as available; the answer must never be
+    /// stricter than a plain `statvfs` there (the regression this guards).
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mac_free_space_is_at_least_what_statvfs_reports() {
+        use std::os::unix::ffi::OsStrExt;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let info = disk_space_info(dir.path()).expect("measured");
+        let c_path = std::ffi::CString::new(dir.path().as_os_str().as_bytes()).unwrap();
+        let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
+        assert_eq!(unsafe { libc::statvfs(c_path.as_ptr(), &mut stat) }, 0);
+        #[allow(clippy::unnecessary_cast)]
+        let statvfs_free = (stat.f_bavail as u64).saturating_mul(stat.f_frsize as u64);
+        // Free space moves between the two reads; allow a little slack.
+        assert!(info.free_bytes + 64 * 1024 * 1024 >= statvfs_free, "{} < {}", info.free_bytes, statvfs_free);
+    }
+
+    #[test]
+    fn disk_space_info_serializes_in_snake_case() {
+        let info = DiskSpaceInfo {
+            free_bytes: 5 * GIB,
+            total_bytes: 100 * GIB,
+            fs_name: Some("NTFS".to_string()),
+            volume_root: Some(r"D:\".to_string()),
+        };
+        assert_eq!(
+            serde_json::to_value(&info).unwrap(),
+            serde_json::json!({
+                "free_bytes": 5_368_709_120u64,
+                "total_bytes": 107_374_182_400u64,
+                "fs_name": "NTFS",
+                "volume_root": "D:\\",
+            })
+        );
+        let unnamed = DiskSpaceInfo {
+            fs_name: None,
+            volume_root: None,
+            ..info
+        };
+        let value = serde_json::to_value(&unnamed).unwrap();
+        assert_eq!(value["fs_name"], serde_json::Value::Null);
+        assert_eq!(value["volume_root"], serde_json::Value::Null);
+    }
 }

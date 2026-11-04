@@ -4,7 +4,7 @@
     "is_inconclusive": false,
     "snapshot": {
       "cuda_runtime_missing": false,
-      "device_init_error": "load_backend: failed to load backend from /x/libggml-cuda.so",
+      "device_init_error": "load_backend: failed to load /x/libggml-cuda.so: libcudart.so.12: cannot open shared object file: No such file or directory",
       "gpu_buffer_bytes": null,
       "gpu_layers_offloaded": null,
       "loaded_backends": [],
@@ -14,7 +14,7 @@
   },
   "input": {
     "lines": [
-      "load_backend: failed to load backend from /x/libggml-cuda.so"
+      "load_backend: failed to load /x/libggml-cuda.so: libcudart.so.12: cannot open shared object file: No such file or directory"
     ],
     "mark_cuda_runtime_missing": false
   },

@@ -4,8 +4,10 @@ use super::helpers::{
     validate_proxy_config,
 };
 use super::models::{DownloadItem, DownloadTask, ProxyConfig};
+use super::volume::{disk_space_info, DiskSpaceInfo};
 use crate::core::app::commands::get_jan_data_folder_path;
 use crate::core::state::AppState;
+use jan_utils::normalize_path;
 use std::collections::HashMap;
 use std::time::Duration;
 use tauri::{Runtime, State};
@@ -94,6 +96,25 @@ pub async fn download_files<R: Runtime>(
 #[tauri::command]
 pub async fn get_download_free_space<R: Runtime>(app: tauri::AppHandle<R>) -> FreeSpaceReport {
     free_space_report(&get_jan_data_folder_path(app))
+}
+
+/// Free and total bytes, file system and root of the volume that holds `path`
+/// — for the web download queue, which places downloads per drive. `path` is
+/// resolved against the data folder when relative (the way a download item's
+/// `save_path` is), and need not exist: its nearest existing directory is the
+/// one measured.
+///
+/// Off the async workers: the query can stall for seconds on an unreachable
+/// network share.
+#[tauri::command]
+pub async fn get_disk_space_info<R: Runtime>(
+    app: tauri::AppHandle<R>,
+    path: String,
+) -> Result<DiskSpaceInfo, String> {
+    let target = normalize_path(&get_jan_data_folder_path(app).join(path));
+    tokio::task::spawn_blocking(move || disk_space_info(&target))
+        .await
+        .map_err(err_to_string)?
 }
 
 #[tauri::command]

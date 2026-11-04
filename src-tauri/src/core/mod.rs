@@ -29,6 +29,7 @@ pub mod system;
 pub mod telemetry;
 pub mod threads;
 pub mod tray_status;
+pub mod webview_store;
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod updater;

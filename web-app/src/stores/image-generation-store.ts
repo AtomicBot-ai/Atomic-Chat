@@ -23,6 +23,7 @@ import {
 } from '@/lib/diffusion/generation-stop'
 import {
   buildLoadRequest,
+  installedDiffusionRequest,
   deleteArtifact as deleteArtifactFiles,
   listInstalledArtifacts,
   parseArtifactId,
@@ -968,7 +969,9 @@ export const useImageGenerationStore = create<ImageGenerationState>()((
       const { catalog, modelFiles, paths } = get()
       if (!catalog || !paths) return
       const parsed = parseArtifactId(artifactId)
-      const family = parsed ? findFamily(catalog, parsed.family) : undefined
+      const family =
+        installedDiffusionRequest(artifactId)?.family ??
+        (parsed ? findFamily(catalog, parsed.family) : undefined)
       const quant =
         family && parsed ? findQuant(family, parsed.quantId) : undefined
       if (!parsed || !family || !quant) {

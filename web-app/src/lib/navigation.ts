@@ -22,8 +22,6 @@ const SERVER_PATHS = [
   '/settings/local-api-server',
   '/settings/remote-lan',
   '/settings/https-proxy',
-  '/settings/claude-code',
-  '/settings/hermes-agent',
 ]
 
 const MODELS_PATHS = [

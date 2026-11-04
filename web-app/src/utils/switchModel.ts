@@ -16,6 +16,13 @@ import { knownLoadStage } from '@/lib/managed-engine/types'
 import { loadWatchdogMs } from '@/lib/managed-engine/chat'
 import { isManagedProvider, managedEngines } from '@/lib/managed-engines'
 import {
+  heldModels,
+  pendingModelStart,
+  shareModelStart,
+  waitForModelHolds,
+  type ModelRef,
+} from '@/lib/model-lifecycle'
+import {
   isKeylessRemoteProvider,
   isSubscriptionProvider,
   registerRemoteProvider,
@@ -33,13 +40,16 @@ import {
   modelLoadSource,
   oomSubtype,
   quantFromModelId,
+  rememberLoadId,
   sanitizeStderrTail,
   shouldCaptureModelLoadSentry,
   shouldEmitModelLoadFailure,
   shouldEmitModelLoadSuccess,
   sizeBucket,
+  telemetryId,
   type RuntimeDeviceSnapshot,
 } from '@/lib/telemetry'
+import { loadDiagProps, parseLoadDiag, stripLoadDiag } from '@/lib/load-diag'
 import { queuedCapture } from '@/lib/telemetry-queue'
 import { ExtensionManager } from '@/lib/extension'
 import { captureHandledError } from '@/lib/sentry'
@@ -141,7 +151,12 @@ function emitModelLoad(
     // every `model_load` event in the project.
     if (status === 'success' && !shouldEmitModelLoadSuccess(args.modelId, backend))
       return
+    // One id per emitted load. A success's id rides on the model's later
+    // `chat_request_sent` events as `last_load_id`, so a load joins to the
+    // turns it served — the first one above all.
+    const loadId = telemetryId()
     const props: Record<string, unknown> = {
+      load_id: loadId,
       // NOT `status`. PostHog types a property globally by its observed values,
       // and `api_server_request.status` (an HTTP code) already claimed that
       // name as numeric — so these strings silently read back as null. That is
@@ -196,13 +211,26 @@ function emitModelLoad(
       device_used: settingStr(settings, 'device'),
     }
     if (status === 'failed') {
-      const err = toErrorObject(args.error)
+      const rawErr = toErrorObject(args.error)
+      // The core's `atomic-core-diag {json}` last line: exit code, startup
+      // stage, the backend that actually ran, fallbacks. Reported as its own
+      // properties and removed from everything below, where its JSON would
+      // feed the text heuristics (`"signal"` reads as a crash, `"cuda"` as a
+      // CUDA memory domain) and fill the stderr tail.
+      const diag =
+        parseLoadDiag(rawErr.details) ?? parseLoadDiag(rawErr.message)
+      const err: ErrorObject = {
+        ...rawErr,
+        message: stripLoadDiag(rawErr.message) ?? rawErr.message,
+        details: stripLoadDiag(rawErr.details),
+      }
       const haystack = err.details ?? err.message
       const errorCode = err.code ?? null
       // ATO-133: a model stuck in a load crashloop emits the same failure over
       // and over; drop duplicates within the throttle window so event-weighted
       // metrics aren't dominated by a handful of stuck devices.
       if (!shouldEmitModelLoadFailure(args.modelId, errorCode)) return
+      Object.assign(props, loadDiagProps(diag))
       // The actual OOM flag, from the same predicate the Sentry severity
       // already uses. On macOS a Metal OOM arrives as
       // `LLAMA_CPP_PROCESS_ERROR` with the cause only in the stderr tail —
@@ -226,6 +254,7 @@ function emitModelLoad(
       props.stderr_tail = sanitizeStderrTail(haystack)
     }
     queuedCapture('model_load', props)
+    if (status === 'success') rememberLoadId(args.modelId, loadId)
   } catch (telemetryError) {
     console.debug('model_load telemetry failed:', telemetryError)
   }
@@ -662,6 +691,30 @@ async function isTargetModelAlreadyServing(params: {
   )
 }
 
+/** The start a local switch shares with chat requests (see `lib/model-lifecycle.ts`). */
+type LocalEngineStart = {
+  /** A request's own start of the same model, already under way when the switch was asked for. */
+  startUnderWay: Promise<void> | undefined
+  /** Ends the shared start: without an error once the engine serves the model. */
+  settle: (error?: unknown) => void
+}
+
+/**
+ * Wait until no chat request holds a model that `stops` says this switch is
+ * about to stop, or until the load is cancelled or superseded. Stopping it
+ * would end that request without a reply.
+ */
+async function waitForRequestsOnModelsToStop(
+  stops: (ref: ModelRef) => boolean,
+  isAbandoned: () => boolean
+): Promise<void> {
+  if (!heldModels().some(stops)) return
+  console.log(
+    '[switchToModel] Waiting for chat requests on the models it stops to finish'
+  )
+  await waitForModelHolds(stops, isAbandoned)
+}
+
 /**
  * Unified model switching function.
  *
@@ -689,6 +742,23 @@ export async function switchToModel(params: {
     pendingExplicitSwitch = explicitKey
     // Asking for the model again is what lifts a hand Stop.
     clearUserStop(params.providerName, params.modelId)
+  }
+
+  // A local target's start is shared from the moment it is asked for: a chat
+  // request for this model made meanwhile (a send while it is still loading)
+  // waits for this load instead of starting the model again beside it. It
+  // settles as soon as the engine serves the model; a request's own start
+  // already under way is waited for before this one loads.
+  let engineStart: LocalEngineStart | undefined
+  if (isLocalEngineProvider(params.providerName)) {
+    const startUnderWay = pendingModelStart(params.providerName, params.modelId)
+    let settle!: LocalEngineStart['settle']
+    const started = new Promise<void>((resolve, reject) => {
+      settle = (error?: unknown) =>
+        error === undefined ? resolve() : reject(error)
+    })
+    shareModelStart(params.providerName, params.modelId, started)
+    engineStart = { startUnderWay, settle }
   }
 
   const run = async (): Promise<void> => {
@@ -732,7 +802,7 @@ export async function switchToModel(params: {
     }
 
     try {
-      await doSwitchToModel(params, () => mySeq !== switchSeq)
+      await doSwitchToModel(params, () => mySeq !== switchSeq, engineStart)
     } catch (error) {
       // A failed load leaves nothing to chat with, so the composer goes back
       // to "Select Model" rather than showing the model that did not come
@@ -751,6 +821,12 @@ export async function switchToModel(params: {
   activeSwitchPromise = chained
   try {
     await chained
+    // Already serving, superseded, or a cloud hop: whoever joined finds out
+    // from the engine whether the model is there.
+    engineStart?.settle()
+  } catch (error) {
+    engineStart?.settle(error ?? new Error('Model switch failed'))
+    throw error
   } finally {
     // Only clear the tail if nobody chained after us; otherwise the later
     // switch owns the tail and must keep the queue intact.
@@ -832,7 +908,9 @@ async function doSwitchToModel(
     isAutoStart?: boolean
   },
   /** A switch requested after this one is waiting behind it. */
-  isSuperseded: () => boolean = () => false
+  isSuperseded: () => boolean = () => false,
+  /** The start this switch shares with chat requests; local targets only. */
+  engineStart?: LocalEngineStart
 ): Promise<void> {
   const { modelId, providerName, serviceHub, isAutoStart } = params
 
@@ -947,6 +1025,21 @@ async function doSwitchToModel(
     //    copy is left alone: `startModel` short-circuits on an already-loaded
     //    model, so a switch whose only job is to drop a stray copy in another
     //    provider never kills a server that may be streaming right now.
+    //    A chat request still waiting on, or reading from, a model about to
+    //    be stopped is let finish first: stopping it under the request ended
+    //    the turn without a reply. A Cancel or a newer switch ends the wait.
+    const stopsModel = (ref: ModelRef) =>
+      isLocalEngineProvider(ref.provider) &&
+      !(isLocal && ref.provider === providerName && ref.modelId === modelId)
+    if (heldModels().some(stopsModel)) {
+      setLoadingModelProgress({ kind: 'unloadingPrevious' })
+      await waitForRequestsOnModelsToStop(
+        stopsModel,
+        () => Boolean(load?.cancelRequested) || isSuperseded()
+      )
+      if (isSuperseded()) throw cancelledLoadError()
+      throwIfLoadCancelled()
+    }
     if (isLocal) {
       if (localEngineWasServing) {
         setLoadingModelProgress({ kind: 'unloadingPrevious' })
@@ -964,12 +1057,22 @@ async function doSwitchToModel(
       console.log('[switchToModel] All local models stopped')
     }
 
-    // 2. Stop the API server so we start it fresh with the new configuration.
-    try {
-      await window.core?.api?.stopServer()
-      console.log('[switchToModel] Server stopped')
-    } catch {
-      // Server may not have been running — that's fine
+    // 2. Stop the API server so we start it fresh with the new configuration —
+    //    unless a chat request is going through it now (a cloud model's
+    //    requests are proxied by it): restarting it would cut that request
+    //    off. Step 5's start then finds it running, which it accepts, and the
+    //    new configuration applies at the next restart.
+    if (heldModels().some((ref) => !isLocalEngineProvider(ref.provider))) {
+      console.log(
+        '[switchToModel] Server left running: a chat request is going through it'
+      )
+    } else {
+      try {
+        await window.core?.api?.stopServer()
+        console.log('[switchToModel] Server stopped')
+      } catch {
+        // Server may not have been running — that's fine
+      }
     }
     throwIfLoadCancelled()
 
@@ -987,6 +1090,14 @@ async function doSwitchToModel(
       // 4a. Local branch — load the model into its engine. An out-of-memory
       //     failure is retried down a ladder (smaller context, then CPU)
       //     rather than surfaced as a dead end; see `planOomRetry`.
+      //     A chat request that was already starting this model itself is
+      //     let finish first; the load below then finds the model up instead
+      //     of starting it a second time beside it. Its failure is its own:
+      //     this load still runs, with the OOM ladder the request lacks.
+      if (engineStart?.startUnderWay) {
+        await engineStart.startUnderWay.catch(() => undefined)
+        throwIfLoadCancelled()
+      }
       loadStartTs = Date.now()
       modelConfig = await loadLocalModelWithOomRetry({
         serviceHub,
@@ -1018,6 +1129,9 @@ async function doSwitchToModel(
       console.log('[switchToModel] Local model started:', modelId)
       await settleAfterLocalStart(serviceHub, providerName, modelId)
       throwIfLoadCancelled()
+      // The engine serves the model: a request waiting on this load may go
+      // now, without waiting for the Local API Server and the bookkeeping.
+      engineStart?.settle()
     } else {
       // 4b. Cloud branch — register the provider so the proxy can route
       //     requests for `modelId` to provider.base_url.
@@ -1048,7 +1162,7 @@ async function doSwitchToModel(
     //    from another in-flight switch) wins the race, and without this
     //    guard that benign race would surface as a spurious "Failed to load
     //    the model" toast on top of a model that is, in fact, running fine.
-    //    Mirrors the same handling in hermes-agent.tsx / claude-code.tsx.
+    //    Mirrors the same handling in hermes-agent.tsx.
     //
     //    Gating: the :1337 proxy is a user-facing surface, not a hard
     //    requirement for chatting with a *local* engine (llamacpp/mlx connect
@@ -1508,7 +1622,11 @@ export function splitModelLoadError(err: ErrorObject): {
   const newlineAt = raw.indexOf('\n')
   const head = (newlineAt === -1 ? raw : raw.slice(0, newlineAt)).trim()
   const tail = newlineAt === -1 ? '' : raw.slice(newlineAt + 1).trim()
-  const details = err.details?.trim() || tail || undefined
+  // The core's `atomic-core-diag {json}` line is for telemetry, not for people.
+  const details =
+    stripLoadDiag(err.details?.trim())?.trim() ||
+    stripLoadDiag(tail)?.trim() ||
+    undefined
 
   if (head.length <= MAX_SUMMARY_LENGTH) {
     return { summary: head, details: details && clampDetails(details) }

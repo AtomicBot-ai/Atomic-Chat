@@ -36,6 +36,8 @@ import { DefaultUploadsService } from './uploads/default'
 import type { UploadsService } from './uploads/types'
 import { DefaultDiffusionService } from './diffusion/default'
 import type { DiffusionService } from './diffusion/types'
+import { DefaultAudioService } from './audio/default'
+import type { AudioService } from './audio/types'
 import { DefaultDecisionService } from './decision/default'
 import type { DecisionService } from './decision/types'
 import { DefaultEmbeddingService } from './embedding/default'
@@ -95,6 +97,7 @@ export interface ServiceHub {
   uploads(): UploadsService
   voice(): VoiceService
   diffusion(): DiffusionService
+  audio(): AudioService
   decision(): DecisionService
   embedding(): EmbeddingService
   media(): MediaService
@@ -127,6 +130,7 @@ class PlatformServiceHub implements ServiceHub {
   private uploadsService: UploadsService = new DefaultUploadsService()
   private voiceService: VoiceService = new DefaultVoiceService()
   private diffusionService: DiffusionService = new DefaultDiffusionService()
+  private audioService: AudioService = new DefaultAudioService()
   private decisionService: DecisionService = new DefaultDecisionService()
   private embeddingService: EmbeddingService = new DefaultEmbeddingService()
   private mediaService: MediaService = new DefaultMediaService()
@@ -167,6 +171,7 @@ class PlatformServiceHub implements ServiceHub {
           deepLinkModule,
           voiceModule,
           diffusionModule,
+          audioModule,
           decisionModule,
           embeddingModule,
           modelSetupModule,
@@ -189,6 +194,7 @@ class PlatformServiceHub implements ServiceHub {
           import('./deeplink/tauri'),
           import('./voice/tauri'),
           import('./diffusion/tauri'),
+          import('./audio/tauri'),
           import('./decision/tauri'),
           import('./embedding/tauri'),
           import('./model-setup/tauri'),
@@ -212,6 +218,7 @@ class PlatformServiceHub implements ServiceHub {
         this.deepLinkService = new deepLinkModule.TauriDeepLinkService()
         this.voiceService = new voiceModule.TauriVoiceService()
         this.diffusionService = new diffusionModule.TauriDiffusionService()
+        this.audioService = new audioModule.TauriAudioService()
         this.decisionService = new decisionModule.TauriDecisionService()
         this.embeddingService = new embeddingModule.TauriEmbeddingService()
         this.mediaService = new mediaModule.TauriMediaService()
@@ -392,6 +399,11 @@ class PlatformServiceHub implements ServiceHub {
   diffusion(): DiffusionService {
     this.ensureInitialized()
     return this.diffusionService
+  }
+
+  audio(): AudioService {
+    this.ensureInitialized()
+    return this.audioService
   }
 
   decision(): DecisionService {

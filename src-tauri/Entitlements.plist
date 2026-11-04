@@ -14,5 +14,10 @@
          records it and Hardened Runtime is happier with it declared. -->
     <key>com.apple.security.device.audio-input</key>
     <true/>
+    <!-- Connect starts agents in Terminal through Apple Events (osascript);
+         Hardened Runtime refuses to send them without this, and macOS asks
+         with NSAppleEventsUsageDescription from Info.plist. -->
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
 </dict>
 </plist>

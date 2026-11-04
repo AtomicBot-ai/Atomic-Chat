@@ -7,15 +7,26 @@
  * import, the app's downloader, the GGUF check — and the chat afterwards runs
  * on the fixture backend like every other scenario.
  */
+import { proxySeed } from '../harness/backend-mirror.js'
 import { createHash } from 'node:crypto'
 import { readdir, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { existsSync } from 'node:fs'
-import { coreSessions, pageShows, send, waitForChat, skipOnboarding } from '../harness/chat.js'
-import { installFakeBackend, startHubFixture, type HubFixture } from '../harness/fixtures.js'
+import { coreSessions, pageShows, send, waitForChat } from '../harness/chat.js'
+import {
+  installFakeBackend,
+  startHubFixture,
+  type HubFixture,
+} from '../harness/fixtures.js'
 import { CAN_RUN_FAKE_BACKEND } from '../harness/platform.js'
-import { endSession, startSession, withArtifacts, type Session } from '../harness/session.js'
+import {
+  endSession,
+  restartApp,
+  startSession,
+  withArtifacts,
+  type Session,
+} from '../harness/session.js'
 import { openSection } from '../harness/navigation.js'
 
 const MODEL_NAME = 'e2e/hub-fixture-GGUF'
@@ -23,19 +34,62 @@ const QUANT_ID = 'e2e/hub-fixture-Q4_K_M'
 const TITLE = 'E2E Hub Fixture'
 const REPLY = 'ATOMIC-E2E-HUB 1f8a'
 
+async function startHubSession(
+  name: string,
+  hub: HubFixture,
+  options: Parameters<typeof startSession>[1] = {}
+) {
+  return startSession(name, {
+    ...options,
+    webviewSeed: {
+      ...proxySeed(hub.proxyUrl),
+      'setup-completed': 'true',
+      'atomic_turboquant_default_active_v1': 'false',
+      ...options.webviewSeed,
+    },
+    alsoAllowedBackends: [
+      'llamacpp:b10298-2.0.0/macos-arm64',
+      ...(options.alsoAllowedBackends ?? []),
+    ],
+    prepare: async (profile) => {
+      await installFakeBackend(profile, {
+        provider: 'llamacpp',
+        version: 'b10298-2.0.0',
+      })
+      await options.prepare?.(profile)
+    },
+  })
+}
+
+async function showDownloadPanel(browser: Session['app']['browser']) {
+  const expand = browser.$('button[aria-label="Show downloads"]')
+  if (await expand.isExisting()) await expand.click()
+  const panel = browser.$('[role="region"][aria-label="Downloads"]')
+  await panel.waitForDisplayed({ timeout: 30000 })
+  await panel.moveTo()
+}
+
 /** A second model, for the scenarios where the server refuses to hand it over. */
 const REFUSED_MODEL_NAME = 'e2e/refused-model'
 const REFUSED_QUANT_ID = 'e2e/refused-model-Q4_K_M'
 const REFUSED_TITLE = 'E2E Refused Model'
 
-describe.skipIf(!CAN_RUN_FAKE_BACKEND)('downloading a model from the Hub', () => {
+describe.skipIf(!CAN_RUN_FAKE_BACKEND)(
+  'downloading a model from the Hub',
+  () => {
   let session: Session
   let hub: HubFixture
 
   beforeAll(async () => {
-    hub = await startHubFixture({ modelName: MODEL_NAME, quantId: QUANT_ID, title: TITLE })
-    session = await startSession('hub-download', {
-      prepare: async (profile) => installFakeBackend(profile, { reply: REPLY }),
+      hub = await startHubFixture({
+        modelName: MODEL_NAME,
+        quantId: QUANT_ID,
+        title: TITLE,
+      })
+      session = await startHubSession('hub-download', hub, {
+        webviewSeed: proxySeed(hub.proxyUrl),
+        prepare: async (profile) =>
+          installFakeBackend(profile, { reply: REPLY }),
     })
   })
 
@@ -50,8 +104,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('downloading a model from the Hub', () =>
       const browser = session.app.browser
       const dataFolder = session.profile.dataFolder
 
-      // No model yet, so the app opens on onboarding; the Hub is the way in here.
-      await skipOnboarding(session)
+        // The returning profile has no model; the Hub is the way to get one.
       await waitForChat(session)
       await openSection(browser, 'models')
 
@@ -71,11 +124,17 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('downloading a model from the Hub', () =>
         while (watching) {
           const now = await browser
             .execute(() => {
-              const panel = document.querySelector('[role="region"][aria-label="Downloads"]')
+                const panel = document.querySelector(
+                  '[role="region"][aria-label="Downloads"]'
+                )
               if (!panel) return null
               return {
-                status: (panel as HTMLElement).innerText.replace(/\s+/g, ' ').trim(),
-                controls: Array.from(panel.querySelectorAll('button')).map((b) => b.getAttribute('aria-label') ?? ''),
+                  status: (panel as HTMLElement).innerText
+                    .replace(/\s+/g, ' ')
+                    .trim(),
+                  controls: Array.from(panel.querySelectorAll('button')).map(
+                    (b) => b.getAttribute('aria-label') ?? ''
+                  ),
               }
             })
             .catch(() => null)
@@ -84,27 +143,46 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('downloading a model from the Hub', () =>
         }
       })()
       await download.click()
+        await showDownloadPanel(browser)
       await pageShows(session, 'Download Complete', 120_000)
       watching = false
       await watcher
 
       // It was seen on its way — a share of the real total, not only the end —
       // and while it ran the user could pause or cancel it.
-      const inFlight = seen.filter((s) => /\b([1-9]\d?)% · \d+ \/ 32 MB/.test(s.status))
-      expect(inFlight.length, `the panel showed: ${JSON.stringify([...new Set(seen.map((s) => s.status))])}`).toBeGreaterThan(0)
+        const inFlight = seen.filter((s) =>
+          /\b([1-9]\d?)%/.test(s.status) && /\d+ \/ 32 MB/.test(s.status)
+        )
+        expect(
+          inFlight.length,
+          `the panel showed: ${JSON.stringify([...new Set(seen.map((s) => s.status))])}`
+        ).toBeGreaterThan(0)
       expect(inFlight[0]!.status).toContain(QUANT_ID.split('/')[1])
-      expect(inFlight[0]!.controls).toEqual(expect.arrayContaining(['Pause download', 'Cancel download']))
+        expect(inFlight[0]!.controls).toEqual(
+          expect.arrayContaining(['Pause download', 'Cancel download'])
+        )
 
       // The whole file arrived under the quant's id, and the importer accepted
       // it as a GGUF and described it for the app and the core.
-      const modelDir = join(dataFolder, 'llamacpp', 'models', ...QUANT_ID.split('/'))
-      expect((await stat(join(modelDir, 'model.gguf'))).size).toBe(hub.modelBytes)
+        const modelDir = join(
+          dataFolder,
+          'llamacpp',
+          'models',
+          ...QUANT_ID.split('/')
+        )
+        expect((await stat(join(modelDir, 'model.gguf'))).size).toBe(
+          hub.modelBytes
+        )
       const yml = await readFile(join(modelDir, 'model.yml'), 'utf8')
-      expect(yml).toContain(`model_path: llamacpp/models/${QUANT_ID}/model.gguf`)
+        expect(yml).toContain(
+          `model_path: llamacpp/models/${QUANT_ID}/model.gguf`
+        )
       expect(yml).toContain(`size_bytes: ${hub.modelBytes}`)
 
       // The file was asked for from the fixture, without anybody's token.
-      const fileRequests = hub.requests().filter((r) => r.path === '/model.gguf' && r.method === 'GET')
+        const fileRequests = hub
+          .requests()
+          .filter((r) => r.path === '/model.gguf' && r.method === 'GET')
       expect(fileRequests.length).toBeGreaterThan(0)
       expect(fileRequests.every((r) => r.authorization === '')).toBe(true)
 
@@ -113,18 +191,27 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('downloading a model from the Hub', () =>
       await waitForChat(session)
       await send(session, 'hello, downloaded model')
       await pageShows(session, REPLY, 90_000)
-      expect((await coreSessions(dataFolder)).map((s) => s.model_id)).toEqual([QUANT_ID])
-    })
+        expect((await coreSessions(dataFolder)).map((s) => s.model_id)).toEqual(
+          [QUANT_ID]
+        )
   })
 })
+  }
+)
 
 describe.skipIf(!CAN_RUN_FAKE_BACKEND)('cancelling a Hub download', () => {
   let session: Session
   let hub: HubFixture
 
   beforeAll(async () => {
-    hub = await startHubFixture({ modelName: MODEL_NAME, quantId: QUANT_ID, title: TITLE })
-    session = await startSession('hub-download-cancel')
+    hub = await startHubFixture({
+      modelName: MODEL_NAME,
+      quantId: QUANT_ID,
+      title: TITLE,
+    })
+    session = await startHubSession('hub-download-cancel', hub, {
+      webviewSeed: proxySeed(hub.proxyUrl),
+    })
   })
 
   afterAll(async () => {
@@ -136,13 +223,22 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('cancelling a Hub download', () => {
   it('stops the transfer, leaves no model behind, and lets the same model be downloaded again', async () => {
     await withArtifacts(session, async () => {
       const browser = session.app.browser
-      const modelDir = join(session.profile.dataFolder, 'llamacpp', 'models', ...QUANT_ID.split('/'))
+      const modelDir = join(
+        session.profile.dataFolder,
+        'llamacpp',
+        'models',
+        ...QUANT_ID.split('/')
+      )
       const panelStatus = () =>
         browser.execute(
-          () => (document.querySelector('[role="region"][aria-label="Downloads"]') as HTMLElement | null)?.innerText ?? ''
+          () =>
+            (
+              document.querySelector(
+                '[role="region"][aria-label="Downloads"]'
+              ) as HTMLElement | null
+            )?.innerText ?? ''
         )
 
-      await skipOnboarding(session)
       await waitForChat(session)
       await openSection(browser, 'models')
       const card = browser.$(`//*[normalize-space(text())="${TITLE}"]`)
@@ -151,25 +247,42 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('cancelling a Hub download', () => {
       const download = browser.$('//button[normalize-space(.)="Download"]')
       await download.waitForClickable({ timeout: 30_000 })
       await download.click()
+      await showDownloadPanel(browser)
 
       // Part of it has arrived; then the user changes their mind.
-      await expect.poll(panelStatus, { timeout: 60_000, interval: 100 }).toMatch(/\b[1-9]\d?% · /)
-      await browser.$('[role="region"][aria-label="Downloads"] button[aria-label="Cancel download"]').click()
+      await expect
+        .poll(panelStatus, { timeout: 60_000, interval: 100 })
+        .toMatch(/\b[1-9]\d?%/)
+      await browser
+        .$(
+          '[role="region"][aria-label="Downloads"] button[aria-label="Cancel download"]'
+        )
+        .click()
 
       // The panel goes away, the Hub offers the model again, and no model was
       // registered: nothing the app would list, nothing a load could pick up.
       await expect.poll(panelStatus, { timeout: 30_000 }).toBe('')
-      await download.waitForDisplayed({ timeout: 30_000 })
+      const downloadAgain = browser.$('//button[normalize-space(.)="Download"]')
+      await downloadAgain.waitForDisplayed({ timeout: 30_000 })
       await expect(stat(join(modelDir, 'model.yml'))).rejects.toThrow()
-      expect(await pageShows(session, 'Download Complete', 3_000).then(() => true, () => false)).toBe(false)
+      expect(
+        await pageShows(session, 'Download Complete', 3_000).then(
+          () => true,
+          () => false
+        )
+      ).toBe(false)
 
       // Cancelling left nothing in the way of doing it properly.
-      await download.click()
+      await downloadAgain.click()
       await pageShows(session, 'Download Complete', 120_000)
-      expect((await stat(join(modelDir, 'model.gguf'))).size).toBe(hub.modelBytes)
+      expect((await stat(join(modelDir, 'model.gguf'))).size).toBe(
+        hub.modelBytes
+      )
       // The model's description is written a moment after the toast.
       await expect
-        .poll(() => readFile(join(modelDir, 'model.yml'), 'utf8').catch(() => ''))
+        .poll(() =>
+          readFile(join(modelDir, 'model.yml'), 'utf8').catch(() => '')
+        )
         .toContain(`size_bytes: ${hub.modelBytes}`)
     })
   })
@@ -180,8 +293,24 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('pausing a Hub download', () => {
   let hub: HubFixture
 
   beforeAll(async () => {
-    hub = await startHubFixture({ modelName: MODEL_NAME, quantId: QUANT_ID, title: TITLE })
-    session = await startSession('hub-download-pause')
+    hub = await startHubFixture({
+      modelName: MODEL_NAME,
+      quantId: QUANT_ID,
+      title: TITLE,
+    })
+    session = await startHubSession('hub-download-pause', hub, {
+      webviewSeed: {
+        ...proxySeed(hub.proxyUrl),
+        'setup-completed': 'true',
+        'atomic_turboquant_default_active_v1': 'false',
+      },
+      prepare: (profile) =>
+        installFakeBackend(profile, {
+          provider: 'llamacpp',
+          version: 'b10298-2.0.0',
+        }),
+      alsoAllowedBackends: ['llamacpp:b10298-2.0.0/macos-arm64'],
+    })
   })
 
   afterAll(async () => {
@@ -192,21 +321,37 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('pausing a Hub download', () => {
 
   it('holds the transfer where it is, and picks it up from there instead of starting over', async () => {
     await withArtifacts(session, async () => {
-      const browser = session.app.browser
-      const modelDir = join(session.profile.dataFolder, 'llamacpp', 'models', ...QUANT_ID.split('/'))
+      let browser = session.app.browser
+      const modelDir = join(
+        session.profile.dataFolder,
+        'llamacpp',
+        'models',
+        ...QUANT_ID.split('/')
+      )
       const panel = '[role="region"][aria-label="Downloads"]'
       const panelStatus = () =>
         browser.execute(
-          () => (document.querySelector('[role="region"][aria-label="Downloads"]') as HTMLElement | null)?.innerText ?? ''
+          () =>
+            (
+              document.querySelector(
+                '[role="region"][aria-label="Downloads"]'
+              ) as HTMLElement | null
+            )?.innerText ?? ''
         )
       /** Bytes of the model that are on disk, whatever the partial file is called. */
       const bytesOnDisk = async () => {
         const names = await readdir(modelDir).catch(() => [] as string[])
-        const sizes = await Promise.all(names.map((name) => stat(join(modelDir, name)).then((s) => s.size, () => 0)))
+        const sizes = await Promise.all(
+          names.map((name) =>
+            stat(join(modelDir, name)).then(
+              (s) => s.size,
+              () => 0
+            )
+          )
+        )
         return sizes.reduce((sum, size) => sum + size, 0)
       }
 
-      await skipOnboarding(session)
       await waitForChat(session)
       await openSection(browser, 'models')
       const card = browser.$(`//*[normalize-space(text())="${TITLE}"]`)
@@ -216,12 +361,17 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('pausing a Hub download', () => {
       await download.waitForClickable({ timeout: 30_000 })
       await download.click()
 
-      await expect.poll(panelStatus, { timeout: 60_000, interval: 100 }).toMatch(/\b[1-9]\d?% · /)
+      await showDownloadPanel(browser)
+      await expect
+        .poll(bytesOnDisk, { timeout: 30000, interval: 100 })
+        .toBeGreaterThan(0)
       await browser.$(`${panel} button[aria-label="Pause download"]`).click()
 
       // The panel says so and offers to go on; what has arrived stays, and no
       // more arrives while the user is away.
-      await browser.$(`${panel} button[aria-label="Resume download"]`).waitForDisplayed({ timeout: 30_000 })
+      await browser
+        .$(`${panel} button[aria-label="Resume download"]`)
+        .waitForDisplayed({ timeout: 30_000 })
       expect(await panelStatus()).toContain('Paused')
       const held = await bytesOnDisk()
       expect(held).toBeGreaterThan(0)
@@ -230,31 +380,76 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('pausing a Hub download', () => {
       expect(await bytesOnDisk()).toBe(held)
       await expect(stat(join(modelDir, 'model.yml'))).rejects.toThrow()
 
+      hub.advanceMain()
+      // Replace the whole cached catalog with the newly published snapshot, as a refresh would.
+      await browser.execute(async () => {
+        const catalog = await (
+          await fetch('http://127.0.0.1:47391/unified-model-catalog.json')
+        ).json()
+        localStorage.setItem(
+          'atomic_unified_model_catalog_v1',
+          JSON.stringify({ catalog, at: Date.now() })
+        )
+      })
+      await restartApp(session)
+      browser = session.app.browser
+      await waitForChat(session)
+      const beforeResume = hub.requests().length
+      await showDownloadPanel(browser)
+      await browser
+        .$(`${panel} button[aria-label="Resume download"]`)
+        .waitForDisplayed({ timeout: 30000 })
       await browser.$(`${panel} button[aria-label="Resume download"]`).click()
       await pageShows(session, 'Download Complete', 120_000)
 
+      const resumedRequests = hub.requests().slice(beforeResume)
+      expect(
+        resumedRequests.some((r) =>
+          r.sourcePath?.includes('/resolve/' + 'b'.repeat(40))
+        )
+      ).toBe(false)
+      expect(
+        resumedRequests
+          .filter((r) => r.path === '/model.gguf')
+          .every((r) => r.sourcePath?.includes('/resolve/' + hub.revision))
+      ).toBe(true)
       // It went on from the bytes it had — the server was asked for the rest,
       // not for the file again — and the pieces make the file the fixture serves.
       const ranged = hub
         .requests()
         .filter((r) => r.path === '/model.gguf' && r.method === 'GET')
         .map((r) => Number(/^bytes=(\d+)-/.exec(r.range)?.[1] ?? 0))
-      expect(ranged.some((from) => from > 0), `GET /model.gguf started at: ${JSON.stringify(ranged)}`).toBe(true)
+      expect(
+        ranged.some((from) => from > 0),
+        `GET /model.gguf started at: ${JSON.stringify(ranged)}`
+      ).toBe(true)
       const file = await readFile(join(modelDir, 'model.gguf'))
       expect(file.length).toBe(hub.modelBytes)
-      expect(createHash('sha256').update(file).digest('hex')).toBe(hub.modelSha256)
-      expect(await readFile(join(modelDir, 'model.yml'), 'utf8')).toContain(`size_bytes: ${hub.modelBytes}`)
+      expect(createHash('sha256').update(file).digest('hex')).toBe(
+        hub.modelSha256
+      )
+      expect(await readFile(join(modelDir, 'model.yml'), 'utf8')).toContain(
+        `size_bytes: ${hub.modelBytes}`
+      )
     })
   })
 })
 
-describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a Hub download the server refuses', () => {
+describe.skipIf(!CAN_RUN_FAKE_BACKEND)(
+  'a Hub download the server refuses',
+  () => {
   let session: Session
   let hub: HubFixture
 
   /** The model's directory only exists once the importer has accepted a complete file. */
   const modelYml = (): string =>
-    join(session.profile.dataFolder, 'llamacpp', 'models', ...REFUSED_QUANT_ID.split('/'), 'model.yml')
+      join(
+        session.profile.dataFolder,
+        'llamacpp',
+        'models',
+        ...REFUSED_QUANT_ID.split('/'),
+        'model.yml'
+      )
 
   /** Open the fixture's model row and ask for it. Leaves the row open for the next attempt. */
   async function askForTheModel(): Promise<void> {
@@ -276,11 +471,16 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a Hub download the server refuses', () =
 
   beforeAll(async () => {
     // Small on purpose: the last scenario drops the connection every half megabyte.
-    hub = await startHubFixture({ modelName: REFUSED_MODEL_NAME, quantId: REFUSED_QUANT_ID, title: REFUSED_TITLE, modelBytes: 4 * 1024 * 1024 })
-    session = await startSession('download-failures', {
+      hub = await startHubFixture({
+        modelName: REFUSED_MODEL_NAME,
+        quantId: REFUSED_QUANT_ID,
+        title: REFUSED_TITLE,
+        modelBytes: 4 * 1024 * 1024,
+      })
+      session = await startHubSession('download-failures', hub, {
+        webviewSeed: proxySeed(hub.proxyUrl),
       prepare: async (profile) => installFakeBackend(profile),
     })
-    await skipOnboarding(session)
     await waitForChat(session)
   })
 
@@ -321,7 +521,9 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a Hub download the server refuses', () =
       // so a connection this bad still ends in a whole file — and the bytes are checked, because
       // resuming at the wrong offset would leave a file of the right size and the wrong contents.
       hub.abortAfter(512 * 1024)
-      const before = hub.requests().filter((r) => r.path === '/model.gguf' && r.method === 'GET').length
+        const before = hub
+          .requests()
+          .filter((r) => r.path === '/model.gguf' && r.method === 'GET').length
       await askForTheModel()
 
       await pageShows(session, 'Download Complete', 240_000)
@@ -329,7 +531,10 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a Hub download the server refuses', () =
         .requests()
         .filter((r) => r.path === '/model.gguf' && r.method === 'GET')
         .slice(before)
-      expect(attempts.length, 'the transfer took several attempts').toBeGreaterThan(2)
+        expect(
+          attempts.length,
+          'the transfer took several attempts'
+        ).toBeGreaterThan(2)
       expect(
         attempts.slice(1).some((r) => /^bytes=[1-9]/.test(r.range)),
         'it resumed where it stopped instead of starting over'
@@ -338,20 +543,32 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a Hub download the server refuses', () =
       const yml = modelYml()
       expect(existsSync(yml)).toBe(true)
       const model = await readFile(join(yml, '..', 'model.gguf'))
-      expect(createHash('sha256').update(model).digest('hex')).toBe(hub.modelSha256)
-    })
+        expect(createHash('sha256').update(model).digest('hex')).toBe(
+          hub.modelSha256
+        )
   })
 })
+  }
+)
 
-describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a Hub download that has to retry', () => {
+describe.skipIf(!CAN_RUN_FAKE_BACKEND)(
+  'a Hub download that has to retry',
+  () => {
   let session: Session
   let hub: HubFixture
 
   beforeAll(async () => {
     // The first two answers are a 503: the app's downloader backs off and tries again.
-    hub = await startHubFixture({ modelName: MODEL_NAME, quantId: QUANT_ID, title: TITLE, failFirst: 2 })
-    session = await startSession('hub-download-retry', {
-      prepare: async (profile) => installFakeBackend(profile, { reply: REPLY }),
+      hub = await startHubFixture({
+        modelName: MODEL_NAME,
+        quantId: QUANT_ID,
+        title: TITLE,
+        failFirst: 2,
+      })
+      session = await startHubSession('hub-download-retry', hub, {
+        webviewSeed: proxySeed(hub.proxyUrl),
+        prepare: async (profile) =>
+          installFakeBackend(profile, { reply: REPLY }),
     })
   })
 
@@ -365,7 +582,6 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a Hub download that has to retry', () =>
     await withArtifacts(session, async () => {
       const browser = session.app.browser
       const dataFolder = session.profile.dataFolder
-      await skipOnboarding(session)
       await waitForChat(session)
       await openSection(browser, 'models')
       const card = browser.$(`//*[normalize-space(text())="${TITLE}"]`)
@@ -380,8 +596,12 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a Hub download that has to retry', () =>
         while (watching) {
           const now = await browser
             .execute(() => {
-              const panel = document.querySelector('[role="region"][aria-label="Downloads"]')
-              return panel ? (panel as HTMLElement).innerText.replace(/\s+/g, ' ').trim() : null
+                const panel = document.querySelector(
+                  '[role="region"][aria-label="Downloads"]'
+                )
+                return panel
+                  ? (panel as HTMLElement).innerText.replace(/\s+/g, ' ').trim()
+                  : null
             })
             .catch(() => null)
           if (now) statuses.push(now)
@@ -389,18 +609,34 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('a Hub download that has to retry', () =>
         }
       })()
       await download.click()
+        await showDownloadPanel(browser)
       await pageShows(session, 'Download Complete', 180_000)
       watching = false
       await watcher
 
       // The retry was said, as its own line, not as progress going backwards.
-      const retrying = statuses.filter((status) => /Connection failed, retrying \(\d+\/\d+\)/.test(status))
-      expect(retrying.length, `the panel showed: ${JSON.stringify([...new Set(statuses)])}`).toBeGreaterThan(0)
+        const retrying = statuses.filter((status) =>
+          /Connection failed, retrying \(\d+\/\d+\)/.test(status)
+        )
+        expect(
+          retrying.length,
+          `the panel showed: ${JSON.stringify([...new Set(statuses)])}`
+        ).toBeGreaterThan(0)
       // And the file arrived whole, from the third answer on.
-      const modelDir = join(dataFolder, 'llamacpp', 'models', ...QUANT_ID.split('/'))
-      expect((await stat(join(modelDir, 'model.gguf'))).size).toBe(hub.modelBytes)
-      const fileRequests = hub.requests().filter((r) => r.path === '/model.gguf' && r.method === 'GET')
+        const modelDir = join(
+          dataFolder,
+          'llamacpp',
+          'models',
+          ...QUANT_ID.split('/')
+        )
+        expect((await stat(join(modelDir, 'model.gguf'))).size).toBe(
+          hub.modelBytes
+        )
+        const fileRequests = hub
+          .requests()
+          .filter((r) => r.path === '/model.gguf' && r.method === 'GET')
       expect(fileRequests.length).toBeGreaterThanOrEqual(3)
     })
   }, 300_000)
-})
+  }
+)

@@ -14,6 +14,8 @@
   <string>Atomic Chat runs the commands and scripts you approve in a chat; this lets them work with files in your Documents folder.</string>
   <key>NSDownloadsFolderUsageDescription</key>
   <string>Atomic Chat runs the commands and scripts you approve in a chat; this lets them work with files in your Downloads folder.</string>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>Atomic Chat opens Terminal to start the coding agents you connect to your local models, and brings that window back when you connect again.</string>
   <key>CFBundleURLTypes</key>
   <array>
     <dict>

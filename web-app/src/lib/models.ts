@@ -350,11 +350,16 @@ export function getMlxTotalFileSize(
 //* a recommended model from one org silently resolves to another org's model.
 export function findCatalogModelForRecommendedRepo(
   sources: readonly CatalogModel[],
-  recommendedRepoId: string
+  recommendedRepoId: string,
+  revision?: string
 ): CatalogModel | undefined {
   if (!recommendedRepoId) return undefined
   const target = recommendedRepoId.toLowerCase()
-  return sources.find((s) => s.model_name.toLowerCase() === target)
+  return sources.find(
+    (s) =>
+      s.model_name.toLowerCase() === target &&
+      (!revision || s.revision === revision)
+  )
 }
 
 /**

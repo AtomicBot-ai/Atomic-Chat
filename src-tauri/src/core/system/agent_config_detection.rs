@@ -14,16 +14,20 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use super::codex_config::{codex_home, profile_is_ours};
-use super::commands::{
-    agent_home_dir, detect_shell_env_file, dsh_home_dir, entry_is_ours,
-    openclaude_global_config_path, openclaw_config_path, resolve_atomic_agent_state_dir,
-    resolve_hermes_dir, split_custom_providers, zcode_config_dir, ATOMIC_AGENT_PROVIDER_ID,
-    DSH_ROUTE_ID, DSH_SECTION, OPENCLAUDE_ATOMIC_PROFILE_ID, OPENCLAW_PROVIDER_ID,
-    ZCODE_PROVIDER_ID, ZED_PROVIDER_ID,
+use super::claude_config::{
+    resolve_claude_settings_path, resolve_openclaude_paths, startup_profile_is_ours, OurServer,
+    OPENCLAUDE_PROFILE_ID,
 };
+use super::codex_config::{profile_is_ours, resolve_codex_home};
+use super::commands::{
+    agent_home_dir, detect_shell_env_file, dsh_home_dir, entry_is_ours, openclaw_config_path,
+    resolve_atomic_agent_state_dir, resolve_hermes_dir, split_custom_providers, zcode_config_dir,
+    ATOMIC_AGENT_PROVIDER_ID, DSH_ROUTE_ID, DSH_SECTION, OPENCLAW_PROVIDER_ID, ZCODE_PROVIDER_ID,
+    ZED_PROVIDER_ID,
+};
+use super::opencode_family::{opencode_style_configured, pi_configured, FamilyPaths};
 
-/// Shell-rc block markers written by `write_marked_env_to_shell` (the `MARKER`
+/// Shell-rc block markers older releases wrote (the `MARKER`
 /// constant inside each `configure_*`), plus the legacy Claude Code block
 /// `write_env_to_shell` writes. Keep in sync with `commands.rs`.
 const COPILOT_SHELL_MARKER: &str = "# Atomic Chat - Copilot CLI Config";
@@ -38,8 +42,6 @@ const DROID_DISPLAY_NAME: &str = "Atomic Chat";
 /// Provider key `configure_opencode` / `configure_mimo` / `configure_kilo` /
 /// `configure_pi` write under `provider` (`providers` for Pi).
 const ATOMIC_PROVIDER_KEY: &str = "atomic";
-/// `provider` of the OpenClaude profile (and `profile` of its startup file).
-const OPENCLAUDE_PROVIDER: &str = "atomic-chat";
 /// Placeholder `muse_env_vars` stores in `META_API_KEY` when the local server
 /// has no key.
 const MUSE_KEY_PLACEHOLDER: &str = "atomic";
@@ -52,12 +54,23 @@ pub(crate) struct AgentConfigPaths {
     pub shell_env_file: Option<PathBuf>,
     pub hermes_dir: Option<PathBuf>,
     pub zcode_dir: PathBuf,
+    /// Zed's config directory (`%APPDATA%\Zed` on Windows).
+    pub zed_dir: Option<PathBuf>,
     pub atomic_agent_dir: Option<PathBuf>,
     pub dsh_home: Option<PathBuf>,
     pub openclaw_config: PathBuf,
     pub openclaude_config: PathBuf,
+    pub openclaude_profile: PathBuf,
+    /// `settings.json` in `$CLAUDE_CONFIG_DIR`, else `~/.claude`.
+    pub claude_settings: PathBuf,
+    /// The Local API Server's address, which Claude Code's endpoint must match.
+    pub server: OurServer,
     /// `$CODEX_HOME`, else `~/.codex`.
     pub codex_home: PathBuf,
+    /// Kilo Code, OpenCode, MiMo Code and pi.
+    pub family: FamilyPaths,
+    /// Copilot's `providers.json`.
+    pub copilot_providers: PathBuf,
 }
 
 impl AgentConfigPaths {
@@ -69,11 +82,17 @@ impl AgentConfigPaths {
             shell_env_file: shell_env_file.map(Path::to_path_buf),
             hermes_dir: Some(home.join(".hermes")),
             zcode_dir: zcode_config_dir(home, None),
+            zed_dir: Some(home.join(".config").join("zed")),
             atomic_agent_dir: Some(home.join(".atomic-agent")),
             dsh_home: Some(home.join(".dsh")),
             openclaw_config: home.join(".openclaw").join("openclaw.json"),
             openclaude_config: home.join(".openclaude.json"),
+            openclaude_profile: home.join(".openclaude").join(".openclaude-profile.json"),
+            claude_settings: home.join(".claude").join("settings.json"),
+            server: OurServer::new("127.0.0.1", 1337),
             codex_home: home.join(".codex"),
+            family: FamilyPaths::resolve_with(home, &|_| None),
+            copilot_providers: home.join(".copilot").join("providers.json"),
         }
     }
 
@@ -88,28 +107,38 @@ impl AgentConfigPaths {
             Some(PathBuf::from(file))
         };
         let zcode_env = std::env::var("ZCODE_DATA_BASE_DIR").ok();
+        let openclaude = resolve_openclaude_paths().ok()?;
         Some(Self {
             shell_env_file,
             hermes_dir: resolve_hermes_dir().ok(),
             zcode_dir: zcode_config_dir(&home, zcode_env.as_deref()),
+            zed_dir: super::commands::zed_config_dir().ok(),
             atomic_agent_dir: resolve_atomic_agent_state_dir().ok(),
             dsh_home: dsh_home_dir().ok(),
             openclaw_config: openclaw_config_path(&home_str),
-            openclaude_config: openclaude_global_config_path(&home_str),
-            codex_home: codex_home(&home, std::env::var("CODEX_HOME").ok().as_deref()),
+            openclaude_config: openclaude.config,
+            openclaude_profile: openclaude.profile,
+            claude_settings: resolve_claude_settings_path().ok()?,
+            server: OurServer::from_app_state(),
+            codex_home: resolve_codex_home().unwrap_or_else(|_| home.join(".codex")),
+            family: FamilyPaths::resolve_with(&home, &|name| std::env::var(name).ok()),
+            copilot_providers: super::copilot_config::resolve_providers_path()
+                .unwrap_or_else(|_| home.join(".copilot").join("providers.json")),
             home,
         })
     }
 }
 
 /// Ids of the agents whose config already points at Atomic Chat, in the
-/// Launch page's catalog order.
+/// Launch page's catalog order. An agent configured through an environment
+/// URL counts only when that URL is this server's: a local host on `port`.
 ///
 /// `user_env` reads a persistent User-scope env var (Windows `HKCU\Environment`,
 /// where `setx` writes); off Windows it returns `None`.
 pub(crate) fn detect_configured_agents_in(
     paths: &AgentConfigPaths,
     user_env: &dyn Fn(&str) -> Option<String>,
+    port: u16,
 ) -> Vec<String> {
     let home = paths.home.as_path();
     let rc = paths
@@ -118,49 +147,46 @@ pub(crate) fn detect_configured_agents_in(
         .and_then(read_text)
         .unwrap_or_default();
     let block = |marker: &str| shell_block_vars(&rc, marker);
-    let user_env_is_local = |name: &str| user_env(name).is_some_and(|v| is_local_url(&v));
+    let user_env_is_local = |name: &str| user_env(name).is_some_and(|v| is_local_url(&v, port));
+    let var_is_local = |vars: &HashMap<String, String>, name: &str| var_is_local(vars, name, port);
+    // Claude Code is matched on the exact address the app serves (host and port, or loopback
+    // with the port): its base URL is the one setting a user's own gateway also uses.
+    let is_our_server = |url: &str| paths.server.is_url(url);
 
     let checks: [(&str, bool); 19] = [
-        (
-            "kilo",
-            json_file(&home.join(".config").join("kilo").join("kilo.jsonc"))
-                .is_some_and(|v| has_object(&v, &["provider", ATOMIC_PROVIDER_KEY])),
-        ),
+        ("kilo", opencode_style_configured(&paths.family.kilo)),
         (
             "claude-code",
-            claude_code_settings_local(home)
-                || block(LEGACY_CLAUDE_CODE_SHELL_MARKER)
-                    .is_some_and(|vars| var_is_local(&vars, "ANTHROPIC_BASE_URL"))
-                || user_env_is_local("ANTHROPIC_BASE_URL"),
+            claude_code_settings_ours(paths)
+                || block(LEGACY_CLAUDE_CODE_SHELL_MARKER).is_some_and(|vars| {
+                    vars.get("ANTHROPIC_BASE_URL")
+                        .is_some_and(|url| is_our_server(url))
+                })
+                || user_env("ANTHROPIC_BASE_URL").is_some_and(|url| is_our_server(&url)),
         ),
-        (
-            "pi",
-            json_file(&home.join(".pi").join("agent").join("models.json"))
-                .is_some_and(|v| has_object(&v, &["providers", ATOMIC_PROVIDER_KEY])),
-        ),
+        ("pi", pi_configured(&paths.family.pi_dir)),
         ("codex", codex_configured(&paths.codex_home)),
         (
             "opencode",
-            json_file(&home.join(".config").join("opencode").join("opencode.json"))
-                .is_some_and(|v| has_object(&v, &["provider", ATOMIC_PROVIDER_KEY])),
+            opencode_style_configured(&paths.family.opencode),
         ),
         ("openclaude", openclaude_configured(paths)),
         ("dsh", paths.dsh_home.as_deref().is_some_and(dsh_configured)),
         (
             "zed",
-            json_file(&home.join(".config").join("zed").join("settings.json")).is_some_and(|v| {
-                has_object(
-                    &v,
-                    &["language_models", "openai_compatible", ZED_PROVIDER_ID],
-                )
-            }),
+            paths
+                .zed_dir
+                .as_deref()
+                .and_then(|dir| json_file(&dir.join("settings.json")))
+                .is_some_and(|v| {
+                    has_object(
+                        &v,
+                        &["language_models", "openai_compatible", ZED_PROVIDER_ID],
+                    )
+                }),
         ),
         ("zcode", zcode_configured(&paths.zcode_dir)),
-        (
-            "mimo",
-            json_file(&home.join(".config").join("mimocode").join("mimocode.json"))
-                .is_some_and(|v| has_object(&v, &["provider", ATOMIC_PROVIDER_KEY])),
-        ),
+        ("mimo", opencode_style_configured(&paths.family.mimo)),
         (
             "droid",
             json_file(&home.join(".factory").join("settings.json")).is_some_and(|v| {
@@ -171,8 +197,14 @@ pub(crate) fn detect_configured_agents_in(
         ),
         (
             "copilot",
-            block(COPILOT_SHELL_MARKER)
-                .is_some_and(|vars| var_is_local(&vars, "COPILOT_PROVIDER_BASE_URL"))
+            json_file(&paths.copilot_providers).is_some_and(|v| {
+                array_has(&v, &["providers"], |p| {
+                    str_at(p, "name") == Some(super::copilot_config::PROVIDER_NAME)
+                })
+            })
+                // What earlier releases persisted, until a Connect removes it.
+                || block(COPILOT_SHELL_MARKER)
+                    .is_some_and(|vars| var_is_local(&vars, "COPILOT_PROVIDER_BASE_URL"))
                 || user_env_is_local("COPILOT_PROVIDER_BASE_URL"),
         ),
         (
@@ -238,13 +270,13 @@ pub(crate) fn detect_configured_agents_in(
 /// Ids of the integration agents whose own config on disk already points at
 /// Atomic Chat (written by our `configure_*` commands, possibly by an older
 /// release). Read-only; never fails — anything unreadable counts as not
-/// configured.
+/// configured. `port` is the Local API Server's.
 #[tauri::command]
-pub async fn detect_configured_agents() -> Vec<String> {
+pub async fn detect_configured_agents(port: u16) -> Vec<String> {
     // Path resolution may spawn a login shell (dsh) or PowerShell (Hermes,
     // Atomic Agent on Windows), so keep it off the async runtime.
-    let found = tokio::task::spawn_blocking(|| match AgentConfigPaths::resolve() {
-        Some(paths) => detect_configured_agents_in(&paths, &read_user_env),
+    let found = tokio::task::spawn_blocking(move || match AgentConfigPaths::resolve() {
+        Some(paths) => detect_configured_agents_in(&paths, &read_user_env, port),
         None => Vec::new(),
     })
     .await
@@ -255,7 +287,7 @@ pub async fn detect_configured_agents() -> Vec<String> {
 
 /// A persistent User-scope env var from `HKCU\Environment`, where `setx` writes.
 #[cfg(windows)]
-fn read_user_env(name: &str) -> Option<String> {
+pub(crate) fn read_user_env(name: &str) -> Option<String> {
     use winreg::enums::HKEY_CURRENT_USER;
     use winreg::RegKey;
 
@@ -268,7 +300,7 @@ fn read_user_env(name: &str) -> Option<String> {
 }
 
 #[cfg(not(windows))]
-fn read_user_env(_name: &str) -> Option<String> {
+pub(crate) fn read_user_env(_name: &str) -> Option<String> {
     None
 }
 
@@ -279,12 +311,14 @@ fn read_text(path: &Path) -> Option<String> {
 }
 
 /// Parse a JSON / JSONC / JSON5 file. Strict JSON first: it is far faster on the
-/// large files some agents keep (e.g. `~/.openclaude.json`).
+/// large files some agents keep (e.g. `~/.openclaude.json`). A UTF-8
+/// byte-order mark (PowerShell 5 writes one) is skipped.
 fn json_file(path: &Path) -> Option<serde_json::Value> {
     let text = read_text(path)?;
-    serde_json::from_str(&text)
+    let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
+    serde_json::from_str(text)
         .ok()
-        .or_else(|| json5::from_str(&text).ok())
+        .or_else(|| json5::from_str(text).ok())
 }
 
 fn value_at<'a>(root: &'a serde_json::Value, keys: &[&str]) -> Option<&'a serde_json::Value> {
@@ -309,13 +343,14 @@ fn str_at<'a>(v: &'a serde_json::Value, key: &str) -> Option<&'a str> {
     v.get(key).and_then(serde_json::Value::as_str)
 }
 
-/// `~/.claude/settings.json` `env.ANTHROPIC_BASE_URL` on a local / LAN host —
-/// a corporate gateway URL there is the user's own setup, not ours.
-fn claude_code_settings_local(home: &Path) -> bool {
-    json_file(&home.join(".claude").join("settings.json")).is_some_and(|v| {
+/// Claude Code's `settings.json` `env.ANTHROPIC_BASE_URL` on this server (its
+/// host and port, or loopback with its port). A gateway — on the LAN or not —
+/// is the user's own setup, not ours.
+fn claude_code_settings_ours(paths: &AgentConfigPaths) -> bool {
+    json_file(&paths.claude_settings).is_some_and(|v| {
         value_at(&v, &["env", "ANTHROPIC_BASE_URL"])
             .and_then(serde_json::Value::as_str)
-            .is_some_and(is_local_url)
+            .is_some_and(|url| paths.server.is_url(url))
     })
 }
 
@@ -329,33 +364,30 @@ fn codex_configured(codex_home: &Path) -> bool {
         })
 }
 
+/// Our provider profile (by its id: one the user made from OpenClaude's own
+/// Atomic Chat preset is theirs), or a startup profile pointing at this server.
 fn openclaude_configured(paths: &AgentConfigPaths) -> bool {
-    let profile_listed = json_file(&paths.openclaude_config).is_some_and(|v| {
+    json_file(&paths.openclaude_config).is_some_and(|v| {
         array_has(&v, &["providerProfiles"], |p| {
-            str_at(p, "id") == Some(OPENCLAUDE_ATOMIC_PROFILE_ID)
-                || str_at(p, "provider") == Some(OPENCLAUDE_PROVIDER)
+            str_at(p, "id") == Some(OPENCLAUDE_PROFILE_ID)
         })
-    });
-    profile_listed
-        || json_file(
-            &paths
-                .home
-                .join(".openclaude")
-                .join(".openclaude-profile.json"),
-        )
-        .is_some_and(|v| str_at(&v, "profile") == Some(OPENCLAUDE_PROVIDER))
+    }) || json_file(&paths.openclaude_profile)
+        .is_some_and(|v| startup_profile_is_ours(&v, Some(&paths.server)))
 }
 
-/// `llm-pi-ai.providers.atomic` in `$DSH_HOME/settings.yaml`.
+/// Our route in the `web` profile's patch layer (dsh 0.2+), or
+/// `llm-pi-ai.providers.atomic` in the `$DSH_HOME/settings.yaml` older dsh
+/// reads.
 fn dsh_configured(dsh_home: &Path) -> bool {
-    read_text(&dsh_home.join("settings.yaml"))
-        .and_then(|text| serde_yaml::from_str::<serde_yaml::Value>(&text).ok())
-        .is_some_and(|root| {
-            root.get(DSH_SECTION)
-                .and_then(|s| s.get("providers"))
-                .and_then(|p| p.get(DSH_ROUTE_ID))
-                .is_some_and(serde_yaml::Value::is_mapping)
-        })
+    super::dsh_config::profile_has_route(dsh_home, DSH_ROUTE_ID)
+        || read_text(&dsh_home.join("settings.yaml"))
+            .and_then(|text| serde_yaml::from_str::<serde_yaml::Value>(&text).ok())
+            .is_some_and(|root| {
+                root.get(DSH_SECTION)
+                    .and_then(|s| s.get("providers"))
+                    .and_then(|p| p.get(DSH_ROUTE_ID))
+                    .is_some_and(serde_yaml::Value::is_mapping)
+            })
 }
 
 /// Our provider rule in ZCode's `provider_config.json`.
@@ -404,14 +436,16 @@ fn unquote(v: &str) -> &str {
     v
 }
 
-fn var_is_local(vars: &HashMap<String, String>, name: &str) -> bool {
-    vars.get(name).is_some_and(|v| is_local_url(v))
+fn var_is_local(vars: &HashMap<String, String>, name: &str, port: u16) -> bool {
+    vars.get(name).is_some_and(|v| is_local_url(v, port))
 }
 
-/// Whether `raw` points at this machine or the local network: `localhost`,
+/// Whether `raw` points at this server: `port` (the scheme's default when the
+/// URL names none) on this machine or the local network — `localhost`,
 /// loopback, `0.0.0.0`, private / link-local IPv4, or loopback / unique-local /
-/// link-local IPv6. A scheme-less `host:port` is accepted too.
-pub(crate) fn is_local_url(raw: &str) -> bool {
+/// link-local IPv6. A scheme-less `host:port` is accepted too. Another local
+/// server (Ollama on 11434, a LiteLLM proxy) is the user's own, not ours.
+pub(crate) fn is_local_url(raw: &str, port: u16) -> bool {
     let raw = raw.trim();
     if raw.is_empty() {
         return false;
@@ -423,6 +457,9 @@ pub(crate) fn is_local_url(raw: &str) -> bool {
     let Some(parsed) = parsed else {
         return false;
     };
+    if parsed.port_or_known_default() != Some(port) {
+        return false;
+    }
     match parsed.host() {
         Some(url::Host::Domain(d)) => {
             let d = d.trim_end_matches('.').to_ascii_lowercase();
@@ -459,7 +496,7 @@ mod tests {
     }
 
     fn detect(home: &Path, rc: Option<&Path>) -> Vec<String> {
-        detect_configured_agents_in(&AgentConfigPaths::under_home(home, rc), &no_user_env)
+        detect_configured_agents_in(&AgentConfigPaths::under_home(home, rc), &no_user_env, 1337)
     }
 
     #[test]
@@ -542,9 +579,38 @@ mod tests {
         assert!(detect(home.path(), None).is_empty());
         write(
             &profile,
-            &super::super::codex_config::render_profile("http://127.0.0.1:1337/v1", "qwen3", false),
+            &super::super::codex_config::render_profile(
+                "http://127.0.0.1:1337/v1",
+                "qwen3",
+                false,
+                None,
+            ),
         );
         assert_eq!(detect(home.path(), None), vec!["codex"]);
+    }
+
+    #[test]
+    fn detects_copilot_providers_and_the_dsh_profile() {
+        let home = tempfile::tempdir().unwrap();
+        let h = home.path();
+        write(
+            &h.join(".copilot/providers.json"),
+            r#"{"providers":[{"name":"ollama","baseUrl":"http://localhost:11434/v1"}]}"#,
+        );
+        write(
+            &h.join(".dsh/profiles/web/cordis.patch.yml"),
+            "# mine\n- id: llm-pi-ai\n  config:\n    providers:\n      gw: {}\n",
+        );
+        assert!(detect(h, None).is_empty());
+        write(
+            &h.join(".copilot/providers.json"),
+            r#"{"providers":[{"name":"atomic-chat","baseUrl":"http://127.0.0.1:1337/v1"}]}"#,
+        );
+        write(
+            &h.join(".dsh/profiles/web/cordis.patch.yml"),
+            "- id: llm-pi-ai\n  config:\n    providers:\n      atomic:\n        baseURL: http://127.0.0.1:1337/v1\n",
+        );
+        assert_eq!(detect(h, None), vec!["dsh", "copilot"]);
     }
 
     #[test]
@@ -566,26 +632,66 @@ mod tests {
         assert_eq!(detect(home.path(), None), vec!["zed"]);
     }
 
+    /// On Windows Zed reads `%APPDATA%\Zed`; a provider left in
+    /// `~/.config/zed` by an older release is not a connection Zed sees.
     #[test]
-    fn claude_code_counts_only_a_local_base_url() {
+    fn zed_is_read_where_zed_keeps_its_settings() {
+        let home = tempfile::tempdir().unwrap();
+        let zed_dir = home.path().join("AppData/Roaming/Zed");
+        let ours = r#"{"language_models":{"openai_compatible":{"Atomic Chat":{}}}}"#;
+        write(&home.path().join(".config/zed/settings.json"), ours);
+        let mut paths = AgentConfigPaths::under_home(home.path(), None);
+        paths.zed_dir = Some(zed_dir.clone());
+        assert!(detect_configured_agents_in(&paths, &no_user_env, 1337).is_empty());
+
+        write(&zed_dir.join("settings.json"), ours);
+        assert_eq!(
+            detect_configured_agents_in(&paths, &no_user_env, 1337),
+            vec!["zed"]
+        );
+    }
+
+    #[test]
+    fn claude_code_counts_only_this_servers_base_url() {
         let home = tempfile::tempdir().unwrap();
         let settings = home.path().join(".claude/settings.json");
 
         write(
             &settings,
-            r#"{"env":{"ANTHROPIC_BASE_URL":"http://localhost:1337","ANTHROPIC_AUTH_TOKEN":"atomic"}}"#,
+            "\u{feff}{\"env\":{\"ANTHROPIC_BASE_URL\":\"http://localhost:1337\",\"ANTHROPIC_AUTH_TOKEN\":\"atomic\"}}",
         );
         assert_eq!(detect(home.path(), None), vec!["claude-code"]);
 
+        // Some other server on the LAN, or ours on another port, is not ours.
+        for url in ["http://192.168.1.20:1337", "http://127.0.0.1:4000"] {
+            write(
+                &settings,
+                &format!(r#"{{"env":{{"ANTHROPIC_BASE_URL":"{url}"}}}}"#),
+            );
+            assert!(detect(home.path(), None).is_empty(), "{url}");
+        }
+        // ... unless the server itself listens on that LAN address.
         write(
             &settings,
             r#"{"env":{"ANTHROPIC_BASE_URL":"http://192.168.1.20:1337"}}"#,
         );
-        assert_eq!(detect(home.path(), None), vec!["claude-code"]);
+        let mut paths = AgentConfigPaths::under_home(home.path(), None);
+        paths.server = OurServer::new("192.168.1.20", 1337);
+        assert_eq!(
+            detect_configured_agents_in(&paths, &no_user_env, 1337),
+            vec!["claude-code"]
+        );
 
         write(
             &settings,
             r#"{"env":{"ANTHROPIC_BASE_URL":"https://llm-gateway.corp.example.com"}}"#,
+        );
+        assert!(detect(home.path(), None).is_empty());
+
+        // Another local proxy on its own port is the user's, not ours.
+        write(
+            &settings,
+            r#"{"env":{"ANTHROPIC_BASE_URL":"http://localhost:4000"}}"#,
         );
         assert!(detect(home.path(), None).is_empty());
 
@@ -637,8 +743,11 @@ mod tests {
             ("META_API_KEY", "sk-real-meta-key"),
         ]);
         let lookup = |name: &str| env.get(name).map(|v| v.to_string());
-        let found =
-            detect_configured_agents_in(&AgentConfigPaths::under_home(home.path(), None), &lookup);
+        let found = detect_configured_agents_in(
+            &AgentConfigPaths::under_home(home.path(), None),
+            &lookup,
+            1337,
+        );
         assert_eq!(found, vec!["poolside", "goose"]);
     }
 
@@ -715,6 +824,21 @@ mod tests {
     }
 
     #[test]
+    fn openclaude_profiles_of_the_users_own_are_not_ours() {
+        let home = tempfile::tempdir().unwrap();
+        // Made from OpenClaude's own Atomic Chat preset: its id is not ours.
+        write(
+            &home.path().join(".openclaude.json"),
+            r#"{"providerProfiles":[{"id":"provider_x1","provider":"atomic-chat"}]}"#,
+        );
+        write(
+            &home.path().join(".openclaude/.openclaude-profile.json"),
+            r#"{"profile":"atomic-chat","env":{"OPENAI_BASE_URL":"http://192.168.1.9:8080/v1"}}"#,
+        );
+        assert!(detect(home.path(), None).is_empty());
+    }
+
+    #[test]
     fn local_url_classification() {
         for url in [
             "http://localhost:1337/v1",
@@ -723,25 +847,33 @@ mod tests {
             "http://10.0.0.5:1337",
             "http://172.16.3.4:1337",
             "http://192.168.1.20:1337/v1",
-            "http://169.254.10.1",
+            "http://169.254.10.1:1337",
             "http://[::1]:1337",
             "http://[fd00::1]:1337",
             "http://api.localhost:1337",
             "localhost:1337",
             "127.0.0.1:1337",
         ] {
-            assert!(is_local_url(url), "{url} should be local");
+            assert!(is_local_url(url, 1337), "{url} should be ours");
         }
         for url in [
             "",
             "https://api.anthropic.com",
             "https://llm-gateway.corp.example.com",
-            "http://8.8.8.8",
-            "http://172.32.0.1",
-            "http://[2001:db8::1]",
+            "http://8.8.8.8:1337",
+            "http://172.32.0.1:1337",
+            "http://[2001:db8::1]:1337",
             "not a url",
+            // Local, but another server's port.
+            "http://localhost:11434/v1",
+            "http://127.0.0.1:4000",
+            "http://169.254.10.1",
+            "localhost",
         ] {
-            assert!(!is_local_url(url), "{url} should not be local");
+            assert!(!is_local_url(url, 1337), "{url} should not be ours");
         }
+        // The scheme's default port is the port when the URL names none.
+        assert!(is_local_url("http://localhost", 80));
+        assert!(is_local_url("https://127.0.0.1/v1", 443));
     }
 }

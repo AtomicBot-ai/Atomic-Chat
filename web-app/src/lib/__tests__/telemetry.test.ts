@@ -14,19 +14,22 @@ import {
   execBackendForModel,
   finalizeChatTurnOnce,
   gpuOffloadBucket,
+  lastLoadIdForModel,
   lengthBucket,
   loadBackendFromProvider,
   markModelDownloaded,
   modelLoadSource,
   normalizeModelId,
   rememberExecBackend,
+  rememberLoadId,
   resetDownloadedModelsForTests,
   resetExecBackendsForTests,
+  resetLoadIdsForTests,
   resetModelLoadThrottlesForTests,
-  shouldEmitChatFailure,
   shouldEmitModelLoadSuccess,
   toolNameForAnalytics,
 } from '@/lib/telemetry'
+import { formatTransportError } from '@/lib/transport-error'
 
 describe('loadBackendFromProvider', () => {
   it('names every local engine as its own backend', () => {
@@ -229,6 +232,108 @@ describe('classifyChatFailure', () => {
   })
 })
 
+describe('classifyChatFailure on transport failures', () => {
+  const tagged = (kind: Parameters<typeof formatTransportError>[0]) =>
+    // The text after the tag is localized on Windows; it must not matter.
+    formatTransportError(kind, 'Es konnte keine Verbindung hergestellt werden')
+
+  it.each([
+    ['connect_refused', 'engine_unreachable', 'network'],
+    ['connection_reset', 'engine_exited', 'network'],
+    ['body_eof', 'engine_exited', 'network'],
+    ['idle_timeout', 'timeout', 'timeout'],
+    ['connect_timeout', 'timeout', 'timeout'],
+  ] as const)(
+    'reads [transport:%s] as %s from a local engine and %s from a cloud',
+    (kind, local, remote) => {
+      expect(classifyChatFailure(tagged(kind), 'llamacpp-upstream')).toBe(local)
+      expect(classifyChatFailure(tagged(kind), 'mlx')).toBe(local)
+      expect(classifyChatFailure(tagged(kind), 'openai')).toBe(remote)
+      // No provider is no evidence of a local engine.
+      expect(classifyChatFailure(tagged(kind))).toBe(remote)
+    }
+  )
+
+  it('lets the message decide a request_failed tag', () => {
+    expect(
+      classifyChatFailure(
+        formatTransportError('request_failed', 'request timed out'),
+        'llamacpp'
+      )
+    ).toBe('timeout')
+  })
+
+  it('classifies an untagged refusal by its OS code on every platform', () => {
+    const refusals = [
+      // macOS — used to be `model_unreachable`.
+      'error sending request: Connection refused (os error 61)',
+      // English Windows — used to be `network`.
+      'No connection could be made because the target machine actively refused it. (os error 10061)',
+      // Localized Windows — used to be `unknown`.
+      'Es konnte keine Verbindung hergestellt werden, da der Zielcomputer die Verbindung verweigerte. (os error 10061)',
+      // Linux.
+      'Connection refused (os error 111)',
+    ]
+    for (const message of refusals) {
+      expect(classifyChatFailure(message, 'llamacpp-upstream')).toBe(
+        'engine_unreachable'
+      )
+      expect(classifyChatFailure(message, 'anthropic')).toBe('network')
+    }
+  })
+
+  it('does not count an aborted connection as a user abort', () => {
+    // 10053 says "aborted"; it used to land in `aborted` and drop out of the
+    // error counts.
+    const wsaAborted =
+      'An established connection was aborted by the software in your host machine. (os error 10053)'
+    expect(classifyChatFailure(wsaAborted, 'llamacpp-upstream')).toBe(
+      'engine_exited'
+    )
+    expect(classifyChatFailure(wsaAborted, 'openrouter')).toBe('network')
+    expect(
+      classifyChatFailure('Software caused connection abort', 'llamacpp')
+    ).toBe('engine_exited')
+    expect(
+      classifyChatFailure('connection reset by peer (os error 104)', 'mlx')
+    ).toBe('engine_exited')
+    expect(classifyChatFailure('(os error 10054)', 'llamacpp')).toBe(
+      'engine_exited'
+    )
+  })
+
+  it('reads WSAETIMEDOUT as a timeout', () => {
+    expect(
+      classifyChatFailure('operation failed (os error 10060)', 'groq')
+    ).toBe('timeout')
+  })
+
+  it('keeps a real user abort an abort', () => {
+    expect(classifyChatFailure('The operation was aborted', 'llamacpp')).toBe(
+      'aborted'
+    )
+  })
+})
+
+describe('lastLoadIdForModel', () => {
+  beforeEach(() => resetLoadIdsForTests())
+
+  it('returns the id of the last emitted load of a local model', () => {
+    rememberLoadId('unsloth\\gemma-Q4_K_M', 'load-1')
+    rememberLoadId('unsloth/gemma-Q4_K_M', 'load-2')
+    expect(lastLoadIdForModel('unsloth/gemma-Q4_K_M', 'llamacpp')).toBe(
+      'load-2'
+    )
+  })
+
+  it('is null for a cloud provider and for a model never loaded', () => {
+    rememberLoadId('gpt-oss-20b', 'load-1')
+    expect(lastLoadIdForModel('gpt-oss-20b', 'openai')).toBeNull()
+    expect(lastLoadIdForModel('other-model', 'llamacpp')).toBeNull()
+    expect(lastLoadIdForModel(null, 'llamacpp')).toBeNull()
+  })
+})
+
 describe('finalizeChatTurnOnce', () => {
   it('admits a turn id exactly once', () => {
     const id = `turn-${Math.random()}`
@@ -244,25 +349,6 @@ describe('finalizeChatTurnOnce', () => {
 
   it('rejects an empty id rather than deduping every turn together', () => {
     expect(finalizeChatTurnOnce('')).toBe(false)
-  })
-})
-
-describe('shouldEmitChatFailure', () => {
-  it('throttles an identical (model, kind) pair inside the window', () => {
-    const model = `model-${Math.random()}`
-    expect(shouldEmitChatFailure(model, 'oom')).toBe(true)
-    expect(shouldEmitChatFailure(model, 'oom')).toBe(false)
-  })
-
-  it('does not throttle a different failure kind on the same model', () => {
-    const model = `model-${Math.random()}`
-    expect(shouldEmitChatFailure(model, 'oom')).toBe(true)
-    expect(shouldEmitChatFailure(model, 'network')).toBe(true)
-  })
-
-  it('keys a missing model id consistently', () => {
-    expect(shouldEmitChatFailure(null, 'unknown')).toBe(true)
-    expect(shouldEmitChatFailure(undefined, 'unknown')).toBe(false)
   })
 })
 
@@ -317,6 +403,18 @@ describe('classifyModelLoadFailure', () => {
     expect(classifyModelLoadFailure('MODEL_FORMAT_LEGACY', null, false)).toBe(
       'format_legacy'
     )
+  })
+
+  it('maps the core verdicts on a dead engine', () => {
+    expect(
+      classifyModelLoadFailure('GPU_BACKEND_INCOMPATIBLE', 'exited', false)
+    ).toBe('gpu_backend_incompatible')
+    expect(classifyModelLoadFailure('ENGINE_BINARY_BROKEN', null, false)).toBe(
+      'binary_broken'
+    )
+    expect(
+      classifyModelLoadFailure('CPU_INSTRUCTION_UNSUPPORTED', null, false)
+    ).toBe('cpu_unsupported')
   })
 
   it('still classifies the 68% of failures that carry no code', () => {
@@ -501,11 +599,28 @@ describe('classifyDownloadFailure', () => {
     expect(
       classifyDownloadFailure('Error: [disk_device_lost] The device is not ready')
     ).toBe('disk_device_lost')
+    // FAT32 drives stop at 4 GiB per file; it used to land in `disk_io`.
+    expect(
+      classifyDownloadFailure(
+        'Error: [disk_fs_limit] File too large (os error 27)'
+      )
+    ).toBe('disk_fs_limit')
   })
 
   it('keeps the tag out of the way of cancellation', () => {
     // A user-cancelled download must not be counted as a disk failure.
     expect(classifyDownloadFailure('Download cancelled')).toBe('cancelled')
+  })
+
+  it('trusts a disk tag even when the OS text under it says aborted', () => {
+    expect(
+      classifyDownloadFailure(
+        'Error: [disk_device_lost] The I/O operation has been aborted because of either a thread exit or an application request. (os error 995)'
+      )
+    ).toBe('disk_device_lost')
+    expect(
+      classifyDownloadFailure('Error: [disk_io] write interrupted, aborted')
+    ).toBe('disk_io')
   })
 
   it('falls back to the old heuristics for untagged errors', () => {
@@ -576,6 +691,15 @@ describe('classifyDownloadFailure', () => {
 })
 
 describe('downloadKind', () => {
+  it('tells a catalog audio model from a chat model', () => {
+    expect(downloadKind('audio-model-moss-tts-nano-100m_q8_0', 'Model')).toBe(
+      'audio_model'
+    )
+    expect(downloadKind('engine-build-audio-cpp-v0_9_3', 'Backend')).toBe(
+      'gpu_backend'
+    )
+  })
+
   it('tells a catalog embedding model from a chat model, an engine and a diffusion file', () => {
     expect(downloadKind('embedding-embeddinggemma-2')).toBe('embedding_model')
     expect(downloadKind('embedding-bge-m3', 'Model')).toBe('embedding_model')

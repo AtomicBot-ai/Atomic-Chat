@@ -127,7 +127,7 @@ describe('purpose and server steps', () => {
     expect(
       screen.getByRole('heading', { name: 'onboarding-server:purpose.title' })
     ).toHaveFocus()
-    expect(screen.getByText('onboarding:stepOf 03 03')).toBeInTheDocument()
+    expect(screen.queryByText(/onboarding:stepOf/)).not.toBeInTheDocument()
     expect(
       screen.getByRole('button', {
         name: /onboarding-server:purpose\.everyday/,
@@ -172,7 +172,7 @@ describe('purpose and server steps', () => {
     expect(
       screen.getByRole('heading', { name: 'onboarding-server:server.title' })
     ).toHaveFocus()
-    expect(screen.getByText('onboarding:stepOf 03 03')).toBeInTheDocument()
+    expect(screen.queryByText(/onboarding:stepOf/)).not.toBeInTheDocument()
     expect(useOnboardingStore.getState().phase).toBe('active')
     expect(named('onboarding_purpose')).toEqual([
       expect.objectContaining({ purpose: 'power_tools' }),

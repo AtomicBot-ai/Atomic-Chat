@@ -12,12 +12,17 @@
 
 import type { EngineBuildProxy } from '@/services/engine-builds/types'
 
-/** Every engine the layer answers for, in the order the desktop lists them. */
+/**
+ * Every engine the layer answers for, in the order the desktop lists them. A
+ * core older than the app may not report all of them: `audio-cpp` needs a core
+ * newer than 0.20.5, and every reader treats an absent engine as not there.
+ */
 export const ENGINE_IDS = [
   'llamacpp-upstream',
   'llamacpp',
   'atomic-prism',
   'sd-cpp',
+  'audio-cpp',
   'mlx',
   'foundry-local',
   'litert-lm',
@@ -37,6 +42,7 @@ export const ENGINE_KINDS: Readonly<Record<EngineId, EngineKind>> = {
   'llamacpp': 'llamacpp',
   'atomic-prism': 'llamacpp',
   'sd-cpp': 'engine-build',
+  'audio-cpp': 'engine-build',
   'mlx': 'engine-build',
   'foundry-local': 'engine-build',
   'litert-lm': 'engine-build',

@@ -22,6 +22,7 @@
   "sendMessage": "Send Message",
   "replyGate": {
     "sendHint": "Choose what to reply with",
+    "sendWith": "Send with {{model}}",
     "startingTitle": "Starting {{name}}…",
     "startingDescription": "Your message will be sent as soon as it's ready.",
     "emptyTitle": "Pick a model to start chatting",
@@ -318,5 +319,29 @@
     "extracted": "Text extracted from the document. Open the file to see its original layout.",
     "noText": "No text could be extracted from this document.",
     "videoModelNote": "The model can't watch videos: it only sees the file name."
+  },
+  "turnRecovery": {
+    "engineRestarting": "The model engine stopped. Restarting and retrying…",
+    "engineGoneTitle": "The model engine stopped",
+    "engineGoneMessage": "The local model engine stopped before the answer finished. Retry to start it again and resend your message.",
+    "engineRestartFailed": "The model engine could not be restarted automatically. Retry to try again, or pick the model again in the composer.",
+    "shortenHistory": "Shorten history and retry",
+    "historyShortened_one": "Left out {{count}} older message so the conversation fits the context.",
+    "historyShortened_other": "Left out {{count}} older messages so the conversation fits the context.",
+    "historyCannotShorten": "There is no older history to leave out. Shorten your message or remove attachments, then try again.",
+    "contextNoMemory": "There is not enough free memory for a larger context.",
+    "contextReloadFailed": "The model did not load with a larger context, so it keeps its current size.",
+    "contextGrowthSpent": "The context already grew once for this message. Shorten the history to go on.",
+    "retry": "Retry",
+    "details": "Details",
+    "genericTitle": "Error generating response",
+    "genericMessage": "The model reported an error before the answer finished. Retry to send your message again; what it reported is under Details.",
+    "settingsRestartTitle": "The model restarted after a settings change",
+    "settingsRestartMessage": "Your settings change restarted {{model}} while it was answering. Retry to send your message again."
+  },
+  "queuedSend": {
+    "modelChanged": "Your message wasn't sent: a different model was selected. It's still in the message box.",
+    "modelLost": "Your message wasn't sent: the model didn't start. It's still in the message box.",
+    "modelStopped": "Your message wasn't sent: the model was stopped. It's still in the message box."
   }
 }

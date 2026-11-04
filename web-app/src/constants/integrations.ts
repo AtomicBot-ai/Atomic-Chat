@@ -3,19 +3,21 @@ export type IntegrationKind = 'coding' | 'assistant' | 'editor'
 /**
  * Ordered manual-setup instructions shown inside an editor card. These mirror
  * the per-editor pages other local-model tools ship (e.g. Ollama's
- * "IDEs & Editors" docs): VS Code (Copilot BYOK), JetBrains AI Assistant, and
- * Xcode all store the provider in secret/IDE storage with no writable config
- * file, so the connection details have to be pasted into the editor's own UI.
- * The strings are intentionally not localized — they describe product UI whose
- * labels are English in every locale (matching the non-localized product names
- * already used on this page).
+ * "IDEs & Editors" docs): VS Code (Copilot Chat's Custom Endpoint), JetBrains
+ * AI Assistant, and Xcode all keep the provider in their own settings or
+ * secret storage, so the connection details have to be pasted into the
+ * editor's own UI. Each step is an i18n key; the editors' menu labels stay
+ * English inside the translations.
  */
 export type EditorSetup = {
   /** Stable id passed to the Rust `launch_editor` command. */
   launchId: string
-  /** Ordered manual steps to finish setup inside the editor. */
+  /** i18n keys of the ordered manual steps to finish setup in the editor. */
   steps: string[]
 }
+
+/** A desktop OS an integration can be limited to. */
+export type DesktopPlatform = 'macos' | 'windows' | 'linux'
 
 export type IntegrationAgent = {
   /** Stable id used by the Rust install/configure commands. */
@@ -36,6 +38,15 @@ export type IntegrationAgent = {
   /** Whether a model must be picked before the agent can be enabled. */
   requiresModel: boolean
   /**
+   * The smallest context window (tokens) the agent works in: its system
+   * prompt and tool definitions alone take most of a smaller one. Connect
+   * reloads a served model loaded with less (`ensureAgentContextWindow`).
+   * Absent for the editors, set up by hand.
+   */
+  minContextLength?: number
+  /** Where to get an agent Atomic Chat cannot install (ZCode's app). */
+  downloadUrl?: string
+  /**
    * When true the local endpoint is passed WITH the API prefix (`/v1`).
    * Claude Code expects the bare host:port and appends its own path.
    */
@@ -46,9 +57,11 @@ export type IntegrationAgent = {
    * write-config "Run" flow they expose Launch + Copy settings + manual steps.
    */
   editor?: EditorSetup
+  /** The only desktop OSes the integration exists on; absent means all. */
+  platforms?: DesktopPlatform[]
 }
 
-export const INTEGRATION_AGENTS: IntegrationAgent[] = [
+const CATALOG: IntegrationAgent[] = [
   {
     id: 'kilo',
     name: 'Kilo Code',
@@ -59,6 +72,7 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
     installable: true,
     configurable: true,
     requiresModel: true,
+    minContextLength: 32768,
     endpointWithPrefix: true,
   },
   {
@@ -71,6 +85,7 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
     installable: true,
     configurable: true,
     requiresModel: false,
+    minContextLength: 32768,
     endpointWithPrefix: false,
   },
   {
@@ -83,6 +98,7 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
     installable: true,
     configurable: true,
     requiresModel: true,
+    minContextLength: 32768,
     endpointWithPrefix: true,
   },
   {
@@ -95,6 +111,7 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
     installable: true,
     configurable: true,
     requiresModel: true,
+    minContextLength: 32768,
     endpointWithPrefix: true,
   },
   {
@@ -107,6 +124,7 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
     installable: true,
     configurable: true,
     requiresModel: true,
+    minContextLength: 32768,
     endpointWithPrefix: true,
   },
   {
@@ -120,6 +138,7 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
     installable: true,
     configurable: true,
     requiresModel: true,
+    minContextLength: 32768,
     endpointWithPrefix: true,
   },
   {
@@ -132,6 +151,7 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
     installable: true,
     configurable: true,
     requiresModel: true,
+    minContextLength: 32768,
     endpointWithPrefix: true,
   },
   {
@@ -148,6 +168,7 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
     // section when one route is invalid -- so an unset model would take the
     // user's other providers down with it, not merely fail to help.
     requiresModel: true,
+    minContextLength: 32768,
     // The route is declared with the `openai-completions` protocol, whose
     // `baseURL` is expected to already carry the `/v1` prefix.
     endpointWithPrefix: true,
@@ -162,8 +183,9 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
     installable: true,
     configurable: true,
     requiresModel: true,
-    // Zed's native Atomic Chat provider expects the OpenAI-compatible base URL
-    // with the `/v1` prefix (matches its built-in default).
+    minContextLength: 32768,
+    // Registered as an `openai_compatible` provider, whose `api_url` is the
+    // OpenAI API root with the `/v1` prefix.
     endpointWithPrefix: true,
   },
   {
@@ -179,6 +201,8 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
     installable: false,
     configurable: true,
     requiresModel: true,
+    minContextLength: 32768,
+    downloadUrl: 'https://zcode.z.ai',
     // Stored as an `openai-chat-completions` provider, whose `baseUrl` is the
     // OpenAI API root ZCode appends `/chat/completions` to.
     endpointWithPrefix: true,
@@ -193,6 +217,7 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
     installable: true,
     configurable: true,
     requiresModel: true,
+    minContextLength: 32768,
     endpointWithPrefix: true,
   },
   {
@@ -205,6 +230,7 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
     installable: true,
     configurable: true,
     requiresModel: true,
+    minContextLength: 32768,
     endpointWithPrefix: true,
   },
   {
@@ -217,6 +243,7 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
     installable: true,
     configurable: true,
     requiresModel: true,
+    minContextLength: 32768,
     endpointWithPrefix: true,
   },
   {
@@ -229,6 +256,7 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
     installable: true,
     configurable: true,
     requiresModel: true,
+    minContextLength: 32768,
     endpointWithPrefix: true,
   },
   {
@@ -241,6 +269,7 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
     installable: true,
     configurable: true,
     requiresModel: true,
+    minContextLength: 32768,
     endpointWithPrefix: true,
   },
   {
@@ -253,6 +282,7 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
     installable: true,
     configurable: true,
     requiresModel: true,
+    minContextLength: 32768,
     endpointWithPrefix: false,
   },
   {
@@ -265,6 +295,7 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
     installable: true,
     configurable: true,
     requiresModel: true,
+    minContextLength: 32768,
     // `--base-url` replaces the Meta Model API root (`https://api.meta.ai/v1`),
     // onto which Muse appends `/responses` itself -- the same Responses wire
     // protocol Codex CLI speaks, which the local server already serves.
@@ -281,6 +312,7 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
     installable: true,
     configurable: true,
     requiresModel: true,
+    minContextLength: 32768,
     // Atomic Agent stores an `openai-compatible` provider, whose `baseUrl` is
     // the OpenAI API root. It normalises a trailing `/v1` away itself, but the
     // stored value should still read as the base URL the user would paste.
@@ -296,6 +328,8 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
     installable: true,
     configurable: true,
     requiresModel: true,
+    // Hermes refuses to start on a smaller window.
+    minContextLength: 65536,
     endpointWithPrefix: true,
   },
   {
@@ -308,6 +342,7 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
     installable: true,
     configurable: true,
     requiresModel: true,
+    minContextLength: 32768,
     endpointWithPrefix: true,
   },
   {
@@ -325,10 +360,10 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
     editor: {
       launchId: 'vscode',
       steps: [
-        'Sign in to GitHub Copilot (the free plan is enough).',
-        'Open the Copilot Chat view, then click the model picker and choose "Manage Models…".',
-        'Pick "OpenAI Compatible" (BYOK), paste the copied Base URL and API key, and save.',
-        'Select the Atomic Chat model from the model picker to start chatting.',
+        'launch:editorSteps.vscode.open',
+        'launch:editorSteps.vscode.add',
+        'launch:editorSteps.vscode.paste',
+        'launch:editorSteps.vscode.pick',
       ],
     },
   },
@@ -339,7 +374,7 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
       'Connect AI Assistant in IntelliJ, PyCharm, WebStorm and other JetBrains IDEs.',
     kind: 'editor',
     detectBin: 'idea',
-    docsUrl: 'https://www.jetbrains.com/help/ai-assistant/',
+    docsUrl: 'https://www.jetbrains.com/help/ai-assistant/use-custom-models.html',
     installable: false,
     configurable: false,
     requiresModel: false,
@@ -347,10 +382,10 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
     editor: {
       launchId: 'jetbrains',
       steps: [
-        'Open Settings → Tools → AI Assistant → Models.',
-        'Enable third-party / local providers, then add an "OpenAI-compatible endpoint".',
-        'Paste the copied Base URL (and API key if prompted) and apply.',
-        'Select the Atomic Chat model as the provider for AI Assistant.',
+        'launch:editorSteps.jetbrains.open',
+        'launch:editorSteps.jetbrains.provider',
+        'launch:editorSteps.jetbrains.assign',
+        'launch:editorSteps.jetbrains.agents',
       ],
     },
   },
@@ -360,23 +395,52 @@ export const INTEGRATION_AGENTS: IntegrationAgent[] = [
     description:
       "Use your local models with Xcode's Coding Intelligence.",
     kind: 'editor',
-    detectBin: 'xed',
-    docsUrl: 'https://developer.apple.com/xcode/',
+    // Found as `Xcode*.app`: `/usr/bin/xed` is a system shim that exists
+    // without Xcode.
+    detectBin: 'xcode',
+    docsUrl:
+      'https://developer.apple.com/documentation/xcode/setting-up-coding-intelligence',
     installable: false,
     configurable: false,
     requiresModel: false,
     endpointWithPrefix: true,
+    platforms: ['macos'],
     editor: {
       launchId: 'xcode',
       steps: [
-        'Open Xcode → Settings → Intelligence (requires Xcode 26 or newer, macOS only).',
-        'Click "Add a Model Provider" and choose "Locally Hosted".',
-        'Enter the port from the copied Base URL (default 1337); Xcode adds the /v1 path itself.',
-        'Restart Xcode if the models do not appear, then pick the Atomic Chat model.',
+        'launch:editorSteps.xcode.open',
+        'launch:editorSteps.xcode.add',
+        'launch:editorSteps.xcode.port',
+        'launch:editorSteps.xcode.pick',
       ],
     },
   },
 ]
+
+/** The desktop OS this build runs on; `null` outside the desktop app. */
+export function currentDesktopPlatform(): DesktopPlatform | null {
+  if (IS_MACOS) return 'macos'
+  if (IS_WINDOWS) return 'windows'
+  if (IS_LINUX) return 'linux'
+  return null
+}
+
+/**
+ * The integrations that exist on `platform` (Xcode only on macOS). With the
+ * platform unknown, all of them.
+ */
+export function integrationsFor(
+  platform: DesktopPlatform | null
+): IntegrationAgent[] {
+  return CATALOG.filter(
+    (agent) =>
+      !platform || !agent.platforms || agent.platforms.includes(platform)
+  )
+}
+
+export const INTEGRATION_AGENTS: IntegrationAgent[] = integrationsFor(
+  currentDesktopPlatform()
+)
 
 /**
  * The order the Server lists integrations in: Claude Code, Codex and Atomic

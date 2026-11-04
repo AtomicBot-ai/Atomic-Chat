@@ -13,13 +13,13 @@
   {
     "key": "context_length",
     "title": "Context Length",
-    "description": "Maximum prompt plus reply length in tokens, fixed when the model starts. A longer request is refused with context_length_exceeded instead of restarting the model. Applies from the next model load.",
+    "description": "Maximum prompt plus reply length in tokens, fixed when the model starts. 0 = automatic: 64K or 32K when the card has room, down to 8K when it has not (never more than the model takes). A longer request is refused with context_length_exceeded instead of restarting the model. Applies from the next model load.",
     "controllerType": "input",
     "controllerProps": {
-      "value": 8192,
-      "placeholder": "8192",
+      "value": 0,
+      "placeholder": "0",
       "type": "number",
-      "min": 512,
+      "min": 0,
       "max": 1048576
     }
   },
@@ -39,13 +39,13 @@
   {
     "key": "max_running_requests",
     "title": "Parallel Requests",
-    "description": "How many requests the engine serves at once (chat, agent and API together); more wait in a queue. The memory check reserves KV cache for that many full contexts, and CUDA graphs are captured up to that many, so 1 fits the most on a desktop card. Applies from the next model load.",
+    "description": "How many requests the engine serves at once (chat, agent and API together); more wait in a queue. 0 = automatic: 2 when the card has room for them at the chosen context, else 1. The memory check reserves KV cache for that many full contexts, and CUDA graphs are captured up to that many. Applies from the next model load.",
     "controllerType": "input",
     "controllerProps": {
-      "value": 1,
-      "placeholder": "1",
+      "value": 0,
+      "placeholder": "0",
       "type": "number",
-      "min": 1,
+      "min": 0,
       "max": 256
     }
   },

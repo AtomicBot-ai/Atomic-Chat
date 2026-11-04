@@ -17,6 +17,11 @@ import {
   isModelAccessError,
   isOutOfMemoryError,
 } from '@/utils/error'
+import {
+  parseOsErrorCode,
+  parseTransportKind,
+  type TransportKind,
+} from '@/lib/transport-error'
 
 export function getAnalyticsPlatform(): string {
   if (IS_MACOS) return 'macos'
@@ -39,6 +44,8 @@ export type DownloadKind =
   // A catalog embedding model (`embedding-<id>`, `lib/embedding/models.ts`):
   // served on /v1/embeddings, never a chat model.
   | 'embedding_model'
+  // A catalog audio model (`audio-model-<id>`, `lib/audio/models.ts`).
+  | 'audio_model'
 
 export type DownloadFailureReason =
   | 'http_404'
@@ -55,6 +62,9 @@ export type DownloadFailureReason =
   | 'disk_file_locked'
   | 'disk_path_too_long'
   | 'disk_device_lost'
+  // A file larger than the target filesystem allows: FAT32, the format of
+  // many USB drives, stops at 4 GiB per file, which most model files exceed.
+  | 'disk_fs_limit'
   | 'disk_io'
   | 'network'
   // ATO — #290: split out of `network` so a dead or misconfigured HTTPS-proxy
@@ -76,6 +86,7 @@ const DISK_FAULT_TAGS = new Set<DownloadFailureReason>([
   'disk_file_locked',
   'disk_path_too_long',
   'disk_device_lost',
+  'disk_fs_limit',
   'disk_io',
 ])
 
@@ -207,13 +218,17 @@ export function classifyDownloadFailure(
 ): DownloadFailureReason {
   if (!err) return 'unknown'
   const e = err.toLowerCase()
-  if (/\b(abort|aborted|cancel|cancelled|canceled|stopped|interrupt)\b/.test(e))
-    return 'cancelled'
 
-  // The downloader's own tag beats every heuristic below: it was derived from
-  // the OS error code, not from guessing at the message text.
+  // The downloader's own tag beats every heuristic below, the cancellation
+  // match included: it was derived from the OS error code, not from guessing
+  // at the message text. Checked first because the OS text under a tag can
+  // say "aborted" (Windows os error 995, "The I/O operation has been
+  // aborted…"), and that read as a user cancel.
   const tagged = diskFaultTag(err)
   if (tagged) return tagged
+
+  if (/\b(abort|aborted|cancel|cancelled|canceled|stopped|interrupt)\b/.test(e))
+    return 'cancelled'
 
   const status = parseHttpStatus(err)
   if (status === 404) return 'http_404'
@@ -261,6 +276,7 @@ export function downloadKind(
   if (id.startsWith('diffusion-backend')) return 'gpu_backend'
   if (id.startsWith('diffusion')) return 'diffusion_model'
   if (id.startsWith('embedding-')) return 'embedding_model'
+  if (id.startsWith('audio-model-')) return 'audio_model'
   if (downloadType === 'Backend' || id.includes('llamacpp-backend'))
     return 'gpu_backend'
   return 'model'
@@ -530,6 +546,50 @@ export function resetExecBackendsForTests(): void {
   execBackendByModel.clear()
 }
 
+/** A random id for joining events: a UUID where the runtime has one. */
+export function telemetryId(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
+    return crypto.randomUUID()
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+/**
+ * The `load_id` of the last successful `model_load` that was emitted, per
+ * model, so later `chat_request_sent` events for that model carry it as
+ * `last_load_id` and a load joins to the turns it served — the first one
+ * above all, which is where a load that "worked" but cannot answer shows up.
+ *
+ * Only emitted loads are remembered: a success dropped by the success
+ * throttle keeps the previous id, which names an event that exists.
+ */
+const loadIdByModel = new Map<string, string>()
+
+export function rememberLoadId(modelId: string, loadId: string): void {
+  const key = normalizeModelId(modelId)
+  if (!key) return
+  loadIdByModel.delete(key)
+  loadIdByModel.set(key, loadId)
+  if (loadIdByModel.size > 200) {
+    const oldest = loadIdByModel.keys().next().value
+    if (oldest !== undefined) loadIdByModel.delete(oldest)
+  }
+}
+
+/** The remembered `load_id` for a local model, or null (cloud, or never loaded). */
+export function lastLoadIdForModel(
+  modelId?: string | null,
+  provider?: string | null
+): string | null {
+  if (loadBackendFromProvider(provider) === 'unknown') return null
+  const key = normalizeModelId(modelId)
+  return key ? (loadIdByModel.get(key) ?? null) : null
+}
+
+/** Test seam — the cache is module state and outlives a single test. */
+export function resetLoadIdsForTests(): void {
+  loadIdByModel.clear()
+}
+
 /** What the plugin parsed out of the llama-server startup log. */
 export type RuntimeDeviceSnapshot = {
   loaded_backends?: string[] | null
@@ -628,6 +688,12 @@ export type ModelLoadFailureKind =
   | 'timeout'
   | 'device_init'
   | 'process_crash'
+  // The core's own verdicts on a dead engine, which `process_crash` lumped
+  // together: a GPU build this device cannot run, an engine binary that does
+  // not start at all, and a CPU missing an instruction set the build needs.
+  | 'gpu_backend_incompatible'
+  | 'binary_broken'
+  | 'cpu_unsupported'
   | 'unknown'
 
 const LOAD_FAILURE_BY_CODE: Record<string, ModelLoadFailureKind> = {
@@ -644,6 +710,9 @@ const LOAD_FAILURE_BY_CODE: Record<string, ModelLoadFailureKind> = {
   OPERATION_TIMED_OUT: 'timeout',
   DEVICE_LIST_PARSE_FAILED: 'device_init',
   LLAMA_CPP_PROCESS_ERROR: 'process_crash',
+  GPU_BACKEND_INCOMPATIBLE: 'gpu_backend_incompatible',
+  ENGINE_BINARY_BROKEN: 'binary_broken',
+  CPU_INSTRUCTION_UNSUPPORTED: 'cpu_unsupported',
 }
 
 export function classifyModelLoadFailure(
@@ -998,6 +1067,10 @@ export type ChatFailureKind =
   | 'oom'
   | 'model_access'
   | 'model_unreachable'
+  /** A local engine refused the connection: nothing listens on its port. */
+  | 'engine_unreachable'
+  /** A local engine dropped an open connection or ended the stream early. */
+  | 'engine_exited'
   | 'model_load_failed'
   | 'auth'
   | 'rate_limit'
@@ -1035,16 +1108,95 @@ export function chatHttpStatus(error: unknown): number | null {
 }
 
 /**
+ * OS error codes for a refused connect: WSAECONNREFUSED, macOS and Linux
+ * ECONNREFUSED. Matched by code because the message beside it is localized on
+ * Windows and was classified by language: macOS "Connection refused" read as
+ * `model_unreachable`, English Windows "No connection could be made" as
+ * `network`, and every other Windows language as `unknown`.
+ */
+const OS_CONNECT_REFUSED = new Set([10061, 61, 111])
+/** WSAECONNRESET, WSAECONNABORTED, macOS and Linux ECONNRESET. */
+const OS_CONNECTION_DROPPED = new Set([10054, 10053, 54, 104])
+/** WSAETIMEDOUT. */
+const OS_TIMED_OUT = new Set([10060])
+
+/**
+ * The connection itself was aborted — "An established connection was aborted
+ * by the software in your host machine" (10053), "Software caused connection
+ * abort" — which the user-abort match below used to claim, dropping a dead
+ * engine out of the error counts.
+ */
+const CONNECTION_ABORT = /\bconnection\b[^.]{0,24}\babort/
+
+/**
+ * What a transport failure means depends on who was on the other end: a local
+ * engine that refuses or drops the connection is gone, a cloud provider that
+ * does the same is the network.
+ */
+function transportFailureKind(
+  kind: TransportKind,
+  isLocalEngine: boolean
+): ChatFailureKind | undefined {
+  switch (kind) {
+    case 'connect_refused':
+      return isLocalEngine ? 'engine_unreachable' : 'network'
+    case 'connection_reset':
+    case 'body_eof':
+      return isLocalEngine ? 'engine_exited' : 'network'
+    case 'idle_timeout':
+    case 'connect_timeout':
+      return 'timeout'
+    default:
+      // `request_failed` says only that no response arrived; the message
+      // after the tag decides.
+      return undefined
+  }
+}
+
+function osErrorFailureKind(
+  code: number | undefined,
+  isLocalEngine: boolean
+): ChatFailureKind | undefined {
+  if (code === undefined) return undefined
+  if (OS_CONNECT_REFUSED.has(code))
+    return isLocalEngine ? 'engine_unreachable' : 'network'
+  if (OS_CONNECTION_DROPPED.has(code))
+    return isLocalEngine ? 'engine_exited' : 'network'
+  if (OS_TIMED_OUT.has(code)) return 'timeout'
+  return undefined
+}
+
+/**
  * Classify a failed chat turn into a stable enum. Reuses the matchers the UI
  * already trusts (`utils/error.ts`, which mirror the Rust proxy's matchers) so
  * telemetry and the error banner can never disagree about what went wrong.
  * `rate_limit` and `content_filter` have no client-side handling today — they
  * are classified here so the gap becomes measurable.
+ *
+ * Transport failures are classified first and never from their wording: Rust
+ * tags loopback errors with `[transport:<kind>]` (`lib/transport-error.ts`),
+ * and an untagged one from an older build still carries `(os error N)`.
+ * `provider` tells a local engine from a cloud provider; without it the
+ * failure is treated as remote.
  */
-export function classifyChatFailure(error: unknown): ChatFailureKind {
+export function classifyChatFailure(
+  error: unknown,
+  provider?: string | null
+): ChatFailureKind {
   const raw = errorText(error)
   if (!raw) return 'unknown'
   const e = raw.toLowerCase()
+  const isLocalEngine = loadBackendFromProvider(provider) !== 'unknown'
+
+  const transportKind = parseTransportKind(raw)
+  const byTransport = transportKind
+    ? transportFailureKind(transportKind, isLocalEngine)
+    : undefined
+  if (byTransport) return byTransport
+  const byOsError = osErrorFailureKind(parseOsErrorCode(raw), isLocalEngine)
+  if (byOsError) return byOsError
+  if (CONNECTION_ABORT.test(e))
+    return isLocalEngine ? 'engine_exited' : 'network'
 
   if (/\b(abort|aborted|cancel|cancelled|canceled|user stopped)\b/.test(e))
     return 'aborted'
@@ -1105,23 +1257,4 @@ export function finalizeChatTurnOnce(turnId: string): boolean {
   finalizedChatTurns.add(turnId)
   if (finalizedChatTurns.size > 500) finalizedChatTurns.clear()
   return true
-}
-
-const chatFailureThrottle = new Map<string, number>()
-
-/**
- * Same rationale as `shouldEmitModelLoadFailure`: a backend stuck failing
- * every request would otherwise emit one event per retry and dominate
- * event-weighted metrics. Successes are never throttled — only call this on
- * failure paths.
- */
-export function shouldEmitChatFailure(
-  modelId: string | null | undefined,
-  errorKind: ChatFailureKind
-): boolean {
-  return throttle(
-    chatFailureThrottle,
-    `${modelId ?? 'unknown'}::${errorKind}`,
-    MODEL_LOAD_FAILURE_THROTTLE_MS
-  )
 }

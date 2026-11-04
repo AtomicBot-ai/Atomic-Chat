@@ -213,6 +213,49 @@ describe('OnboardingRuntime', () => {
   })
 
   describe('the queue', () => {
+    it('offers Retry if registration fails after download verification', () => {
+      startRun([chat])
+      downloadingChat()
+      render(<OnboardingRuntime />)
+      emit(DownloadEvent.onFileDownloadAndVerificationSuccess, {
+        modelId: chat.taskId,
+        downloadType: 'Model',
+      })
+      expect(phaseOf(chat.key)).toBe('done')
+      emit(DownloadEvent.onFileDownloadError, {
+        modelId: chat.taskId,
+        error: 'Failed to write model configuration',
+      })
+      expect(phaseOf(chat.key)).toBe('failed')
+    })
+
+    it.each([
+      DownloadEvent.onFileDownloadSuccess,
+      DownloadEvent.onFileDownloadAndVerificationSuccess,
+    ])(
+      'settles a completed chat transfer before the library refresh (%s)',
+      (event) => {
+        startRun([chat])
+        downloadingChat()
+        setProviders([local(['Gemma']), cloud])
+        useModelProvider.setState({
+          selectedProvider: 'llamacpp-upstream',
+          selectedModel: { id: 'Gemma' },
+        } as never)
+        render(<OnboardingRuntime />)
+
+        emit(event, { modelId: chat.taskId, downloadType: 'Model' })
+        act(() => useDownloadStore.getState().removeDownload(chat.taskId))
+        expect(phaseOf(chat.key)).toBe('done')
+        expect(
+          jobView(jobOf(chat.key)!, useDownloadStore.getState()).percent
+        ).toBe(100)
+
+        landChatModel()
+        expect(useModelProvider.getState().selectedModel?.id).toBe('Gemma')
+        expect(phaseOf(chat.key)).toBe('done')
+      }
+    )
     it('runs the image and video jobs after the chat model, one at a time', async () => {
       startRun([done(chat), image, video])
       landChatModel()

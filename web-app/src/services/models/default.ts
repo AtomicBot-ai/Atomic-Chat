@@ -1,18 +1,17 @@
+import { hfRepoToCatalogModel } from './hf-catalog'
+import {
+  atomicHfSource,
+  prepareAtomicDownload,
+  readAtomicDownloadPlan,
+  saveAtomicDownloadPlan,
+  atomicModelMetadataFetch,
+} from '@janhq/core'
 /**
  * Default Models Service - Web implementation
  */
 
 import { managedEngines } from '@/lib/managed-engines'
-import {
-  sanitizeModelId,
-  LOCAL_LLAMACPP_PROVIDER,
-  formatBytes,
-} from '@/lib/utils'
-import {
-  ggufShardGroupKey,
-  groupGgufShards,
-  isNonWeightGgufFile,
-} from '@/lib/models'
+import { LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
 import {
   AIEngine,
   EngineManager,
@@ -42,6 +41,8 @@ import type {
   ModelValidationResult,
 } from './types'
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
+import { invoke } from '@tauri-apps/api/core'
+import type { CompatibilityVerdict } from '@/services/model-setup/types'
 import { getCatalogOrFallback } from '@/services/model-catalog-registry'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import {
@@ -53,9 +54,10 @@ import {
   urlHost,
 } from '@/lib/telemetry'
 import { queuedCapture } from '@/lib/telemetry-queue'
-import { toast } from 'sonner'
-import i18n from '@/i18n/setup'
-import { preflightDownloadDiskSpace } from './downloadPreflight'
+import {
+  preflightDownloadDiskSpace,
+  showDownloadRefusalToast,
+} from './downloadPreflight'
 import { makeRoomForChatModel } from './gpuRoom'
 
 // Platform-active llama.cpp provider id. Windows registers only the
@@ -181,10 +183,9 @@ function huggingFaceFormatParams(
 }
 
 /** A listing entry's architectures and parameters by dtype; anything malformed reads as absent. */
-function managedListingFields(repo: HuggingFaceManagedExpansion): Pick<
-  CatalogModel,
-  'is_managed' | 'managed'
-> {
+function managedListingFields(
+  repo: HuggingFaceManagedExpansion
+): Pick<CatalogModel, 'is_managed' | 'managed'> {
   const architectures = repo.config?.architectures
   const parameters = repo.safetensors?.parameters
   return {
@@ -258,6 +259,8 @@ const scoreHuggingFaceRepoMatch = (
 }
 
 export class DefaultModelsService implements ModelsService {
+  private preparingModels = new Map<string, AbortController>()
+
   private getEngine(provider: string = defaultProvider) {
     return EngineManager.instance().get(provider) as AIEngine | undefined
   }
@@ -287,12 +290,16 @@ export class DefaultModelsService implements ModelsService {
 
   private async fetchExactHuggingFaceRepo(
     cleanRepoId: string,
-    hfToken?: string
+    hfToken?: string,
+    revision?: string,
+    signal?: AbortSignal
   ): Promise<HuggingFaceRepo | null> {
-    const response = await fetch(
-      `https://huggingface.co/api/models/${cleanRepoId}?blobs=true&files_metadata=true`,
+    const ref = revision ?? 'main'
+    const response = await atomicModelMetadataFetch()(
+      `https://huggingface.co/api/models/${cleanRepoId}/revision/${encodeURIComponent(ref)}?blobs=true&files_metadata=true`,
       {
         headers: this.getHuggingFaceHeaders(hfToken),
+        ...(signal ? { signal } : {}),
       }
     )
 
@@ -306,7 +313,15 @@ export class DefaultModelsService implements ModelsService {
       )
     }
 
-    return response.json()
+    const data = (await response.json()) as HuggingFaceRepo
+    if (
+      !/^[0-9a-f]{40}$/.test(data.sha) ||
+      (/^[0-9a-f]{40}$/.test(ref) && data.sha !== ref)
+    )
+      throw new Error(
+        `Hugging Face did not confirm commit ${cleanRepoId}@${ref}`
+      )
+    return data
   }
 
   private async searchHuggingFaceRepo(
@@ -455,11 +470,15 @@ export class DefaultModelsService implements ModelsService {
     limit = HUGGING_FACE_FEED_LIMIT,
     hfToken,
   }: HuggingFaceFeedParams): Promise<HuggingFaceFeedPage> {
-    const params = huggingFaceFormatParams(format, {}, {
-      sort: HUGGING_FACE_FEED_SORT[sort],
-      direction: '-1',
-      limit: String(limit),
-    })
+    const params = huggingFaceFormatParams(
+      format,
+      {},
+      {
+        sort: HUGGING_FACE_FEED_SORT[sort],
+        direction: '-1',
+        limit: String(limit),
+      }
+    )
     if (search?.trim()) params.set('search', search.trim())
     if (cursor) params.set('cursor', cursor)
     const url = `https://huggingface.co/api/models?${params.toString()}`
@@ -522,7 +541,9 @@ export class DefaultModelsService implements ModelsService {
 
   async fetchHuggingFaceRepo(
     repoId: string,
-    hfToken?: string
+    hfToken?: string,
+    revision?: string,
+    signal?: AbortSignal
   ): Promise<HuggingFaceRepo | null> {
     try {
       // Clean the repo ID to handle various input formats
@@ -537,7 +558,12 @@ export class DefaultModelsService implements ModelsService {
       }
 
       if (cleanRepoId.includes('/')) {
-        return await this.fetchExactHuggingFaceRepo(cleanRepoId, hfToken)
+        return await this.fetchExactHuggingFaceRepo(
+          cleanRepoId,
+          hfToken,
+          revision,
+          signal
+        )
       }
 
       return await this.searchHuggingFaceRepo(cleanRepoId, hfToken)
@@ -548,99 +574,7 @@ export class DefaultModelsService implements ModelsService {
   }
 
   convertHfRepoToCatalogModel(repo: HuggingFaceRepo): CatalogModel {
-    // Format file size helper
-    const formatFileSize = (size?: number) => {
-      if (!size) return 'Unknown size'
-      if (size < 1024 ** 3) return `${(size / 1024 ** 2).toFixed(1)} MB`
-      return `${(size / 1024 ** 3).toFixed(1)} GB`
-    }
-
-    // Extract GGUF files from the repository siblings
-    const ggufFiles =
-      repo.siblings?.filter((file) =>
-        file.rfilename.toLowerCase().endsWith('.gguf')
-      ) || []
-
-    // Keep only files that are runnable weights: drop the projectors, the MTP
-    // heads, and everything else a repo ships alongside its quants (imatrix
-    // dumps, DFlash/EAGLE drafts, vocab-only and audio-companion GGUFs) — none
-    // of those load as a model, and offering them is a download the user has to
-    // throw away.
-    const regularGgufFiles = ggufFiles.filter(
-      (file) =>
-        !file.rfilename.toLowerCase().includes('mmproj') &&
-        !isNonWeightGgufFile(file.rfilename)
-    )
-
-    const mmprojFiles = ggufFiles.filter((file) =>
-      file.rfilename.toLowerCase().includes('mmproj')
-    )
-
-    // Convert regular GGUF files to quants format. A quant split across shards
-    // is one downloadable variant, quoted at the size of the whole set.
-    const quants = groupGgufShards(regularGgufFiles).map((shards) => {
-      const first = shards[0]
-      // Generate model_id from filename (remove .gguf extension, case-insensitive)
-      const modelId = ggufShardGroupKey(first.rfilename).replace(/\.gguf$/i, '')
-      const totalSize = shards.reduce((sum, file) => sum + (file.size ?? 0), 0)
-
-      return {
-        model_id: `${repo.author}/${sanitizeModelId(modelId)}`,
-        path: `https://huggingface.co/${repo.modelId}/resolve/main/${first.rfilename}`,
-        file_size: formatFileSize(totalSize),
-      }
-    })
-
-    // Convert mmproj files to mmproj_models format
-    const mmprojModels = mmprojFiles.map((file) => {
-      const modelId = file.rfilename.replace(/\.gguf$/i, '')
-
-      return {
-        model_id: sanitizeModelId(modelId),
-        path: `https://huggingface.co/${repo.modelId}/resolve/main/${file.rfilename}`,
-        file_size: formatFileSize(file.size),
-      }
-    })
-
-    // Extract safetensors files (MLX models)
-    const safetensorsFiles =
-      repo.siblings?.filter((file) =>
-        file.rfilename.toLowerCase().endsWith('.safetensors')
-      ) || []
-
-    // Check if this repository has MLX model files (safetensors + associated files)
-    const hasMlxFiles =
-      repo.library_name === 'mlx' || repo.tags?.includes('mlx')
-
-    const safetensorsModels = safetensorsFiles.map((file) => {
-      // Generate model_id from filename (remove .safetensors extension, case-insensitive)
-      const modelId = file.rfilename.replace(/\.safetensors$/i, '')
-
-      return {
-        model_id: sanitizeModelId(modelId),
-        path: `https://huggingface.co/${repo.modelId}/resolve/main/${file.rfilename}`,
-        file_size: formatFileSize(file.size),
-        sha256: file.lfs?.sha256,
-      }
-    })
-
-    return {
-      model_name: repo.modelId,
-      developer: repo.author,
-      downloads: repo.downloads || 0,
-      likes: repo.likes || 0,
-      created_at: repo.createdAt,
-      last_modified: repo.last_modified,
-      num_quants: quants.length,
-      quants: quants,
-      num_mmproj: mmprojModels.length,
-      mmproj_models: mmprojModels,
-      safetensors_files: safetensorsModels,
-      num_safetensors: safetensorsModels.length,
-      is_mlx: hasMlxFiles,
-      readme: `https://huggingface.co/${repo.modelId}/resolve/main/README.md`,
-      description: `**Tags**: ${repo.tags?.join(', ')}`,
-    }
+    return hfRepoToCatalogModel(repo)
   }
 
   async updateModel(modelId: string, model: Partial<CoreModel>): Promise<void> {
@@ -685,127 +619,188 @@ export class DefaultModelsService implements ModelsService {
     resume: boolean = false,
     options: PullModelOptions = {}
   ): Promise<DownloadRefusal | undefined> {
-    let { modelSha256, modelSize, mmprojSha256, mmprojSize } = options
+    const controller = new AbortController()
+    this.preparingModels.set(id, controller)
+    try {
+      let { modelSha256, modelSize, mmprojSha256, mmprojSize } = options
+      const requestId = `request:${options.provider ?? defaultProvider}/${id}`
+      let prepared:
+        | Awaited<ReturnType<typeof prepareAtomicDownload>>
+        | undefined
+      const savedRequest = resume
+        ? readAtomicDownloadPlan(requestId)
+        : undefined
 
-    // Extract repo ID from model URL
-    // URL format: https://huggingface.co/{repo}/resolve/main/{filename}
-    const modelUrlMatch = modelPath.match(
-      /https:\/\/huggingface\.co\/([^/]+\/[^/]+)\/resolve\/main\/(.+)/
-    )
-
-    if (modelUrlMatch && !skipVerification) {
-      const [, repoId, modelFilename] = modelUrlMatch
-
-      try {
-        // Fetch real-time metadata from HuggingFace
-        const repoInfo = await this.fetchHuggingFaceRepo(repoId, hfToken)
-
-        if (repoInfo?.siblings) {
-          // Find the specific model file
-          const modelFile = repoInfo.siblings.find(
-            (file) => file.rfilename === modelFilename
-          )
-          if (modelFile?.lfs) {
-            modelSha256 = modelFile.lfs.sha256
-            modelSize = modelFile.lfs.size
-          }
-
-          // If mmproj path provided, extract its metadata too
-          if (mmprojPath) {
-            const mmprojUrlMatch = mmprojPath.match(
-              /https:\/\/huggingface\.co\/[^/]+\/[^/]+\/resolve\/main\/(.+)/
-            )
-            if (mmprojUrlMatch) {
-              const [, mmprojFilename] = mmprojUrlMatch
-              const mmprojFile = repoInfo.siblings.find(
-                (file) => file.rfilename === mmprojFilename
-              )
-              if (mmprojFile?.lfs) {
-                mmprojSha256 = mmprojFile.lfs.sha256
-                mmprojSize = mmprojFile.lfs.size
-              }
-            }
-          }
-        }
-      } catch (error) {
-        console.warn(
-          'Failed to fetch HuggingFace metadata, proceeding without hash verification:',
-          error
+      const source = atomicHfSource(modelPath)
+      if (
+        resume &&
+        source &&
+        !savedRequest &&
+        !/^[0-9a-f]{40}$/.test(source.revision)
+      ) {
+        throw new Error(
+          'This download has no recorded model commit. Start a new download; partial files were kept.'
         )
-        // Continue with download even if metadata fetch fails
       }
-    }
+      if (source) {
+        // File URLs and expected metadata are taken from one commit before space checks or imports.
+        const plan =
+          savedRequest ??
+          (await prepareAtomicDownload(
+            [
+              {
+                url: modelPath,
+                save_path: 'model.gguf',
+                purpose: 'weights',
+                ...(modelSize !== undefined ? { size: modelSize } : {}),
+                ...(modelSha256 ? { sha256: modelSha256 } : {}),
+              },
+              ...(mmprojPath
+                ? [
+                    {
+                      url: mmprojPath,
+                      save_path: 'mmproj.gguf',
+                      purpose: 'projector',
+                      ...(mmprojSize !== undefined ? { size: mmprojSize } : {}),
+                      ...(mmprojSha256 ? { sha256: mmprojSha256 } : {}),
+                    },
+                  ]
+                : []),
+            ],
+            { token: hfToken, signal: controller.signal, expandGguf: true }
+          ).catch((error) => {
+            if (controller.signal.aborted) throw new Error('Download cancelled')
+            throw error
+          }))
+        prepared = plan
+        const model = plan.files[0]!
+        modelPath = model.url
+        modelSize = model.size ?? undefined
+        modelSha256 = model.sha256 ?? undefined
+        const projector = plan.files.find(
+          (file) => file.purpose === 'projector'
+        )
+        if (projector) {
+          mmprojPath = projector.url
+          mmprojSize = projector.size ?? undefined
+          mmprojSha256 = projector.sha256 ?? undefined
+        }
+      }
 
-    // Will it fit? Asked here, before anything is recorded or started, so a
-    // model that cannot fit is declined with the list still on screen instead
-    // of surfacing as a failed download a moment after the row said
-    // "Downloading". Every entry point sets `localDownloadingModels` (and the
-    // Hub its origin) before calling; on a refusal that is undone here, since
-    // most of them do not await the pull. A resume is left to the Rust check,
-    // which knows how much of the partial already counts.
-    if (!resume) {
-      const refusal = await preflightDownloadDiskSpace({
+      // The final verdict must describe the bytes in this plan. Earlier Hub
+      // badges may have checked rules for a moving branch before the click.
+      if (!resume && source && typeof IS_TAURI !== 'undefined' && IS_TAURI) {
+        const pinned = atomicHfSource(modelPath)!
+        const verdict = await invoke<CompatibilityVerdict>('atomic_core_call', {
+          method: 'POST',
+          path: '/models/compatibility',
+          body: {
+            repo: pinned.repo,
+            revision: pinned.revision,
+            file: pinned.path,
+            provider: options.provider ?? defaultProvider,
+            inspect_remote: true,
+          },
+        })
+        if (
+          verdict &&
+          ['unsupported', 'legacy_artifact'].includes(verdict.outcome)
+        )
+          throw new Error(verdict.reason)
+      }
+
+      // Will it fit? Asked here, before anything is recorded or started, so a
+      // model that cannot fit is declined with the list still on screen instead
+      // of surfacing as a failed download a moment after the row said
+      // "Downloading". Every entry point sets `localDownloadingModels` (and the
+      // Hub its origin) before calling; on a refusal that is undone here, since
+      // most of them do not await the pull. The destination's volume is asked
+      // for its free space and its file system (FAT32 holds no file of 4 GiB or
+      // more). A resume counts what is already downloaded, when the progress
+      // is known here; otherwise it is left to the Rust check.
+      {
+        const weights = prepared
+          ? prepared.files.filter((file) => file.purpose === 'weights')
+          : []
+        const refusal = await preflightDownloadDiskSpace({
+          modelPath,
+          mmprojPath,
+          modelSize: prepared
+            ? weights.reduce((sum, file) => sum + file.size!, 0)
+            : modelSize,
+          mmprojSize,
+          ...(prepared
+            ? {
+                largestFileBytes: Math.max(
+                  0,
+                  ...prepared.files.map((file) => file.size ?? 0)
+                ),
+              }
+            : {}),
+          resume,
+          partialBytes: resume
+            ? useDownloadStore.getState().downloads[id]?.current
+            : undefined,
+        })
+        if (refusal) {
+          const store = useDownloadStore.getState()
+          store.removeLocalDownloadingModel(id)
+          store.clearDownloadOrigin(id)
+          showDownloadRefusalToast(refusal, id)
+          return refusal
+        }
+      }
+
+      // Save only after preflight accepted the request. Resume reads this snapshot
+      // before asking HF, so an offline restart cannot change the selected commit.
+      if (prepared) saveAtomicDownloadPlan(requestId, prepared)
+
+      // ATO-154: record resume parameters at the single GGUF download-start
+      // choke point so the global Download popover can resume a paused download
+      // (it only knows the model id, not these HF paths/token). MLX downloads go
+      // through `engine.import` directly and are pause/resume-gated out.
+      useDownloadStore.getState().setResumeParams(id, {
+        ...options,
+        modelSha256,
+        modelSize,
+        mmprojSha256,
+        mmprojSize,
         modelPath,
         mmprojPath,
-        modelSize,
-        mmprojSize,
+        hfToken,
+        skipVerification,
       })
-      if (refusal) {
-        const store = useDownloadStore.getState()
-        store.removeLocalDownloadingModel(id)
-        store.clearDownloadOrigin(id)
-        toast.error(i18n.t('common:toast.downloadWontFit.title'), {
-          id: 'download-wont-fit',
-          description: i18n.t('common:toast.downloadWontFit.description', {
-            model: id,
-            needed: formatBytes(refusal.needed),
-            available: formatBytes(refusal.available) || '0 B',
-          }),
-          duration: 15000,
+
+      // ATO-109: model_download funnel entry. Terminal events are emitted from
+      // DownloadManagement listeners; this records the start (+ duration anchor).
+      try {
+        markDownloadStart(id)
+        queuedCapture('model_download', {
+          // NOT `status` — globally typed numeric in PostHog by
+          // `api_server_request.status`, which silently nulls string values.
+          // Must stay in sync with the terminal event in DownloadManagement.
+          download_status: 'started',
+          download_kind: 'model',
+          model_id: normalizeModelId(id),
+          quant: quantFromModelId(id),
+          // Usually `unknown` here: the byte count comes from HuggingFace
+          // metadata that is only fetched when `skipVerification` is false, and
+          // it defaults to true. The terminal event carries the real size from
+          // the downloader, so read `size_bucket` off that.
+          size_bucket: sizeBucket(modelSize),
+          is_hf_url: isHfUrl(modelPath),
+          resolved_asset_url_host: urlHost(modelPath),
+          hf_token_present: !!hfToken,
         })
-        return refusal
+      } catch (telemetryError) {
+        console.debug(
+          'model_download started telemetry failed:',
+          telemetryError
+        )
       }
-    }
 
-    // ATO-154: record resume parameters at the single GGUF download-start
-    // choke point so the global Download popover can resume a paused download
-    // (it only knows the model id, not these HF paths/token). MLX downloads go
-    // through `engine.import` directly and are pause/resume-gated out.
-    useDownloadStore.getState().setResumeParams(id, {
-      ...options,
-      modelPath,
-      mmprojPath,
-      hfToken,
-      skipVerification,
-    })
-
-    // ATO-109: model_download funnel entry. Terminal events are emitted from
-    // DownloadManagement listeners; this records the start (+ duration anchor).
-    try {
-      markDownloadStart(id)
-      queuedCapture('model_download', {
-        // NOT `status` — globally typed numeric in PostHog by
-        // `api_server_request.status`, which silently nulls string values.
-        // Must stay in sync with the terminal event in DownloadManagement.
-        download_status: 'started',
-        download_kind: 'model',
-        model_id: normalizeModelId(id),
-        quant: quantFromModelId(id),
-        // Usually `unknown` here: the byte count comes from HuggingFace
-        // metadata that is only fetched when `skipVerification` is false, and
-        // it defaults to true. The terminal event carries the real size from
-        // the downloader, so read `size_bucket` off that.
-        size_bucket: sizeBucket(modelSize),
-        is_hf_url: isHfUrl(modelPath),
-        resolved_asset_url_host: urlHost(modelPath),
-        hf_token_present: !!hfToken,
-      })
-    } catch (telemetryError) {
-      console.debug('model_download started telemetry failed:', telemetryError)
-    }
-
-    // Call the original pullModel with the fetched metadata
-    try {
+      // Call the original pullModel with the fetched metadata
+      controller.signal.throwIfAborted()
       await this.pullModel(
         id,
         modelPath,
@@ -827,6 +822,7 @@ export class DefaultModelsService implements ModelsService {
       if (useDownloadStore.getState().pausedDownloads.has(id)) {
         return
       }
+      if (controller.signal.aborted) throw new Error('Download cancelled')
       // Emit download error event so the UI can clean up the stale downloading state
       events.emit(DownloadEvent.onFileDownloadError, {
         modelId: id,
@@ -834,10 +830,13 @@ export class DefaultModelsService implements ModelsService {
         error: error instanceof Error ? error.message : String(error),
       })
       throw error
+    } finally {
+      this.preparingModels.delete(id)
     }
   }
 
   async abortDownload(id: string): Promise<void> {
+    this.preparingModels.get(id)?.abort()
     // A Bonsai file downloads under PrismML's own task id: every engine that
     // may hold `id` is asked, and the ones that do not hold it ignore it.
     const engines = [LOCAL_LLAMACPP_PROVIDER, 'atomic-prism', 'mlx'].map(

@@ -3,6 +3,7 @@ import {
   INTEGRATION_AGENTS,
   type IntegrationAgent,
 } from '@/constants/integrations'
+import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useServerSetup } from '@/hooks/useServerSetup'
 import { useLaunchStore } from '@/stores/launch-store'
 import { useLaunchSettings } from '@/stores/launch-settings-store'
@@ -53,11 +54,15 @@ export async function detectIntegrationAgent(
 /**
  * Lists the agents whose own config already points at this server — set up
  * through an earlier release, before the Server section kept its list — as
- * configured. When the backend cannot tell, the list stays as it is.
+ * configured. A URL counts only on this server's port: another local server
+ * (Ollama, a LiteLLM proxy) is the user's own. When the backend cannot tell,
+ * the list stays as it is.
  */
 export async function adoptConfiguredAgents(): Promise<void> {
   try {
-    const ids = await invoke<string[]>('detect_configured_agents')
+    const ids = await invoke<string[]>('detect_configured_agents', {
+      port: useLocalApiServer.getState().serverPort,
+    })
     const known = new Set(INTEGRATION_AGENTS.map((agent) => agent.id))
     useServerSetup.getState().adoptAgents(ids.filter((id) => known.has(id)))
   } catch {

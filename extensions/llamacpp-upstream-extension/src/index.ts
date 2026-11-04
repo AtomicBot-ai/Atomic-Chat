@@ -8,6 +8,7 @@
 
 import {
   AIEngine,
+  atomicAuxiliaryFile,
   getJanDataFolderPath,
   fs,
   joinPath,
@@ -4397,7 +4398,7 @@ export default class llamacpp_upstream_extension extends AIEngine {
     const installed = await this.list()
     if (!installed.some((model) => model.id === modelId)) {
       await this.import(modelId, {
-        modelPath: 'https://huggingface.co/second-state/All-MiniLM-L6-v2-Embedding-GGUF/resolve/main/all-MiniLM-L6-v2-ggml-model-f16.gguf?download=true',
+        modelPath: atomicAuxiliaryFile('second-state/All-MiniLM-L6-v2-Embedding-GGUF', 'all-MiniLM-L6-v2-ggml-model-f16.gguf').url,
       })
     }
     await this.ensureCoreIsReady()

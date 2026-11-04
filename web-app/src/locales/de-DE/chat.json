@@ -7,6 +7,10 @@
     "empty": "Keine Chats gefunden"
   },
   "sendMessage": "Nachricht senden",
+  "replyGate": {
+    "sendHint": "Wählen, womit geantwortet wird",
+    "sendWith": "Mit {{model}} senden"
+  },
   "newConversation": "Neue Konversation",
   "clearHistory": "Verlauf löschen",
   "activity": {
@@ -39,5 +43,13 @@
     "openFailed": "{{name}} konnte nicht geöffnet werden",
     "openFailedDescription": "Die Datei wurde möglicherweise verschoben oder gelöscht.",
     "chipLabel": "Quelle: {{name}}, Abschnitt {{passage}}"
+  },
+  "turnRecovery": {
+    "retry": "Erneut versuchen",
+    "details": "Details",
+    "genericTitle": "Fehler beim Erstellen der Antwort",
+    "genericMessage": "Das Modell hat einen Fehler gemeldet, bevor die Antwort fertig war. Versuche es erneut, um deine Nachricht noch einmal zu senden; die Fehlermeldung findest du unter Details.",
+    "settingsRestartTitle": "Das Modell wurde nach einer Einstellungsänderung neu gestartet",
+    "settingsRestartMessage": "Deine Einstellungsänderung hat {{model}} neu gestartet, während das Modell geantwortet hat. Versuche es erneut, um deine Nachricht noch einmal zu senden."
   }
 }

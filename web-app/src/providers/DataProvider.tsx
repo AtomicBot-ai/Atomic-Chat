@@ -54,11 +54,22 @@ import {
 } from '@/utils/registerRemoteProvider'
 import { hydrateActiveModelsForRunningServer } from '@/utils/activeModelsSync'
 import { resumeServedHelperModels } from '@/utils/turnOffLocalApiServer'
-import { claimLaunchAutoStart } from '@/utils/localApiServerControl'
+import {
+  claimLaunchAutoStart,
+  hasResidentEmbeddingModel,
+  hasResidentMediaModel,
+} from '@/utils/localApiServerControl'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import { ensureRemoteProviderReady } from '@/utils/ensureRemoteProviderReady'
 import { syncServedModelSelection } from '@/utils/serverModelSelection'
+import {
+  canLoadForServer,
+  loadServedModel,
+  servedModel,
+} from '@/utils/servedModel'
+import { syncConnectedAgentsWithServedModel } from '@/utils/connectedAgentsModel'
+import type { ServiceHub } from '@/services'
 import { reconcileLaunchAtStartup } from '@/lib/launchAtStartup'
 import { ModelFactory } from '@/lib/model-factory'
 import { isProviderConnected } from '@/lib/cloud-providers'
@@ -98,6 +109,42 @@ export async function restoreServerModelAfterRecovery(
     }
   } catch (error) {
     console.warn('[LocalAPI] could not reload the model for the recovered server:', error)
+  }
+}
+
+/**
+ * B01 (QA 2.3.2): "Start automatically" brought the server up at launch with
+ * nothing loaded, while every page named the model it served last; agents
+ * pointed at it got 503 until the user pressed Stop and Start. The launch now
+ * loads that model, the one and the way Start would (`ensureModelForServer`
+ * through `loadServedModel`), whatever "Preload last used model" says.
+ * Nothing to load leaves the server to come up without a model, as before: no
+ * served model yet, a cloud one, one since deleted, or an image, video or
+ * embedding model the server already answers with (Start loads no chat model
+ * over those either). A load that fails or times out does too.
+ * ADR 2026-11-03-start-the-local-api-server-at-launch-with-its-last-model.
+ */
+export async function loadServedModelAtLaunch(
+  serviceHub: Pick<ServiceHub, 'models' | 'diffusion' | 'embedding'>
+): Promise<void> {
+  const wanted = servedModel()
+  if (!wanted || !canLoadForServer(wanted)) return
+  if (
+    (await hasResidentMediaModel(serviceHub.diffusion())) ||
+    (await hasResidentEmbeddingModel(serviceHub.embedding()))
+  )
+    return
+  try {
+    console.log('[LocalAPI:startup] Loading the served model:', wanted.model)
+    const result = await loadServedModel(serviceHub.models(), wanted)
+    if (result.status === 'no_model_available') {
+      console.warn('[LocalAPI:startup] no model to load for the server')
+    }
+  } catch (error) {
+    console.warn(
+      '[LocalAPI:startup] could not load the served model; starting without it:',
+      error
+    )
   }
 }
 
@@ -467,6 +514,9 @@ export function DataProvider() {
   // The server sends each model id to the provider its page shows (AC-03).
   useEffect(() => syncServedModelSelection(), [])
 
+  // Connected agents follow the model the server serves (B02).
+  useEffect(() => syncConnectedAgentsWithServedModel(), [])
+
   // The core's media catalog, asked again while the core is still starting.
   const mediaCatalog = useMediaCatalog((state) => state.catalog)
   useEffect(() => {
@@ -822,9 +872,8 @@ export function DataProvider() {
   }, [serviceHub])
 
   // Auto-start Local API Server on app startup: re-attach to an
-  // already-running server, or start it when "Start automatically" is on. We
-  // never proactively load/select a model here: with nothing running, the
-  // server is up with no local model until the user loads one.
+  // already-running server, or start it when "Start automatically" is on,
+  // with the model it served last (`loadServedModelAtLaunch`).
   useEffect(() => {
     const autoStartServer = async () => {
       try {
@@ -870,10 +919,11 @@ export function DataProvider() {
         }
 
         // "Start automatically" promises the server when Atomic Chat opens, so
-        // it comes up whether or not a model is running. No model is loaded or
-        // picked for it (ADR 2026-08-19): it answers with what is there —
-        // cloud models, an embedding, image or decision model — and with a
-        // local chat model once one is loaded (ADR 2026-10-21).
+        // it comes up whether or not a model is running (ADR 2026-10-21), and
+        // with the chat model it served last when there is one to load (ADR
+        // 2026-11-03). Otherwise it answers with what is there — cloud models,
+        // an embedding, image or decision model — and with a local chat model
+        // once one is loaded.
         const runningModels =
           (await serviceHub
             .models()
@@ -898,6 +948,10 @@ export function DataProvider() {
           runningModels
         )
         try {
+          // Loaded first, as Start does: the server comes up with its model.
+          if (PlatformFeatures[PlatformFeature.LOCAL_API_SERVER]) {
+            await loadServedModelAtLaunch(serviceHub)
+          }
           // ATO-270: never let a stuck native invoke leave the UI on
           // "Starting Server" forever.
           const startServerCall = window.core?.api?.startServer({

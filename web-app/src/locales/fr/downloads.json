@@ -14,6 +14,7 @@
     "local": "Modèles locaux",
     "image": "Images",
     "video": "Vidéos",
+    "audio": "Audio",
     "voice": "Voix",
     "engine": "Moteurs"
   },
@@ -27,6 +28,7 @@
     "decision": "modèle de décision",
     "image": "génération d'images",
     "video": "génération de vidéos",
+    "audio": "génération audio",
     "voice": "reconnaissance vocale",
     "engine": "moteur d'inférence",
     "partial": "téléchargement incomplet",

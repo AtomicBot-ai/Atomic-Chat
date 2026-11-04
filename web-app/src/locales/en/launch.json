@@ -11,9 +11,34 @@
   "editorsDesc": "Code editors that let you chat and code with your local models.",
   "copySettings": "Copy settings",
   "manualSetup": "Manual setup",
+  "editorSteps": {
+    "vscode": {
+      "open": "In VS Code, open the Chat view and run \"Chat: Manage Language Models\" from the Command Palette (or choose Manage Models in the chat's model picker).",
+      "add": "Click \"Add Models\" → \"Custom Endpoint\". Name the group \"Atomic Chat\", enter the server's API key (any text when it has none) and choose the \"Chat Completions\" API type.",
+      "paste": "In the chatLanguageModels.json that opens, replace the new entry with the one Copy settings put on your clipboard, keeping its \"apiKey\" line, and save.",
+      "pick": "Pick the Atomic Chat model in the chat's model picker. Restart VS Code if it does not appear."
+    },
+    "jetbrains": {
+      "open": "Open Settings | Tools | AI Assistant | Providers & API keys.",
+      "provider": "Under Third-party AI providers, choose the OpenAI-compatible provider, paste the copied URL and API key, turn on Tool calling and click Test Connection.",
+      "assign": "Local models are not assigned automatically: under Models Assignment, pick the Atomic Chat model for Core features and Instant helpers, set Context window to the copied value, and click Apply.",
+      "agents": "JetBrains agents can't use local models; use AI Chat and the in-editor features instead."
+    },
+    "xcode": {
+      "open": "Open Xcode → Settings → Intelligence (Xcode 26 or newer).",
+      "add": "Under Chat, click \"Add a Chat Provider\" and choose \"Locally Hosted\".",
+      "port": "Enter the copied port and click Add. Xcode calls /v1/models and /v1/chat/completions on it.",
+      "pick": "Pick the Atomic Chat model in the chat. Restart Xcode if it does not appear."
+    }
+  },
+  "editorWarnings": {
+    "xcodeApiKey": "Xcode's Locally Hosted provider has no API key field, so it can't reach this server while it requires a key. Turn the server's API key off to use Xcode.",
+    "xcodePrefix": "The server's API prefix is {{prefix}}, but Xcode always calls /v1. Set the prefix back to /v1 to use Xcode."
+  },
   "serverNotRunningHint": "Start the local server above first so {{name}} can reach your models.",
   "installed": "Installed",
   "installedViaWsl": "Installed (WSL)",
+  "wslOnlyHint": "{{name}} is installed only inside WSL. Atomic Chat writes its settings on Windows and starts it in a Windows terminal, which can't reach a WSL install (and WSL 2's localhost isn't this PC). Install {{name}} on Windows to connect it.",
   "notInstalled": "Not installed",
   "setCustomPath": "Set binary path",
   "customPathSet": "Binary path set",
@@ -49,14 +74,20 @@
     "configuredDesc": "{{name}} now points at your local server — opening a terminal.",
     "configuredDescEditor": "{{name}} now points at your local server — opening the editor.",
     "configuredDescOpenclaw": "{{name}} now points at your local server. Its Gateway reloads the config on its own — if a chat is still pinned to another model, run /model default in it.",
-    "openclawAppReady": "Open OpenClaw Companion",
-    "openclawAppReadyDesc": "Your config is updated. Open OpenClaw Companion from the system tray or the Start menu to use the Atomic Chat model.",
     "configuredDescCodex": "{{name}} now uses your local server through its own profile — opening a terminal. A plain `codex` and the ChatGPT app keep your settings; run `codex --profile atomic-chat` to use the local model yourself.",
+    "configuredDescCodexKeyed": "{{name}} now uses your local server through its own profile — opening a terminal. A plain `codex` and the ChatGPT app keep your settings. To use the local model yourself, set ATOMIC_CHAT_API_KEY to this server's API key, then run `codex --profile atomic-chat`.",
     "configuredDescZcode": "{{name}} now points at your local server and picks the change up on its own — choose Atomic Chat in its model menu if a chat is still on another model.",
     "zcodeNotInstalled": "ZCode isn't installed",
     "zcodeNotInstalledDesc": "The Atomic Chat provider is saved. Download ZCode from zcode.z.ai — it will use your local model on first start.",
     "configureFailed": "Failed to configure {{name}}",
     "terminalFailed": "Couldn't open a terminal for {{name}}",
+    "terminalNotAllowedDesc": "macOS didn’t let Atomic Chat control Terminal. Allow it in System Settings → Privacy & Security → Automation, then connect again.",
+    "contextTooSmall": "{{name}} needs a context window of at least {{minimum}} tokens",
+    "contextTooSmallFit": "The model runs with {{current}}, sized by “Fit to device memory”. Turn that off in the model’s settings to set a larger context, or pick a smaller model.",
+    "contextTooSmallModel": "The model supports at most {{current}}. Pick a model with a longer context.",
+    "contextTooSmallMemory": "The model runs with {{current}} and couldn’t be loaded with more on this computer. Free some memory or pick a smaller model.",
+    "wslOnly": "{{name}} is installed only in WSL",
+    "wslOnlyDesc": "Atomic Chat can't connect an agent installed inside WSL: its settings and terminal are on Windows, and WSL 2's localhost isn't this PC. Install {{name}} on Windows to connect it.",
     "settingsCopied": "Connection settings copied",
     "settingsCopiedDesc": "Paste them into {{name}}'s provider settings.",
     "copyFailed": "Couldn't copy settings to the clipboard",

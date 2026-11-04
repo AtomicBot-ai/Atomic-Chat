@@ -375,7 +375,7 @@ describe('ModelFactory tensorrt-llm provider', () => {
     expect(modelId).toBe('qwen3-8b')
     expect(config.provider).toBe('tensorrt-llm')
     expect(config.url({ path: '/chat/completions' })).toBe(
-      'http://localhost:4001/v1/chat/completions'
+      'http://127.0.0.1:4001/v1/chat/completions'
     )
     expect(config.headers().Authorization).toBe('Bearer gateway-key')
   })
@@ -588,7 +588,7 @@ describe('ModelFactory foundry-local provider (change add-foundry-local)', () =>
     expect(modelId).toBe('qwen3-4b-generic-gpu')
     expect(config.provider).toBe('foundry-local')
     expect(config.url({ path: '/chat/completions' })).toBe(
-      'http://localhost:4101/v1/chat/completions'
+      'http://127.0.0.1:4101/v1/chat/completions'
     )
     expect(config.headers().Authorization).toBe('Bearer foundry-key')
   })
@@ -722,7 +722,7 @@ describe('ModelFactory litert-lm provider (change add-litert-lm-runtime)', () =>
     expect(modelId).toBe('gemma-4-e4b-it-gpu')
     expect(config.provider).toBe('litert-lm')
     expect(config.url({ path: '/chat/completions' })).toBe(
-      'http://localhost:4202/v1/chat/completions'
+      'http://127.0.0.1:4202/v1/chat/completions'
     )
     expect(config.headers().Authorization).toBe('Bearer litert-key')
   })
@@ -859,7 +859,7 @@ describe('ModelFactory geniex provider (change add-geniex-runtime)', () => {
     expect(modelId).toBe('qwen3-4b')
     expect(config.provider).toBe('geniex')
     expect(config.url({ path: '/chat/completions' })).toBe(
-      'http://localhost:4303/v1/chat/completions'
+      'http://127.0.0.1:4303/v1/chat/completions'
     )
     expect(config.headers().Authorization).toBe('Bearer geniex-key')
   })
@@ -952,7 +952,7 @@ describe('countLocalPromptTokens', () => {
     expect(mockedInvoke).toHaveBeenCalledWith(
       'post_local_http',
       expect.objectContaining({
-        url: 'http://localhost:4242/apply-template',
+        url: 'http://127.0.0.1:4242/apply-template',
         timeoutSecs: 3,
       })
     )

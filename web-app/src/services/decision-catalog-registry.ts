@@ -1,3 +1,7 @@
+import {
+  unifiedModelCollection,
+  unifiedModelBaseline,
+} from './unified-model-catalog'
 /**
  * Decision catalog registry — remote configuration loader.
  *
@@ -19,8 +23,7 @@
 
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 
-import { BASELINE_DECISION_CATALOG } from './decision-catalog-baseline'
-
+/** @deprecated Independent catalog URL; retained for legacy/custom adapters. Production desktop projects models/catalog.json. */
 export const DEFAULT_DECISION_CATALOG_URL =
   'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/models/decision.json'
 
@@ -473,7 +476,7 @@ export type DecisionCatalogFetchOptions = {
 
 /** The bundled snapshot, re-validated so a stale generator cannot ship junk. */
 export const getBaselineDecisionCatalog = (): DecisionCatalog =>
-  parseDecisionCatalog(BASELINE_DECISION_CATALOG)
+  parseDecisionCatalog(unifiedModelBaseline('decision'))
 
 /**
  * Resolve the catalog: fresh cache (unless forced), then the network (cached
@@ -482,6 +485,16 @@ export const getBaselineDecisionCatalog = (): DecisionCatalog =>
 export const fetchDecisionCatalog = async (
   options: DecisionCatalogFetchOptions = {}
 ): Promise<DecisionCatalogFetchResult> => {
+  if (options.url === undefined) {
+    const result = await unifiedModelCollection('decision', options.force)
+    return {
+      catalog: parseDecisionCatalog(result.data),
+      source: result.source,
+      fetchedAt: result.fetchedAt,
+      ...(result.error ? { error: result.error } : {}),
+    }
+  }
+
   const {
     force = false,
     url = DECISION_CATALOG_URL,

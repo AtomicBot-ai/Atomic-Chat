@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   loadPrismSetupPlan,
@@ -207,6 +207,16 @@ describe('verifyPrismDownload when the core cannot be asked', () => {
 })
 
 describe('loadPrismSetupPlan', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const ref = /\/revision\/([^?]+)/.exec(String(input))?.[1]
+      return Response.json({ sha: ref && /^[0-9a-f]{40}$/.test(ref) ? ref : 'a'.repeat(40), siblings: [
+        { rfilename: 'Bonsai-8B-PQ2_0.gguf', lfs: { size: 2000, sha256: 'a'.repeat(64) } },
+        { rfilename: 'mmproj-Q8_0.gguf', lfs: { size: 500, sha256: 'c'.repeat(64) } },
+        { rfilename: 'f.gguf', size: 10 },
+      ] })
+    }))
+  })
   it('builds the plan from the verdict, the families, the PrismML catalog and the free space', async () => {
     const families: PrismFamiliesResponse = {
       rules_version: 1,
@@ -215,7 +225,7 @@ describe('loadPrismSetupPlan', () => {
           id: 'bonsai-8b',
           title: 'Bonsai 8B',
           repo: 'prism-ml/Bonsai-8B-gguf',
-          revision: 'b072e1d',
+          revision: 'a'.repeat(40),
           files: [
             {
               file: 'Bonsai-8B-PQ2_0.gguf',
@@ -261,7 +271,7 @@ describe('loadPrismSetupPlan', () => {
     expect(service.checkCompatibility).toHaveBeenCalledWith({
       repo: 'prism-ml/Bonsai-8B-gguf',
       file: 'Bonsai-8B-PQ2_0.gguf',
-      revision: 'main',
+      revision: 'a'.repeat(40),
       inspect_remote: true,
     })
     expect(loaded).toMatchObject({

@@ -38,6 +38,8 @@ import {
 } from '@/hooks/useServerSetup'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { requireAgentContextWindow } from '@/lib/agent-context-window'
+import { detectIntegrationAgent } from '@/lib/integration-agent-detection'
 import {
   agentConnectHost,
   isGuidedAgent,
@@ -45,6 +47,7 @@ import {
 } from '@/lib/integration-agent-setup'
 import { openIntegrationAgent } from '@/lib/integration-agent-run'
 import { useLaunchStore } from '@/stores/launch-store'
+import { useLaunchSettings } from '@/stores/launch-settings-store'
 
 import {
   EngineModelFields,
@@ -181,10 +184,14 @@ export function ServerSetupGuide({ entry }: { entry: SetupGuideEntry }) {
       }
       case 'connect':
         if (path === 'agent') {
+          // A window below the agent's minimum is grown first; when it cannot
+          // be, the step fails saying why and nothing is written.
+          const contextLength = await requireAgentContextWindow(agent, t, model)
           await writeAgentConfig(
             agent,
             model.model,
-            useLocalApiServer.getState()
+            useLocalApiServer.getState(),
+            { contextLength }
           )
           useServerSetup.getState().markAgentConfigured(agent.id)
         } else {
@@ -216,20 +223,24 @@ export function ServerSetupGuide({ entry }: { entry: SetupGuideEntry }) {
     // The endpoint hints too, when this set up the server they lead to.
     finishGuide()
     setStep('done')
-    // Configured, the agent opens — its app, or a terminal running it —
-    // unless it is known to be missing from this computer.
-    if (
-      path === 'agent' &&
-      !(
-        agent.installable &&
-        useLaunchStore.getState().installed[agent.id] === false
-      )
-    ) {
-      void openIntegrationAgent(agent, {
-        t,
-        model: choice.model,
-        server: useLocalApiServer.getState(),
-      })
+    // Configured, the agent opens — its app, or a terminal running it (the
+    // one already running it, brought forward) — unless it is missing from
+    // this computer: asked again, a terminal would only say "command not
+    // found".
+    if (path === 'agent') {
+      const present =
+        !agent.installable ||
+        (await detectIntegrationAgent(
+          agent,
+          useLaunchSettings.getState().customPaths[agent.id]
+        ))
+      if (present) {
+        void openIntegrationAgent(agent, {
+          t,
+          model: choice.model,
+          server: useLocalApiServer.getState(),
+        })
+      }
     }
   }
 

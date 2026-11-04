@@ -23,9 +23,10 @@ export type BackendMismatch =
   | { kind: 'suboptimal-config'; configured: string; ideal: string }
 
 /**
- * Window event that opens `SuboptimalBackendDialog`. Detection happens at model
- * load, but the prompt is raised on the first message send so a load is never
- * interrupted; `ChatInput` dispatches this without blocking the send.
+ * Window event that opens `SuboptimalBackendDialog` now, unless a chat request
+ * is in flight. Detection happens at model load; the dialog raises the prompt
+ * itself once a turn finishes or the app is idle, never on the send, whose
+ * request its Fix or Restart would end.
  */
 export const BACKEND_MISMATCH_PROMPT_EVENT = 'app:backend-mismatch-prompt'
 

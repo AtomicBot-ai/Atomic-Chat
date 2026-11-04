@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import { mockHfModelMetadata } from '@/test/hf-model-metadata'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -7,6 +9,7 @@ import type {
   CompatibilityVerdict,
   PrismCatalog,
   PrismFamiliesResponse,
+  PrismSetupPlan,
 } from '@/services/model-setup/types'
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
@@ -42,7 +45,7 @@ const families: PrismFamiliesResponse = {
       id: 'bonsai-8b',
       title: 'Bonsai 8B',
       repo: file.repo,
-      revision: 'b072e1d',
+      revision: 'a'.repeat(40),
       files: [
         {
           file: file.file,
@@ -90,21 +93,30 @@ class FakeService extends DefaultModelSetupService {
 let service: FakeService
 const onStart = vi.fn()
 
-const renderSheet = () =>
-  render(
+/** The sheet with the projector choice kept outside it, as the row keeps it. */
+function Sheet({ initialPlan }: { initialPlan?: PrismSetupPlan }) {
+  const [includeProjector, setIncludeProjector] = useState(true)
+  return (
     <ModelSetupSheet
       open
       onOpenChange={() => {}}
       file={file}
       modelName="Bonsai 8B"
       modelId="prism-ml/Bonsai-8B-PQ2_0"
+      initialPlan={initialPlan}
+      includeProjector={includeProjector}
+      onIncludeProjectorChange={setIncludeProjector}
       onStart={onStart}
     />
   )
+}
+
+const renderSheet = () => render(<Sheet />)
 
 describe('ModelSetupSheet', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockHfModelMetadata(families.families)
     service = new FakeService()
     seedServiceHub({ modelSetup: service })
   })
@@ -127,6 +139,7 @@ describe('ModelSetupSheet', () => {
     // disk, and no setup-plan route of the core.
     expect(service.checkCompatibility).toHaveBeenCalledWith({
       ...file,
+      revision: 'a'.repeat(40),
       inspect_remote: true,
     })
     expect(service.families).toHaveBeenCalled()
@@ -144,17 +157,7 @@ describe('ModelSetupSheet', () => {
       include_projector: true,
     })
     vi.clearAllMocks()
-    render(
-      <ModelSetupSheet
-        open
-        onOpenChange={() => {}}
-        file={file}
-        modelName="Bonsai 8B"
-        modelId="prism-ml/Bonsai-8B-PQ2_0"
-        initialPlan={initialPlan}
-        onStart={onStart}
-      />
-    )
+    render(<Sheet initialPlan={initialPlan} />)
 
     expect(await screen.findByTestId('model-setup-engine')).toHaveTextContent(
       'prism-b9000-abcdef0'

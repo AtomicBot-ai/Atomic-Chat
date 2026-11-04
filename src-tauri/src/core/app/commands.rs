@@ -10,6 +10,7 @@ use super::{
     constants::CONFIGURATION_FILE_NAME, helpers::copy_dir_recursive_except, models::AppConfiguration,
 };
 use crate::core::state::AppState;
+use crate::core::webview_store::{webview_data_store, WebviewStorage};
 
 const PROFILE_DIR_ENV: &str = "ATOMIC_CHAT_PROFILE_DIR";
 
@@ -76,6 +77,56 @@ fn isolated_profile_config_path(root: &Path) -> PathBuf {
 
 fn isolated_profile_data_path(root: &Path) -> PathBuf {
     root.join("data")
+}
+
+/// The file in an isolated profile that names the profile's WebKit data store.
+const PROFILE_WEBVIEW_STORE_FILE: &str = "webview-store-id";
+
+/// The webview storage of an isolated profile, or `None` without a valid
+/// override (the usual windows and the usual storage then stay as they are).
+///
+/// Projects, onboarding progress and frontend settings live in the webview's
+/// localStorage, so a profile that moved only `settings.json` and the data
+/// folder still showed the usual profile's projects.
+pub fn isolated_profile_webview_storage() -> Option<WebviewStorage> {
+    isolated_profile_root().map(|root| profile_webview_storage(&root))
+}
+
+/// WebView2 and WebKitGTK keep their data in `<profile>/webview` and go away
+/// with the profile. WKWebView keeps a data store outside it, under
+/// `~/Library/WebKit`, so its id is drawn at random once and kept in the
+/// profile: a folder deleted and created again at the same path starts with
+/// an empty webview, not with the store the deleted one left behind.
+fn profile_webview_storage(root: &Path) -> WebviewStorage {
+    WebviewStorage {
+        data_store_identifier: profile_webview_store_id(root),
+        ..WebviewStorage::derived_from(root)
+    }
+}
+
+fn profile_webview_store_id(root: &Path) -> [u8; 16] {
+    let file = root.join(PROFILE_WEBVIEW_STORE_FILE);
+    if let Some(kept) = fs::read_to_string(&file)
+        .ok()
+        .and_then(|content| uuid::Uuid::parse_str(content.trim()).ok())
+    {
+        return *kept.as_bytes();
+    }
+    let drawn = uuid::Uuid::new_v4();
+    let kept =
+        fs::create_dir_all(root).and_then(|()| fs::write(&file, drawn.hyphenated().to_string()));
+    match kept {
+        Ok(()) => *drawn.as_bytes(),
+        // Still a store of this profile's own, just not one a re-created
+        // folder at the same path would leave behind.
+        Err(err) => {
+            eprintln!(
+                "Could not keep the webview store id in {}: {err}; naming the store after the profile path",
+                file.display()
+            );
+            webview_data_store(root)
+        }
+    }
 }
 
 fn resolve_data_folder_from_config(config_file: &Path, default_folder: &Path) -> PathBuf {
@@ -632,5 +683,90 @@ mod tests {
         assert!(!first_data.starts_with(&second));
         assert!(!second_config.starts_with(&first));
         assert!(!second_data.starts_with(&first));
+    }
+
+    #[test]
+    fn isolated_profile_webview_storage_lives_in_the_profile_and_survives_a_restart() {
+        let root = tempdir().unwrap();
+        let profile = root.path().join("clean-flow");
+
+        let storage = profile_webview_storage(&profile);
+
+        assert_eq!(storage.data_directory, profile.join("webview"));
+        let kept = fs::read_to_string(profile.join(PROFILE_WEBVIEW_STORE_FILE)).unwrap();
+        assert_eq!(
+            uuid::Uuid::parse_str(kept.trim()).unwrap().as_bytes(),
+            &storage.data_store_identifier
+        );
+        assert_eq!(profile_webview_storage(&profile), storage);
+    }
+
+    #[test]
+    fn isolated_profiles_have_disjoint_webview_storage() {
+        let root = tempdir().unwrap();
+        let first = profile_webview_storage(&root.path().join("profile-a"));
+        let second = profile_webview_storage(&root.path().join("profile-b"));
+
+        assert_ne!(first.data_store_identifier, second.data_store_identifier);
+        assert!(!first
+            .data_directory
+            .starts_with(root.path().join("profile-b")));
+        assert!(!second
+            .data_directory
+            .starts_with(root.path().join("profile-a")));
+    }
+
+    #[test]
+    fn a_profile_created_again_at_the_same_path_gets_an_empty_webview() {
+        let root = tempdir().unwrap();
+        let profile = root.path().join("clean-flow");
+        let before = profile_webview_storage(&profile);
+
+        fs::remove_dir_all(&profile).unwrap();
+        let after = profile_webview_storage(&profile);
+
+        assert_ne!(before.data_store_identifier, after.data_store_identifier);
+        assert_eq!(before.data_directory, after.data_directory);
+    }
+
+    #[test]
+    fn an_unreadable_store_id_is_replaced_and_an_unwritable_one_falls_back_to_the_path() {
+        let root = tempdir().unwrap();
+        let profile = root.path().join("clean-flow");
+        fs::create_dir_all(&profile).unwrap();
+        fs::write(profile.join(PROFILE_WEBVIEW_STORE_FILE), "not a uuid").unwrap();
+
+        let replaced = profile_webview_storage(&profile);
+        let kept = fs::read_to_string(profile.join(PROFILE_WEBVIEW_STORE_FILE)).unwrap();
+        assert_eq!(
+            uuid::Uuid::parse_str(kept.trim()).unwrap().as_bytes(),
+            &replaced.data_store_identifier
+        );
+
+        // A profile path taken by a file cannot hold the id.
+        let blocked = root.path().join("a-file");
+        fs::write(&blocked, "").unwrap();
+        assert_eq!(
+            profile_webview_storage(&blocked).data_store_identifier,
+            webview_data_store(&blocked)
+        );
+    }
+
+    #[test]
+    fn an_invalid_profile_override_keeps_the_usual_webview_storage() {
+        let root = tempdir().unwrap();
+        let traversal = root.path().join("a").join("..").join("b");
+        for value in [
+            None,
+            Some(OsString::from("")),
+            Some(OsString::from("relative/profile")),
+            Some(traversal.into_os_string()),
+        ] {
+            assert_eq!(
+                isolated_profile_root_from(value).map(|root| profile_webview_storage(&root)),
+                None
+            );
+        }
+        assert!(!root.path().join("b").exists());
     }
 }

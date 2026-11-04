@@ -1,5 +1,4 @@
 {
-  "stepOf": "Step {{index}} / {{count}}",
   "back": "Back",
   "skipSetup": "Skip setup",
   "continue": "Continue",
@@ -22,7 +21,7 @@
     "resume": "Resume download"
   },
   "model": {
-    "title": "Choose your first model.",
+    "title": "Choose a model",
     "onDevice": "On this device",
     "recommended": "Recommended for this device",
     "huggingFace": "Hugging Face",

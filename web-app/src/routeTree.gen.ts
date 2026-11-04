@@ -34,11 +34,9 @@ import { Route as SettingsMcpServersRouteImport } from './routes/settings/mcp-se
 import { Route as SettingsLocalApiServerRouteImport } from './routes/settings/local-api-server'
 import { Route as SettingsInterfaceRouteImport } from './routes/settings/interface'
 import { Route as SettingsHttpsProxyRouteImport } from './routes/settings/https-proxy'
-import { Route as SettingsHermesAgentRouteImport } from './routes/settings/hermes-agent'
 import { Route as SettingsHardwareRouteImport } from './routes/settings/hardware'
 import { Route as SettingsGeneralRouteImport } from './routes/settings/general'
 import { Route as SettingsExtensionsRouteImport } from './routes/settings/extensions'
-import { Route as SettingsClaudeCodeRouteImport } from './routes/settings/claude-code'
 import { Route as SettingsAttachmentsRouteImport } from './routes/settings/attachments'
 import { Route as SettingsAssistantRouteImport } from './routes/settings/assistant'
 import { Route as ProjectProjectIdRouteImport } from './routes/project/$projectId'
@@ -176,11 +174,6 @@ const SettingsHttpsProxyRoute = SettingsHttpsProxyRouteImport.update({
   path: '/settings/https-proxy',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SettingsHermesAgentRoute = SettingsHermesAgentRouteImport.update({
-  id: '/settings/hermes-agent',
-  path: '/settings/hermes-agent',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const SettingsHardwareRoute = SettingsHardwareRouteImport.update({
   id: '/settings/hardware',
   path: '/settings/hardware',
@@ -194,11 +187,6 @@ const SettingsGeneralRoute = SettingsGeneralRouteImport.update({
 const SettingsExtensionsRoute = SettingsExtensionsRouteImport.update({
   id: '/settings/extensions',
   path: '/settings/extensions',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SettingsClaudeCodeRoute = SettingsClaudeCodeRouteImport.update({
-  id: '/settings/claude-code',
-  path: '/settings/claude-code',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsAttachmentsRoute = SettingsAttachmentsRouteImport.update({
@@ -273,11 +261,9 @@ export interface FileRoutesByFullPath {
   '/project/$projectId': typeof ProjectProjectIdRoute
   '/settings/assistant': typeof SettingsAssistantRoute
   '/settings/attachments': typeof SettingsAttachmentsRoute
-  '/settings/claude-code': typeof SettingsClaudeCodeRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/hardware': typeof SettingsHardwareRoute
-  '/settings/hermes-agent': typeof SettingsHermesAgentRoute
   '/settings/https-proxy': typeof SettingsHttpsProxyRoute
   '/settings/interface': typeof SettingsInterfaceRoute
   '/settings/local-api-server': typeof SettingsLocalApiServerRoute
@@ -316,11 +302,9 @@ export interface FileRoutesByTo {
   '/project/$projectId': typeof ProjectProjectIdRoute
   '/settings/assistant': typeof SettingsAssistantRoute
   '/settings/attachments': typeof SettingsAttachmentsRoute
-  '/settings/claude-code': typeof SettingsClaudeCodeRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/hardware': typeof SettingsHardwareRoute
-  '/settings/hermes-agent': typeof SettingsHermesAgentRoute
   '/settings/https-proxy': typeof SettingsHttpsProxyRoute
   '/settings/interface': typeof SettingsInterfaceRoute
   '/settings/local-api-server': typeof SettingsLocalApiServerRoute
@@ -360,11 +344,9 @@ export interface FileRoutesById {
   '/project/$projectId': typeof ProjectProjectIdRoute
   '/settings/assistant': typeof SettingsAssistantRoute
   '/settings/attachments': typeof SettingsAttachmentsRoute
-  '/settings/claude-code': typeof SettingsClaudeCodeRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
   '/settings/general': typeof SettingsGeneralRoute
   '/settings/hardware': typeof SettingsHardwareRoute
-  '/settings/hermes-agent': typeof SettingsHermesAgentRoute
   '/settings/https-proxy': typeof SettingsHttpsProxyRoute
   '/settings/interface': typeof SettingsInterfaceRoute
   '/settings/local-api-server': typeof SettingsLocalApiServerRoute
@@ -405,11 +387,9 @@ export interface FileRouteTypes {
     | '/project/$projectId'
     | '/settings/assistant'
     | '/settings/attachments'
-    | '/settings/claude-code'
     | '/settings/extensions'
     | '/settings/general'
     | '/settings/hardware'
-    | '/settings/hermes-agent'
     | '/settings/https-proxy'
     | '/settings/interface'
     | '/settings/local-api-server'
@@ -448,11 +428,9 @@ export interface FileRouteTypes {
     | '/project/$projectId'
     | '/settings/assistant'
     | '/settings/attachments'
-    | '/settings/claude-code'
     | '/settings/extensions'
     | '/settings/general'
     | '/settings/hardware'
-    | '/settings/hermes-agent'
     | '/settings/https-proxy'
     | '/settings/interface'
     | '/settings/local-api-server'
@@ -491,11 +469,9 @@ export interface FileRouteTypes {
     | '/project/$projectId'
     | '/settings/assistant'
     | '/settings/attachments'
-    | '/settings/claude-code'
     | '/settings/extensions'
     | '/settings/general'
     | '/settings/hardware'
-    | '/settings/hermes-agent'
     | '/settings/https-proxy'
     | '/settings/interface'
     | '/settings/local-api-server'
@@ -535,11 +511,9 @@ export interface RootRouteChildren {
   ProjectProjectIdRoute: typeof ProjectProjectIdRoute
   SettingsAssistantRoute: typeof SettingsAssistantRoute
   SettingsAttachmentsRoute: typeof SettingsAttachmentsRoute
-  SettingsClaudeCodeRoute: typeof SettingsClaudeCodeRoute
   SettingsExtensionsRoute: typeof SettingsExtensionsRoute
   SettingsGeneralRoute: typeof SettingsGeneralRoute
   SettingsHardwareRoute: typeof SettingsHardwareRoute
-  SettingsHermesAgentRoute: typeof SettingsHermesAgentRoute
   SettingsHttpsProxyRoute: typeof SettingsHttpsProxyRoute
   SettingsInterfaceRoute: typeof SettingsInterfaceRoute
   SettingsLocalApiServerRoute: typeof SettingsLocalApiServerRoute
@@ -741,13 +715,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsHttpsProxyRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/settings/hermes-agent': {
-      id: '/settings/hermes-agent'
-      path: '/settings/hermes-agent'
-      fullPath: '/settings/hermes-agent'
-      preLoaderRoute: typeof SettingsHermesAgentRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/settings/hardware': {
       id: '/settings/hardware'
       path: '/settings/hardware'
@@ -767,13 +734,6 @@ declare module '@tanstack/react-router' {
       path: '/settings/extensions'
       fullPath: '/settings/extensions'
       preLoaderRoute: typeof SettingsExtensionsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/settings/claude-code': {
-      id: '/settings/claude-code'
-      path: '/settings/claude-code'
-      fullPath: '/settings/claude-code'
-      preLoaderRoute: typeof SettingsClaudeCodeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings/attachments': {
@@ -871,11 +831,9 @@ const rootRouteChildren: RootRouteChildren = {
   ProjectProjectIdRoute: ProjectProjectIdRoute,
   SettingsAssistantRoute: SettingsAssistantRoute,
   SettingsAttachmentsRoute: SettingsAttachmentsRoute,
-  SettingsClaudeCodeRoute: SettingsClaudeCodeRoute,
   SettingsExtensionsRoute: SettingsExtensionsRoute,
   SettingsGeneralRoute: SettingsGeneralRoute,
   SettingsHardwareRoute: SettingsHardwareRoute,
-  SettingsHermesAgentRoute: SettingsHermesAgentRoute,
   SettingsHttpsProxyRoute: SettingsHttpsProxyRoute,
   SettingsInterfaceRoute: SettingsInterfaceRoute,
   SettingsLocalApiServerRoute: SettingsLocalApiServerRoute,

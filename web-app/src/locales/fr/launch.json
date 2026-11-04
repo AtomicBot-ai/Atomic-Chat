@@ -11,9 +11,34 @@
   "editorsDesc": "Des éditeurs de code pour discuter et coder avec vos modèles locaux.",
   "copySettings": "Copier les paramètres",
   "manualSetup": "Configuration manuelle",
+  "editorSteps": {
+    "vscode": {
+      "open": "Dans VS Code, ouvrez la vue Chat et lancez « Chat: Manage Language Models » depuis la palette de commandes (ou choisissez Manage Models dans le sélecteur de modèle du chat).",
+      "add": "Cliquez sur « Add Models » → « Custom Endpoint ». Nommez le groupe « Atomic Chat », saisissez la clé API du serveur (n'importe quel texte s'il n'en a pas) et choisissez le type d'API « Chat Completions ».",
+      "paste": "Dans le chatLanguageModels.json qui s'ouvre, remplacez la nouvelle entrée par celle que « Copier les paramètres » a placée dans le presse-papiers, en gardant sa ligne « apiKey », puis enregistrez.",
+      "pick": "Choisissez le modèle Atomic Chat dans le sélecteur de modèle du chat. Redémarrez VS Code s'il n'apparaît pas."
+    },
+    "jetbrains": {
+      "open": "Ouvrez Settings | Tools | AI Assistant | Providers & API keys.",
+      "provider": "Sous Third-party AI providers, choisissez le fournisseur compatible OpenAI, collez l'URL et la clé API copiées, activez Tool calling et cliquez sur Test Connection.",
+      "assign": "Les modèles locaux ne sont pas attribués automatiquement : dans Models Assignment, choisissez le modèle Atomic Chat pour Core features et Instant helpers, réglez Context window sur la valeur copiée, puis cliquez sur Apply.",
+      "agents": "Les agents JetBrains ne peuvent pas utiliser de modèles locaux ; utilisez AI Chat et les fonctions de l'éditeur."
+    },
+    "xcode": {
+      "open": "Ouvrez Xcode → Settings → Intelligence (Xcode 26 ou plus récent).",
+      "add": "Sous Chat, cliquez sur « Add a Chat Provider » et choisissez « Locally Hosted ».",
+      "port": "Saisissez le port copié et cliquez sur Add. Xcode y appelle /v1/models et /v1/chat/completions.",
+      "pick": "Choisissez le modèle Atomic Chat dans le chat. Redémarrez Xcode s'il n'apparaît pas."
+    }
+  },
+  "editorWarnings": {
+    "xcodeApiKey": "Le fournisseur Locally Hosted de Xcode n'a pas de champ de clé API : il ne peut pas joindre ce serveur tant qu'une clé est exigée. Désactivez la clé API du serveur pour utiliser Xcode.",
+    "xcodePrefix": "Le préfixe d'API du serveur est {{prefix}}, mais Xcode appelle toujours /v1. Remettez le préfixe à /v1 pour utiliser Xcode."
+  },
   "serverNotRunningHint": "Démarrez d'abord le serveur local ci-dessus pour que {{name}} puisse accéder à vos modèles.",
   "installed": "Installé",
   "installedViaWsl": "Installé (WSL)",
+  "wslOnlyHint": "{{name}} est installé uniquement dans WSL. Atomic Chat écrit ses paramètres sous Windows et le lance dans un terminal Windows, qui ne peut pas atteindre une installation WSL (et le localhost de WSL 2 n'est pas ce PC). Installez {{name}} sous Windows pour le connecter.",
   "notInstalled": "Non installé",
   "setCustomPath": "Définir le chemin du binaire",
   "customPathSet": "Chemin du binaire défini",
@@ -49,14 +74,20 @@
     "configuredDesc": "{{name}} utilise désormais votre serveur local — ouverture d'un terminal.",
     "configuredDescEditor": "{{name}} utilise désormais votre serveur local — ouverture de l'éditeur.",
     "configuredDescOpenclaw": "{{name}} utilise désormais votre serveur local. Sa passerelle (Gateway) recharge la configuration d'elle-même — si une discussion est encore liée à un autre modèle, exécutez /model default dans celle-ci.",
-    "openclawAppReady": "Ouvrez OpenClaw Companion",
-    "openclawAppReadyDesc": "Votre configuration est à jour. Ouvrez OpenClaw Companion depuis la zone de notification ou le menu Démarrer pour utiliser le modèle Atomic Chat.",
     "configuredDescCodex": "{{name}} utilise désormais votre serveur local via son propre profil — ouverture d'un terminal. La commande `codex` seule et l'application ChatGPT conservent vos paramètres ; exécutez `codex --profile atomic-chat` pour utiliser vous-même le modèle local.",
+    "configuredDescCodexKeyed": "{{name}} utilise désormais votre serveur local via son propre profil — ouverture d'un terminal. La commande `codex` seule et l'application ChatGPT conservent vos paramètres. Pour utiliser vous-même le modèle local, définissez ATOMIC_CHAT_API_KEY avec la clé API de ce serveur, puis exécutez `codex --profile atomic-chat`.",
     "configuredDescZcode": "{{name}} utilise désormais votre serveur local et prend en compte la modification automatiquement — choisissez Atomic Chat dans son menu de modèles si une discussion utilise encore un autre modèle.",
     "zcodeNotInstalled": "ZCode n'est pas installé",
     "zcodeNotInstalledDesc": "Le fournisseur Atomic Chat est enregistré. Téléchargez ZCode sur zcode.z.ai — il utilisera votre modèle local dès le premier démarrage.",
     "configureFailed": "Échec de la configuration de {{name}}",
     "terminalFailed": "Impossible d'ouvrir un terminal pour {{name}}",
+    "terminalNotAllowedDesc": "macOS n’a pas autorisé Atomic Chat à contrôler Terminal. Autorisez-le dans Réglages Système → Confidentialité et sécurité → Automatisation, puis reconnectez.",
+    "contextTooSmall": "{{name}} a besoin d’une fenêtre de contexte d’au moins {{minimum}} tokens",
+    "contextTooSmallFit": "Le modèle tourne avec {{current}}, dimensionné par « Ajuster à la mémoire de l’appareil ». Désactivez cette option dans les réglages du modèle pour choisir un contexte plus grand, ou prenez un modèle plus petit.",
+    "contextTooSmallModel": "Le modèle accepte au plus {{current}}. Choisissez un modèle au contexte plus long.",
+    "contextTooSmallMemory": "Le modèle tourne avec {{current}} et n’a pas pu être chargé avec plus sur cet ordinateur. Libérez de la mémoire ou choisissez un modèle plus petit.",
+    "wslOnly": "{{name}} est installé uniquement dans WSL",
+    "wslOnlyDesc": "Atomic Chat ne peut pas connecter un agent installé dans WSL : ses paramètres et son terminal sont sous Windows, et le localhost de WSL 2 n'est pas ce PC. Installez {{name}} sous Windows pour le connecter.",
     "settingsCopied": "Paramètres de connexion copiés",
     "settingsCopiedDesc": "Collez-les dans les paramètres de fournisseur de {{name}}.",
     "copyFailed": "Impossible de copier les paramètres dans le presse-papiers",

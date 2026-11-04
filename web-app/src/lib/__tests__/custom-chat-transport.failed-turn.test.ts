@@ -114,3 +114,55 @@ describe('CustomChatTransport with a failed turn in the history', () => {
     expect(JSON.stringify(prompt)).toContain('again')
   })
 })
+
+describe('CustomChatTransport with a shortened history', () => {
+  it('leaves the turns before the history start out of the request, nothing else', async () => {
+    const messages: UIMessage[] = [
+      { id: 'user-1', role: 'user', parts: [{ type: 'text', text: 'oldest question' }] },
+      { id: 'assistant-1', role: 'assistant', parts: [{ type: 'text', text: 'oldest answer' }] },
+      { id: 'user-2', role: 'user', parts: [{ type: 'text', text: 'recent question' }] },
+      { id: 'assistant-2', role: 'assistant', parts: [{ type: 'text', text: 'recent answer' }] },
+      { id: 'user-3', role: 'user', parts: [{ type: 'text', text: 'latest question' }] },
+    ]
+    const before = structuredClone(messages)
+    const model = recordingModel()
+    vi.spyOn(ModelFactory, 'createModel').mockResolvedValue(model)
+    const transport = new CustomChatTransport('Answer in English.', 'thread-1')
+    transport.setHistoryStart('user-2')
+    expect(transport.getHistoryStart()).toBe('user-2')
+
+    const stream = (await transport.sendMessages({
+      chatId: 'chat-1',
+      messages,
+      abortSignal: undefined,
+      trigger: 'regenerate-message',
+      messageId: undefined,
+    })) as ReadableStream<unknown>
+    for await (const chunk of stream) void chunk
+
+    const doStream = (
+      model as unknown as { doStream: ReturnType<typeof vi.fn> }
+    ).doStream
+    const sent = JSON.stringify(doStream.mock.calls[0][0].prompt)
+    expect(sent).not.toContain('oldest')
+    expect(sent).toContain('recent question')
+    expect(sent).toContain('latest question')
+    // The system prompt rides every request.
+    expect(sent).toContain('Answer in English.')
+    // The thread's messages are not touched.
+    expect(messages).toEqual(before)
+
+    transport.setHistoryStart(undefined)
+    const again = (await transport.sendMessages({
+      chatId: 'chat-1',
+      messages,
+      abortSignal: undefined,
+      trigger: 'regenerate-message',
+      messageId: undefined,
+    })) as ReadableStream<unknown>
+    for await (const chunk of again) void chunk
+    expect(JSON.stringify(doStream.mock.calls[1][0].prompt)).toContain(
+      'oldest question'
+    )
+  })
+})

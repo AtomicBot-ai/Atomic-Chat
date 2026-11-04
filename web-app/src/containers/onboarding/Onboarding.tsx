@@ -14,7 +14,6 @@ import {
   nextStep,
   normalizeStep,
   prevStep,
-  progressOf,
   resolveSteps,
   type OnboardingStepId,
 } from '@/lib/onboarding/steps'
@@ -63,8 +62,6 @@ const STEP_COMPONENTS: Record<
   server: ServerStep,
   wait: WaitStep,
 }
-
-const twoDigits = (value: number) => String(value).padStart(2, '0')
 
 /**
  * The first-run flow, full window: one step at a time, Back and Skip setup
@@ -187,7 +184,6 @@ export function Onboarding() {
   if (!step) return null
   const StepScreen = STEP_COMPONENTS[step]
   const back = prevStep(steps, step)
-  const progress = step === 'welcome' ? null : progressOf(steps, step)
 
   return (
     <div
@@ -208,14 +204,8 @@ export function Onboarding() {
             step === 'model' && 'ob-model-step'
           )}
         >
-          {progress && (
-            <div className="ob-eyebrow">
-              {t('onboarding:stepOf', {
-                index: twoDigits(progress.index),
-                count: twoDigits(progress.count),
-              })}
-            </div>
-          )}
+          {/* No "STEP 0N / 0M" eyebrow: each step's own heading names the
+              decision, and a counter only framed it (design review D8). */}
           <StepScreen
             next={next}
             goTo={goTo}

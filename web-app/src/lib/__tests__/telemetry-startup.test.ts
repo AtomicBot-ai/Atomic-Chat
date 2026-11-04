@@ -33,3 +33,20 @@ it('buffers against the real uninitialized SDK despite its opted-in result', () 
   flushTelemetryQueue()
   expect(capture).toHaveBeenCalledTimes(1)
 })
+
+it('flushes on shutdown through the installed SDK API, not a guessed one', async () => {
+  // `_handle_unload` drains posthog-js's batch and retry queues with
+  // sendBeacon; `request_batching` is what makes later captures skip the
+  // 3 s batch. Both exist on posthog-js 1.255.1.
+  const { flushTelemetryForShutdown } = await import('@/lib/telemetry-queue')
+  expect(typeof posthog._handle_unload).toBe('function')
+  const unload = vi.spyOn(posthog, '_handle_unload')
+  const setConfig = vi.spyOn(posthog, 'set_config')
+
+  flushTelemetryQueue()
+  expect(() => flushTelemetryForShutdown()).not.toThrow()
+
+  expect(unload).toHaveBeenCalledTimes(1)
+  expect(setConfig).toHaveBeenCalledWith({ request_batching: false })
+  expect(posthog.config.request_batching).toBe(false)
+})

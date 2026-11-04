@@ -108,6 +108,8 @@ export type PrismPlanInput = {
    * engine and then have the model refused.
    */
   headroomBytes?: number
+  preparedModel?: PrismSetupArtifact
+  preparedProjector?: PrismSetupArtifact | null
 }
 
 /** The build number of a PrismML tag (`prism-b9100-1234567` → 9100); `0` for anything else. */
@@ -165,9 +167,7 @@ function prismEngineOf(
       catalog.installed.find(
         (pack) => prismTagBuild(pack.version) === verdict.installed_prism_build
       ) ?? catalog.installed[0]
-    return current
-      ? { ...current, installed: true, download_size: 0 }
-      : null
+    return current ? { ...current, installed: true, download_size: 0 } : null
   }
   if (!needsPrismBuild(verdict)) return null
   // The core's pick for the file's requirements: the catalog was asked with them.
@@ -208,11 +208,15 @@ export function planPrismSetup(input: PrismPlanInput): PrismSetupPlan {
   const family = input.families.find(
     (candidate) =>
       candidate.repo === request.repo &&
+      (!request.revision ||
+        request.revision === 'main' ||
+        candidate.revision === request.revision) &&
       candidate.files.some((file) => file.file === request.file)
   )
   const listed = family?.files.find((file) => file.file === request.file)
   const model: PrismSetupArtifact =
-    family && listed
+    input.preparedModel ??
+    (family && listed
       ? {
           file: listed.file,
           url: hubUrl(family.repo, family.revision, listed.file),
@@ -223,17 +227,18 @@ export function planPrismSetup(input: PrismPlanInput): PrismSetupPlan {
           file: request.file,
           url: hubUrl(request.repo, request.revision ?? 'main', request.file),
           size: 0,
-        }
+        })
   const defaultProjector = family?.projectors.find((p) => p.default)
   const projector: PrismSetupArtifact | null =
-    family && defaultProjector && request.include_projector
+    input.preparedProjector ??
+    (family && defaultProjector && request.include_projector
       ? {
           file: defaultProjector.file,
           url: hubUrl(family.repo, family.revision, defaultProjector.file),
           size: defaultProjector.size,
           sha256: defaultProjector.sha256,
         }
-      : null
+      : null)
 
   const total =
     (engine?.download_size ?? 0) + model.size + (projector?.size ?? 0)
@@ -314,7 +319,9 @@ export function prismFamilyCard(family: PrismFamily): CatalogModel {
 }
 
 /** The Hub's PrismML list: the featured families first, in the rules' order otherwise. */
-export function prismFamilyCards(families: readonly PrismFamily[]): CatalogModel[] {
+export function prismFamilyCards(
+  families: readonly PrismFamily[]
+): CatalogModel[] {
   return [...families]
     .sort((a, b) => Number(!!b.featured) - Number(!!a.featured))
     .map(prismFamilyCard)

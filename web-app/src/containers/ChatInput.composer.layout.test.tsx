@@ -281,7 +281,8 @@ describe('Composer toolbar and Send reveal (Chromium)', () => {
     expect(getComputedStyle(control).overflow).toBe('hidden')
 
     await wait(400)
-    expect(control.getBoundingClientRect().width).toBeCloseTo(32, 0)
+    // The 28 px circle and the 6 px its 40 px click target reaches past it.
+    expect(control.getBoundingClientRect().width).toBeCloseTo(34, 0)
     expect(getComputedStyle(control).overflow).toBe('visible')
   })
 
@@ -294,6 +295,6 @@ describe('Composer toolbar and Send reveal (Chromium)', () => {
     await nextFrames()
     expect(
       screen.getByTestId('send-control').getBoundingClientRect().width
-    ).toBeCloseTo(32, 0)
+    ).toBeCloseTo(34, 0)
   })
 })

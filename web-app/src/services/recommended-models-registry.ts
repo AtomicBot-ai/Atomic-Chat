@@ -1,3 +1,7 @@
+import {
+  unifiedModelCollection,
+  usesUnifiedModelCatalog,
+} from './unified-model-catalog'
 /**
  * Recommended-models registry — remote configuration loader.
  *
@@ -24,6 +28,8 @@ export type RecommendationPlatform = 'macos' | 'windows' | 'linux'
 
 export type Recommendation = {
   model_name: string
+  /** Commit selected by the managed catalog; absent in legacy exports. */
+  revision?: string
   description_key: string
   platforms?: RecommendationPlatform[]
   active?: boolean
@@ -38,6 +44,7 @@ export type Recommendation = {
   mmproj_quant?: string
 }
 
+/** @deprecated Independent catalog URL; retained for legacy/custom adapters. Production desktop projects models/catalog.json. */
 export const DEFAULT_REGISTRY_URL =
   'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/models/recommended.json'
 
@@ -125,9 +132,14 @@ const sanitizeQuantToken = (value: unknown): string | undefined =>
     ? value.toUpperCase()
     : undefined
 
-const sanitizeRecommendation = (raw: unknown): Recommendation | null => {
+export const sanitizeRecommendation = (raw: unknown): Recommendation | null => {
   if (typeof raw !== 'object' || raw === null) return null
   const r = raw as Record<string, unknown>
+  if (
+    r.revision !== undefined &&
+    (typeof r.revision !== 'string' || !/^[0-9a-f]{40}$/.test(r.revision))
+  )
+    return null
   if (typeof r.model_name !== 'string' || r.model_name.length === 0) return null
   if (
     typeof r.description_key !== 'string' ||
@@ -147,6 +159,9 @@ const sanitizeRecommendation = (raw: unknown): Recommendation | null => {
   const mmprojQuant = sanitizeQuantToken(r.mmproj_quant)
   return {
     model_name: r.model_name,
+    ...(typeof r.revision === 'string' && /^[0-9a-f]{40}$/.test(r.revision)
+      ? { revision: r.revision }
+      : {}),
     description_key: r.description_key,
     ...(platforms && platforms.length > 0 ? { platforms } : {}),
     ...(active === false ? { active: false } : {}),
@@ -161,7 +176,7 @@ const sanitizeRecommendation = (raw: unknown): Recommendation | null => {
  * was written for a newer tier vocabulary; dropping it leaves that machine on
  * the bundled ladder, which is a working recommendation rather than none.
  */
-const sanitizeTiers = (
+export const sanitizeTiers = (
   raw: unknown
 ): Partial<Record<HardwareTier, Recommendation[]>> => {
   if (typeof raw !== 'object' || raw === null) return {}
@@ -357,6 +372,21 @@ export type FetchOptions = {
 export const getRecommendationsOrFallback = async (
   options: FetchOptions = {}
 ): Promise<RegistryFetchResult> => {
+  if (options.url === undefined && usesUnifiedModelCatalog()) {
+    const result = await unifiedModelCollection('recommended', options.force)
+    const manifest = result.data as unknown as RegistryManifest
+    return {
+      recommendations: manifest.recommendations
+        .map(sanitizeRecommendation)
+        .filter((r): r is Recommendation => r !== null),
+      tiers: sanitizeTiers(manifest.tiers),
+      source: result.source,
+      fetchedAt: result.fetchedAt,
+      manifestUpdatedAt: result.updatedAt,
+      ...(result.error ? { error: result.error } : {}),
+    }
+  }
+
   const {
     force = false,
     url = REGISTRY_URL,

@@ -14,6 +14,10 @@ const TAURI_ROOT = join(REPO_ROOT, 'src-tauri')
 const PLUGINS_ROOT = join(TAURI_ROOT, 'plugins')
 
 const EXPECTED_DESKTOP_ONLY = new Set([
+  // Free space and file system of a download destination for the queue's
+  // admission check. Mobile keeps `get_download_free_space`, which the web
+  // preflight falls back to when this command is missing.
+  'get_disk_space_info',
   // atomic-chat-core is a native sidecar. Mobile builds neither bundle it nor
   // expose its process lifecycle and control commands.
   'atomic_core_call',

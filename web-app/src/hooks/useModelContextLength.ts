@@ -5,6 +5,7 @@ import { EngineManager, type AIEngine } from '@janhq/core'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { readProviderFit } from '@/lib/provider-fit'
+import { trackSettingsRestart } from '@/lib/settings-restart'
 import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
 
 /** Providers whose models expose a `ctx_len` knob the app can restart with. */
@@ -63,12 +64,16 @@ export function useModelContextLength() {
     () =>
       debounce(async (modelId: string, providerName: string) => {
         try {
-          await serviceHub.models().stopModel(modelId)
-          const freshProvider =
-            useModelProvider.getState().getProviderByName(providerName)
-          if (freshProvider) {
-            await serviceHub.models().startModel(freshProvider, modelId, true)
-          }
+          // A turn this restart cuts off says the settings change did it.
+          await trackSettingsRestart(providerName, modelId, async () => {
+            await serviceHub.models().stopModel(modelId)
+            const freshProvider = useModelProvider
+              .getState()
+              .getProviderByName(providerName)
+            if (freshProvider) {
+              await serviceHub.models().startModel(freshProvider, modelId, true)
+            }
+          })
           const activeModels = await serviceHub.models().getActiveModels()
           syncActiveModelsFromEngines(activeModels || [])
         } catch (error) {

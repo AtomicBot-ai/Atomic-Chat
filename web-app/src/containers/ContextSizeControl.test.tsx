@@ -6,6 +6,7 @@ import { ContextSizeControl } from '@/containers/ContextSizeControl'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import type { ModelsService } from '@/services/models/types'
 import { seedServiceHub } from '@/test/service-hub'
+import { activeSettingsRestart } from '@/lib/settings-restart'
 
 const stopModel = vi.fn()
 const startModel = vi.fn()
@@ -252,6 +253,11 @@ describe('ContextSizeControl', () => {
       true
     )
     expect(syncActiveModelsFromEngines).toHaveBeenCalled()
+    // A chat turn the restart cut off says the settings change did it (D7).
+    expect(activeSettingsRestart('mlx', 'test-model')).toMatchObject({
+      providerId: 'mlx',
+      modelId: 'test-model',
+    })
     vi.useRealTimers()
   })
 

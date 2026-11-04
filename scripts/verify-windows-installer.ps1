@@ -10,7 +10,7 @@
 #    1. Preflight: refuses to run where Atomic Chat is already installed.
 #    2. The installer is signed (Valid, by AtomicMail Systems OU).
 #    3. Silent install with /S exits 0.
-#    4. The Add/Remove Programs entry carries its metadata.
+#    4. The Add/Remove Programs entry carries the exact expected publisher.
 #    5. A Start Menu shortcut exists.
 #    6. Every PE file in the install dir has a Valid signature.
 #    7. The WebView2 runtime is registered.
@@ -31,6 +31,12 @@
 #     scp scripts/verify-windows-installer.ps1 setup.exe <user>@<host>:
 #     ssh <user>@<host> powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File verify-windows-installer.ps1 -Installer setup.exe -SkipLaunch
 #
+# Regression check: install an older NSIS build in a unique non-default directory,
+# then upgrade it without /D and verify the directory and registry entry survive:
+#   .\scripts\verify-windows-installer.ps1 -Installer .\new.exe -LegacyInstaller .\old.exe -SkipLaunch
+# Repeat on a clean profile with -UpgradeMode Installer to exercise /S /P instead
+# of the updater's /S /P /UPDATE path. Both installers must be trusted builds.
+#
 # Exit codes: 0 every check passed, 1 at least one check failed, 2 the check
 # could not run (not Windows, installer missing, Atomic Chat already
 # installed).
@@ -43,6 +49,12 @@ param(
     # Path to the NSIS setup .exe to check.
     [Parameter(Mandatory = $true)]
     [string]$Installer,
+
+    # Optional old NSIS build carrying the Spaceship Intelligence publisher.
+    [string]$LegacyInstaller,
+
+    [ValidateSet('Updater', 'Installer')]
+    [string]$UpgradeMode = 'Updater',
 
     # Do not start the app (over SSH there is no desktop to start it on).
     [switch]$SkipLaunch,
@@ -75,9 +87,21 @@ if (-not (Test-Path -LiteralPath $Installer -PathType Leaf)) {
     exit 2
 }
 $installerPath = (Resolve-Path -LiteralPath $Installer).ProviderPath
+$legacyInstallerPath = $null
+$legacyInstallDir = $null
+$legacyEntryName = $null
+if ($LegacyInstaller) {
+    if (-not (Test-Path -LiteralPath $LegacyInstaller -PathType Leaf)) {
+        Write-Host "[FATAL] Legacy installer not found: $LegacyInstaller" -ForegroundColor Red
+        exit 2
+    }
+    $legacyInstallerPath = (Resolve-Path -LiteralPath $LegacyInstaller).ProviderPath
+    $legacyInstallDir = Join-Path $env:LOCALAPPDATA ("Atomic Chat upgrade test " + [guid]::NewGuid().ToString('N'))
+}
 
 # What the Tauri NSIS bundle installs (src-tauri/tauri.conf.json, Cargo.toml).
 $ProductName       = 'Atomic Chat'
+$ExpectedPublisher = 'Atomic Mail Systems'
 $MainExeName       = 'Atomic-Chat.exe'
 $MainProcessName   = 'Atomic-Chat'
 $CoreProcessName   = 'atomic-chat-app-core'
@@ -348,13 +372,45 @@ try {
 # -----------------------------------------------------------------------------
 Write-Section '3/10  Silent install (/S)'
 
+if ($legacyInstallerPath) {
+    try {
+        # NSIS /D must be last and unquoted, even when the path contains spaces.
+        $legacy = Start-Process -FilePath $legacyInstallerPath -ArgumentList "/S /D=$legacyInstallDir" -PassThru
+        $null = $legacy.Handle
+        if (-not $legacy.WaitForExit($InstallTimeoutSeconds * 1000)) {
+            throw "Legacy installer timed out; inspect the process before retrying"
+        }
+        if ($legacy.ExitCode -ne 0) { throw "Legacy installer exited with code $($legacy.ExitCode)" }
+        $legacyEntries = @(Find-UninstallEntry)
+        if ($legacyEntries.Count -ne 1) { throw "Expected one legacy uninstall entry, found $($legacyEntries.Count)" }
+        $legacyEntryName = $legacyEntries[0].Name
+        $legacyPublisher = [string]$legacyEntries[0].Key.GetValue('Publisher')
+        $legacyLocation = ([string]$legacyEntries[0].Key.GetValue('InstallLocation')).Trim().Trim('"').TrimEnd('\')
+        if ($legacyPublisher -cne 'Spaceship Intelligence') { throw "Unexpected legacy publisher: $legacyPublisher" }
+        if ($legacyLocation -ne $legacyInstallDir) { throw "Legacy /D was not honored: $legacyLocation" }
+        if (-not (Test-Path -LiteralPath (Join-Path $legacyInstallDir $MainExeName))) {
+            throw "Legacy main executable is missing from $legacyInstallDir"
+        }
+        Add-Result 'Legacy install' 'PASS' "installed in $legacyInstallDir; publisher $legacyPublisher"
+    } catch {
+        Add-Unexpected 'Legacy install' $_
+        Write-Host "[FATAL] Upgrade fixture failed. Inspect $legacyInstallDir before retrying; it is left in place." -ForegroundColor Red
+        exit 1
+    }
+}
+
+$installArguments = '/S'
+if ($legacyInstallerPath) {
+    $installArguments = '/S /P'
+    if ($UpgradeMode -eq 'Updater') { $installArguments += ' /UPDATE' }
+}
 try {
-    Write-Host "  Running: `"$installerPath`" /S"
+    Write-Host "  Running: `"$installerPath`" $installArguments"
     # Wait for the installer process itself, not -Wait: Windows PowerShell's
     # -Wait also waits for every process the installer leaves running, and a
     # hang here would block an SSH run forever.
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
-    $proc = Start-Process -FilePath $installerPath -ArgumentList '/S' -PassThru
+    $proc = Start-Process -FilePath $installerPath -ArgumentList $installArguments -PassThru
     # Holding the handle keeps ExitCode readable once the process is gone.
     $null = $proc.Handle
     $finished = $proc.WaitForExit($InstallTimeoutSeconds * 1000)
@@ -391,7 +447,7 @@ try {
         # A per-user install writes to HKCU; prefer that key if there are several.
         $entry = $entries | Sort-Object { if ($_.Name -like 'HKEY_CURRENT_USER\*') { 0 } else { 1 } } | Select-Object -First 1
         if ($entries.Count -gt 1) {
-            Add-Result 'Add/Remove Programs keys' 'INFO' ('{0} keys found, checking the first: {1}' -f $entries.Count, (($entries | ForEach-Object { $_.Name }) -join '; '))
+            Add-Result 'Add/Remove Programs keys' 'FAIL' ('{0} keys found, checking the first: {1}' -f $entries.Count, (($entries | ForEach-Object { $_.Name }) -join '; '))
         }
         Write-Host "  Key: $($entry.Name)"
         $values = @{}
@@ -410,6 +466,8 @@ try {
         }
         if ($missing.Count -gt 0) {
             Add-Result 'Add/Remove Programs' 'FAIL' ('{0}: missing or empty {1}' -f $entry.Name, ($missing -join ', '))
+        } elseif ([string]$values['Publisher'] -cne $ExpectedPublisher) {
+            Add-Result 'Add/Remove Programs' 'FAIL' ("Publisher '{0}'; expected exactly '{1}'" -f $values['Publisher'], $ExpectedPublisher)
         } else {
             Add-Result 'Add/Remove Programs' 'PASS' ("{0}: DisplayName '{1}', Publisher '{2}', DisplayVersion {3}" -f $entry.Name, $values['DisplayName'], $values['Publisher'], $values['DisplayVersion'])
         }
@@ -445,6 +503,13 @@ try {
             $detail += " (the default per-user location is $defaultInstallDir)"
         }
         Add-Result 'InstallLocation' $status $detail
+        if ($legacyInstallerPath) {
+            if ($entries.Count -ne 1 -or $entry.Name -ne $legacyEntryName -or $installDir -ne $legacyInstallDir) {
+                Add-Result 'Upgrade identity' 'FAIL' "expected the same uninstall entry and directory: $legacyEntryName; $legacyInstallDir"
+            } else {
+                Add-Result 'Upgrade identity' 'PASS' "retained $legacyEntryName and $legacyInstallDir ($UpgradeMode mode)"
+            }
+        }
     }
 } catch {
     Add-Unexpected 'Add/Remove Programs' $_

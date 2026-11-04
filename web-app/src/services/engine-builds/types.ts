@@ -1,8 +1,8 @@
 /**
- * The core's engine builds: stable-diffusion.cpp (`sd-server`), MLX
- * (`mlx-server`), the Foundry Local runtime (core with change
- * `add-foundry-local`), the LiteRT-LM library (change
- * `add-litert-lm-runtime`) and the Qualcomm GenieX SDK (change
+ * The core's engine builds: stable-diffusion.cpp (`sd-server`), audio.cpp
+ * (`audiocpp_server`, a core newer than 0.20.5 only), MLX (`mlx-server`), the
+ * Foundry Local runtime (core with change `add-foundry-local`), the LiteRT-LM
+ * library (change `add-litert-lm-runtime`) and the Qualcomm GenieX SDK (change
  * `add-geniex-runtime`), installed, checked and removed by the core from conf's
  * manifests. Vendored from `@atomic-chat/core/contracts` (`engine-builds.ts`,
  * core 0.12.0); snake_case on the wire, like `/backends`.
@@ -11,7 +11,13 @@
  * `install` acts when the user asked for it.
  */
 
-export type EngineBuildId = 'sd-cpp' | 'mlx' | 'foundry-local' | 'litert-lm' | 'geniex'
+export type EngineBuildId =
+  | 'sd-cpp'
+  | 'audio-cpp'
+  | 'mlx'
+  | 'foundry-local'
+  | 'litert-lm'
+  | 'geniex'
 
 /**
  * `downloaded` — installed by the core under its data folder, removable;
@@ -52,6 +58,8 @@ export interface EngineBuildCatalog {
   /** The build this host would install; `null` with `host_reason` when none fits. */
   host_backend_id: string | null
   host_reason: string | null
+  /** Every archive an install of the host build downloads; `null` without one or with a size missing. */
+  host_download_bytes?: number | null
   installed: InstalledEngineBuild[]
   active: InstalledEngineBuild | null
 }

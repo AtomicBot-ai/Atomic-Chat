@@ -46,13 +46,13 @@ export function FactoryResetDialog({
         <DialogHeader>
           <DialogTitle>{t('settings:general.factoryResetTitle')}</DialogTitle>
           <DialogDescription>
-            {t('settings:general.factoryResetDesc')}
+            {t('settings:others.resetFactoryDesc')}
           </DialogDescription>
           <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
             <DialogClose asChild>
-              <Button 
-                variant="ghost" 
-                size="sm" 
+              <Button
+                variant="ghost"
+                size="sm"
                 className="hover:no-underline w-full sm:w-auto"
               >
                 {t('settings:general.cancel')}

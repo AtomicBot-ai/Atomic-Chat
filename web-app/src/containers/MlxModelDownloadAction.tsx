@@ -17,6 +17,7 @@ import {
   MLX_PROVIDER,
   mlxModelIds,
 } from '@/lib/hub-installed'
+import { mlxDownloadOptions } from '@/lib/models/mlx-download'
 import { CatalogModel } from '@/services/models/types'
 import { cn } from '@/lib/utils'
 import { downloadWithMlxEngine } from '@/lib/mlx-engine'
@@ -157,57 +158,21 @@ export const MlxModelDownloadAction = memo(
 
       const modelPath = `${model.developer}/${modelName}`
       try {
-        // Fetch repository info to get all files
-        const repoInfo = await serviceHub
-          .models()
-          .fetchHuggingFaceRepo(modelPath, huggingfaceToken)
-
-        if (!repoInfo || !repoInfo.siblings) {
-          throw new Error('Failed to fetch repository files')
-        }
-
-        // Filter relevant model files for MLX
-        const modelFiles = repoInfo.siblings
-
-        if (modelFiles.length === 0) {
-          throw new Error('No MLX model files found in repository')
-        }
-
-        // Get the MLX engine and import
         const engine = EngineManager.instance().get('mlx')
-        if (!engine) {
-          throw new Error('MLX engine not found')
-        }
-
-        // For MLX, we download the first safetensors file as the main model
-        // and the extension will download all related files
-        const mainSafetensorsFile = modelFiles.find((f) =>
-          f.rfilename.toLowerCase().endsWith('.safetensors')
+        if (!engine) throw new Error('MLX engine not found')
+        const request = await mlxDownloadOptions(
+          serviceHub.models(),
+          modelId,
+          modelPath,
+          resumableDownloads.has(modelId),
+          huggingfaceToken,
+          model.revision
         )
-
-        if (!mainSafetensorsFile) {
-          throw new Error('No safetensors file found in repository')
-        }
-
-        const modelUrl = `https://huggingface.co/${modelPath}/resolve/main/${mainSafetensorsFile.rfilename}`
-
-        // Prepare additional files to download (all model files except main safetensors)
-        // Don't pass sha256/size to skip verification for MLX models
-        const extraFiles = modelFiles
-          .filter((f) => f.rfilename !== mainSafetensorsFile.rfilename)
-          .map((file) => ({
-            url: `https://huggingface.co/${modelPath}/resolve/main/${file.rfilename}`,
-            filename: file.rfilename,
-          }))
 
         // `await` is load-bearing: a bare `return engine.import(...)` inside
         // try{} lets the rejection escape the catch — the download then fails
         // with no toast, no console.error and a button stuck in "downloading".
-        await engine.import(modelId, {
-          modelPath: modelUrl,
-          files: extraFiles,
-          resume: resumableDownloads.has(modelId),
-        })
+        await engine.import(modelId, request)
         return true
       } catch (error) {
         console.error('Error downloading MLX model:', error)

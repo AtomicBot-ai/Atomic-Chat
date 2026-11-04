@@ -1,3 +1,7 @@
+import {
+  unifiedModelCollection,
+  unifiedModelBaseline,
+} from './unified-model-catalog'
 /**
  * Embedding catalog registry — remote configuration loader.
  *
@@ -19,8 +23,7 @@
 
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 
-import { BASELINE_EMBEDDING_CATALOG } from './embedding-catalog-baseline'
-
+/** @deprecated Independent catalog URL; retained for legacy/custom adapters. Production desktop projects models/catalog.json. */
 export const DEFAULT_EMBEDDING_CATALOG_URL =
   'https://raw.githubusercontent.com/AtomicBot-ai/atomic-chat-conf/main/models/embedding.json'
 
@@ -482,7 +485,7 @@ export type EmbeddingCatalogFetchOptions = {
 
 /** The bundled snapshot, re-validated so a stale generator cannot ship junk. */
 export const getBaselineEmbeddingCatalog = (): EmbeddingCatalog =>
-  parseEmbeddingCatalog(BASELINE_EMBEDDING_CATALOG)
+  parseEmbeddingCatalog(unifiedModelBaseline('embedding'))
 
 /**
  * Resolve the catalog: fresh cache (unless forced), then the network (cached
@@ -491,6 +494,16 @@ export const getBaselineEmbeddingCatalog = (): EmbeddingCatalog =>
 export const fetchEmbeddingCatalog = async (
   options: EmbeddingCatalogFetchOptions = {}
 ): Promise<EmbeddingCatalogFetchResult> => {
+  if (options.url === undefined) {
+    const result = await unifiedModelCollection('embedding', options.force)
+    return {
+      catalog: parseEmbeddingCatalog(result.data),
+      source: result.source,
+      fetchedAt: result.fetchedAt,
+      ...(result.error ? { error: result.error } : {}),
+    }
+  }
+
   const {
     force = false,
     url = EMBEDDING_CATALOG_URL,

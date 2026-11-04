@@ -8,6 +8,8 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
   }),
 }))
 
+vi.mock('@tauri-apps/plugin-opener', () => ({ openUrl: vi.fn() }))
+
 vi.mock('@tanstack/react-router', () => ({
   Link: ({
     children,
@@ -55,7 +57,8 @@ describe('Overview, agents and tools', () => {
     useAppState.setState({ serverStatus: 'running' })
     useLaunchStore.setState({
       installed: { codex: true },
-      launched: {},
+      opened: {},
+      connected: {},
       phase: {},
     })
     useServerSetup.setState({
@@ -107,17 +110,40 @@ describe('Overview, agents and tools', () => {
       expect.objectContaining({ id: 'claude-code' })
     )
 
-    act(() => useLaunchStore.setState({ launched: { 'claude-code': true } }))
+    act(() => useLaunchStore.getState().markOpened('claude-code', null))
     // There is no client-exit signal. A historical launch must not hide reopening.
     expect(connect()).toBeEnabled()
+    // Opened is not connected: nothing reached the server yet.
+    expect(connect()).toHaveTextContent('api:agents.opened')
     expect(screen.queryByText('api:agents.connected')).not.toBeInTheDocument()
+    act(() => useLaunchStore.setState({ connected: { 'claude-code': true } }))
+    expect(connect()).toHaveTextContent('api:agents.connected')
     act(() => useAppState.setState({ serverStatus: 'stopped' }))
     expect(connect()).toBeEnabled()
     act(() => useAppState.setState({ serverStatus: 'running' }))
     fireEvent.click(connect())
     expect(actions.connect).toHaveBeenCalledTimes(2)
-    act(() => useLaunchStore.setState({ launched: {} }))
+    act(() => useLaunchStore.setState({ opened: {}, connected: {} }))
     expect(connect()).toBeEnabled()
+  })
+
+  it('offers ZCode’s download, not Connect, while its app is missing', () => {
+    useServerSetup.setState({ configuredAgents: [{ id: 'zcode', at: 1 }] })
+    useLaunchStore.setState({ installed: { zcode: false } })
+    render(<ServerAgents />)
+
+    const zcode = card('ZCode')
+    expect(zcode).not.toHaveClass('is-connected')
+    expect(
+      within(zcode).getByRole('button', {
+        name: 'api:agents.downloadAgent:{"name":"ZCode"}',
+      })
+    ).toHaveTextContent('api:agents.appMissing')
+    expect(
+      within(zcode).queryByRole('button', {
+        name: 'api:agents.connectAgent:{"name":"ZCode"}',
+      })
+    ).toBeNull()
   })
 
   it('installs a missing agent first, and shows the work while it runs', () => {

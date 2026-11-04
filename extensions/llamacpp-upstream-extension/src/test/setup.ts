@@ -68,7 +68,8 @@ vi.mock('@tauri-apps/api/path', () => ({
 }))
 
 // Mock @janhq/core
-vi.mock('@janhq/core', () => ({
+vi.mock('@janhq/core', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@janhq/core')>()),
   getJanDataFolderPath: vi.fn(),
   fs: {
     existsSync: vi.fn(),

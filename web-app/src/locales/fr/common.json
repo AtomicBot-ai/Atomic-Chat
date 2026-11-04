@@ -590,6 +590,10 @@
     "downloadResumed": {
       "title": "Téléchargement repris"
     },
+    "downloadArtifactChanged": {
+      "title": "Le fichier du modèle a changé",
+      "description": "Le fichier du serveur ne correspond plus à ce modèle. Le téléchargement a été arrêté et le fichier partiel a été conservé. Mettez à jour Atomic Chat ou actualisez le catalogue des modèles avant de réessayer."
+    },
     "downloadFailed": {
       "title": "Échec du téléchargement",
       "description": "Le téléchargement de {{item}} a échoué"
@@ -687,7 +691,9 @@
     },
     "downloadWontFit": {
       "title": "Ce modèle ne tiendra pas sur votre disque",
-      "description": "{{model}} nécessite {{needed}} d'espace libre et ce disque dispose de {{available}}. Choisissez un modèle plus petit ou libérez de l'espace."
+      "description": "{{model}} nécessite {{needed}} d'espace libre et ce disque dispose de {{available}}. Choisissez un modèle plus petit ou libérez de l'espace.",
+      "descriptionOnVolume": "{{model}} nécessite {{needed}} d'espace libre et {{volume}} dispose de {{available}}. Choisissez un modèle plus petit, libérez de l'espace ou déplacez le dossier de données vers un autre disque.",
+      "changeFolder": "Changer le dossier de données"
     },
     "downloadProxyUnreachable": {
       "title": "Impossible de joindre le serveur via votre proxy",
@@ -701,6 +707,12 @@
     "fileDialogFailed": {
       "title": "Impossible d'ouvrir la boîte de dialogue de fichiers",
       "description": "Le système n'a pas affiché le sélecteur de fichier ou de dossier. Réessayez ; si le problème persiste, redémarrez Atomic Chat."
+    },
+    "downloadFsLimit": {
+      "title": "Ce disque ne peut pas stocker de fichiers de plus de 4 Go",
+      "description": "{{model}} contient un fichier de {{size}}, mais {{volume}} est formaté en {{fsName}}, qui ne peut pas stocker de fichier de 4 Go ou plus. Déplacez le dossier de données d'Atomic Chat vers un disque NTFS ou exFAT.",
+      "descriptionFailed": "Le disque qui contient le dossier de données d'Atomic Chat est formaté en FAT32, qui ne peut pas stocker de fichier de 4 Go ou plus. Déplacez le dossier de données vers un disque NTFS ou exFAT et réessayez.",
+      "thisDrive": "ce disque"
     }
   },
   "errors": {

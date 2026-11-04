@@ -88,10 +88,12 @@ describe('normalizeFinishedPatch', () => {
       duration_ms: 3500,
       ttft_ms: 755,
       prompt_tokens: 28,
+      cached_tokens: 20,
       completion_tokens: 150,
       total_tokens: 178,
       finish_reason: 'length',
       reply_preview: 'Hello!',
+      ctx_len: 16384,
     })
     expect(result?.id).toBe('a')
     expect(result?.patch).toMatchObject({
@@ -100,10 +102,12 @@ describe('normalizeFinishedPatch', () => {
       durationMs: 3500,
       ttftMs: 755,
       promptTokens: 28,
+      cachedTokens: 20,
       completionTokens: 150,
       totalTokens: 178,
       finishReason: 'length',
       replyPreview: 'Hello!',
+      contextLength: 16384,
     })
   })
 

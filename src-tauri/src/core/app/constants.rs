@@ -5,6 +5,8 @@ pub const JAN_DATA_SUBDIRS: &[&str] = &[
     "agent-skills",
     "agent-workspace",
     "assistants",
+    "audio",
+    "audios",
     "diffusion",
     "images",
     "threads",
@@ -54,6 +56,8 @@ mod tests {
             "assistants",
             "agent-skills",
             "agent-workspace",
+            "audio",
+            "audios",
             "diffusion",
             "images",
         ] {

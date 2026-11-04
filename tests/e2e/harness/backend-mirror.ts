@@ -163,7 +163,7 @@ export function proxySeed(proxyUrl: string): Record<string, string> {
         verifyProxyHostSSL: false,
         verifyPeerSSL: false,
         verifyHostSSL: false,
-        noProxy: '',
+        noProxy: '127.0.0.1,localhost',
       },
       version: 0,
     }),

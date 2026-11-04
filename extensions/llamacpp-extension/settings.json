@@ -45,11 +45,11 @@
   {
     "key": "parallel",
     "title": "Parallel Sequences",
-    "description": "Number of parallel sequences to decode (0 = llama.cpp default of 1). Set to 1 to also enable -kvu for optimized single-request serving. Ignored when Concurrent Mode is on.",
+    "description": "Requests served at once (0 = llama.cpp's own choice). Every slot shares one KV cache of the whole context window (-kvu), so a second slot costs no extra window memory and a title or side request no longer waits behind a long agent turn. The slots share that window: one long request can still use all of it, and slots that outgrow it together are stopped. Ignored when Concurrent Mode is on.",
     "controllerType": "input",
     "controllerProps": {
-      "value": 1,
-      "placeholder": "1",
+      "value": 2,
+      "placeholder": "2",
       "type": "number",
       "textAlign": "right",
       "min": 0
@@ -58,10 +58,10 @@
   {
     "key": "cont_batching",
     "title": "Continuous Batching",
-    "description": "Enable continuous batching (a.k.a dynamic batching) for concurrent requests.",
+    "description": "Let new requests join a generation already running instead of waiting for it (llama.cpp's default). Off sends --no-cont-batching: requests then run one at a time even with several parallel sequences.",
     "controllerType": "checkbox",
     "controllerProps": {
-      "value": false
+      "value": true
     }
   },
   {
@@ -178,13 +178,27 @@
   {
     "key": "n_predict",
     "title": "Max Tokens to Predict",
-    "description": "Maximum number of tokens to generate (-1 = infinity).",
+    "description": "Maximum tokens one answer may generate when the request sets no max_tokens of its own. 0 = automatic: 16384, never more than the context window. -1 = no limit (a client that sets none then generates until the context is full).",
     "controllerType": "input",
     "controllerProps": {
-      "value": -1,
-      "placeholder": "-1",
+      "value": 0,
+      "placeholder": "0",
       "type": "number",
-      "textAlign": "right"
+      "textAlign": "right",
+      "min": -1
+    }
+  },
+  {
+    "key": "reasoning_budget",
+    "title": "Reasoning Budget",
+    "description": "Thinking tokens a thinking model may spend on a request that sets no budget of its own; when they run out it is told to answer from what it has. -1 = no limit, 0 = no thinking. Needs llama.cpp b8287 or newer.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 8192,
+      "placeholder": "8192",
+      "type": "number",
+      "textAlign": "right",
+      "min": -1
     }
   },
   {

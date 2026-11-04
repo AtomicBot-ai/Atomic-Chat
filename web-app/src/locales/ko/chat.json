@@ -7,6 +7,10 @@
     "empty": "채팅을 찾을 수 없습니다"
   },
   "sendMessage": "메시지 보내기",
+  "replyGate": {
+    "sendHint": "답장에 사용할 모델 선택",
+    "sendWith": "{{model}}(으)로 보내기"
+  },
   "newConversation": "새 대화",
   "clearHistory": "기록 지우기",
   "activity": {
@@ -37,5 +41,13 @@
     "openFailed": "{{name}}을(를) 열 수 없습니다",
     "openFailedDescription": "파일이 이동되었거나 삭제되었을 수 있습니다.",
     "chipLabel": "출처: {{name}}, 구절 {{passage}}"
+  },
+  "turnRecovery": {
+    "retry": "다시 시도",
+    "details": "자세히",
+    "genericTitle": "응답 생성 중 오류가 발생했습니다",
+    "genericMessage": "답변이 끝나기 전에 모델이 오류를 보고했습니다. 다시 시도하면 메시지를 다시 보냅니다. 오류 내용은 '자세히'에서 확인할 수 있습니다.",
+    "settingsRestartTitle": "설정 변경으로 모델이 다시 시작되었습니다",
+    "settingsRestartMessage": "답변하는 동안 설정을 변경해 {{model}}이(가) 다시 시작되었습니다. 다시 시도하면 메시지를 다시 보냅니다."
   }
 }

@@ -2,7 +2,7 @@
   "comparator": "agent-config-files",
   "expected": {
     "files": {
-      ".zshenv": "export OPENAI_API_KEY='sk-user-owned'\nexport EDITOR=nvim\n# Atomic Chat - Goose Config\nexport GOOSE_PROVIDER='openai'\nexport GOOSE_MODEL='AtomicChat/Qwen3.5-9B-GGUF'\nexport OPENAI_HOST='http://127.0.0.1:1337'\nexport OPENAI_BASE_PATH='v1/chat/completions'\nexport OPENAI_API_KEY='sk-atomic-fixture-key'\n\n# Atomic Chat - Goose Config\n"
+      ".zshenv": "export OPENAI_API_KEY='sk-user-owned'\nexport EDITOR=nvim\n"
     },
     "ok": true
   },
@@ -18,7 +18,7 @@
   },
   "name": "goose__unrelated_openai_export_preserved",
   "source": {
-    "commit": "ccf542733",
-    "file": "src-tauri/src/core/cli/fixture_dump.rs"
+    "commit": "344cc5a42",
+    "file": "src-tauri/src/core/system/opencode_family.rs"
   }
 }

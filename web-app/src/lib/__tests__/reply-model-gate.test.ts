@@ -5,6 +5,7 @@ import {
   collectReplyModels,
   estimateParamsB,
   estimateQuantBits,
+  pickReplyModel,
   replyGateBranch,
   replyGateContext,
   resolveReplyModel,
@@ -432,5 +433,44 @@ describe('resolveReplyModel', () => {
     expect(
       resolveReplyModel(options, { provider: 'llamacpp-upstream', model: 'deleted' })
     ).toMatchObject({ resolution: 'single_local' })
+  })
+})
+
+// AC-02: the Send button names what a send with nothing selected starts, and
+// the send starts it. Both read this one function.
+describe('pickReplyModel', () => {
+  it('is collectReplyModels fed to resolveReplyModel', () => {
+    const lastUsed = {
+      provider: 'llamacpp-upstream',
+      model: 'Qwen3.5-4B-Q4_K_M',
+    }
+    const providers = [
+      local([model('Qwen3.5-9B-Q4_K_M'), model('Qwen3.5-4B-Q4_K_M')]),
+      cloud('openai', [model('gpt-4.1')]),
+    ]
+
+    expect(pickReplyModel(providers, lastUsed)).toEqual(
+      resolveReplyModel(collectReplyModels(providers, lastUsed), lastUsed)
+    )
+    expect(pickReplyModel(providers, lastUsed)).toMatchObject({
+      option: { modelId: 'Qwen3.5-4B-Q4_K_M', label: 'Qwen3.5 4B' },
+      resolution: 'last_used',
+    })
+  })
+
+  it('names the model a send would start when there is no history', () => {
+    expect(
+      pickReplyModel([
+        local([model('Qwen3.5-9B-Q4_K_M'), model('LFM2.5-1.2B-Q4_K_M')]),
+      ])
+    ).toMatchObject({
+      option: { modelId: 'LFM2.5-1.2B-Q4_K_M' },
+      resolution: 'smallest_local',
+    })
+  })
+
+  it('resolves nothing on an empty device, so Send stays a choice', () => {
+    expect(pickReplyModel([])).toBeNull()
+    expect(pickReplyModel([provider('openai', [model('gpt-4.1')])])).toBeNull()
   })
 })

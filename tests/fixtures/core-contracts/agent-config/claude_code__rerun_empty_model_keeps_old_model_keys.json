@@ -2,7 +2,8 @@
   "comparator": "agent-config-files",
   "expected": {
     "files": {
-      ".claude/settings.json": "{\n  \"env\": {\n    \"ANTHROPIC_AUTH_TOKEN\": \"sk-atomic-fixture-key\",\n    \"ANTHROPIC_BASE_URL\": \"http://127.0.0.1:1337\",\n    \"ANTHROPIC_DEFAULT_HAIKU_MODEL\": \"AtomicChat/Qwen3.5-9B-GGUF\",\n    \"ANTHROPIC_DEFAULT_OPUS_MODEL\": \"AtomicChat/Qwen3.5-9B-GGUF\",\n    \"ANTHROPIC_DEFAULT_SONNET_MODEL\": \"AtomicChat/Qwen3.5-9B-GGUF\",\n    \"ANTHROPIC_MODEL\": \"AtomicChat/Qwen3.5-9B-GGUF\"\n  },\n  \"model\": \"AtomicChat/Qwen3.5-9B-GGUF\"\n}\n"
+      ".claude/settings.json": "{\n  \"env\": {\n    \"ANTHROPIC_AUTH_TOKEN\": \"sk-atomic-fixture-key\",\n    \"ANTHROPIC_BASE_URL\": \"http://127.0.0.1:1337\",\n    \"ANTHROPIC_DEFAULT_HAIKU_MODEL\": \"AtomicChat/Qwen3.5-9B-GGUF\",\n    \"ANTHROPIC_DEFAULT_OPUS_MODEL\": \"AtomicChat/Qwen3.5-9B-GGUF\",\n    \"ANTHROPIC_DEFAULT_SONNET_MODEL\": \"AtomicChat/Qwen3.5-9B-GGUF\",\n    \"ANTHROPIC_MODEL\": \"AtomicChat/Qwen3.5-9B-GGUF\",\n    \"CLAUDE_CODE_DISABLE_TERMINAL_TITLE\": \"1\",\n    \"CLAUDE_CODE_USE_BEDROCK\": \"\",\n    \"CLAUDE_CODE_USE_FOUNDRY\": \"\",\n    \"CLAUDE_CODE_USE_VERTEX\": \"\"\n  },\n  \"model\": \"AtomicChat/Qwen3.5-9B-GGUF\"\n}\n",
+      ".claude/settings.json.atomic-chat-backup.json": "{\n  \"about\": \"Atomic Chat keeps the values it replaced here and puts them back when you disconnect.\",\n  \"created\": [\n    [\n      \"env\"\n    ]\n  ],\n  \"entries\": [\n    {\n      \"existed\": false,\n      \"path\": [\n        \"env\",\n        \"ANTHROPIC_BASE_URL\"\n      ],\n      \"written\": \"http://127.0.0.1:1337\"\n    },\n    {\n      \"existed\": false,\n      \"path\": [\n        \"env\",\n        \"ANTHROPIC_AUTH_TOKEN\"\n      ],\n      \"written\": \"sk-atomic-fixture-key\"\n    },\n    {\n      \"existed\": false,\n      \"path\": [\n        \"env\",\n        \"CLAUDE_CODE_USE_BEDROCK\"\n      ],\n      \"written\": \"\"\n    },\n    {\n      \"existed\": false,\n      \"path\": [\n        \"env\",\n        \"CLAUDE_CODE_USE_VERTEX\"\n      ],\n      \"written\": \"\"\n    },\n    {\n      \"existed\": false,\n      \"path\": [\n        \"env\",\n        \"CLAUDE_CODE_USE_FOUNDRY\"\n      ],\n      \"written\": \"\"\n    },\n    {\n      \"existed\": false,\n      \"path\": [\n        \"env\",\n        \"CLAUDE_CODE_DISABLE_TERMINAL_TITLE\"\n      ],\n      \"written\": \"1\"\n    },\n    {\n      \"existed\": false,\n      \"path\": [\n        \"env\",\n        \"ANTHROPIC_MODEL\"\n      ],\n      \"written\": \"AtomicChat/Qwen3.5-9B-GGUF\"\n    },\n    {\n      \"existed\": false,\n      \"path\": [\n        \"env\",\n        \"ANTHROPIC_DEFAULT_OPUS_MODEL\"\n      ],\n      \"written\": \"AtomicChat/Qwen3.5-9B-GGUF\"\n    },\n    {\n      \"existed\": false,\n      \"path\": [\n        \"env\",\n        \"ANTHROPIC_DEFAULT_SONNET_MODEL\"\n      ],\n      \"written\": \"AtomicChat/Qwen3.5-9B-GGUF\"\n    },\n    {\n      \"existed\": false,\n      \"path\": [\n        \"env\",\n        \"ANTHROPIC_DEFAULT_HAIKU_MODEL\"\n      ],\n      \"written\": \"AtomicChat/Qwen3.5-9B-GGUF\"\n    },\n    {\n      \"existed\": false,\n      \"path\": [\n        \"model\"\n      ],\n      \"written\": \"AtomicChat/Qwen3.5-9B-GGUF\"\n    }\n  ],\n  \"fileExisted\": false,\n  \"version\": 1\n}\n"
     },
     "ok": true
   },
@@ -23,7 +24,7 @@
   },
   "name": "claude_code__rerun_empty_model_keeps_old_model_keys",
   "source": {
-    "commit": "ccf542733",
-    "file": "src-tauri/src/core/cli/fixture_dump.rs"
+    "commit": "a13a1e979",
+    "file": "src-tauri/src/core/system/claude_config.rs"
   }
 }

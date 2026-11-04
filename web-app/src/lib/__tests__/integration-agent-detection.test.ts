@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { invoke } from '@tauri-apps/api/core'
 import { INTEGRATION_AGENTS } from '@/constants/integrations'
+import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useServerSetup } from '@/hooks/useServerSetup'
 import { useLaunchStore } from '@/stores/launch-store'
 
@@ -54,13 +55,17 @@ describe('adoptConfiguredAgents', () => {
 
   it('lists the known agents whose config already points here', async () => {
     vi.mocked(invoke).mockResolvedValue(['opencode', 'not-an-agent'])
+    useLocalApiServer.setState({ serverPort: 4242 })
     const { adoptConfiguredAgents } = await import(
       '../integration-agent-detection'
     )
 
     await adoptConfiguredAgents()
 
-    expect(invoke).toHaveBeenCalledWith('detect_configured_agents')
+    // Only a URL on this server's port is ours.
+    expect(invoke).toHaveBeenCalledWith('detect_configured_agents', {
+      port: 4242,
+    })
     expect(
       useServerSetup.getState().configuredAgents.map((entry) => entry.id)
     ).toEqual(['opencode'])
@@ -102,7 +107,9 @@ describe('detectIntegrationAgentsOnce', () => {
 
     // One question per unknown agent, plus one for what is already set up.
     expect(invoke).toHaveBeenCalledTimes(INTEGRATION_AGENTS.length)
-    expect(invoke).toHaveBeenCalledWith('detect_configured_agents')
+    expect(invoke).toHaveBeenCalledWith('detect_configured_agents', {
+      port: expect.any(Number),
+    })
     // The known answer stands; it is not asked again.
     expect(store.getState().installed[agent.id]).toBe(true)
     expect(invoke).not.toHaveBeenCalledWith(

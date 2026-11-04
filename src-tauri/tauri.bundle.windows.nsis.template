@@ -1,3 +1,6 @@
+; Based on tauri-cli-v2.8.4/crates/tauri-bundler/src/bundle/windows/nsis/installer.nsi.
+; Keep in sync when upgrading Tauri. Local changes: stable registry namespace
+; and recognition of MSI installations carrying the previous publisher.
 Unicode true
 ManifestDPIAware true
 ; Add in `dpiAwareness` `PerMonitorV2` to manifest for Windows 10 1607+ (note this should not affect lower versions since they should be able to ignore this and pick up `dpiAware` `true` set by `ManifestDPIAware true`)
@@ -6,11 +9,11 @@ ManifestDPIAware true
 ; https://github.com/tauri-apps/tauri/pull/10106
 ManifestDPIAwareness PerMonitorV2
 
-!if "lzma" == "none"
+!if "{{compression}}" == "none"
   SetCompress off
 !else
   ; Set the compression algorithm. We default to LZMA.
-  SetCompressor /SOLID "lzma"
+  SetCompressor /SOLID "{{compression}}"
 !endif
 
 !include MUI2.nsh
@@ -25,41 +28,44 @@ ManifestDPIAwareness PerMonitorV2
 ${StrCase}
 ${StrLoc}
 
+{{#if installer_hooks}}
+!include "{{installer_hooks}}"
+{{/if}}
 
 !define WEBVIEW2APPGUID "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
 
-!define MANUFACTURER "Atomic Chat"
-!define PRODUCTNAME "jan_productname"
-!define VERSION "jan_version"
-!define VERSIONWITHBUILD "jan_build"
-!define HOMEPAGE ""
-!define INSTALLMODE "currentUser"
-!define LICENSE ""
-!define INSTALLERICON "D:\a\jan\jan\src-tauri\icons\icon.ico"
-!define SIDEBARIMAGE ""
-!define HEADERIMAGE ""
-!define MAINBINARYNAME "jan_mainbinaryname"
-!define MAINBINARYSRCPATH "D:\a\jan\jan\src-tauri\target\release\jan_mainbinaryname.exe"
-!define BUNDLEID "jan_mainbinaryname.ai.app"
-!define COPYRIGHT ""
-!define OUTFILE "nsis-output.exe"
-!define ARCH "x64"
-!define ADDITIONALPLUGINSPATH "D:\a\jan\jan\src-tauri\target\release\nsis\x64\Plugins\x86-unicode\additional"
-!define ALLOWDOWNGRADES "true"
-!define DISPLAYLANGUAGESELECTOR "false"
-!define INSTALLWEBVIEW2MODE "downloadBootstrapper"
-!define WEBVIEW2INSTALLERARGS "/silent"
-!define WEBVIEW2BOOTSTRAPPERPATH ""
-!define WEBVIEW2INSTALLERPATH ""
-!define MINIMUMWEBVIEW2VERSION ""
+!define MANUFACTURER "{{manufacturer}}"
+!define PRODUCTNAME "{{product_name}}"
+!define VERSION "{{version}}"
+!define VERSIONWITHBUILD "{{version_with_build}}"
+!define HOMEPAGE "{{homepage}}"
+!define INSTALLMODE "{{install_mode}}"
+!define LICENSE "{{license}}"
+!define INSTALLERICON "{{installer_icon}}"
+!define SIDEBARIMAGE "{{sidebar_image}}"
+!define HEADERIMAGE "{{header_image}}"
+!define MAINBINARYNAME "{{main_binary_name}}"
+!define MAINBINARYSRCPATH "{{main_binary_path}}"
+!define BUNDLEID "{{bundle_id}}"
+!define COPYRIGHT "{{copyright}}"
+!define OUTFILE "{{out_file}}"
+!define ARCH "{{arch}}"
+!define ADDITIONALPLUGINSPATH "{{additional_plugins_path}}"
+!define ALLOWDOWNGRADES "{{allow_downgrades}}"
+!define DISPLAYLANGUAGESELECTOR "{{display_language_selector}}"
+!define INSTALLWEBVIEW2MODE "{{install_webview2_mode}}"
+!define WEBVIEW2INSTALLERARGS "{{webview2_installer_args}}"
+!define WEBVIEW2BOOTSTRAPPERPATH "{{webview2_bootstrapper_path}}"
+!define WEBVIEW2INSTALLERPATH "{{webview2_installer_path}}"
+!define MINIMUMWEBVIEW2VERSION "{{minimum_webview2_version}}"
 !define UNINSTKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCTNAME}"
-!define MANUKEY "Software\${MANUFACTURER}"
+; Internal installation identity must survive display-publisher changes.
+!define LEGACY_MANUFACTURER "Spaceship Intelligence"
+!define MANUKEY "Software\${LEGACY_MANUFACTURER}"
 !define MANUPRODUCTKEY "${MANUKEY}\${PRODUCTNAME}"
-!define UNINSTALLERSIGNCOMMAND "$\"powershell$\" $\"-ExecutionPolicy$\" $\"Bypass$\" $\"-File$\" $\"./sign.ps1$\" $\"%1$\""
-!define ESTIMATEDSIZE "793795"
-!define STARTMENUFOLDER ""
-!define VCREDIST_URL "https://aka.ms/vs/17/release/vc_redist.x64.exe"
-!define VCREDIST_FILENAME "vc_redist.x64.exe"
+!define UNINSTALLERSIGNCOMMAND "{{uninstaller_sign_cmd}}"
+!define ESTIMATEDSIZE "{{estimated_size}}"
+!define STARTMENUFOLDER "{{start_menu_folder}}"
 
 Var PassiveMode
 Var UpdateMode
@@ -70,9 +76,6 @@ Var OldMainBinaryName
 Name "${PRODUCTNAME}"
 BrandingText "${COPYRIGHT}"
 OutFile "${OUTFILE}"
-
-ShowInstDetails nevershow
-ShowUninstDetails nevershow
 
 ; We don't actually use this value as default install path,
 ; it's just for nsis to append the product name folder in the directory selector
@@ -97,7 +100,7 @@ VIAddVersionKey "ProductVersion" "${VERSION}"
 
 ; Handle install mode, `perUser`, `perMachine` or `both`
 !if "${INSTALLMODE}" == "perMachine"
-  RequestExecutionLevel highest
+  RequestExecutionLevel admin
 !endif
 
 !if "${INSTALLMODE}" == "currentUser"
@@ -182,7 +185,10 @@ Function PageReinstall
     IntOp $0 $0 + 1
     ReadRegStr $R0 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1" "DisplayName"
     ReadRegStr $R1 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1" "Publisher"
-    StrCmp "$R0$R1" "${PRODUCTNAME}${MANUFACTURER}" 0 wix_loop
+    StrCmp $R0 "${PRODUCTNAME}" 0 wix_loop
+    StrCmp $R1 "${MANUFACTURER}" wix_publisher_match
+    StrCmp $R1 "${LEGACY_MANUFACTURER}" 0 wix_loop
+    wix_publisher_match:
     ReadRegStr $R0 HKLM "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$1" "UninstallString"
     ${StrCase} $R1 $R0 "L"
     ${StrLoc} $R0 $R1 "msiexec" ">"
@@ -286,12 +292,6 @@ Function PageReinstallUpdateSelection
   ${EndIf}
 FunctionEnd
 Function PageLeaveReinstall
-  ; In passive mode, always uninstall when upgrading
-  ${If} $PassiveMode = 1
-  ${AndIf} $R0 = 1  ; Upgrading
-    Goto reinst_uninstall
-  ${EndIf}
-
   ${NSD_GetState} $R2 $R1
 
   ; If migrating from Wix, always uninstall
@@ -450,17 +450,19 @@ FunctionEnd
 !insertmacro MUI_UNPAGE_INSTFILES
 
 ;Languages
-!insertmacro MUI_LANGUAGE "English"
+{{#each languages}}
+!insertmacro MUI_LANGUAGE "{{this}}"
+{{/each}}
 !insertmacro MUI_RESERVEFILE_LANGDLL
-  !include "D:\a\jan\jan\src-tauri\target\release\nsis\x64\English.nsh"
+{{#each language_files}}
+  !include "{{this}}"
+{{/each}}
 
 Function .onInit
   ${GetOptions} $CMDLINE "/P" $PassiveMode
   ${IfNot} ${Errors}
     StrCpy $PassiveMode 1
   ${EndIf}
-  ; always run in passive mode
-  StrCpy $PassiveMode 1
 
   ${GetOptions} $CMDLINE "/NS" $NoShortcutMode
   ${IfNot} ${Errors}
@@ -493,18 +495,12 @@ Function .onInit
         StrCpy $INSTDIR "$PROGRAMFILES\${PRODUCTNAME}"
       ${EndIf}
     !else if "${INSTALLMODE}" == "currentUser"
-      StrCpy $INSTDIR "$LOCALAPPDATA\Programs\${PRODUCTNAME}"
+      StrCpy $INSTDIR "$LOCALAPPDATA\${PRODUCTNAME}"
     !endif
 
     Call RestorePreviousInstallLocation
   ${EndIf}
 
-  ; Remove old Jan if it exists
-  ${If} ${FileExists} "$INSTDIR\LICENSE.electron.txt"
-      DeleteRegKey HKLM "Software\${PRODUCTNAME}"
-      RMDir /r "$INSTDIR"
-      Delete "$INSTDIR\*.*"
-  ${EndIf}
 
   !if "${INSTALLMODE}" == "both"
     !insertmacro MULTIUSER_INIT
@@ -623,65 +619,7 @@ Section WebView2
   ${EndIf}
 SectionEnd
 
-Section VCRedist
-  ; Check if VC++ Redistributable is already installed
-  ; Check for Visual Studio 2015-2022 redistributable (14.0 or higher)
-  ReadRegStr $0 HKLM "SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64" "Version"
-  ${If} $0 == ""
-    ; Try alternative registry location
-    ReadRegStr $0 HKLM "SOFTWARE\WOW6432Node\Microsoft\VisualStudio\14.0\VC\Runtimes\x64" "Version"
-  ${EndIf}
-  ${If} $0 == ""
-    ; Try checking for any version of Visual C++ 2015-2022 Redistributable
-    ReadRegStr $0 HKLM "SOFTWARE\Classes\Installer\Dependencies\Microsoft.VS.VC_RuntimeMinimumVSU_amd64,v14" "Version"
-  ${EndIf}
-
-  ${If} $0 == ""
-    ; VC++ Redistributable not found, need to install
-    DetailPrint "Visual C++ Redistributable not found, downloading and installing..."
-
-    ; Download VC++ Redistributable
-    Delete "$TEMP\${VCREDIST_FILENAME}"
-    DetailPrint "Downloading Visual C++ Redistributable..."
-    NSISdl::download "${VCREDIST_URL}" "$TEMP\${VCREDIST_FILENAME}"
-    Pop $1
-
-    ${If} $1 == "success"
-      DetailPrint "Visual C++ Redistributable download successful"
-
-      ; Install VC++ Redistributable silently
-      DetailPrint "Installing Visual C++ Redistributable..."
-      ExecWait '"$TEMP\${VCREDIST_FILENAME}" /quiet /norestart' $2
-
-      ${If} $2 == 0
-        DetailPrint "Visual C++ Redistributable installed successfully"
-      ${ElseIf} $2 == 1638
-        DetailPrint "Visual C++ Redistributable already installed (newer version)"
-      ${ElseIf} $2 == 3010
-        DetailPrint "Visual C++ Redistributable installed successfully (restart required)"
-        ; You might want to handle restart requirement here
-      ${Else}
-        DetailPrint "Visual C++ Redistributable installation failed with exit code: $2"
-        MessageBox MB_ICONEXCLAMATION|MB_YESNO "Visual C++ Redistributable installation failed. Continue anyway?" IDYES continue_install
-        Abort "Installation cancelled due to Visual C++ Redistributable failure"
-        continue_install:
-      ${EndIf}
-
-      ; Clean up downloaded file
-      Delete "$TEMP\${VCREDIST_FILENAME}"
-    ${Else}
-      DetailPrint "Failed to download Visual C++ Redistributable: $1"
-      MessageBox MB_ICONEXCLAMATION|MB_YESNO "Failed to download Visual C++ Redistributable. Continue anyway?" IDYES continue_install_download_fail
-      Abort "Installation cancelled due to download failure"
-      continue_install_download_fail:
-    ${EndIf}
-  ${Else}
-    DetailPrint "Visual C++ Redistributable already installed (version: $0)"
-  ${EndIf}
-SectionEnd
-
 Section Install
-  SetDetailsPrint none
   SetOutPath $INSTDIR
 
   !ifmacrodef NSIS_HOOK_PREINSTALL
@@ -694,22 +632,32 @@ Section Install
   File "${MAINBINARYSRCPATH}"
 
   ; Copy resources
-    CreateDirectory "$INSTDIR\resources"
-    CreateDirectory "$INSTDIR\resources\pre-install"
-    CreateDirectory "$INSTDIR\resources\bin"
-    SetOutPath $INSTDIR
-    File /a "/oname=LICENSE" "D:\a\jan\jan\src-tauri\resources\LICENSE"
-    SetOutPath "$INSTDIR\resources\pre-install"
-    File /nonfatal /a /r "D:\a\jan\jan\src-tauri\resources\pre-install\"
-    SetOutPath $INSTDIR
+  {{#each resources_dirs}}
+    CreateDirectory "$INSTDIR\\{{this}}"
+  {{/each}}
+  {{#each resources}}
+    File /a "/oname={{this.[1]}}" "{{no-escape @key}}"
+  {{/each}}
 
   ; Copy external binaries
-    File /a "/oname=bun.exe" "D:\a\jan\jan\src-tauri\resources\bin\bun-x86_64-pc-windows-msvc.exe"
-    File /a "/oname=uv.exe" "D:\a\jan\jan\src-tauri\resources\bin\uv-x86_64-pc-windows-msvc.exe"
+  {{#each binaries}}
+    File /a "/oname={{this}}" "{{no-escape @key}}"
+  {{/each}}
 
   ; Create file associations
+  {{#each file_associations as |association| ~}}
+    {{#each association.ext as |ext| ~}}
+       !insertmacro APP_ASSOCIATE "{{ext}}" "{{or association.name ext}}" "{{association-description association.description ext}}" "$INSTDIR\${MAINBINARYNAME}.exe,0" "Open with ${PRODUCTNAME}" "$INSTDIR\${MAINBINARYNAME}.exe $\"%1$\""
+    {{/each}}
+  {{/each}}
 
   ; Register deep links
+  {{#each deep_link_protocols as |protocol| ~}}
+    WriteRegStr SHCTX "Software\Classes\\{{protocol}}" "URL Protocol" ""
+    WriteRegStr SHCTX "Software\Classes\\{{protocol}}" "" "URL:${BUNDLEID} protocol"
+    WriteRegStr SHCTX "Software\Classes\\{{protocol}}\DefaultIcon" "" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\",0"
+    WriteRegStr SHCTX "Software\Classes\\{{protocol}}\shell\open\command" "" "$\"$INSTDIR\${MAINBINARYNAME}.exe$\" $\"%1$\""
+  {{/each}}
 
   ; Create uninstaller
   WriteUninstaller "$INSTDIR\uninstall.exe"
@@ -781,11 +729,11 @@ Function .onInstSuccess
   ; GUI installer has a toggle for the user to (re)start the app
   ${If} $PassiveMode = 1
   ${OrIf} ${Silent}
-    ; ${GetOptions} $CMDLINE "/R" $R0
-    ; ${IfNot} ${Errors}
-    ${GetOptions} $CMDLINE "/ARGS" $R0
-    nsis_tauri_utils::RunAsUser "$INSTDIR\${MAINBINARYNAME}.exe" "$R0"
-    ; ${EndIf}
+    ${GetOptions} $CMDLINE "/R" $R0
+    ${IfNot} ${Errors}
+      ${GetOptions} $CMDLINE "/ARGS" $R0
+      nsis_tauri_utils::RunAsUser "$INSTDIR\${MAINBINARYNAME}.exe" "$R0"
+    ${EndIf}
   ${EndIf}
 FunctionEnd
 
@@ -810,7 +758,6 @@ Function un.onInit
 FunctionEnd
 
 Section Uninstall
-  SetDetailsPrint none
 
   !ifmacrodef NSIS_HOOK_PREUNINSTALL
     !insertmacro NSIS_HOOK_PREUNINSTALL
@@ -822,32 +769,39 @@ Section Uninstall
   ; Copy main executable
   Delete "$INSTDIR\${MAINBINARYNAME}.exe"
 
-  ; Delete LICENSE file
-    Delete "$INSTDIR\LICENSE"
-
   ; Delete resources
-    Delete "$INSTDIR\resources\pre-install\janhq-assistant-extension-1.0.2.tgz"
-    Delete "$INSTDIR\resources\pre-install\janhq-conversational-extension-1.0.0.tgz"
-    Delete "$INSTDIR\resources\pre-install\janhq-engine-management-extension-1.0.3.tgz"
-    Delete "$INSTDIR\resources\pre-install\janhq-hardware-management-extension-1.0.0.tgz"
-    Delete "$INSTDIR\resources\pre-install\janhq-inference-cortex-extension-1.0.25.tgz"
-    Delete "$INSTDIR\resources\pre-install\janhq-model-extension-1.0.36.tgz"
+  {{#each resources}}
+    Delete "$INSTDIR\\{{this.[1]}}"
+  {{/each}}
 
   ; Delete external binaries
-    Delete "$INSTDIR\bun.exe"
-    Delete "$INSTDIR\uv.exe"
+  {{#each binaries}}
+    Delete "$INSTDIR\\{{this}}"
+  {{/each}}
 
   ; Delete app associations
+  {{#each file_associations as |association| ~}}
+    {{#each association.ext as |ext| ~}}
+      !insertmacro APP_UNASSOCIATE "{{ext}}" "{{or association.name ext}}"
+    {{/each}}
+  {{/each}}
 
   ; Delete deep links
+  {{#each deep_link_protocols as |protocol| ~}}
+    ReadRegStr $R7 SHCTX "Software\Classes\\{{protocol}}\shell\open\command" ""
+    ${If} $R7 == "$\"$INSTDIR\${MAINBINARYNAME}.exe$\" $\"%1$\""
+      DeleteRegKey SHCTX "Software\Classes\\{{protocol}}"
+    ${EndIf}
+  {{/each}}
 
 
   ; Delete uninstaller
   Delete "$INSTDIR\uninstall.exe"
 
-  RMDir /REBOOTOK "$INSTDIR\resources\pre-install"
-  RMDir /r /REBOOTOK "$INSTDIR\resources"
-  RMDir /r "$INSTDIR"
+  {{#each resources_ancestors}}
+  RMDir /REBOOTOK "$INSTDIR\\{{this}}"
+  {{/each}}
+  RMDir "$INSTDIR"
 
   ; Remove shortcuts if not updating
   ${If} $UpdateMode <> 1

@@ -113,7 +113,8 @@ describe('TensorRT-LLM defaults', () => {
     expect(customEngineSettingKeys('vllm', settings)).toEqual(['max_num_seqs'])
     expect(
       withDefaultEngineSettings('vllm', settings).map((s) => s.controller_props.value)
-    ).toEqual([1, 'auto'])
+      // 0: the core picks the request count at load (core fix/agent-integrations).
+    ).toEqual([0, 'auto'])
   })
 
   it('resets SGLang to its core schema defaults', () => {
@@ -123,7 +124,7 @@ describe('TensorRT-LLM defaults', () => {
     expect(customEngineSettingKeys('sglang', settings)).toEqual(['max_running_requests'])
     expect(
       withDefaultEngineSettings('sglang', settings).map((s) => s.controller_props.value)
-    ).toEqual([1, 'auto'])
+    ).toEqual([0, 'auto'])
   })
 
   it('resets LiteRT-LM to its core schema defaults (change add-litert-lm-runtime)', () => {

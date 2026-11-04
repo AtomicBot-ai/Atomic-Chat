@@ -46,10 +46,12 @@ import {
   embeddingDownloadTaskId,
   isEmbeddingDownloadTaskId,
 } from '@/lib/embedding/models'
+import { resolveAudioDownloadTaskId } from '@/lib/audio/models'
 import { isManagedDownloadId } from '@/lib/managed-engine/download-id'
 import { isFoundryLocalDownloadId } from '@/lib/foundry-local/download-id'
 import { isLiteRtLmDownloadId } from '@/lib/litert-lm/download-id'
 import { isGeniexDownloadId } from '@/lib/geniex/download-id'
+import { useAudioGenerationStore } from '@/stores/audio-generation-store'
 import { useDecisionStore } from '@/stores/decision-store'
 import { useEmbeddingStore } from '@/stores/embedding-store'
 import { useImageGenerationStore } from '@/stores/image-generation-store'
@@ -58,6 +60,7 @@ import {
   describeDiffusionDownloadToast,
   describeFinishedDownload,
 } from '@/lib/downloadNotification'
+import type { AudioCatalog } from '@/services/audio-catalog-registry'
 import type { DecisionCatalog } from '@/services/decision-catalog-registry'
 import type { DiffusionCatalog } from '@/services/diffusion-catalog-registry'
 import type { EmbeddingCatalog } from '@/services/embedding-catalog-registry'
@@ -120,17 +123,18 @@ type RowNameSources = {
   origins: Record<string, string>
   decisionCatalog: DecisionCatalog
   embeddingCatalog: EmbeddingCatalog
+  audioCatalog: AudioCatalog
 }
 
 /**
  * What the panel calls a download. A managed model's id spells its repository
  * with `_`; the Hub's Download recorded the repository itself as the
- * download's origin. A decision or embedding model's task id is its catalog id
- * behind a prefix: the row shows the model's name instead.
+ * download's origin. A decision, embedding or audio model's task id is its
+ * catalog id behind a prefix: the row shows the model's name instead.
  */
 function downloadRowName(
   id: string,
-  { origins, decisionCatalog, embeddingCatalog }: RowNameSources
+  { origins, decisionCatalog, embeddingCatalog, audioCatalog }: RowNameSources
 ): string {
   return (
     (isManagedDownloadId(id) && origins[id]) ||
@@ -145,6 +149,7 @@ function downloadRowName(
       decisionCatalog.models.find(
         (model) => decisionDownloadTaskId(model.id) === id
       )?.name) ||
+    resolveAudioDownloadTaskId(audioCatalog, id)?.model.name ||
     id
   )
 }
@@ -185,6 +190,7 @@ function notifyDownloadFinished(
       origins: downloadOriginByModelId,
       decisionCatalog: useDecisionStore.getState().catalog,
       embeddingCatalog: useEmbeddingStore.getState().catalog,
+      audioCatalog: useAudioGenerationStore.getState().catalog,
     })
   )
   if (!notification) return
@@ -239,6 +245,7 @@ export function DownloadManagement({
   } = useDownloadStore()
   const decisionCatalog = useDecisionStore((s) => s.catalog)
   const embeddingCatalog = useEmbeddingStore((s) => s.catalog)
+  const audioCatalog = useAudioGenerationStore((s) => s.catalog)
 
   // A model download that Pause, a quit or a crash stopped comes back after a
   // relaunch, paused and with its Resume (`lib/interrupted-downloads`).
@@ -250,6 +257,7 @@ export function DownloadManagement({
         origins: downloadOriginByModelId,
         decisionCatalog,
         embeddingCatalog,
+        audioCatalog,
       })
     // Get downloads with progress data
     const downloadsWithProgress = Object.entries(downloads).map(
@@ -292,6 +300,7 @@ export function DownloadManagement({
     downloadOriginByModelId,
     decisionCatalog,
     embeddingCatalog,
+    audioCatalog,
   ])
 
   // The app update is not counted: its progress lives in the update banner
@@ -480,9 +489,39 @@ export function DownloadManagement({
         return
       }
 
+      if (
+        err.includes('Remote file changed:') ||
+        err.includes('Server rejected the saved download offset')
+      ) {
+        markResumableDownload(state.modelId)
+        toast.error(t('common:toast.downloadArtifactChanged.title'), {
+          id: 'download-failed',
+          description: t('common:toast.downloadArtifactChanged.description'),
+          duration: 30000,
+        })
+        return
+      }
+
       // ATO-467: a filesystem failure now says which one it was. The generic
       // "download failed" toast told 647 devices nothing they could act on,
       // and disk faults are the single largest failure cause.
+      // A FAT32 drive cannot store a file of 4 GiB or more (`[disk_fs_limit]`);
+      // matched on the tag itself so it never reads as a full disk. Moving the
+      // data folder is the fix, so the toast offers it.
+      if (err.includes('[disk_fs_limit]')) {
+        markResumableDownload(state.modelId)
+        toast.error(t('common:toast.downloadFsLimit.title'), {
+          id: 'download-failed',
+          description: t('common:toast.downloadFsLimit.descriptionFailed'),
+          duration: 30000,
+          action: {
+            label: t('common:toast.downloadWontFit.changeFolder'),
+            onClick: () => navigate({ to: route.settings.general }),
+          },
+        })
+        return
+      }
+
       const diskReason = classifyDownloadFailure(err)
       const diskToastKey: Record<string, string> = {
         disk_full: 'common:toast.downloadDiskFull',

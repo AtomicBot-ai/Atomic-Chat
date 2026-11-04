@@ -2,7 +2,8 @@
   "comparator": "agent-config-files",
   "expected": {
     "files": {
-      ".config/mimocode/mimocode.json": "{\n  \"$schema\": \"https://mimo.xiaomi.com/config.json\",\n  \"model\": \"atomic/AtomicChat/Qwen3.5-9B-GGUF\",\n  \"provider\": {\n    \"atomic\": {\n      \"models\": {\n        \"AtomicChat/Qwen3.5-9B-GGUF\": {\n          \"name\": \"AtomicChat/Qwen3.5-9B-GGUF\"\n        }\n      },\n      \"name\": \"Atomic Chat\",\n      \"npm\": \"@ai-sdk/openai-compatible\",\n      \"options\": {\n        \"apiKey\": \"sk-atomic-fixture-key\",\n        \"baseURL\": \"http://127.0.0.1:1337/v1\"\n      }\n    },\n    \"deepseek\": {\n      \"models\": {\n        \"deepseek-chat\": {\n          \"name\": \"deepseek-chat\"\n        }\n      },\n      \"name\": \"DeepSeek\",\n      \"npm\": \"@ai-sdk/openai-compatible\",\n      \"options\": {\n        \"baseURL\": \"https://api.deepseek.com\"\n      }\n    }\n  }\n}\n"
+      ".config/mimocode/mimocode.json": "{\n  \"$schema\": \"https://mimo.xiaomi.com/mimocode/config.json\",\n  \"model\": \"atomic/AtomicChat/Qwen3.5-9B-GGUF\",\n  \"provider\": {\n    \"atomic\": {\n      \"models\": {\n        \"AtomicChat/Qwen3.5-9B-GGUF\": {\n          \"interleaved\": {\n            \"field\": \"reasoning_content\"\n          },\n          \"name\": \"AtomicChat/Qwen3.5-9B-GGUF\",\n          \"reasoning\": true\n        }\n      },\n      \"name\": \"Atomic Chat\",\n      \"npm\": \"@ai-sdk/openai-compatible\",\n      \"options\": {\n        \"apiKey\": \"sk-atomic-fixture-key\",\n        \"baseURL\": \"http://127.0.0.1:1337/v1\",\n        \"headerTimeout\": false,\n        \"timeout\": false\n      }\n    },\n    \"deepseek\": {\n      \"models\": {\n        \"deepseek-chat\": {\n          \"name\": \"deepseek-chat\"\n        }\n      },\n      \"name\": \"DeepSeek\",\n      \"npm\": \"@ai-sdk/openai-compatible\",\n      \"options\": {\n        \"baseURL\": \"https://api.deepseek.com\"\n      }\n    }\n  }\n}\n",
+      ".config/mimocode/mimocode.json.atomic-chat-backup.json": "{\n  \"about\": \"Atomic Chat keeps the settings its connection replaced here and puts them back on Disconnect.\",\n  \"previous\": {\n    \"model\": \"deepseek/deepseek-chat\"\n  }\n}\n"
     },
     "ok": true
   },
@@ -18,7 +19,7 @@
   },
   "name": "mimo__existing_other_provider",
   "source": {
-    "commit": "ccf542733",
-    "file": "src-tauri/src/core/cli/fixture_dump.rs"
+    "commit": "344cc5a42",
+    "file": "src-tauri/src/core/system/opencode_family.rs"
   }
 }

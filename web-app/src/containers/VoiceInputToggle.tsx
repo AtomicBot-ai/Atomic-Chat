@@ -117,8 +117,9 @@ const VoiceInputToggle = memo(function VoiceInputToggle({
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          {/* icon-sm, not the icon-xs used by the toggles in the left
-              cluster: this button sits next to Send and has to match it. */}
+          {/* icon-sm, like every icon action in the composer toolbar
+              (`COMPOSER_ICON_ACTION` in ChatInput): one size beside Send
+              and in the left cluster alike. */}
           <Button
             variant="ghost"
             size="icon-sm"

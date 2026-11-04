@@ -22,6 +22,7 @@
   "sendMessage": "Envoyer un message",
   "replyGate": {
     "sendHint": "Choisissez avec quoi répondre",
+    "sendWith": "Envoyer avec {{model}}",
     "startingTitle": "Démarrage de {{name}}…",
     "startingDescription": "Votre message sera envoyé dès que le modèle sera prêt.",
     "emptyTitle": "Choisissez un modèle pour commencer à discuter",
@@ -319,5 +320,29 @@
     "extracted": "Texte extrait du document. Ouvrez le fichier pour voir sa mise en page d'origine.",
     "noText": "Aucun texte n'a pu être extrait de ce document.",
     "videoModelNote": "Le modèle ne peut pas regarder les vidéos : il ne voit que le nom du fichier."
+  },
+  "turnRecovery": {
+    "engineRestarting": "Le moteur du modèle s'est arrêté. Redémarrage et nouvelle tentative…",
+    "engineGoneTitle": "Le moteur du modèle s'est arrêté",
+    "engineGoneMessage": "Le moteur local du modèle s'est arrêté avant la fin de la réponse. Réessayez pour le redémarrer et renvoyer votre message.",
+    "engineRestartFailed": "Le moteur du modèle n'a pas pu redémarrer automatiquement. Réessayez, ou choisissez à nouveau le modèle dans la zone de saisie.",
+    "shortenHistory": "Raccourcir l'historique et réessayer",
+    "historyShortened_one": "{{count}} ancien message a été laissé de côté pour que la conversation tienne dans le contexte.",
+    "historyShortened_other": "{{count}} anciens messages ont été laissés de côté pour que la conversation tienne dans le contexte.",
+    "historyCannotShorten": "Il n'y a pas d'historique plus ancien à laisser de côté. Raccourcissez votre message ou retirez des pièces jointes, puis réessayez.",
+    "contextNoMemory": "Il n'y a pas assez de mémoire libre pour un contexte plus grand.",
+    "contextReloadFailed": "Le modèle ne s'est pas chargé avec un contexte plus grand ; il garde sa taille actuelle.",
+    "contextGrowthSpent": "Le contexte a déjà été agrandi une fois pour ce message. Raccourcissez l'historique pour continuer.",
+    "retry": "Réessayer",
+    "details": "Détails",
+    "genericTitle": "Erreur lors de la génération de la réponse",
+    "genericMessage": "Le modèle a signalé une erreur avant la fin de la réponse. Réessayez pour renvoyer votre message ; le message d'erreur se trouve dans Détails.",
+    "settingsRestartTitle": "Le modèle a redémarré après une modification des paramètres",
+    "settingsRestartMessage": "La modification de vos paramètres a redémarré {{model}} pendant qu'il répondait. Réessayez pour renvoyer votre message."
+  },
+  "queuedSend": {
+    "modelChanged": "Votre message n'a pas été envoyé : un autre modèle a été sélectionné. Il est toujours dans la zone de saisie.",
+    "modelLost": "Votre message n'a pas été envoyé : le modèle n'a pas démarré. Il est toujours dans la zone de saisie.",
+    "modelStopped": "Votre message n'a pas été envoyé : le modèle a été arrêté. Il est toujours dans la zone de saisie."
   }
 }

@@ -50,18 +50,38 @@ describe('integration agent setup', () => {
       apiUrl: 'http://127.0.0.1:1337/v1',
       model: 'qwen3.5-4b',
       apiKey: 'sk-atomic-key',
+      contextLength: null,
     })
   })
 
-  it('leaves the key out when the server has none, and keeps Hermes at its 64K floor', async () => {
+  it("tells the agent the served model's window when the app knows it", async () => {
     await expect(
-      writeAgentConfig(agent('hermes'), 'gemma-4', { ...SERVER, apiKey: '' })
+      writeAgentConfig(agent('kilo'), 'qwen3.5-4b', SERVER, {
+        contextLength: 32768,
+      })
+    ).resolves.toBeUndefined()
+    expect(invoke).toHaveBeenCalledWith('configure_kilo', {
+      apiUrl: 'http://127.0.0.1:1337/v1',
+      model: 'qwen3.5-4b',
+      apiKey: 'sk-atomic-key',
+      contextLength: 32768,
+    })
+  })
+
+  it('leaves the key out when the server has none, and tells Hermes the served window', async () => {
+    await expect(
+      writeAgentConfig(
+        agent('hermes'),
+        'gemma-4',
+        { ...SERVER, apiKey: '' },
+        { contextLength: 131072 }
+      )
     ).resolves.toBeUndefined()
     expect(invoke).toHaveBeenCalledWith('configure_hermes_agent', {
       apiUrl: 'http://127.0.0.1:1337/v1',
       model: 'gemma-4',
       apiKey: undefined,
-      contextLength: 65536,
+      contextLength: 131072,
     })
   })
 
@@ -83,6 +103,13 @@ describe('integration agent setup', () => {
     )
     expect(agentConfiguredDescriptionKey('codex')).toBe(
       'launch:toast.configuredDescCodex'
+    )
+    // A keyed server: the user must set the key's variable to run it alone.
+    expect(agentConfiguredDescriptionKey('codex', { keyed: true })).toBe(
+      'launch:toast.configuredDescCodexKeyed'
+    )
+    expect(agentConfiguredDescriptionKey('opencode', { keyed: true })).toBe(
+      'launch:toast.configuredDesc'
     )
     expect(agentConfiguredDescriptionKey('opencode')).toBe(
       'launch:toast.configuredDesc'

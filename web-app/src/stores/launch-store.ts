@@ -14,7 +14,9 @@
  */
 
 import { create } from 'zustand'
+import { useApiServerLog } from '@/hooks/useApiServerLog'
 import { useAppState } from '@/hooks/useAppState'
+import { agentsWithRequests, type OpenedAgent } from '@/lib/agent-status'
 
 export type RunPhase = 'installing' | 'configuring' | 'connecting' | undefined
 
@@ -42,10 +44,17 @@ type LaunchState = {
   logs: Record<string, string[]>
   openLog: Record<string, boolean>
   /**
-   * Agents Atomic Chat opened (a terminal or their app) during this run of
-   * the server generation. This records launch history, never client liveness.
+   * Agents Atomic Chat opened (a terminal or their app) while the server
+   * runs, with when and for which model. This records launch history, never
+   * client liveness.
    */
-  launched: Record<string, boolean>
+  opened: Record<string, OpenedAgent>
+  /**
+   * Opened agents the server has seen a request from since they were opened
+   * (`agentsWithRequests`). Kept once seen, so clearing the Activity log or
+   * a flood of other requests does not take it back.
+   */
+  connected: Record<string, boolean>
   setInstalled: SetState<Record<string, boolean>>
   setViaWsl: SetState<Record<string, boolean>>
   setBinPath: SetState<Record<string, string | undefined>>
@@ -54,7 +63,16 @@ type LaunchState = {
   setPhase: SetState<Record<string, RunPhase>>
   setLogs: SetState<Record<string, string[]>>
   setOpenLog: SetState<Record<string, boolean>>
-  markLaunched: (id: string) => void
+  /**
+   * Record that `id` was opened for `model`. A new window starts over: until
+   * the server hears from it, it is only opened. One brought forward
+   * (`reopened`) is the same process, so what was known about it stays.
+   */
+  markOpened: (
+    id: string,
+    model: string | null,
+    options?: { reopened?: boolean }
+  ) => void
 }
 
 export const useLaunchStore = create<LaunchState>((set) => ({
@@ -66,7 +84,8 @@ export const useLaunchStore = create<LaunchState>((set) => ({
   phase: {},
   logs: {},
   openLog: {},
-  launched: {},
+  opened: {},
+  connected: {},
   setInstalled: (updater) =>
     set((s) => ({ installed: apply(updater, s.installed) })),
   setViaWsl: (updater) => set((s) => ({ viaWsl: apply(updater, s.viaWsl) })),
@@ -79,12 +98,36 @@ export const useLaunchStore = create<LaunchState>((set) => ({
   setLogs: (updater) => set((s) => ({ logs: apply(updater, s.logs) })),
   setOpenLog: (updater) =>
     set((s) => ({ openLog: apply(updater, s.openLog) })),
-  markLaunched: (id) =>
-    set((s) => ({ launched: { ...s.launched, [id]: true } })),
+  markOpened: (id, model, options) =>
+    set((s) => {
+      if (options?.reopened && s.opened[id]) return s
+      return {
+        opened: { ...s.opened, [id]: { at: Date.now(), model } },
+        connected: { ...s.connected, [id]: false },
+      }
+    }),
 }))
 
 useAppState.subscribe((state, previous) => {
   if (previous.serverStatus === 'running' && state.serverStatus !== 'running') {
-    useLaunchStore.setState({ launched: {} })
+    useLaunchStore.setState({ opened: {}, connected: {} })
   }
+})
+
+// Requests are credited as they arrive; the log is live for the whole app
+// run (`useApiServerLogLive`).
+useApiServerLog.subscribe((state, previous) => {
+  if (state.entries === previous.entries) return
+  const { opened, connected } = useLaunchStore.getState()
+  if (Object.keys(opened).every((id) => connected[id])) return
+  const heard = [...agentsWithRequests(opened, state.entries)].filter(
+    (id) => !connected[id]
+  )
+  if (heard.length === 0) return
+  useLaunchStore.setState((s) => ({
+    connected: {
+      ...s.connected,
+      ...Object.fromEntries(heard.map((id) => [id, true])),
+    },
+  }))
 })

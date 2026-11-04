@@ -1,5 +1,6 @@
 import type { ServiceHub } from '@/services'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
+import { isAudioDownloadTaskId } from '@/lib/audio/models'
 import { isDecisionDownloadTaskId } from '@/lib/decision/models'
 import { isDiffusionModelDownloadTaskId } from '@/lib/diffusion/models'
 import { isEmbeddingDownloadTaskId } from '@/lib/embedding/models'
@@ -20,7 +21,7 @@ import { isEngineUpdateTaskId } from '@/services/engines/update'
  * Backend-binary downloads (`llamacpp*`) and MLX repos (`mlx-community/*`,
  * which start with `mlx`) get cancel-only, matching Jan's gating.
  * Decision and embedding models resume from their Hub or settings card,
- * not from here.
+ * not from here, and audio models from their row in the Audios model list.
  * Engine updates (`engine-update-*`) are the core's to stop, cancel-only.
  * Managed models are cancel-only too: Download again in the Hub resumes
  * from the files on disk (change add-tensorrt-llm-model-hub, design D6);
@@ -36,6 +37,7 @@ export function isPausableDownload(id: string): boolean {
     !id.startsWith('mlx') &&
     !isDecisionDownloadTaskId(id) &&
     !isEmbeddingDownloadTaskId(id) &&
+    !isAudioDownloadTaskId(id) &&
     !isManagedDownloadId(id) &&
     !isFoundryLocalDownloadId(id) &&
     !isLiteRtLmDownloadId(id) &&

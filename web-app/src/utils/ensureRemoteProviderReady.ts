@@ -89,8 +89,8 @@ async function reconcileRemoteProvider(
     // The model switch, the autostart and the agent settings raise the proxy
     // too, outside `readinessQueue`, and one of them can land between the
     // status check above and this start. The server they raised is the one we
-    // wanted — failing the send over it is ATO-524. Mirrors switchModel.ts,
-    // hermes-agent.tsx and claude-code.tsx.
+    // wanted — failing the send over it is ATO-524. Mirrors switchModel.ts
+    // and hermes-agent.tsx.
     const message = error instanceof Error ? error.message : String(error)
     if (message.includes('already running')) {
       useAppState.getState().setServerStatus('running')

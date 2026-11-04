@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-502 records, 2026-05-19 → 2026-10-29.
+521 records, 2026-05-19 → 2026-11-04.
 
 ---
 
@@ -33,7 +33,11 @@ decision is reversed, add a new one that says which record it supersedes.
 
 ---
 
-## Local image & video generation (30)
+## Local image & video generation (33)
+
+- **2026-11-02** — [Open the Audios studio in releases, on the unified catalog's audio collection](2026-11-02-open-the-audios-studio-in-releases-on-the-unified-catalog.md) — flag on for desktop releases; models from `catalog.json`'s `audio` collection; resume only the same pinned plan. Supersedes the dev-only clauses of 2026-10-27 and 2026-11-01.
+- **2026-11-01** — [Run the Audios studio on the core's audio.cpp and conf's audio catalog](2026-11-01-run-the-audios-studio-on-the-core-and-the-audio-catalog.md) — `services/audio/`, the catalog's `controls` decide the form, a core without audio is a quiet state; still dev-only.
+- **2026-10-30** — [Pin media artifacts and stop on remote size changes](2026-10-30-pin-media-artifacts-and-stop-on-remote-size-changes.md)
 
 - **2026-10-27** — [Lay out an Audios studio, in dev builds only until there is an audio engine](2026-10-27-lay-out-an-audios-studio-in-dev-builds-only.md) — `PlatformFeature.AUDIO_GENERATION`; candidate models, Download and Generate off until the audio engine lands.
 - **2026-10-26** — [Judge an image model against the RAM it shares on a Mac, and ask before a run that will not fit](2026-10-26-judge-an-image-model-against-the-ram-it-shares-on-a-mac.md)
@@ -179,8 +183,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-05** — [Port `gemma4_unified` (+ vision fixes) into the `mlx-vlm` fork so Gemma 4 12B loads under MLX (ATO-88, head 1)](2026-06-05-port-gemma4-unified-vision-fixes-into-the-mlx-vlm-fork-so-gemma.md)
 - **2026-06-02** — [Surface MLX KV-cache quantization (TurboQuant / uniform) as a provider setting](2026-06-02-surface-mlx-kv-cache-quantization-turboquant-uniform-as-a.md)
 
-## llama.cpp providers & backend selection (56)
+## llama.cpp providers & backend selection (57)
 
+- **2026-11-04** — [Share one model start, and never stop a model a request is using](2026-11-04-share-one-model-start-and-hold-models-in-use.md) — joined starts, request holds, mismatch prompt after the turn, disk-checked download admission, 127.0.0.1 for engines.
 - **2026-10-26** — [Show the context llama.cpp fitted, not the one the load asked for](2026-10-26-show-the-context-llama-cpp-fitted-not-the-one-asked-for.md)
 - **2026-10-13** — [Bundle the upstream llama.cpp release the pinned core would choose](2026-10-13-bundle-the-upstream-release-the-pinned-core-would-choose.md) — supersedes the bundled-tag rule of 2026-08-12 and the extension baseline of 2026-08-13.
 - **2026-10-08** — [Take engine versions from the core, and update and switch engine builds only through it](2026-10-08-take-engine-versions-from-the-core-and-update-through-it.md) — supersedes the 2026-07-01 hot-swap ordering record; refines 2026-09-14 (offers come from the core).
@@ -239,8 +244,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Ship `janhq/llama.cpp` cudart DLLs with every Windows CUDA backend](2026-05-22-ship-janhq-llama-cpp-cudart-dlls-with-every-windows-cuda-backend.md)
 - **2026-05-19** — [Windows uses upstream `ggml-org/llama.cpp`, not the TurboQuant fork](2026-05-19-windows-uses-upstream-ggml-org-llama-cpp-not-the-turboquant-fork.md)
 
-## Models, Hub & downloads (49)
+## Models, Hub & downloads (50)
 
+- **2026-11-04** — [Retry locked download renames and measure free space at the destination](2026-11-04-retry-locked-download-renames-and-measure-space-at-the-destination.md) — Windows lock retries (~10 s), free space at the destination plus max(512 MiB, 2%), `disk_fs_limit` for FAT32.
 - **2026-10-26** — [Count a task's finished files on resume, and reopen a connection that only trickles](2026-10-26-count-finished-files-on-resume-and-reopen-trickling-connections.md)
 - **2026-10-22** — [Run LiteRT-LM through the core; download its models from Hugging Face in the app](2026-10-22-run-litert-lm-through-the-core-and-download-its-models-in-the-app.md)
 - **2026-10-22** — [Step the Hub toolbar down by its own width, search first](2026-10-22-step-the-hub-toolbar-down-by-its-own-width.md)
@@ -291,8 +297,12 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-04** — [Recover from unsupported multimodal projector (`gemma4a`) by falling back to text-only instead of crashing the load (issue #44)](2026-06-04-recover-from-unsupported-multimodal-projector-gemma4a-by.md)
 - **2026-05-27** — [Replace `janhq/model-catalog` + Fuse.js with curated `AtomicBot-ai/atomic-chat-model-catalog` and a pre-built MiniSearch index](2026-05-27-replace-janhq-model-catalog-fuse-js-with-curated-atomicbot-ai.md)
 
-## Local API server & OpenAI compatibility (16)
+## Local API server & OpenAI compatibility (20)
 
+- **2026-11-03** — [Connect agents with their window, launch-only environment, and give them back on Disconnect](2026-11-03-connect-agents-with-their-window-and-give-them-back-on-disconnect.md) — every writer gets the served window and an output cap; Connect grows the model to the agent's minimum; no user-wide env (launch-only for Goose, OpenHands, Copilot, Poolside, Muse); a `.atomic-chat-backup.json` sidecar per config and `disconnect_agent` for every agent; registry PATH, `-ExecutionPolicy Bypass`, npm `--allow-scripts`, WSL-only agents not connected.
+- **2026-11-03** — [Start the Local API Server at launch with the model it served last](2026-11-03-start-the-local-api-server-at-launch-with-its-last-model.md) — "Start automatically" loads `lastServerModels[0]` (else the default) as Start does, whatever "Preload last used model" says; Connect loads it first on a running server without it. Supersedes in part 2026-10-21 and the server side of 2026-08-19.
+- **2026-11-03** — [Keep connected agents on the model the server serves](2026-11-03-keep-connected-agents-on-the-model-the-server-serves.md) — every change of the served model rewrites each connected agent's config and says to restart a running one.
+- **2026-11-03** — [Say Connected only after an agent's first request, and launch agents from a script](2026-11-03-say-connected-only-after-an-agents-first-request.md) — Not installed → Installed → Configured → Opened → Connected; Connect re-detects the install and grows the window to the agent's minimum; 0700 launcher script, Terminal window reuse, Linux terminal discovery.
 - **2026-10-26** — [Keep the Activity log live while no Server page is open, and say why a request has no text](2026-10-26-keep-the-activity-log-live-and-say-why-a-request-has-no-text.md)
 - **2026-10-23** — [Stop an idle server at the first-run endpoint handoff](2026-10-23-stop-an-idle-server-at-the-first-run-endpoint-handoff.md) — supersedes in part 2026-10-21.
 - **2026-10-21** — [The Local API Server routes a model id to the provider selected for it](2026-10-21-the-server-routes-a-model-id-to-the-provider-selected-for-it.md) — supersedes "remote wins over local" for ids the server page shows.
@@ -310,8 +320,11 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-07-15** — [Aggregate Local API Server request telemetry into three-minute summaries (ATO-297)](2026-07-15-aggregate-local-api-server-request-telemetry-into-three-minute.md)
 - **2026-06-09** — [Make the Local API Server "Invalid host header" rejection actionable + fix Trusted Hosts field copy (ATO-118, scope I+II)](2026-06-09-make-the-local-api-server-invalid-host-header-rejection.md)
 
-## Telemetry, crash reporting & error handling (15)
+## Telemetry, crash reporting & error handling (18)
 
+- **2026-11-04** — [Explain a failed turn in words and keep the diagnostics behind Details](2026-11-04-explain-a-failed-turn-and-keep-diagnostics-behind-details.md) — one `TurnErrorCard`; raw text in a collapsed Details; a turn cut off by a settings-change restart says so.
+- **2026-11-04** — [Classify loopback chat failures by transport kind, and report what the engine says on load](2026-11-04-classify-loopback-failures-by-transport-kind.md) — `[transport:<kind>]` from Rust, `engine_unreachable` / `engine_exited`, no fake `success`, load diag fields; `telemetry_schema` 4.
+- **2026-11-04** — [Recover a failed local turn once, and grow the fitted context on GPU builds](2026-11-04-recover-a-failed-local-turn-once.md) — one auto-retry after a dropped engine without re-running tools; model-level `fit_ctx` growth; shorten history and retry.
 - **2026-10-28** — [Wait for analytics readiness and recover onboarding assignments](2026-10-28-wait-for-analytics-readiness-and-recover-onboarding-assignments.md)
 
 - **2026-10-23** — [Count Local API traffic as a first request in the onboarding experiment](2026-10-23-count-local-api-traffic-as-a-first-request-in-the-onboarding-experiment.md)
@@ -329,13 +342,16 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-10** — [Throttle crashloop `model_load` failure spam client-side; confirm `model_load.status` / api 404-noise are already-fixed-pending-rollout, not code bugs (ATO-130: ATO-133 + ATO-131 + ATO-132)](2026-06-10-throttle-crashloop-model-load-failure-spam-client-side-confirm.md)
 - **2026-06-09** — [Add zero-PII Sentry crash/error tracking to both the React frontend and the Rust/Tauri desktop, gated behind `productAnalytic` (ATO-113)](2026-06-09-add-zero-pii-sentry-crash-error-tracking-to-both-the-react.md)
 
-## Packaging, installers, autostart & platform policy (30)
+## Packaging, installers, autostart & platform policy (32)
+
+- **2026-10-30** — [Correct the Windows publisher without changing installation identity](2026-10-30-correct-windows-publisher-without-changing-install-identity.md)
 
 - **2026-10-29** — [Host the Microsoft Store installer in its own bucket](2026-10-29-host-the-microsoft-store-installer-in-its-own-bucket.md) — `msstore.yml` copies each published release's `*_x64_msstore.exe` to `atomic-chat-downloads` on Hetzner (immutable, versioned, no redirect) for the Partner Center package URL.
 - **2026-10-27** — [Ship only upstream llama.cpp in the installer](2026-10-27-ship-only-upstream-llama-cpp-in-the-installer.md) — MLX and TurboQuant install through the core on demand; no `jan-cli` copy, Install CLI copies `atomic-chat-core`. Supersedes the file-name part of the 2026-09-15 jan-cli record and the installer parts of the 2026-10-07 MLX and 2026-06-23 TurboQuant records.
 - **2026-10-26** — [Ship deb, rpm and AUR packages from the AppImage build](2026-10-26-ship-deb-rpm-and-aur-packages-from-the-appimage-build.md) — nfpm packs Tauri's deb tree under `/opt/atomic-chat` with dependencies read from its ELF files; signed apt/dnf repository in its own bucket and `atomic-chat-bin` on the AUR follow a published release.
 - **2026-10-22** — [Sign every Windows PE file through Tauri's signCommand and ship a Microsoft Store installer](2026-10-22-sign-every-windows-pe-via-tauri-signcommand-and-ship-an-msstore-installer.md) — x64 installers fully signed; `*_x64_msstore.exe` embeds the offline WebView2 installer; ARM64 and the publisher name stay as they were.
 - **2026-10-21** — [Give the Linux window a stable app id](2026-10-21-give-the-linux-window-a-stable-app-id.md) — Wayland `app_id` / Hyprland class is `chat.atomic.app`, matched by the desktop entry's `StartupWMClass`.
+- **2026-11-04** — [Close the Windows window to the tray only while a reply or download runs](2026-11-04-close-the-windows-window-to-the-tray-while-busy.md) — idle close still quits; ~400 ms exit grace for the analytics flush; `SetErrorMode` for the core and engines.
 - **2026-10-21** — [Close the Linux window to the tray](2026-10-21-close-the-linux-window-to-the-tray.md) — under a bar with a tray, closing hides the window instead of stopping `:1337`; tray "Quit" exits; without a StatusNotifier host closing still quits.
 - **2026-10-21** — [Let a package manager own updates](2026-10-21-let-a-package-manager-own-updates.md) — a marker file beside the AppImage or binary, or `ATOMIC_CHAT_PACKAGE_MANAGED=1`, turns the updater off, including its startup check and the updater service's plugin fallback.
 - **2026-10-19** — [Reveal files in the file manager from the blocking pool](2026-10-19-reveal-files-from-the-blocking-pool-on-linux.md) — the opener plugin's async reveal blocks on D-Bus inside tokio and aborts the Linux app.
@@ -370,7 +386,8 @@ decision is reversed, add a new one that says which record it supersedes.
 ## UI / UX (2)
 - **2026-10-20** — [Show hosted providers on Cloud and the user's own servers on Custom Endpoint](2026-10-20-show-hosted-providers-on-cloud-and-own-servers-on-custom-endpoint.md)
 - **2026-10-20** — [List everything downloaded on a Downloads page](2026-10-20-list-everything-downloaded-on-a-downloads-page.md)
-## UI / UX (132)
+## UI / UX (133)
+- **2026-11-04** — [Name the model a send without a selection will start, and give composer actions full-size targets](2026-11-04-name-the-model-a-send-without-a-selection-will-start.md) — "Send with {{model}}" from the same pick as the auto-start; 36/40 px invisible targets on 28 px controls.
 - **2026-10-29** — [Leave the first run's downloads to the download panel after setup](2026-10-29-leave-the-first-runs-downloads-to-the-download-panel-after-setup.md) — the handoff panel shows only an interrupted download, the model ready or the way back; supersedes in part 2026-10-22.
 - **2026-10-28** — [Deliver the wait screen's model-ready email reminder](2026-10-28-deliver-model-ready-email-reminders.md) — supersedes hiding the form on 2026-10-27.
 - **2026-10-28** — [Preserve a project’s first queued send across navigation](2026-10-28-preserve-project-first-send-across-navigation.md)
@@ -551,8 +568,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-09-30** — [TensorRT-LLM is a Linux-only extension that decides its own visibility](2026-09-30-tensorrt-llm-is-a-linux-only-extension-that-decides-its-own-visibility.md)
 - **2026-09-30** — [Run Agent turns on TensorRT-LLM through its session gateway](2026-09-30-run-agent-turns-on-tensorrt-llm-through-its-session-gateway.md)
 
-## Other (21)
+## Other (22)
 
+- **2026-11-04** — [Keep an isolated profile's webview storage in the profile](2026-11-04-keep-an-isolated-profiles-webview-storage-in-the-profile.md) — `ATOMIC_CHAT_PROFILE_DIR` windows get their own WebKit store (random id kept in the profile) and WebView2/WebKitGTK directory; single-instance lock unchanged.
 - **2026-10-28** — [Bound support writes and preserve retry identity](2026-10-28-bound-support-writes-and-preserve-retry-identity.md)
 
 - **2026-10-26** — [Chat with the team through a support relay, with diagnostics attached](2026-10-26-chat-with-the-team-through-a-support-relay.md)
@@ -576,3 +594,6 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-07-23** — [Isolate the Windows Common Controls test manifest by feature](2026-07-23-isolate-the-windows-common-controls-test-manifest-by-feature.md)
 - **2026-07-20** — [Open Agent-referenced files from assistant summaries](2026-07-20-open-agent-referenced-files-from-assistant-summaries.md)
 - **2026-10-30** — [Pin diffusion downloads to each repository's commit](2026-10-30-pin-diffusion-catalog-downloads.md) — optional transformer and side-file revision pins, independent URL construction, and corrected Z-Image Turbo metadata.
+- **2026-11-01** — [Use one model catalog and persist immutable download plans](2026-11-01-unify-model-catalog-and-download-plans.md).
+
+- **2026-11-02** — [Preserve generated Hub discovery alongside managed model pins](2026-11-02-preserve-hub-discovery-and-model-pins.md)

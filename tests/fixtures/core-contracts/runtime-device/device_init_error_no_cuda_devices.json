@@ -4,7 +4,7 @@
     "is_inconclusive": false,
     "snapshot": {
       "cuda_runtime_missing": false,
-      "device_init_error": "ggml_cuda_init: no CUDA devices found",
+      "device_init_error": "ggml_cuda_init: failed to initialize CUDA: no CUDA-capable device is detected",
       "gpu_buffer_bytes": null,
       "gpu_layers_offloaded": null,
       "loaded_backends": [],
@@ -14,7 +14,7 @@
   },
   "input": {
     "lines": [
-      "ggml_cuda_init: no CUDA devices found"
+      "ggml_cuda_init: failed to initialize CUDA: no CUDA-capable device is detected"
     ],
     "mark_cuda_runtime_missing": false
   },

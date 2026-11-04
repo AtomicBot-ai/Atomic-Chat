@@ -32,6 +32,10 @@ import {
 } from '../staff-picks-registry'
 import { BASELINE_STAFF_PICKS } from '@/constants/staff-picks'
 import { iconKeyLogoSrc } from '@/lib/model-logo'
+import {
+  atomicModelCatalogBaseline,
+  clearAtomicModelCatalogCache,
+} from '@janhq/core'
 
 const REMOTE_URL = 'https://example.test/staff-picks.json'
 
@@ -84,6 +88,28 @@ describe('staff-picks-registry loader', () => {
 
   afterEach(() => {
     vi.restoreAllMocks()
+  })
+
+  it('reads desktop picks from the whole canonical document', async () => {
+    clearAtomicModelCatalogCache()
+    const request = mockFetchSuccess(atomicModelCatalogBaseline())
+    const result = await getStaffPicksOrFallback()
+    expect(result.source).toBe('remote')
+    expect(result.picks.length).toBeGreaterThan(50)
+    expect(request).toHaveBeenCalledTimes(1)
+    expect(request).toHaveBeenCalledWith(expect.stringContaining('/models/catalog.json'), expect.anything())
+    expect(localStorage.getItem('atomic_unified_model_catalog_v1')).toBeTruthy()
+    clearAtomicModelCatalogCache()
+  })
+
+  it('uses the canonical bundled picks when the desktop catalog is unavailable', async () => {
+    clearAtomicModelCatalogCache()
+    mockFetchFailure(new Error('offline canonical catalog'))
+    const result = await getStaffPicksOrFallback({ force: true })
+    expect(result.source).toBe('baseline')
+    expect(result.picks.length).toBeGreaterThan(50)
+    expect(result.error).toContain('offline canonical catalog')
+    clearAtomicModelCatalogCache()
   })
 
   it('fetches a valid manifest and exposes its picks', async () => {
@@ -265,9 +291,9 @@ describe('staff-picks-registry loader', () => {
     await getStaffPicksOrFallback({ url: REMOTE_URL })
     clearStaffPicksCache()
 
-    expect(
-      window.localStorage.getItem('jan_recommended_models_cache_v1')
-    ).toBe(recommendedPayload)
+    expect(window.localStorage.getItem('jan_recommended_models_cache_v1')).toBe(
+      recommendedPayload
+    )
     expect(
       window.localStorage.getItem('jan_recommended_models_cache_ts_v1')
     ).toBe('123')
@@ -354,7 +380,9 @@ describe('BASELINE_STAFF_PICKS', () => {
       'opens the %s list with Qwen, then Gemma, then LFM',
       (format) => {
         const tiers = listed(format).map((pick) => tierOf(pick.icon))
-        expect(tiers.slice(0, 13)).toEqual([0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2])
+        expect(tiers.slice(0, 13)).toEqual([
+          0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2,
+        ])
       }
     )
 
@@ -371,7 +399,9 @@ describe('BASELINE_STAFF_PICKS', () => {
     // what "top of the recommendations" means.
     it('walks the MLX list in the same model order as the GGUF one', () => {
       const ggufTitles = listed('gguf').map((p) => p.title)
-      const mlxTitles = listed('mlx').map((p) => p.title?.replace(/ \(MLX\)$/, ''))
+      const mlxTitles = listed('mlx').map((p) =>
+        p.title?.replace(/ \(MLX\)$/, '')
+      )
 
       expect(mlxTitles.length).toBeGreaterThan(0)
       for (const title of mlxTitles) expect(ggufTitles).toContain(title)
@@ -447,7 +477,11 @@ describe('filterStaffPicksForPlatform', () => {
   const picks: StaffPick[] = [
     { model_name: 'universal/one', order: 20 },
     { model_name: 'mac/only', platforms: ['macos'], order: 10 },
-    { model_name: 'win-linux/only', platforms: ['windows', 'linux'], order: 30 },
+    {
+      model_name: 'win-linux/only',
+      platforms: ['windows', 'linux'],
+      order: 30,
+    },
     { model_name: 'disabled/everywhere', active: false, order: 1 },
     { model_name: 'unordered/tail' },
   ]

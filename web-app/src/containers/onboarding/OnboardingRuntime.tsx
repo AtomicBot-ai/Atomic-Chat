@@ -94,8 +94,28 @@ export function OnboardingRuntime() {
   // so the run stops waiting for it. MLX repositories report through
   // `startMlxCatalogDownload`, which settles the job itself.
   useEffect(() => {
-    const onError = (state: DownloadState) => {
+    // Terminal transfer events remove the byte counters before the model's
+    // library refresh arrives. Settle the job now; readiness still comes
+    // from the library, independently of the model selected in the composer.
+    const onSuccess = (state: DownloadState & { downloadType?: string }) => {
       const job = runningChatJob(state.modelId)
+      if (job && state.downloadType !== 'Backend') {
+        useOnboardingStore.getState().setJobPhase(job.key, 'done')
+      }
+    }
+    const onError = (state: DownloadState) => {
+      const run = useOnboardingStore.getState()
+      // Registration can still fail after the bytes were verified. In that
+      // case the completed transfer needs Retry, not a permanently done job.
+      const job =
+        runningChatJob(state.modelId) ??
+        run.jobs.find(
+          (candidate) =>
+            candidate.kind === 'chat' &&
+            candidate.taskId === state.modelId &&
+            candidate.phase === 'done' &&
+            !findChatModel(run.choice, useModelProvider.getState().providers)
+        )
       if (!job) return
       const error = (state as unknown as { error?: string }).error ?? ''
       const cancelled = isDownloadCancellationError(error)
@@ -122,10 +142,14 @@ export function OnboardingRuntime() {
       if (job) useOnboardingStore.getState().setJobPhase(job.key, 'failed')
     }
     events.on(DownloadEvent.onFileDownloadError, onError)
+    events.on(DownloadEvent.onFileDownloadSuccess, onSuccess)
+    events.on(DownloadEvent.onFileDownloadAndVerificationSuccess, onSuccess)
     events.on(DownloadEvent.onFileDownloadStopped, onStopped)
     events.on(DownloadEvent.onModelValidationFailed, onValidationFailed)
     return () => {
       events.off(DownloadEvent.onFileDownloadError, onError)
+      events.off(DownloadEvent.onFileDownloadSuccess, onSuccess)
+      events.off(DownloadEvent.onFileDownloadAndVerificationSuccess, onSuccess)
       events.off(DownloadEvent.onFileDownloadStopped, onStopped)
       events.off(DownloadEvent.onModelValidationFailed, onValidationFailed)
     }

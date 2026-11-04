@@ -10,6 +10,7 @@
 
 import {
   AIEngine,
+  atomicAuxiliaryModel,
   getJanDataFolderPath,
   fs,
   joinPath,
@@ -1327,6 +1328,8 @@ export default class mlx_extension extends AIEngine {
       const downloadItems: any[] = [
         {
           url: sourcePath,
+          size: opts.modelSize,
+          sha256: opts.modelSha256,
           save_path: localPath,
           model_id: modelId,
         },
@@ -1337,6 +1340,8 @@ export default class mlx_extension extends AIEngine {
         for (const file of opts.files) {
           downloadItems.push({
             url: file.url,
+            size: file.size,
+            sha256: file.sha256,
             save_path: await joinPath([modelDir, file.filename]),
             model_id: modelId,
           })
@@ -2014,6 +2019,11 @@ export default class mlx_extension extends AIEngine {
       return local
     }
 
+    const source = atomicAuxiliaryModel(repo)
+    repo = source.repo
+    required = source.required
+    optional = source.optional
+
     const draftRoot = await this.getDraftRoot()
     const draftDir = await joinPath([draftRoot, repo])
 
@@ -2066,7 +2076,7 @@ export default class mlx_extension extends AIEngine {
     const downloadModelId = `mlx/${kind}:${safeRepoId}`
 
     const buildItem = async (filename: string) => ({
-      url: `https://huggingface.co/${repo}/resolve/main/${filename}`,
+      url: `https://huggingface.co/${repo}/resolve/${source.revision}/${filename}`,
       save_path: await joinPath([draftDir, filename]),
       model_id: downloadModelId,
     })

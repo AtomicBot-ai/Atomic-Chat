@@ -50,6 +50,31 @@ const columnsIn = (elements: HTMLElement[]) =>
 describe('Server pages on a wide window', () => {
   afterEach(() => setFontSize(DEFAULT_FONT_SIZE))
 
+  it.each([DEFAULT_FONT_SIZE, XL_FONT_SIZE])(
+    'uses the Models page heading typography at %s',
+    async (fontSize) => {
+      setFontSize(fontSize)
+      await renderInColumn(
+        1280,
+        <ServerPage title="Engine & model">
+          <h1
+            data-testid="models-heading"
+            className="font-sans text-xl font-semibold"
+          >
+            Models
+          </h1>
+        </ServerPage>
+      )
+      const heading = getComputedStyle(
+        screen.getByRole('heading', { name: 'Engine & model' })
+      )
+      const reference = getComputedStyle(screen.getByTestId('models-heading'))
+      expect(heading.fontFamily).toBe(reference.fontFamily)
+      expect(heading.fontSize).toBe(reference.fontSize)
+      expect(heading.fontWeight).toBe(reference.fontWeight)
+    }
+  )
+
   it.each(
     [1280, 1920, 2560].flatMap((width) =>
       [DEFAULT_FONT_SIZE, XL_FONT_SIZE].map((fontSize) => ({

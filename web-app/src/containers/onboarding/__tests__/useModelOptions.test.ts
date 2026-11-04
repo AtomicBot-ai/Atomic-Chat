@@ -13,6 +13,12 @@ const mocks = vi.hoisted(() => ({
   sources: [] as unknown[],
   profile: null as unknown,
   tierReady: true,
+  tier: 'unified_16',
+  /** The tier's own offer, when a test gives one per tier. */
+  recommendedByTier: null as null | Record<
+    string,
+    { rec: Record<string, unknown>; model: unknown }[]
+  >,
 }))
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
@@ -30,14 +36,15 @@ vi.mock('@/services/models/downloadPreflight', () => ({
   }),
 }))
 vi.mock('@/hooks/useResolvedRecommendedModels', () => ({
-  useResolvedRecommendedModels: () => mocks.recommended,
+  useResolvedRecommendedModels: (_sources: unknown, tier: string) =>
+    mocks.recommendedByTier?.[tier] ?? mocks.recommended,
 }))
 vi.mock('@/hooks/useStaffPicks', () => ({
   useStaffPicks: () => mocks.picks,
 }))
 vi.mock('@/hooks/useHardwareTier', () => ({
   useHardwareTier: () => ({
-    tier: 'unified_16',
+    tier: mocks.tier,
     profile: mocks.profile,
     ready: mocks.tierReady,
   }),
@@ -60,7 +67,11 @@ vi.mock('@/stores/staff-picks-store', () => ({
 import { useHardware } from '@/hooks/useHardware'
 import { useModelProvider } from '@/hooks/useModelProvider'
 
-import { MODEL_INPUT_DEADLINE_MS, useModelOptions } from '../useModelOptions'
+import {
+  HARDWARE_TIER_DEADLINE_MS,
+  MODEL_INPUT_DEADLINE_MS,
+  useModelOptions,
+} from '../useModelOptions'
 
 const gguf = (
   name: string,
@@ -96,6 +107,8 @@ describe('model step options', () => {
     mocks.scan.mockReset().mockResolvedValue([])
     mocks.profile = machine
     mocks.tierReady = true
+    mocks.tier = 'unified_16'
+    mocks.recommendedByTier = null
     mocks.recommended = [
       {
         rec: { modelName: 'unsloth/Qwen3.5-4B' },
@@ -375,5 +388,87 @@ describe('model step options', () => {
 
     expect(result.current.recommended[0].fit).toBeNull()
     expect(result.current.device.memoryGb).toBeNull()
+  })
+
+  describe('a hardware probe that answers late', () => {
+    const fallbackOffer = {
+      rec: { modelName: 'unsloth/Qwen3.5-0.8B' },
+      model: gguf('unsloth/Qwen3.5-0.8B', 0.6),
+    }
+    const realOffer = {
+      rec: { modelName: 'unsloth/Qwen3.5-9B' },
+      model: gguf('unsloth/Qwen3.5-9B', 5.5),
+    }
+
+    beforeEach(() => {
+      vi.useFakeTimers()
+      mocks.tierReady = false
+      mocks.profile = null
+      mocks.tier = 'fallback'
+      mocks.recommendedByTier = {
+        fallback: [fallbackOffer],
+        vram_8: [realOffer],
+      }
+    })
+
+    const answer = (rerender: () => void) => {
+      mocks.tierReady = true
+      mocks.profile = { ...machine, tier: 'vram_8' }
+      mocks.tier = 'vram_8'
+      rerender()
+    }
+
+    it('opens on a provisional offer and replaces it when the probe answers', async () => {
+      const { result, rerender } = renderHook(() => useModelOptions())
+      await act(async () => {
+        vi.advanceTimersByTime(MODEL_INPUT_DEADLINE_MS)
+      })
+      expect(result.current.ready).toBe(true)
+      expect(result.current.tierFinal).toBe(false)
+      expect(result.current.recommended[0].catalog.model_name).toBe(
+        'unsloth/Qwen3.5-0.8B'
+      )
+
+      await act(async () => {
+        vi.advanceTimersByTime(11_000)
+      })
+      await act(async () => answer(rerender))
+
+      expect(result.current.recommended[0].catalog.model_name).toBe(
+        'unsloth/Qwen3.5-9B'
+      )
+      expect(result.current.tierReady).toBe(true)
+      expect(result.current.tierFinal).toBe(true)
+      // The real wait, not the 4 s the list opened at.
+      expect(result.current.tierResolvedMs).toBeGreaterThanOrEqual(15_000)
+    })
+
+    it('leaves the list alone once the user has picked a row', async () => {
+      const { result, rerender } = renderHook(
+        ({ keep }) => useModelOptions({ keepRecommendation: keep }),
+        { initialProps: { keep: false } }
+      )
+      await act(async () => {
+        vi.advanceTimersByTime(MODEL_INPUT_DEADLINE_MS)
+      })
+      rerender({ keep: true })
+      await act(async () => answer(() => rerender({ keep: true })))
+
+      expect(result.current.recommended[0].catalog.model_name).toBe(
+        'unsloth/Qwen3.5-0.8B'
+      )
+      // Still reported as it really went.
+      expect(result.current.tierReady).toBe(true)
+    })
+
+    it('settles on the fallback once the probe deadline passes', async () => {
+      const { result } = renderHook(() => useModelOptions())
+      await act(async () => {
+        vi.advanceTimersByTime(HARDWARE_TIER_DEADLINE_MS)
+      })
+      expect(result.current.tierFinal).toBe(true)
+      expect(result.current.tierReady).toBe(false)
+      expect(result.current.tierResolvedMs).toBeNull()
+    })
   })
 })

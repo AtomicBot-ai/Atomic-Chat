@@ -596,7 +596,8 @@
     "dontRemind": "Ne plus me le rappeler",
     "actuallyRunning": "Exécution réelle : {{backend}}",
     "actuallyRunningCpuLayers": "Exécution réelle sur le CPU : {{offloaded}} couches sur {{total}} sur le GPU",
-    "actuallyRunningDevice": "Exécution réelle sur {{device}}"
+    "actuallyRunningDevice": "Exécution réelle sur {{device}}",
+    "waitForReply": "Disponible dès que la réponse en cours est terminée."
   },
   "turboquantOptimalPrompt": {
     "title": "Optimiser le backend Turboquant ?",
