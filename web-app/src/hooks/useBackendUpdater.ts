@@ -12,6 +12,7 @@ import { friendlyBackendLabel } from '@/lib/backendLabel'
 import type { EngineId } from '@/services/engines/types'
 import { switchBackendThroughCore } from '@/services/engines/update'
 import { useEngineVersionsStore } from '@/stores/engine-versions-store'
+import { waitForModelHolds } from '@/lib/model-lifecycle'
 
 /// Maximum time we wait for a `app:backend-hotswapped` window event after the
 /// backend archive download finishes. If no switch is ever reported, fall back
@@ -412,7 +413,9 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
   ///
   /// The core downloads the build, switches `version_backend` and unloads
   /// the provider's models (`POST /engines/:engine/update`); the dialog
-  /// follows the download and switch events that call reports.
+  /// follows the download and switch events that call reports. A chat
+  /// request on one of those models is let finish first: the unload would
+  /// end it without a reply.
   const downloadRecommendedBackend = useCallback(
     async (overrideBackend?: string) => {
       const targetBackend = overrideBackend ?? recommendation?.recommendedBackend
@@ -421,6 +424,7 @@ export const useBackendUpdater = (config: UseBackendUpdaterConfig = {}) => {
       setRecommendationPhase('downloading')
 
       try {
+        await waitForModelHolds((ref) => ref.provider === providerId)
         const result = await switchBackendThroughCore(
           providerId as EngineId,
           targetBackend

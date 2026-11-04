@@ -331,5 +331,10 @@
     "contextNoMemory": "There is not enough free memory for a larger context.",
     "contextReloadFailed": "The model did not load with a larger context, so it keeps its current size.",
     "contextGrowthSpent": "The context already grew once for this message. Shorten the history to go on."
+  },
+  "queuedSend": {
+    "modelChanged": "Your message wasn't sent: a different model was selected. It's still in the message box.",
+    "modelLost": "Your message wasn't sent: the model didn't start. It's still in the message box.",
+    "modelStopped": "Your message wasn't sent: the model was stopped. It's still in the message box."
   }
 }

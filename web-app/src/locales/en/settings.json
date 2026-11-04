@@ -593,7 +593,8 @@
     "dontRemind": "Don't remind me",
     "actuallyRunning": "Actually running: {{backend}}",
     "actuallyRunningCpuLayers": "Actually running on the CPU: {{offloaded}} of {{total}} layers on the GPU",
-    "actuallyRunningDevice": "Actually running on {{device}}"
+    "actuallyRunningDevice": "Actually running on {{device}}",
+    "waitForReply": "Available once the current reply finishes."
   },
   "turboquantOptimalPrompt": {
     "title": "Optimize the Turboquant backend?",

@@ -5,7 +5,10 @@ import {
   saveAtomicDownloadPlan,
 } from '@janhq/core'
 import type { ModelsService } from '@/services/models/types'
-import { preflightDownloadDiskSpace } from '@/services/models/downloadPreflight'
+import {
+  describeDownloadRefusal,
+  preflightDownloadDiskSpace,
+} from '@/services/models/downloadPreflight'
 
 export async function mlxDownloadOptions(
   service: ModelsService,
@@ -72,7 +75,10 @@ export async function mlxDownloadOptions(
       const refusal = await preflightDownloadDiskSpace({
         modelPath: weights.url,
         modelSize: plan.files.reduce((total, file) => total + file.size!, 0),
+        largestFileBytes: Math.max(...plan.files.map((file) => file.size!)),
       })
+      if (refusal?.kind === 'fs_file_limit')
+        throw new Error(describeDownloadRefusal(refusal, modelId).description)
       if (refusal)
         throw new Error(
           `Not enough disk space for this MLX model: ${refusal.needed} bytes needed, ${refusal.available} available.`

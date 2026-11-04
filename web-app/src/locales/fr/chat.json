@@ -332,5 +332,10 @@
     "contextNoMemory": "Il n'y a pas assez de mémoire libre pour un contexte plus grand.",
     "contextReloadFailed": "Le modèle ne s'est pas chargé avec un contexte plus grand ; il garde sa taille actuelle.",
     "contextGrowthSpent": "Le contexte a déjà été agrandi une fois pour ce message. Raccourcissez l'historique pour continuer."
+  },
+  "queuedSend": {
+    "modelChanged": "Votre message n'a pas été envoyé : un autre modèle a été sélectionné. Il est toujours dans la zone de saisie.",
+    "modelLost": "Votre message n'a pas été envoyé : le modèle n'a pas démarré. Il est toujours dans la zone de saisie.",
+    "modelStopped": "Votre message n'a pas été envoyé : le modèle a été arrêté. Il est toujours dans la zone de saisie."
   }
 }

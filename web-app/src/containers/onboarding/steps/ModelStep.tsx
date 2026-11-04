@@ -68,16 +68,20 @@ function OptionIcon({ option }: { option: ModelOption }) {
 export function ModelStep({ next }: StepProps) {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
-  const options = useModelOptions()
-  const { guardWontFit, confirmation } = useConfirmWontFitDownload()
   const choice = useOnboardingStore((state) => state.choice)
+  // What is on the machine is preselected; otherwise the best fit is.
+  const [pickedKey, setPickedKey] = useState<string | null>(null)
+  // Once a row is picked (here, or earlier in the run), a hardware probe that
+  // answers late no longer replaces the recommendation under it.
+  const options = useModelOptions({
+    keepRecommendation: pickedKey !== null || choice !== null,
+  })
+  const { guardWontFit, confirmation } = useConfirmWontFitDownload()
   const all = useMemo(
     () => [...options.onDevice, ...options.recommended, ...options.huggingFace],
     [options.onDevice, options.recommended, options.huggingFace]
   )
 
-  // What is on the machine is preselected; otherwise the best fit is.
-  const [pickedKey, setPickedKey] = useState<string | null>(null)
   const chosenKey = choice
     ? all.find((option) =>
         option.matchIds.some((id) => choice.matchIds.includes(id))
@@ -103,32 +107,49 @@ export function ModelStep({ next }: StepProps) {
     [serviceHub]
   )
 
-  // `setup_screen_shown` once the list is settled, then an impression per
-  // row, as the old screen reported them, so the funnel keeps its series.
+  // `setup_screen_shown` once the list is settled and the tier final (the
+  // probe answered, or its deadline passed), so it carries the tier the
+  // machine really got and how long the probe took; a step left before that
+  // reports what it had. Then an impression per row, as the old screen
+  // reported them, so the funnel keeps its series.
   const shownRef = useRef(false)
   const impressionsRef = useRef(new Set<string>())
+  const screenShownRef = useRef<(() => void) | null>(null)
+  screenShownRef.current = () => {
+    if (shownRef.current) return
+    shownRef.current = true
+    captureSetupScreenShown({
+      recommendedCount: options.recommended.length,
+      rendered: true,
+      hardwareTier: options.tier,
+      hardwareTierResolved: options.tierReady,
+      hardwareTierResolvedMs: options.tierResolvedMs,
+      memoryKind: options.profile?.memoryKind ?? null,
+      memoryBudgetMib: options.profile?.budgetMib ?? null,
+      primaryModelId: options.recommended[0]?.taskId ?? null,
+      detectedLocalModelsCount: options.detected.length,
+      detectedSources: [
+        ...new Set(
+          options.detected.flatMap((option) =>
+            option.kind === 'scan' ? [option.candidate.source] : []
+          )
+        ),
+      ],
+    })
+  }
+  const listSettledRef = useRef(false)
+  useEffect(
+    () => () => {
+      if (listSettledRef.current) screenShownRef.current?.()
+    },
+    []
+  )
   useEffect(() => {
     if (!options.ready) return
     if (!shownRef.current) {
       if (options.recommended.length === 0 && options.catalogLoading) return
-      shownRef.current = true
-      captureSetupScreenShown({
-        recommendedCount: options.recommended.length,
-        rendered: true,
-        hardwareTier: options.tier,
-        hardwareTierResolved: options.tierReady,
-        memoryKind: options.profile?.memoryKind ?? null,
-        memoryBudgetMib: options.profile?.budgetMib ?? null,
-        primaryModelId: options.recommended[0]?.taskId ?? null,
-        detectedLocalModelsCount: options.detected.length,
-        detectedSources: [
-          ...new Set(
-            options.detected.flatMap((option) =>
-              option.kind === 'scan' ? [option.candidate.source] : []
-            )
-          ),
-        ],
-      })
+      listSettledRef.current = true
+      if (options.tierFinal) screenShownRef.current?.()
     }
     const fresh = buildRecommendedImpressions({
       pending: options.recommended.map((option) => ({

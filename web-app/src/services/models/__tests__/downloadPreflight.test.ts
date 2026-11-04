@@ -37,6 +37,7 @@ import { EngineManager } from '@janhq/core'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useModelSources } from '@/hooks/useModelSources'
 import type { CatalogModel } from '../types'
+import { downloadHeadroomBytes, isFatFileSystem } from '../downloadPreflight'
 
 const GB = 1024 ** 3
 const MB = 1024 ** 2
@@ -264,5 +265,168 @@ describe('pullModelWithMetadata disk-space preflight', () => {
     expect(
       useDownloadStore.getState().resumeParams['big-q4_k_m']
     ).toMatchObject({ modelPath: BIG_PATH })
+  })
+
+  describe('on the destination volume', () => {
+    type Volume = {
+      free_bytes: number
+      total_bytes: number
+      fs_name: string | null
+      volume_root: string | null
+    }
+    const mockVolume = (volume: Volume) => {
+      const ipc = vi.fn((command: string, args?: unknown) => {
+        if (command === 'get_disk_space_info') return volume
+        if (command === 'get_download_free_space')
+          return { available: 1000 * GB, headroom: HEADROOM }
+        return args === undefined ? undefined : undefined
+      })
+      mockIPC(ipc)
+      return ipc
+    }
+
+    it('names the drive and offers another folder when the model will not fit', async () => {
+      const ipc = mockVolume({
+        free_bytes: 2 * GB,
+        total_bytes: 256 * GB,
+        fs_name: 'NTFS',
+        volume_root: 'D:\\',
+      })
+
+      const result = await service.pullModelWithMetadata(
+        'big-q4_k_m',
+        BIG_PATH,
+        BIG_MMPROJ_PATH,
+        undefined,
+        true,
+        false
+      )
+
+      expect(ipc).toHaveBeenCalledWith('get_disk_space_info', { path: '.' })
+      // What is left to write plus max(512 MiB, 2% of the download).
+      expect(result).toEqual({
+        kind: 'disk_full',
+        needed: 6 * GB + 800 * MB + HEADROOM,
+        available: 2 * GB,
+        volume: 'D:\\',
+      })
+      expect(engine.import).not.toHaveBeenCalled()
+      const [, options] = mockToast.error.mock.calls[0]
+      expect(options.description).toBe(
+        'big-q4_k_m needs 7.3 GB free and D:\\ has 2.0 GB. Pick a smaller model, free up space, or move the data folder to another drive.'
+      )
+      expect(options.action.label).toBe('Change data folder')
+    })
+
+    it('refuses a file of 4 GiB or more on a FAT32 drive, whatever its free space', async () => {
+      mockVolume({
+        free_bytes: 500 * GB,
+        total_bytes: 1000 * GB,
+        fs_name: 'FAT32',
+        volume_root: 'E:\\',
+      })
+
+      const result = await service.pullModelWithMetadata(
+        'big-q4_k_m',
+        BIG_PATH,
+        undefined,
+        undefined,
+        true,
+        false
+      )
+
+      expect(result).toEqual({
+        kind: 'fs_file_limit',
+        fileBytes: 6 * GB,
+        fsName: 'FAT32',
+        volume: 'E:\\',
+      })
+      expect(engine.import).not.toHaveBeenCalled()
+      const [title] = mockToast.error.mock.calls[0]
+      expect(title).toBe("This drive can't store files over 4 GB")
+    })
+
+    it('starts a file under 4 GiB on FAT32, and anything on exFAT', async () => {
+      mockVolume({
+        free_bytes: 500 * GB,
+        total_bytes: 1000 * GB,
+        fs_name: 'FAT32',
+        volume_root: 'E:\\',
+      })
+      await expect(
+        service.pullModelWithMetadata(
+          'small-q4_k_m',
+          SMALL_PATH,
+          undefined,
+          undefined,
+          true,
+          false
+        )
+      ).resolves.toBeUndefined()
+
+      mockVolume({
+        free_bytes: 500 * GB,
+        total_bytes: 1000 * GB,
+        fs_name: 'exFAT',
+        volume_root: 'E:\\',
+      })
+      await expect(
+        service.pullModelWithMetadata(
+          'big-q4_k_m',
+          BIG_PATH,
+          undefined,
+          undefined,
+          true,
+          false
+        )
+      ).resolves.toBeUndefined()
+      expect(mockToast.error).not.toHaveBeenCalled()
+    })
+
+    it('counts what a resume has already downloaded', async () => {
+      mockFreeSpace({ available: 20 * GB, headroom: HEADROOM })
+      await service.pullModelWithMetadata('big-q4_k_m', BIG_PATH)
+      service = new DefaultModelsService()
+      vi.mocked(fetch).mockRejectedValue(new Error('offline'))
+      useDownloadStore
+        .getState()
+        .updateProgress('big-q4_k_m', 0.9, 'big-q4_k_m', 5.5 * GB, 6 * GB)
+      // 0.5 GB still to write + 512 MiB headroom fits in 1.1 GB.
+      mockVolume({
+        free_bytes: 1.1 * GB,
+        total_bytes: 256 * GB,
+        fs_name: 'NTFS',
+        volume_root: 'C:\\',
+      })
+
+      await expect(
+        service.pullModelWithMetadata(
+          'big-q4_k_m',
+          BIG_PATH,
+          undefined,
+          undefined,
+          true,
+          true
+        )
+      ).resolves.toBeUndefined()
+      expect(engine.import).toHaveBeenLastCalledWith(
+        'big-q4_k_m',
+        expect.objectContaining({ resume: true })
+      )
+    })
+  })
+})
+
+describe("the downloader's own rules", () => {
+  it('keeps 2% of the download free, at least 512 MiB, like disk.rs', () => {
+    expect(downloadHeadroomBytes(6 * GB)).toBe(HEADROOM)
+    expect(downloadHeadroomBytes(50 * GB)).toBe(Math.floor((50 * GB) / 100) * 2)
+  })
+
+  it('treats FAT12/16/32 as FAT, and exFAT or NTFS not', () => {
+    for (const fat of ['FAT', 'FAT16', 'FAT32', 'fat32', 'vfat', 'msdos'])
+      expect(isFatFileSystem(fat)).toBe(true)
+    for (const other of ['exFAT', 'NTFS', 'apfs', null])
+      expect(isFatFileSystem(other)).toBe(false)
   })
 })

@@ -689,7 +689,9 @@
     },
     "downloadWontFit": {
       "title": "This model won't fit on your disk",
-      "description": "{{model}} needs {{needed}} free and this drive has {{available}}. Pick a smaller model or free up space."
+      "description": "{{model}} needs {{needed}} free and this drive has {{available}}. Pick a smaller model or free up space.",
+      "descriptionOnVolume": "{{model}} needs {{needed}} free and {{volume}} has {{available}}. Pick a smaller model, free up space, or move the data folder to another drive.",
+      "changeFolder": "Change data folder"
     },
     "downloadProxyUnreachable": {
       "title": "Could not reach the server through your proxy",
@@ -703,6 +705,12 @@
     "fileDialogFailed": {
       "title": "Couldn't open the file dialog",
       "description": "The system did not show the file or folder picker. Try again; if it keeps failing, restart Atomic Chat."
+    },
+    "downloadFsLimit": {
+      "title": "This drive can't store files over 4 GB",
+      "description": "{{model}} has a {{size}} file, but {{volume}} is formatted as {{fsName}}, which can't store a file of 4 GB or more. Move the Atomic Chat data folder to an NTFS or exFAT drive.",
+      "descriptionFailed": "The drive holding the Atomic Chat data folder is formatted as FAT32, which can't store a file of 4 GB or more. Move the data folder to an NTFS or exFAT drive and retry.",
+      "thisDrive": "this drive"
     }
   },
   "errors": {

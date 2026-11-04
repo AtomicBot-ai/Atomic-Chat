@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useShallow } from 'zustand/shallow'
 
 import {
@@ -12,7 +12,10 @@ import {
 } from '@/containers/SetupScreenHelpers'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useHardware } from '@/hooks/useHardware'
-import { useHardwareTier } from '@/hooks/useHardwareTier'
+import {
+  useHardwareTier,
+  type HardwareTierResult,
+} from '@/hooks/useHardwareTier'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useModelSources } from '@/hooks/useModelSources'
 import { useResolvedRecommendedModels } from '@/hooks/useResolvedRecommendedModels'
@@ -46,10 +49,18 @@ import { useStaffPicksStore } from '@/stores/staff-picks-store'
 
 /**
  * Neither the on-disk scan nor the hardware enumeration may hold the screen
- * hostage: whatever has not answered by then counts as "nothing found" or the
- * fallback tier.
+ * hostage: whatever has not answered by then counts as "nothing found", and
+ * the list opens on a provisional recommendation from the fallback tier.
  */
 export const MODEL_INPUT_DEADLINE_MS = 4_000
+
+/**
+ * How long a late hardware probe may still replace that provisional tier.
+ * Windows' probe takes up to 15 s; finalising the tier at the 4 s list
+ * deadline left Windows machines on the fallback ("capacity unclassified")
+ * nearly three times as often as Macs.
+ */
+export const HARDWARE_TIER_DEADLINE_MS = 20_000
 
 /** How many offers the screen shows: the best fit and two more. */
 const RECOMMENDED_ROWS = 3
@@ -171,9 +182,17 @@ function downloadOption(
  * the most downloaded chat models of the Hugging Face catalog.
  *
  * `ready` stays false until the scan and the hardware tier answered (or the
- * deadline passed), so the list never reshuffles under the user.
+ * {@link MODEL_INPUT_DEADLINE_MS} deadline passed). A tier that answers after
+ * that still replaces the provisional one, until
+ * {@link HARDWARE_TIER_DEADLINE_MS}, unless `keepRecommendation` says the user
+ * has picked a row: then the list stays as they saw it.
  */
-export function useModelOptions() {
+export function useModelOptions({
+  keepRecommendation = false,
+}: {
+  /** The user picked a model: a late tier must not reshuffle the list. */
+  keepRecommendation?: boolean
+} = {}) {
   const { t } = useTranslation()
   const tagline = useCallback(
     (name: string, tags?: readonly string[]) =>
@@ -188,7 +207,35 @@ export function useModelOptions() {
       loading: state.loading,
     }))
   )
-  const { tier, profile, ready: tierReady } = useHardwareTier()
+  const live = useHardwareTier()
+  const tierReady = live.ready
+  // What the list is built from: the live tier, or — once the user picked —
+  // the one they were shown when they did.
+  const [kept, setKept] = useState<HardwareTierResult | null>(null)
+  if (keepRecommendation && !kept) setKept(live)
+  if (!keepRecommendation && kept) setKept(null)
+  const { tier, profile } = keepRecommendation ? (kept ?? live) : live
+
+  // When the probe actually answered, counted from when the step opened; a
+  // tier already known at mount (persisted, forced) took no time.
+  const openedAtRef = useRef(Date.now())
+  const [tierResolvedMs, setTierResolvedMs] = useState<number | null>(
+    tierReady ? 0 : null
+  )
+  useEffect(() => {
+    if (tierReady && tierResolvedMs === null)
+      setTierResolvedMs(Date.now() - openedAtRef.current)
+  }, [tierReady, tierResolvedMs])
+  const [tierDeadlinePassed, setTierDeadlinePassed] = useState(false)
+  useEffect(() => {
+    if (tierReady) return
+    const timer = setTimeout(
+      () => setTierDeadlinePassed(true),
+      HARDWARE_TIER_DEADLINE_MS
+    )
+    return () => clearTimeout(timer)
+  }, [tierReady])
+
   const [deadlinePassed, setDeadlinePassed] = useState(false)
   const [candidates, setCandidates] = useState<LocalModelCandidate[] | null>(
     null
@@ -434,6 +481,13 @@ export function useModelOptions() {
     device,
     tier,
     tierReady,
+    /**
+     * The tier will not change any more: the probe answered, or
+     * {@link HARDWARE_TIER_DEADLINE_MS} passed and the fallback stands.
+     */
+    tierFinal: tierReady || tierDeadlinePassed,
+    /** Milliseconds from the step opening to the probe's answer; `null` until it answers. */
+    tierResolvedMs,
     profile,
   }
 }

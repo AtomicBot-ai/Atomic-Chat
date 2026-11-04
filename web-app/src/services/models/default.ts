@@ -11,7 +11,7 @@ import {
  */
 
 import { managedEngines } from '@/lib/managed-engines'
-import { LOCAL_LLAMACPP_PROVIDER, formatBytes } from '@/lib/utils'
+import { LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
 import {
   AIEngine,
   EngineManager,
@@ -54,9 +54,10 @@ import {
   urlHost,
 } from '@/lib/telemetry'
 import { queuedCapture } from '@/lib/telemetry-queue'
-import { toast } from 'sonner'
-import i18n from '@/i18n/setup'
-import { preflightDownloadDiskSpace } from './downloadPreflight'
+import {
+  preflightDownloadDiskSpace,
+  showDownloadRefusalToast,
+} from './downloadPreflight'
 import { makeRoomForChatModel } from './gpuRoom'
 
 // Platform-active llama.cpp provider id. Windows registers only the
@@ -713,32 +714,39 @@ export class DefaultModelsService implements ModelsService {
       // of surfacing as a failed download a moment after the row said
       // "Downloading". Every entry point sets `localDownloadingModels` (and the
       // Hub its origin) before calling; on a refusal that is undone here, since
-      // most of them do not await the pull. A resume is left to the Rust check,
-      // which knows how much of the partial already counts.
-      if (!resume) {
+      // most of them do not await the pull. The destination's volume is asked
+      // for its free space and its file system (FAT32 holds no file of 4 GiB or
+      // more). A resume counts what is already downloaded, when the progress
+      // is known here; otherwise it is left to the Rust check.
+      {
+        const weights = prepared
+          ? prepared.files.filter((file) => file.purpose === 'weights')
+          : []
         const refusal = await preflightDownloadDiskSpace({
           modelPath,
           mmprojPath,
           modelSize: prepared
-            ? prepared.files
-                .filter((file) => file.purpose === 'weights')
-                .reduce((sum, file) => sum + file.size!, 0)
+            ? weights.reduce((sum, file) => sum + file.size!, 0)
             : modelSize,
           mmprojSize,
+          ...(prepared
+            ? {
+                largestFileBytes: Math.max(
+                  0,
+                  ...prepared.files.map((file) => file.size ?? 0)
+                ),
+              }
+            : {}),
+          resume,
+          partialBytes: resume
+            ? useDownloadStore.getState().downloads[id]?.current
+            : undefined,
         })
         if (refusal) {
           const store = useDownloadStore.getState()
           store.removeLocalDownloadingModel(id)
           store.clearDownloadOrigin(id)
-          toast.error(i18n.t('common:toast.downloadWontFit.title'), {
-            id: 'download-wont-fit',
-            description: i18n.t('common:toast.downloadWontFit.description', {
-              model: id,
-              needed: formatBytes(refusal.needed),
-              available: formatBytes(refusal.available) || '0 B',
-            }),
-            duration: 15000,
-          })
+          showDownloadRefusalToast(refusal, id)
           return refusal
         }
       }

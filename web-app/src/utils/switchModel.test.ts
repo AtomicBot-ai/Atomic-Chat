@@ -14,6 +14,12 @@ import {
 } from '@/lib/telemetry'
 import { registerRemoteProvider } from '@/utils/registerRemoteProvider'
 import {
+  holdModel,
+  pendingModelStart,
+  resetModelLifecycleForTests,
+  shareModelStart,
+} from '@/lib/model-lifecycle'
+import {
   cancelModelLoad,
   describeModelLoadFailure,
   installMlxEngineAndLoad,
@@ -1740,5 +1746,159 @@ describe('OOM retry ladder', () => {
     ).rejects.toThrow('unsupported arch')
     expect(startModel).toHaveBeenCalledTimes(1)
     expect(modelSetting('ctx_len')).toBe(16384)
+  })
+})
+
+describe('switchToModel beside chat requests', () => {
+  const localHub = (loaded: ReturnType<typeof createLoadedEngines>) => {
+    const models = {
+      getActiveModels: vi.fn(loaded.getActiveModels),
+      stopAllModels: vi.fn(loaded.stopAllModels),
+      stopAllModelsExcept: vi.fn(loaded.stopAllModelsExcept),
+      startModel: vi.fn(loaded.startModel),
+    }
+    const serviceHub = {
+      app: () => ({ getServerStatus: vi.fn().mockResolvedValue(false) }),
+      models: () => models,
+    } as unknown as ServiceHub
+    return { models, serviceHub }
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    resetModelLifecycleForTests()
+    appState.serverStatus = 'running'
+    startServer.mockResolvedValue(1337)
+    stopServer.mockResolvedValue(undefined)
+    window.core = { api: { startServer, stopServer } } as typeof window.core
+  })
+
+  it('lets a request on the model it unloads finish before stopping it', async () => {
+    const loaded = createLoadedEngines({ mlx: ['broken-model'] })
+    const { models, serviceHub } = localHub(loaded)
+    const hold = holdModel('mlx', 'broken-model', 60_000)
+
+    const switching = switchToModel({
+      modelId: 'shared-model',
+      providerName: 'llamacpp-upstream',
+      serviceHub,
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(models.stopAllModelsExcept).not.toHaveBeenCalled()
+    expect(loaded.snapshot().mlx).toEqual(['broken-model'])
+
+    hold.release()
+    await switching
+    expect(loaded.unloaded).toEqual(['mlx::broken-model'])
+    expect(loaded.snapshot()['llamacpp-upstream']).toEqual(['shared-model'])
+  })
+
+  it('does not wait for requests on the model it switches to', async () => {
+    const loaded = createLoadedEngines({ 'llamacpp-upstream': [] })
+    const { models, serviceHub } = localHub(loaded)
+    const hold = holdModel('llamacpp-upstream', 'shared-model', 60_000)
+
+    await switchToModel({
+      modelId: 'shared-model',
+      providerName: 'llamacpp-upstream',
+      serviceHub,
+    })
+    expect(models.stopAllModelsExcept).toHaveBeenCalled()
+    hold.release()
+  })
+
+  it('leaves the Local API Server running while a request goes through it', async () => {
+    const loaded = createLoadedEngines({ 'llamacpp-upstream': [] })
+    const { serviceHub } = localHub(loaded)
+    const hold = holdModel('openai', 'gpt-x', 60_000)
+    startServer.mockRejectedValue(new Error('Server is already running'))
+
+    await switchToModel({
+      modelId: 'shared-model',
+      providerName: 'llamacpp-upstream',
+      serviceHub,
+    })
+    expect(stopServer).not.toHaveBeenCalled()
+    expect(appState.setServerStatus).toHaveBeenLastCalledWith('running')
+    hold.release()
+  })
+
+  it('shares its load with a request for the same model, ending once the engine serves it', async () => {
+    const loaded = createLoadedEngines({ 'llamacpp-upstream': [] })
+    const { models, serviceHub } = localHub(loaded)
+    let release!: () => void
+    models.startModel.mockImplementation(async (provider, modelId) => {
+      await new Promise<void>((resolve) => {
+        release = resolve
+      })
+      await loaded.startModel(provider, modelId)
+    })
+
+    const switching = switchToModel({
+      modelId: 'shared-model',
+      providerName: 'llamacpp-upstream',
+      serviceHub,
+    })
+    const shared = pendingModelStart('llamacpp-upstream', 'shared-model')
+    expect(shared).toBeDefined()
+    let joined = false
+    void shared!.then(() => {
+      joined = true
+    })
+    await vi.waitFor(() => expect(models.startModel).toHaveBeenCalled())
+    expect(joined).toBe(false)
+
+    release()
+    await switching
+    expect(joined).toBe(true)
+    expect(models.startModel).toHaveBeenCalledTimes(1)
+  })
+
+  it('passes a failed load on to the request waiting for it', async () => {
+    const { models, serviceHub } = localHub(
+      createLoadedEngines({ 'llamacpp-upstream': [] })
+    )
+    models.startModel.mockRejectedValue(new Error('missing vision weights'))
+
+    const switching = switchToModel({
+      modelId: 'shared-model',
+      providerName: 'llamacpp-upstream',
+      serviceHub,
+    })
+    const shared = pendingModelStart('llamacpp-upstream', 'shared-model')!
+    await expect(switching).rejects.toThrow('missing vision weights')
+    await expect(shared).rejects.toThrow('missing vision weights')
+  })
+
+  it('waits for a request that was already starting the model itself', async () => {
+    const loaded = createLoadedEngines({ 'llamacpp-upstream': [] })
+    const { models, serviceHub } = localHub(loaded)
+    let finishRequestStart!: () => void
+    shareModelStart(
+      'llamacpp-upstream',
+      'shared-model',
+      new Promise<void>((resolve) => {
+        finishRequestStart = () => {
+          void loaded.startModel(
+            { provider: 'llamacpp-upstream' },
+            'shared-model'
+          )
+          resolve()
+        }
+      })
+    )
+
+    const switching = switchToModel({
+      modelId: 'shared-model',
+      providerName: 'llamacpp-upstream',
+      serviceHub,
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(models.startModel).not.toHaveBeenCalled()
+
+    finishRequestStart()
+    await switching
+    // The switch's own call found the model up (a no-op in the engine).
+    expect(loaded.snapshot()['llamacpp-upstream']).toEqual(['shared-model'])
   })
 })

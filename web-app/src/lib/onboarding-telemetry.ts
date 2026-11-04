@@ -683,8 +683,14 @@ export function captureSetupScreenShown(params: {
    * amount of staring at it could show a mis-tiered machine.
    */
   hardwareTier?: string | null
-  /** False when the tier deadline elapsed and the fallback was assumed. */
+  /**
+   * False when the hardware probe had not answered by the time the event was
+   * sent — its deadline passed, or the user left the step first — and the
+   * fallback tier stood.
+   */
   hardwareTierResolved?: boolean
+  /** Milliseconds from the step opening to the probe's answer; null when it never answered. */
+  hardwareTierResolvedMs?: number | null
   /** Which memory pool the tier was decided on: unified / vram / system. */
   memoryKind?: string | null
   /** The budget that decision used, in MiB. Coarse enough not to fingerprint. */
@@ -707,6 +713,7 @@ export function captureSetupScreenShown(params: {
     rendered: params.rendered,
     hardware_tier: params.hardwareTier ?? null,
     hardware_tier_resolved: params.hardwareTierResolved ?? null,
+    hardware_tier_resolved_ms: params.hardwareTierResolvedMs ?? null,
     memory_kind: params.memoryKind ?? null,
     memory_budget_mib: params.memoryBudgetMib ?? null,
     primary_model_id: params.primaryModelId

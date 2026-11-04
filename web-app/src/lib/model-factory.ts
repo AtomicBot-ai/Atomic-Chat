@@ -83,6 +83,13 @@ import { foundryLocalRequestBody } from '@/lib/foundry-local/request'
 import { liteRtLmRequestBody } from '@/lib/litert-lm/request'
 import { geniexRequestBody } from '@/lib/geniex/request'
 import { textToolCallMiddleware } from '@/lib/text-tool-call-middleware'
+import {
+  holdModel,
+  holdModelUntilFirstRequest,
+  pendingModelStart,
+  shareModelStart,
+  type ModelHold,
+} from '@/lib/model-lifecycle'
 
 /**
  * Inactivity budget (seconds) handed to `stream_local_http` on this generic
@@ -99,6 +106,86 @@ import { textToolCallMiddleware } from '@/lib/text-tool-call-middleware'
  * same answer.
  */
 const LOCAL_STREAM_IDLE_TIMEOUT_SECS = 1800
+
+/**
+ * How long a new model object holds its model before it sends anything. Covers
+ * the pre-flight between `createModel` and the first request (prompt measuring,
+ * a context grow); a model object that never sends lets go after this.
+ */
+const FIRST_REQUEST_HOLD_MS = 15_000
+
+/** Statuses whose responses may not carry a body (`new Response` refuses one). */
+const NULL_BODY_STATUSES = new Set([101, 103, 204, 205, 304])
+
+/** Release `hold` once `response`'s body has been read to the end, failed or been cancelled. */
+function releaseWhenRead(response: Response, hold: ModelHold): Response {
+  const body = response?.body
+  if (!body || NULL_BODY_STATUSES.has(response.status)) {
+    hold.release()
+    return response
+  }
+  const reader = body.getReader()
+  const stream = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read()
+        if (done) {
+          hold.release()
+          controller.close()
+          return
+        }
+        hold.touch()
+        controller.enqueue(value)
+      } catch (error) {
+        hold.release()
+        controller.error(error)
+      }
+    },
+    cancel(reason) {
+      hold.release()
+      return reader.cancel(reason)
+    },
+  })
+  return new Response(stream, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  })
+}
+
+/**
+ * A fetch that holds `providerName/modelId` (see `lib/model-lifecycle.ts`)
+ * from the moment the model object is built until each of its requests has
+ * been answered, so a model switch neither stops the engine nor restarts the
+ * Local API Server under the request.
+ */
+export function createHoldingFetch(
+  providerName: string,
+  modelId: string,
+  inner: typeof httpFetch
+): typeof httpFetch {
+  let releaseFirstRequestHold: (() => void) | null = holdModelUntilFirstRequest(
+    providerName,
+    modelId,
+    FIRST_REQUEST_HOLD_MS
+  )
+  return async (input, init) => {
+    const hold = holdModel(
+      providerName,
+      modelId,
+      LOCAL_STREAM_IDLE_TIMEOUT_SECS * 1000
+    )
+    releaseFirstRequestHold?.()
+    releaseFirstRequestHold = null
+    init?.signal?.addEventListener('abort', hold.release, { once: true })
+    try {
+      return releaseWhenRead(await inner(input, init), hold)
+    } catch (error) {
+      hold.release()
+      throw error
+    }
+  }
+}
 
 /**
  * Legacy llama.cpp / dflash timings structure (kept for backward
@@ -797,19 +884,17 @@ export class ModelFactory {
     ttftPreBegin('resolveLocalSession-cacheMiss', { key })
     // #endregion
     const inFlight = (async () => {
-      if (provider) {
-        try {
-          const { useServiceStore } = await import('@/hooks/useServiceHub')
-          const serviceHub = useServiceStore.getState().serviceHub
-          if (serviceHub) {
-            await serviceHub.models().startModel(provider, modelId)
-          }
-        } catch (error) {
-          console.error(`Failed to start ${providerName} model:`, error)
-          throw new Error(
-            `Failed to start model: ${extractModelErrorMessage(error)}`
-          )
-        }
+      try {
+        await ModelFactory.ensureLocalModelStarted(
+          providerName,
+          modelId,
+          provider
+        )
+      } catch (error) {
+        console.error(`Failed to start ${providerName} model:`, error)
+        throw new Error(
+          `Failed to start model: ${extractModelErrorMessage(error)}`
+        )
       }
 
       const sessionInfo = await findLocalSession(providerName, modelId)
@@ -844,6 +929,52 @@ export class ModelFactory {
     }
   }
 
+  /**
+   * Bring the model up for a request, without ever starting it a second time:
+   * a start already under way — a model switch's load, or another request's
+   * start — is joined rather than repeated next to it. A send made while the
+   * model was still loading used to call `startModel` itself beside the
+   * switch's own load, and the first turn after the load went unanswered.
+   *
+   * Rejects with the joined start's error (a failed or cancelled load is not
+   * retried here). A joined start that ended without the model — a switch
+   * superseded by a newer one — falls through to a start of its own. Answers
+   * whether anything was joined or started, i.e. whether a session may exist
+   * now that did not before.
+   */
+  private static async ensureLocalModelStarted(
+    providerName: CachedLocalProvider,
+    modelId: string,
+    provider: ProviderObject | undefined
+  ): Promise<boolean> {
+    const pending = pendingModelStart(providerName, modelId)
+    if (pending) {
+      await pending
+      if (await findLocalSession(providerName, modelId)) return true
+    }
+    if (!provider) return Boolean(pending)
+    const { useServiceStore } = await import('@/hooks/useServiceHub')
+    const serviceHub = useServiceStore.getState().serviceHub
+    if (!serviceHub) return Boolean(pending)
+    // Held while it loads: a switch to another model waits for this request
+    // instead of stopping the engine it is about to use.
+    const hold = holdModel(
+      providerName,
+      modelId,
+      LOCAL_STREAM_IDLE_TIMEOUT_SECS * 1000
+    )
+    try {
+      await shareModelStart(
+        providerName,
+        modelId,
+        serviceHub.models().startModel(provider, modelId)
+      )
+    } finally {
+      hold.release()
+    }
+    return true
+  }
+
   /** Resolve immediately before a request; never reuse a cached bearer key or port. */
   private static async resolveFreshLocalSession(
     providerName: CachedLocalProvider,
@@ -851,13 +982,15 @@ export class ModelFactory {
     provider: ProviderObject | undefined
   ): Promise<SessionInfo> {
     let sessionInfo = await findLocalSession(providerName, modelId)
-    if (!sessionInfo && provider) {
-      const { useServiceStore } = await import('@/hooks/useServiceHub')
-      const serviceHub = useServiceStore.getState().serviceHub
-      if (serviceHub) {
-        await serviceHub.models().startModel(provider, modelId)
-        sessionInfo = await findLocalSession(providerName, modelId)
-      }
+    if (
+      !sessionInfo &&
+      (await ModelFactory.ensureLocalModelStarted(
+        providerName,
+        modelId,
+        provider
+      ))
+    ) {
+      sessionInfo = await findLocalSession(providerName, modelId)
     }
     if (!sessionInfo) {
       ModelFactory.invalidateLocalSessionCache(providerName, modelId)
@@ -937,7 +1070,7 @@ export class ModelFactory {
         modelId,
         provider
       )
-      const baseUrl = `http://localhost:${sessionInfo.port}`
+      const baseUrl = `http://127.0.0.1:${sessionInfo.port}`
       const headers = {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${sessionInfo.api_key}`,
@@ -1118,8 +1251,12 @@ export class ModelFactory {
     // whenever a prompt overflows the context window and the engine reloads it one step larger.
     // The symptom was a conversation that worked until it grew, and then failed against a port
     // nothing was listening on.
-    const liveFetch = createLiveSessionFetch(customFetch, () =>
-      ModelFactory.resolveFreshLocalSession(engineName, modelId, provider)
+    const liveFetch = createHoldingFetch(
+      engineName,
+      modelId,
+      createLiveSessionFetch(customFetch, () =>
+        ModelFactory.resolveFreshLocalSession(engineName, modelId, provider)
+      )
     )
 
     const model = new OpenAICompatibleChatLanguageModel(modelId, {
@@ -1129,7 +1266,7 @@ export class ModelFactory {
         Origin: 'tauri://localhost',
       }),
       url: ({ path }) => {
-        const url = new URL(`http://localhost:${sessionInfo.port}/v1${path}`)
+        const url = new URL(`http://127.0.0.1:${sessionInfo.port}/v1${path}`)
         return url.toString()
       },
       includeUsage: true,
@@ -1162,7 +1299,7 @@ export class ModelFactory {
       provider
     )
 
-    const baseUrl = `http://localhost:${sessionInfo.port}`
+    const baseUrl = `http://127.0.0.1:${sessionInfo.port}`
     const authHeaders = {
       Authorization: `Bearer ${sessionInfo.api_key}`,
       Origin: 'tauri://localhost',
@@ -1180,9 +1317,10 @@ export class ModelFactory {
     // Re-attach audio attachments as `input_audio` on the request body the
     // mlx-vlm/omni server receives (they were stripped from the AI SDK message
     // path because the OpenAI-compatible converter rejects audio file parts).
-    const customFetch = createAudioInjectingFetch(
-      streamingFetch,
-      audioParts ?? []
+    const customFetch = createHoldingFetch(
+      'mlx',
+      modelId,
+      createAudioInjectingFetch(streamingFetch, audioParts ?? [])
     )
 
     const model = new OpenAICompatibleChatLanguageModel(modelId, {
@@ -1245,11 +1383,15 @@ export class ModelFactory {
               ModelFactory.managedStructuredOutput(engineId, modelId))
           : false,
       })
-    const liveFetch = createLiveSessionFetch(
-      createEngineErrorFetch(
-        createLocalStreamingFetch(httpFetch, parameters, shapeBody)
-      ),
-      () => ModelFactory.resolveFreshLocalSession(engineId, modelId, provider)
+    const liveFetch = createHoldingFetch(
+      engineId,
+      modelId,
+      createLiveSessionFetch(
+        createEngineErrorFetch(
+          createLocalStreamingFetch(httpFetch, parameters, shapeBody)
+        ),
+        () => ModelFactory.resolveFreshLocalSession(engineId, modelId, provider)
+      )
     )
 
     const model = new OpenAICompatibleChatLanguageModel(modelId, {
@@ -1259,7 +1401,7 @@ export class ModelFactory {
         Origin: 'tauri://localhost',
       }),
       url: ({ path }) =>
-        new URL(`http://localhost:${sessionInfo.port}/v1${path}`).toString(),
+        new URL(`http://127.0.0.1:${sessionInfo.port}/v1${path}`).toString(),
       includeUsage: true,
       fetch: liveFetch,
       metadataExtractor: providerMetadataExtractor,
@@ -1291,14 +1433,22 @@ export class ModelFactory {
       modelId,
       provider
     )
-    const liveFetch = createLiveSessionFetch(
-      createEngineErrorFetch(
-        createLocalStreamingFetch(httpFetch, parameters, async (body) =>
-          foundryLocalRequestBody(body)
-        )
-      ),
-      () =>
-        ModelFactory.resolveFreshLocalSession('foundry-local', modelId, provider)
+    const liveFetch = createHoldingFetch(
+      'foundry-local',
+      modelId,
+      createLiveSessionFetch(
+        createEngineErrorFetch(
+          createLocalStreamingFetch(httpFetch, parameters, async (body) =>
+            foundryLocalRequestBody(body)
+          )
+        ),
+        () =>
+          ModelFactory.resolveFreshLocalSession(
+            'foundry-local',
+            modelId,
+            provider
+          )
+      )
     )
 
     const model = new OpenAICompatibleChatLanguageModel(modelId, {
@@ -1308,7 +1458,7 @@ export class ModelFactory {
         Origin: 'tauri://localhost',
       }),
       url: ({ path }) =>
-        new URL(`http://localhost:${sessionInfo.port}/v1${path}`).toString(),
+        new URL(`http://127.0.0.1:${sessionInfo.port}/v1${path}`).toString(),
       includeUsage: true,
       fetch: liveFetch,
       metadataExtractor: providerMetadataExtractor,
@@ -1347,13 +1497,18 @@ export class ModelFactory {
       modelId,
       provider
     )
-    const liveFetch = createLiveSessionFetch(
-      createEngineErrorFetch(
-        createLocalStreamingFetch(httpFetch, parameters, async (body) =>
-          liteRtLmRequestBody(body)
-        )
-      ),
-      () => ModelFactory.resolveFreshLocalSession('litert-lm', modelId, provider)
+    const liveFetch = createHoldingFetch(
+      'litert-lm',
+      modelId,
+      createLiveSessionFetch(
+        createEngineErrorFetch(
+          createLocalStreamingFetch(httpFetch, parameters, async (body) =>
+            liteRtLmRequestBody(body)
+          )
+        ),
+        () =>
+          ModelFactory.resolveFreshLocalSession('litert-lm', modelId, provider)
+      )
     )
 
     return new OpenAICompatibleChatLanguageModel(modelId, {
@@ -1363,7 +1518,7 @@ export class ModelFactory {
         Origin: 'tauri://localhost',
       }),
       url: ({ path }) =>
-        new URL(`http://localhost:${sessionInfo.port}/v1${path}`).toString(),
+        new URL(`http://127.0.0.1:${sessionInfo.port}/v1${path}`).toString(),
       includeUsage: true,
       fetch: liveFetch,
       metadataExtractor: providerMetadataExtractor,
@@ -1389,13 +1544,17 @@ export class ModelFactory {
       modelId,
       provider
     )
-    const liveFetch = createLiveSessionFetch(
-      createEngineErrorFetch(
-        createLocalStreamingFetch(httpFetch, parameters, async (body) =>
-          geniexRequestBody(body)
-        )
-      ),
-      () => ModelFactory.resolveFreshLocalSession('geniex', modelId, provider)
+    const liveFetch = createHoldingFetch(
+      'geniex',
+      modelId,
+      createLiveSessionFetch(
+        createEngineErrorFetch(
+          createLocalStreamingFetch(httpFetch, parameters, async (body) =>
+            geniexRequestBody(body)
+          )
+        ),
+        () => ModelFactory.resolveFreshLocalSession('geniex', modelId, provider)
+      )
     )
 
     return new OpenAICompatibleChatLanguageModel(modelId, {
@@ -1405,7 +1564,7 @@ export class ModelFactory {
         Origin: 'tauri://localhost',
       }),
       url: ({ path }) =>
-        new URL(`http://localhost:${sessionInfo.port}/v1${path}`).toString(),
+        new URL(`http://127.0.0.1:${sessionInfo.port}/v1${path}`).toString(),
       includeUsage: true,
       fetch: liveFetch,
       metadataExtractor: providerMetadataExtractor,
@@ -1492,13 +1651,17 @@ export class ModelFactory {
       )
     }
 
-    const baseUrl = `http://localhost:${sessionInfo.port}`
+    const baseUrl = `http://127.0.0.1:${sessionInfo.port}`
     const authHeaders = {
       Authorization: `Bearer ${sessionInfo.api_key}`,
       Origin: 'tauri://localhost',
     }
 
-    const customFetch = createCustomFetch(httpFetch, parameters)
+    const customFetch = createHoldingFetch(
+      'foundation-models',
+      modelId,
+      createCustomFetch(httpFetch, parameters)
+    )
 
     const model = new OpenAICompatibleChatLanguageModel(modelId, {
       provider: 'foundation-models',
@@ -1546,7 +1709,11 @@ export class ModelFactory {
       // Use the IPC-channel streaming fetch because the Local API Server is on
       // localhost and tauri_plugin_http's ReadableStream bridge does not relay
       // SSE chunks from loopback targets.
-      fetch: createLocalStreamingFetch(httpFetch, parameters),
+      fetch: createHoldingFetch(
+        provider.provider,
+        modelId,
+        createLocalStreamingFetch(httpFetch, parameters)
+      ),
     })
 
     return anthropic(modelId)
@@ -1581,7 +1748,11 @@ export class ModelFactory {
       // Use the IPC-channel streaming fetch because the Local API Server is on
       // localhost and tauri_plugin_http's ReadableStream bridge does not relay
       // SSE chunks from loopback targets.
-      fetch: createLocalStreamingFetch(httpFetch, parameters),
+      fetch: createHoldingFetch(
+        provider.provider,
+        modelId,
+        createLocalStreamingFetch(httpFetch, parameters)
+      ),
     })
 
     // AI SDK v5 routes `openai(id)` through the new Responses API
@@ -1615,7 +1786,11 @@ export class ModelFactory {
       baseURL,
       headers: Object.keys(headers).length > 0 ? headers : undefined,
       // Use the IPC-channel streaming fetch (see OpenAI factory rationale).
-      fetch: createLocalStreamingFetch(httpFetch, parameters),
+      fetch: createHoldingFetch(
+        provider.provider,
+        modelId,
+        createLocalStreamingFetch(httpFetch, parameters)
+      ),
     })
 
     return xai(modelId)
@@ -1654,7 +1829,11 @@ export class ModelFactory {
       headers,
       includeUsage: true,
       // Use the IPC-channel streaming fetch (see OpenAI factory rationale).
-      fetch: createLocalStreamingFetch(httpFetch, parameters),
+      fetch: createHoldingFetch(
+        provider.provider,
+        modelId,
+        createLocalStreamingFetch(httpFetch, parameters)
+      ),
     })
 
     // Some OpenAI-compatible providers (MiniMax, DeepSeek, Moonshot, NVIDIA

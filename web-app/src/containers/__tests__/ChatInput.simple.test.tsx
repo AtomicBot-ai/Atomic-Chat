@@ -15,6 +15,10 @@ import { useAttachments } from '@/hooks/useAttachments'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useMCPServers } from '@/hooks/useMCPServers'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import {
+  markAppShuttingDown,
+  resetAppShutdownForTests,
+} from '@/lib/app-shutdown'
 import { useModelLoad } from '@/hooks/useModelLoad'
 import { modelStopKey, useAppState } from '@/hooks/useAppState'
 import { usePrompt } from '@/hooks/usePrompt'
@@ -1227,6 +1231,10 @@ describe('ChatInput', () => {
       ).not.toBeInTheDocument()
     )
     expect(onSubmit).not.toHaveBeenCalled()
+    // Not silently: the user hears the message stayed behind.
+    expect(toast.info).toHaveBeenCalledWith('chat:queuedSend.modelStopped', {
+      id: 'queued-send-held',
+    })
     unmount()
   })
 
@@ -1286,6 +1294,67 @@ describe('ChatInput', () => {
     expect(screen.getByTestId('chat-input')).toHaveValue(
       'Invoke the machine spirit'
     )
+    expect(toast.info).toHaveBeenCalledWith('chat:queuedSend.modelLost', {
+      id: 'queued-send-held',
+    })
+    unmount()
+  })
+
+  // The send was made for one model; a different pick must not answer it.
+  it('keeps a waiting send in the field when another model is picked', async () => {
+    const model = {
+      id: 'Qwen3.5-4B-Q4_K_M',
+      capabilities: [],
+      settings: {},
+    } as Model
+    const other = {
+      id: 'Gemma-4B-Q4_K_M',
+      capabilities: [],
+      settings: {},
+    } as Model
+    useModelProvider.setState({
+      providers: [
+        {
+          provider: 'llamacpp-upstream',
+          active: true,
+          models: [model, other],
+          settings: [],
+        } as ModelProvider,
+      ],
+      selectedProvider: 'llamacpp-upstream',
+      selectedModel: model,
+    })
+    useAppState.setState({
+      activeModels: [],
+      loadingModel: false,
+      userStoppedModels: [modelStopKey('llamacpp-upstream', model.id)],
+    })
+    mocks.switchToModel.mockResolvedValue(undefined)
+    const onSubmit = vi.fn()
+    const { unmount } = render(<ChatInput onSubmit={onSubmit} />)
+    fireEvent.change(screen.getByTestId('chat-input'), {
+      target: { value: 'Invoke the machine spirit' },
+    })
+    fireEvent.click(
+      document.querySelector('[data-test-id="send-message-button"]')!
+    )
+    await waitFor(() => expect(mocks.switchToModel).toHaveBeenCalled())
+
+    act(() => {
+      useModelProvider
+        .getState()
+        .selectModelProvider('llamacpp-upstream', other.id)
+      useAppState.setState({ activeModels: [other.id], userStoppedModels: [] })
+    })
+
+    await act(async () => {})
+    expect(onSubmit).not.toHaveBeenCalled()
+    expect(screen.getByTestId('chat-input')).toHaveValue(
+      'Invoke the machine spirit'
+    )
+    expect(toast.info).toHaveBeenCalledWith('chat:queuedSend.modelChanged', {
+      id: 'queued-send-held',
+    })
     unmount()
   })
 
@@ -1972,6 +2041,21 @@ describe('ChatInput local model auto-start', () => {
     // Until the start lands, the composer no longer claims the model runs.
     expect(useAppState.getState().activeModels).toEqual([])
     unmount()
+  })
+
+  // During quit the core no longer takes calls: a load started then only
+  // fails with CORE_NOT_RUNNING.
+  it('starts nothing once the app announced it is quitting', async () => {
+    const { getActiveModels } = seedModels({})
+    useAppState.setState({ activeModels: [] })
+    markAppShuttingDown()
+    const { unmount } = render(<ChatInput />)
+
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(getActiveModels).not.toHaveBeenCalled()
+    expect(mocks.switchToModel).not.toHaveBeenCalled()
+    unmount()
+    resetAppShutdownForTests()
   })
 
   it('never touches the engines while this thread is streaming', async () => {

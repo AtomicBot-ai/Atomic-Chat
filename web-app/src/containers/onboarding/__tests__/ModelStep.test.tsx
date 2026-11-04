@@ -132,6 +132,8 @@ function withOptions({
     device: { name: 'Apple M2', memoryGb: 16, freeGb: 84 },
     tier: 'unified_16',
     tierReady: true,
+    tierFinal: true,
+    tierResolvedMs: 0,
     profile: null,
   }
 }
@@ -173,6 +175,52 @@ describe('model step', () => {
       recommended_count: 1,
       primary_model_id: 'Qwen3.5-4B-Q4_K_M',
     })
+  })
+
+  // The Windows probe takes up to 15 s: the event waits for the real tier,
+  // and says how long it took.
+  it('reports the screen once the hardware tier is final, with its real wait', () => {
+    withOptions({})
+    mocks.options = {
+      ...mocks.options,
+      tierReady: false,
+      tierFinal: false,
+      tierResolvedMs: null,
+    }
+    const { rerender } = render(<ModelStep next={next} handOff={handOff} />)
+    expect(named('setup_screen_shown')).toEqual([])
+
+    mocks.options = {
+      ...mocks.options,
+      tierReady: true,
+      tierFinal: true,
+      tierResolvedMs: 14_200,
+    }
+    rerender(<ModelStep next={next} handOff={handOff} />)
+    expect(named('setup_screen_shown')).toEqual([
+      expect.objectContaining({
+        hardware_tier_resolved: true,
+        hardware_tier_resolved_ms: 14_200,
+      }),
+    ])
+  })
+
+  it('still reports the screen when the user leaves it before the tier is final', () => {
+    withOptions({})
+    mocks.options = {
+      ...mocks.options,
+      tierReady: false,
+      tierFinal: false,
+      tierResolvedMs: null,
+    }
+    const { unmount } = render(<ModelStep next={next} handOff={handOff} />)
+    unmount()
+    expect(named('setup_screen_shown')).toEqual([
+      expect.objectContaining({
+        hardware_tier_resolved: false,
+        hardware_tier_resolved_ms: null,
+      }),
+    ])
   })
 
   it('starts the download, queues it as the chat model and moves on', () => {

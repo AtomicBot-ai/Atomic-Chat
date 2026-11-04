@@ -16,6 +16,13 @@ import { knownLoadStage } from '@/lib/managed-engine/types'
 import { loadWatchdogMs } from '@/lib/managed-engine/chat'
 import { isManagedProvider, managedEngines } from '@/lib/managed-engines'
 import {
+  heldModels,
+  pendingModelStart,
+  shareModelStart,
+  waitForModelHolds,
+  type ModelRef,
+} from '@/lib/model-lifecycle'
+import {
   isKeylessRemoteProvider,
   isSubscriptionProvider,
   registerRemoteProvider,
@@ -684,6 +691,30 @@ async function isTargetModelAlreadyServing(params: {
   )
 }
 
+/** The start a local switch shares with chat requests (see `lib/model-lifecycle.ts`). */
+type LocalEngineStart = {
+  /** A request's own start of the same model, already under way when the switch was asked for. */
+  startUnderWay: Promise<void> | undefined
+  /** Ends the shared start: without an error once the engine serves the model. */
+  settle: (error?: unknown) => void
+}
+
+/**
+ * Wait until no chat request holds a model that `stops` says this switch is
+ * about to stop, or until the load is cancelled or superseded. Stopping it
+ * would end that request without a reply.
+ */
+async function waitForRequestsOnModelsToStop(
+  stops: (ref: ModelRef) => boolean,
+  isAbandoned: () => boolean
+): Promise<void> {
+  if (!heldModels().some(stops)) return
+  console.log(
+    '[switchToModel] Waiting for chat requests on the models it stops to finish'
+  )
+  await waitForModelHolds(stops, isAbandoned)
+}
+
 /**
  * Unified model switching function.
  *
@@ -711,6 +742,23 @@ export async function switchToModel(params: {
     pendingExplicitSwitch = explicitKey
     // Asking for the model again is what lifts a hand Stop.
     clearUserStop(params.providerName, params.modelId)
+  }
+
+  // A local target's start is shared from the moment it is asked for: a chat
+  // request for this model made meanwhile (a send while it is still loading)
+  // waits for this load instead of starting the model again beside it. It
+  // settles as soon as the engine serves the model; a request's own start
+  // already under way is waited for before this one loads.
+  let engineStart: LocalEngineStart | undefined
+  if (isLocalEngineProvider(params.providerName)) {
+    const startUnderWay = pendingModelStart(params.providerName, params.modelId)
+    let settle!: LocalEngineStart['settle']
+    const started = new Promise<void>((resolve, reject) => {
+      settle = (error?: unknown) =>
+        error === undefined ? resolve() : reject(error)
+    })
+    shareModelStart(params.providerName, params.modelId, started)
+    engineStart = { startUnderWay, settle }
   }
 
   const run = async (): Promise<void> => {
@@ -754,7 +802,7 @@ export async function switchToModel(params: {
     }
 
     try {
-      await doSwitchToModel(params, () => mySeq !== switchSeq)
+      await doSwitchToModel(params, () => mySeq !== switchSeq, engineStart)
     } catch (error) {
       // A failed load leaves nothing to chat with, so the composer goes back
       // to "Select Model" rather than showing the model that did not come
@@ -773,6 +821,12 @@ export async function switchToModel(params: {
   activeSwitchPromise = chained
   try {
     await chained
+    // Already serving, superseded, or a cloud hop: whoever joined finds out
+    // from the engine whether the model is there.
+    engineStart?.settle()
+  } catch (error) {
+    engineStart?.settle(error ?? new Error('Model switch failed'))
+    throw error
   } finally {
     // Only clear the tail if nobody chained after us; otherwise the later
     // switch owns the tail and must keep the queue intact.
@@ -854,7 +908,9 @@ async function doSwitchToModel(
     isAutoStart?: boolean
   },
   /** A switch requested after this one is waiting behind it. */
-  isSuperseded: () => boolean = () => false
+  isSuperseded: () => boolean = () => false,
+  /** The start this switch shares with chat requests; local targets only. */
+  engineStart?: LocalEngineStart
 ): Promise<void> {
   const { modelId, providerName, serviceHub, isAutoStart } = params
 
@@ -969,6 +1025,21 @@ async function doSwitchToModel(
     //    copy is left alone: `startModel` short-circuits on an already-loaded
     //    model, so a switch whose only job is to drop a stray copy in another
     //    provider never kills a server that may be streaming right now.
+    //    A chat request still waiting on, or reading from, a model about to
+    //    be stopped is let finish first: stopping it under the request ended
+    //    the turn without a reply. A Cancel or a newer switch ends the wait.
+    const stopsModel = (ref: ModelRef) =>
+      isLocalEngineProvider(ref.provider) &&
+      !(isLocal && ref.provider === providerName && ref.modelId === modelId)
+    if (heldModels().some(stopsModel)) {
+      setLoadingModelProgress({ kind: 'unloadingPrevious' })
+      await waitForRequestsOnModelsToStop(
+        stopsModel,
+        () => Boolean(load?.cancelRequested) || isSuperseded()
+      )
+      if (isSuperseded()) throw cancelledLoadError()
+      throwIfLoadCancelled()
+    }
     if (isLocal) {
       if (localEngineWasServing) {
         setLoadingModelProgress({ kind: 'unloadingPrevious' })
@@ -986,12 +1057,22 @@ async function doSwitchToModel(
       console.log('[switchToModel] All local models stopped')
     }
 
-    // 2. Stop the API server so we start it fresh with the new configuration.
-    try {
-      await window.core?.api?.stopServer()
-      console.log('[switchToModel] Server stopped')
-    } catch {
-      // Server may not have been running — that's fine
+    // 2. Stop the API server so we start it fresh with the new configuration —
+    //    unless a chat request is going through it now (a cloud model's
+    //    requests are proxied by it): restarting it would cut that request
+    //    off. Step 5's start then finds it running, which it accepts, and the
+    //    new configuration applies at the next restart.
+    if (heldModels().some((ref) => !isLocalEngineProvider(ref.provider))) {
+      console.log(
+        '[switchToModel] Server left running: a chat request is going through it'
+      )
+    } else {
+      try {
+        await window.core?.api?.stopServer()
+        console.log('[switchToModel] Server stopped')
+      } catch {
+        // Server may not have been running — that's fine
+      }
     }
     throwIfLoadCancelled()
 
@@ -1009,6 +1090,14 @@ async function doSwitchToModel(
       // 4a. Local branch — load the model into its engine. An out-of-memory
       //     failure is retried down a ladder (smaller context, then CPU)
       //     rather than surfaced as a dead end; see `planOomRetry`.
+      //     A chat request that was already starting this model itself is
+      //     let finish first; the load below then finds the model up instead
+      //     of starting it a second time beside it. Its failure is its own:
+      //     this load still runs, with the OOM ladder the request lacks.
+      if (engineStart?.startUnderWay) {
+        await engineStart.startUnderWay.catch(() => undefined)
+        throwIfLoadCancelled()
+      }
       loadStartTs = Date.now()
       modelConfig = await loadLocalModelWithOomRetry({
         serviceHub,
@@ -1040,6 +1129,9 @@ async function doSwitchToModel(
       console.log('[switchToModel] Local model started:', modelId)
       await settleAfterLocalStart(serviceHub, providerName, modelId)
       throwIfLoadCancelled()
+      // The engine serves the model: a request waiting on this load may go
+      // now, without waiting for the Local API Server and the bookkeeping.
+      engineStart?.settle()
     } else {
       // 4b. Cloud branch — register the provider so the proxy can route
       //     requests for `modelId` to provider.base_url.
