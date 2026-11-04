@@ -361,6 +361,30 @@ async fn wait_for_ready_owner(data_folder: &Path, deadline: Instant) -> Option<L
     }
 }
 
+/// The error-mode bits `suppress_crash_dialogs` adds.
+#[cfg(windows)]
+const QUIET_ERROR_MODE: u32 = {
+    use windows_sys::Win32::System::Diagnostics::Debug::{
+        SEM_FAILCRITICALERRORS, SEM_NOGPFAULTERRORBOX, SEM_NOOPENFILEERRORBOX,
+    };
+    SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX
+};
+
+/// Windows: a crashed process ends instead of waiting in a Windows Error Reporting ("has stopped
+/// working") or critical-error dialog. Nobody sees that dialog for a windowless core or
+/// llama-server, and while it is up the dead process keeps its port, so every retry against it
+/// hangs. The error mode is per process and children inherit it unless they are created with
+/// `CREATE_DEFAULT_ERROR_MODE`, which `spawn_detached` never passes — so calling this before the
+/// first core starts covers the core and every llama-server it spawns. Bits already set are kept.
+#[cfg(windows)]
+pub(crate) fn suppress_crash_dialogs() {
+    use windows_sys::Win32::System::Diagnostics::Debug::{GetErrorMode, SetErrorMode};
+    // SAFETY: both calls only read or replace this process's error-mode flags.
+    unsafe {
+        SetErrorMode(GetErrorMode() | QUIET_ERROR_MODE);
+    }
+}
+
 fn spawn_detached(
     command: &CoreCommand,
     data_folder: &Path,
@@ -397,6 +421,8 @@ fn spawn_detached(
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         const DETACHED_PROCESS: u32 = 0x0000_0008;
+        // Never add CREATE_DEFAULT_ERROR_MODE: the core must inherit the app's error mode
+        // (`suppress_crash_dialogs`) and pass it on to the llama-servers it starts.
         cmd.creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS);
     }
 
@@ -412,6 +438,16 @@ fn spawn_detached(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn crash_dialogs_stay_off_for_the_core_to_inherit() {
+        use windows_sys::Win32::System::Diagnostics::Debug::GetErrorMode;
+        suppress_crash_dialogs();
+        // SAFETY: reads this process's error-mode flags.
+        let mode = unsafe { GetErrorMode() };
+        assert_eq!(mode & QUIET_ERROR_MODE, QUIET_ERROR_MODE);
+    }
 
     #[test]
     fn splits_on_whitespace_and_keeps_quoted_paths_whole() {

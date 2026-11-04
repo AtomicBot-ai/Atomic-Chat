@@ -187,6 +187,8 @@ windows-sys = { version = "0.60.2", features = [
   "Win32_Foundation",
   "Win32_Security",
   "Win32_Security_Authorization",
+  # SetErrorMode: no crash dialog for the core and its llama-servers (core::atomic_core::launch).
+  "Win32_System_Diagnostics_Debug",
   "Win32_System_Registry",
   "Win32_System_Threading",
   "Win32_UI_Shell",

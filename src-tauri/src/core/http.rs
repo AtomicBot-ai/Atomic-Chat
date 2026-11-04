@@ -103,9 +103,118 @@ fn take_complete_utf8(pending: &mut Vec<u8>) -> String {
     }
 }
 
+/// What kind of transport failure a loopback request hit, as the web classifies it
+/// (`web-app/src/lib/transport-error.ts`). The OS text after the token is localized on Windows and
+/// carries WinSock codes (os error 10061 for a refused connect), so the web must never match on it:
+/// the kind is decided here, from `io::ErrorKind` and reqwest's own flags, which are the same on
+/// every OS and language.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TransportKind {
+    /// Nothing listens on the port: the engine never started, or it died.
+    ConnectRefused,
+    /// The TCP connect did not finish in time.
+    ConnectTimeout,
+    /// The peer reset or aborted an open connection.
+    ConnectionReset,
+    /// The response body ended mid-stream.
+    BodyEof,
+    /// No response headers, or no data, within the budget.
+    IdleTimeout,
+    /// Any other failure before or while reading a response.
+    RequestFailed,
+}
+
+impl TransportKind {
+    fn token(self) -> &'static str {
+        match self {
+            Self::ConnectRefused => "connect_refused",
+            Self::ConnectTimeout => "connect_timeout",
+            Self::ConnectionReset => "connection_reset",
+            Self::BodyEof => "body_eof",
+            Self::IdleTimeout => "idle_timeout",
+            Self::RequestFailed => "request_failed",
+        }
+    }
+
+    /// `message` with the `[transport:<kind>] ` prefix; the message itself is kept as it was, so
+    /// logs stay greppable by the old text.
+    fn tag(self, message: impl std::fmt::Display) -> String {
+        format!("[transport:{}] {message}", self.token())
+    }
+}
+
+/// The kind of a transport failure, from reqwest's flags and the error's `source()` chain.
+///
+/// The chain is walked first because it is the most specific: an `io::Error` kind (which std maps
+/// from both errno and WinSock codes) or hyper's "connection closed before message completed".
+/// Only when the chain names nothing known do the flags decide, and then only for timeouts —
+/// reqwest's own connect and request timers are not `io::Error`s.
+fn classify_transport(
+    is_connect: bool,
+    is_timeout: bool,
+    error: &(dyn std::error::Error + 'static),
+) -> TransportKind {
+    use std::io::ErrorKind;
+
+    let mut cause: Option<&(dyn std::error::Error + 'static)> = Some(error);
+    while let Some(current) = cause {
+        if let Some(io) = current.downcast_ref::<std::io::Error>() {
+            match io.kind() {
+                ErrorKind::ConnectionRefused => return TransportKind::ConnectRefused,
+                ErrorKind::ConnectionReset | ErrorKind::ConnectionAborted => {
+                    return TransportKind::ConnectionReset
+                }
+                ErrorKind::UnexpectedEof => return TransportKind::BodyEof,
+                ErrorKind::TimedOut if is_connect => return TransportKind::ConnectTimeout,
+                ErrorKind::TimedOut => return TransportKind::IdleTimeout,
+                // An `Other` wrapper can still carry a known kind further down.
+                _ => {}
+            }
+        }
+        if current
+            .downcast_ref::<hyper::Error>()
+            .is_some_and(hyper::Error::is_incomplete_message)
+        {
+            return TransportKind::BodyEof;
+        }
+        // `io::Error::source()` skips the error it wraps (its `Display` already shows it), so a
+        // wrapped error is followed through `get_ref` instead.
+        cause = match current
+            .downcast_ref::<std::io::Error>()
+            .and_then(std::io::Error::get_ref)
+        {
+            Some(inner) => Some(inner as &(dyn std::error::Error + 'static)),
+            None => current.source(),
+        };
+    }
+    match (is_timeout, is_connect) {
+        (true, true) => TransportKind::ConnectTimeout,
+        (true, false) => TransportKind::IdleTimeout,
+        _ => TransportKind::RequestFailed,
+    }
+}
+
+fn classify_reqwest_error(error: &reqwest::Error) -> TransportKind {
+    classify_transport(error.is_connect(), error.is_timeout(), error)
+}
+
+/// `message` tagged with the kind of `error`.
+fn transport_error(error: &reqwest::Error, message: impl std::fmt::Display) -> String {
+    classify_reqwest_error(error).tag(message)
+}
+
+/// The number of `stream_local_http` calls alive right now: what tells a close on Windows that a
+/// reply is still being written.
+pub fn streams_in_flight() -> usize {
+    STREAMS_IN_FLIGHT.load(Ordering::SeqCst)
+}
+
 /// Simple non-streaming HTTP POST that returns the full response body as text.
 /// Bypasses tauri_plugin_http's fetch interception which may not properly
 /// deliver response bodies to the webview.
+///
+/// Transport failures carry a `[transport:<kind>] ` prefix (see `TransportKind`); `HTTP {status}`
+/// answers do not.
 #[tauri::command]
 pub async fn post_local_http(
     url: String,
@@ -124,12 +233,12 @@ pub async fn post_local_http(
     let response = req
         .send()
         .await
-        .map_err(|e| format!("Request failed: {e}"))?;
+        .map_err(|e| transport_error(&e, format!("Request failed: {e}")))?;
     let status = response.status().as_u16();
     let text = response
         .text()
         .await
-        .map_err(|e| format!("Body read failed: {e}"))?;
+        .map_err(|e| transport_error(&e, format!("Body read failed: {e}")))?;
 
     if status >= 400 {
         return Err(format!("HTTP {status}: {text}"));
@@ -142,6 +251,9 @@ pub async fn post_local_http(
 /// Bypasses tauri_plugin_http's fetch interception, which has been observed to
 /// hang while reading response bodies from some local servers (e.g. Ollama's
 /// OpenAI-compatible `/v1/models`).
+///
+/// Its errors are deliberately not `[transport:…]`-tagged: it lists cloud providers' models too,
+/// and its callers (`web-app/src/services/providers/tauri.ts`) match `^Request failed`.
 #[tauri::command]
 pub async fn get_local_http(
     url: String,
@@ -329,11 +441,11 @@ pub async fn stream_local_http(
         sent = tokio::time::timeout(idle_timeout, req.send()) => sent,
     };
     let response = match sent {
-        Ok(sent) => sent.map_err(|e| format!("Request failed: {e}"))?,
+        Ok(sent) => sent.map_err(|e| transport_error(&e, format!("Request failed: {e}")))?,
         Err(_) => {
             let message = format!("Request failed: no response headers within {timeout_secs}s");
             report_stalled_stream(&message);
-            return Err(message);
+            return Err(TransportKind::IdleTimeout.tag(message));
         }
     };
     let status = response.status().as_u16();
@@ -356,7 +468,7 @@ pub async fn stream_local_http(
             Err(_) => {
                 let message = format!("Stream error: no data received for {timeout_secs}s");
                 report_stalled_stream(&message);
-                return Err(message);
+                return Err(TransportKind::IdleTimeout.tag(message));
             }
         };
         let Some(chunk_result) = next else { break };
@@ -373,7 +485,7 @@ pub async fn stream_local_http(
                 }
             }
             Err(e) => {
-                return Err(format!("Stream error: {e}"));
+                return Err(transport_error(&e, format!("Stream error: {e}")));
             }
         }
     }
@@ -455,6 +567,199 @@ mod tests {
         drop(first);
         drop(second);
         assert_eq!(STREAMS_IN_FLIGHT.load(Ordering::SeqCst), before);
+    }
+}
+
+#[cfg(test)]
+mod transport_tests {
+    use super::*;
+    use std::error::Error;
+    use std::io::{self, ErrorKind};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    /// One layer of an error chain, standing in for reqwest's and hyper's wrappers.
+    #[derive(Debug)]
+    struct Layer(&'static str, Box<dyn Error + Send + Sync>);
+
+    impl std::fmt::Display for Layer {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str(self.0)
+        }
+    }
+
+    impl Error for Layer {
+        fn source(&self) -> Option<&(dyn Error + 'static)> {
+            Some(self.1.as_ref())
+        }
+    }
+
+    /// `io` under the two layers reqwest and hyper put around a socket error.
+    fn wrapped(io: io::Error) -> Layer {
+        Layer(
+            "error sending request",
+            Box::new(Layer("tcp connect error", Box::new(io))),
+        )
+    }
+
+    fn kind_of(io: io::Error, is_connect: bool) -> TransportKind {
+        classify_transport(is_connect, false, &wrapped(io))
+    }
+
+    #[test]
+    fn the_kind_comes_from_the_io_error_kind_not_from_its_localized_text() {
+        // What Windows says in Russian for os error 10061; the text must not matter.
+        let refused = io::Error::new(
+            ErrorKind::ConnectionRefused,
+            "Подключение не установлено, т.к. конечный компьютер отверг запрос на подключение. (os error 10061)",
+        );
+        assert_eq!(kind_of(refused, true), TransportKind::ConnectRefused);
+        assert_eq!(
+            kind_of(io::Error::new(ErrorKind::ConnectionReset, "x"), false),
+            TransportKind::ConnectionReset
+        );
+        assert_eq!(
+            kind_of(io::Error::new(ErrorKind::ConnectionAborted, "x"), false),
+            TransportKind::ConnectionReset
+        );
+        assert_eq!(
+            kind_of(io::Error::new(ErrorKind::UnexpectedEof, "x"), false),
+            TransportKind::BodyEof
+        );
+        assert_eq!(
+            kind_of(io::Error::new(ErrorKind::TimedOut, "x"), true),
+            TransportKind::ConnectTimeout
+        );
+        assert_eq!(
+            kind_of(io::Error::new(ErrorKind::TimedOut, "x"), false),
+            TransportKind::IdleTimeout
+        );
+    }
+
+    #[test]
+    fn a_known_kind_wrapped_inside_another_io_error_is_still_found() {
+        let inner = io::Error::new(ErrorKind::ConnectionReset, "reset by peer");
+        let outer = io::Error::other(inner);
+        assert_eq!(kind_of(outer, false), TransportKind::ConnectionReset);
+    }
+
+    #[test]
+    fn without_a_known_cause_only_reqwest_timeouts_are_named() {
+        let unknown = || wrapped(io::Error::other("something else"));
+        assert_eq!(
+            classify_transport(true, true, &unknown()),
+            TransportKind::ConnectTimeout
+        );
+        assert_eq!(
+            classify_transport(false, true, &unknown()),
+            TransportKind::IdleTimeout
+        );
+        assert_eq!(
+            classify_transport(true, false, &unknown()),
+            TransportKind::RequestFailed
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn winsock_codes_map_to_their_kinds() {
+        let raw = |code| kind_of(io::Error::from_raw_os_error(code), true);
+        assert_eq!(raw(10061), TransportKind::ConnectRefused);
+        assert_eq!(raw(10054), TransportKind::ConnectionReset);
+        assert_eq!(raw(10053), TransportKind::ConnectionReset);
+        assert_eq!(raw(10060), TransportKind::ConnectTimeout);
+    }
+
+    #[test]
+    fn the_tag_prefixes_the_message_unchanged() {
+        assert_eq!(
+            TransportKind::BodyEof.tag("Stream error: x"),
+            "[transport:body_eof] Stream error: x"
+        );
+    }
+
+    /// A loopback port nothing listens on.
+    async fn closed_port_url() -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        drop(listener);
+        format!("http://{addr}/v1/chat/completions")
+    }
+
+    /// A server that reads the request, writes `reply`, and closes the connection.
+    async fn one_shot_server(reply: &'static str) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!(
+            "http://{}/v1/chat/completions",
+            listener.local_addr().unwrap()
+        );
+        tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = [0u8; 4096];
+            let _ = socket.read(&mut request).await;
+            let _ = socket.write_all(reply.as_bytes()).await;
+            let _ = socket.shutdown().await;
+        });
+        url
+    }
+
+    async fn stream(url: String) -> Result<u16, String> {
+        let chunks = Channel::new(|_| Ok(()));
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            stream_local_http(url, HashMap::new(), "{}".into(), 5, None, chunks),
+        )
+        .await
+        .expect("the call ends promptly")
+    }
+
+    #[tokio::test]
+    async fn a_stream_to_a_port_nobody_listens_on_is_connect_refused() {
+        let error = stream(closed_port_url().await).await.unwrap_err();
+        assert!(
+            error.starts_with("[transport:connect_refused] Request failed: "),
+            "{error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_post_to_a_port_nobody_listens_on_is_connect_refused() {
+        let error = post_local_http(closed_port_url().await, HashMap::new(), "{}".into(), 5)
+            .await
+            .unwrap_err();
+        assert!(
+            error.starts_with("[transport:connect_refused] Request failed: "),
+            "{error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_engine_that_dies_mid_stream_is_body_eof() {
+        let head = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\nf\r\ndata: {\"x\":1}\n\n\r\n";
+        let error = stream(one_shot_server(head).await).await.unwrap_err();
+        assert!(
+            error.starts_with("[transport:body_eof] Stream error: "),
+            "{error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_engine_that_closes_before_answering_is_body_eof() {
+        // hyper's "connection closed before message completed".
+        let error = stream(one_shot_server("").await).await.unwrap_err();
+        assert!(
+            error.starts_with("[transport:body_eof] Request failed: "),
+            "{error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_http_error_status_stays_untagged() {
+        let reply = "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 7\r\n\r\nloading";
+        assert_eq!(
+            stream(one_shot_server(reply).await).await,
+            Err("HTTP 503: loading".to_string())
+        );
     }
 }
 

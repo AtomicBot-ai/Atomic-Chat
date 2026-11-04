@@ -89,6 +89,13 @@ impl AtomicCoreClient {
         self.server_running_intent.store(running, Ordering::SeqCst);
     }
 
+    /// Refuse every control call from now on, without stopping anything yet: the first step of
+    /// `stop`, taken early when exit begins (see `begin_shutdown`).
+    fn close_gate(&self) {
+        self.set_server_running_intent(false);
+        self.enabled.store(false, Ordering::SeqCst);
+    }
+
     fn claim_server_recovery(&self, generation: u64) -> bool {
         let mut observed = self.last_server_recovery.load(Ordering::SeqCst);
         loop {
@@ -140,8 +147,7 @@ impl AtomicCoreClient {
     /// Drain control calls and stop this app's core. Closing only the window to
     /// the tray never calls this; full exit and a factory reset do.
     async fn stop(&self) {
-        self.set_server_running_intent(false);
-        self.enabled.store(false, Ordering::SeqCst);
+        self.close_gate();
         // A queued writer also prevents later readers from cutting in: calls
         // already holding a permit finish, while calls arriving after the
         // transition observe `enabled = false` once this permit is released.
@@ -340,6 +346,10 @@ pub fn init<R: Runtime>(app: &AppHandle<R>) {
     use crate::core::sessions::resolver::SessionResolver;
     use crate::core::state::AppState;
 
+    // Before the first core is spawned: it, and every llama-server it starts, inherit the mode.
+    #[cfg(windows)]
+    super::launch::suppress_crash_dialogs();
+
     let data_folder = get_jan_data_folder_path(app.clone());
     let resource_dir = app.path().resource_dir().unwrap_or_default();
     let supervisor = Arc::new(Supervisor::new(
@@ -367,6 +377,16 @@ pub fn init<R: Runtime>(app: &AppHandle<R>) {
             client.start(&handle).await;
         }
     });
+}
+
+/// The moment exit is decided, before `shutdown` runs: the webview lives on for the exit grace
+/// (`setup::defer_exit_for_shutdown_flush`), and a model auto-start it fires then must neither
+/// reach a core that is about to stop nor launch a new one. Calls answer `CORE_NOT_RUNNING`
+/// ("the app is starting up or shutting down") from here on; `shutdown` still drains and stops.
+pub fn begin_shutdown<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(client) = app.try_state::<AtomicCoreClient>() {
+        client.close_gate();
+    }
 }
 
 /// Stop the core on the way out: full exit, or before a factory reset deletes the data folder the
@@ -848,6 +868,29 @@ mod tests {
         assert!(
             !crate::core::atomic_core::lock::instance_lock_path(data.path()).exists(),
             "a call after exit must not reach ensure_attached or launch a process"
+        );
+    }
+
+    #[tokio::test]
+    async fn once_exit_begins_no_call_reaches_or_relaunches_a_core() {
+        let data = tempfile::tempdir().unwrap();
+        let client = stopped_client(data.path());
+        client.enabled.store(true, Ordering::SeqCst);
+        client.set_server_running_intent(true);
+
+        // What the exit grace does before the webview's last few hundred milliseconds.
+        client.close_gate();
+
+        // A model auto-start fired in that window.
+        let load = client
+            .call("POST", "/models/load", Some(json!({"model_id": "m"})))
+            .await
+            .unwrap_err();
+        assert_eq!(load.code, "CORE_NOT_RUNNING");
+        assert!(!client.server_running_intent.load(Ordering::SeqCst));
+        assert!(
+            !crate::core::atomic_core::lock::instance_lock_path(data.path()).exists(),
+            "a call after exit began must not reach ensure_attached or launch a process"
         );
     }
 
