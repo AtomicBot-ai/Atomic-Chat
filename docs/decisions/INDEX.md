@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-518 records, 2026-05-19 → 2026-11-04.
+520 records, 2026-05-19 → 2026-11-04.
 
 ---
 
@@ -320,8 +320,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-07-15** — [Aggregate Local API Server request telemetry into three-minute summaries (ATO-297)](2026-07-15-aggregate-local-api-server-request-telemetry-into-three-minute.md)
 - **2026-06-09** — [Make the Local API Server "Invalid host header" rejection actionable + fix Trusted Hosts field copy (ATO-118, scope I+II)](2026-06-09-make-the-local-api-server-invalid-host-header-rejection.md)
 
-## Telemetry, crash reporting & error handling (17)
+## Telemetry, crash reporting & error handling (18)
 
+- **2026-11-04** — [Explain a failed turn in words and keep the diagnostics behind Details](2026-11-04-explain-a-failed-turn-and-keep-diagnostics-behind-details.md) — one `TurnErrorCard`; raw text in a collapsed Details; a turn cut off by a settings-change restart says so.
 - **2026-11-04** — [Classify loopback chat failures by transport kind, and report what the engine says on load](2026-11-04-classify-loopback-failures-by-transport-kind.md) — `[transport:<kind>]` from Rust, `engine_unreachable` / `engine_exited`, no fake `success`, load diag fields; `telemetry_schema` 4.
 - **2026-11-04** — [Recover a failed local turn once, and grow the fitted context on GPU builds](2026-11-04-recover-a-failed-local-turn-once.md) — one auto-retry after a dropped engine without re-running tools; model-level `fit_ctx` growth; shorten history and retry.
 - **2026-10-28** — [Wait for analytics readiness and recover onboarding assignments](2026-10-28-wait-for-analytics-readiness-and-recover-onboarding-assignments.md)
@@ -566,8 +567,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-09-30** — [TensorRT-LLM is a Linux-only extension that decides its own visibility](2026-09-30-tensorrt-llm-is-a-linux-only-extension-that-decides-its-own-visibility.md)
 - **2026-09-30** — [Run Agent turns on TensorRT-LLM through its session gateway](2026-09-30-run-agent-turns-on-tensorrt-llm-through-its-session-gateway.md)
 
-## Other (21)
+## Other (22)
 
+- **2026-11-04** — [Keep an isolated profile's webview storage in the profile](2026-11-04-keep-an-isolated-profiles-webview-storage-in-the-profile.md) — `ATOMIC_CHAT_PROFILE_DIR` windows get their own WebKit store (random id kept in the profile) and WebView2/WebKitGTK directory; single-instance lock unchanged.
 - **2026-10-28** — [Bound support writes and preserve retry identity](2026-10-28-bound-support-writes-and-preserve-retry-identity.md)
 
 - **2026-10-26** — [Chat with the team through a support relay, with diagnostics attached](2026-10-26-chat-with-the-team-through-a-support-relay.md)
