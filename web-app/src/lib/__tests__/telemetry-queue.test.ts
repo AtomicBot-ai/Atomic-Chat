@@ -191,6 +191,9 @@ describe('flushTelemetryForShutdown', () => {
 
     flushTelemetryForShutdown()
 
+    expect(capture().mock.calls.map(([event]) => event)).toEqual([
+      'chat_response_received',
+    ])
     expect(posthog._handle_unload).toHaveBeenCalledTimes(1)
     expect(posthog.set_config).toHaveBeenCalledWith({
       request_batching: false,
@@ -221,13 +224,17 @@ describe('flushTelemetryForShutdown', () => {
     expect(posthog._handle_unload).not.toHaveBeenCalled()
     // Still held for the regular flush.
     flushTelemetryQueue()
-    expect(capture()).toHaveBeenCalledTimes(1)
+    expect(capture().mock.calls.map(([event]) => event)).toEqual([
+      'onboarding_step_shown',
+    ])
   })
 
   it('does nothing when analytics is off', () => {
+    queuedCapture('onboarding_step_shown', { step: 'welcome' })
     disableTelemetryQueue()
     markTelemetryIdentityReady()
     flushTelemetryForShutdown()
+    expect(capture().mock.calls).toEqual([])
     expect(posthog._handle_unload).not.toHaveBeenCalled()
     expect(posthog.set_config).not.toHaveBeenCalled()
   })

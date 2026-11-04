@@ -1818,6 +1818,7 @@ describe('switchToModel beside chat requests', () => {
       serviceHub,
     })
     expect(models.stopAllModelsExcept).toHaveBeenCalled()
+    expect(loaded.snapshot()['llamacpp-upstream']).toEqual(['shared-model'])
     hold.release()
   })
 

@@ -2054,6 +2054,8 @@ describe('ChatInput local model auto-start', () => {
     await new Promise((resolve) => setTimeout(resolve, 20))
     expect(getActiveModels).not.toHaveBeenCalled()
     expect(mocks.switchToModel).not.toHaveBeenCalled()
+    // Nothing was probed or started, so the app still shows no running model.
+    expect(useAppState.getState().activeModels).toEqual([])
     unmount()
     resetAppShutdownForTests()
   })

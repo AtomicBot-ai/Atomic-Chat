@@ -40,6 +40,7 @@ describe('app shutdown', () => {
       'app-shutting-down',
       expect.any(Function)
     )
+    expect([...listeners.keys()]).toEqual([APP_SHUTTING_DOWN_EVENT])
   })
 
   it('tries again later when the listener could not be set up', async () => {
@@ -49,5 +50,9 @@ describe('app shutdown', () => {
     await Promise.resolve()
     watchAppShutdown()
     expect(listen).toHaveBeenCalledTimes(2)
+    // The second attempt took: the quit is seen.
+    await Promise.resolve()
+    listeners.get(APP_SHUTTING_DOWN_EVENT)!()
+    expect(isAppShuttingDown()).toBe(true)
   })
 })

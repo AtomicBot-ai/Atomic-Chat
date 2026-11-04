@@ -114,6 +114,7 @@ describe('a send while its model is still starting', () => {
     await ModelFactory.createModel('join-empty', provider)
 
     expect(startModel).toHaveBeenCalledTimes(1)
+    expect(loaded).toBe(true)
   })
 
   it('shares its own start, and holds the model while it loads', async () => {

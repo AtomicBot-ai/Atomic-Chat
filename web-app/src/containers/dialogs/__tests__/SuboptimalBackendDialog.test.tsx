@@ -119,6 +119,10 @@ describe('SuboptimalBackendDialog', () => {
       'settings:backendMismatch.waitForReply'
     )
     expect(updater.recheckOptimalBackend).not.toHaveBeenCalled()
+    // The prompt stays open so the user can fix it once the reply is done.
+    expect(
+      screen.getByRole('button', { name: /settings:backendMismatch.fix/ })
+    ).toBeInTheDocument()
     hold.release()
   })
 })
