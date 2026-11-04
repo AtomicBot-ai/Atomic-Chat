@@ -64,9 +64,13 @@ describe('TurnErrorCard', () => {
   it('retries with a labelled button', () => {
     const { onRetry } = renderCard(new Error(ENGINE_GONE))
 
-    fireEvent.click(
-      screen.getByRole('button', { name: 'chat:turnRecovery.retry' })
-    )
+    const retry = screen.getByRole('button', {
+      name: 'chat:turnRecovery.retry',
+    })
+    // A visible text label, not an icon with an accessible name only.
+    expect(retry).toHaveTextContent('chat:turnRecovery.retry')
+    expect(screen.getAllByRole('button')).toHaveLength(1)
+    fireEvent.click(retry)
     expect(onRetry).toHaveBeenCalledTimes(1)
   })
 
@@ -105,6 +109,13 @@ describe('TurnErrorCard', () => {
       new Error('the request exceeds the available context size.'),
       { contextGrowthBlocked: true }
     )
+    expect(
+      screen.getByRole('alert', { name: CONTEXT_OVERFLOW_TITLE })
+    ).toBeInTheDocument()
+    // The one action offered: growing the context is no longer possible.
+    expect(
+      screen.queryByRole('button', { name: 'Increase Context Size' })
+    ).toBeNull()
     fireEvent.click(
       screen.getByRole('button', { name: 'chat:turnRecovery.shortenHistory' })
     )
