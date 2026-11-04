@@ -9,6 +9,7 @@
   "sendMessage": "メッセージを送信",
   "replyGate": {
     "sendHint": "返信に使うモデルを選択",
+    "sendWith": "{{model}} で送信",
     "startingTitle": "{{name}} を起動しています…",
     "startingDescription": "準備ができ次第、メッセージを送信します。",
     "emptyTitle": "まだ返信に使えるモデルがありません",

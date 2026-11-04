@@ -5,6 +5,10 @@
     "empty": "找不到聊天"
   },
   "sendMessage": "傳送訊息",
+  "replyGate": {
+    "sendHint": "選擇用於回覆的模型",
+    "sendWith": "使用 {{model}} 傳送"
+  },
   "newConversation": "新對話",
   "clearHistory": "清除歷史記錄",
   "activity": {

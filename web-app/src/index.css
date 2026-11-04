@@ -18,6 +18,29 @@
   }
 }
 
+/* A control drawn below the size its target needs takes clicks on a box of
+ * at least 36 × 36 px (`hit-area-36`, icon actions) or 40 × 40 px
+ * (`hit-area-40`, a primary action such as Send), centred on it; a larger
+ * control keeps its own box. The visible control stays on the dense scale
+ * (28 px): two of them 8 px apart tile their 36 px targets edge to edge.
+ * The control must be positioned, and its container must leave the reach
+ * free — the layout check discounts it on the control, not on its parent. */
+@utility hit-area-36 {
+  &::after {
+    content: '';
+    position: absolute;
+    inset: min(0px, calc((100% - 2.25rem) / 2));
+  }
+}
+
+@utility hit-area-40 {
+  &::after {
+    content: '';
+    position: absolute;
+    inset: min(0px, calc((100% - 2.5rem) / 2));
+  }
+}
+
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);

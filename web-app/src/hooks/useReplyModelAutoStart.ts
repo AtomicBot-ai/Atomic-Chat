@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 
 import type { ReplyModelGateResolution } from '@/containers/ReplyModelGate'
 import { useHardwareTier } from '@/hooks/useHardwareTier'
@@ -6,9 +6,11 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { captureReplyModelAutoResolved } from '@/lib/reply-gate-telemetry'
 import {
-  collectReplyModels,
+  pickReplyModel,
   replyGateContext,
-  resolveReplyModel,
+  type LastUsedModel,
+  type ReplyModelOption,
+  type ReplyResolution,
 } from '@/lib/reply-model-gate'
 import { getLastUsedModel } from '@/utils/getModelToStart'
 import { switchToModel } from '@/utils/switchModel'
@@ -32,6 +34,10 @@ import { switchToModel } from '@/utils/switchModel'
  * A local model is started here, on the send, and never at launch: that is
  * the line the product drew — a local model costs memory, and only an
  * expressed intent to chat should pay it.
+ *
+ * The pick is {@link pickReplyModel}, the same function
+ * {@link useReplyModelPreview} reads, so what the Send button says it will
+ * start is what this starts.
  */
 export function useReplyModelAutoStart(): {
   tryAutoStart: () => ReplyModelGateResolution | null
@@ -41,11 +47,7 @@ export function useReplyModelAutoStart(): {
 
   const tryAutoStart = useCallback((): ReplyModelGateResolution | null => {
     const { providers, selectModelProvider } = useModelProvider.getState()
-    const lastUsed = getLastUsedModel()
-    const resolved = resolveReplyModel(
-      collectReplyModels(providers, lastUsed),
-      lastUsed
-    )
+    const resolved = pickReplyModel(providers, getLastUsedModel())
     if (!resolved) return null
 
     const { option, resolution } = resolved
@@ -81,4 +83,32 @@ export function useReplyModelAutoStart(): {
   }, [serviceHub, tier])
 
   return { tryAutoStart }
+}
+
+/**
+ * What `tryAutoStart` would start if Send were pressed now — without starting,
+ * selecting or reporting anything.
+ *
+ * The Send button with nothing selected used to be labelled "Choose what to
+ * reply with" and then, on click, load the last used model and send: a
+ * control named as a choice that sent the message (AC-02). It now names the
+ * model it is about to load ("Send with Qwen3.5 4B"), and keeps the choice
+ * label only when nothing resolves — that click really does open the widget.
+ *
+ * Follows the provider store and the last-used pointer, so a model that
+ * finishes downloading or a cloud key that gets connected relabels the
+ * button. `enabled: false` skips the work while a model is selected.
+ */
+export function useReplyModelPreview(
+  enabled = true
+): { option: ReplyModelOption; resolution: ReplyResolution } | null {
+  const providers = useModelProvider((state) => state.providers)
+  // Read on every render (a localStorage read), memoized on its value: the
+  // pointer is written by model switches, which re-render the composer.
+  const lastUsedKey = enabled ? JSON.stringify(getLastUsedModel()) : 'null'
+  return useMemo(() => {
+    if (!enabled) return null
+    const lastUsed = JSON.parse(lastUsedKey) as LastUsedModel
+    return pickReplyModel(providers, lastUsed)
+  }, [enabled, providers, lastUsedKey])
 }

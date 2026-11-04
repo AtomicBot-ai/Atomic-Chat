@@ -164,10 +164,13 @@ const WebSearchToggle = memo(function WebSearchToggle({
           {/* A disabled button gets no pointer events, so the span carries
               the tooltip. */}
           <TooltipTrigger asChild>
-            <span tabIndex={0} className="inline-flex">
+            <span
+              tabIndex={0}
+              className="inline-flex rounded-full outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            >
               <Button
                 variant="ghost"
-                size="icon-xs"
+                size="icon-sm"
                 className={className}
                 disabled
                 aria-label={t('common:webSearchToggleDisabled')}
@@ -197,7 +200,7 @@ const WebSearchToggle = memo(function WebSearchToggle({
         <TooltipTrigger asChild>
           <Button
             variant="ghost"
-            size="icon-xs"
+            size="icon-sm"
             className={cn(
               enabled &&
                 'text-blue-500 hover:text-blue-500 bg-blue-500/10 hover:bg-blue-500/15',

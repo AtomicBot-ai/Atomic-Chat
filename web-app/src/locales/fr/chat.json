@@ -22,6 +22,7 @@
   "sendMessage": "Envoyer un message",
   "replyGate": {
     "sendHint": "Choisissez avec quoi répondre",
+    "sendWith": "Envoyer avec {{model}}",
     "startingTitle": "Démarrage de {{name}}…",
     "startingDescription": "Votre message sera envoyé dès que le modèle sera prêt.",
     "emptyTitle": "Choisissez un modèle pour commencer à discuter",

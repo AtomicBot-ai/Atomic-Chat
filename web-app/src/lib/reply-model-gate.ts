@@ -326,3 +326,20 @@ export function resolveReplyModel(
     resolution: options.length === 1 ? 'single_local' : 'smallest_local',
   }
 }
+
+/**
+ * What a Send with nothing selected answers with, straight from the provider
+ * list: {@link collectReplyModels} fed to {@link resolveReplyModel}.
+ *
+ * The one decision both readers share. `useReplyModelAutoStart` acts on it
+ * when Send is pressed; the Send button reads it beforehand to say what it
+ * will do ("Send with Qwen3.5 4B") rather than offering a choice it never
+ * shows (AC-02). Kept as one function so the label and the action cannot
+ * drift apart. Pure: no selection, no start, no telemetry.
+ */
+export function pickReplyModel(
+  providers: ModelProvider[],
+  lastUsed: LastUsedModel = null
+): { option: ReplyModelOption; resolution: ReplyResolution } | null {
+  return resolveReplyModel(collectReplyModels(providers, lastUsed), lastUsed)
+}

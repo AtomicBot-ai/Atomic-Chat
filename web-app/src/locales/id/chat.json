@@ -7,6 +7,10 @@
     "empty": "Tidak Ada Obrolan Ditemukan"
   },
   "sendMessage": "Kirim Pesan",
+  "replyGate": {
+    "sendHint": "Pilih model untuk membalas",
+    "sendWith": "Kirim dengan {{model}}"
+  },
   "newConversation": "Percakapan Baru",
   "clearHistory": "Hapus Riwayat",
   "activity": {

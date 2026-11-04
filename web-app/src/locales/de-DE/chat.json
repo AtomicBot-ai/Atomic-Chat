@@ -7,6 +7,10 @@
     "empty": "Keine Chats gefunden"
   },
   "sendMessage": "Nachricht senden",
+  "replyGate": {
+    "sendHint": "Wählen, womit geantwortet wird",
+    "sendWith": "Mit {{model}} senden"
+  },
   "newConversation": "Neue Konversation",
   "clearHistory": "Verlauf löschen",
   "activity": {

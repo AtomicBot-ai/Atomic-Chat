@@ -22,6 +22,7 @@
   "sendMessage": "Send Message",
   "replyGate": {
     "sendHint": "Choose what to reply with",
+    "sendWith": "Send with {{model}}",
     "startingTitle": "Starting {{name}}…",
     "startingDescription": "Your message will be sent as soon as it's ready.",
     "emptyTitle": "Pick a model to start chatting",

@@ -1035,7 +1035,11 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
               aria-label={pendingName ?? (compact ? displayModel : undefined)}
               data-test-id="model-picker-trigger"
               className={cn(
-                'inline-flex h-full min-w-0 flex-1 items-center justify-center gap-1 rounded-full px-1.5'
+                'inline-flex h-full min-w-0 flex-1 items-center justify-center gap-1 rounded-full px-1.5',
+                // Inset: the shell clips to its rounded edge, so a ring drawn
+                // outside the trigger would be cut away and keyboard focus
+                // would vanish from the pill.
+                'outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring'
               )}
             >
               {pending && (

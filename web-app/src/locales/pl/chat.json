@@ -5,6 +5,10 @@
     "empty": "Nie znaleziono czatów"
   },
   "sendMessage": "Wyślij Wiadomość",
+  "replyGate": {
+    "sendHint": "Wybierz, czym odpowiedzieć",
+    "sendWith": "Wyślij za pomocą {{model}}"
+  },
   "newConversation": "Nowa Rozmowa",
   "clearHistory": "Wyczyść Historię",
   "activity": {

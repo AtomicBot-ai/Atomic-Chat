@@ -22,6 +22,7 @@
   "sendMessage": "Отправить сообщение",
   "replyGate": {
     "sendHint": "Выберите, чем отвечать",
+    "sendWith": "Отправить через {{model}}",
     "startingTitle": "Запускаю {{name}}…",
     "startingDescription": "Сообщение уйдёт, как только модель будет готова.",
     "emptyTitle": "Пока нечем отвечать",

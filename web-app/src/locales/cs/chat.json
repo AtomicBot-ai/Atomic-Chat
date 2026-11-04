@@ -7,6 +7,10 @@
     "empty": "Nebyly nalezeny žádné chaty"
   },
   "sendMessage": "Odeslat zprávu",
+  "replyGate": {
+    "sendHint": "Vyberte, čím odpovědět",
+    "sendWith": "Odeslat pomocí {{model}}"
+  },
   "newConversation": "Nová konverzace",
   "clearHistory": "Vymazat historii",
   "activity": {

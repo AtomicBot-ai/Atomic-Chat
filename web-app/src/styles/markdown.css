@@ -1,9 +1,16 @@
 .markdown {
   @apply text-inherit;
+  /* Body leading: 1.6 of the text, but no more than about 24 px once the
+     type is large. At Extra Large (17.5 px body) 1.6 made 28 px lines, and
+     the conversation lost a fifth of its rows to air while the navigation
+     and the composer competed for the same height (design review D4).
+     Small, Medium and Large keep their 1.6 exactly; the 1.375em floor
+     only matters past 24 / 1.375 ≈ 17.5 px. */
+  --markdown-leading: min(1.6em, max(1.5rem, 1.375em));
 
   &.is-user {
     p {
-      line-height: 1.6;
+      line-height: var(--markdown-leading);
       margin-bottom: 1em;
       &:first-child {
         margin-bottom: 0;
@@ -76,7 +83,7 @@
 
   /* Paragraphs and text */
   p {
-    line-height: 1.6;
+    line-height: var(--markdown-leading);
     margin-bottom: 1em;
   }
 
@@ -95,7 +102,7 @@
   /* Lists */
   ul,
   ol {
-    line-height: 1.6;
+    line-height: var(--markdown-leading);
     margin-bottom: 1em;
     padding-left: 1.5em;
   }
@@ -132,7 +139,7 @@
 
   /* Blockquotes */
   blockquote {
-    line-height: 1.6;
+    line-height: var(--markdown-leading);
     border-left: 4px solid var(--color-accent);
     padding-left: 1em;
     margin-left: 0;

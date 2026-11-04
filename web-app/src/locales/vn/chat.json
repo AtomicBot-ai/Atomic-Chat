@@ -7,6 +7,10 @@
     "empty": "Không tìm thấy cuộc trò chuyện nào"
   },
   "sendMessage": "Gửi tin nhắn",
+  "replyGate": {
+    "sendHint": "Chọn mô hình để trả lời",
+    "sendWith": "Gửi bằng {{model}}"
+  },
   "newConversation": "Cuộc trò chuyện mới",
   "clearHistory": "Xóa lịch sử",
   "activity": {
