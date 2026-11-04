@@ -14,7 +14,7 @@ import { endSession, restartApp, startSession, withArtifacts, type Session } fro
 import { skipOnboarding } from '../harness/chat.js'
 
 const ONBOARDING_HEADING = 'h1=Meet Atomic Chat.'
-const MODEL_HEADING = 'h1=Choose your first model.'
+const MODEL_HEADING = 'h1=Choose a model'
 const CHAT_INPUT = '[data-testid="chat-input"]'
 
 describe('first launch on a clean profile', () => {

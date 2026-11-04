@@ -141,7 +141,7 @@ describe('the wait screen', () => {
     expect(
       screen.getByRole('heading', { name: 'onboarding-wait:title' })
     ).toHaveFocus()
-    expect(screen.getByText('onboarding:stepOf 03 03')).toBeInTheDocument()
+    expect(screen.queryByText(/onboarding:stepOf/)).not.toBeInTheDocument()
     expect(
       screen.getByRole('region', { name: 'onboarding:download.label' })
     ).toHaveTextContent('Qwen3.5 4B')

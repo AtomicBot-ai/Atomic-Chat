@@ -19,7 +19,6 @@
     var(--muted-foreground) 80%,
     var(--background)
   );
-  --ob-eyebrow: #28786c;
   --ob-focus: #28786c;
   --ob-line: var(--border);
   --ob-primary: #cdeee6;
@@ -70,7 +69,6 @@
   --ob-text: #f1f4f2;
   --ob-muted: #aeb9b2;
   --ob-subtle: #8f9f95;
-  --ob-eyebrow: #a5cabb;
   --ob-focus: #bee8df;
   --ob-line: #ffffff10;
   --ob-primary: #bee8df;
@@ -205,13 +203,6 @@
     overscroll-behavior: contain;
     scrollbar-gutter: stable;
     animation: ob-enter 0.25s ease-out;
-  }
-  .ob-eyebrow {
-    margin: 0 0 14px;
-    color: var(--ob-eyebrow);
-    font-size: calc(var(--font-size-base) * 0.625);
-    letter-spacing: 2.3px;
-    text-transform: uppercase;
   }
   .ob-lead {
     max-width: 540px;

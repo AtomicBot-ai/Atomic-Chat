@@ -107,13 +107,13 @@ describe('first-run flow', () => {
     ])
   })
 
-  it('goes on to the model with its place counted, and back again', () => {
+  it('goes on to the model, with no step counter, and back again', () => {
     render(<Onboarding />)
 
     fireEvent.click(screen.getByRole('button', { name: /welcome.start/ }))
 
     expect(screen.getByRole('heading', { name: 'model step' })).toHaveFocus()
-    expect(screen.getByText('onboarding:stepOf 02 02')).toBeInTheDocument()
+    expect(screen.queryByText(/onboarding:stepOf/)).not.toBeInTheDocument()
     expect(named('onboarding_step_left')[0]).toMatchObject({
       step: 'welcome',
       step_action: 'next',
@@ -296,7 +296,7 @@ describe('the model-only variant', () => {
     })
 
     fireEvent.click(screen.getByRole('button', { name: /welcome.start/ }))
-    expect(screen.getByText('onboarding:stepOf 02 02')).toBeInTheDocument()
+    expect(screen.queryByText(/onboarding:stepOf/)).not.toBeInTheDocument()
     // What reports the run as abandoned if the app closes here.
     expect(
       JSON.parse(localStorage.getItem(localStorageKey.onboardingInFlight)!)
