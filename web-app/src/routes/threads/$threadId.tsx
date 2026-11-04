@@ -1655,7 +1655,10 @@ function ThreadDetail() {
   // - For user messages: keeps the user message, deletes all after, regenerates assistant response
   // - For assistant messages: finds the closest preceding user message, deletes from there
   const handleRegenerate = useCallback(
-    async (requestedMessageId?: string) => {
+    async (
+      requestedMessageId?: string,
+      retrySource: 'regenerate' | 'auto_retry' = 'regenerate'
+    ) => {
       // Mutating history under an active agent run would wipe the streaming
       // UI and then bail on the run guard, losing messages for nothing.
       const activeRun = useAgentRun.getState().getRun(threadId)
@@ -1789,7 +1792,7 @@ function ThreadDetail() {
       // Call the AI SDK regenerate function - it will handle truncating the UI messages
       // and generating a new response from the selected message
       setIsChatRequestActive(true)
-      captureRetryRequest('regenerate')
+      captureRetryRequest(retrySource)
       regenerate(messageId ? { messageId } : undefined)
     },
     [
@@ -2174,14 +2177,14 @@ function ThreadDetail() {
       if (plan?.kind === 'resume') {
         chatMessagesRef.current = plan.messages
         setChatMessages(plan.messages)
-        captureRetryRequest('regenerate')
+        captureRetryRequest('auto_retry')
         // No message: the Chat continues its last (assistant) message.
         void sendMessage()
         return
       }
       // `handleRegenerate` marks the request active again when it starts one.
       setIsChatRequestActive(false)
-      await handleRegenerate(plan?.failedMessageId)
+      await handleRegenerate(plan?.failedMessageId, 'auto_retry')
     },
     [
       captureRetryRequest,
