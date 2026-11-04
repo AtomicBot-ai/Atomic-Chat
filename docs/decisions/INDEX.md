@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-515 records, 2026-05-19 → 2026-11-04.
+518 records, 2026-05-19 → 2026-11-04.
 
 ---
 
@@ -183,8 +183,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-05** — [Port `gemma4_unified` (+ vision fixes) into the `mlx-vlm` fork so Gemma 4 12B loads under MLX (ATO-88, head 1)](2026-06-05-port-gemma4-unified-vision-fixes-into-the-mlx-vlm-fork-so-gemma.md)
 - **2026-06-02** — [Surface MLX KV-cache quantization (TurboQuant / uniform) as a provider setting](2026-06-02-surface-mlx-kv-cache-quantization-turboquant-uniform-as-a.md)
 
-## llama.cpp providers & backend selection (56)
+## llama.cpp providers & backend selection (57)
 
+- **2026-11-04** — [Share one model start, and never stop a model a request is using](2026-11-04-share-one-model-start-and-hold-models-in-use.md) — joined starts, request holds, mismatch prompt after the turn, disk-checked download admission, 127.0.0.1 for engines.
 - **2026-10-26** — [Show the context llama.cpp fitted, not the one the load asked for](2026-10-26-show-the-context-llama-cpp-fitted-not-the-one-asked-for.md)
 - **2026-10-13** — [Bundle the upstream llama.cpp release the pinned core would choose](2026-10-13-bundle-the-upstream-release-the-pinned-core-would-choose.md) — supersedes the bundled-tag rule of 2026-08-12 and the extension baseline of 2026-08-13.
 - **2026-10-08** — [Take engine versions from the core, and update and switch engine builds only through it](2026-10-08-take-engine-versions-from-the-core-and-update-through-it.md) — supersedes the 2026-07-01 hot-swap ordering record; refines 2026-09-14 (offers come from the core).
@@ -319,8 +320,10 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-07-15** — [Aggregate Local API Server request telemetry into three-minute summaries (ATO-297)](2026-07-15-aggregate-local-api-server-request-telemetry-into-three-minute.md)
 - **2026-06-09** — [Make the Local API Server "Invalid host header" rejection actionable + fix Trusted Hosts field copy (ATO-118, scope I+II)](2026-06-09-make-the-local-api-server-invalid-host-header-rejection.md)
 
-## Telemetry, crash reporting & error handling (15)
+## Telemetry, crash reporting & error handling (17)
 
+- **2026-11-04** — [Classify loopback chat failures by transport kind, and report what the engine says on load](2026-11-04-classify-loopback-failures-by-transport-kind.md) — `[transport:<kind>]` from Rust, `engine_unreachable` / `engine_exited`, no fake `success`, load diag fields; `telemetry_schema` 4.
+- **2026-11-04** — [Recover a failed local turn once, and grow the fitted context on GPU builds](2026-11-04-recover-a-failed-local-turn-once.md) — one auto-retry after a dropped engine without re-running tools; model-level `fit_ctx` growth; shorten history and retry.
 - **2026-10-28** — [Wait for analytics readiness and recover onboarding assignments](2026-10-28-wait-for-analytics-readiness-and-recover-onboarding-assignments.md)
 
 - **2026-10-23** — [Count Local API traffic as a first request in the onboarding experiment](2026-10-23-count-local-api-traffic-as-a-first-request-in-the-onboarding-experiment.md)
