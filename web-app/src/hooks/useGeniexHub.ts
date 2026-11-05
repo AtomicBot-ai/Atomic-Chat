@@ -7,7 +7,6 @@ import {
   bundleGeniexCard,
   curatedGeniexCard,
   qualcommGeniexCards,
-  qualcommGgufCard,
   ggufCandidates,
   hfGeniexCard,
   hostGeniexPlatform,
@@ -107,16 +106,11 @@ export function useGeniexHub(enabled: boolean, query: string): GeniexHubState {
   const chip = useGeniexChip(enabled)
   const list = enabled ? state.list : null
 
-  const [vendor, setVendor] = useState({
-    ggufs: [] as CatalogModel[],
-    models: [] as CatalogModel[],
-    unavailable: false,
-    loading: false,
-  })
+  const [vendor, setVendor] = useState({ models: [] as CatalogModel[], unavailable: false, loading: false })
   useEffect(() => {
     if (!enabled || !chip) return
     let live = true
-    setVendor({ ggufs: [], models: [], unavailable: false, loading: true })
+    setVendor({ models: [], unavailable: false, loading: true })
     const timer = setTimeout(() => {
       const excluded = new Set(
         list?.models.flatMap((m) => (m.kind === 'qairt' ? m.variants.map((v) => v.bundle.url) : [])) ?? []
@@ -124,9 +118,6 @@ export function useGeniexHub(enabled: boolean, query: string): GeniexHubState {
       void searchQualcomm(query, chip, excluded).then((result) => {
         if (live)
           setVendor({
-            ggufs: list?.huggingface.backends['win-arm64']?.length
-              ? result.ggufs.map((g) => qualcommGgufCard(g, list.huggingface.backends['win-arm64']!))
-              : [],
             models: result.models.flatMap(qualcommGeniexCards),
             unavailable: result.unavailable,
             loading: false,
@@ -194,27 +185,11 @@ export function useGeniexHub(enabled: boolean, query: string): GeniexHubState {
     }
   }, [list, query])
 
-  const huggingFace = useMemo(() => {
-    const seen = new Set(
-      [...state.curated, ...state.huggingFace]
-        .map((c) => c.geniex?.gguf)
-        .filter(Boolean)
-        .map((g) => g!.repo.toLowerCase() + '/' + g!.file.path)
-    )
-    return [
-      ...state.huggingFace,
-      ...vendor.ggufs.filter((c) => {
-        const g = c.geniex?.gguf
-        return g && !seen.has(g.repo.toLowerCase() + '/' + g.file.path)
-      }),
-    ]
-  }, [state.curated, state.huggingFace, vendor.ggufs])
   return enabled
     ? {
         ...state,
         chip,
         bundles,
-        huggingFace,
         loading: state.loading || (!!chip && vendor.loading),
         qualcommUnavailable: !!chip && vendor.unavailable,
       }
