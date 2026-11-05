@@ -588,24 +588,27 @@ function ThreadDetail() {
               total_tokens: totalTokens,
             })
           }
+          if (!willContinue) {
+            setIsChatRequestActive(false)
+          }
+          // A continuation is a second model call, so this event closes the
+          // first one; `captureChatResponse` releases the turn id and the
+          // continuation's own finish gets a fresh one.
+          captureTurnOutcome(
+            willContinue ? 'truncated_continued' : 'truncated_stopped',
+            message
+          )
+          return
         }
-        if (!willContinue) {
-          setIsChatRequestActive(false)
-        }
-        // A continuation is a second model call, so this event closes the
-        // first one; `captureChatResponse` releases the turn id and the
-        // continuation's own finish gets a fresh one. `finishReason: 'length'`
-        // without a context hit is just max_output_tokens — an ordinary
-        // completion, not a truncation.
-        captureTurnOutcome(
-          willContinue
-            ? 'truncated_continued'
-            : isContextLimit
-              ? 'truncated_stopped'
-              : 'success',
-          message
-        )
-        return
+        // Short of the window, `length` is the answer's own cap (`max_tokens`,
+        // or the engine's default when the request names none): an ordinary
+        // completion, not a truncation, so it is kept below like any other
+        // answer. Returning here skipped that save, and an MLX answer longer
+        // than mlx-server's default cap lived only in memory until the next
+        // reload took it away (#384).
+        toast.info(t('chat:turnRecovery.outputLimitReached'), {
+          id: `output-limit-${message.id}`,
+        })
       }
 
       if (!isAbort && message.parts.length) setPendingContinueMessage(null)

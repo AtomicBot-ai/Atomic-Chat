@@ -44,6 +44,7 @@ import {
   selectMlxDraftSettings,
 } from './buildMlxConfig'
 import { mlxMainWeightFileName } from './weightFileName'
+import { isContextOverflowLength, type MlxUsage } from './finishLength'
 import {
   createCoreRuntime,
   describeCoreError,
@@ -1029,8 +1030,18 @@ export default class mlx_extension extends AIEngine {
 
     const body = JSON.stringify(opts)
 
+    // The window the model was loaded with, to tell a full window from an
+    // answer that reached its `max_tokens` when mlx-server reports `length`.
+    const windowTokens = this.modelCtxSize.get(opts.model)
+
     if (opts.stream) {
-      return this.handleStreamingResponse(url, headers, body, abortController)
+      return this.handleStreamingResponse(
+        url,
+        headers,
+        body,
+        windowTokens,
+        abortController
+      )
     }
 
     const response = await fetch(url, {
@@ -1049,7 +1060,12 @@ export default class mlx_extension extends AIEngine {
 
     const completionResponse = (await response.json()) as chatCompletion
 
-    if (completionResponse.choices?.[0]?.finish_reason === 'length') {
+    // `length` is usually the answer's own `max_tokens`, and the answer is
+    // returned; throwing on every `length` lost it (#384).
+    if (
+      completionResponse.choices?.[0]?.finish_reason === 'length' &&
+      isContextOverflowLength(completionResponse.usage, windowTokens)
+    ) {
       throw new Error(OUT_OF_CONTEXT_SIZE)
     }
 
@@ -1060,6 +1076,7 @@ export default class mlx_extension extends AIEngine {
     url: string,
     headers: HeadersInit,
     body: string,
+    windowTokens: number | undefined,
     abortController?: AbortController
   ): AsyncIterable<chatCompletionChunk> {
     // Stream via Tauri IPC Channel instead of the intercepted global fetch.
@@ -1160,6 +1177,10 @@ export default class mlx_extension extends AIEngine {
     }
 
     let buffer = ''
+    // A `length` finish is told apart once the stream is over: mlx-server
+    // sends the usage in a chunk of its own, after the finish.
+    let finishedOnLength = false
+    let usage: MlxUsage | undefined
 
     while (true) {
       while (rawChunks.length === 0 && !streamDone) {
@@ -1182,10 +1203,13 @@ export default class mlx_extension extends AIEngine {
           if (trimmedLine.startsWith('data: ')) {
             const jsonStr = trimmedLine.slice(6)
             try {
-              const data = JSON.parse(jsonStr) as chatCompletionChunk
+              const data = JSON.parse(jsonStr) as chatCompletionChunk & {
+                usage?: MlxUsage
+              }
 
+              if (data.usage) usage = data.usage
               if (data.choices?.[0]?.finish_reason === 'length') {
-                throw new Error(OUT_OF_CONTEXT_SIZE)
+                finishedOnLength = true
               }
 
               yield data
@@ -1203,6 +1227,11 @@ export default class mlx_extension extends AIEngine {
 
       if (streamError) throw streamError
       if (streamDone) break
+    }
+
+    // Only after the last chunk, so the answer is never lost (#384).
+    if (finishedOnLength && isContextOverflowLength(usage, windowTokens)) {
+      throw new Error(OUT_OF_CONTEXT_SIZE)
     }
   }
 

@@ -332,6 +332,7 @@
     "contextNoMemory": "There is not enough free memory for a larger context.",
     "contextReloadFailed": "The model did not load with a larger context, so it keeps its current size.",
     "contextGrowthSpent": "The context already grew once for this message. Shorten the history to go on.",
+    "outputLimitReached": "This answer reached its maximum length and was cut off. Ask the model to continue to get the rest.",
     "retry": "Retry",
     "details": "Details",
     "genericTitle": "Error generating response",

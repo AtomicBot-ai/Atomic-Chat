@@ -95,6 +95,7 @@ import {
 import { ensureChatExecStatus } from '@/hooks/useChatExecStatus'
 import type { ChatExecStatus } from '@/services/chat-exec/types'
 import {
+  getModelMaxCtxTrain,
   growModelContext,
   readAutoIncreaseCtx,
   readModelCtxLen,
@@ -392,6 +393,62 @@ export function resolveTokenSpeed({
   }
 
   return 0
+}
+
+/**
+ * The longest answer a local llama.cpp load gives a request that names no
+ * `max_tokens`: the core starts llama-server with `--n-predict` 16384
+ * (`DEFAULT_N_PREDICT`, atomic-chat-core `runtime/llamacpp/generation-limits.ts`),
+ * and the end of the window stops it sooner.
+ */
+export const LOCAL_ANSWER_CAP_TOKENS = 16_384
+
+/**
+ * What mlx-server generates for a request that names no `max_tokens`: mlx-vlm's
+ * `DEFAULT_MAX_TOKENS` (or `MLX_VLM_MAX_TOKENS`), which the core does not set.
+ */
+export const MLX_SERVER_DEFAULT_MAX_TOKENS = 2048
+
+/**
+ * The `max_tokens` an MLX request carries when the assistant sets no answer
+ * length, or `undefined` to leave mlx-server's own default. Without it every
+ * MLX answer stopped at 2048 tokens (#384), where llama.cpp runs to
+ * {@link LOCAL_ANSWER_CAP_TOKENS} or the end of the window.
+ *
+ * mlx-server refuses a request whose prompt plus `max_tokens` does not fit its
+ * window before it generates anything (`... but MAX_KV_SIZE is N`), so the cap
+ * is the room the window has after the prompt, measured against the same
+ * share of the window the pre-flight lets a prompt use: the prompt is an
+ * estimate. A cap no larger than the server's default changes nothing and is
+ * not sent.
+ */
+export function mlxAnswerTokenCap({
+  windowTokens,
+  promptTokens,
+}: {
+  windowTokens: number | undefined
+  promptTokens: number
+}): number | undefined {
+  if (!windowTokens || windowTokens <= 0) return undefined
+  const room =
+    Math.floor(windowTokens * PREFLIGHT_CTX_THRESHOLD) -
+    Math.max(0, promptTokens)
+  const cap = Math.min(LOCAL_ANSWER_CAP_TOKENS, room)
+  return cap > MLX_SERVER_DEFAULT_MAX_TOKENS ? cap : undefined
+}
+
+/**
+ * Whether a prompt carries images or other files, whose token cost is the
+ * model's own and which the prompt estimate does not count.
+ */
+function carriesMediaParts(messages: readonly ModelMessage[]): boolean {
+  return messages.some(
+    (message) =>
+      Array.isArray(message.content) &&
+      (message.content as ReadonlyArray<{ type?: unknown }>).some(
+        (part) => part.type === 'image' || part.type === 'file'
+      )
+  )
 }
 
 export type OnFinishCallback = (params: {
@@ -799,7 +856,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
    * failure — the reactive error path in the thread route remains the
    * safety net. Throws a context-limit error when the ladder is already at
    * the model's maximum so the request is not sent into a window it cannot
-   * fit.
+   * fit. Resolves to the window the request goes out with, or `undefined`
+   * when the pre-flight did not run to a decision.
    */
   private async ensureContextFits(args: {
     providerId: string
@@ -811,7 +869,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     maxOutputTokens: number | undefined
     recreateModel: () => Promise<void>
     abortSignal: AbortSignal | undefined
-  }): Promise<void> {
+  }): Promise<number | undefined> {
     const selectedModel = useModelProvider.getState().selectedModel
     if (!selectedModel || selectedModel.id !== args.modelId) return
     if (!readAutoIncreaseCtx(selectedModel)) return
@@ -861,7 +919,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       ctxLen,
       measured,
     }
-    if (needed <= limit) return
+    if (needed <= limit) return ctxLen
 
     const minCtxLen = Math.ceil(needed / PREFLIGHT_CTX_THRESHOLD)
     console.info(
@@ -896,11 +954,48 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           `${OUT_OF_CONTEXT_SIZE} The prompt needs about ${needed} tokens (${this.lastPromptSize.toolTokens} of them are tool definitions) but the context is ${result.from} and ${why}. Disable some connectors for this chat or shorten the conversation.`
         )
       }
-      return
+      return ctxLen
     }
     if (args.abortSignal?.aborted) return
     await args.recreateModel()
     this.lastPromptSize = { ...this.lastPromptSize, ctxLen: result.to }
+    return result.to
+  }
+
+  /**
+   * {@link mlxAnswerTokenCap} for this request: the window is the pre-flight's
+   * (or the model's `ctx_len` when it did not run), no larger than the model
+   * was trained for, since the engine loads no larger. `undefined` leaves
+   * mlx-server's default when the window is not known, and when the prompt
+   * carries images or audio: the estimate cannot count them, and a cap that
+   * overruns the window gets the request refused.
+   */
+  private async mlxAnswerCap(args: {
+    modelId: string
+    window: number | undefined
+    system: string | undefined
+    messages: ModelMessage[]
+    tools: Record<string, Tool> | undefined
+    sendsAudio: boolean
+  }): Promise<number | undefined> {
+    if (args.sendsAudio || carriesMediaParts(args.messages)) return undefined
+    const selectedModel = useModelProvider.getState().selectedModel
+    const configured =
+      args.window ??
+      (selectedModel?.id === args.modelId
+        ? readModelCtxLen(selectedModel)
+        : undefined)
+    if (!configured) return undefined
+    const trainMax = await getModelMaxCtxTrain('mlx', args.modelId)
+    return mlxAnswerTokenCap({
+      windowTokens:
+        trainMax && trainMax > 0 ? Math.min(configured, trainMax) : configured,
+      promptTokens: estimatePromptTokensHeuristic({
+        system: args.system,
+        messages: args.messages,
+        tools: args.tools,
+      }),
+    })
   }
 
   async sendMessages(
@@ -931,6 +1026,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // Re-creates `this.model` against the provider store's current settings
     // (used after a pre-flight context growth reloads the local session).
     let recreateModel: (() => Promise<void>) | undefined
+    // Audio rides outside the model messages (see `audioInputParts` below).
+    let sendsAudio = false
     if (this.serviceHub && modelId && provider) {
       try {
         const updatedProvider = useModelProvider
@@ -1097,6 +1194,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           effectiveProviderName === 'mlx'
             ? extractAudioInputParts(options.messages)
             : []
+        sendsAudio = audioInputParts.length > 0
 
         ttftMark('deltaStart')
         const effectiveProvider = updatedProvider ?? provider
@@ -1276,8 +1374,9 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // whole prompt is regenerated; with it there is one reload and no error.
     // TensorRT-LLM is left out: its context is fixed when the container starts (design D9) and its
     // gateway has no `/tokenize` to measure with.
+    let preflightWindow: number | undefined
     if (isLocalProvider && modelId && canGrowContext(effectiveProviderName)) {
-      await this.ensureContextFits({
+      preflightWindow = await this.ensureContextFits({
         providerId: effectiveProviderName,
         modelId,
         provider,
@@ -1290,6 +1389,22 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       })
     }
 
+    // An answer length the assistant sets always wins; MLX alone gets one
+    // when it sets none, because mlx-server's own default stops every answer
+    // at 2048 tokens.
+    const requestMaxOutputTokens =
+      maxOutputTokens ??
+      (effectiveProviderName === 'mlx' && modelId
+        ? await this.mlxAnswerCap({
+            modelId,
+            window: preflightWindow,
+            system: effectiveSystemMessage,
+            messages: finalModelMessages,
+            tools: activeTools,
+            sendsAudio,
+          })
+        : undefined)
+
     const result = streamText({
       model: this.model,
       messages: finalModelMessages,
@@ -1297,7 +1412,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
       tools: activeTools,
       toolChoice: shouldEnableTools ? 'auto' : undefined,
       system: effectiveSystemMessage,
-      maxOutputTokens,
+      maxOutputTokens: requestMaxOutputTokens,
       // Local engines answer a prompt that does not fit with a fast,
       // deterministic error; retrying it (the SDK default for 5xx) only
       // delays the context-growth path. Cloud providers keep the default.

@@ -6,11 +6,14 @@ import { localStorageKey } from '@/constants/localStorage'
 import { useMCPServers } from '@/hooks/useMCPServers'
 import { useAppState } from '@/hooks/useAppState'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+import { useAssistant } from '@/hooks/useAssistant'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { seedServiceHub } from '@/test/service-hub'
 import {
   CustomChatTransport,
+  LOCAL_ANSWER_CAP_TOKENS,
+  mlxAnswerTokenCap,
   resolveTokenSpeed,
 } from '../custom-chat-transport'
 import { loadChatSkillDetails } from '../chat-skill-injection'
@@ -27,10 +30,16 @@ import type { SecureEnvironment } from '@/services/chat-exec/types'
 // is mocked at the boundary; the pure collect/render/compose helpers run real.
 const contextMocks = vi.hoisted(() => ({
   growModelContext: vi.fn(),
+  // The engine's training maximum; unknown unless a test says otherwise.
+  getModelMaxCtxTrain: vi.fn(async () => undefined as number | undefined),
 }))
 vi.mock('../context-size', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../context-size')>()
-  return { ...actual, growModelContext: contextMocks.growModelContext }
+  return {
+    ...actual,
+    growModelContext: contextMocks.growModelContext,
+    getModelMaxCtxTrain: contextMocks.getModelMaxCtxTrain,
+  }
 })
 
 vi.mock('../chat-skill-injection', async (importOriginal) => {
@@ -1013,6 +1022,181 @@ describe('CustomChatTransport pre-flight context sizing', () => {
       await expect(failure).rejects.toThrow(detail)
     }
   )
+})
+
+/**
+ * mlx-server stops an answer at 2048 tokens unless the request names a
+ * `max_tokens` (#384); llama.cpp loads run to 16384 or the end of the window.
+ */
+describe('mlxAnswerTokenCap', () => {
+  it('gives the room the window has after the prompt, within the pre-flight share', () => {
+    // floor(16384 * 0.9) = 14745.
+    expect(mlxAnswerTokenCap({ windowTokens: 16384, promptTokens: 745 })).toBe(
+      14000
+    )
+  })
+
+  it('never goes past the llama.cpp answer cap', () => {
+    expect(mlxAnswerTokenCap({ windowTokens: 131072, promptTokens: 500 })).toBe(
+      LOCAL_ANSWER_CAP_TOKENS
+    )
+  })
+
+  it("leaves mlx-server's default when the room is no larger or the window is unknown", () => {
+    expect(
+      mlxAnswerTokenCap({ windowTokens: 16384, promptTokens: 12697 })
+    ).toBeUndefined()
+    expect(
+      mlxAnswerTokenCap({ windowTokens: 2048, promptTokens: 100 })
+    ).toBeUndefined()
+    expect(
+      mlxAnswerTokenCap({ windowTokens: undefined, promptTokens: 100 })
+    ).toBeUndefined()
+  })
+})
+
+describe('CustomChatTransport answer length for MLX', () => {
+  const answer: ModelStreamPart[] = [
+    { type: 'stream-start', warnings: [] },
+    { type: 'text-start', id: 'text-1' },
+    { type: 'text-delta', id: 'text-1', delta: 'ok' },
+    { type: 'text-end', id: 'text-1' },
+    {
+      type: 'finish',
+      finishReason: 'stop',
+      usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+    },
+  ]
+
+  /** The `maxOutputTokens` the request went out with. */
+  const sentMaxOutputTokens = async (messages: UIMessage[] = [userMessage]) => {
+    const model = fakeStreamingModel(answer)
+    vi.spyOn(ModelFactory, 'createModel').mockResolvedValue(model)
+    await readChunks(
+      (await new CustomChatTransport().sendMessages({
+        chatId: 'chat-1',
+        messages,
+        abortSignal: undefined,
+        trigger: 'submit-message',
+        messageId: undefined,
+      })) as ReadableStream<Record<string, unknown>>
+    )
+    const doStream = (
+      model as unknown as { doStream: ReturnType<typeof vi.fn> }
+    ).doStream
+    return (doStream.mock.calls[0][0] as { maxOutputTokens?: number })
+      .maxOutputTokens
+  }
+
+  const select = (provider: string, ctxLen?: number) =>
+    useModelProvider.setState((state) => ({
+      selectedProvider: provider,
+      selectedModel: {
+        ...state.selectedModel!,
+        settings:
+          ctxLen === undefined
+            ? {}
+            : { ctx_len: { controller_props: { value: ctxLen } } },
+      },
+      providers: [
+        {
+          provider,
+          active: true,
+          api_key: '',
+          base_url: 'http://localhost',
+          models: [],
+          settings: [],
+        },
+      ] as never,
+    }))
+
+  const assistantsBefore = useAssistant.getState()
+
+  beforeEach(() => {
+    contextMocks.growModelContext.mockReset()
+    contextMocks.getModelMaxCtxTrain.mockReset()
+    contextMocks.getModelMaxCtxTrain.mockResolvedValue(undefined)
+  })
+
+  afterEach(() => {
+    useAssistant.setState({
+      assistants: assistantsBefore.assistants,
+      defaultAssistantId: assistantsBefore.defaultAssistantId,
+      pendingAssistant: assistantsBefore.pendingAssistant,
+    })
+  })
+
+  it('asks for the room the window has instead of the server default', async () => {
+    select('mlx', 16384)
+    const cap = await sentMaxOutputTokens()
+    // A one-word prompt leaves nearly all of the pre-flight share.
+    expect(cap).toBeGreaterThan(14700)
+    expect(cap).toBeLessThanOrEqual(14745)
+  })
+
+  it('caps a large window at the llama.cpp answer cap', async () => {
+    select('mlx', 131072)
+    expect(await sentMaxOutputTokens()).toBe(LOCAL_ANSWER_CAP_TOKENS)
+  })
+
+  it('sizes the room by the training maximum the engine loads with', async () => {
+    select('mlx', 131072)
+    contextMocks.getModelMaxCtxTrain.mockResolvedValue(8192)
+    const cap = await sentMaxOutputTokens()
+    expect(contextMocks.getModelMaxCtxTrain).toHaveBeenCalledWith(
+      'mlx',
+      'fixture-model'
+    )
+    expect(cap).toBeLessThanOrEqual(Math.floor(8192 * 0.9))
+    expect(cap).toBeGreaterThan(7300)
+  })
+
+  it('keeps the answer length the assistant sets', async () => {
+    select('mlx', 16384)
+    useAssistant.setState({
+      assistants: [
+        {
+          id: 'capped',
+          name: 'Capped',
+          parameters: { max_output_tokens: 512 },
+        } as never,
+      ],
+      defaultAssistantId: 'capped',
+      pendingAssistant: undefined,
+    })
+    expect(await sentMaxOutputTokens()).toBe(512)
+  })
+
+  it('leaves the server default when the window is unknown', async () => {
+    select('mlx')
+    expect(await sentMaxOutputTokens()).toBeUndefined()
+  })
+
+  it('leaves the server default for a prompt with an image', async () => {
+    select('mlx', 16384)
+    expect(
+      await sentMaxOutputTokens([
+        {
+          id: 'user-image',
+          role: 'user',
+          parts: [
+            { type: 'text', text: 'what is this?' },
+            {
+              type: 'file',
+              mediaType: 'image/png',
+              url: 'data:image/png;base64,iVBORw0KGgo=',
+            },
+          ],
+        },
+      ])
+    ).toBeUndefined()
+  })
+
+  it('sends nothing extra to other local engines', async () => {
+    select('llamacpp-upstream', 16384)
+    vi.spyOn(ModelFactory, 'countLocalPromptTokens').mockResolvedValue(null)
+    expect(await sentMaxOutputTokens()).toBeUndefined()
+  })
 })
 
 /**

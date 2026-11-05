@@ -272,6 +272,147 @@ describe('MLX runtime in the core', () => {
     vi.unstubAllGlobals()
   })
 
+  describe('an answer mlx-server ends with finish_reason "length" (#384)', () => {
+    // The window the model was loaded with, as `load` records it.
+    const loadedWith = (windowTokens: number) => {
+      const ext = extension()
+      ;(
+        ext as unknown as { modelCtxSize: Map<string, number> }
+      ).modelCtxSize.set('m', windowTokens)
+      return ext
+    }
+
+    const answerWith = (usage: Record<string, number>) => {
+      core({
+        'GET /sessions': () => ({
+          sessions: [{ ...session, provider: 'mlx' }],
+        }),
+      })
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (url: string) =>
+          url.endsWith('/health')
+            ? new Response('{}')
+            : new Response(
+                JSON.stringify({
+                  choices: [
+                    {
+                      message: { content: 'a long story' },
+                      finish_reason: 'length',
+                    },
+                  ],
+                  usage,
+                })
+              )
+        )
+      )
+    }
+
+    /** Streams `lines` (SSE `data:` payloads) the way `stream_local_http` relays them. */
+    const streamWith = (payloads: unknown[]) => {
+      core({
+        'GET /sessions': () => ({
+          sessions: [{ ...session, provider: 'mlx' }],
+        }),
+      })
+      const routed = invokeMock.getMockImplementation()!
+      invokeMock.mockImplementation(
+        async (command: string, args?: Record<string, unknown>) => {
+          if (command !== 'stream_local_http') return routed(command, args)
+          const channel = args?.['onChunk'] as {
+            onmessage: (event: { data: string; done?: boolean }) => void
+          }
+          for (const payload of payloads)
+            channel.onmessage({ data: `data: ${JSON.stringify(payload)}\n\n` })
+          channel.onmessage({ data: 'data: [DONE]\n\n', done: true })
+          return 200
+        }
+      )
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => new Response('{}'))
+      )
+    }
+
+    const delta = (content: string, finish_reason: string | null = null) => ({
+      choices: [{ index: 0, delta: { content }, finish_reason }],
+    })
+
+    afterEach(() => {
+      vi.unstubAllGlobals()
+    })
+
+    it('returns the answer that reached its max_tokens instead of throwing', async () => {
+      answerWith({ prompt_tokens: 40, completion_tokens: 2048 })
+      const answer = await loadedWith(16384).chat({
+        model: 'm',
+        messages: [],
+      } as never)
+      expect(answer).toMatchObject({
+        choices: [
+          { message: { content: 'a long story' }, finish_reason: 'length' },
+        ],
+      })
+    })
+
+    it('still reports a full window as a context overflow', async () => {
+      answerWith({ prompt_tokens: 14000, completion_tokens: 2384 })
+      await expect(
+        loadedWith(16384).chat({ model: 'm', messages: [] } as never)
+      ).rejects.toThrow('the request exceeds the available context size.')
+    })
+
+    const collect = async (stream: AsyncIterable<unknown>) => {
+      const chunks: unknown[] = []
+      for await (const chunk of stream) chunks.push(chunk)
+      return chunks
+    }
+
+    it('streams every chunk of an answer that reached its max_tokens', async () => {
+      streamWith([
+        delta('Once '),
+        delta('upon a time', 'length'),
+        { choices: [], usage: { prompt_tokens: 40, completion_tokens: 2048 } },
+      ])
+      const stream = (await loadedWith(16384).chat({
+        model: 'm',
+        messages: [],
+        stream: true,
+      } as never)) as AsyncIterable<unknown>
+      const chunks = await collect(stream)
+      expect(chunks).toHaveLength(3)
+      expect(chunks[1]).toMatchObject({
+        choices: [
+          { delta: { content: 'upon a time' }, finish_reason: 'length' },
+        ],
+      })
+    })
+
+    it('throws on a full window only after the answer has streamed', async () => {
+      streamWith([
+        delta('Once ', 'length'),
+        {
+          choices: [],
+          usage: { prompt_tokens: 16000, completion_tokens: 384 },
+        },
+      ])
+      const stream = (await loadedWith(16384).chat({
+        model: 'm',
+        messages: [],
+        stream: true,
+      } as never)) as AsyncIterable<unknown>
+      const seen: unknown[] = []
+      await expect(
+        (async () => {
+          for await (const chunk of stream) seen.push(chunk)
+        })()
+      ).rejects.toThrow('the request exceeds the available context size.')
+      expect(seen[0]).toMatchObject({
+        choices: [{ delta: { content: 'Once ' } }],
+      })
+    })
+  })
+
   it('asks the core to grow the context and relays every outcome', async () => {
     let outcome: () => unknown = () => ({ ok: true, new_ctx_len: 32768 })
     core({ 'POST /models/mlx/m/ctx/increase': () => outcome() })
