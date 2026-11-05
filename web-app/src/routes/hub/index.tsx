@@ -1634,6 +1634,9 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
                 {t('hub:liteRtLm.huggingFaceUnavailable')}
               </p>
             )}
+          {geniexFormat && !showOnlyDownloaded && geniex.qualcommUnavailable && (
+            <p className="px-2 pb-2 text-xs text-muted-foreground" role="status">{t('hub:geniex.qualcommUnavailable')}</p>
+          )}
           {geniexFormat &&
             !showOnlyDownloaded &&
             geniex.huggingFaceUnavailable && (

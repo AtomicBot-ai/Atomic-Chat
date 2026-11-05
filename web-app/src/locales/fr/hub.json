@@ -311,6 +311,7 @@
     "huggingFace": "Hugging Face, non vérifié par Atomic Chat",
     "huggingFaceUnavailable": "Hugging Face est indisponible pour le moment. Seuls les modèles sélectionnés par Atomic Chat sont affichés.",
     "notVerified": "Hugging Face, non vérifié par Atomic Chat",
+    "qualcommUnavailable": "Certains résultats de Qualcomm AI Hub n’ont pas pu être chargés.",
     "aiHub": "Paquet Qualcomm AI Hub",
     "downloaded": "Téléchargé",
     "checking": "Vérification…",

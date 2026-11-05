@@ -13,6 +13,22 @@ import type { GeniexHfModel } from '@/services/geniex/huggingface'
 import type { GeniexChip, GeniexDevice, GeniexHubModel, GeniexHubVariant } from '@/services/geniex/types'
 import type { CatalogModel } from '@/services/models/types'
 
+import type { QualcommModel } from '@/services/geniex/qualcomm'
+
+export function qualcommGeniexCards(model: QualcommModel): CatalogModel[] {
+  return model.variants.map((variant) =>
+    card({
+      origin: 'qualcomm',
+      kind: 'qairt',
+      model_id: variant.id,
+      name: model.name,
+      summary: 'Qualcomm AI Hub · ' + variant.precision,
+      license: null,
+      variants: [variant],
+    })
+  )
+}
+
 export const GENIEX_HUB_PREFIX = 'geniex/'
 
 /** A GenieX entry's own fields, or `undefined` for any other Hub entry. */

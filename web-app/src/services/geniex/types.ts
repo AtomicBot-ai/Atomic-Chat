@@ -1,3 +1,5 @@
+import type { QualcommBundle } from './qualcomm'
+
 /**
  * Qualcomm GenieX as the core runs it on a Snapdragon X laptop (openspec change
  * `add-geniex-runtime`): the devices its library found (the Hexagon NPU, the Adreno GPU), the
@@ -115,7 +117,7 @@ export interface GeniexCheckResult {
  * Where a Model Hub entry of GenieX comes from; `installed` is a model found on disk in
  * "Downloaded", whose card offers only New chat and delete.
  */
-export type GeniexOrigin = 'curated' | 'huggingface' | 'installed'
+export type GeniexOrigin = 'curated' | 'huggingface' | 'qualcomm' | 'installed'
 
 /** A file of a Hugging Face repository: its path there, size and sha256 (conf's, or the LFS metadata). */
 export interface GeniexHubFile {
@@ -146,7 +148,7 @@ export interface GeniexHubVariant {
   /** Names the download task and the folder `<data>/geniex/models/<id>`. */
   id: string
   chip: GeniexChip
-  bundle: { url: string; size: number; sha256: string }
+  bundle: { url: string; size: number; sha256: string; crc64?: never } | (QualcommBundle & { sha256?: never })
   /** As AI Hub names it (`w4a16`). */
   precision: string
   /** Known before download only when conf names it. */

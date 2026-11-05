@@ -454,3 +454,24 @@ describe('installGeniexModel — an AI Hub bundle', () => {
     expect(steps).toEqual(['check variant', 'extract', 'check on disk', 'model.yml'])
   })
 })
+
+it('checks a versioned Qualcomm archive before publishing its registration', async () => {
+  const crc64 = 'ae8b14860a799888'
+  const variant = { ...xElite, bundle: { url: BUNDLE_URL + '?versionId=fixture', size: 100, crc64 } }
+  const { deps, yaml } = fakeDeps({
+    extractZip: vi.fn(async () => {
+      throw new Error('Qualcomm archive checksum mismatch.')
+    }),
+  })
+  await expect(
+    installGeniexModel({ model: { ...bundleModel, origin: 'qualcomm' }, variant }, deps)
+  ).rejects.toThrow(/checksum mismatch/)
+  expect(deps.extractZip).toHaveBeenCalledWith(
+    expect.any(String),
+    expect.any(String),
+    expect.any(String),
+    expect.any(Function),
+    crc64
+  )
+  expect(yaml).toEqual([])
+})

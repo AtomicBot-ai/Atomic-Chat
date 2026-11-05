@@ -9,7 +9,7 @@
 //! folder (`POST /models/geniex/check` by path) before the app writes `model.yml`.
 
 use std::fs;
-use std::io;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
@@ -28,6 +28,29 @@ pub struct ExtractReport {
     pub files: u64,
     /// Bytes written, uncompressed.
     pub bytes: u64,
+}
+
+/// Reflected CRC-64/NVME used by S3 for full-object checksums of multipart archives.
+fn archive_crc64(mut reader: impl Read, cancelled: impl Fn() -> bool) -> Result<String, String> {
+    const POLY: u64 = 0x9a6c9329ac4bc9b5;
+    let table: [u64; 256] = std::array::from_fn(|index| {
+        let mut value = index as u64;
+        for _ in 0..8 {
+            value = (value >> 1) ^ if value & 1 == 1 { POLY } else { 0 };
+        }
+        value
+    });
+    let mut sum = u64::MAX;
+    let mut buf = vec![0_u8; 128 * 1024];
+    loop {
+        if cancelled() { return Err(EXTRACT_CANCELLED.to_string()); }
+        let count = reader.read(&mut buf).map_err(|e| e.to_string())?;
+        if count == 0 { break; }
+        for byte in &buf[..count] {
+            sum = (sum >> 8) ^ table[((sum as u8) ^ byte) as usize];
+        }
+    }
+    Ok(format!("{:016x}", !sum))
 }
 
 /// Unpack `archive` into `output_dir`, which is created when missing, reporting
@@ -52,6 +75,13 @@ pub fn extract_zip_into(
             .enclosed_name()
             .map(Path::to_path_buf)
             .ok_or_else(|| format!("zip entry \"{}\" would land outside the folder", entry.name()))?;
+        if relative.components().any(|part| {
+            let name = part.as_os_str().to_string_lossy();
+            let name = name.trim_end_matches(['.', ' ']);
+            name.eq_ignore_ascii_case("model.yml") || name.eq_ignore_ascii_case("bundle.zip") || name.contains(':') || name.contains('\\')
+        }) {
+            return Err(format!("reserved entry in bundle: {}", relative.display()));
+        }
         entries.push((index, relative, entry.is_dir(), entry.size()));
     }
     // AI Hub zips hold one top folder named after the bundle (spike S4); the bundle's folder is the
@@ -142,6 +172,7 @@ pub async fn extract_zip<R: Runtime>(
     output_dir: &str,
     task_id: &str,
     remove_archive: bool,
+    crc64: Option<String>,
 ) -> Result<ExtractReport, String> {
     let data_folder = get_jan_data_folder_path(app.clone());
     let archive_path = jan_utils::normalize_path(Path::new(archive));
@@ -172,6 +203,12 @@ pub async fn extract_zip<R: Runtime>(
     let token = cancel_token.clone();
     let (archive_for_task, output_for_task) = (archive_path.clone(), output_path.clone());
     let result = tokio::task::spawn_blocking(move || {
+        if let Some(expected) = crc64 {
+            let file = fs::File::open(&archive_for_task).map_err(|e| e.to_string())?;
+            if archive_crc64(file, || token.is_cancelled())? != expected {
+                return Err("Qualcomm archive checksum mismatch.".to_string());
+            }
+        }
         let mut last = std::time::Instant::now() - std::time::Duration::from_secs(1);
         extract_zip_into(
             &archive_for_task,
@@ -220,6 +257,11 @@ mod tests {
     use super::*;
     use std::io::Write;
     use zip::write::FileOptions;
+
+    #[test]
+    fn s3_checksum_matches_nvme_check_vector() {
+        assert_eq!(archive_crc64(&b"123456789"[..], || false).unwrap(), "ae8b14860a799888");
+    }
 
     fn zip_with(entries: &[(&str, &[u8])]) -> (tempfile::TempDir, PathBuf) {
         let dir = tempfile::tempdir().unwrap();
