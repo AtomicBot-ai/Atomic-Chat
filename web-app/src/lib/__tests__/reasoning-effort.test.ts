@@ -337,6 +337,11 @@ describe('remote reasoning', () => {
     expect(buildCloudReasoningRequestFields('max', 'moonshot')).toEqual({
       reasoning_effort: 'max',
     })
+    // MiniMax gets the level itself; the model factory puts it on what the
+    // model takes (see `shapeCloudReasoningOverride` below).
+    expect(buildCloudReasoningRequestFields('max', 'minimax')).toEqual({
+      reasoning_effort: 'max',
+    })
     expect(buildCloudReasoningRequestFields('medium', 'anthropic')).toEqual({
       thinking: { type: 'enabled', budget_tokens: 4096 },
     })
@@ -365,6 +370,18 @@ describe('remote reasoning', () => {
       enabled: true,
       effort: 'high',
       effort_value: 'high',
+      supports_thinking: true,
+    })
+  })
+
+  it('starts a cloud Agent turn at the weakest level while the preference is off, as chat does', () => {
+    // Defaults are `disableReasoning: true` with a stored `medium` (#366).
+    expect(
+      buildAgentReasoningRequest('medium', true, undefined, false, 'openai')
+    ).toEqual({
+      enabled: true,
+      effort: 'low',
+      effort_value: 'low',
       supports_thinking: true,
     })
   })
@@ -410,8 +427,8 @@ describe('remote reasoning', () => {
 })
 
 /**
- * #381: Mistral checks `reasoning_effort` against the model, so the provider
- * alone cannot say what to send.
+ * #381 / #366: Mistral and MiniMax check `reasoning_effort` against the model,
+ * so the provider alone cannot say what to send.
  */
 describe('per-model cloud reasoning', () => {
   const select = (provider: string, id: string) =>
@@ -478,6 +495,32 @@ describe('per-model cloud reasoning', () => {
     expect(canDisableReasoning('mistral', undefined)).toBe(true)
   })
 
+  it('offers MiniMax Max only where it is documented', () => {
+    select('minimax', 'MiniMax-M3.1-Flash')
+    expect(reasoningLevelsForModel('minimax', undefined)).toEqual([
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ])
+    expect(canDisableReasoning('minimax', undefined)).toBe(false)
+    expect(
+      buildAgentReasoningRequest('max', false, undefined, false, 'minimax')
+    ).toMatchObject({ effort_value: 'max' })
+
+    select('minimax', 'MiniMax-M2.7')
+    expect(reasoningLevelsForModel('minimax', undefined)).toEqual([
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+    ])
+    expect(
+      buildAgentReasoningRequest('max', false, undefined, false, 'minimax')
+    ).toMatchObject({ effort_value: 'xhigh' })
+  })
+
   it('ignores a selection on another provider', () => {
     select('openai', 'mistral-small-2506')
     expect(reasoningLevelsForModel('mistral', undefined)).toEqual([
@@ -512,6 +555,18 @@ describe('per-model cloud reasoning', () => {
     })
     expect(shape('mistral', 'mistral-small-2603', 'low')).toEqual({
       reasoning_effort: 'high',
+    })
+    expect(shape('minimax', 'MiniMax-M3.1-Flash', 'max')).toEqual({
+      reasoning_effort: 'max',
+    })
+    expect(shape('minimax', 'MiniMax-M3', 'max')).toEqual({
+      reasoning_effort: 'xhigh',
+    })
+    expect(shape('minimax', 'MiniMax-M2.7', 'max')).toEqual({
+      reasoning_effort: 'xhigh',
+    })
+    expect(shape('minimax', 'MiniMax-M2.7', 'low')).toEqual({
+      reasoning_effort: 'low',
     })
   })
 

@@ -546,6 +546,18 @@ describe('getModelCapabilities', () => {
     expect(capabilities).toContain(ModelCapabilities.VISION)
   })
 
+  // #366: Refresh / Add Model created these with `completion` only.
+  it.each(['MiniMax-M3', 'MiniMax-M3.1-Flash'])(
+    'knows %s takes tools and images',
+    (modelId) => {
+      expect(getModelCapabilities('minimax', modelId)).toEqual([
+        ModelCapabilities.COMPLETION,
+        ModelCapabilities.TOOLS,
+        ModelCapabilities.VISION,
+      ])
+    }
+  )
+
   it('handles provider with no capability arrays gracefully', () => {
     const capabilities = getModelCapabilities('ai21', 'jamba-instruct')
     expect(capabilities).toEqual([ModelCapabilities.COMPLETION])

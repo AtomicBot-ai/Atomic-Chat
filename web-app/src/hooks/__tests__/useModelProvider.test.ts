@@ -712,6 +712,62 @@ describe('useModelProvider migrations', () => {
     ])
   })
 
+  it('gives saved MiniMax M3 entries the capabilities Refresh left out, once', () => {
+    const persistApi = (useModelProvider as any).persist
+    const migrate = persistApi?.getOptions().migrate as
+      | ((state: unknown, version: number) => any)
+      | undefined
+
+    const model = (id: string, capabilities?: string[]) => ({
+      id,
+      model: id,
+      name: id,
+      version: '1.0',
+      capabilities,
+    })
+    const persistedState = () => ({
+      providers: [
+        {
+          provider: 'minimax',
+          settings: [],
+          models: [
+            model('MiniMax-M3', ['completion']),
+            model('MiniMax-M3.1-Flash'),
+            model('MiniMax-M2.7', ['completion']),
+          ],
+        },
+        {
+          provider: 'openrouter',
+          settings: [],
+          models: [model('MiniMax-M3', ['completion'])],
+        },
+      ],
+      selectedProvider: 'minimax',
+      selectedModel: model('MiniMax-M3', ['completion']),
+      deletedModels: [],
+    })
+
+    const migrated = migrate!(persistedState(), 15)
+    const caps = (provider: number, index: number) =>
+      migrated.providers[provider].models[index].capabilities
+
+    expect(caps(0, 0)).toEqual(['completion', 'tools', 'vision'])
+    expect(caps(0, 1)).toEqual(['completion', 'tools', 'vision'])
+    expect(migrated.selectedModel.capabilities).toEqual([
+      'completion',
+      'tools',
+      'vision',
+    ])
+    // Only the two entries the table was missing, only on MiniMax.
+    expect(caps(0, 2)).toEqual(['completion'])
+    expect(caps(1, 0)).toEqual(['completion'])
+
+    // Already migrated: an entry the user trimmed later keeps its choice.
+    expect(
+      migrate!(persistedState(), 16).providers[0].models[0].capabilities
+    ).toEqual(['completion'])
+  })
+
   it('migrates Mistral provider base URL to add /v1 suffix', () => {
     const persistApi = (useModelProvider as any).persist
     const migrate = persistApi?.getOptions().migrate as

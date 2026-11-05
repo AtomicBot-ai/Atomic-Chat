@@ -8,6 +8,7 @@ import { LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
 import { turboquantDefaultActive } from '@/lib/turboquantDefaultMigration'
 import { isCloudProvider, isProviderConnected } from '@/lib/cloud-providers'
 import { isEmbeddingOnlyModel } from '@/lib/answerable-model'
+import { getModelCapabilities } from '@/lib/models'
 
 /**
  * Historical provider id retained for one-time migration logic. The
@@ -781,9 +782,36 @@ export const useModelProvider = create<ModelProviderState>()(
           })
         }
 
+        // v16 — MiniMax M3 and M3.1-Flash were missing from the hard-coded
+        // capability table, so Refresh, Add Model and the loopback auto-load
+        // saved them with `completion` only: no tools, no image input, no
+        // agent vision. A saved entry is never overwritten by the registry, so
+        // re-derive these two from the table once. Like v15 this runs once per
+        // install, so the Edit Model toggles keep the last word afterwards
+        // (#366).
+        if (version <= 15 && state?.providers) {
+          const MINIMAX_COMPLETION_ONLY_IDS = new Set([
+            'MiniMax-M3',
+            'MiniMax-M3.1-Flash',
+          ])
+          const backfill = (model: Model | null | undefined) => {
+            if (!model || !MINIMAX_COMPLETION_ONLY_IDS.has(model.id)) return
+            const current = model.capabilities ?? []
+            if (current.some((capability) => capability !== 'completion'))
+              return
+            model.capabilities = getModelCapabilities('minimax', model.id)
+          }
+          state.providers
+            .filter((provider) => provider.provider === 'minimax')
+            .forEach((provider) => provider.models?.forEach(backfill))
+          if (state.selectedProvider === 'minimax') {
+            backfill(state.selectedModel)
+          }
+        }
+
         return state
       },
-      version: 15,
+      version: 16,
     }
   )
 )

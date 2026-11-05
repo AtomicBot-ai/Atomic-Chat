@@ -55,6 +55,16 @@ const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(120);
 const MAX_RETRY_AFTER: Duration = Duration::from_secs(20);
 const TRANSIENT_RETRY_DELAY: Duration = Duration::from_secs(1);
 const VISION_MAX_TOKENS: u32 = 1024;
+/// Vision budget for a target this run drives with a `reasoning_effort`: a
+/// catalogue cloud model that thinks before it answers. MiniMax cannot switch
+/// thinking off and defaults to its strongest effort, which could spend all of
+/// [`VISION_MAX_TOKENS`] on thought and leave no description (#366). Stays at
+/// 4096, the smallest output cap among the providers this path reaches.
+const VISION_REASONING_MAX_TOKENS: u32 = 4096;
+/// The weakest effort the catalogue reasoning APIs take in common, asked of a
+/// thinking target for an image description. One that refuses it is asked
+/// again without an effort (see `describe_images`).
+const VISION_REASONING_EFFORT: &str = "low";
 /// How many times one completion may be re-sent while walking the degrade
 /// ladder. Six sticky rungs plus the two once-per-completion transient ones
 /// bound the real ladder well below this; the cap is a backstop against a
@@ -167,6 +177,10 @@ pub struct OpenAiCompatibleClient {
     /// models (gpt-5, o-series) accept only the defaults and answer 400 on any
     /// other value, so the run drops both fields and lets the target sample.
     sampling_disabled: AtomicBool,
+    /// Set once this run sends the Local API Server a `reasoning_effort`: the
+    /// frontend resolves one only for a model that thinks, so the vision
+    /// request gives that model room to think and asks it to think least.
+    sends_cloud_effort: AtomicBool,
 }
 
 impl OpenAiCompatibleClient {
@@ -194,6 +208,7 @@ impl OpenAiCompatibleClient {
             stream_usage_disabled: AtomicBool::new(false),
             streaming_disabled: AtomicBool::new(false),
             sampling_disabled: AtomicBool::new(false),
+            sends_cloud_effort: AtomicBool::new(false),
         })
     }
 
@@ -514,6 +529,10 @@ impl OpenAiCompatibleClient {
         if !self.reasoning_disabled.load(Ordering::SeqCst) {
             insert_reasoning_fields(&mut body, target, &request.reasoning);
         }
+        if target.kind == OpenAiTargetKind::LocalApiServer && body.contains_key("reasoning_effort")
+        {
+            self.sends_cloud_effort.store(true, Ordering::SeqCst);
+        }
         Value::Object(body)
     }
 }
@@ -740,6 +759,13 @@ impl AgentLlmClient for OpenAiCompatibleClient {
                 "the active model is not vision-capable".into(),
             ));
         }
+        // A target the run already drives with an effort thinks before it
+        // answers, and some (MiniMax) cannot stop: give it room and ask for the
+        // least thought.
+        let thinks = target.kind == OpenAiTargetKind::LocalApiServer
+            && self.sends_cloud_effort.load(Ordering::SeqCst);
+        let mut effort = (thinks && !self.reasoning_disabled.load(Ordering::SeqCst))
+            .then_some(VISION_REASONING_EFFORT);
         // The same ladder as the chat path: the vision tool is often the first
         // request of a run, so it cannot assume a sibling completion has
         // already taught the client which fields this target refuses.
@@ -752,6 +778,8 @@ impl AgentLlmClient for OpenAiCompatibleClient {
                 images,
                 self.sampling_disabled.load(Ordering::SeqCst),
                 self.use_max_completion_tokens.load(Ordering::SeqCst),
+                thinks,
+                effort,
             );
             let error = match self.post_chat(&target, &payload, cancellation).await {
                 Ok(value) => break value,
@@ -760,6 +788,18 @@ impl AgentLlmClient for OpenAiCompatibleClient {
             attempts += 1;
             if attempts >= MAX_DEGRADE_ATTEMPTS {
                 return Err(error);
+            }
+            // A model whose effort scale has no `low` (Mistral Small 4 takes
+            // only `high`) describes at its own default instead. The run's
+            // effort was accepted, so the run-wide reasoning rung stays unfired.
+            let effort_refused = matches!(
+                &error,
+                LlmClientError::Http { status: 400, detail }
+                    if mentions_reasoning_rejection(detail)
+            );
+            if effort.is_some() && effort_refused {
+                effort = None;
+                continue;
             }
             match self.classify_degrade(&error, false, &mut budget) {
                 Degrade::Retry => {}
@@ -794,13 +834,16 @@ fn prompt_messages(prompt: &AgentPrompt) -> Vec<Value> {
 ///
 /// `drop_sampling` and `use_max_completion_tokens` are the two sticky degrade
 /// flags, threaded in so a target that has already rejected a field on the chat
-/// path is not asked to reject it again here.
+/// path is not asked to reject it again here. `thinks` raises the budget to
+/// [`VISION_REASONING_MAX_TOKENS`]; `effort` is sent as `reasoning_effort`.
 fn vision_payload(
     target: &OpenAiTarget,
     prompt: &str,
     images: &[(String, String)],
     drop_sampling: bool,
     use_max_completion_tokens: bool,
+    thinks: bool,
+    effort: Option<&str>,
 ) -> Value {
     let mut content = images
         .iter()
@@ -825,7 +868,15 @@ fn vision_payload(
     } else {
         "max_tokens"
     };
-    body.insert(token_key.into(), json!(VISION_MAX_TOKENS));
+    let max_tokens = if thinks {
+        VISION_REASONING_MAX_TOKENS
+    } else {
+        VISION_MAX_TOKENS
+    };
+    body.insert(token_key.into(), json!(max_tokens));
+    if let Some(effort) = effort {
+        body.insert("reasoning_effort".into(), json!(effort));
+    }
     if !drop_sampling {
         body.insert("temperature".into(), json!(0.2));
     }
@@ -1238,6 +1289,8 @@ async fn sleep_or_cancel(
 mod tests {
     use super::*;
     use crate::core::agent::llm_client::{CompletionRequest, ReasoningTags};
+    use crate::core::agent::test_support::{ScriptedChatServer, ScriptedResponse};
+    use hyper::StatusCode;
 
     fn target(kind: OpenAiTargetKind, json_schema: bool) -> OpenAiTarget {
         OpenAiTarget {
@@ -1944,6 +1997,8 @@ mod tests {
             &images,
             false,
             false,
+            false,
+            None,
         );
         assert_eq!(mlx["chat_template_kwargs"]["enable_thinking"], json!(false));
         assert!(mlx.get("reasoning_format").is_none());
@@ -1960,6 +2015,8 @@ mod tests {
             &images,
             false,
             false,
+            false,
+            None,
         );
         assert!(proxied.get("chat_template_kwargs").is_none());
     }
@@ -1977,6 +2034,8 @@ mod tests {
             &images,
             true,
             true,
+            false,
+            None,
         );
 
         assert!(degraded.get("temperature").is_none());
@@ -2152,6 +2211,156 @@ mod tests {
             "the stream ended before completion"
         ));
         assert!(!mentions_stream_options_rejection("bad request"));
+    }
+
+    #[test]
+    fn vision_payload_gives_a_thinking_target_room_and_the_least_effort() {
+        let images = vec![("image/png".to_string(), "AAAA".to_string())];
+        let thinking = vision_payload(
+            &target(OpenAiTargetKind::LocalApiServer, false),
+            "describe",
+            &images,
+            false,
+            false,
+            true,
+            Some(VISION_REASONING_EFFORT),
+        );
+        assert_eq!(thinking["reasoning_effort"], json!("low"));
+        assert_eq!(thinking["max_tokens"], json!(VISION_REASONING_MAX_TOKENS));
+
+        let without_effort = vision_payload(
+            &target(OpenAiTargetKind::LocalApiServer, false),
+            "describe",
+            &images,
+            false,
+            false,
+            true,
+            None,
+        );
+        assert!(without_effort.get("reasoning_effort").is_none());
+        assert_eq!(
+            without_effort["max_tokens"],
+            json!(VISION_REASONING_MAX_TOKENS)
+        );
+    }
+
+    /// A scripted proxied cloud target that takes images, as the Local API
+    /// Server presents MiniMax-M3.1-Flash.
+    fn vision_cloud_client(server: &ScriptedChatServer) -> OpenAiCompatibleClient {
+        let client = server.client_without_schema();
+        let mut cloud = client.target();
+        cloud.kind = OpenAiTargetKind::LocalApiServer;
+        cloud.has_vision = true;
+        client.retarget(&cloud);
+        client
+    }
+
+    fn effort_request(effort: &str) -> CompletionRequest {
+        request_with_reasoning(CompletionReasoning::On {
+            tags: ReasoningTags {
+                open: "<think>",
+                close: "</think>",
+            },
+            budget_tokens: None,
+            effort_value: Some(effort.into()),
+        })
+    }
+
+    fn png() -> Vec<(String, String)> {
+        vec![("image/png".to_string(), "AAAA".to_string())]
+    }
+
+    /// #366: MiniMax thinks at `max` unless told otherwise, and the vision
+    /// call used to send neither an effort nor room to think.
+    #[tokio::test]
+    async fn describe_images_asks_a_thinking_cloud_model_for_the_least_effort() {
+        let server = ScriptedChatServer::start(vec![
+            ScriptedResponse::chat_completion("[]"),
+            ScriptedResponse::chat_completion("A cat on a mat."),
+        ])
+        .await;
+        let client = vision_cloud_client(&server);
+        let cancellation = CancellationToken::new();
+
+        client
+            .complete(&effort_request("max"), &cancellation)
+            .await
+            .expect("chat step");
+        let description = client
+            .describe_images("describe", &png(), &cancellation)
+            .await
+            .expect("description");
+
+        assert_eq!(description, "A cat on a mat.");
+        let requests = server.requests();
+        assert_eq!(requests[0]["reasoning_effort"], json!("max"));
+        assert_eq!(requests[1]["reasoning_effort"], json!("low"));
+        assert_eq!(
+            requests[1]["max_tokens"],
+            json!(VISION_REASONING_MAX_TOKENS)
+        );
+    }
+
+    #[tokio::test]
+    async fn describe_images_drops_a_refused_effort_without_touching_the_run() {
+        let server = ScriptedChatServer::start(vec![
+            ScriptedResponse::chat_completion("[]"),
+            ScriptedResponse::http_error(
+                StatusCode::BAD_REQUEST,
+                "reasoning_effort='low' is not supported for this model.",
+            ),
+            ScriptedResponse::chat_completion("A cat on a mat."),
+        ])
+        .await;
+        let client = vision_cloud_client(&server);
+        let cancellation = CancellationToken::new();
+
+        client
+            .complete(&effort_request("high"), &cancellation)
+            .await
+            .expect("chat step");
+        let description = client
+            .describe_images("describe", &png(), &cancellation)
+            .await
+            .expect("description");
+
+        assert_eq!(description, "A cat on a mat.");
+        let requests = server.requests();
+        assert_eq!(requests[1]["reasoning_effort"], json!("low"));
+        assert!(requests[2].get("reasoning_effort").is_none());
+        assert_eq!(
+            requests[2]["max_tokens"],
+            json!(VISION_REASONING_MAX_TOKENS)
+        );
+        // The chat steps keep the effort the model did accept.
+        assert!(!client.reasoning_disabled.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn describe_images_leaves_a_cloud_model_without_an_effort_alone() {
+        let server = ScriptedChatServer::start(vec![
+            ScriptedResponse::chat_completion("[]"),
+            ScriptedResponse::chat_completion("A cat on a mat."),
+        ])
+        .await;
+        let client = vision_cloud_client(&server);
+        let cancellation = CancellationToken::new();
+
+        client
+            .complete(
+                &request_with_reasoning(CompletionReasoning::Unset),
+                &cancellation,
+            )
+            .await
+            .expect("chat step");
+        client
+            .describe_images("describe", &png(), &cancellation)
+            .await
+            .expect("description");
+
+        let vision = &server.requests()[1];
+        assert!(vision.get("reasoning_effort").is_none());
+        assert_eq!(vision["max_tokens"], json!(VISION_MAX_TOKENS));
     }
 
     /// #381: Mistral reasoning models answer with a list of content chunks.

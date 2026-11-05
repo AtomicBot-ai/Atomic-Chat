@@ -185,6 +185,20 @@ const CLOUD_MODEL_REASONING: Record<string, CloudModelReasoningTable> = {
     ],
     other: { supportsThinking: false },
   },
+  // https://platform.minimax.io/docs/api-reference/text-openai-api. Thinking
+  // cannot be switched off (`none` is a 400). `low`…`max`, defaulting to
+  // `max`, is documented for M3.1-Flash only. M2.x and M3 keep the
+  // `low`…`xhigh` the app has always sent them: nothing has shown yet that
+  // they take `max` (#366).
+  minimax: {
+    models: [
+      [
+        /^minimax-m3\.1-flash$/i,
+        effortControls(['low', 'medium', 'high', 'xhigh', 'max']),
+      ],
+    ],
+    other: effortControls(['low', 'medium', 'high', 'xhigh']),
+  },
 }
 
 /**
@@ -465,7 +479,8 @@ export const cloudReasoningEffortValue = (
   if (provider === 'moonshot') return level
   // Per-model providers get the level itself: `shapeCloudReasoningOverride`
   // puts it on the value the model declares (Mistral GLM 5.3 takes `max`,
-  // Large 4 tops out at `high`).
+  // Large 4 tops out at `high`; MiniMax `max` reaches M3.1-Flash as `max` and
+  // M2.x as `xhigh`).
   if (CLOUD_MODEL_REASONING[provider]) return level
   // Gemini tops out at `high` and rejects `xhigh` with a 400.
   if (
@@ -572,7 +587,9 @@ export const buildAgentReasoningRequest = (
   if (allowDisable && (disableReasoning || level === 'off')) return off
 
   if (inferredCloudThinking) {
-    const effort = level === 'off' ? 'low' : level
+    // Same start as the chat transport: a provider that cannot skip thinking
+    // runs at its weakest level while the preference says "off".
+    const effort = disableReasoning || level === 'off' ? 'low' : level
     return {
       enabled: true,
       effort,

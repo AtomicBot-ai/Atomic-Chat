@@ -1048,12 +1048,17 @@ export const providerModels = {
     supportsToolCalls: ['sonar', 'sonar-pro', 'sonar-reasoning-pro'],
     supportsN: true,
   },
+  // M3 and M3.1-Flash take image input and tools (registry entries,
+  // atomic-chat-conf#29). Without them here, Refresh, Add Model and the
+  // loopback auto-load created both with `completion` only (#366).
   'minimax': {
     models: [
       'MiniMax-M2.7',
       'MiniMax-M2.7-highspeed',
       'MiniMax-M2.5',
       'MiniMax-M2.5-highspeed',
+      'MiniMax-M3.1-Flash',
+      'MiniMax-M3',
     ],
     supportsCompletion: true,
     supportsStreaming: [
@@ -1061,14 +1066,18 @@ export const providerModels = {
       'MiniMax-M2.7-highspeed',
       'MiniMax-M2.5',
       'MiniMax-M2.5-highspeed',
+      'MiniMax-M3.1-Flash',
+      'MiniMax-M3',
     ],
     supportsJSON: [],
-    supportsImages: [],
+    supportsImages: ['MiniMax-M3.1-Flash', 'MiniMax-M3'],
     supportsToolCalls: [
       'MiniMax-M2.7',
       'MiniMax-M2.7-highspeed',
       'MiniMax-M2.5',
       'MiniMax-M2.5-highspeed',
+      'MiniMax-M3.1-Flash',
+      'MiniMax-M3',
     ],
     supportsN: true,
   },
