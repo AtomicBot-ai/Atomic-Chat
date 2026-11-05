@@ -71,6 +71,40 @@ describe('AudioPlayer switching clips (QA 2.3.2)', () => {
     expect(screen.getByRole('button', { name: 'Play' })).toBeEnabled()
   })
 
+  it('drops the spinner once the metadata is in: WebKit fires no canplay under preload="metadata"', () => {
+    const { container } = render(
+      <AudioPlayer src={SRC} mediaType="audio/wav" durationHint={4} />
+    )
+    const audio = container.querySelector('audio')!
+    act(() => vi.advanceTimersByTime(300))
+    expect(container.querySelector('.animate-spin')).not.toBeNull()
+
+    act(() => {
+      fireEvent(audio, new Event('loadedmetadata'))
+      vi.advanceTimersByTime(1000)
+    })
+    expect(container.querySelector('.animate-spin')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Play' })).toHaveAttribute(
+      'aria-busy',
+      'false'
+    )
+  })
+
+  it('shows no spinner when the metadata was in before the listeners were attached', () => {
+    const readyState = vi
+      .spyOn(HTMLMediaElement.prototype, 'readyState', 'get')
+      .mockReturnValue(HTMLMediaElement.HAVE_METADATA)
+    try {
+      const { container } = render(
+        <AudioPlayer src={SRC} mediaType="audio/wav" durationHint={4} />
+      )
+      act(() => vi.advanceTimersByTime(1000))
+      expect(container.querySelector('.animate-spin')).toBeNull()
+    } finally {
+      readyState.mockRestore()
+    }
+  })
+
   it('reloads when the same player is given another clip', () => {
     const { container, rerender } = render(
       <AudioPlayer src={SRC} mediaType="audio/wav" />

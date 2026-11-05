@@ -125,6 +125,14 @@ export function AudioPlayer({
       setIsLoading(false)
       setHasError(false)
     }
+    // Under preload="metadata" WebKit (the macOS webview) stops at
+    // HAVE_METADATA and never fires loadeddata/canplay until play() is
+    // called: the length is known and play() fetches the rest. Waiting for
+    // canplay there kept the spinner up for good.
+    const onMetadata = () => {
+      onMeta()
+      onReady()
+    }
     const onWaiting = () => setIsLoading(true)
     const onError = () => {
       setIsLoading(false)
@@ -132,7 +140,7 @@ export function AudioPlayer({
     }
 
     el.addEventListener('timeupdate', onTime)
-    el.addEventListener('loadedmetadata', onMeta)
+    el.addEventListener('loadedmetadata', onMetadata)
     el.addEventListener('durationchange', onMeta)
     el.addEventListener('ended', onEnded)
     el.addEventListener('play', onPlay)
@@ -144,12 +152,11 @@ export function AudioPlayer({
     el.addEventListener('error', onError)
     // The element starts loading as it mounts, so it may be further along
     // than the listeners just added have heard.
-    if (el.readyState >= HTMLMediaElement.HAVE_METADATA) onMeta()
-    if (el.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) onReady()
+    if (el.readyState >= HTMLMediaElement.HAVE_METADATA) onMetadata()
 
     return () => {
       el.removeEventListener('timeupdate', onTime)
-      el.removeEventListener('loadedmetadata', onMeta)
+      el.removeEventListener('loadedmetadata', onMetadata)
       el.removeEventListener('durationchange', onMeta)
       el.removeEventListener('ended', onEnded)
       el.removeEventListener('play', onPlay)
