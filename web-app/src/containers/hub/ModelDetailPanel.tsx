@@ -76,7 +76,7 @@ function SourceLink({ model }: { model: CatalogModel }) {
       {liteRt
         ? t(liteRt.origin === 'curated' ? 'hub:liteRtLm.curated' : 'hub:liteRtLm.huggingFace')
         : geniex
-          ? t(geniex.origin === 'curated' ? 'hub:geniex.curated' : 'hub:geniex.huggingFace')
+          ? (geniex.origin === 'qualcomm' ? 'Qualcomm AI Hub · Hugging Face' : t(geniex.origin === 'curated' ? 'hub:geniex.curated' : 'hub:geniex.huggingFace'))
           : t('hub:source.huggingFace')}
       <ExternalLink size={12} />
     </a>

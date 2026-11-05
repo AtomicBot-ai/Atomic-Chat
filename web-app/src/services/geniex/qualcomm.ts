@@ -3,6 +3,18 @@
 const ROOT = 'https://qaihub-public-assets.s3.us-west-2.amazonaws.com/qai-hub-models'
 const VERSION = 'https://pypi.org/pypi/qai-hub-models/json'
 const RUNTIME = 'RUNTIME_GENIEX_QAIRT'
+const GGUF_RUNTIME = 'RUNTIME_GENIEX_LLAMACPP'
+type File = { path: string; size: number; sha256: string }
+export interface QualcommGguf {
+  id: string
+  name: string
+  repo: string
+  revision: string
+  file: File
+  mmproj?: File
+  gated: boolean
+  license: string
+}
 type Chip = 'x-elite' | 'x2-elite'
 interface Entry {
   id: string
@@ -49,6 +61,57 @@ export function qualcommSearch(request: typeof fetch) {
     if (!res.ok) throw new Error('Qualcomm AI Hub catalog request failed (HTTP ' + res.status + ').')
     return res
   }
+  async function hfAsset(url: string) {
+    const match =
+      /^https:\/\/huggingface\.co\/([\w-][\w.-]*\/[\w-][\w.-]*)\/resolve\/(main|[a-f0-9]{40})\/([\w.-]+(?:\/[\w.-]+)*\.gguf)$/i.exec(
+        url
+      )
+    if (
+      !match ||
+      match[3]!.split('/').some((s) => s === '.' || s === '..') ||
+      /-\d{5}-of-\d{5}\.gguf$/i.test(url)
+    )
+      return null
+    const repo = match[1]!,
+      ref = match[2]!,
+      path = match[3]!
+    const api = 'https://huggingface.co/api/models/' + repo + '/revision/' + ref + '?blobs=true'
+    const tree = await cached(
+      api,
+      async () =>
+        (await (await response(api)).json()) as {
+          sha: string
+          gated?: unknown
+          cardData?: { license?: string }
+          siblings: { rfilename: string; lfs?: { size: number; sha256: string } }[]
+        }
+    )
+    if (!/^[a-f0-9]{40}$/.test(tree.sha) || !Array.isArray(tree.siblings)) return null
+    const files = tree.siblings.flatMap((s) => {
+      if (
+        !s.lfs ||
+        !Number.isSafeInteger(s.lfs.size) ||
+        s.lfs.size <= 0 ||
+        !/^[a-f0-9]{64}$/.test(s.lfs.sha256) ||
+        !/^[\w.-]+(?:\/[\w.-]+)*\.gguf$/i.test(s.rfilename) ||
+        s.rfilename.split('/').some((p) => p === '.' || p === '..')
+      )
+        return []
+      return [{ path: s.rfilename, size: s.lfs.size, sha256: s.lfs.sha256 }]
+    })
+    const file = files.find((f) => f.path === path)
+    if (!file) return null
+    const projectors = files.filter((f) => /mmproj/i.test(f.path.split('/').pop()!))
+    const mmproj = projectors.find((f) => /f16/i.test(f.path)) ?? projectors[0]
+    return {
+      repo,
+      file,
+      revision: tree.sha,
+      gated: !!tree.gated,
+      license: tree.cardData?.license ?? '',
+      ...(mmproj ? { mmproj } : {}),
+    }
+  }
   const release = () =>
     cached('manifest', async () => {
       const version: unknown = (
@@ -71,17 +134,33 @@ export function qualcommSearch(request: typeof fetch) {
         aihm_version: string
         assets: Asset[]
       }
-      if (
-        result.model_id !== entry.id ||
-        result.aihm_version !== version ||
-        !Array.isArray(result.assets)
-      )
+      if (result.model_id !== entry.id || result.aihm_version !== version || !Array.isArray(result.assets))
         throw new Error('Invalid Qualcomm release assets.')
       return result.assets
     })
     const id = 'qai-' + entry.id
     const variants: QualcommModel['variants'] = []
+    const ggufs: QualcommGguf[] = []
+    let partial = false
     for (const a of listing) {
+      if (
+        a.runtime === GGUF_RUNTIME &&
+        (!a.chipset || a.chipset === 'qualcomm-snapdragon-' + chip) &&
+        /^PRECISION_[A-Z0-9_]+$/.test(a.precision)
+      ) {
+        try {
+          const gguf = await hfAsset(a.download_url)
+          if (gguf)
+            ggufs.push({
+              ...gguf,
+              id: id + '-gguf-' + a.precision.slice(10).toLowerCase(),
+              name: entry.display_name,
+            })
+        } catch {
+          partial = true
+        }
+        continue
+      }
       if (
         a.runtime !== RUNTIME ||
         a.chipset !== 'qualcomm-snapdragon-' + chip ||
@@ -113,16 +192,19 @@ export function qualcommSearch(request: typeof fetch) {
           size <= 0
         )
           throw new Error('Qualcomm bundle lacks a version, size or full-object checksum.')
-        const crc64 = Array.from(atob(crc), (c) => c.charCodeAt(0).toString(16).padStart(2, '0')).join(
-          ''
-        )
+        const crc64 = Array.from(atob(crc), (c) => c.charCodeAt(0).toString(16).padStart(2, '0')).join('')
         return { url: a.download_url + '?versionId=' + encodeURIComponent(versionId), size, crc64 }
-      })
+      }).catch(() => null)
+      if (!bundle) {
+        partial = true
+        continue
+      }
       variants.push({ id: [id, chip, precision, version].join('-'), chip, precision, bundle })
     }
-    return { id, name: entry.display_name, variants }
+    return { id, name: entry.display_name, variants, ggufs, partial }
   }
   return async (query: string, chip: Chip, excluded: ReadonlySet<string> = new Set()) => {
+    const ggufs: QualcommGguf[] = []
     const found: QualcommModel[] = []
     let unavailable = false
     try {
@@ -137,7 +219,7 @@ export function qualcommSearch(request: typeof fetch) {
           !/^[a-z0-9][a-z0-9_]*$/.test(m.id) ||
           typeof m.display_name !== 'string' ||
           m.use_case !== 'MODEL_USE_CASE_TEXT_GENERATION' ||
-          !m.supported_runtimes?.includes(RUNTIME) ||
+          !m.supported_runtimes?.some((r) => r === RUNTIME || r === GGUF_RUNTIME) ||
           !m.supported_chipsets?.includes('qualcomm-snapdragon-' + chip)
         )
           return false
@@ -154,6 +236,8 @@ export function qualcommSearch(request: typeof fetch) {
             continue
           }
           const row = result.value
+          if (row.partial) unavailable = true
+          ggufs.push(...row.ggufs)
           row.variants = row.variants.filter((v) => !excluded.has(v.bundle.url.split('?')[0]!))
           if (row.variants.length) found.push(row)
         }
@@ -161,6 +245,6 @@ export function qualcommSearch(request: typeof fetch) {
     } catch {
       unavailable = true
     }
-    return { models: found, unavailable }
+    return { models: found, ggufs, unavailable }
   }
 }

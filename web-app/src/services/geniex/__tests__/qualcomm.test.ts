@@ -37,11 +37,21 @@ describe('published Qualcomm releases', () => {
           aihm_version: '0.66.0',
           assets: [
             asset,
+            {
+              runtime: 'RUNTIME_GENIEX_LLAMACPP',
+              precision: 'PRECISION_MXFP4',
+              download_url: 'https://huggingface.co/publisher/model/resolve/main/weights.gguf',
+            },
             { ...asset, precision: 'PRECISION_W8A16', download_url: base + 'large.zip' },
             { ...asset, chipset: 'qualcomm-snapdragon-x2-elite' },
             { ...asset, runtime: 'RUNTIME_GENIE' },
             { ...asset, download_url: 'https://example.com/wrong.zip' },
           ],
+        })
+      if (path.startsWith('https://huggingface.co/api/models/publisher/model/revision/main'))
+        return Response.json({
+          sha: 'a'.repeat(40),
+          siblings: [{ rfilename: 'weights.gguf', lfs: { size: 125, sha256: 'b'.repeat(64) } }],
         })
       expect(init?.method).toBe('HEAD')
       expect([base + 'small.zip', base + 'large.zip']).toContain(path)
@@ -56,6 +66,13 @@ describe('published Qualcomm releases', () => {
     })
     const search = qualcommSearch(request)
     const found = await search('smollm', 'x-elite')
+    expect(found.ggufs).toMatchObject([
+      {
+        id: 'qai-smollm-gguf-mxfp4',
+        file: { path: 'weights.gguf', sha256: 'b'.repeat(64) },
+        revision: 'a'.repeat(40),
+      },
+    ])
     expect(found.unavailable).toBe(false)
     const cards = found.models.flatMap(qualcommGeniexCards)
     expect(
@@ -70,6 +87,6 @@ describe('published Qualcomm releases', () => {
     expect(
       (await search('smollm', 'x-elite', new Set([base + 'small.zip']))).models[0]?.variants
     ).toHaveLength(1)
-    expect(request).toHaveBeenCalledTimes(5)
+    expect(request).toHaveBeenCalledTimes(6)
   })
 })

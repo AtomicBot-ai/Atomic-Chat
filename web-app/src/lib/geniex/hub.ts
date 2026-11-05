@@ -13,7 +13,28 @@ import type { GeniexHfModel } from '@/services/geniex/huggingface'
 import type { GeniexChip, GeniexDevice, GeniexHubModel, GeniexHubVariant } from '@/services/geniex/types'
 import type { CatalogModel } from '@/services/models/types'
 
-import type { QualcommModel } from '@/services/geniex/qualcomm'
+import type { QualcommModel, QualcommGguf } from '@/services/geniex/qualcomm'
+
+export function qualcommGgufCard(g: QualcommGguf, devices: GeniexDevice[]): CatalogModel {
+  return card({
+    origin: 'qualcomm',
+    kind: 'gguf',
+    model_id: g.id,
+    name: g.name,
+    summary: 'Qualcomm AI Hub · ' + g.repo,
+    license: g.license,
+    vision: !!g.mmproj,
+    gguf: {
+      repo: g.repo,
+      revision: g.revision,
+      file: g.file,
+      gated: g.gated,
+      ...(g.mmproj ? { mmproj: g.mmproj } : {}),
+      devices,
+      platforms: ['win-arm64'],
+    },
+  })
+}
 
 export function qualcommGeniexCards(model: QualcommModel): CatalogModel[] {
   return model.variants.map((variant) =>

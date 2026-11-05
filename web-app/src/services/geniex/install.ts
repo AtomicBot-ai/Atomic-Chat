@@ -258,7 +258,7 @@ function ggufModelYml(
 ): Record<string, unknown> {
   const metadata = check.metadata?.kind === 'gguf' ? check.metadata : undefined
   const abilities =
-    model.origin === 'huggingface'
+    (model.origin === 'huggingface' || model.origin === 'qualcomm')
       ? {
           context_length: metadata?.max_context_tokens ?? model.context_length ?? DEFAULT_CONTEXT_LENGTH,
           tools: false,
@@ -290,7 +290,7 @@ function ggufModelYml(
       file,
       ...(mmproj ? { mmproj } : {}),
       ...abilities,
-      source: model.origin,
+      source: model.origin === 'qualcomm' ? 'huggingface' : model.origin,
     },
   }
 }
