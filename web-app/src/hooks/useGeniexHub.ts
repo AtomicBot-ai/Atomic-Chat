@@ -1,9 +1,12 @@
-import { useEffect, useState } from 'react'
+import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
+import { qualcommSearch } from '@/services/geniex/qualcomm'
+import { useEffect, useMemo, useState } from 'react'
 
 import { useModelProvider } from '@/hooks/useModelProvider'
 import {
   bundleGeniexCard,
   curatedGeniexCard,
+  qualcommGeniexCards,
   ggufCandidates,
   hfGeniexCard,
   hostGeniexPlatform,
@@ -14,6 +17,10 @@ import { fetchHfGeniexModels } from '@/services/geniex/huggingface'
 import type { GeniexChip } from '@/services/geniex/types'
 import { getModelSearchService } from '@/services/model-search'
 import type { CatalogModel } from '@/services/models/types'
+
+const searchQualcomm = qualcommSearch((url, options) =>
+  (typeof IS_TAURI !== 'undefined' && IS_TAURI ? fetchTauri : fetch)(url, options)
+)
 
 const GENIEX_PROVIDER = 'geniex'
 
@@ -70,6 +77,7 @@ export interface GeniexHubState {
   /** The AI Hub shelf: every curated bundle model; the rows keep the ones for this chip. */
   bundles: CatalogModel[]
   /** Hugging Face could not be listed; the curated list is shown alone, with a note. */
+  qualcommUnavailable?: boolean
   huggingFaceUnavailable: boolean
   chip: GeniexChip | null
   /** The list the cards came from. */
@@ -97,6 +105,34 @@ export function useGeniexHub(enabled: boolean, query: string): GeniexHubState {
   const [state, setState] = useState<GeniexHubState>(EMPTY)
   const chip = useGeniexChip(enabled)
   const list = enabled ? state.list : null
+
+  const [vendor, setVendor] = useState({ models: [] as CatalogModel[], unavailable: false, loading: false })
+  useEffect(() => {
+    if (!enabled || !chip) return
+    let live = true
+    setVendor({ models: [], unavailable: false, loading: true })
+    const timer = setTimeout(() => {
+      const excluded = new Set(
+        list?.models.flatMap((m) => (m.kind === 'qairt' ? m.variants.map((v) => v.bundle.url) : [])) ?? []
+      )
+      void searchQualcomm(query, chip, excluded).then((result) => {
+        if (live)
+          setVendor({
+            models: result.models.flatMap(qualcommGeniexCards),
+            unavailable: result.unavailable,
+            loading: false,
+          })
+      })
+    }, 180)
+    return () => {
+      live = false
+      clearTimeout(timer)
+    }
+  }, [enabled, chip, list, query])
+  const bundles = useMemo(
+    () => (chip ? [...state.bundles, ...vendor.models] : state.bundles),
+    [chip, state.bundles, vendor.models]
+  )
 
   // conf's list, once each time the format is shown: a search does not read it again.
   useEffect(() => {
@@ -149,5 +185,13 @@ export function useGeniexHub(enabled: boolean, query: string): GeniexHubState {
     }
   }, [list, query])
 
-  return enabled ? { ...state, chip } : EMPTY
+  return enabled
+    ? {
+        ...state,
+        chip,
+        bundles,
+        loading: state.loading || (!!chip && vendor.loading),
+        qualcommUnavailable: !!chip && vendor.unavailable,
+      }
+    : EMPTY
 }

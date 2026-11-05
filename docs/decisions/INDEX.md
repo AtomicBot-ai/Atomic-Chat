@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-522 records, 2026-05-19 → 2026-11-05.
+523 records, 2026-05-19 → 2026-11-05.
 
 ---
 
@@ -244,7 +244,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Ship `janhq/llama.cpp` cudart DLLs with every Windows CUDA backend](2026-05-22-ship-janhq-llama-cpp-cudart-dlls-with-every-windows-cuda-backend.md)
 - **2026-05-19** — [Windows uses upstream `ggml-org/llama.cpp`, not the TurboQuant fork](2026-05-19-windows-uses-upstream-ggml-org-llama-cpp-not-the-turboquant-fork.md)
 
-## Models, Hub & downloads (50)
+## Models, Hub & downloads (51)
+
+- **2026-11-05** — [Discover GenieX bundles in Qualcomm releases](2026-11-05-discover-geniex-qualcomm-bundles.md)
 
 - **2026-11-04** — [Retry locked download renames and measure free space at the destination](2026-11-04-retry-locked-download-renames-and-measure-space-at-the-destination.md) — Windows lock retries (~10 s), free space at the destination plus max(512 MiB, 2%), `disk_fs_limit` for FAT32.
 - **2026-10-26** — [Count a task's finished files on resume, and reopen a connection that only trickles](2026-10-26-count-finished-files-on-resume-and-reopen-trickling-connections.md)

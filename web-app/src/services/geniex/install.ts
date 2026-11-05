@@ -98,7 +98,8 @@ export interface GeniexInstallDeps {
     archive: string,
     outputDir: string,
     taskId: string,
-    onProgress?: (fraction: number) => void
+    onProgress?: (fraction: number) => void,
+    crc64?: string
   ) => Promise<ExtractReport>
   removeFolder: (path: string) => Promise<void>
   writeYaml: (savePath: string, data: unknown) => Promise<void>
@@ -319,7 +320,7 @@ async function installBundle(
   // Unpacked means the archive is gone: `extract_zip` deletes it only after the last entry, so a
   // cancelled or failed unpack, which may have written `genie_config.json` already, is done again.
   const archiveSize = await deps.existingSize(archive)
-  const unpacked = archiveSize === null && (await deps.isUnpacked(root))
+  const unpacked = !variant.bundle.crc64 && archiveSize === null && (await deps.isUnpacked(root))
   const pending = !unpacked && archiveSize !== variant.bundle.size
   if (pending && !(await deps.hasPartial(archive))) {
     // The zip and what it unpacks to: the archive is deleted only once everything is out.
@@ -353,8 +354,10 @@ async function installBundle(
         })
       }
       // The same task: the panel's row moves on to the unpacking, and its Cancel stops it.
-      const report = await deps.extractZip(archive, root, downloadId, (fraction) =>
-        emitProgress(total, total, DOWNLOAD_SHARE + (1 - DOWNLOAD_SHARE) * fraction)
+      const report = await deps.extractZip(
+        archive, root, downloadId,
+        (fraction) => emitProgress(total, total, DOWNLOAD_SHARE + (1 - DOWNLOAD_SHARE) * fraction),
+        variant.bundle.crc64
       )
       sizeBytes = report.bytes > 0 ? report.bytes : sizeBytes
     }
@@ -365,6 +368,9 @@ async function installBundle(
     }
     await deps.writeYaml(underRoot(root, 'model.yml'), bundleModelYml(model, variant, folderCheck, sizeBytes))
   } catch (error) {
+    if (variant.bundle.crc64 && String(error).includes('Qualcomm archive checksum mismatch')) {
+      await deps.removeFolder(root)
+    }
     if (!unpacked) emitDownloadEnded(deps, downloadId, error)
     throw error
   }
@@ -429,14 +435,15 @@ async function extractZipWithProgress(
   archive: string,
   outputDir: string,
   taskId: string,
-  onProgress?: (fraction: number) => void
+  onProgress?: (fraction: number) => void,
+  crc64?: string
 ): Promise<ExtractReport> {
   const unlisten = await listen<{ transferred?: number; total?: number }>(`download-${taskId}`, (event) => {
     const { transferred, total } = event.payload
     if (typeof transferred === 'number' && typeof total === 'number' && total > 0) onProgress?.(transferred / total)
   })
   try {
-    return await invoke<ExtractReport>('extract_zip', { archive, outputDir, taskId, removeArchive: true })
+    return await invoke<ExtractReport>('extract_zip', { archive, outputDir, taskId, removeArchive: true, crc64 })
   } finally {
     unlisten()
   }
