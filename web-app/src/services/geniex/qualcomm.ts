@@ -7,6 +7,7 @@ type Chip = 'x-elite' | 'x2-elite'
 interface Entry {
   id: string
   display_name: string
+  manifest_urls?: { release_assets?: string }
   supported_chipsets?: string[]
   supported_runtimes?: string[]
   use_case?: string
@@ -143,6 +144,8 @@ export function qualcommSearch(request: typeof fetch) {
         if (
           !/^[a-z0-9][a-z0-9_]*$/.test(m.id) ||
           typeof m.display_name !== 'string' ||
+          m.manifest_urls?.release_assets !==
+            ROOT + '/models/' + m.id + '/releases/v' + version + '/release-assets.json' ||
           m.use_case !== 'MODEL_USE_CASE_TEXT_GENERATION' ||
           !m.supported_runtimes?.includes(RUNTIME) ||
           !m.supported_chipsets?.includes('qualcomm-snapdragon-' + chip)

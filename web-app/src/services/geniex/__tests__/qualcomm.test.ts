@@ -23,8 +23,16 @@ describe('published Qualcomm releases', () => {
           version: '0.66.0',
           models: [
             {
+              id: 'smollm_restricted',
+              display_name: 'Restricted SmolLM',
+              supported_runtimes: [runtime],
+              supported_chipsets: [chip],
+              use_case: 'MODEL_USE_CASE_TEXT_GENERATION',
+            },
+            {
               id: 'smollm',
               display_name: 'SmolLM',
+              manifest_urls: { release_assets: base + 'release-assets.json' },
               supported_runtimes: [runtime],
               supported_chipsets: [chip],
               use_case: 'MODEL_USE_CASE_TEXT_GENERATION',
