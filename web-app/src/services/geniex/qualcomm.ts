@@ -29,6 +29,11 @@ export interface QualcommModel {
   variants: { id: string; chip: Chip; precision: string; bundle: QualcommBundle }[]
 }
 
+// Releases of the same model use the same asset filename for a given runtime, precision and chip.
+// Prefer Atomic's reviewed copy even when Qualcomm has since published a new release.
+const bundleKey = (url: string) =>
+  url.split('?')[0]!.replace(/\/releases\/v\d+\.\d+\.\d+\//, '/releases/')
+
 // Both clients keep successful reads for one hour. An outage is retried on the next search.
 export function qualcommSearch(request: typeof fetch) {
   const cache = new Map<string, { expires: number; read: Promise<unknown> }>()
@@ -63,7 +68,7 @@ export function qualcommSearch(request: typeof fetch) {
         throw new Error('Invalid Qualcomm manifest.')
       return manifest
     })
-  async function model(entry: Entry, version: string, chip: Chip) {
+  async function model(entry: Entry, version: string, chip: Chip, excluded: ReadonlySet<string>) {
     const base = ROOT + '/models/' + entry.id + '/releases/v' + version + '/'
     const listing = await cached(base, async () => {
       const result = (await (await response(base + 'release-assets.json')).json()) as {
@@ -90,6 +95,7 @@ export function qualcommSearch(request: typeof fetch) {
         continue
       if (
         typeof a.download_url !== 'string' ||
+        excluded.has(bundleKey(a.download_url)) ||
         !a.download_url.startsWith(base) ||
         !/^[a-zA-Z0-9_-][\w.-]*\.zip$/.test(a.download_url.slice(base.length))
       )
@@ -123,6 +129,7 @@ export function qualcommSearch(request: typeof fetch) {
     return { id, name: entry.display_name, variants }
   }
   return async (query: string, chip: Chip, excluded: ReadonlySet<string> = new Set()) => {
+    const curated = new Set(Array.from(excluded, bundleKey))
     const found: QualcommModel[] = []
     let unavailable = false
     try {
@@ -146,7 +153,7 @@ export function qualcommSearch(request: typeof fetch) {
       })
       for (let i = 0; i < candidates.length; i += 4) {
         const results = await Promise.allSettled(
-          candidates.slice(i, i + 4).map((m) => model(m, version, chip))
+          candidates.slice(i, i + 4).map((m) => model(m, version, chip, curated))
         )
         for (const result of results) {
           if (result.status === 'rejected') {
@@ -154,7 +161,6 @@ export function qualcommSearch(request: typeof fetch) {
             continue
           }
           const row = result.value
-          row.variants = row.variants.filter((v) => !excluded.has(v.bundle.url.split('?')[0]!))
           if (row.variants.length) found.push(row)
         }
       }

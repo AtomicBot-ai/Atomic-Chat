@@ -40,6 +40,11 @@ describe('published Qualcomm releases', () => {
             { ...asset, precision: 'PRECISION_W8A16', download_url: base + 'large.zip' },
             { ...asset, chipset: 'qualcomm-snapdragon-x2-elite' },
             { ...asset, runtime: 'RUNTIME_GENIE' },
+            {
+              ...asset,
+              runtime: 'RUNTIME_GENIEX_LLAMACPP',
+              download_url: 'https://huggingface.co/publisher/model/resolve/main/weights.gguf',
+            },
             { ...asset, download_url: 'https://example.com/wrong.zip' },
           ],
         })
@@ -68,8 +73,15 @@ describe('published Qualcomm releases', () => {
     })
     expect((await search('smollm', 'x2-elite')).models).toEqual([])
     expect(
-      (await search('smollm', 'x-elite', new Set([base + 'small.zip']))).models[0]?.variants
+      (
+        await search(
+          'smollm',
+          'x-elite',
+          new Set([base.replace('/v0.66.0/', '/v0.65.0/') + 'small.zip'])
+        )
+      ).models[0]?.variants
     ).toHaveLength(1)
+    expect(request.mock.calls.some(([url]) => String(url).includes('huggingface.co'))).toBe(false)
     expect(request).toHaveBeenCalledTimes(5)
   })
 })
