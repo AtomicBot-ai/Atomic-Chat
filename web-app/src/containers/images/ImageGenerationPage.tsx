@@ -304,7 +304,8 @@ export const ImageGenerationPage = memo(function ImageGenerationPage({
                   </span>
                 )}
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-4">
+              {/* `pt-1`: room for the selected tile's ring, which the scroll box would clip. */}
+              <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-1 pb-4">
                 <ImageGalleryGrid
                   items={gallery.items}
                   selectedId={showLivePreview ? null : gallery.selectedId}

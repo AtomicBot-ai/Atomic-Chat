@@ -233,7 +233,8 @@ export const AudioResultsPane = memo(function AudioResultsPane() {
           <span>{t('audios:gallery.title')}</span>
           <span className="tabular-nums">{total}</span>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-4">
+        {/* `pt-1`: room for the selected tile's ring, which the scroll box would clip. */}
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 pt-1 pb-4">
           <div
             className="grid grid-cols-[repeat(auto-fill,minmax(104px,1fr))] gap-2"
             data-testid="audio-gallery-grid"

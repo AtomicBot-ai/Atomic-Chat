@@ -119,6 +119,21 @@ describe('Audios studio geometry', () => {
     }
   )
 
+  it('leaves the selected tile’s ring room under the top of the gallery’s scroll box', async () => {
+    setFontSize(DEFAULT_FONT_SIZE)
+    setTheme('dark')
+    await seedStudio()
+    await settle()
+
+    const grid = screen.getByTestId('audio-gallery-grid')
+    const scroller = grid.parentElement!
+    const tile = within(grid).getAllByRole('button', { pressed: true })[0]
+    const ring = 2 // ring-2: drawn outside the tile, where the scroll box clips it
+    expect(
+      tile.getBoundingClientRect().top - scroller.getBoundingClientRect().top
+    ).toBeGreaterThanOrEqual(ring)
+  })
+
   it('shows a job’s phase in the pane without moving the gallery off the page', async () => {
     setFontSize(DEFAULT_FONT_SIZE)
     setTheme('light')
