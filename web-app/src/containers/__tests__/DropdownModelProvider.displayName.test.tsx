@@ -7,6 +7,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useFavoriteModel } from '@/hooks/useFavoriteModel'
 import type { ModelsService } from '@/services/models/types'
 import { seedServiceHub } from '@/test/service-hub'
+import { useNavigate } from '@tanstack/react-router'
 
 // Define basic types to avoid missing declarations
 type ModelProvider = {
@@ -218,6 +219,47 @@ describe('DropdownModelProvider - Display Name Integration', () => {
       expect(gear.parentElement).toHaveClass('gap-3')
     }
   )
+
+  it.each([
+    [
+      'a local engine to its unfolded row on Inference engines',
+      { provider: 'llamacpp-upstream' },
+      {
+        to: '/settings/providers',
+        search: { openEngine: 'llamacpp-upstream' },
+      },
+    ],
+    [
+      'a cloud provider to its old route, which forwards to /cloud',
+      { provider: 'openai', api_key: 'sk-test' },
+      {
+        to: '/settings/providers/$providerName',
+        params: { providerName: 'openai' },
+      },
+    ],
+  ])('the gear takes %s', (_, patch, expected) => {
+    const navigate = vi.fn()
+    vi.mocked(useNavigate).mockReturnValue(navigate)
+    const configured = { ...mockProviders[0], ...patch }
+    mockModelProvider({
+      providers: [configured],
+      selectedProvider: configured.provider,
+      selectedModel: mockSelectedModel,
+      getProviderByName: () => configured,
+      selectModelProvider: vi.fn(),
+      getModelBy: vi.fn(),
+      updateProvider: vi.fn(),
+    })
+    renderPicker()
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'common:modelPicker.providerSettings',
+      })
+    )
+
+    expect(navigate).toHaveBeenCalledWith(expected)
+  })
 
   it('should display custom model name in the trigger button', () => {
     renderPicker()

@@ -141,6 +141,64 @@ describe('the audio engine row', () => {
   })
 })
 
+describe('opening the page for one engine (the model picker’s gear)', () => {
+  beforeEach(() => {
+    useModelProvider.setState({
+      providers: [engine('llamacpp-upstream'), engine('llamacpp')],
+    })
+    act(() => useEngineVersionsStore.setState({ engines: {}, error: null }))
+  })
+
+  const settingsOf = (provider: string) =>
+    within(screen.getByTestId(`engine-row-${provider}`)).queryByRole('region')
+
+  it('unfolds that engine’s row and scrolls to it, leaving the others folded', () => {
+    const original = Element.prototype.scrollIntoView
+    const scrollIntoView = vi.fn()
+    Element.prototype.scrollIntoView = scrollIntoView
+    try {
+      render(<InferenceEnginesOverview openEngine="llamacpp-upstream" />)
+
+      expect(settingsOf('llamacpp-upstream')).not.toBeNull()
+      expect(settingsOf('llamacpp')).toBeNull()
+      expect(scrollIntoView).toHaveBeenCalledTimes(1)
+      expect(scrollIntoView.mock.contexts[0]).toBe(
+        screen.getByTestId('engine-row-llamacpp-upstream')
+      )
+    } finally {
+      Element.prototype.scrollIntoView = original
+    }
+  })
+
+  it('unfolds the row again for a later link to it, after it was folded', () => {
+    const { rerender } = render(
+      <InferenceEnginesOverview openEngine="llamacpp-upstream" />
+    )
+    act(() =>
+      within(screen.getByTestId('engine-row-llamacpp-upstream'))
+        .getByRole('button', {
+          name: 'providers:overview.collapseSettings',
+        })
+        .click()
+    )
+    expect(settingsOf('llamacpp-upstream')).toBeNull()
+
+    // The update banner's reinstall links here again, asking to confirm.
+    rerender(
+      <InferenceEnginesOverview openEngine="llamacpp-upstream" engineUpdate />
+    )
+
+    expect(settingsOf('llamacpp-upstream')).not.toBeNull()
+  })
+
+  it('keeps every row folded without one', () => {
+    render(<InferenceEnginesOverview />)
+
+    expect(settingsOf('llamacpp-upstream')).toBeNull()
+    expect(settingsOf('llamacpp')).toBeNull()
+  })
+})
+
 describe('the status of a language engine row', () => {
   beforeEach(() => {
     useModelProvider.setState({

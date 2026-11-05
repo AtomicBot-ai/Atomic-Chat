@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode, type RefObje
 
 import { Button } from '@/components/ui/button'
 import { route } from '@/constants/routes'
+import { engineSettingsLink } from '@/lib/engine-settings-link'
 import { DeleteModelAction } from '@/containers/hub/DeleteModelAction'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -363,7 +364,7 @@ function Action({
       <Button
         size="sm"
         variant="outline"
-        onClick={() => navigate({ to: route.settings.providers, params: { providerName: PROVIDER } })}
+        onClick={() => navigate(engineSettingsLink(PROVIDER))}
         // The column is fixed; a long label wraps inside it rather than spilling over the list.
         // `h-auto!`: the shell's control-height rule in index.css pins `sm` buttons to one line.
         className="h-auto! max-w-full whitespace-normal py-1.5 text-center"

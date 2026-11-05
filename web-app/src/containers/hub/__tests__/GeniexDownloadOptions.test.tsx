@@ -156,7 +156,7 @@ describe('GeniexDownloadOptions — a GGUF model', () => {
     render(<GeniexDownloadOptions model={model(gguf())} chip="x-elite" />)
 
     await user.click(await screen.findByRole('button', { name: 'hub:geniex.installEngine' }))
-    expect(navigate).toHaveBeenCalledWith(expect.objectContaining({ params: { providerName: 'geniex' } }))
+    expect(navigate).toHaveBeenCalledWith({ to: '/settings/providers', search: { openEngine: 'geniex' } })
     expect(screen.queryByRole('button', { name: 'hub:download' })).not.toBeInTheDocument()
     expect(installer.installGeniexModel).not.toHaveBeenCalled()
   })
@@ -274,7 +274,7 @@ describe('GeniexDownloadOptions — an AI Hub bundle', () => {
     render(<GeniexDownloadOptions model={model(bundle())} chip="x-elite" />)
 
     await user.click(await screen.findByRole('button', { name: 'hub:geniex.installEngine' }))
-    expect(navigate).toHaveBeenCalledWith(expect.objectContaining({ params: { providerName: 'geniex' } }))
+    expect(navigate).toHaveBeenCalledWith({ to: '/settings/providers', search: { openEngine: 'geniex' } })
     expect(screen.getByText('npu: engine-not-installed')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'hub:download' })).not.toBeInTheDocument()
     expect(installer.installGeniexModel).not.toHaveBeenCalled()

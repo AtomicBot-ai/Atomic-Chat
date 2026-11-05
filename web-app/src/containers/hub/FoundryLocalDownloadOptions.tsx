@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode, type RefObje
 
 import { Button } from '@/components/ui/button'
 import { route } from '@/constants/routes'
+import { engineSettingsLink } from '@/lib/engine-settings-link'
 import { DeleteModelAction } from '@/containers/hub/DeleteModelAction'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -232,8 +233,7 @@ function Action({
 }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const toProviderPage = () =>
-    navigate({ to: route.settings.providers, params: { providerName: PROVIDER } })
+  const toProviderPage = () => navigate(engineSettingsLink(PROVIDER))
 
   if (downloaded) return <NewChatButton modelId={variant.id} />
   if (!verdict || 'error' in verdict) return null

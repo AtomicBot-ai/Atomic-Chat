@@ -315,7 +315,7 @@ describe('EngineUpdateBanner', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('takes a managed engine to its page to confirm the reinstall', async () => {
+  it('takes a managed engine to its unfolded row to confirm the reinstall', async () => {
     const user = userEvent.setup()
     hold(
       versions('vllm', 'vllm-0.31.0-r1/linux', 'vllm-0.32.0-r1/linux', {
@@ -336,9 +336,8 @@ describe('EngineUpdateBanner', () => {
 
     expect(updateEngineWithProgress).not.toHaveBeenCalled()
     expect(navigate).toHaveBeenCalledWith({
-      to: '/settings/providers/$providerName',
-      params: { providerName: 'vllm' },
-      search: { engineUpdate: true },
+      to: '/settings/providers',
+      search: { openEngine: 'vllm', engineUpdate: true },
     })
     // Nothing began: the offer stays until the reinstall is confirmed.
     expect(screen.getByText('updater:engine.title')).toBeInTheDocument()

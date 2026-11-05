@@ -14,8 +14,9 @@ import { isLocalEngineProvider } from '@/lib/cloud-providers'
 export const Route = createFileRoute('/settings/providers/$providerName')({
   /**
    * Cloud providers are configured on `/cloud` now. The route stays alive
-   * because bookmarks, the model picker's gear and `DeleteProvider` all point
-   * at it; it just forwards.
+   * because bookmarks and the model picker's gear for a cloud provider point
+   * at it; it just forwards. A local engine's settings links go to its
+   * unfolded row instead (`engineSettingsLink`); this page keeps its models.
    *
    * `beforeLoad` rather than a redirect inside the component: it runs outside
    * React, so it cannot disturb the hook order of a 2800-line component. An

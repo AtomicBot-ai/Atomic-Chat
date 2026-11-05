@@ -210,7 +210,7 @@ describe('a card under several managed engines (spec vllm-desktop)', () => {
 
     await userEvent.setup().click(screen.getByRole('button', { name: 'hub:second.installEngine' }))
     expect(navigate).toHaveBeenCalledWith(
-      expect.objectContaining({ params: { providerName: 'second-engine' } })
+      { to: '/settings/providers', search: { openEngine: 'second-engine' } }
     )
   })
 
@@ -378,6 +378,6 @@ describe('a card under the three managed engines (spec sglang-desktop)', () => {
     expect(screen.queryByRole('button', { name: 'hub:download' })).not.toBeInTheDocument()
 
     await userEvent.setup().click(screen.getByRole('button', { name: 'hub:sglang.installEngine' }))
-    expect(navigate).toHaveBeenCalledWith(expect.objectContaining({ params: { providerName: 'sglang' } }))
+    expect(navigate).toHaveBeenCalledWith({ to: '/settings/providers', search: { openEngine: 'sglang' } })
   })
 })

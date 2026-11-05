@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-521 records, 2026-05-19 → 2026-11-04.
+522 records, 2026-05-19 → 2026-11-05.
 
 ---
 
@@ -386,7 +386,8 @@ decision is reversed, add a new one that says which record it supersedes.
 ## UI / UX (2)
 - **2026-10-20** — [Show hosted providers on Cloud and the user's own servers on Custom Endpoint](2026-10-20-show-hosted-providers-on-cloud-and-own-servers-on-custom-endpoint.md)
 - **2026-10-20** — [List everything downloaded on a Downloads page](2026-10-20-list-everything-downloaded-on-a-downloads-page.md)
-## UI / UX (133)
+## UI / UX (134)
+- **2026-11-05** — [Link to an engine's settings on its unfolded row](2026-11-05-link-to-an-engines-settings-on-its-unfolded-row.md) — the picker's gear, Logs, Hub install and update links open Inference engines with the row unfolded; the engine's page keeps only its models; supersedes in part 2026-10-20.
 - **2026-11-04** — [Name the model a send without a selection will start, and give composer actions full-size targets](2026-11-04-name-the-model-a-send-without-a-selection-will-start.md) — "Send with {{model}}" from the same pick as the auto-start; 36/40 px invisible targets on 28 px controls.
 - **2026-10-29** — [Leave the first run's downloads to the download panel after setup](2026-10-29-leave-the-first-runs-downloads-to-the-download-panel-after-setup.md) — the handoff panel shows only an interrupted download, the model ready or the way back; supersedes in part 2026-10-22.
 - **2026-10-28** — [Deliver the wait screen's model-ready email reminder](2026-10-28-deliver-model-ready-email-reminders.md) — supersedes hiding the form on 2026-10-27.

@@ -15,9 +15,12 @@ import { seedServiceHub } from '@/test/service-hub'
 import { Route as ProvidersRoute } from '../index'
 
 const navigate = vi.hoisted(() => vi.fn())
+/** The page's search params: `openEngine` from the model picker's gear. */
+const search = vi.hoisted(() => ({ current: {} as Record<string, unknown> }))
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (config: Record<string, unknown>) => config,
   useNavigate: () => navigate,
+  useSearch: () => search.current,
   Link: ({
     children,
     to,
@@ -53,13 +56,16 @@ vi.mock('@/containers/engines/EngineDetail', () => ({
   EngineDetail: ({
     providerName,
     embedded,
+    engineUpdate,
   }: {
     providerName: string
     embedded?: boolean
+    engineUpdate?: boolean
   }) => (
     <div
       data-testid={`engine-detail-${providerName}`}
       data-embedded={String(embedded)}
+      data-engine-update={String(Boolean(engineUpdate))}
     />
   ),
 }))
@@ -159,6 +165,7 @@ describe('Inference engines overview', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.unstubAllGlobals()
+    search.current = {}
     i18n.changeLanguage('en')
     platform.mediaGeneration = true
     platform.voiceInput = true
@@ -272,6 +279,54 @@ describe('Inference engines overview', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('opens on the engine the model picker’s gear names, unfolded', () => {
+    search.current = { openEngine: 'llamacpp-upstream' }
+    renderPage()
+
+    expect(
+      within(row('engine-row-llamacpp-upstream')).getByRole('region', {
+        name: 'llama.cpp settings',
+      })
+    ).toBeInTheDocument()
+    expect(
+      within(row('engine-row-llamacpp')).queryByRole('region')
+    ).not.toBeInTheDocument()
+  })
+
+  it('has only the named engine’s setup ask to confirm its update', () => {
+    useModelProvider.setState({
+      providers: [engine('vllm'), engine('llamacpp-upstream')],
+    })
+    search.current = { openEngine: 'vllm', engineUpdate: true }
+    renderPage()
+
+    expect(screen.getByTestId('engine-detail-vllm')).toHaveAttribute(
+      'data-engine-update',
+      'true'
+    )
+    expect(
+      screen.queryByTestId('engine-detail-llamacpp-upstream')
+    ).not.toBeInTheDocument()
+  })
+
+  it('reads only a named engine from the URL', () => {
+    const validate = ProvidersRoute.validateSearch as (
+      raw: Record<string, unknown>
+    ) => Record<string, unknown>
+
+    expect(validate({ openEngine: 'llamacpp-upstream' })).toEqual({
+      openEngine: 'llamacpp-upstream',
+    })
+    expect(validate({ openEngine: 'vllm', engineUpdate: 'true' })).toEqual({
+      openEngine: 'vllm',
+      engineUpdate: true,
+    })
+    expect(validate({ openEngine: '' })).toEqual({})
+    expect(validate({ openEngine: 3 })).toEqual({})
+    expect(validate({ engineUpdate: true })).toEqual({})
+    expect(validate({})).toEqual({})
+  })
+
   it('says whether each build is current, and names the model count and build', () => {
     useEngineVersionsStore.setState({
       engines: {
@@ -332,7 +387,7 @@ describe('Inference engines overview', () => {
     expect(refresh).toHaveBeenCalled()
   })
 
-  it("sends a reinstall to the engine's page to be confirmed there", async () => {
+  it("sends a reinstall to the engine's unfolded row to be confirmed there", async () => {
     useModelProvider.setState({ providers: [engine('vllm')] })
     useEngineVersionsStore.setState({
       engines: {
@@ -353,9 +408,8 @@ describe('Inference engines overview', () => {
 
     expect(installEngineUpdate).not.toHaveBeenCalled()
     expect(navigate).toHaveBeenCalledWith({
-      to: '/settings/providers/$providerName',
-      params: { providerName: 'vllm' },
-      search: { engineUpdate: true },
+      to: '/settings/providers',
+      search: { openEngine: 'vllm', engineUpdate: true },
     })
     // Nothing started here: the row still offers the update.
     expect(statusOf('engine-row-vllm')).toBe('available')

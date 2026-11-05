@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState } from 'react'
+import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import {
@@ -15,7 +15,6 @@ import {
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
-import { route } from '@/constants/routes'
 import {
   VOICE_MODEL_ID,
   VOICE_MODEL_NAME,
@@ -37,6 +36,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { isLocalEngineProvider } from '@/lib/cloud-providers'
+import { engineSettingsLink } from '@/lib/engine-settings-link'
 import {
   engineUpdateOfferFrom,
   type EngineUpdateOffer,
@@ -182,6 +182,7 @@ function EngineRow({
   status,
   onUpdate,
   actions,
+  reveal,
   children,
 }: {
   testId: string
@@ -193,15 +194,29 @@ function EngineRow({
   onUpdate?: () => void
   /** Engine-specific buttons left of the chevron. */
   actions?: ReactNode
+  /**
+   * Set when the page was opened for this engine: the row unfolds and is
+   * scrolled to, and again whenever the key changes (a later link to the same
+   * engine, after the person folded it).
+   */
+  reveal?: string
   children: ReactNode
 }) {
   const { t } = useTranslation()
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(reveal !== undefined)
   const panelId = useId()
+  const rowRef = useRef<HTMLLIElement>(null)
   const updating = status === 'updating'
+
+  useEffect(() => {
+    if (reveal === undefined) return
+    setOpen(true)
+    rowRef.current?.scrollIntoView?.({ block: 'start' })
+  }, [reveal])
 
   return (
     <li
+      ref={rowRef}
       data-testid={testId}
       className="rounded-xl border border-border bg-card"
     >
@@ -279,9 +294,14 @@ function EngineRow({
  * engine's are its page's, without the models. "Check for updates" asks the
  * core again for every engine; on Windows and Linux the llama.cpp rows also
  * offer "Find optimal backend". Engines have no start or stop of their own:
- * one runs while a model is loaded on it.
+ * one runs while a model is loaded on it. `openEngine` opens on that
+ * engine's row unfolded (`engineSettingsLink`); with `engineUpdate` its
+ * managed setup asks to confirm the update.
  */
-export function InferenceEnginesOverview() {
+export function InferenceEnginesOverview({
+  openEngine,
+  engineUpdate = false,
+}: { openEngine?: string; engineUpdate?: boolean } = {}) {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
   const navigate = useNavigate()
@@ -323,12 +343,8 @@ export function InferenceEnginesOverview() {
   const applyUpdate = async (engine: EngineId, offer: EngineUpdateOffer) => {
     if (offer.apply === 'reinstall') {
       // A reinstall downloads a large image and asks for consent: the
-      // engine's page confirms it first, as from the banner.
-      await navigate({
-        to: route.settings.providers,
-        params: { providerName: engine },
-        search: { engineUpdate: true },
-      })
+      // engine's unfolded setup confirms it first, as from the banner.
+      await navigate(engineSettingsLink(engine, { engineUpdate: true }))
       return
     }
     setUpdating((held) => new Set(held).add(engine))
@@ -441,6 +457,11 @@ export function InferenceEnginesOverview() {
                 ])}
                 status={statusOf(provider.provider)}
                 onUpdate={onUpdate(provider.provider)}
+                reveal={
+                  provider.provider === openEngine
+                    ? `${openEngine}:${engineUpdate ? 'update' : 'settings'}`
+                    : undefined
+                }
                 actions={
                   offersOptimalBackend(provider.provider) && (
                     <FindOptimalBackendButton
@@ -449,7 +470,13 @@ export function InferenceEnginesOverview() {
                   )
                 }
               >
-                <EngineDetail providerName={provider.provider} embedded />
+                <EngineDetail
+                  providerName={provider.provider}
+                  embedded
+                  engineUpdate={
+                    engineUpdate && provider.provider === openEngine
+                  }
+                />
               </EngineRow>
             )
           })}

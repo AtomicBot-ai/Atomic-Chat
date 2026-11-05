@@ -18,7 +18,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { useMemo } from 'react'
 
 import { Button } from '@/components/ui/button'
-import { route } from '@/constants/routes'
+import { engineSettingsLink } from '@/lib/engine-settings-link'
 import { useAppState } from '@/hooks/useAppState'
 import { useInferenceStatus } from '@/hooks/useInferenceStatus'
 import { useModelLoad } from '@/hooks/useModelLoad'
@@ -167,19 +167,14 @@ export function InferenceServerStatusStrip({
           {t('common:inferenceStatus.retry')}
         </Button>
       )}
-      {/* A managed engine's container log is on its provider page (the core keeps the last
-          failed attempt's). */}
+      {/* A managed engine's container log is in its unfolded engine row (the core keeps the
+          last failed attempt's). */}
       {isManagedProvider(selectedProvider) && (
         <Button
           variant="link"
           size="sm"
           className="h-auto shrink-0 p-0 text-xs"
-          onClick={() =>
-            void navigate({
-              to: route.settings.providers,
-              params: { providerName: selectedProvider },
-            })
-          }
+          onClick={() => void navigate(engineSettingsLink(selectedProvider))}
         >
           {t('common:inferenceStatus.logs')}
         </Button>

@@ -136,7 +136,7 @@ describe('FoundryLocalDownloadOptions', () => {
     expect(option('generic-cpu')).toHaveAttribute('aria-checked', 'true')
   })
 
-  it('leads to the provider page instead of downloading when the engine is not installed', async () => {
+  it('leads to the engine’s settings instead of downloading when the engine is not installed', async () => {
     verdicts({ cpu: 'engine-not-installed', cuda: 'engine-not-installed', webgpu: 'engine-not-installed', openvino: 'engine-not-installed' })
     const user = userEvent.setup()
 
@@ -146,11 +146,11 @@ describe('FoundryLocalDownloadOptions', () => {
     expect(screen.queryByRole('button', { name: 'hub:download' })).not.toBeInTheDocument()
     await user.click(install)
     expect(navigate).toHaveBeenCalledWith(
-      expect.objectContaining({ params: { providerName: 'foundry-local' } })
+      { to: '/settings/providers', search: { openEngine: 'foundry-local' } }
     )
   })
 
-  it('leads to the provider page to prepare the accelerator of the chosen variant', async () => {
+  it('leads to the engine’s settings to prepare the accelerator of the chosen variant', async () => {
     verdicts({ openvino: 'accelerator-not-prepared' })
 
     render(<FoundryLocalDownloadOptions model={model()} platform="win-x64" />)

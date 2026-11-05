@@ -2,7 +2,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { useMemo, type RefObject } from 'react'
 
 import { Button } from '@/components/ui/button'
-import { route } from '@/constants/routes'
+import { engineSettingsLink } from '@/lib/engine-settings-link'
 import { ManagedModelDownloadAction } from '@/containers/ManagedModelDownloadAction'
 import { ManagedInstalledActions } from '@/containers/hub/ManagedInstalledActions'
 import { EngineVerdictText } from '@/containers/hub/ManagedVerdicts'
@@ -107,7 +107,7 @@ function EngineRow({ entry }: { entry: EngineVerdict }) {
           variant="outline"
           className="self-start"
           onClick={() =>
-            navigate({ to: route.settings.providers, params: { providerName: engine.id } })
+            navigate(engineSettingsLink(engine.id))
           }
         >
           {t(k('installEngine'))}

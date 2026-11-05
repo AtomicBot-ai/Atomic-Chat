@@ -167,10 +167,7 @@ describe('InferenceServerStatusStrip', () => {
     const { unmount } = render(<InferenceServerStatusStrip />)
     screen.getByRole('button', { name: 'common:inferenceStatus.logs' }).click()
 
-    expect(navigate).toHaveBeenCalledWith({
-      to: '/settings/providers/$providerName',
-      params: { providerName: 'tensorrt-llm' },
-    })
+    expect(navigate).toHaveBeenCalledWith({ to: '/settings/providers', search: { openEngine: 'tensorrt-llm' } })
     unmount()
 
     seed({}, 'llamacpp')

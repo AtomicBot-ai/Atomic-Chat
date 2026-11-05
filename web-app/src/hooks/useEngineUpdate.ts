@@ -1,7 +1,7 @@
 import { useNavigate } from '@tanstack/react-router'
 import { useCallback, useMemo, useState } from 'react'
 
-import { route } from '@/constants/routes'
+import { engineSettingsLink } from '@/lib/engine-settings-link'
 import {
   ENGINE_UPDATE_ORDER,
   dismissEngineUpdate,
@@ -107,12 +107,8 @@ export const useEngineUpdate = (): EngineUpdateState => {
     if (!offer) return
     if (offer.apply === 'reinstall') {
       // A reinstall downloads a large image and asks for consent: the
-      // engine's card confirms it first.
-      await navigate({
-        to: route.settings.providers,
-        params: { providerName: offer.provider },
-        search: { engineUpdate: true },
-      })
+      // engine's unfolded setup confirms it first.
+      await navigate(engineSettingsLink(offer.provider, { engineUpdate: true }))
       return
     }
 

@@ -419,7 +419,7 @@ describe('DownloadOptionsSelect for a TensorRT-LLM model', () => {
     expect(screen.queryByRole('button', { name: 'hub:download' })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'hub:tensorrt.installEngine' }))
     expect(navigate).toHaveBeenCalledWith(
-      expect.objectContaining({ params: { providerName: 'tensorrt-llm' } })
+      { to: '/settings/providers', search: { openEngine: 'tensorrt-llm' } }
     )
   })
 

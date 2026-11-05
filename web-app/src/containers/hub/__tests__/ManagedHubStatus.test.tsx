@@ -38,7 +38,7 @@ beforeEach(() => {
 })
 
 describe('ManagedHubBlocked', () => {
-  it('says which driver is needed and which one is there, with what to do and the way to the provider page', () => {
+  it('says which driver is needed and which one is there, with what to do and the way to the engine’s settings', () => {
     render(<ManagedHubBlocked engine={TENSORRT_LLM_ENGINE} blockers={[driverTooOld]} />)
 
     expect(
@@ -51,7 +51,7 @@ describe('ManagedHubBlocked', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'hub:tensorrt.blocked.openProvider' }))
     expect(navigate).toHaveBeenCalledWith(
-      expect.objectContaining({ params: { providerName: 'tensorrt-llm' } })
+      { to: '/settings/providers', search: { openEngine: 'tensorrt-llm' } }
     )
   })
 

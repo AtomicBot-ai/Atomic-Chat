@@ -101,7 +101,7 @@ import { useAttachments } from '@/hooks/useAttachments'
 import { PromptProgress } from '@/components/PromptProgress'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { OUT_OF_CONTEXT_SIZE, isContextLimitError } from '@/utils/error'
-import { route } from '@/constants/routes'
+import { engineSettingsLink } from '@/lib/engine-settings-link'
 import { canGrowContext } from '@/lib/managed-engine/chat'
 import {
   DEFAULT_CTX_LEN,
@@ -2443,10 +2443,7 @@ function ThreadDetail() {
                           void handleContextSizeIncrease('manual')
                         }
                         onOpenEngineSettings={(engineId) =>
-                          void navigate({
-                            to: route.settings.providers,
-                            params: { providerName: engineId },
-                          })
+                          void navigate(engineSettingsLink(engineId))
                         }
                       />
                     )}

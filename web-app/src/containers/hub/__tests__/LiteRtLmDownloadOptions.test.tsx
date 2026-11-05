@@ -106,7 +106,7 @@ describe('LiteRtLmDownloadOptions', () => {
     expect(core.checkLiteRtLmModel).toHaveBeenCalledWith({ backend: 'npu', npu: 'intel-lnl' })
     expect(screen.getByText('npu: accelerator-not-prepared')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'hub:liteRtLm.prepareAccelerator' }))
-    expect(navigate).toHaveBeenCalledWith(expect.objectContaining({ params: { providerName: 'litert-lm' } }))
+    expect(navigate).toHaveBeenCalledWith({ to: '/settings/providers', search: { openEngine: 'litert-lm' } })
     expect(installer.installLiteRtLmVariant).not.toHaveBeenCalled()
   })
 
@@ -129,7 +129,7 @@ describe('LiteRtLmDownloadOptions', () => {
     render(<LiteRtLmDownloadOptions model={model()} platform="linux-x64" />)
 
     await user.click(await screen.findByRole('button', { name: 'hub:liteRtLm.installEngine' }))
-    expect(navigate).toHaveBeenCalledWith(expect.objectContaining({ params: { providerName: 'litert-lm' } }))
+    expect(navigate).toHaveBeenCalledWith({ to: '/settings/providers', search: { openEngine: 'litert-lm' } })
     expect(screen.queryByRole('button', { name: 'hub:download' })).not.toBeInTheDocument()
   })
 

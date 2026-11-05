@@ -196,7 +196,7 @@ describe('useEngineUpdate', () => {
     await waitFor(() => expect(result.current.offer?.provider).toBe('sd-cpp'))
   })
 
-  it('opens the managed engine’s page instead of reinstalling from the banner', async () => {
+  it('opens the managed engine’s unfolded row instead of reinstalling from the banner', async () => {
     hold(
       versions('vllm', {
         kind: 'managed',
@@ -216,13 +216,12 @@ describe('useEngineUpdate', () => {
 
     expect(updateEngineWithProgress).not.toHaveBeenCalled()
     expect(navigate).toHaveBeenCalledWith({
-      to: '/settings/providers/$providerName',
-      params: { providerName: 'vllm' },
-      search: { engineUpdate: true },
+      to: '/settings/providers',
+      search: { openEngine: 'vllm', engineUpdate: true },
     })
   })
 
-  it('offers an SGLang update too, on its own page (change add-sglang-runtime)', async () => {
+  it('offers an SGLang update too, on its own row (change add-sglang-runtime)', async () => {
     hold(
       versions('sglang', {
         kind: 'managed',
@@ -241,9 +240,8 @@ describe('useEngineUpdate', () => {
     await act(() => result.current.applyUpdate())
 
     expect(navigate).toHaveBeenCalledWith({
-      to: '/settings/providers/$providerName',
-      params: { providerName: 'sglang' },
-      search: { engineUpdate: true },
+      to: '/settings/providers',
+      search: { openEngine: 'sglang', engineUpdate: true },
     })
   })
 

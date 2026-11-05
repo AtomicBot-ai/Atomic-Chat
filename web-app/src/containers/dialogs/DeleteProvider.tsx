@@ -11,7 +11,6 @@ import {
 } from '@/components/ui/dialog'
 
 import { CardItem } from '../Card'
-import { useModelProvider } from '@/hooks/useModelProvider'
 import { canDeleteProvider, useDeleteProvider } from '@/hooks/useDeleteProvider'
 import { useRouter } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
@@ -28,7 +27,6 @@ type Props = {
 }
 const DeleteProvider = ({ provider, onDeleted }: Props) => {
   const { t } = useTranslation()
-  const { providers } = useModelProvider()
   const deleteProvider = useDeleteProvider()
   const router = useRouter()
   if (!canDeleteProvider(provider)) return null
@@ -40,12 +38,8 @@ const DeleteProvider = ({ provider, onDeleted }: Props) => {
         onDeleted()
         return
       }
-      router.navigate({
-        to: route.settings.providers,
-        params: {
-          providerName: providers[0].provider,
-        },
-      })
+      // Back to Models Hub → Inference engines, where the engine's row was.
+      router.navigate({ to: route.settings.model_providers })
     }, 0)
   }
 

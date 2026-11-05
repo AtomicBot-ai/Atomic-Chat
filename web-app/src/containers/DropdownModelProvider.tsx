@@ -31,6 +31,7 @@ import ReasoningEffortPanel from '@/containers/ReasoningEffortPanel'
 import { useReasoningEffort } from '@/hooks/useReasoningEffort'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
+import { engineSettingsLink } from '@/lib/engine-settings-link'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import { ActiveModelIndicator } from '@/containers/ActiveModelIndicator'
 import { useAppState } from '@/hooks/useAppState'
@@ -1323,12 +1324,21 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                             className="size-6 shrink-0 cursor-pointer flex items-center justify-center rounded-sm bg-transparent transition-colors duration-200 ease-in-out hover:bg-secondary-foreground/8 focus-visible:bg-secondary-foreground/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                             onClick={(e) => {
                               e.stopPropagation()
-                              navigate({
-                                to: route.settings.providers,
-                                params: {
-                                  providerName: providerInfo.provider,
-                                },
-                              })
+                              // A local engine's settings unfold on its row in
+                              // Models Hub → Inference engines; a cloud
+                              // provider's old route forwards to /cloud.
+                              if (isLocalEngineProvider(providerInfo)) {
+                                navigate(
+                                  engineSettingsLink(providerInfo.provider)
+                                )
+                              } else {
+                                navigate({
+                                  to: route.settings.providers,
+                                  params: {
+                                    providerName: providerInfo.provider,
+                                  },
+                                })
+                              }
                               setOpen(false)
                             }}
                           >

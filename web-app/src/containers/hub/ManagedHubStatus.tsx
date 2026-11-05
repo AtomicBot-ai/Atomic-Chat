@@ -2,7 +2,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { Loader } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import { route } from '@/constants/routes'
+import { engineSettingsLink } from '@/lib/engine-settings-link'
 import { useManagedPlan } from '@/hooks/useManagedPlan'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { hubKey, type ManagedEngine } from '@/lib/managed-engines'
@@ -78,12 +78,7 @@ export function ManagedHubBlocked({
       <div className="flex flex-wrap gap-2">
         <Button
           size="sm"
-          onClick={() =>
-            navigate({
-              to: route.settings.providers,
-              params: { providerName: engine.id },
-            })
-          }
+          onClick={() => navigate(engineSettingsLink(engine.id))}
         >
           {t(k('blocked.openProvider'))}
         </Button>
