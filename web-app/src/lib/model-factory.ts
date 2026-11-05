@@ -84,6 +84,10 @@ import { liteRtLmRequestBody } from '@/lib/litert-lm/request'
 import { geniexRequestBody } from '@/lib/geniex/request'
 import { textToolCallMiddleware } from '@/lib/text-tool-call-middleware'
 import {
+  cloudModelReasoningControls,
+  shapeCloudReasoningOverride,
+} from '@/lib/reasoning-effort'
+import {
   holdModel,
   holdModelUntilFirstRequest,
   pendingModelStart,
@@ -421,6 +425,230 @@ function createAudioInjectingFetch(
       }
     }
     return baseFetch(input, init)
+  }
+}
+
+/**
+ * One Mistral content chunk. Reasoning models answer with a list of these
+ * instead of a string: `thinking` chunks carry the trace as a list of text
+ * chunks, `text` chunks carry the answer.
+ * https://docs.mistral.ai/studio/conversations/reasoning
+ */
+type MistralContentChunk = {
+  type?: unknown
+  text?: unknown
+  thinking?: unknown
+}
+
+/** The answer text and the thinking text of a Mistral content-chunk list. */
+export function splitMistralContentChunks(chunks: unknown[]): {
+  text: string
+  thinking: string
+} {
+  let text = ''
+  let thinking = ''
+  for (const chunk of chunks as MistralContentChunk[]) {
+    if (chunk?.type === 'text' && typeof chunk.text === 'string') {
+      text += chunk.text
+    } else if (chunk?.type === 'thinking') {
+      const parts: unknown[] = Array.isArray(chunk.thinking)
+        ? chunk.thinking
+        : [chunk.thinking]
+      for (const part of parts) {
+        const partText =
+          typeof part === 'string' ? part : (part as MistralContentChunk)?.text
+        if (typeof partText === 'string') thinking += partText
+      }
+    }
+  }
+  return { text, thinking }
+}
+
+/**
+ * Rewrite a chunk-list `content` (a non-streaming `message` or a streamed
+ * `delta`) into the string `content` plus `reasoning_content` the
+ * OpenAI-compatible client reads. Returns whether anything changed.
+ */
+function flattenMistralContent(target: unknown): boolean {
+  const message = target as
+    | { content?: unknown; reasoning_content?: unknown }
+    | null
+    | undefined
+  if (!message || !Array.isArray(message.content)) return false
+  const { text, thinking } = splitMistralContentChunks(message.content)
+  message.content = text
+  if (thinking) {
+    const earlier =
+      typeof message.reasoning_content === 'string'
+        ? message.reasoning_content
+        : ''
+    message.reasoning_content = earlier + thinking
+  }
+  return true
+}
+
+/** Flatten every choice of one chat-completions body; returns whether any changed. */
+export function normalizeMistralChatPayload(
+  payload: unknown,
+  key: 'message' | 'delta'
+): boolean {
+  const choices = (payload as { choices?: unknown } | null)?.choices
+  if (!Array.isArray(choices)) return false
+  let changed = false
+  for (const choice of choices) {
+    if (flattenMistralContent((choice as Record<string, unknown>)?.[key])) {
+      changed = true
+    }
+  }
+  return changed
+}
+
+/** Matches a streamed delta whose `content` is a chunk list. */
+const MISTRAL_CHUNK_LIST_CONTENT = /"content"\s*:\s*\[/
+
+/** Rewrite one SSE line; anything that is not a chunk-list delta passes untouched. */
+function normalizeMistralSseLine(line: string): string {
+  const match = /^data:\s?(.*?)(\r?)$/.exec(line)
+  if (!match || !MISTRAL_CHUNK_LIST_CONTENT.test(match[1])) return line
+  try {
+    const payload = JSON.parse(match[1])
+    return normalizeMistralChatPayload(payload, 'delta')
+      ? `data: ${JSON.stringify(payload)}${match[2]}`
+      : line
+  } catch {
+    return line
+  }
+}
+
+function normalizeMistralStream(response: Response): Response {
+  const decoder = new TextDecoder()
+  const encoder = new TextEncoder()
+  let pending = ''
+  const rewrite = new TransformStream<Uint8Array, Uint8Array>({
+    transform(bytes, controller) {
+      pending += decoder.decode(bytes, { stream: true })
+      const lines = pending.split('\n')
+      pending = lines.pop() ?? ''
+      if (lines.length) {
+        controller.enqueue(
+          encoder.encode(lines.map(normalizeMistralSseLine).join('\n') + '\n')
+        )
+      }
+    },
+    flush(controller) {
+      pending += decoder.decode()
+      if (pending)
+        controller.enqueue(encoder.encode(normalizeMistralSseLine(pending)))
+    },
+  })
+  return new Response(response.body!.pipeThrough(rewrite), {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  })
+}
+
+async function normalizeMistralJson(response: Response): Promise<Response> {
+  const raw = await response.text()
+  let body = raw
+  try {
+    const payload = JSON.parse(raw)
+    if (normalizeMistralChatPayload(payload, 'message')) {
+      body = JSON.stringify(payload)
+    }
+  } catch {
+    /* not JSON — hand it on unchanged */
+  }
+  return new Response(body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  })
+}
+
+/**
+ * Models whose earlier thinking goes back to Mistral as a `thinking` chunk, as
+ * its reasoning guide asks. Everything else gets the answer text alone: a
+ * model without a thinking phase is not known to accept the chunk.
+ */
+const mistralKeepsThinking = (modelId: unknown): boolean =>
+  typeof modelId === 'string' &&
+  (cloudModelReasoningControls('mistral', modelId)?.supportsThinking === true ||
+    /^(magistral|zai-glm)-/.test(modelId))
+
+/**
+ * The OpenAI-compatible client sends earlier thinking back as an assistant
+ * `reasoning_content`, a field Mistral's request schema does not have (422).
+ * Mistral takes it as a `thinking` content chunk instead.
+ */
+function toMistralHistory(body: Record<string, unknown>): void {
+  if (!Array.isArray(body.messages)) return
+  const keepThinking = mistralKeepsThinking(body.model)
+  for (const message of body.messages as Record<string, unknown>[]) {
+    if (message?.role !== 'assistant' || !('reasoning_content' in message)) {
+      continue
+    }
+    const thinking = message.reasoning_content
+    delete message.reasoning_content
+    if (!keepThinking || typeof thinking !== 'string' || !thinking) continue
+    const text = typeof message.content === 'string' ? message.content : ''
+    message.content = [
+      { type: 'thinking', thinking: [{ type: 'text', text: thinking }] },
+      ...(text ? [{ type: 'text', text }] : []),
+    ]
+  }
+}
+
+/** Mistral's 400 for an effort the model does not take (code 3051). */
+const mentionsRejectedReasoningEffort = (detail: string): boolean =>
+  /reasoning_effort/i.test(detail)
+
+/**
+ * The Mistral leg of the OpenAI-compatible client (#381):
+ *
+ * - merges the reasoning fields itself (pass `inner` an empty bag), so that
+ * - a 400 blaming `reasoning_effort` is retried once without it — the
+ *   per-model table cannot know a model Mistral adds or retires tomorrow;
+ * - earlier thinking goes back the way Mistral reads it (see
+ *   {@link toMistralHistory});
+ * - chunk-list `content` (streamed or not) comes back as the string `content`
+ *   plus `reasoning_content` the client validates against, so the thinking
+ *   shows as reasoning and the answer as text.
+ */
+export function createMistralFetch(
+  inner: typeof httpFetch,
+  parameters: Record<string, unknown>
+): typeof httpFetch {
+  return async (input, init) => {
+    const isPost = !init?.method || init.method.toUpperCase() === 'POST'
+    if (!isPost || typeof init?.body !== 'string') return inner(input, init)
+
+    let body: Record<string, unknown>
+    try {
+      body = { ...JSON.parse(init.body), ...parameters }
+    } catch {
+      return inner(input, init)
+    }
+    toMistralHistory(body)
+    const send = (payload: Record<string, unknown>) =>
+      inner(input, { ...init, body: JSON.stringify(payload) })
+
+    let response = await send(body)
+    if (response.status === 400 && 'reasoning_effort' in body) {
+      const detail = await response.clone().text()
+      if (mentionsRejectedReasoningEffort(detail)) {
+        console.warn(
+          `[mistral] ${String(body.model)} rejected reasoning_effort=${String(body.reasoning_effort)}; retrying without it`
+        )
+        const withoutEffort = { ...body }
+        delete withoutEffort.reasoning_effort
+        response = await send(withoutEffort)
+      }
+    }
+    if (!response.ok || !response.body) return response
+    return body.stream === true
+      ? normalizeMistralStream(response)
+      : normalizeMistralJson(response)
   }
 }
 
@@ -1128,7 +1356,13 @@ export class ModelFactory {
     audioParts?: AudioInputPart[]
   ): Promise<LanguageModel> {
     const providerName = provider.provider.toLowerCase()
-    const override = reasoningOverride ?? {}
+    // Providers that gate reasoning per model get their fields put on what
+    // this model takes; a no-op for every other provider.
+    const override = shapeCloudReasoningOverride(
+      providerName,
+      modelId,
+      reasoningOverride ?? {}
+    )
     // Local providers accept the full inference-parameter bag (top_k,
     // repeat_penalty, stop_sequences, …) as body injection. Cloud providers
     // must receive ONLY the reasoning-override fields — otherwise local-only
@@ -1823,17 +2057,20 @@ export class ModelFactory {
       headers['Authorization'] = `Bearer ${provider.api_key}`
     }
 
+    // Use the IPC-channel streaming fetch (see OpenAI factory rationale).
+    const transport =
+      provider.provider.toLowerCase() === 'mistral'
+        ? createMistralFetch(
+            createLocalStreamingFetch(httpFetch, {}),
+            parameters
+          )
+        : createLocalStreamingFetch(httpFetch, parameters)
     const openAICompatible = createOpenAICompatible({
       name: provider.provider,
       baseURL,
       headers,
       includeUsage: true,
-      // Use the IPC-channel streaming fetch (see OpenAI factory rationale).
-      fetch: createHoldingFetch(
-        provider.provider,
-        modelId,
-        createLocalStreamingFetch(httpFetch, parameters)
-      ),
+      fetch: createHoldingFetch(provider.provider, modelId, transport),
     })
 
     // Some OpenAI-compatible providers (MiniMax, DeepSeek, Moonshot, NVIDIA

@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { ModelFactory, createLocalStreamingFetch } from '../model-factory'
+import {
+  ModelFactory,
+  createLocalStreamingFetch,
+  createMistralFetch,
+} from '../model-factory'
 import type { ProviderObject } from '@janhq/core'
 import { invoke } from '@tauri-apps/api/core'
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
@@ -182,6 +186,43 @@ describe('ModelFactory', () => {
           vi.mocked(httpFetch).mock.calls.at(-1)![1]!.body as string
         )
         expect('top_k' in sent).toBe(forwarded)
+      }
+    )
+
+    // #381: Mistral answers 400 to `reasoning_effort` on a model without
+    // reasoning, and takes only its own values on the ones with it.
+    it.each([
+      ['mistral-small-2506', { reasoning_effort: 'low' }, undefined],
+      ['mistral-large-4-0', { reasoning_effort: 'max' }, 'high'],
+      ['zai-glm-5-3', { reasoning_effort: 'max' }, 'max'],
+    ])(
+      'sends %s only an effort it takes',
+      async (modelId, override, expected) => {
+        const provider: ProviderObject = {
+          provider: 'mistral',
+          api_key: 'test-api-key',
+          base_url: 'https://api.mistral.ai/v1',
+          models: [],
+          settings: [],
+          active: true,
+        }
+        vi.mocked(httpFetch).mockResolvedValueOnce(
+          new Response('{}', { status: 200 })
+        )
+
+        await ModelFactory.createModel(modelId, provider, {}, override)
+
+        const { fetch } = vi
+          .mocked(createOpenAICompatible)
+          .mock.calls.at(-1)![0]
+        await fetch!('https://api.example.com/v1/chat/completions', {
+          method: 'POST',
+          body: JSON.stringify({ model: modelId }),
+        })
+        const sent = JSON.parse(
+          vi.mocked(httpFetch).mock.calls.at(-1)![1]!.body as string
+        )
+        expect(sent.reasoning_effort).toBe(expected)
       }
     )
 
@@ -1071,5 +1112,271 @@ describe('createLocalStreamingFetch cancellation', () => {
     controller.abort()
 
     expect(calls.cancelled).toEqual([])
+  })
+})
+
+/**
+ * #381: Mistral's reasoning models answer with `content` as a list of chunks —
+ * always for GLM, and whenever Small 4 / Large 4 think. Fixtures follow
+ * https://docs.mistral.ai/studio/conversations/reasoning: the thinking phase
+ * streams a `thinking` chunk, the transition one list with the closing
+ * `thinking` chunk and the first `text` chunk, the answer plain strings.
+ */
+describe('createMistralFetch', () => {
+  const chunk = (
+    delta: Record<string, unknown>,
+    finish: string | null = null
+  ) =>
+    `data: ${JSON.stringify({
+      id: 'cmpl-1',
+      object: 'chat.completion.chunk',
+      created: 1,
+      model: 'zai-glm-5-3',
+      choices: [{ index: 0, delta, finish_reason: finish }],
+    })}\n\n`
+  const thinking = (text: string, extra: Record<string, unknown> = {}) => ({
+    type: 'thinking',
+    thinking: [{ type: 'text', text }],
+    ...extra,
+  })
+  const SSE = [
+    chunk({ role: 'assistant', content: [thinking('Two plus ')] }),
+    chunk({ content: [thinking('two.')] }),
+    chunk({
+      content: [
+        thinking('', { closed: true }),
+        { type: 'text', text: 'It is' },
+      ],
+    }),
+    chunk({ content: ' 4.' }),
+    chunk({ content: '' }, 'stop'),
+    'data: [DONE]\n\n',
+  ].join('')
+
+  /** A body split mid-line, the way a socket delivers it. */
+  const sseResponse = (text: string) => {
+    const bytes = new TextEncoder().encode(text)
+    const cut = Math.floor(bytes.length / 3)
+    return new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(bytes.slice(0, cut))
+          controller.enqueue(bytes.slice(cut, cut * 2))
+          controller.enqueue(bytes.slice(cut * 2))
+          controller.close()
+        },
+      }),
+      { status: 200, headers: { 'Content-Type': 'text/event-stream' } }
+    )
+  }
+
+  const NON_STREAMING = {
+    id: 'cmpl-2',
+    object: 'chat.completion',
+    created: 1,
+    model: 'zai-glm-5-3',
+    choices: [
+      {
+        index: 0,
+        message: {
+          role: 'assistant',
+          content: [
+            thinking('Two plus two.'),
+            { type: 'text', text: 'It is 4.' },
+          ],
+        },
+        finish_reason: 'stop',
+      },
+    ],
+    usage: { prompt_tokens: 5, completion_tokens: 7, total_tokens: 12 },
+  }
+
+  const URL = 'https://api.mistral.test/v1/chat/completions'
+  const request = (body: Record<string, unknown>) => ({
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+  const dataLines = (text: string) =>
+    text
+      .split('\n')
+      .filter((line) => line.startsWith('data: {'))
+      .map((line) => JSON.parse(line.slice(6)))
+
+  it('rewrites streamed chunk lists into content and reasoning_content', async () => {
+    const inner = vi.fn().mockResolvedValue(sseResponse(SSE))
+    const response = await createMistralFetch(inner, {})(
+      URL,
+      request({ model: 'zai-glm-5-3', stream: true, messages: [] })
+    )
+    const deltas = dataLines(await response.text()).map(
+      (payload) => payload.choices[0].delta
+    )
+
+    expect(deltas).toEqual([
+      { role: 'assistant', content: '', reasoning_content: 'Two plus ' },
+      { content: '', reasoning_content: 'two.' },
+      { content: 'It is' },
+      { content: ' 4.' },
+      { content: '' },
+    ])
+  })
+
+  it('rewrites a non-streamed chunk list the same way', async () => {
+    const inner = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify(NON_STREAMING)))
+    const response = await createMistralFetch(inner, {})(
+      URL,
+      request({ model: 'zai-glm-5-3', messages: [] })
+    )
+    const { message } = (await response.json()).choices[0]
+    expect(message.content).toBe('It is 4.')
+    expect(message.reasoning_content).toBe('Two plus two.')
+  })
+
+  it('retries once without reasoning_effort when Mistral rejects it', async () => {
+    const rejection = JSON.stringify({
+      object: 'error',
+      message: "reasoning_effort='low' is not supported for this model.",
+      type: 'invalid_request_error',
+      code: '3051',
+    })
+    const inner = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(rejection, { status: 400 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(NON_STREAMING)))
+
+    const response = await createMistralFetch(inner, {
+      reasoning_effort: 'low',
+    })(URL, request({ model: 'mistral-medium-2508', messages: [] }))
+
+    expect(response.status).toBe(200)
+    expect(inner).toHaveBeenCalledTimes(2)
+    const bodies = inner.mock.calls.map(([, init]) => JSON.parse(init.body))
+    expect(bodies[0].reasoning_effort).toBe('low')
+    expect('reasoning_effort' in bodies[1]).toBe(false)
+  })
+
+  it('surfaces any other 400 unchanged', async () => {
+    const inner = vi
+      .fn()
+      .mockResolvedValue(
+        new Response('{"message":"bad tools"}', { status: 400 })
+      )
+    const response = await createMistralFetch(inner, {
+      reasoning_effort: 'low',
+    })(URL, request({ model: 'zai-glm-5-3', messages: [] }))
+    expect(response.status).toBe(400)
+    expect(inner).toHaveBeenCalledTimes(1)
+  })
+
+  it('sends earlier thinking back as a thinking chunk, never as reasoning_content', async () => {
+    const history = (model: string) =>
+      request({
+        model,
+        messages: [
+          { role: 'user', content: 'What is 2+2?' },
+          {
+            role: 'assistant',
+            content: 'It is 4.',
+            reasoning_content: 'Two plus two.',
+          },
+          { role: 'user', content: 'And 3+3?' },
+        ],
+      })
+    const inner = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(JSON.stringify(NON_STREAMING))
+    )
+    const mistralFetch = createMistralFetch(inner, {})
+
+    await mistralFetch(URL, history('zai-glm-5-3'))
+    await mistralFetch(URL, history('mistral-small-2506'))
+
+    const [glm, small] = inner.mock.calls.map(
+      ([, init]) => JSON.parse(init!.body as string).messages[1]
+    )
+    expect(glm).toEqual({
+      role: 'assistant',
+      content: [
+        {
+          type: 'thinking',
+          thinking: [{ type: 'text', text: 'Two plus two.' }],
+        },
+        { type: 'text', text: 'It is 4.' },
+      ],
+    })
+    expect(small).toEqual({ role: 'assistant', content: 'It is 4.' })
+  })
+
+  describe('through the OpenAI-compatible client', () => {
+    const realModel = async (fetch: typeof globalThis.fetch) => {
+      const { createOpenAICompatible: create } = await vi.importActual<
+        typeof import('@ai-sdk/openai-compatible')
+      >('@ai-sdk/openai-compatible')
+      return create({
+        name: 'mistral',
+        baseURL: 'https://api.mistral.test/v1',
+        fetch,
+      }).languageModel('zai-glm-5-3')
+    }
+    const prompt = [
+      {
+        role: 'user' as const,
+        content: [{ type: 'text' as const, text: '2+2?' }],
+      },
+    ]
+    const readParts = async (stream: ReadableStream<{ type: string }>) => {
+      const parts: Array<Record<string, unknown>> = []
+      const reader = stream.getReader()
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) return parts
+        parts.push(value as Record<string, unknown>)
+      }
+    }
+
+    it('fails type validation on the raw stream (the reported bug)', async () => {
+      const model = await realModel(
+        vi.fn(async () => sseResponse(SSE)) as unknown as typeof fetch
+      )
+      const { stream } = await model.doStream({ prompt })
+      const parts = await readParts(stream)
+      expect(parts.some((part) => part.type === 'error')).toBe(true)
+    })
+
+    it('streams the thinking as reasoning and the answer as text', async () => {
+      const model = await realModel(
+        createMistralFetch(
+          vi.fn(async () => sseResponse(SSE)),
+          {}
+        ) as unknown as typeof fetch
+      )
+      const { stream } = await model.doStream({ prompt })
+      const parts = await readParts(stream)
+
+      expect(parts.some((part) => part.type === 'error')).toBe(false)
+      const join = (type: string) =>
+        parts
+          .filter((part) => part.type === type)
+          .map((part) => part.delta)
+          .join('')
+      expect(join('reasoning-delta')).toBe('Two plus two.')
+      expect(join('text-delta')).toBe('It is 4.')
+    })
+
+    it('generates the thinking as reasoning and the answer as text', async () => {
+      const model = await realModel(
+        createMistralFetch(
+          vi.fn(async () => new Response(JSON.stringify(NON_STREAMING))),
+          {}
+        ) as unknown as typeof fetch
+      )
+      const { content } = await model.doGenerate({ prompt })
+      expect(content).toEqual([
+        { type: 'text', text: 'It is 4.' },
+        { type: 'reasoning', text: 'Two plus two.' },
+      ])
+    })
   })
 })

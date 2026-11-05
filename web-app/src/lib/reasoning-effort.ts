@@ -1,6 +1,7 @@
 import type { ReasoningControls } from '@janhq/core'
 
 import type { ReasoningBudgetLevel } from '@/hooks/useGeneralSetting'
+import { useModelProvider } from '@/hooks/useModelProvider'
 import { isKnownProvider } from '@/stores/provider-registry-store'
 import {
   isLocalProvider,
@@ -131,13 +132,151 @@ export const usesTemplateReasoningKwargs = (
 
 /** Catalogue-backed remote providers. Their model lists rarely carry the
  * per-model `ReasoningControls` local engines can inspect, so the provider is
- * the capability boundary for the composer effort control. */
+ * the capability boundary for the composer effort control — except for the
+ * providers in {@link CLOUD_MODEL_REASONING}. */
 export const isCloudReasoningProvider = (
   provider: string | undefined
 ): boolean => {
   if (!provider || isLocalProvider(provider)) return false
   if (isSelfHostedProviderName(provider)) return false
   return CLOUD_REASONING_PROVIDERS.has(provider) || isKnownProvider(provider)
+}
+
+/** A model driven by a top-level `reasoning_effort` that takes exactly `values`. */
+const effortControls = (
+  values: string[],
+  offValue?: string
+): ReasoningControls => ({
+  supportsThinking: true,
+  canDisable: offValue !== undefined,
+  effortKwarg: 'reasoning_effort',
+  effortValues: values,
+  ...(offValue ? { offValue } : {}),
+})
+
+type CloudModelReasoningTable = {
+  /** First match wins. */
+  models: Array<[RegExp, ReasoningControls]>
+  /** Every other model of the provider. */
+  other: ReasoningControls
+}
+
+/**
+ * Catalogue cloud APIs that check `reasoning_effort` against the model and
+ * answer 400 on a value it does not take, so the provider is too coarse a
+ * boundary for them. The registry carries no per-model effort values, so the
+ * documented ones live here.
+ */
+const CLOUD_MODEL_REASONING: Record<string, CloudModelReasoningTable> = {
+  // https://docs.mistral.ai/studio/conversations/reasoning (checked
+  // 2026-11-05). Mistral answers 400 (code 3051, "reasoning_effort='low' is
+  // not supported for this model") on any model that page does not list —
+  // the always-thinking ones it no longer documents (Magistral, GLM 5.2)
+  // included — so those get no effort control at all (#381).
+  mistral: {
+    models: [
+      // Small 4 and Medium 3.5 take `high`, and `none` to skip thinking.
+      [/^mistral-small-2603$/, effortControls(['high'], 'none')],
+      [/^mistral-medium-3-5$/, effortControls(['high'], 'none')],
+      // Large 4 refuses `none`, `minimal`, `xhigh` and `max`.
+      [/^mistral-large-4(-0)?$/, effortControls(['low', 'medium', 'high'])],
+      // GLM 5.3 refuses `none`.
+      [/^zai-glm-5-3(-flash)?$/, effortControls(['low', 'high', 'max'])],
+    ],
+    other: { supportsThinking: false },
+  },
+}
+
+/**
+ * The documented reasoning controls of a cloud model whose provider gates
+ * `reasoning_effort` per model. `undefined` for every other provider, which
+ * stays on provider-level inference.
+ */
+export const cloudModelReasoningControls = (
+  provider: string | undefined,
+  modelId: string | undefined
+): ReasoningControls | undefined => {
+  const table = provider ? CLOUD_MODEL_REASONING[provider] : undefined
+  if (!table || !modelId) return undefined
+  return (
+    table.models.find(([pattern]) => pattern.test(modelId))?.[1] ?? table.other
+  )
+}
+
+/**
+ * `controls`, or — when the model carries none and its provider gates
+ * reasoning per model — the documented controls of the selected model.
+ *
+ * Every caller of the provider-level fallbacks below acts for the composer's
+ * selected model (it passes `selectedModel.reasoning`), so the model id is read
+ * from that same store instead of being threaded through each of them.
+ */
+const withCloudModelControls = (
+  provider: string | undefined,
+  controls: ReasoningControls | undefined
+): ReasoningControls | undefined => {
+  if (controls !== undefined || !provider || !CLOUD_MODEL_REASONING[provider])
+    return controls
+  const state = useModelProvider?.getState?.()
+  if (state?.selectedProvider !== provider) return undefined
+  return cloudModelReasoningControls(provider, state.selectedModel?.id)
+}
+
+/** The declared value nearest to `value` on the effort scale; ties go weaker. */
+const nearestDeclaredEffort = (
+  value: string,
+  declared: string[]
+): string | undefined => {
+  if (declared.includes(value)) return value
+  const target = EFFORT_RANK[value]
+  if (target === undefined) return undefined
+  const ranked = declared.filter((entry) => EFFORT_RANK[entry] !== undefined)
+  if (!ranked.length) return undefined
+  return ranked.reduce((closest, candidate) =>
+    Math.abs(EFFORT_RANK[candidate] - target) <
+    Math.abs(EFFORT_RANK[closest] - target)
+      ? candidate
+      : closest
+  )
+}
+
+/**
+ * The last say over the reasoning fields of one cloud request, made where the
+ * model id is known (the model factory). A no-op for providers that do not
+ * gate reasoning per model.
+ *
+ * - A model without an effort knob gets no reasoning field at all.
+ * - `reasoning_effort` lands on the nearest value the model declares.
+ * - The transport's "skip thinking" hint for providers it does not name
+ *   (`chat_template_kwargs.enable_thinking: false`) is not a field these APIs
+ *   take; it becomes the model's own off value, or nothing.
+ */
+export const shapeCloudReasoningOverride = (
+  provider: string,
+  modelId: string,
+  override: Record<string, unknown>
+): Record<string, unknown> => {
+  const controls = cloudModelReasoningControls(provider, modelId)
+  if (!controls) return override
+
+  const {
+    chat_template_kwargs: kwargs,
+    reasoning_effort: effort,
+    ...rest
+  } = override
+  if (!controls.supportsThinking) return rest
+
+  const skipThinking =
+    (kwargs as { enable_thinking?: unknown } | undefined)?.enable_thinking ===
+    false
+  if (skipThinking) {
+    return controls.offValue
+      ? { ...rest, reasoning_effort: controls.offValue }
+      : rest
+  }
+  if (typeof effort !== 'string') return rest
+  const value = nearestDeclaredEffort(effort, controls.effortValues ?? [])
+  return value ? { ...rest, reasoning_effort: value } : rest
 }
 
 const usesNativeEffort = (
@@ -150,8 +289,9 @@ const usesNativeEffort = (
 /** Some native APIs expose effort levels but no way to disable reasoning. */
 export const canDisableReasoning = (
   provider: string | undefined,
-  controls?: ReasoningControls
+  modelControls?: ReasoningControls
 ): boolean => {
+  const controls = withCloudModelControls(provider, modelControls)
   if (controls?.canDisable !== undefined) return controls.canDisable
   if (controls?.offValue) return true
   // These APIs expose a real zero/disabled state. Other cloud APIs only
@@ -194,8 +334,9 @@ export const availableReasoningLevels = (
  */
 export const reasoningLevelsForModel = (
   provider: string | undefined,
-  controls?: ReasoningControls
+  modelControls?: ReasoningControls
 ): ReasoningEffortLevel[] => {
+  const controls = withCloudModelControls(provider, modelControls)
   if (controls !== undefined) return availableReasoningLevels(controls)
   if (
     isCloudReasoningProvider(provider) ||
@@ -322,6 +463,10 @@ export const cloudReasoningEffortValue = (
   provider: string
 ): string => {
   if (provider === 'moonshot') return level
+  // Per-model providers get the level itself: `shapeCloudReasoningOverride`
+  // puts it on the value the model declares (Mistral GLM 5.3 takes `max`,
+  // Large 4 tops out at `high`).
+  if (CLOUD_MODEL_REASONING[provider]) return level
   // Gemini tops out at `high` and rejects `xhigh` with a 400.
   if (
     (provider === 'google' || provider === 'gemini') &&
@@ -410,10 +555,11 @@ export type AgentReasoningRequest = {
 export const buildAgentReasoningRequest = (
   level: ReasoningBudgetLevel,
   disableReasoning: boolean,
-  controls?: ReasoningControls,
+  modelControls?: ReasoningControls,
   allowDisable = true,
   provider?: string
 ): AgentReasoningRequest => {
+  const controls = withCloudModelControls(provider, modelControls)
   const inferredCloudThinking =
     controls === undefined && isCloudReasoningProvider(provider)
   const supportsThinking =

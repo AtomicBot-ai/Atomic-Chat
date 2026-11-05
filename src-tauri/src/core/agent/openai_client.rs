@@ -767,11 +767,9 @@ impl AgentLlmClient for OpenAiCompatibleClient {
                 Degrade::Unstream | Degrade::Fail => return Err(error),
             }
         };
-        value
-            .pointer("/choices/0/message/content")
-            .and_then(Value::as_str)
+        let (description, _) = message_content(value.pointer("/choices/0/message/content"));
+        Some(description)
             .filter(|value| !value.trim().is_empty())
-            .map(str::to_owned)
             .ok_or_else(|| {
                 LlmClientError::InvalidResponse(
                     "vision response did not contain message content".into(),
@@ -882,12 +880,9 @@ impl ChatStreamAccumulator {
         if let Some(reason) = choice.get("finish_reason").and_then(Value::as_str) {
             self.finish_reason = Some(reason.to_owned());
         }
-        let delta = choice
-            .pointer("/delta/content")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_owned();
-        let reasoning_delta = extract_reasoning(choice).unwrap_or_default();
+        let (delta, thinking) = message_content(choice.pointer("/delta/content"));
+        let mut reasoning_delta = extract_reasoning(choice).unwrap_or_default();
+        reasoning_delta.push_str(&thinking);
         if delta.is_empty() && reasoning_delta.is_empty() {
             return None;
         }
@@ -1006,23 +1001,64 @@ async fn consume_chat_stream(
     Ok(result)
 }
 
+/// The answer text and the thinking text of a message's or a delta's `content`.
+///
+/// A string is all answer. Mistral's reasoning models send a list of chunks
+/// instead (#381): `{"type": "text", "text"}` carries the answer and
+/// `{"type": "thinking", "thinking": [{"type": "text", "text"}]}` the trace
+/// (https://docs.mistral.ai/studio/conversations/reasoning).
+fn message_content(content: Option<&Value>) -> (String, String) {
+    let Some(chunks) = content.and_then(Value::as_array) else {
+        return (
+            content
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned(),
+            String::new(),
+        );
+    };
+    let mut text = String::new();
+    let mut thinking = String::new();
+    for chunk in chunks {
+        match chunk.get("type").and_then(Value::as_str) {
+            Some("text") => text.push_str(
+                chunk
+                    .get("text")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default(),
+            ),
+            Some("thinking") => match chunk.get("thinking") {
+                Some(Value::Array(parts)) => {
+                    for part in parts {
+                        let part_text = part
+                            .as_str()
+                            .or_else(|| part.get("text").and_then(Value::as_str));
+                        thinking.push_str(part_text.unwrap_or_default());
+                    }
+                }
+                Some(Value::String(part)) => thinking.push_str(part),
+                _ => {}
+            },
+            _ => {}
+        }
+    }
+    (text, thinking)
+}
+
 pub(crate) fn parse_chat_response(value: &Value) -> Result<CompletionResult, LlmClientError> {
     let message = value.pointer("/choices/0/message").ok_or_else(|| {
         LlmClientError::InvalidResponse("response did not contain choices[0].message".into())
     })?;
-    let content = message
-        .get("content")
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_owned();
+    let (content, thinking) = message_content(message.get("content"));
     // The shared inspector helper covers every wild spelling —
     // `reasoning_content` (DeepSeek / mlx-vlm), `reasoning` (OpenRouter,
     // Ollama), and `reasoning_details` (OpenRouter's parts list). Inline
     // `<think>` blocks need no handling here — the shared parser strips them.
-    let reasoning_content = value
+    let mut reasoning_content = value
         .pointer("/choices/0")
         .and_then(extract_reasoning)
         .unwrap_or_default();
+    reasoning_content.push_str(&thinking);
     let finish_reason = value
         .pointer("/choices/0/finish_reason")
         .and_then(Value::as_str)
@@ -2116,5 +2152,54 @@ mod tests {
             "the stream ended before completion"
         ));
         assert!(!mentions_stream_options_rejection("bad request"));
+    }
+
+    /// #381: Mistral reasoning models answer with a list of content chunks.
+    #[test]
+    fn mistral_content_chunks_split_into_answer_and_reasoning() {
+        let value = json!({
+            "model": "zai-glm-5-3",
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "thinking",
+                            "thinking": [{"type": "text", "text": "Two plus two."}],
+                        },
+                        {"type": "text", "text": "It is 4."},
+                    ],
+                },
+                "finish_reason": "stop",
+            }],
+        });
+        let result = parse_chat_response(&value).expect("parse");
+        assert_eq!(result.content, "It is 4.");
+        assert_eq!(result.reasoning_content, "Two plus two.");
+
+        let mut accumulator = ChatStreamAccumulator::default();
+        let thinking = accumulator
+            .ingest(&delta_chunk(json!({
+                "content": [{
+                    "type": "thinking",
+                    "thinking": [{"type": "text", "text": "Two plus two."}],
+                }],
+            })))
+            .expect("thinking chunk");
+        assert_eq!(thinking.delta, "");
+        assert_eq!(thinking.reasoning_delta, "Two plus two.");
+        let transition = accumulator
+            .ingest(&delta_chunk(json!({
+                "content": [
+                    {"type": "thinking", "thinking": [], "closed": true},
+                    {"type": "text", "text": "It is"},
+                ],
+            })))
+            .expect("transition chunk");
+        assert_eq!(transition.delta, "It is");
+        accumulator.ingest(&delta_chunk(json!({"content": " 4."})));
+        let result = accumulator.into_result().expect("result");
+        assert_eq!(result.content, "It is 4.");
+        assert_eq!(result.reasoning_content, "Two plus two.");
     }
 }

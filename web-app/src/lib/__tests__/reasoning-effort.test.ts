@@ -1,16 +1,20 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import type { ReasoningControls } from '@janhq/core'
 
+import { useModelProvider } from '@/hooks/useModelProvider'
 import {
   availableReasoningLevels,
   buildAgentReasoningRequest,
   buildCloudReasoningRequestFields,
   buildReasoningRequestFields,
   buildRemoteReasoningRequestFields,
+  canDisableReasoning,
+  cloudModelReasoningControls,
   modelEffortValue,
   isCloudReasoningProvider,
   reasoningLevelsForModel,
   resolveReasoningLevel,
+  shapeCloudReasoningOverride,
   usesTemplateReasoningKwargs,
 } from '../reasoning-effort'
 
@@ -402,5 +406,129 @@ describe('remote reasoning', () => {
         },
       })
     }
+  })
+})
+
+/**
+ * #381: Mistral checks `reasoning_effort` against the model, so the provider
+ * alone cannot say what to send.
+ */
+describe('per-model cloud reasoning', () => {
+  const select = (provider: string, id: string) =>
+    useModelProvider.setState({
+      selectedProvider: provider,
+      selectedModel: { id } as Model,
+    })
+
+  afterEach(() => {
+    useModelProvider.setState({ selectedProvider: '', selectedModel: null })
+  })
+
+  it('knows the documented Mistral reasoning models and nothing else', () => {
+    expect(
+      cloudModelReasoningControls('mistral', 'mistral-small-2506')
+    ).toEqual({ supportsThinking: false })
+    expect(
+      cloudModelReasoningControls('mistral', 'magistral-medium-2509')
+    ).toEqual({ supportsThinking: false })
+    expect(
+      cloudModelReasoningControls('mistral', 'mistral-large-4-0')?.effortValues
+    ).toEqual(['low', 'medium', 'high'])
+    expect(
+      cloudModelReasoningControls('mistral', 'zai-glm-5-3-flash')?.effortValues
+    ).toEqual(['low', 'high', 'max'])
+    expect(
+      cloudModelReasoningControls('mistral', 'mistral-small-2603')
+    ).toMatchObject({
+      effortValues: ['high'],
+      offValue: 'none',
+      canDisable: true,
+    })
+    // Providers that do not gate per model stay on provider inference.
+    expect(cloudModelReasoningControls('openai', 'gpt-5')).toBeUndefined()
+  })
+
+  it('offers no effort control for a Mistral model without reasoning', () => {
+    select('mistral', 'mistral-small-2506')
+    expect(reasoningLevelsForModel('mistral', undefined)).toEqual([])
+    expect(canDisableReasoning('mistral', undefined)).toBe(false)
+    expect(
+      buildAgentReasoningRequest('low', false, undefined, false, 'mistral')
+    ).toEqual({ enabled: false, supports_thinking: false })
+  })
+
+  it('offers a Mistral reasoning model the levels it declares', () => {
+    select('mistral', 'zai-glm-5-3')
+    expect(reasoningLevelsForModel('mistral', undefined)).toEqual([
+      'low',
+      'high',
+      'max',
+    ])
+    expect(
+      buildAgentReasoningRequest('max', false, undefined, false, 'mistral')
+    ).toEqual({
+      enabled: true,
+      effort: 'max',
+      effort_value: 'max',
+      supports_thinking: true,
+    })
+
+    select('mistral', 'mistral-small-2603')
+    expect(reasoningLevelsForModel('mistral', undefined)).toEqual(['high'])
+    expect(canDisableReasoning('mistral', undefined)).toBe(true)
+  })
+
+  it('ignores a selection on another provider', () => {
+    select('openai', 'mistral-small-2506')
+    expect(reasoningLevelsForModel('mistral', undefined)).toEqual([
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ])
+  })
+
+  it('never sends an effort to a Mistral model without reasoning', () => {
+    expect(
+      shapeCloudReasoningOverride('mistral', 'mistral-small-2506', {
+        reasoning_effort: 'low',
+      })
+    ).toEqual({})
+  })
+
+  it('puts the effort on the nearest value the model declares', () => {
+    const shape = (provider: string, model: string, effort: string) =>
+      shapeCloudReasoningOverride(provider, model, { reasoning_effort: effort })
+
+    expect(shape('mistral', 'mistral-large-4-0', 'max')).toEqual({
+      reasoning_effort: 'high',
+    })
+    expect(shape('mistral', 'zai-glm-5-3', 'max')).toEqual({
+      reasoning_effort: 'max',
+    })
+    expect(shape('mistral', 'zai-glm-5-3', 'medium')).toEqual({
+      reasoning_effort: 'low',
+    })
+    expect(shape('mistral', 'mistral-small-2603', 'low')).toEqual({
+      reasoning_effort: 'high',
+    })
+  })
+
+  it("turns the generic skip-thinking hint into the model's own off value", () => {
+    const off = { chat_template_kwargs: { enable_thinking: false } }
+    expect(
+      shapeCloudReasoningOverride('mistral', 'mistral-small-2603', off)
+    ).toEqual({ reasoning_effort: 'none' })
+    expect(
+      shapeCloudReasoningOverride('mistral', 'mistral-large-4-0', off)
+    ).toEqual({})
+  })
+
+  it('leaves every other provider alone', () => {
+    const override = { reasoning_effort: 'xhigh' }
+    expect(shapeCloudReasoningOverride('openai', 'gpt-5', override)).toBe(
+      override
+    )
   })
 })
