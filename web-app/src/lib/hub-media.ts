@@ -1,14 +1,17 @@
 /**
- * Pure logic behind the Hub's Images, Video, Decision and Embedding
+ * Pure logic behind the Hub's Images, Video, Audio, Decision and Embedding
  * categories.
  *
  * Chat models come from the open Hugging Face catalog; image and video models
  * do not. A diffusion checkpoint only runs with the VAE and text encoders the
  * curated catalog pairs it with, so these categories list that catalog and
- * nothing else — the same families the Images and Video pages offer. Decision
- * and embedding models likewise come from their own curated catalogs only.
+ * nothing else — the same families the Images and Video pages offer. Audio,
+ * decision and embedding models likewise come from their own curated catalogs
+ * only.
  */
 
+import type { AudioCatalogModel } from '@/services/audio-catalog-registry'
+import { AUDIO_MODES } from '@/services/audio/types'
 import type { DecisionCatalogModel } from '@/services/decision-catalog-registry'
 import type { EmbeddingCatalogModel } from '@/services/embedding-catalog-registry'
 import type { DiffusionModality } from '@/services/diffusion/types'
@@ -21,6 +24,7 @@ import { artifactId } from '@/lib/diffusion/models'
 export type HubCategory =
   | 'chat'
   | DiffusionModality
+  | 'audio'
   | 'decision'
   | 'embedding'
   | 'voice'
@@ -29,6 +33,7 @@ export const HUB_CATEGORIES: readonly HubCategory[] = [
   'chat',
   'image',
   'video',
+  'audio',
   'decision',
   'embedding',
   'voice',
@@ -106,6 +111,33 @@ export function filterEmbeddingModels(
   if (terms.length === 0) return [...models]
   return models.filter((model) => {
     const haystack = [model.name, model.description, model.repo]
+      .join(' ')
+      .toLowerCase()
+    return terms.every((term) => haystack.includes(term))
+  })
+}
+
+/**
+ * The Audio category's list: speech, then music, then sound effects, each
+ * mode in catalog order, narrowed to the models whose name, developer,
+ * description or mode has every word of the query.
+ */
+export function filterAudioModels(
+  models: readonly AudioCatalogModel[],
+  query: string
+): AudioCatalogModel[] {
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean)
+  const byMode = AUDIO_MODES.flatMap((mode) =>
+    models.filter((model) => model.mode === mode)
+  )
+  if (terms.length === 0) return byMode
+  return byMode.filter((model) => {
+    const haystack = [
+      model.name,
+      model.developer,
+      model.description,
+      model.mode,
+    ]
       .join(' ')
       .toLowerCase()
     return terms.every((term) => haystack.includes(term))

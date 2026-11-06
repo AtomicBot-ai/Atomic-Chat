@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
+  filterAudioModels,
   filterFamiliesBySearch,
   familyIsInstalled,
   isHubCategory,
   mediaFamilies,
   splitByInstalled,
 } from '@/lib/hub-media'
+import type { AudioCatalogModel } from '@/services/audio-catalog-registry'
 import type {
   DiffusionCatalog,
   DiffusionCatalogFamily,
@@ -35,13 +37,69 @@ const catalogOf = (families: DiffusionCatalogFamily[]): DiffusionCatalog =>
   ({ schema_version: 1, families }) as DiffusionCatalog
 
 describe('isHubCategory', () => {
-  it('accepts the five categories and nothing else', () => {
+  it('accepts the seven categories and nothing else', () => {
     expect(
-      ['chat', 'image', 'video', 'decision', 'embedding'].every(isHubCategory)
+      [
+        'chat',
+        'image',
+        'video',
+        'audio',
+        'decision',
+        'embedding',
+        'voice',
+      ].every(isHubCategory)
     ).toBe(true)
-    expect([undefined, '', 'images', 'audio', 1].some(isHubCategory)).toBe(
+    expect([undefined, '', 'images', 'audios', 1].some(isHubCategory)).toBe(
       false
     )
+  })
+})
+
+const audioModel = (
+  id: string,
+  mode: AudioCatalogModel['mode'],
+  extra: Partial<AudioCatalogModel> = {}
+): AudioCatalogModel =>
+  ({
+    id,
+    name: id,
+    developer: 'Dev',
+    description: '',
+    mode,
+    ...extra,
+  }) as AudioCatalogModel
+
+describe('filterAudioModels', () => {
+  const models = [
+    audioModel('ace-step', 'music', { developer: 'ACE Studio' }),
+    audioModel('sfx', 'effects', { description: 'Short sound effects' }),
+    audioModel('qwen3-tts', 'speech', { name: 'Qwen3-TTS 1.7B' }),
+    audioModel('moss', 'speech', { developer: 'OpenMOSS' }),
+  ]
+
+  it('lists speech, then music, then effects, each in catalog order', () => {
+    expect(filterAudioModels(models, '  ').map((m) => m.id)).toEqual([
+      'qwen3-tts',
+      'moss',
+      'ace-step',
+      'sfx',
+    ])
+  })
+
+  it('matches name, developer, description and mode, every word, ignoring case', () => {
+    expect(filterAudioModels(models, 'QWEN').map((m) => m.id)).toEqual([
+      'qwen3-tts',
+    ])
+    expect(filterAudioModels(models, 'openmoss').map((m) => m.id)).toEqual([
+      'moss',
+    ])
+    expect(filterAudioModels(models, 'sound short').map((m) => m.id)).toEqual([
+      'sfx',
+    ])
+    expect(filterAudioModels(models, 'music').map((m) => m.id)).toEqual([
+      'ace-step',
+    ])
+    expect(filterAudioModels(models, 'music qwen')).toEqual([])
   })
 })
 

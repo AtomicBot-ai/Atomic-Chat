@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from 'react'
 import { Loader } from 'lucide-react'
+import { AudioHub } from '@/containers/hub/AudioHub'
 import { DecisionHub } from '@/containers/hub/DecisionHub'
 import { EmbeddingHub } from '@/containers/hub/EmbeddingHub'
 import { HubCategorySelect } from '@/containers/hub/HubCategorySelect'
@@ -121,7 +122,8 @@ type SearchParams = {
   q?: string
   /**
    * Repo id of the open row; in the Images and Video categories, the id of
-   * the catalog family; in Decision and Embedding, the catalog id of the model.
+   * the catalog family; in Audio, Decision and Embedding, the catalog id of
+   * the model.
    */
   model?: string
   /** Absent means Chat: every link into the Hub from a chat asks for one. */
@@ -228,6 +230,9 @@ function HubContent() {
   const voiceSupported =
     PlatformFeatures[PlatformFeature.VOICE_INPUT] &&
     serviceHub.voice().isSupported()
+  // Audio models are offered wherever the Audios page is; the list itself
+  // says when the core or this computer cannot run them yet.
+  const audioSupported = PlatformFeatures[PlatformFeature.AUDIO_GENERATION]
   const categories = useMemo(
     () =>
       HUB_CATEGORIES.filter((c) =>
@@ -237,9 +242,17 @@ function HubContent() {
             ? embeddingSupported
             : c === 'voice'
               ? voiceSupported
-              : c === 'chat' || mediaSupported
+              : c === 'audio'
+                ? audioSupported
+                : c === 'chat' || mediaSupported
       ),
-    [mediaSupported, decisionSupported, embeddingSupported, voiceSupported]
+    [
+      mediaSupported,
+      decisionSupported,
+      embeddingSupported,
+      voiceSupported,
+      audioSupported,
+    ]
   )
   const category: HubCategory =
     categorySearchParam && categories.includes(categorySearchParam)
@@ -281,6 +294,9 @@ function HubContent() {
   }
   if (category === 'voice') {
     return <VoiceHubContent categoryTabs={categoryTabs} />
+  }
+  if (category === 'audio') {
+    return <AudioHubContent categoryTabs={categoryTabs} />
   }
   return (
     <MediaHubContent
@@ -420,6 +436,52 @@ function VoiceHubContent({ categoryTabs }: { categoryTabs?: ReactNode }) {
 
   return (
     <VoiceHub
+      categoryTabs={categoryTabs}
+      query={query}
+      onQueryChange={changeQuery}
+      selectedModelId={modelSearchParam ?? null}
+      onSelectModel={selectModel}
+    />
+  )
+}
+
+function AudioHubContent({ categoryTabs }: { categoryTabs?: ReactNode }) {
+  const navigate = useNavigate()
+  const { q: querySearchParam, model: modelSearchParam } = Route.useSearch()
+  const [query, setQuery] = useState(querySearchParam ?? getHubSearchQuery())
+
+  const changeQuery = useCallback(
+    (next: string) => {
+      setQuery(next)
+      setHubSearchQuery(next)
+      void navigate({
+        to: route.hub.index,
+        search: (prev: SearchParams) => ({
+          ...prev,
+          q: next.trim() || undefined,
+        }),
+        replace: true,
+      })
+    },
+    [navigate]
+  )
+
+  const selectModel = useCallback(
+    (modelId: string | null) => {
+      void navigate({
+        to: route.hub.index,
+        search: (prev: SearchParams) => ({
+          ...prev,
+          model: modelId ?? undefined,
+        }),
+        replace: modelId === null,
+      })
+    },
+    [navigate]
+  )
+
+  return (
+    <AudioHub
       categoryTabs={categoryTabs}
       query={query}
       onQueryChange={changeQuery}

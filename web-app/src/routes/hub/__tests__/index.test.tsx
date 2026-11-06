@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   decisionSupported: false,
   embeddingSupported: false,
   voiceSupported: false,
+  audioSupported: false,
   search: {} as Record<string, unknown>,
   staffPicks: [] as ResolvedStaffPick[],
   mlxStaffPicks: [] as ResolvedStaffPick[],
@@ -247,6 +248,31 @@ vi.mock('@/containers/hub/VoiceHub', () => ({
   ),
 }))
 
+vi.mock('@/containers/hub/AudioHub', () => ({
+  AudioHub: ({
+    categoryTabs,
+    query,
+    selectedModelId,
+    onSelectModel,
+  }: {
+    categoryTabs?: React.ReactNode
+    query: string
+    selectedModelId: string | null
+    onSelectModel: (id: string) => void
+  }) => (
+    <main data-testid="audio-hub">
+      {categoryTabs}
+      <span>{`audio catalog, query "${query}", open ${selectedModelId}`}</span>
+      <button
+        type="button"
+        onClick={() => onSelectModel('ace-step-1.5-turbo')}
+      >
+        pick ace-step
+      </button>
+    </main>
+  ),
+}))
+
 // The Images / Video catalog has tests of its own; here it only has to show
 // what the route handed it, and hand a pick back.
 vi.mock('@/containers/hub/MediaHub', () => ({
@@ -285,7 +311,9 @@ vi.mock('@/lib/platform/const', async (importOriginal) => {
             ? true
             : key === 'voiceInput'
               ? true
-              : target[key as keyof typeof target],
+              : key === 'audioGeneration'
+                ? mocks.audioSupported
+                : target[key as keyof typeof target],
     }),
   }
 })
@@ -437,6 +465,7 @@ describe('/hub route', () => {
     mocks.decisionSupported = false
     mocks.embeddingSupported = false
     mocks.voiceSupported = false
+    mocks.audioSupported = false
     mocks.sources = []
     mocks.staffPicks = [
       {
@@ -1793,6 +1822,59 @@ describe('/hub route', () => {
       render(<HubPage />)
 
       expect(screen.queryByTestId('voice-hub')).not.toBeInTheDocument()
+      expect(picker()).toHaveAttribute('data-mode', 'chat')
+    })
+
+    it('offers Audio wherever the Audios studio runs, after Video', async () => {
+      mocks.mediaSupported = true
+      mocks.audioSupported = true
+      render(<HubPage />)
+
+      await userEvent.click(screen.getByTestId('hub-category-workflow-select'))
+      expect(
+        screen.getByTestId('hub-category-workflow-menu')
+      ).toHaveTextContent('hub:categoryAudioHint')
+      const options = [
+        ...screen
+          .getByTestId('hub-category-workflow-menu')
+          .querySelectorAll('[data-testid^="hub-category-workflow-option-"]'),
+      ].map((option) => option.getAttribute('data-testid'))
+      expect(options).toEqual([
+        'hub-category-workflow-option-chat',
+        'hub-category-workflow-option-image',
+        'hub-category-workflow-option-video',
+        'hub-category-workflow-option-audio',
+      ])
+    })
+
+    it('shows the audio catalog the URL names, with its search and selection', async () => {
+      mocks.audioSupported = true
+      mocks.search = { category: 'audio', q: 'music', model: 'sfx' }
+      render(<HubPage />)
+
+      expect(
+        screen.getByText('audio catalog, query "music", open sfx')
+      ).toBeInTheDocument()
+      expect(picker()).toHaveAttribute('data-mode', 'audio')
+      expect(mocks.listHuggingFaceFeed.mock.calls).toEqual([])
+
+      await userEvent.click(
+        screen.getByRole('button', { name: 'pick ace-step' })
+      )
+      const navigation = lastNavigation()
+      expect(navigation.replace).toBe(false)
+      expect(navigation.search({ category: 'audio' })).toEqual({
+        category: 'audio',
+        model: 'ace-step-1.5-turbo',
+      })
+    })
+
+    it('stays the chat catalog where the Audios studio does not run', () => {
+      mocks.mediaSupported = true
+      mocks.search = { category: 'audio' }
+      render(<HubPage />)
+
+      expect(screen.queryByTestId('audio-hub')).not.toBeInTheDocument()
       expect(picker()).toHaveAttribute('data-mode', 'chat')
     })
 

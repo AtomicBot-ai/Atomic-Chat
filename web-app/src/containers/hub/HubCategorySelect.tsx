@@ -6,6 +6,7 @@ import {
   IconMicrophone,
   IconMovie,
   IconPhoto,
+  IconWaveSine,
   type IconProps,
 } from '@tabler/icons-react'
 import { MediaModeSelect } from '@/containers/images/MediaModeSelect'
@@ -30,6 +31,11 @@ const CATEGORY: Record<
     icon: IconMovie,
     title: 'hub:categoryVideo',
     hint: 'hub:categoryVideoHint',
+  },
+  audio: {
+    icon: IconWaveSine,
+    title: 'hub:categoryAudio',
+    hint: 'hub:categoryAudioHint',
   },
   decision: {
     icon: IconArrowsSplit,
