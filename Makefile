@@ -993,11 +993,14 @@ else
 	@echo "This target is for Windows only."
 endif
 
-# Publish a draft release as latest and repoint the landing page's download
-# manifest (atomic-chat-conf app/latest.json) at its installers:
+# Publish a draft release as latest, repoint the landing page's download
+# manifest (atomic-chat-conf app/latest.json) at its installers, and follow
+# msstore.yml, which uploads the Microsoft Store installer and submits it to
+# the Store:
 #   make release-prod 2.1.3            publish v2.1.3
 #   make release-prod 2.1.3 DRY_RUN=1  show what would happen, change nothing
-# On a release that is already latest it only rewrites the manifest.
+# On a release that is already latest it rewrites the manifest and starts
+# msstore.yml again (e.g. once an earlier Store submission left certification).
 ifeq (release-prod,$(firstword $(MAKECMDGOALS)))
 RELEASE_VERSION := $(word 2,$(MAKECMDGOALS))
 ifneq ($(RELEASE_VERSION),)

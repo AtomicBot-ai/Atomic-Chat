@@ -3,16 +3,24 @@ name: msstore
 # The Microsoft Store installs Atomic Chat (an "EXE or MSI app") from a URL we host: the Store downloads the
 # installer from it on every install, so it must answer without a redirect (GitHub release assets redirect,
 # and Partner Center refuses them), keep serving the same bytes while a submission points at it, and carry the
-# version in its path. release.yml uploads Atomic.Chat_<version>_x64_msstore.exe to every draft; this copies
-# it to its own public object in the atomic-chat-downloads bucket on Hetzner Object Storage when a person
-# publishes the release (`release: published`, which `make release-prod` does), or by hand:
+# version in its path. release.yml uploads Atomic.Chat_<version>_x64_msstore.exe to every draft; when a person
+# publishes the release (`release: published`, which `make release-prod` does) the upload job copies it to its
+# own public object in the atomic-chat-downloads bucket on Hetzner Object Storage, and the submit job
+# (scripts/msstore-submit.mjs) points the Partner Center product at that URL, rewrites "What's new" from the
+# release notes and submits it for certification. By hand:
 #
 #   gh workflow run msstore.yml --ref vX.Y.Z                    # on the tag: the environment admits tags only
+#   gh workflow run msstore.yml --ref vX.Y.Z -f store=dry-run   # show what the submission would change
+#   gh workflow run msstore.yml --ref vX.Y.Z -f force=true      # resubmit a version the Store already has
 #   gh workflow run msstore.yml --ref <tag with this file> -f tag=vX.Y.Z   # a release tagged before it existed
 #
-# The run summary prints the URL for Partner Center (Packages > Package URL); a new Store version is a new
-# submission with the new URL. Pre-releases and drafts change nothing. An uploaded installer is never
-# replaced or deleted: the live submission keeps installing from its URL until a newer one goes live.
+# The submission waits for nothing: while an earlier one is still in certification it changes nothing and says
+# so (the API cannot cancel it), and the next publish, or `make release-prod X.Y.Z` again, takes the newest
+# version. Setting the repository variable MSSTORE_SUBMIT to "off" keeps the upload and skips the Store.
+# Store API credentials (MSSTORE_TENANT_ID, MSSTORE_CLIENT_ID, MSSTORE_CLIENT_SECRET, MSSTORE_SELLER_ID) live in
+# the packages environment; without them the submit job warns and skips. Pre-releases and drafts change
+# nothing. An uploaded installer is never replaced or deleted: the live submission keeps installing from its URL
+# until a newer one goes live.
 on:
   release:
     types: [published]
@@ -22,9 +30,21 @@ on:
         description: 'The published release (vX.Y.Z); default: the tag this runs on'
         type: string
         required: false
+      store:
+        description: 'Microsoft Store submission after the upload'
+        type: choice
+        options: [submit, dry-run, skip]
+        default: submit
+      force:
+        description: 'Resubmit even when the Store already points at this version'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
+
+env:
+  TAG: ${{ inputs.tag || github.event.release.tag_name || github.ref_name }}
 
 jobs:
   upload:
@@ -34,9 +54,11 @@ jobs:
     concurrency:
       group: msstore-${{ inputs.tag || github.event.release.tag_name || github.ref_name }}
       cancel-in-progress: false
+    outputs:
+      upload: ${{ steps.release.outputs.upload }}
+      url: ${{ steps.release.outputs.url }}
     env:
       GH_TOKEN: ${{ github.token }}
-      TAG: ${{ inputs.tag || github.event.release.tag_name || github.ref_name }}
       BUCKET: atomic-chat-downloads
       BASE_URL: https://atomic-chat-downloads.fsn1.your-objectstorage.com
       AWS_ENDPOINT_URL: https://fsn1.your-objectstorage.com
@@ -70,6 +92,7 @@ jobs:
             echo "upload=true"
             echo "name=$name"
             echo "key=msstore/$version/$name"
+            echo "url=$BASE_URL/msstore/$version/$name"
           } >> "$GITHUB_OUTPUT"
 
       - name: Download it
@@ -132,3 +155,44 @@ jobs:
             echo "- sha256: \`$SHA256\`"
             echo "- architecture x64, installer parameters \`/S\`, app type EXE"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  submit:
+    needs: upload
+    if: needs.upload.outputs.upload == 'true' && vars.MSSTORE_SUBMIT != 'off' && inputs.store != 'skip'
+    runs-on: ubuntu-latest
+    environment: packages
+    timeout-minutes: 45
+    # One Store product: never two submissions at once, whatever the tag.
+    concurrency:
+      group: msstore-submit
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/msstore-submit.mjs
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Fetch the release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > "$RUNNER_TEMP/notes.md"
+
+      - name: Submit it to the Microsoft Store
+        env:
+          MSSTORE_TENANT_ID: ${{ secrets.MSSTORE_TENANT_ID }}
+          MSSTORE_CLIENT_ID: ${{ secrets.MSSTORE_CLIENT_ID }}
+          MSSTORE_CLIENT_SECRET: ${{ secrets.MSSTORE_CLIENT_SECRET }}
+          MSSTORE_SELLER_ID: ${{ secrets.MSSTORE_SELLER_ID }}
+          # Partner Center > Apps and games > Atomic Chat (the EXE product).
+          MSSTORE_PRODUCT_ID: ef7bb39a-01d5-4579-a0c2-01187b78e596
+          PACKAGE_URL: ${{ needs.upload.outputs.url }}
+          STORE_MODE: ${{ inputs.store }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          set -euo pipefail
+          args=(--tag "$TAG" --package-url "$PACKAGE_URL" --notes-file "$RUNNER_TEMP/notes.md"
+                --release-url "https://github.com/$GITHUB_REPOSITORY/releases/tag/$TAG")
+          if [ "$STORE_MODE" = dry-run ]; then args+=(--dry-run); fi
+          if [ "$FORCE" = true ]; then args+=(--force); fi
+          node scripts/msstore-submit.mjs "${args[@]}"
