@@ -1,7 +1,11 @@
 import { create } from 'zustand'
 
 import { getServiceHub } from '@/hooks/useServiceHub'
-import { isDecisionModelInstalled } from '@/lib/decision/models'
+import {
+  isDecisionModelInstalled,
+  readDecisionFolderModels,
+  type LocalDecisionModel,
+} from '@/lib/decision/models'
 import {
   fetchDecisionCatalog,
   getBaselineDecisionCatalog,
@@ -33,6 +37,8 @@ type DecisionStore = {
   config: DecisionConfig | null
   /** Model id → every file of it is on disk. */
   installed: Record<string, boolean>
+  /** Models put by hand into `decision/models` folders the catalog does not own. */
+  folderModels: LocalDecisionModel[]
   /**
    * `installed` has been read at least once, or the read failed: until then
    * an empty map means "not asked yet", not "nothing on disk".
@@ -58,6 +64,7 @@ export const useDecisionStore = create<DecisionStore>()((set, get) => ({
   status: null,
   config: null,
   installed: {},
+  folderModels: [],
   installedRead: false,
   error: null,
   busy: null,
@@ -82,13 +89,22 @@ export const useDecisionStore = create<DecisionStore>()((set, get) => ({
   refreshInstalled: async () => {
     const { catalog } = get()
     try {
-      const entries = await Promise.all(
-        catalog.models.map(
-          async (model) =>
-            [model.id, await isDecisionModelInstalled(model)] as const
-        )
-      )
-      set({ installed: Object.fromEntries(entries), installedRead: true })
+      const [entries, folderModels] = await Promise.all([
+        Promise.all(
+          catalog.models.map(
+            async (model) =>
+              [model.id, await isDecisionModelInstalled(model)] as const
+          )
+        ),
+        readDecisionFolderModels(
+          new Set(catalog.models.map((model) => model.id))
+        ),
+      ])
+      set({
+        installed: Object.fromEntries(entries),
+        folderModels,
+        installedRead: true,
+      })
     } catch (error) {
       // A failed read is an answer too: nothing waits on it any longer.
       set({ installedRead: true })

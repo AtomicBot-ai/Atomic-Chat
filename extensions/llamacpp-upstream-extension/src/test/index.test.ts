@@ -594,6 +594,63 @@ describe('llamacpp_extension', () => {
       })
     })
 
+    it('flags a decision GGUF as decision, not embedding, and caches it in model.yml', async () => {
+      const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
+      const { invoke } = await import('@tauri-apps/api/core')
+      extension['providerPath'] = '/path/to/jan/llamacpp'
+      const modelsDir = '/path/to/jan/llamacpp/models'
+      const id = 'turintech/d1-3B-Artemis-Q4_K_M'
+      vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
+      vi.mocked(joinPath).mockImplementation((paths) =>
+        Promise.resolve(paths.join('/'))
+      )
+      vi.mocked(fs.existsSync).mockImplementation(
+        async (path: string) =>
+          path === modelsDir ||
+          path === `${modelsDir}/${id}/model.yml` ||
+          path === `/path/to/jan/llamacpp/models/${id}/model.gguf`
+      )
+      vi.mocked(fs.readdirSync).mockImplementation(async (path: string) =>
+        path === modelsDir ? ['turintech'] : ['d1-3B-Artemis-Q4_K_M']
+      )
+      vi.mocked(fs.fileStat).mockResolvedValue({
+        isDirectory: true,
+        size: 1000,
+      })
+      // An older build cached `embedding` only; the decision answer is new.
+      const yml = {
+        model_path: `llamacpp/models/${id}/model.gguf`,
+        name: id,
+        size_bytes: 1000,
+        embedding: false,
+      }
+      vi.mocked(invoke).mockImplementation(async (command: string) =>
+        command === 'read_yaml' ? { ...yml } : undefined
+      )
+      // An upstream decision GGUF: an lfm2 backbone with a pooling type, which
+      // alone would read as an embedding model.
+      vi.mocked(readGgufMetadata).mockResolvedValue({
+        version: 3,
+        tensor_count: 1,
+        metadata: {
+          'general.architecture': 'lfm2',
+          'lfm2.decision.type': 'typed',
+          'lfm2.pooling_type': '1',
+        },
+      } as any)
+
+      const result = await extension.list()
+
+      expect(result).toHaveLength(1)
+      expect(result[0]).toMatchObject({ id, embedding: false, decision: true })
+      expect(invoke).toHaveBeenCalledWith(
+        'write_yaml',
+        expect.objectContaining({
+          data: expect.objectContaining({ embedding: false, decision: true }),
+        })
+      )
+    })
+
     it('leaves out a model the core set up for the PrismML engine', async () => {
       const { getJanDataFolderPath, joinPath, fs } = await import('@janhq/core')
       const { invoke } = await import('@tauri-apps/api/core')

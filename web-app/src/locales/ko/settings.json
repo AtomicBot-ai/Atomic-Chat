@@ -492,7 +492,9 @@
     "sectionTitle": "Decision models",
     "noneTitle": "No decision models downloaded",
     "noneDescription": "Download one in the Decision category of the Hub",
-    "availableInApi": "Available in the API"
+    "availableInApi": "Available in the API",
+    "localModel": "내 llama.cpp 모델에서",
+    "folderModel": "decision 모델 폴더에서"
   },
   "embedding": {
     "multilingual": "다국어",

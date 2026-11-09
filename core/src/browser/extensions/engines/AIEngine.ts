@@ -186,6 +186,8 @@ export interface modelInfo {
   missing?: boolean
   // Additional provider-specific metadata can be added here
   embedding?: boolean
+  /** A decision model (router / classifier): served by the decision module, never chat. */
+  decision?: boolean
   [key: string]: any
 }
 

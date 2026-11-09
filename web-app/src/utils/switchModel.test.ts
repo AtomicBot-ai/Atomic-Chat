@@ -24,6 +24,7 @@ import {
   describeModelLoadFailure,
   installMlxEngineAndLoad,
   isExplicitSwitchPending,
+  isModelLoadCancelled,
   planOomRetry,
   selectThreadModelIfNone,
   shouldAttemptAutoStart,
@@ -142,6 +143,21 @@ vi.mock('@/utils/registerRemoteProvider', () => ({
   isSubscriptionProvider: vi.fn((name: string) => name === 'chatgpt'),
   registerRemoteProvider: vi.fn(),
 }))
+
+// Agents Atomic Chat opened, and what the user says about cutting them off.
+const agentGuard = vi.hoisted(() => ({
+  decideAgentsBeforeSwitch: vi.fn(
+    async (): Promise<
+      | { kind: 'proceed' }
+      | { kind: 'declined' }
+      | { kind: 'restart'; agents: Array<{ id: string; name: string }> }
+    > => ({ kind: 'proceed' })
+  ),
+  reopenAgentsAfterSwitch: vi.fn(async () => {}),
+  reportAgentsStopped: vi.fn(),
+  stopAgentsForSwitch: vi.fn(async () => {}),
+}))
+vi.mock('@/utils/agentSwitchGuard', () => agentGuard)
 
 vi.mock('@/utils/activeModelsSync', () => ({
   syncActiveModelsFromEngines: vi.fn(),
@@ -1915,5 +1931,233 @@ describe('switchToModel beside chat requests', () => {
     await switching
     // The switch's own call found the model up (a no-op in the engine).
     expect(loaded.snapshot()['llamacpp-upstream']).toEqual(['shared-model'])
+  })
+})
+
+describe('switchToModel with agents Atomic Chat opened', () => {
+  const CODEX = { id: 'codex', name: 'Codex CLI' }
+  const served = localApiState as typeof localApiState & {
+    lastServerModels?: Array<{ model: string; provider: string }>
+    defaultModelLocalApiServer?: { model: string; provider: string } | null
+  }
+
+  const hubWith = (loaded: ReturnType<typeof createLoadedEngines>) => {
+    const models = {
+      getActiveModels: vi.fn(loaded.getActiveModels),
+      stopAllModels: vi.fn(loaded.stopAllModels),
+      stopAllModelsExcept: vi.fn(loaded.stopAllModelsExcept),
+      startModel: vi.fn(loaded.startModel),
+    }
+    const serviceHub = {
+      app: () => ({ getServerStatus: vi.fn().mockResolvedValue(true) }),
+      models: () => models,
+    } as unknown as ServiceHub
+    return { models, serviceHub }
+  }
+
+  /** Let the reopen queued behind the switch run. */
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    appState.serverStatus = 'running'
+    startServer.mockResolvedValue(1337)
+    stopServer.mockResolvedValue(undefined)
+    window.core = { api: { startServer, stopServer } } as typeof window.core
+    agentGuard.decideAgentsBeforeSwitch.mockResolvedValue({ kind: 'proceed' })
+    served.lastServerModels = [{ model: 'broken-model', provider: 'mlx' }]
+    served.defaultModelLocalApiServer = null
+  })
+
+  afterEach(() => {
+    modelProviderState.selectedProvider = ''
+    modelProviderState.selectedModel = null
+    delete served.lastServerModels
+    delete served.defaultModelLocalApiServer
+  })
+
+  it('changes nothing on a no, and puts the selection back on the served model', async () => {
+    agentGuard.decideAgentsBeforeSwitch.mockResolvedValue({ kind: 'declined' })
+    // The dropdown selected the target before asking for the switch.
+    modelProviderState.selectedProvider = 'llamacpp-upstream'
+    modelProviderState.selectedModel = { id: 'shared-model' }
+    const { models, serviceHub } = hubWith(
+      createLoadedEngines({ mlx: ['broken-model'] })
+    )
+
+    const error = await switchToModel({
+      modelId: 'shared-model',
+      providerName: 'llamacpp-upstream',
+      serviceHub,
+    }).catch((e: unknown) => e)
+
+    expect(isModelLoadCancelled(error)).toBe(true)
+    expect(modelProviderState.selectModelProvider).toHaveBeenCalledWith(
+      'mlx',
+      'broken-model'
+    )
+    expect(models.stopAllModelsExcept).not.toHaveBeenCalled()
+    expect(models.startModel).not.toHaveBeenCalled()
+    expect(stopServer).not.toHaveBeenCalled()
+    expect(agentGuard.stopAgentsForSwitch).not.toHaveBeenCalled()
+  })
+
+  it('does not ask again for the same model queued while the question was open', async () => {
+    let answer!: (decision: { kind: 'declined' }) => void
+    agentGuard.decideAgentsBeforeSwitch.mockImplementationOnce(
+      () => new Promise((resolve) => (answer = resolve))
+    )
+    const { serviceHub } = hubWith(
+      createLoadedEngines({ mlx: ['broken-model'] })
+    )
+    const params = {
+      modelId: 'shared-model',
+      providerName: 'llamacpp-upstream',
+      serviceHub,
+      isAutoStart: true,
+    }
+
+    const first = switchToModel(params).catch((e: unknown) => e)
+    await vi.waitFor(() =>
+      expect(agentGuard.decideAgentsBeforeSwitch).toHaveBeenCalledOnce()
+    )
+    const second = switchToModel(params).catch((e: unknown) => e)
+    answer({ kind: 'declined' })
+
+    expect(isModelLoadCancelled(await first)).toBe(true)
+    expect(isModelLoadCancelled(await second)).toBe(true)
+    expect(agentGuard.decideAgentsBeforeSwitch).toHaveBeenCalledOnce()
+
+    // Asked for again afterwards, it asks again.
+    await switchToModel(params)
+    expect(agentGuard.decideAgentsBeforeSwitch).toHaveBeenCalledTimes(2)
+  })
+
+  it('stops the agents before the switch and opens them again on the model it serves', async () => {
+    agentGuard.decideAgentsBeforeSwitch.mockResolvedValue({
+      kind: 'restart',
+      agents: [CODEX],
+    })
+    const { models, serviceHub } = hubWith(
+      createLoadedEngines({ mlx: ['broken-model'] })
+    )
+
+    await switchToModel({
+      modelId: 'shared-model',
+      providerName: 'llamacpp-upstream',
+      serviceHub,
+    })
+    // What the switch recorded (the store is mocked here).
+    served.lastServerModels = [
+      { model: 'shared-model', provider: 'llamacpp-upstream' },
+    ]
+    await settle()
+
+    expect(agentGuard.stopAgentsForSwitch).toHaveBeenCalledWith([CODEX])
+    // Stopped before their model went away.
+    expect(
+      agentGuard.stopAgentsForSwitch.mock.invocationCallOrder[0]
+    ).toBeLessThan(models.stopAllModelsExcept.mock.invocationCallOrder[0])
+    expect(agentGuard.reopenAgentsAfterSwitch).toHaveBeenCalledWith([CODEX], {
+      modelId: 'shared-model',
+      providerName: 'llamacpp-upstream',
+    })
+    expect(agentGuard.reportAgentsStopped).not.toHaveBeenCalled()
+  })
+
+  it('takes agents to a cloud model the user confirmed', async () => {
+    agentGuard.decideAgentsBeforeSwitch.mockResolvedValue({
+      kind: 'restart',
+      agents: [CODEX],
+    })
+    modelProviderState.providers.push({
+      provider: 'openai',
+      api_key: 'sk-test',
+      models: [{ id: 'gpt-x' }],
+    })
+    const { models, serviceHub } = hubWith(
+      createLoadedEngines({ mlx: ['broken-model'] })
+    )
+
+    try {
+      await switchToModel({
+        modelId: 'gpt-x',
+        providerName: 'openai',
+        serviceHub,
+      })
+      served.lastServerModels = [{ model: 'gpt-x', provider: 'openai' }]
+      await settle()
+    } finally {
+      modelProviderState.providers.pop()
+    }
+
+    expect(agentGuard.stopAgentsForSwitch).toHaveBeenCalledWith([CODEX])
+    // Stopped before the cloud switch unloaded every local model.
+    expect(
+      agentGuard.stopAgentsForSwitch.mock.invocationCallOrder[0]
+    ).toBeLessThan(models.stopAllModels.mock.invocationCallOrder[0])
+    expect(agentGuard.reopenAgentsAfterSwitch.mock.calls).toEqual([
+      [[CODEX], { modelId: 'gpt-x', providerName: 'openai' }],
+    ])
+  })
+
+  it('opens the agents on the model a newer switch serves when it takes over mid-load', async () => {
+    agentGuard.decideAgentsBeforeSwitch
+      .mockResolvedValueOnce({ kind: 'restart', agents: [CODEX] })
+      .mockResolvedValue({ kind: 'proceed' })
+    const loaded = createLoadedEngines({ mlx: ['broken-model'] })
+    const { models, serviceHub } = hubWith(loaded)
+    let release!: () => void
+    // The first load waits until a newer switch has been asked for.
+    models.startModel.mockImplementationOnce(
+      (provider: { provider: string }, modelId: string) =>
+        new Promise<void>((resolve) => {
+          release = () => resolve(loaded.startModel(provider, modelId))
+        })
+    )
+
+    const first = switchToModel({
+      modelId: 'shared-model',
+      providerName: 'llamacpp-upstream',
+      serviceHub,
+    }).catch((e: unknown) => e)
+    await vi.waitFor(() => expect(models.startModel).toHaveBeenCalledOnce())
+    const second = switchToModel({
+      modelId: 'broken-model',
+      providerName: 'mlx',
+      serviceHub,
+    })
+    release()
+    await first
+    await second
+    served.lastServerModels = [{ model: 'broken-model', provider: 'mlx' }]
+    await settle()
+
+    expect(agentGuard.reportAgentsStopped).not.toHaveBeenCalled()
+    // Opened once, on what the newer switch serves.
+    expect(agentGuard.reopenAgentsAfterSwitch.mock.calls).toEqual([
+      [[CODEX], { modelId: 'broken-model', providerName: 'mlx' }],
+    ])
+  })
+
+  it('says the agents were stopped when the switch fails, and opens nothing', async () => {
+    agentGuard.decideAgentsBeforeSwitch.mockResolvedValue({
+      kind: 'restart',
+      agents: [CODEX],
+    })
+    const { models, serviceHub } = hubWith(createLoadedEngines({}))
+    models.startModel.mockRejectedValue(new Error('missing vision weights'))
+
+    await expect(
+      switchToModel({
+        modelId: 'shared-model',
+        providerName: 'llamacpp-upstream',
+        serviceHub,
+      })
+    ).rejects.toThrow()
+    await settle()
+
+    expect(agentGuard.reportAgentsStopped).toHaveBeenCalledWith([CODEX])
+    expect(agentGuard.reopenAgentsAfterSwitch).not.toHaveBeenCalled()
   })
 })

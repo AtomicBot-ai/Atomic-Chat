@@ -76,6 +76,7 @@ import {
   describeCoreError,
   isPrismModel,
 } from '../../shared/atomicCoreRuntime'
+import { isDecisionGguf } from '../../shared/decisionGguf'
 import type {
   CoreBackendCatalog,
   CoreBackendRecommendation,
@@ -2200,7 +2201,8 @@ export default class llamacpp_extension extends AIEngine {
       path,
     })
 
-    const isEmbedding = await this.resolveEmbeddingConfig(modelId, modelConfig)
+    const { embedding: isEmbedding, decision: isDecision } =
+      await this.resolveModelKind(modelId, modelConfig)
 
     return {
       id: modelId,
@@ -2210,24 +2212,35 @@ export default class llamacpp_extension extends AIEngine {
       port: 0, // port is not known until the model is loaded
       sizeBytes: modelConfig.size_bytes ?? 0,
       embedding: isEmbedding,
+      decision: isDecision,
     } as modelInfo
   }
 
   /**
-   * Checks if embedding status is known. If not, reads GGUF, detects it,
-   * and updates the model.yml for future performance.
+   * What the model's GGUF is besides a chat model: embedding weights, or a
+   * decision model (which runs only in the decision module). Read once from
+   * the GGUF header, then cached in model.yml (`embedding`, `decision`) so a
+   * `list()` does not parse every file again.
    */
-  private async resolveEmbeddingConfig(
+  private async resolveModelKind(
     modelId: string,
     modelConfig: ModelConfig
-  ): Promise<boolean> {
-    // Fast exit: if explicitly set in config, return it
-    if (typeof modelConfig.embedding === 'boolean') {
-      return modelConfig.embedding
+  ): Promise<{ embedding: boolean; decision: boolean }> {
+    // Fast exit: both answers are cached. A decision model is never an
+    // embedding one, whatever an older build wrote.
+    if (
+      typeof modelConfig.embedding === 'boolean' &&
+      typeof modelConfig.decision === 'boolean'
+    ) {
+      return {
+        embedding: modelConfig.embedding && !modelConfig.decision,
+        decision: modelConfig.decision,
+      }
     }
 
     // Migration logic: Detect from GGUF
     let isEmbedding = false
+    let isDecision = false
     try {
       const janDataFolderPath = await getJanDataFolderPath()
       const fullModelPath = await joinPath([
@@ -2237,12 +2250,13 @@ export default class llamacpp_extension extends AIEngine {
 
       if (await fs.existsSync(fullModelPath)) {
         const metadata = await readGgufMetadata(fullModelPath)
-        isEmbedding = isEmbeddingGguf(metadata.metadata)
+        isDecision = isDecisionGguf(metadata.metadata)
+        isEmbedding = !isDecision && isEmbeddingGguf(metadata.metadata)
       }
     } catch (e) {
-      // If GGUF read fails, default to false but log it
+      // If GGUF read fails, keep what model.yml says but log it
       logger.warn(`Failed to check metadata for ${modelId}`, e)
-      return false
+      return { embedding: modelConfig.embedding === true, decision: false }
     }
 
     // Persist the result back to model.yml so we don't read GGUF next time
@@ -2256,6 +2270,7 @@ export default class llamacpp_extension extends AIEngine {
 
       // Update the local object
       modelConfig.embedding = isEmbedding
+      modelConfig.decision = isDecision
 
       // Write to disk
       await invoke<void>('write_yaml', {
@@ -2266,7 +2281,7 @@ export default class llamacpp_extension extends AIEngine {
       logger.warn(`Failed to update config for ${modelId}`, e)
     }
 
-    return isEmbedding
+    return { embedding: isEmbedding, decision: isDecision }
   }
 
   // Implement the required LocalProvider interface methods
@@ -2318,10 +2333,8 @@ export default class llamacpp_extension extends AIEngine {
       // The core refuses to run a PrismML-only file on this engine; it lists under `atomic-prism`.
       if (isPrismModel(modelConfig)) continue
 
-      const isEmbedding = await this.resolveEmbeddingConfig(
-        modelId,
-        modelConfig
-      )
+      const { embedding: isEmbedding, decision: isDecision } =
+        await this.resolveModelKind(modelId, modelConfig)
 
       const capabilities: string[] = []
       if (modelConfig.mmproj_path) {
@@ -2345,6 +2358,7 @@ export default class llamacpp_extension extends AIEngine {
         port: 0, // port is not known until the model is loaded
         sizeBytes: modelConfig.size_bytes ?? 0,
         embedding: isEmbedding,
+        decision: isDecision,
         capabilities: capabilities.length > 0 ? capabilities : undefined,
         source: (modelConfig as { source?: string }).source,
         missing,
@@ -2812,6 +2826,7 @@ export default class llamacpp_extension extends AIEngine {
     const janDataFolderPath = await getJanDataFolderPath()
     const fullModelPath = await joinPath([janDataFolderPath, modelPath])
     let isEmbedding = false
+    let isDecision = false
 
     try {
       // Validate main model file
@@ -2822,7 +2837,10 @@ export default class llamacpp_extension extends AIEngine {
 
       // Embedding weights are usable, but only in embedding mode: handed to
       // the chat path they abort llama.cpp on an assertion.
-      isEmbedding = isEmbeddingGguf(modelMetadata.metadata)
+      // A decision model imports too: it is listed as one (`decision`), kept
+      // out of chat, and served by the decision module.
+      isDecision = isDecisionGguf(modelMetadata.metadata)
+      isEmbedding = !isDecision && isEmbeddingGguf(modelMetadata.metadata)
 
       // Validate mmproj file if present
       if (mmprojPath) {
@@ -2893,6 +2911,7 @@ export default class llamacpp_extension extends AIEngine {
       mmproj_sha256: opts.mmprojSha256,
       mmproj_size_bytes: opts.mmprojSize,
       embedding: isEmbedding,
+      decision: isDecision,
       // Origin of a model imported by absolute path from another app (Ollama /
       // LM Studio / Unsloth / HF cache). Persisted so the UI can label it.
       ...(importSource ? { source: importSource } : {}),
@@ -2918,6 +2937,7 @@ export default class llamacpp_extension extends AIEngine {
       mmproj_sha256: opts.mmprojSha256,
       mmproj_size_bytes: opts.mmprojSize,
       embedding: isEmbedding,
+      decision: isDecision,
       source: importSource,
     })
   }

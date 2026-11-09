@@ -193,6 +193,8 @@ pub fn run() {
         core::system::commands::configure_muse,
         core::system::agent_config_detection::detect_configured_agents,
         core::system::commands::open_agent_terminal,
+        core::system::commands::list_agent_terminals,
+        core::system::commands::stop_agent_terminal,
         core::system::commands::launch_editor,
         // Server commands
         core::server::commands::start_server,
@@ -393,6 +395,8 @@ pub fn run() {
         core::system::commands::configure_muse,
         core::system::agent_config_detection::detect_configured_agents,
         core::system::commands::open_agent_terminal,
+        core::system::commands::list_agent_terminals,
+        core::system::commands::stop_agent_terminal,
         core::system::commands::launch_editor,
         // Server commands
         core::server::commands::start_server,

@@ -1,12 +1,17 @@
 import { useEffect, useMemo, type ReactNode } from 'react'
 import { IconCircleCheckFilled } from '@tabler/icons-react'
 import { ModelLogo } from '@/containers/ModelLogo'
-import { DecisionModelDetailPanel } from '@/containers/hub/DecisionModelDetailPanel'
+import {
+  DecisionModelDetailPanel,
+  LocalDecisionModelDetailPanel,
+} from '@/containers/hub/DecisionModelDetailPanel'
 import { HubNoResults } from '@/containers/hub/HubSearch'
 import { HubSearchToolbar } from '@/containers/hub/HubSearchToolbar'
 import { useHardware } from '@/hooks/useHardware'
+import { useLocalDecisionModels } from '@/hooks/useLocalDecisionModels'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { DECISION_ENGINE_UI } from '@/lib/decision/engine'
+import type { LocalDecisionModel } from '@/lib/decision/models'
 import { isDecisionHostSupported } from '@/lib/decision/platform'
 import { filterDecisionModels } from '@/lib/hub-media'
 import { decisionIconKey } from '@/lib/model-logo'
@@ -82,12 +87,58 @@ function DecisionModelRow({
   )
 }
 
+/** A decision model the catalog does not name: one of the user's llama.cpp models, or a folder. */
+function LocalDecisionModelRow({
+  model,
+  selected,
+  onSelect,
+}: {
+  model: LocalDecisionModel
+  selected: boolean
+  onSelect: () => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-expanded={selected}
+      className={cn(
+        'flex w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-3 text-left transition-colors hover:bg-accent',
+        selected && 'rounded-b-none'
+      )}
+    >
+      <ModelLogo name={model.name} className="size-9 rounded-lg" />
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="flex items-center gap-2">
+          <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+            {model.name}
+          </span>
+          <IconCircleCheckFilled
+            size={16}
+            className="shrink-0 text-emerald-600 dark:text-emerald-400"
+            aria-label={t('hub:downloaded')}
+          />
+        </span>
+        <span className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
+          {model.source === 'folder'
+            ? t('settings:decision.folderModel')
+            : t('settings:decision.localModel')}
+        </span>
+      </span>
+    </button>
+  )
+}
+
 /**
  * The Hub's Decision category: the curated decision catalog, one row per
  * model opening its details below it, each tagged with the engine that runs it.
  * Downloaded models come first; they are started from that engine's provider
  * page (llama.cpp TurboQuant, or llama.cpp), where Open leads. A model whose
- * engine has no build for this machine is not listed.
+ * engine has no build for this machine is not listed. The decision models the
+ * catalog does not name (a decision GGUF among the llama.cpp models, or one
+ * put by hand into `decision/models`) follow the downloaded ones and are
+ * started from their own panel.
  */
 export function DecisionHub({
   categoryTabs,
@@ -100,6 +151,7 @@ export function DecisionHub({
   const catalog = useDecisionStore((s) => s.catalog)
   const installed = useDecisionStore((s) => s.installed)
   const cpuArch = useHardware((s) => s.hardwareData.cpu.arch)
+  const localModels = useLocalDecisionModels()
 
   useEffect(() => useDecisionStore.getState().bind(), [])
 
@@ -113,41 +165,64 @@ export function DecisionHub({
 
   const sections = useMemo(() => {
     const shown = filterDecisionModels(runnable, query)
+    const needle = query.trim().toLowerCase()
     return {
       installed: shown.filter((model) => installed[model.id]),
+      local: localModels.filter(
+        (model) =>
+          !needle ||
+          model.name.toLowerCase().includes(needle) ||
+          model.id.toLowerCase().includes(needle)
+      ),
       available: shown.filter((model) => !installed[model.id]),
     }
-  }, [runnable, query, installed])
+  }, [runnable, query, installed, localModels])
 
   const isEmpty =
-    sections.installed.length === 0 && sections.available.length === 0
+    sections.installed.length === 0 &&
+    sections.local.length === 0 &&
+    sections.available.length === 0
 
-  const renderSection = (
-    label: string,
-    items: DecisionCatalogModel[],
-    downloaded: boolean
-  ) =>
+  const catalogItem = (model: DecisionCatalogModel, downloaded: boolean) => {
+    const open = model.id === selectedModelId
+    return (
+      <div key={model.id} className="rounded-lg border border-border">
+        <DecisionModelRow
+          model={model}
+          installed={downloaded}
+          selected={open}
+          onSelect={() => onSelectModel(open ? null : model.id)}
+        />
+        {open && <DecisionModelDetailPanel model={model} />}
+      </div>
+    )
+  }
+
+  const localItem = (model: LocalDecisionModel) => {
+    const open = model.key === selectedModelId
+    return (
+      <div
+        key={model.key}
+        className="rounded-lg border border-border"
+        data-testid={`decision-local-${model.key}`}
+      >
+        <LocalDecisionModelRow
+          model={model}
+          selected={open}
+          onSelect={() => onSelectModel(open ? null : model.key)}
+        />
+        {open && <LocalDecisionModelDetailPanel model={model} />}
+      </div>
+    )
+  }
+
+  const renderSection = (label: string, items: ReactNode[]) =>
     items.length > 0 && (
       <section>
         <h2 className="px-2 pb-2 pt-4 text-base font-semibold text-foreground">
           {label}
         </h2>
-        <div className="flex flex-col gap-1">
-          {items.map((model) => {
-            const open = model.id === selectedModelId
-            return (
-              <div key={model.id} className="rounded-lg border border-border">
-                <DecisionModelRow
-                  model={model}
-                  installed={downloaded}
-                  selected={open}
-                  onSelect={() => onSelectModel(open ? null : model.id)}
-                />
-                {open && <DecisionModelDetailPanel model={model} />}
-              </div>
-            )
-          })}
-        </div>
+        <div className="flex flex-col gap-1">{items}</div>
       </section>
     )
 
@@ -174,8 +249,14 @@ export function DecisionHub({
             />
           ) : (
             <>
-              {renderSection(t('hub:downloaded'), sections.installed, true)}
-              {renderSection(t('hub:available'), sections.available, false)}
+              {renderSection(t('hub:downloaded'), [
+                ...sections.installed.map((model) => catalogItem(model, true)),
+                ...sections.local.map(localItem),
+              ])}
+              {renderSection(
+                t('hub:available'),
+                sections.available.map((model) => catalogItem(model, false))
+              )}
             </>
           )}
         </div>

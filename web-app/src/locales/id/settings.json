@@ -383,7 +383,9 @@
     "sectionTitle": "Decision models",
     "noneTitle": "No decision models downloaded",
     "noneDescription": "Download one in the Decision category of the Hub",
-    "availableInApi": "Available in the API"
+    "availableInApi": "Available in the API",
+    "localModel": "Dari model llama.cpp Anda",
+    "folderModel": "Dari folder model decision Anda"
   },
   "embedding": {
     "multilingual": "Multibahasa",

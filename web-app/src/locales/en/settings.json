@@ -716,7 +716,9 @@
     "sectionTitle": "Decision models",
     "noneTitle": "No decision models downloaded",
     "noneDescription": "Download one in the Decision category of the Hub",
-    "availableInApi": "Available in the API"
+    "availableInApi": "Available in the API",
+    "localModel": "From your llama.cpp models",
+    "folderModel": "From your decision models folder"
   },
   "embedding": {
     "multilingual": "Multilingual",

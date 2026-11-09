@@ -11,6 +11,31 @@ vi.mock('@/stores/provider-registry-store', async (original) => ({
   ...(await original<object>()),
   ensureRegistryLoaded: vi.fn(async () => []),
 }))
+
+it('preserves decision models without probing them for chat reasoning', async () => {
+  const reasoning = vi.fn().mockResolvedValue({ supported: true })
+  registry.engines = new Map([
+    [
+      'llamacpp-upstream',
+      {
+        list: async () => [
+          { id: 'decision-merge', decision: true, capabilities: ['tools'] },
+        ],
+        getSettings: async () => [],
+        getReasoningControls: reasoning,
+      },
+    ],
+  ])
+  const provider = (await new TauriProvidersService().getProviders()).find(
+    (entry) => entry.provider === 'llamacpp-upstream'
+  )!
+  expect(provider.models[0]).toMatchObject({
+    id: 'decision-merge',
+    decision: true,
+  })
+  expect(reasoning).not.toHaveBeenCalled()
+})
+
 it.each([0, 4096])(
   'review: a fresh FLM model inherits engine context %s without a synthetic override',
   async (context) => {

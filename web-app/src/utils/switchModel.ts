@@ -10,6 +10,13 @@ import { useThreads } from '@/hooks/useThreads'
 import { localStorageKey } from '@/constants/localStorage'
 import { showModelLoadErrorToast } from '@/containers/ModelLoadErrorToast'
 import i18n from '@/i18n/setup'
+import type { IntegrationAgent } from '@/constants/integrations'
+import {
+  decideAgentsBeforeSwitch,
+  reopenAgentsAfterSwitch,
+  reportAgentsStopped,
+  stopAgentsForSwitch,
+} from '@/utils/agentSwitchGuard'
 import type { ServiceHub } from '@/services'
 import type { ModelLoadProgress } from '@/lib/inference-status'
 import { knownLoadStage } from '@/lib/managed-engine/types'
@@ -336,6 +343,13 @@ function setLastUsedModel(provider: string, model: string) {
 // `stopAllModels()`-es it away, producing the "turboquant switch briefly
 // launched an MLX server, dropped it, failed, then worked on retry" race.
 let activeSwitchPromise: Promise<void> | null = null
+/**
+ * The last switch the user declined because it would cut off running agents,
+ * with the newest switch number asked for by then: a switch for the same
+ * model queued while the question was open is dropped rather than asking
+ * again.
+ */
+let declinedSwitch: { key: string; seq: number } | null = null
 // Monotonic id of the most recently *enqueued* switch. A queued switch compares
 // its own id against this right before doing work; if a newer switch has since
 // been enqueued it supersedes this one, so we skip the stale load entirely
@@ -510,6 +524,48 @@ export function selectThreadModelIfNone(
   const state = useModelProvider.getState()
   if (state.selectedModel || !model) return
   state.selectModelProvider(model.provider, model.id)
+}
+
+/**
+ * A switch the user declined (it would have cut off running agents) puts the
+ * selection back on the model the server serves — the caller may already
+ * have shown the target as selected. A selection changed since is left be.
+ */
+function restoreServedSelection(providerName: string, modelId: string): void {
+  const state = useModelProvider.getState()
+  if (
+    state.selectedProvider !== providerName ||
+    state.selectedModel?.id !== modelId
+  ) {
+    return
+  }
+  const server = useLocalApiServer.getState()
+  const served =
+    server.lastServerModels?.[0] ?? server.defaultModelLocalApiServer ?? null
+  if (served?.model) state.selectModelProvider(served.provider, served.model)
+  else state.selectModelProvider('', '')
+}
+
+/**
+ * Open agents stopped for a switch again once no switch is left in the
+ * queue, so they start on the model that ends up served rather than on one a
+ * later switch is about to replace.
+ */
+function reopenAgentsWhenSettled(agents: IntegrationAgent[]): void {
+  void (async () => {
+    while (activeSwitchPromise) {
+      await activeSwitchPromise.catch(() => undefined)
+    }
+    const served = useLocalApiServer.getState().lastServerModels?.[0]
+    if (!served?.model) {
+      reportAgentsStopped(agents)
+      return
+    }
+    await reopenAgentsAfterSwitch(agents, {
+      modelId: served.model,
+      providerName: served.provider,
+    })
+  })()
 }
 
 function clearFailedSelection(providerName: string, modelId: string): void {
@@ -802,6 +858,25 @@ export async function switchToModel(params: {
       return
     }
 
+    // Agents Atomic Chat opened that run on another model are cut off by
+    // this switch: the user is asked first. A no changes nothing; a yes stops
+    // them now and opens them again once the new model is served.
+    const switchKey = autoStartKey(params.providerName, params.modelId)
+    if (declinedSwitch?.key === switchKey && mySeq <= declinedSwitch.seq) {
+      throw cancelledLoadError()
+    }
+    const agents = await decideAgentsBeforeSwitch(params)
+    if (agents.kind === 'declined') {
+      declinedSwitch = { key: switchKey, seq: switchSeq }
+      restoreServedSelection(params.providerName, params.modelId)
+      throw cancelledLoadError()
+    }
+    // A switch asked for while the question was open owns the change; it
+    // asks again for the agents that still run.
+    if (mySeq !== switchSeq) return
+    const restarted = agents.kind === 'restart' ? agents.agents : []
+    if (restarted.length > 0) await stopAgentsForSwitch(restarted)
+
     try {
       await doSwitchToModel(params, () => mySeq !== switchSeq, engineStart)
     } catch (error) {
@@ -812,8 +887,14 @@ export async function switchToModel(params: {
       if (!isModelLoadCancelled(error) && mySeq === switchSeq) {
         clearFailedSelection(params.providerName, params.modelId)
       }
+      if (restarted.length > 0) {
+        // A newer switch took over: the agents open on what it serves.
+        if (mySeq !== switchSeq) reopenAgentsWhenSettled(restarted)
+        else reportAgentsStopped(restarted)
+      }
       throw error
     }
+    if (restarted.length > 0) reopenAgentsWhenSettled(restarted)
   }
 
   // Chain strictly after any in-flight/queued switch. A prior failure must not

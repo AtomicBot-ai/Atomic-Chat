@@ -33,6 +33,7 @@ import { useSupportChatSync } from '@/hooks/useSupportChatSync'
 import ToolApproval from '@/containers/dialogs/ToolApproval'
 import AgentApprovalDialog from '@/containers/dialogs/AgentApprovalDialog'
 import AgentFolderAccessDialog from '@/containers/dialogs/AgentFolderAccessDialog'
+import AgentSwitchDialog from '@/containers/dialogs/AgentSwitchDialog'
 import VoiceSetupDialog from '@/containers/dialogs/VoiceSetupDialog'
 import ImageSetupDialog from '@/containers/dialogs/ImageSetupDialog'
 import { ImageGenerationProvider } from '@/providers/ImageGenerationProvider'
@@ -253,6 +254,7 @@ function RootLayout() {
           <ToolApproval />
           <AgentApprovalDialog />
           <AgentFolderAccessDialog />
+          <AgentSwitchDialog />
           <VoiceSetupDialog />
           <ImageSetupDialog />
           <AttachmentIngestionDialog />

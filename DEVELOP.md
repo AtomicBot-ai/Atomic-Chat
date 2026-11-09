@@ -154,7 +154,7 @@ If a user has relocated the data folder via `Settings → Advanced → Change da
 
 ## FastFlowLM desktop development
 
-FastFlowLM is offered by core on Windows 11/Linux x64 with AMD XDNA2. macOS can run contract and frontend checks, but cannot establish desktop NPU acceptance. Production uses the core binary pair and public SDK pinned to `0.22.0`.
+FastFlowLM is offered by core on Windows 11/Linux x64 with AMD XDNA2. macOS can run contract and frontend checks, but cannot establish desktop NPU acceptance. Production core binaries follow `package.json` → `atomicCore.version`; the public SDK is pinned to `0.22.0`.
 
 For an unreleased core, import both binaries together; the explicit version also controls the Tauri build's handshake stamp:
 

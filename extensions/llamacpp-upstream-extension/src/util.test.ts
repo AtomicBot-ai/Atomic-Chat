@@ -1,3 +1,4 @@
+import { isDecisionGguf } from '../../shared/decisionGguf'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   firstGgufShardPath,
@@ -747,6 +748,38 @@ describe('GGUF shard paths', () => {
   it('ignores a malformed marker', () => {
     expect(parseGgufShard('Model-00000-of-00003.gguf')).toBeNull()
     expect(parseGgufShard('Model-00004-of-00003.gguf')).toBeNull()
+  })
+})
+
+describe('isDecisionGguf', () => {
+  it('knows the three shapes of a decision model', () => {
+    expect(isDecisionGguf({ 'general.architecture': 'laya' })).toBe(true)
+    expect(
+      isDecisionGguf({
+        'general.architecture': 'lfm2',
+        'lfm2.decision.type': 'typed',
+      })
+    ).toBe(true)
+    expect(
+      isDecisionGguf({
+        'general.architecture': 'qwen35',
+        'decision.layout': '{"heads":[]}',
+      })
+    ).toBe(true)
+  })
+
+  it('leaves chat and embedding models alone', () => {
+    expect(isDecisionGguf({ 'general.architecture': 'llama' })).toBe(false)
+    expect(isDecisionGguf({ 'general.architecture': 'bert' })).toBe(false)
+    expect(
+      isDecisionGguf({
+        'general.architecture': 'lfm2',
+        'lfm2.decision.type': ' ',
+      })
+    ).toBe(false)
+    expect(isDecisionGguf({ 'decision.layout': '' })).toBe(false)
+    expect(isDecisionGguf(undefined)).toBe(false)
+    expect(isDecisionGguf(null)).toBe(false)
   })
 })
 

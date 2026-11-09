@@ -14,6 +14,7 @@ import {
   markDownloadCancellationRequested,
   wasDownloadCancellationRequested,
 } from '@/lib/downloadCancellation'
+import { localDecisionKey } from '@/lib/decision/models'
 import { resumeDownload } from '@/lib/downloadResume'
 import {
   findInstalledLocalModel,
@@ -421,6 +422,20 @@ export const ModelDownloadAction = ({
     [providers, model, variant.model_id]
   )
   const isDownloaded = installed !== null
+  // A decision GGUF found through the search downloads like any model, but it
+  // runs only in the decision module: the core refuses it for chat.
+  const installedAsDecision = useMemo(
+    () =>
+      installed !== null &&
+      providers.some(
+        (provider) =>
+          provider.provider === installed.provider &&
+          provider.models.some(
+            (entry) => entry.id === installed.modelId && entry.decision === true
+          )
+      ),
+    [providers, installed]
+  )
   const setupSheet = hubFile ? (
     <ModelSetupSheet
       open={setupOpen}
@@ -545,14 +560,34 @@ export const ModelDownloadAction = ({
   if (isDownloaded && installed) {
     return (
       <div className="flex shrink-0 items-center gap-1">
-        <Button
-          variant="default"
-          size="sm"
-          onClick={() => handleUseModel(installed.modelId, installed.provider)}
-          title={t('hub:useModel')}
-        >
-          {t('hub:newChat')}
-        </Button>
+        {installedAsDecision ? (
+          <Button
+            variant="default"
+            size="sm"
+            onClick={() =>
+              void navigate({
+                to: route.hub.index,
+                search: {
+                  category: 'decision',
+                  model: localDecisionKey('llamacpp', installed.modelId),
+                },
+              })
+            }
+          >
+            {t('hub:useAsDecisionModel')}
+          </Button>
+        ) : (
+          <Button
+            variant="default"
+            size="sm"
+            onClick={() =>
+              handleUseModel(installed.modelId, installed.provider)
+            }
+            title={t('hub:useModel')}
+          >
+            {t('hub:newChat')}
+          </Button>
+        )}
         {deletable && (
           <DeleteModelAction
             modelId={installed.modelId}

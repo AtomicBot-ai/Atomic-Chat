@@ -73,7 +73,7 @@ describe('connected agents follow the served model', () => {
 
   afterEach(() => stop())
 
-  it('points every connected agent at the new model, with the server settings, and says so once', async () => {
+  it('points every connected agent at the new model, with the server settings, without a toast', async () => {
     stop = syncConnectedAgentsWithServedModel()
     // A chat switches to Gemma (what `switchModel` records).
     useLocalApiServer.getState().setDefaultModelLocalApiServer(GEMMA)
@@ -90,14 +90,8 @@ describe('connected agents follow the served model', () => {
       apiPrefix: '/v1',
       apiKey: 'local-key',
     })
-    expect(toastInfo).toHaveBeenCalledTimes(1)
-    expect(toastInfo).toHaveBeenCalledWith(
-      'Connected tools now use Gemma 4 E4B',
-      expect.objectContaining({
-        id: 'connected-agents-model',
-        description: expect.stringContaining('Restart'),
-      })
-    )
+    // The switch asks about running agents itself (agentSwitchGuard.ts).
+    expect(toastInfo).not.toHaveBeenCalled()
   })
 
   it('writes nothing for the model the agents already use, an unrelated change, or a model it cannot serve to them', async () => {
@@ -118,7 +112,6 @@ describe('connected agents follow the served model', () => {
     await settle()
 
     expect(writtenAgents()).toEqual([])
-    expect(toastInfo).not.toHaveBeenCalled()
   })
 
   it('leaves the agents on their local model when the chat switches to a cloud model', async () => {
@@ -135,7 +128,6 @@ describe('connected agents follow the served model', () => {
     await settle()
 
     expect(writtenAgents()).toEqual([])
-    expect(toastInfo).not.toHaveBeenCalled()
   })
 
   it('writes once per model, and drops a write a newer change overtook', async () => {
@@ -154,7 +146,6 @@ describe('connected agents follow the served model', () => {
       ['codex', GEMMA.model],
       ['claude-code', GEMMA.model],
     ])
-    expect(toastInfo).toHaveBeenCalledTimes(1)
   })
 
   it('keeps going past an agent whose config cannot be written', async () => {
@@ -168,13 +159,12 @@ describe('connected agents follow the served model', () => {
     warn.mockRestore()
   })
 
-  it('says nothing when no agent is connected, and stops on unsubscribe', async () => {
+  it('writes nothing when no agent is connected, and stops on unsubscribe', async () => {
     useServerSetup.setState({ configuredAgents: [] })
     stop = syncConnectedAgentsWithServedModel()
     useLocalApiServer.getState().setLastServerModels([GEMMA])
     await settle()
     expect(writtenAgents()).toEqual([])
-    expect(toastInfo).not.toHaveBeenCalled()
 
     useServerSetup.setState({ configuredAgents: [{ id: 'codex', at: 1 }] })
     stop()

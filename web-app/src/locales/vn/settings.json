@@ -383,7 +383,9 @@
     "sectionTitle": "Decision models",
     "noneTitle": "No decision models downloaded",
     "noneDescription": "Download one in the Decision category of the Hub",
-    "availableInApi": "Available in the API"
+    "availableInApi": "Available in the API",
+    "localModel": "Từ các mô hình llama.cpp của bạn",
+    "folderModel": "Từ thư mục mô hình decision của bạn"
   },
   "embedding": {
     "multilingual": "Đa ngôn ngữ",

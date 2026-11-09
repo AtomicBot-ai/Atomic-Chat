@@ -102,8 +102,10 @@ function collectLocalModels(providers: readonly ModelProvider[]): {
   ) => {
     for (const model of models) {
       // The embedding model is an app-internal download for retrieval, not
-      // something the Hub can offer a chat with.
-      if (model.embedding || model.id === EMBEDDING_MODEL_ID) continue
+      // something the Hub can offer a chat with; a decision model lists under
+      // the Decision category.
+      if (model.embedding || model.decision || model.id === EMBEDDING_MODEL_ID)
+        continue
       if (out.has(model.id)) continue
       out.set(model.id, { model, kind })
     }

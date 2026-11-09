@@ -6,11 +6,14 @@ import {
   type ServedHelperKind,
 } from '@/hooks/useLocalApiServer'
 import { useLocalEmbeddingModels } from '@/hooks/useEmbeddingModel'
+import { useLocalDecisionModels } from '@/hooks/useLocalDecisionModels'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { DECISION_ENGINE_UI } from '@/lib/decision/engine'
 import {
   activateDecisionModel,
+  activateLocalDecisionModel,
   isActiveDecisionModel,
+  isActiveLocalDecisionModel,
   stopDecisionModel,
 } from '@/lib/decision/models'
 import { isDecisionHostSupported } from '@/lib/decision/platform'
@@ -140,10 +143,15 @@ export function useServedEmbeddingModels(): ServedHelperModels {
   return { supported, options, active, apply }
 }
 
+/** The value of a decision model the catalog does not name; catalog models keep their bare id. */
+const LOCAL_DECISION_PREFIX = 'local:'
+
 /**
  * Decision models, served at `/v1/systemone` and `/v1/router/score`: the
  * Hub's downloads for the engines this desktop has (TurboQuant behind its
- * platform flag, stock llama.cpp).
+ * platform flag, stock llama.cpp), then the decision models the catalog does
+ * not name (a decision GGUF among the llama.cpp models, or one put by hand
+ * into `decision/models`): the core picks their engine from the file.
  */
 export function useServedDecisionModels(): ServedHelperModels {
   const apiSupported = useServiceHub().decision().isSupported()
@@ -160,6 +168,7 @@ export function useServedDecisionModels(): ServedHelperModels {
   const catalog = useDecisionStore((s) => s.catalog)
   const installed = useDecisionStore((s) => s.installed)
   const config = useDecisionStore((s) => s.config)
+  const local = useLocalDecisionModels()
 
   useEffect(() => {
     if (!supported) return
@@ -169,18 +178,34 @@ export function useServedDecisionModels(): ServedHelperModels {
   const models = catalog.models.filter(
     (model) => installed[model.id] && runsOn(model.engine)
   )
-  const options = models.map((model) => ({
-    value: model.id,
-    label: `${model.name} · ${DECISION_ENGINE_UI[model.engine].name}`,
-  }))
+  const options = [
+    ...models.map((model) => ({
+      value: model.id,
+      label: `${model.name} · ${DECISION_ENGINE_UI[model.engine].name}`,
+    })),
+    ...local.map((model) => ({
+      value: `${LOCAL_DECISION_PREFIX}${model.key}`,
+      label: model.name,
+    })),
+  ]
   const activeModel = config?.enabled
     ? models.find((model) => isActiveDecisionModel(config, model))
     : undefined
+  const activeLocal =
+    config?.enabled && !activeModel
+      ? local.find((model) => isActiveLocalDecisionModel(config, model))
+      : undefined
 
   const apply = async (value: string) => {
     forgetPaused('decision')
     if (value === NO_HELPER_MODEL) {
       await stopDecisionModel()
+    } else if (value.startsWith(LOCAL_DECISION_PREFIX)) {
+      const key = value.slice(LOCAL_DECISION_PREFIX.length)
+      const model = local.find((candidate) => candidate.key === key)
+      if (!model) return
+      await activateLocalDecisionModel(model)
+      await raiseLocalApiServerForMediaModel()
     } else {
       const model = models.find((candidate) => candidate.id === value)
       if (!model) return
@@ -193,7 +218,11 @@ export function useServedDecisionModels(): ServedHelperModels {
   return {
     supported,
     options,
-    active: activeModel?.id ?? NO_HELPER_MODEL,
+    active: activeModel
+      ? activeModel.id
+      : activeLocal
+        ? `${LOCAL_DECISION_PREFIX}${activeLocal.key}`
+        : NO_HELPER_MODEL,
     apply,
   }
 }

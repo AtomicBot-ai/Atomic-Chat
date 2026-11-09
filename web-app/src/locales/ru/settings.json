@@ -628,7 +628,9 @@
     "sectionTitle": "Decision-модели",
     "noneTitle": "Decision-модели не скачаны",
     "noneDescription": "Скачайте модель в категории Decision в Hub",
-    "availableInApi": "Доступна в API"
+    "availableInApi": "Доступна в API",
+    "localModel": "Из ваших моделей llama.cpp",
+    "folderModel": "Из папки decision-моделей"
   },
   "embedding": {
     "multilingual": "Многоязычная",

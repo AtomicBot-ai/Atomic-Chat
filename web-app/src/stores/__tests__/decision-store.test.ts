@@ -6,6 +6,7 @@ vi.mock('@/lib/decision/models', () => ({
   isDecisionModelInstalled: vi.fn(async (model: { id: string }) =>
     installedIds.has(model.id)
   ),
+  readDecisionFolderModels: vi.fn(async () => []),
 }))
 
 vi.mock('@/services/decision-catalog-registry', async (importOriginal) => {
@@ -22,7 +23,10 @@ vi.mock('@/services/decision-catalog-registry', async (importOriginal) => {
   }
 })
 
-import { isDecisionModelInstalled } from '@/lib/decision/models'
+import {
+  isDecisionModelInstalled,
+  readDecisionFolderModels,
+} from '@/lib/decision/models'
 import { seedServiceHub } from '@/test/service-hub'
 import type {
   DecisionEvent,
@@ -120,6 +124,27 @@ describe('useDecisionStore', () => {
     expect(installedRead).toBe(true)
     expect(installed[first.id]).toBe(true)
     expect(Object.values(installed).filter(Boolean)).toHaveLength(1)
+  })
+
+  it('lists the models put by hand into folders the catalog does not own', async () => {
+    const catalogIds = useDecisionStore
+      .getState()
+      .catalog.models.map((model) => model.id)
+    const jevos = {
+      key: 'folder:jevos-v4',
+      id: 'jevos-v4',
+      name: 'jevos-v4',
+      source: 'folder' as const,
+      model_path: 'decision/models/jevos-v4/jevos-v4-Q8_0.gguf',
+      mmproj_path: '',
+    }
+    vi.mocked(readDecisionFolderModels).mockResolvedValueOnce([jevos])
+    await useDecisionStore.getState().refreshInstalled()
+    expect(useDecisionStore.getState().folderModels).toEqual([jevos])
+    // The catalog's own folders are not the folder scan's to report.
+    expect(vi.mocked(readDecisionFolderModels).mock.calls.at(-1)?.[0]).toEqual(
+      new Set(catalogIds)
+    )
   })
 
   it('counts a failed read of the disk as read, so nothing waits on it', async () => {

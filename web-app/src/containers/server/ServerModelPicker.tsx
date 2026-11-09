@@ -70,7 +70,7 @@ export function useServableEngines(): ServableEngine[] {
     const engines = providers.flatMap((provider) => {
       if (!isServableEngine(provider)) return []
       const models = provider.models.filter(
-        (model) => !model.embedding && !model.missing
+        (model) => !model.embedding && !model.decision && !model.missing
       )
       return models.length > 0 ? [{ ...provider, models }] : []
     })

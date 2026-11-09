@@ -41,6 +41,11 @@ type Model = {
   settings?: Record<string, ProviderSetting>
   /** Whether this model is an embedding model (e.g., BERT-based) */
   embedding?: boolean
+  /**
+   * A decision model (router / classifier GGUF) the llama.cpp extensions
+   * found among the user's models: the decision module serves it, chat never.
+   */
+  decision?: boolean
   // Origin of a model imported from another app's storage, shown as a UI badge.
   source?:
     | 'ollama'

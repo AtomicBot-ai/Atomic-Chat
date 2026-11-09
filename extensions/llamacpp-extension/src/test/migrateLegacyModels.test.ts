@@ -273,9 +273,10 @@ describe('migrateLegacyModels', () => {
       const migrateSpy = vi
         .spyOn(extension as any, 'migrateLegacyModels')
         .mockResolvedValue(undefined)
-      vi.spyOn(extension as any, 'resolveEmbeddingConfig').mockResolvedValue(
-        false
-      )
+      vi.spyOn(extension as any, 'resolveModelKind').mockResolvedValue({
+        embedding: false,
+        decision: false,
+      })
 
       vi.mocked(getJanDataFolderPath).mockResolvedValue('/path/to/jan')
       vi.mocked(joinPath).mockImplementation((paths) =>

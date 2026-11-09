@@ -491,7 +491,7 @@ export class TauriProvidersService extends DefaultProvidersService {
                 // Both answers come from the model file; see `probeModel`.
                 const probe = await probeModel(providerName, value, model, {
                   tools: !capabilities.includes(ModelCapabilities.TOOLS),
-                  reasoning: !model.embedding,
+                  reasoning: !model.embedding && !model.decision,
                 })
                 if (probe.tools) capabilities.push(ModelCapabilities.TOOLS)
 
@@ -515,6 +515,8 @@ export class TauriProvidersService extends DefaultProvidersService {
                   capabilities,
                   reasoning,
                   embedding: model.embedding, // Preserve embedding flag for filtering in UI
+                  // Decision GGUFs belong in the decision selectors, outside chat.
+                  decision: model.decision,
                   // Origin of an imported model, for the UI badge — and for
                   // `model_load.import_source`, which is the only way to tell an
                   // imported model from a re-load of one downloaded earlier.
