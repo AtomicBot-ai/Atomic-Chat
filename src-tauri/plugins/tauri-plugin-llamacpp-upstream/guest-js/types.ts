@@ -151,6 +151,8 @@ export interface ModelConfig {
   mmproj_sha256?: string
   mmproj_size_bytes?: number
   embedding?: boolean
+  /** A decision model (router / classifier): served by the decision module, never chat. */
+  decision?: boolean
   /**
    * Which modality this model's mmproj carries. Cached on first read so
    * `list()` does not have to parse the projector GGUF every time. An

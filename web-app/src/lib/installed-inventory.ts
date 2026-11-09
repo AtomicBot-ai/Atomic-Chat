@@ -272,7 +272,11 @@ export function providerModelItems(
         items.push({
           key: `model:${group}:${model.id}`,
           category: 'local',
-          kind: model.embedding ? 'embedding' : 'model',
+          kind: model.decision
+            ? 'decision'
+            : model.embedding
+              ? 'embedding'
+              : 'model',
           ...readableModel(model.id, givenName(model)),
           details: [getProviderTitle(provider)],
           bytes: validBytes(model.sizeBytes),

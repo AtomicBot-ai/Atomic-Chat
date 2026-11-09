@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const fsMock = vi.hoisted(() => ({
   existsSync: vi.fn(),
   rm: vi.fn(),
+  readdirSync: vi.fn(),
 }))
 
 const transfer = vi.hoisted(() => ({
@@ -30,6 +31,7 @@ import type { DecisionService } from '@/services/decision/types'
 
 import {
   activateDecisionModel,
+  activateLocalDecisionModel,
   decisionDownloadTaskId,
   decisionModelDir,
   decisionModelPath,
@@ -37,10 +39,13 @@ import {
   deleteDecisionModel,
   downloadDecisionModel,
   isActiveDecisionModel,
+  isActiveLocalDecisionModel,
   isDecisionDownloadTaskId,
   isDecisionModelInstalled,
   missingDecisionFiles,
+  readDecisionFolderModels,
   stopDecisionModel,
+  type LocalDecisionModel,
 } from '../models'
 
 const HASH = 'a'.repeat(64)
@@ -112,6 +117,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   fsMock.existsSync.mockResolvedValue(false)
   fsMock.rm.mockResolvedValue(undefined)
+  fsMock.readdirSync.mockResolvedValue([])
   transfer.transferFiles.mockResolvedValue(undefined)
   transfer.downloadProxyConfig.mockReturnValue(undefined)
 })
@@ -320,5 +326,108 @@ describe('core control', () => {
     decisionService()
     await expect(deleteDecisionModel(model, null)).resolves.toBeUndefined()
     expect(fsMock.rm).not.toHaveBeenCalled()
+  })
+})
+
+describe('decision models the catalog does not name', () => {
+  /** `decision/models` as the data folder's `readdirSync` lists it: absolute paths. */
+  const root = '/data/decision/models'
+  const disk = (tree: Record<string, string[]>) => {
+    fsMock.readdirSync.mockImplementation(async (path: string) => {
+      if (path === 'file://decision/models')
+        return Object.keys(tree).map((dir) => `${root}/${dir}`)
+      const dir = path.slice(root.length + 1)
+      if (!(dir in tree)) throw new Error('ENOTDIR')
+      return tree[dir].map((file) => `${root}/${dir}/${file}`)
+    })
+  }
+
+  it('finds a GGUF put by hand into a folder, with its projector', async () => {
+    disk({
+      'jevos-v4': ['README.md', 'mmproj-jevos-f16.gguf', 'jevos-v4-Q8_0.gguf'],
+    })
+    await expect(readDecisionFolderModels(new Set())).resolves.toEqual([
+      {
+        key: 'folder:jevos-v4',
+        id: 'jevos-v4',
+        name: 'jevos-v4',
+        source: 'folder',
+        model_path: 'decision/models/jevos-v4/jevos-v4-Q8_0.gguf',
+        mmproj_path: 'decision/models/jevos-v4/mmproj-jevos-f16.gguf',
+      },
+    ])
+  })
+
+  it('points at the first shard of a split GGUF, and at the folder of a laya checkpoint', async () => {
+    disk({
+      'valen-2': [
+        'valen-2-Q4_K_M-00002-of-00002.gguf',
+        'valen-2-Q4_K_M-00001-of-00002.gguf',
+      ],
+      'laya-custom': ['rl_agent_config.json', 'model.safetensors'],
+    })
+    const models = await readDecisionFolderModels(new Set())
+    expect(models.map((m) => [m.id, m.model_path, m.mmproj_path])).toEqual([
+      [
+        'valen-2',
+        'decision/models/valen-2/valen-2-Q4_K_M-00001-of-00002.gguf',
+        '',
+      ],
+      ['laya-custom', 'decision/models/laya-custom', ''],
+    ])
+  })
+
+  it('leaves out catalog folders, folders without weights, and files', async () => {
+    disk({ 'julia-1': ['Julia-1-Q8_0.gguf'], 'empty': ['notes.txt'] })
+    fsMock.readdirSync.mockImplementationOnce(async () => [
+      `${root}/julia-1`,
+      `${root}/empty`,
+      `${root}/stray.gguf`,
+    ])
+    await expect(
+      readDecisionFolderModels(new Set(['julia-1']))
+    ).resolves.toEqual([])
+  })
+
+  it('reads a missing decision/models as no models', async () => {
+    fsMock.readdirSync.mockRejectedValue(new Error('ENOENT'))
+    await expect(readDecisionFolderModels(new Set())).resolves.toEqual([])
+  })
+
+  const artemis: LocalDecisionModel = {
+    key: 'llamacpp:turintech/d1-3B-Artemis-Q4_K_M',
+    id: 'turintech/d1-3B-Artemis-Q4_K_M',
+    name: 'd1-3B-Artemis-Q4_K_M',
+    source: 'llamacpp',
+    model_path: 'llamacpp/models/turintech/d1-3B-Artemis-Q4_K_M/model.gguf',
+    mmproj_path: '',
+  }
+
+  it('points the core at the file and leaves the context and engine to it', async () => {
+    const service = decisionService()
+    await expect(activateLocalDecisionModel(artemis)).resolves.toEqual({
+      state: 'ready',
+    })
+    expect(service.setConfig).toHaveBeenCalledWith({
+      enabled: true,
+      model_path: artemis.model_path,
+      model_id: artemis.id,
+      mmproj_path: '',
+      ctx_size: 0,
+      startup_timeout_secs: 600,
+    })
+    expect(service.setConfig.mock.invocationCallOrder[0]).toBeLessThan(
+      service.load.mock.invocationCallOrder[0]
+    )
+  })
+
+  it('reads the active one off the configured path', () => {
+    expect(
+      isActiveLocalDecisionModel({ model_path: artemis.model_path }, artemis)
+    ).toBe(true)
+    expect(
+      isActiveLocalDecisionModel({ model_path: 'decision/models/x' }, artemis)
+    ).toBe(false)
+    expect(isActiveLocalDecisionModel(null, artemis)).toBe(false)
   })
 })

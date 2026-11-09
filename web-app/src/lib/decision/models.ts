@@ -212,3 +212,110 @@ export async function deleteDecisionModel(
   const dir = decisionModelDir(model.id)
   if (await exists(dir)) await fs.rm(dataPath(dir))
 }
+
+/**
+ * A decision model the catalog does not name, which the user already has: a
+ * decision GGUF among the llama.cpp models (downloaded through the Hub's
+ * search, or imported), or weights put by hand into a folder of
+ * `decision/models` that no catalog model owns. The core runs either from its
+ * path, as it runs a catalog model.
+ */
+export type LocalDecisionModel = {
+  /** Selection key; a llama.cpp id may carry a catalog id's name. */
+  key: string
+  /** `-a`: the name API clients pass as `model`. */
+  id: string
+  name: string
+  source: 'llamacpp' | 'folder'
+  /** A GGUF or a laya checkpoint folder; relative to the data folder, or absolute. */
+  model_path: string
+  /** Empty for a model without a projector. */
+  mmproj_path: string
+}
+
+export const localDecisionKey = (
+  source: LocalDecisionModel['source'],
+  id: string
+): string => `${source}:${id}`
+
+const baseName = (path: string): string =>
+  path.split(/[\\/]/).filter(Boolean).pop() ?? path
+
+const listDir = async (path: string): Promise<string[]> => {
+  try {
+    return ((await fs.readdirSync(path)) as string[] | undefined) ?? []
+  } catch {
+    return []
+  }
+}
+
+/** The first shard of a split GGUF, or the file itself. */
+const isFirstShardOrWhole = (file: string): boolean => {
+  const shard = /-(\d+)-of-\d+\.gguf$/i.exec(file)
+  return !shard || Number(shard[1]) === 1
+}
+
+/**
+ * The models in `decision/models` folders the catalog does not own: a GGUF
+ * (its projector beside it when the folder has one) or a laya checkpoint
+ * folder. Whether the file really is a decision model is the core's to say on
+ * start; a folder with neither is left out.
+ */
+export async function readDecisionFolderModels(
+  catalogIds: ReadonlySet<string>
+): Promise<LocalDecisionModel[]> {
+  const dirs = await listDir(dataPath(DECISION_MODELS_DIR))
+  const models = await Promise.all(
+    dirs.map(async (dir): Promise<LocalDecisionModel | null> => {
+      const name = baseName(dir)
+      if (catalogIds.has(name)) return null
+      const files = (await listDir(dir)).map(baseName)
+      const base = decisionModelDir(name)
+      const folder = {
+        key: localDecisionKey('folder', name),
+        id: name,
+        name,
+        source: 'folder' as const,
+      }
+      if (files.includes('rl_agent_config.json'))
+        return { ...folder, model_path: base, mmproj_path: '' }
+      const ggufs = files.filter((file) => /\.gguf$/i.test(file)).sort()
+      const projector = ggufs.find((file) => /mmproj/i.test(file))
+      const weights = ggufs.find(
+        (file) => !/mmproj/i.test(file) && isFirstShardOrWhole(file)
+      )
+      if (!weights) return null
+      return {
+        ...folder,
+        model_path: `${base}/${weights}`,
+        mmproj_path: projector ? `${base}/${projector}` : '',
+      }
+    })
+  )
+  return models.filter((model): model is LocalDecisionModel => model !== null)
+}
+
+export const isActiveLocalDecisionModel = (
+  config: Pick<DecisionConfig, 'model_path'> | null,
+  model: LocalDecisionModel
+): boolean => config?.model_path === model.model_path
+
+/**
+ * Point the core at a model the catalog does not name and start it. The
+ * context is the core's default for the file: there is no catalog entry to
+ * name one. A stock llama.cpp model may take a while to read onto the GPU.
+ */
+export async function activateLocalDecisionModel(
+  model: LocalDecisionModel
+): Promise<DecisionStatus> {
+  const decision = getServiceHub().decision()
+  await decision.setConfig({
+    enabled: true,
+    model_path: model.model_path,
+    model_id: model.id,
+    mmproj_path: model.mmproj_path,
+    ctx_size: 0,
+    startup_timeout_secs: 600,
+  })
+  return decision.load()
+}

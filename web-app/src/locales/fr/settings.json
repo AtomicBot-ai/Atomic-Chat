@@ -719,7 +719,9 @@
     "sectionTitle": "Modèles de décision",
     "noneTitle": "Aucun modèle de décision téléchargé",
     "noneDescription": "Téléchargez-en un dans la catégorie Décision du Hub",
-    "availableInApi": "Disponible dans l'API"
+    "availableInApi": "Disponible dans l'API",
+    "localModel": "Depuis vos modèles llama.cpp",
+    "folderModel": "Depuis votre dossier de modèles de décision"
   },
   "embedding": {
     "multilingual": "Multilingue",

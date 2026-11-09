@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => ({
   deleteModel: vi.fn(),
   abortDownload: vi.fn(),
   getProviders: vi.fn(),
+  navigate: vi.fn(),
 }))
 
 vi.mock('@tauri-apps/api/event', () => ({
@@ -48,7 +49,7 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
 }))
 
 vi.mock('@tanstack/react-router', () => ({
-  useNavigate: () => vi.fn(),
+  useNavigate: () => mocks.navigate,
 }))
 
 vi.mock('@/hooks/useGeneralSetting', () => ({
@@ -100,6 +101,32 @@ describe('ModelDownloadAction', () => {
     render(<ModelDownloadAction variant={variant} model={model} asButton />)
 
     expect(downloadButton()).toHaveAttribute('data-variant', 'default')
+  })
+
+  it('sends a downloaded decision GGUF to the Decision category instead of a chat', () => {
+    useModelProvider.setState({
+      providers: [
+        {
+          provider: 'llamacpp-upstream',
+          models: [{ id: 'Qwen3.8-27B-Q8_0', decision: true }],
+        },
+      ] as never,
+    })
+    render(<ModelDownloadAction variant={variant} model={model} asButton />)
+
+    expect(screen.queryByRole('button', { name: 'hub:newChat' })).toBeNull()
+    fireEvent.click(
+      screen.getByRole('button', { name: 'hub:useAsDecisionModel' })
+    )
+
+    expect(mocks.navigate).toHaveBeenCalledWith({
+      to: '/hub/',
+      search: {
+        category: 'decision',
+        model: 'llamacpp:Qwen3.8-27B-Q8_0',
+      },
+    })
+    expect(mocks.switchToModel).not.toHaveBeenCalled()
   })
 
   it('downloads a variant without selecting or starting it', () => {

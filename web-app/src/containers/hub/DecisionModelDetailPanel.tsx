@@ -1,15 +1,18 @@
 import { useNavigate } from '@tanstack/react-router'
-import { IconExternalLink } from '@tabler/icons-react'
+import { IconExternalLink, IconLoader2 } from '@tabler/icons-react'
 import { Button } from '@/components/ui/button'
 import DecisionModelCard from '@/containers/DecisionModelCard'
 import { ModelLogo } from '@/containers/ModelLogo'
 import { route } from '@/constants/routes'
 import { useDecisionEngineReadiness } from '@/hooks/useDecisionEngineReadiness'
 import { useDecisionModel } from '@/hooks/useDecisionModel'
+import { useLocalDecisionModel } from '@/hooks/useLocalDecisionModels'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { DECISION_ENGINE_UI } from '@/lib/decision/engine'
+import type { LocalDecisionModel } from '@/lib/decision/models'
 import { decisionIconKey } from '@/lib/model-logo'
 import { cn } from '@/lib/utils'
+import { useDecisionStore } from '@/stores/decision-store'
 import {
   decisionDiskBytes,
   decisionQuantLabel,
@@ -187,6 +190,106 @@ function ModelPanel({
             {isNonCommercialLicense(model.license)
               ? ` · ${t('hub:licenseNonCommercial')}`
               : ''}
+          </DetailCell>
+        </dl>
+      </section>
+    </div>
+  )
+}
+
+/**
+ * The panel for a decision model the catalog does not name (one of the
+ * user's llama.cpp models, or a folder in `decision/models`): what it is,
+ * Start / Stop, and the file the core runs. There is no catalog entry, so no
+ * download, README or engine notice: the core reads the engine from the file
+ * and says on start when the installed build cannot run it.
+ */
+export function LocalDecisionModelDetailPanel({
+  model,
+  className,
+}: {
+  model: LocalDecisionModel
+  className?: string
+}) {
+  const { t } = useTranslation()
+  const { running, busy, error, activate, stop } = useLocalDecisionModel(model)
+  const anyBusy = useDecisionStore((s) => s.busy !== null)
+
+  return (
+    <div
+      className={cn('flex flex-col gap-4 p-6', className)}
+      data-testid={`decision-local-panel-${model.key}`}
+    >
+      <header className="flex items-start gap-3">
+        <ModelLogo name={model.name} />
+        <div className="min-w-0 flex-1">
+          <h1
+            className="min-w-0 truncate text-xl font-semibold"
+            title={model.name}
+          >
+            {model.name}
+          </h1>
+          <p className="truncate text-xs text-muted-foreground">
+            {model.source === 'folder'
+              ? t('settings:decision.folderModel')
+              : t('settings:decision.localModel')}
+          </p>
+        </div>
+        {running ? (
+          <Button
+            size="sm"
+            variant="destructive"
+            disabled={anyBusy}
+            className="min-w-16 shrink-0 justify-center"
+            onClick={() => void stop()}
+          >
+            {busy ? (
+              <IconLoader2 size={16} className="animate-spin" />
+            ) : (
+              t('settings:decision.stop')
+            )}
+          </Button>
+        ) : (
+          <Button
+            size="sm"
+            disabled={anyBusy}
+            className="min-w-16 shrink-0 justify-center"
+            onClick={() => void activate()}
+          >
+            {busy ? (
+              <IconLoader2 size={16} className="animate-spin" />
+            ) : (
+              t('settings:decision.start')
+            )}
+          </Button>
+        )}
+      </header>
+
+      <p className="text-sm text-muted-foreground">
+        {model.source === 'folder'
+          ? t('hub:decisionFolderModel')
+          : t('hub:decisionLocalModel')}{' '}
+        {t('hub:decisionLocalServe')}
+      </p>
+
+      {error && (
+        <p className="text-xs text-destructive" role="alert">
+          {error.message}
+        </p>
+      )}
+
+      <section className="rounded-lg border border-border bg-card p-4">
+        <h2 className="mb-3 text-sm font-medium">{t('hub:details')}</h2>
+        <dl className="grid grid-cols-2 gap-2 text-xs">
+          <DetailCell label={t('hub:decisionModelId')}>
+            <span className="font-mono" title={model.id}>
+              {model.id}
+            </span>
+          </DetailCell>
+          <DetailCell label={t('hub:decisionFile')}>
+            <span className="font-mono font-normal" title={model.model_path}>
+              {model.model_path}
+            </span>
           </DetailCell>
         </dl>
       </section>

@@ -18,6 +18,8 @@ export type AnswerableModelLike = {
   missing?: boolean
   /** Set by the llama.cpp extensions on an embedding GGUF. */
   embedding?: boolean
+  /** Set by the llama.cpp extensions on a decision GGUF. */
+  decision?: boolean
   capabilities?: string[]
 }
 
@@ -37,12 +39,14 @@ export function isEmbeddingOnlyModel(model: AnswerableModelLike): boolean {
 /**
  * A local model that could be loaded and chatted with right now.
  *
- * Excluded: a broken link (loading it only crashes the engine) and an
- * embedding model (not something to chat with).
+ * Excluded: a broken link (loading it only crashes the engine), an embedding
+ * model and a decision model (neither is something to chat with; the core
+ * refuses to load a decision model for chat).
  */
 export function isAnswerableModel(model: AnswerableModelLike): boolean {
   if (!model.id) return false
   if (isEmbeddingOnlyModel(model)) return false
+  if (model.decision === true) return false
   if (model.missing) return false
   return true
 }

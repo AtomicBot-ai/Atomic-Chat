@@ -6,20 +6,31 @@ const {
   activateLocalEmbedding,
   stopEmbedding,
   activateDecision,
+  activateLocalDecision,
   stopDecision,
   raiseServer,
   localModels,
+  localDecisionModels,
   platform,
 } = vi.hoisted(() => ({
   activateEmbedding: vi.fn(),
   activateLocalEmbedding: vi.fn(),
   stopEmbedding: vi.fn(),
   activateDecision: vi.fn(),
+  activateLocalDecision: vi.fn(),
   stopDecision: vi.fn(),
   raiseServer: vi.fn(),
   localModels: [] as Array<{
     id: string
     name: string
+    model_path: string
+    mmproj_path: string
+  }>,
+  localDecisionModels: [] as Array<{
+    key: string
+    id: string
+    name: string
+    source: 'llamacpp' | 'folder'
     model_path: string
     mmproj_path: string
   }>,
@@ -35,6 +46,9 @@ vi.mock('@/hooks/useServiceHub', () => ({
 vi.mock('@/hooks/useEmbeddingModel', () => ({
   useLocalEmbeddingModels: () => localModels,
 }))
+vi.mock('@/hooks/useLocalDecisionModels', () => ({
+  useLocalDecisionModels: () => localDecisionModels,
+}))
 vi.mock('@/lib/embedding/models', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/embedding/models')>()),
   activateEmbeddingModel: activateEmbedding,
@@ -44,6 +58,7 @@ vi.mock('@/lib/embedding/models', async (importOriginal) => ({
 vi.mock('@/lib/decision/models', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/decision/models')>()),
   activateDecisionModel: activateDecision,
+  activateLocalDecisionModel: activateLocalDecision,
   stopDecisionModel: stopDecision,
 }))
 vi.mock('@/utils/localApiServerControl', () => ({
@@ -95,6 +110,7 @@ describe('the embedding and decision models the server serves', () => {
     platform.localInference = true
     platform.turboquantEngine = true
     localModels.length = 0
+    localDecisionModels.length = 0
     useLocalApiServer.setState({ pausedHelperModels: [] })
     const stub = { bind: () => () => {}, refresh: vi.fn() }
     useEmbeddingStore.setState({
@@ -218,6 +234,58 @@ describe('the embedding and decision models the server serves', () => {
     expect(useLocalApiServer.getState().pausedHelperModels).toEqual([
       'embedding',
     ])
+  })
+
+  const artemis = {
+    key: 'llamacpp:turintech/d1-3B-Artemis-Q4_K_M',
+    id: 'turintech/d1-3B-Artemis-Q4_K_M',
+    name: 'd1-3B-Artemis-Q4_K_M',
+    source: 'llamacpp' as const,
+    model_path: 'llamacpp/models/turintech/d1-3B-Artemis-Q4_K_M/model.gguf',
+    mmproj_path: '',
+  }
+  const jevos = {
+    key: 'folder:jevos-v4',
+    id: 'jevos-v4',
+    name: 'jevos-v4',
+    source: 'folder' as const,
+    model_path: 'decision/models/jevos-v4/jevos-v4-Q8_0.gguf',
+    mmproj_path: '',
+  }
+
+  it('offers the decision models the catalog does not name after the downloaded ones', () => {
+    localDecisionModels.push(artemis, jevos)
+    useDecisionStore.setState({
+      config: { enabled: true, model_path: jevos.model_path } as never,
+    })
+    const { result } = renderHook(() => useServedDecisionModels())
+
+    expect(result.current.options).toEqual([
+      { value: 'laya', label: 'Laya · TurboQuant' },
+      { value: 'julia-1', label: 'Julia 1 · llama.cpp' },
+      {
+        value: 'local:llamacpp:turintech/d1-3B-Artemis-Q4_K_M',
+        label: 'd1-3B-Artemis-Q4_K_M',
+      },
+      { value: 'local:folder:jevos-v4', label: 'jevos-v4' },
+    ])
+    expect(result.current.active).toBe('local:folder:jevos-v4')
+  })
+
+  it('starts a decision GGUF from the llama.cpp models and brings the server up with it', async () => {
+    localDecisionModels.push(artemis)
+    useLocalApiServer.setState({ pausedHelperModels: ['decision'] })
+    const { result } = renderHook(() => useServedDecisionModels())
+
+    await act(() =>
+      result.current.apply('local:llamacpp:turintech/d1-3B-Artemis-Q4_K_M')
+    )
+
+    expect(activateLocalDecision).toHaveBeenCalledWith(artemis)
+    expect(activateDecision).not.toHaveBeenCalled()
+    expect(raiseServer).toHaveBeenCalledTimes(1)
+    // The choice replaces the one a server turn-off put aside.
+    expect(useLocalApiServer.getState().pausedHelperModels).toEqual([])
   })
 
   it('offers neither where the desktop cannot run local models', () => {

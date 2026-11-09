@@ -535,7 +535,9 @@
     "sectionTitle": "Decision models",
     "noneTitle": "No decision models downloaded",
     "noneDescription": "Download one in the Decision category of the Hub",
-    "availableInApi": "Available in the API"
+    "availableInApi": "Available in the API",
+    "localModel": "llama.cpp モデルから",
+    "folderModel": "decision モデルのフォルダーから"
   },
   "embedding": {
     "multilingual": "多言語",

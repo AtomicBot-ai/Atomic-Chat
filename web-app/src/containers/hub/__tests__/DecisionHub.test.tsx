@@ -22,6 +22,9 @@ vi.mock('@/containers/hub/DecisionModelDetailPanel', () => ({
   DecisionModelDetailPanel: ({ model }: { model: DecisionCatalogModel }) => (
     <aside data-testid="detail">{model.id}</aside>
   ),
+  LocalDecisionModelDetailPanel: ({ model }: { model: { key: string } }) => (
+    <aside data-testid="local-detail">{model.key}</aside>
+  ),
 }))
 
 import { useDecisionStore } from '@/stores/decision-store'
@@ -55,8 +58,34 @@ describe('DecisionHub', () => {
     useDecisionStore.setState({
       catalog,
       installed: { 'laya-multilingual': true },
+      folderModels: [],
       bind,
     })
+  })
+
+  it('lists a decision model put by hand into decision/models with the downloaded ones', async () => {
+    useDecisionStore.setState({
+      folderModels: [
+        {
+          key: 'folder:jevos-v4',
+          id: 'jevos-v4',
+          name: 'jevos-v4',
+          source: 'folder',
+          model_path: 'decision/models/jevos-v4/jevos-v4-Q8_0.gguf',
+          mmproj_path: '',
+        },
+      ],
+    })
+    const { onSelectModel } = renderHub({ selectedModelId: 'folder:jevos-v4' })
+
+    const downloaded = screen
+      .getByRole('heading', { name: 'hub:downloaded' })
+      .closest('section')!
+    const row = within(downloaded).getByRole('button', { name: /jevos-v4/ })
+    expect(row).toHaveTextContent('settings:decision.folderModel')
+    expect(row.nextElementSibling).toBe(screen.getByTestId('local-detail'))
+    await userEvent.click(row)
+    expect(onSelectModel).toHaveBeenCalledWith(null)
   })
 
   it('lists the downloaded models first, then the rest, and follows the core', () => {
