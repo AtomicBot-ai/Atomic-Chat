@@ -227,6 +227,20 @@
     "modelSwitched": "Les outils connectés utilisent maintenant {{model}}",
     "modelSwitchedDesc": "Redémarrez un outil déjà lancé pour qu'il passe à ce modèle."
   },
+  "agentSwitch": {
+    "title": "Passer les agents en cours sur {{model}} ?",
+    "description_one": "Atomic Chat a ouvert cet agent, qui tourne encore sur le modèle actuel :",
+    "description_other": "Atomic Chat a ouvert ces agents, qui tournent encore sur le modèle actuel :",
+    "consequence_one": "Changer de modèle met fin à sa session : Atomic Chat l'arrête et le rouvre sur {{model}}. Sa conversation repart de zéro.",
+    "consequence_other": "Changer de modèle met fin à leurs sessions : Atomic Chat les arrête et les rouvre sur {{model}}. Leurs conversations repartent de zéro.",
+    "cloud": "{{model}} tourne chez {{provider}} : les requêtes des agents y sont envoyées et facturées sur votre compte {{provider}}.",
+    "cancel": "Annuler",
+    "confirm": "Changer et redémarrer",
+    "restarted": "Redémarrés sur {{model}} : {{names}}",
+    "restartedDesc": "Leurs conversations repartent de zéro sur le nouveau modèle.",
+    "stopped": "Agents arrêtés : le modèle n'a pas changé",
+    "stoppedDesc": "Reconnectez {{names}} depuis la page Serveur une fois un modèle chargé."
+  },
   "guide": {
     "label": "Configuration du serveur",
     "close": "Fermer le guide de configuration",

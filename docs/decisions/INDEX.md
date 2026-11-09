@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-524 records, 2026-05-19 → 2026-11-06.
+525 records, 2026-05-19 → 2026-11-09.
 
 ---
 
@@ -299,8 +299,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-04** — [Recover from unsupported multimodal projector (`gemma4a`) by falling back to text-only instead of crashing the load (issue #44)](2026-06-04-recover-from-unsupported-multimodal-projector-gemma4a-by.md)
 - **2026-05-27** — [Replace `janhq/model-catalog` + Fuse.js with curated `AtomicBot-ai/atomic-chat-model-catalog` and a pre-built MiniSearch index](2026-05-27-replace-janhq-model-catalog-fuse-js-with-curated-atomicbot-ai.md)
 
-## Local API server & OpenAI compatibility (20)
+## Local API server & OpenAI compatibility (21)
 
+- **2026-11-09** — [Ask before a model switch restarts running agents](2026-11-09-ask-before-a-model-switch-restarts-running-agents.md) — a switch to another model (local or cloud) while agents Atomic Chat opened still run asks first; No cancels it, Yes stops those agents, switches and opens them again through Connect with a fresh conversation. Supersedes in part 2026-11-03 (keep connected agents on the served model).
 - **2026-11-03** — [Connect agents with their window, launch-only environment, and give them back on Disconnect](2026-11-03-connect-agents-with-their-window-and-give-them-back-on-disconnect.md) — every writer gets the served window and an output cap; Connect grows the model to the agent's minimum; no user-wide env (launch-only for Goose, OpenHands, Copilot, Poolside, Muse); a `.atomic-chat-backup.json` sidecar per config and `disconnect_agent` for every agent; registry PATH, `-ExecutionPolicy Bypass`, npm `--allow-scripts`, WSL-only agents not connected.
 - **2026-11-03** — [Start the Local API Server at launch with the model it served last](2026-11-03-start-the-local-api-server-at-launch-with-its-last-model.md) — "Start automatically" loads `lastServerModels[0]` (else the default) as Start does, whatever "Preload last used model" says; Connect loads it first on a running server without it. Supersedes in part 2026-10-21 and the server side of 2026-08-19.
 - **2026-11-03** — [Keep connected agents on the model the server serves](2026-11-03-keep-connected-agents-on-the-model-the-server-serves.md) — every change of the served model rewrites each connected agent's config and says to restart a running one.

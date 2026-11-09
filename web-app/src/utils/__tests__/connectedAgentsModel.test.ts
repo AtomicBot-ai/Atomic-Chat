@@ -15,6 +15,7 @@ import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServerSetup } from '@/hooks/useServerSetup'
 
+import { quietAgentsToastFor } from '../agentSwitchGuard'
 import {
   pointConnectedAgentsAt,
   syncConnectedAgentsWithServedModel,
@@ -154,6 +155,23 @@ describe('connected agents follow the served model', () => {
       ['codex', GEMMA.model],
       ['claude-code', GEMMA.model],
     ])
+    expect(toastInfo).toHaveBeenCalledTimes(1)
+  })
+
+  it('still writes but leaves the toast to a switch that restarted the running agents', async () => {
+    stop = syncConnectedAgentsWithServedModel()
+    quietAgentsToastFor(GEMMA.model)
+    useLocalApiServer.getState().setLastServerModels([GEMMA])
+    await settle()
+    expect(writtenAgents()).toEqual([
+      ['codex', GEMMA.model],
+      ['claude-code', GEMMA.model],
+    ])
+    expect(toastInfo).not.toHaveBeenCalled()
+
+    // Taken once: the next change is announced again.
+    useLocalApiServer.getState().setLastServerModels([QWEN])
+    await settle()
     expect(toastInfo).toHaveBeenCalledTimes(1)
   })
 

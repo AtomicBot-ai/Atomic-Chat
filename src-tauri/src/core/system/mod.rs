@@ -3,6 +3,7 @@ pub mod agent_disconnect;
 pub mod agent_files;
 pub mod agent_lookup;
 pub mod agent_process;
+pub mod agent_sessions;
 pub mod agent_terminal;
 pub mod agent_user_env;
 pub mod claude_config;

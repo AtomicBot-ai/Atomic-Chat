@@ -23,6 +23,10 @@ import i18n from '@/i18n/setup'
 import { isEmbeddingOnlyModel } from '@/lib/answerable-model'
 import { writeAgentConfig } from '@/lib/integration-agent-setup'
 import { compactModelDisplayName } from '@/lib/model-display-name'
+import {
+  AGENTS_MODEL_TOAST_ID,
+  consumeQuietAgentsToast,
+} from '@/utils/agentSwitchGuard'
 import { isLocalProvider } from '@/utils/registerRemoteProvider'
 import {
   servedContextLength,
@@ -30,8 +34,11 @@ import {
   servedModelId,
 } from '@/utils/servedModel'
 
-/** One toast at a time: a newer change replaces the one before. */
-const TOAST_ID = 'connected-agents-model'
+/**
+ * One toast at a time: a newer change replaces the one before, and so does a
+ * switch that restarted the running agents (`agentSwitchGuard.ts`).
+ */
+const TOAST_ID = AGENTS_MODEL_TOAST_ID
 
 /** The connected agents whose config Atomic Chat writes, in connection order. */
 export function connectedConfigurableAgents(): IntegrationAgent[] {
@@ -96,6 +103,8 @@ export function syncConnectedAgentsWithServedModel(): () => void {
     if (model !== wanted || model === current) return
     const written = await pointConnectedAgentsAt(model)
     current = model
+    // A switch that restarted the running agents announces them itself.
+    if (consumeQuietAgentsToast(model)) return
     if (written.length === 0) return
     const listed = findChatModel(model)
     toast.info(

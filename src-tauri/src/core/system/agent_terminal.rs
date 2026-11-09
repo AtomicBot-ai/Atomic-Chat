@@ -191,24 +191,35 @@ pub(crate) fn exec_line(command: &str) -> String {
     }
 }
 
-/// The POSIX `sh` launcher: it deletes itself, exports `env`, sets the window
-/// title, prints `banner`, then runs `command`.
+/// The POSIX `sh` launcher: it deletes itself, writes its pid to `pid_file`
+/// (the agent's, since it `exec`s it), exports `env`, sets the window title,
+/// prints `banner`, then runs `command`.
 #[cfg_attr(windows, allow(dead_code))]
 pub(crate) fn launcher_script(
     command: &str,
     env: &[(String, String)],
     title: Option<&str>,
     banner: Option<&str>,
+    pid_file: Option<&Path>,
 ) -> String {
     let mut script = String::from(
         "#!/bin/sh\n\
          # Written by Atomic Chat to start an agent; it deletes itself first.\n\
          rm -f -- \"$0\"\n",
     );
+    if let Some(pid_file) = pid_file {
+        script.push_str(&format!(
+            "printf '%s' \"$$\" > {}\n",
+            sh_quote(&pid_file.to_string_lossy())
+        ));
+    }
     for (name, value) in env {
         script.push_str(&format!("export {}={}\n", name, sh_quote(value)));
     }
     if let Some(title) = title {
+        // A tab an agent was stopped in may still be on its alternate screen,
+        // with the cursor hidden: leave both before printing anything.
+        script.push_str("printf '\\033[?1049l\\033[?25h\\033[0m'\n");
         script.push_str(&format!(
             "printf '\\033]0;%s\\007' {}\n",
             sh_quote(&one_line(title))
@@ -263,19 +274,91 @@ fn remove_later(path: PathBuf) {
     });
 }
 
+/// A fresh, empty 0600 file in `dir` for the launcher to write the agent's
+/// pid into. `create_new` refuses a name that already exists, so the file the
+/// app later reads is one it made.
+#[cfg(unix)]
+pub(crate) fn write_pid_file(dir: &Path, agent_id: &str) -> std::io::Result<PathBuf> {
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let slug: String = agent_id
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+        .collect();
+    let path = dir.join(format!(
+        "atomic-chat-{}-{}.pid",
+        slug,
+        uuid::Uuid::new_v4().simple()
+    ));
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&path)?;
+    Ok(path)
+}
+
+/// A launcher written to the temp dir, and the file it writes the agent's pid
+/// to when the terminal is for a known agent.
+#[cfg(unix)]
+pub(crate) struct Launcher {
+    pub script: PathBuf,
+    pub pid_file: Option<PathBuf>,
+}
+
+#[cfg(unix)]
+impl Launcher {
+    /// The terminal did not open: neither file will be used.
+    fn discard(&self) {
+        let _ = std::fs::remove_file(&self.script);
+        if let Some(pid_file) = &self.pid_file {
+            let _ = std::fs::remove_file(pid_file);
+        }
+    }
+
+    /// The terminal opened: remember the agent's session by its pid file.
+    fn track(self, info: Option<&AgentTerminalInfo>) {
+        remove_later(self.script);
+        if let (Some(info), Some(pid_file)) = (info, self.pid_file) {
+            super::agent_sessions::track_pid_file(&info.agent_id, info.model.clone(), pid_file);
+        }
+    }
+}
+
 /// The launcher for `command`, written to the temp dir.
 #[cfg(unix)]
 fn prepare_launcher(
     command: &str,
     proxy: &[(String, String)],
     info: Option<&AgentTerminalInfo>,
-) -> Result<PathBuf, String> {
+) -> Result<Launcher, String> {
+    let dir = std::env::temp_dir();
+    let pid_file = match info {
+        Some(info) => Some(
+            write_pid_file(&dir, &info.agent_id)
+                .map_err(|e| format!("Could not write the agent launcher: {}", e))?,
+        ),
+        None => None,
+    };
     let title = info.map(|i| terminal_title(&i.agent_name));
     let banner = info.map(banner_line);
-    let script = launcher_script(command, proxy, title.as_deref(), banner.as_deref());
+    let contents = launcher_script(
+        command,
+        proxy,
+        title.as_deref(),
+        banner.as_deref(),
+        pid_file.as_deref(),
+    );
     let id = info.map(|i| i.agent_id.as_str()).unwrap_or("agent");
-    write_launcher(&std::env::temp_dir(), id, &script)
-        .map_err(|e| format!("Could not write the agent launcher: {}", e))
+    match write_launcher(&dir, id, &contents) {
+        Ok(script) => Ok(Launcher { script, pid_file }),
+        Err(e) => {
+            if let Some(pid_file) = pid_file {
+                let _ = std::fs::remove_file(pid_file);
+            }
+            Err(format!("Could not write the agent launcher: {}", e))
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -283,18 +366,46 @@ fn prepare_launcher(
 // ---------------------------------------------------------------------------
 
 /// Opens a tab running `item 1 of argv`, titles it `item 2 of argv`, and
-/// answers `<window id>\t<tty>`. Started cold, Terminal opens a window of its
-/// own (or restores the last session's): that one is waited for and reused,
-/// instead of racing it with a second window.
+/// answers `<window id>\t<tty>`. Given the tab the agent ran in before
+/// (`item 3`, a window id, and `item 4`, its tty) and that tab is idle — the
+/// agent exited or was stopped — the launcher runs there instead, so a
+/// restarted agent stays in its window. Started cold, Terminal opens a window
+/// of its own (or restores the last session's): that one is waited for and
+/// reused, instead of racing it with a second window.
 #[cfg(any(target_os = "macos", test))]
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) const MACOS_OPEN_SCRIPT: &str = r#"on run argv
 	set launchLine to item 1 of argv
 	set tabTitle to item 2 of argv
+	set reuseWindow to 0
+	set reuseTty to ""
+	if (count of argv) > 3 then
+		set reuseWindow to (item 3 of argv) as integer
+		set reuseTty to item 4 of argv
+	end if
 	set wasRunning to application "Terminal" is running
 	tell application "Terminal"
 		activate
-		if wasRunning then
+		set newTab to missing value
+		if wasRunning and reuseWindow is not 0 then
+			repeat with candidate in windows
+				if id of candidate is reuseWindow then
+					repeat with candidateTab in tabs of candidate
+						if (tty of candidateTab is reuseTty) and not (busy of candidateTab) then
+							set newTab to contents of candidateTab
+							do script launchLine in newTab
+							set selected of newTab to true
+							set index of candidate to 1
+							exit repeat
+						end if
+					end repeat
+					exit repeat
+				end if
+			end repeat
+		end if
+		if newTab is not missing value then
+			-- The launcher already runs in the agent's old tab.
+		else if wasRunning then
 			set newTab to do script launchLine
 		else
 			repeat 30 times
@@ -440,24 +551,20 @@ mod macos {
     }
 
     /// Bring forward the tab `agent_id` was started in, when it still runs.
+    /// The tab is remembered either way: once idle, the next open runs there.
     fn focus(agent_id: &str) -> bool {
         let Some(tab) = tabs().lock().ok().and_then(|t| t.get(agent_id).cloned()) else {
             return false;
         };
         let window = tab.window_id.to_string();
-        match osascript(
-            MACOS_FOCUS_SCRIPT,
-            &[&window, &tab.tty],
-            Duration::from_secs(10),
-        ) {
-            Ok(answer) if answer == "focused" => true,
-            _ => {
-                if let Ok(mut t) = tabs().lock() {
-                    t.remove(agent_id);
-                }
-                false
-            }
-        }
+        matches!(
+            osascript(
+                MACOS_FOCUS_SCRIPT,
+                &[&window, &tab.tty],
+                Duration::from_secs(10),
+            ),
+            Ok(answer) if answer == "focused"
+        )
     }
 
     pub(crate) fn open(
@@ -474,17 +581,20 @@ mod macos {
         let launcher = prepare_launcher(command, proxy, info)?;
         // The leading space keeps the line out of history where the shell
         // ignores space-prefixed commands; only the path is typed anyway.
-        let launch_line = format!(" {}", sh_quote(&launcher.to_string_lossy()));
+        let launch_line = format!(" {}", sh_quote(&launcher.script.to_string_lossy()));
         let title = info
             .map(|i| terminal_title(&i.agent_name))
             .unwrap_or_else(|| "Atomic Chat".to_string());
-        match osascript(
-            MACOS_OPEN_SCRIPT,
-            &[&launch_line, &title],
-            OSASCRIPT_TIMEOUT,
-        ) {
+        let previous = info.and_then(|i| tabs().lock().ok()?.get(&i.agent_id).cloned());
+        let mut args = vec![launch_line, title];
+        if let Some(tab) = previous {
+            args.push(tab.window_id.to_string());
+            args.push(tab.tty);
+        }
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        match osascript(MACOS_OPEN_SCRIPT, &args, OSASCRIPT_TIMEOUT) {
             Ok(answer) => {
-                remove_later(launcher);
+                launcher.track(info);
                 match (info, parse_terminal_tab(&answer)) {
                     (Some(info), Some(tab)) => {
                         if let Ok(mut t) = tabs().lock() {
@@ -504,7 +614,7 @@ mod macos {
                 Ok(TerminalOutcome::Opened)
             }
             Err(error) => {
-                let _ = std::fs::remove_file(&launcher);
+                launcher.discard();
                 log::warn!("Terminal did not open: {}", error);
                 Err(format!("Terminal did not open: {}", error))
             }
@@ -691,11 +801,11 @@ pub(crate) fn open_linux(
     let mut failures = Vec::new();
     for candidate in linux_terminal_candidates(terminal_env.as_deref()) {
         let mut cmd = std::process::Command::new(&candidate.program);
-        cmd.args(linux_terminal_args(&candidate, &shell, &launcher));
+        cmd.args(linux_terminal_args(&candidate, &shell, &launcher.script));
         prepare(&mut cmd);
         match spawn_terminal(cmd) {
             Ok(()) => {
-                remove_later(launcher);
+                launcher.track(info);
                 // Not the command: it may carry a key.
                 log::info!(
                     "Opened {} for {}",
@@ -711,7 +821,7 @@ pub(crate) fn open_linux(
             }
         }
     }
-    let _ = std::fs::remove_file(&launcher);
+    launcher.discard();
     Err(if failures.is_empty() {
         "No supported terminal emulator found".to_string()
     } else {
@@ -809,10 +919,16 @@ mod tests {
             )],
             Some("Atomic Chat \u{2013} Codex CLI"),
             Some("Atomic Chat \u{b7} Codex CLI"),
+            Some(Path::new("/tmp/atomic chat's/codex.pid")),
         );
         let lines: Vec<&str> = script.lines().collect();
         assert_eq!(lines[0], "#!/bin/sh");
         assert_eq!(lines[2], "rm -f -- \"$0\"");
+        assert_eq!(
+            lines[3],
+            "printf '%s' \"$$\" > '/tmp/atomic chat'\\''s/codex.pid'"
+        );
+        assert!(lines.contains(&"printf '\\033[?1049l\\033[?25h\\033[0m'"));
         assert!(lines.contains(&"export HTTPS_PROXY='http://u:p'\\''w@proxy:8080'"));
         assert!(lines.contains(&"printf '\\033]0;%s\\007' 'Atomic Chat \u{2013} Codex CLI'"));
         assert!(lines.contains(&"printf '%s\\n\\n' 'Atomic Chat \u{b7} Codex CLI'"));
@@ -828,6 +944,7 @@ mod tests {
             &[("HTTP_PROXY".to_string(), "http://proxy:1".to_string())],
             None,
             Some("banner"),
+            None,
         );
         let path = write_launcher(dir.path(), "co/dex", &script).unwrap();
         use std::os::unix::fs::PermissionsExt;
@@ -852,6 +969,26 @@ mod tests {
             "{stdout}"
         );
         assert!(!path.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_pid_the_launcher_writes_is_the_agents() {
+        let dir = tempfile::tempdir().unwrap();
+        let pid_file = write_pid_file(dir.path(), "claude-code").unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            std::fs::metadata(&pid_file).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert!(write_pid_file(dir.path(), "claude-code").unwrap() != pid_file);
+        // The agent here prints its own pid: `exec` kept the launcher's.
+        let script = launcher_script("/bin/sh -c 'echo $$'", &[], None, None, Some(&pid_file));
+        let path = write_launcher(dir.path(), "claude-code", &script).unwrap();
+        let output = std::process::Command::new(&path).output().unwrap();
+        assert!(output.status.success());
+        let printed = String::from_utf8(output.stdout).unwrap();
+        assert_eq!(std::fs::read_to_string(&pid_file).unwrap(), printed.trim());
     }
 
     #[cfg(unix)]

@@ -226,6 +226,20 @@
     "modelSwitched": "Connected tools now use {{model}}",
     "modelSwitchedDesc": "Restart a tool that is already running to switch it over."
   },
+  "agentSwitch": {
+    "title": "Switch running agents to {{model}}?",
+    "description_one": "Atomic Chat opened this agent, and it is still running on the current model:",
+    "description_other": "Atomic Chat opened these agents, and they are still running on the current model:",
+    "consequence_one": "Switching ends its session: Atomic Chat stops it and opens it again on {{model}}. Its conversation starts over.",
+    "consequence_other": "Switching ends their sessions: Atomic Chat stops them and opens them again on {{model}}. Their conversations start over.",
+    "cloud": "{{model}} runs on {{provider}}: the agents' requests go there and are billed to your {{provider}} account.",
+    "cancel": "Cancel",
+    "confirm": "Switch and restart",
+    "restarted": "Restarted on {{model}}: {{names}}",
+    "restartedDesc": "Their conversations started over on the new model.",
+    "stopped": "Agents stopped: the model did not switch",
+    "stoppedDesc": "Connect {{names}} again from the Server page once a model is loaded."
+  },
   "guide": {
     "label": "Server setup",
     "close": "Close setup guide",

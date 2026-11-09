@@ -7005,11 +7005,16 @@ pub async fn open_agent_terminal(
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
-        // `start "<title>" cmd /K <cmd>` opens a fresh console that stays open
-        // so the interactive agent keeps running. The new console inherits this
-        // command's environment, so the proxy env applied below reaches the
-        // interactive agent. The line is passed raw: Rust's argument quoting
-        // (`\"`) means nothing to cmd.exe and broke quoted launcher paths.
+        /// A console of its own, as `start` used to give the agent.
+        const CREATE_NEW_CONSOLE: u32 = 0x0000_0010;
+        // `cmd /K <cmd>` in a console of its own stays open so the interactive
+        // agent keeps running. It is started here rather than through `start`
+        // so its pid is known: a model switch can stop the agent with its
+        // console and open it again (`agent_sessions`). The new console
+        // inherits this command's environment, so the proxy env applied below
+        // reaches the interactive agent. The line is passed raw: Rust's
+        // argument quoting (`\"`) means nothing to cmd.exe and broke quoted
+        // launcher paths.
         let title = agent
             .as_ref()
             .map(|a| super::agent_terminal::windows_title(&a.agent_name));
@@ -7022,7 +7027,8 @@ pub async fn open_agent_terminal(
             None => command,
         };
         let mut cmd = std::process::Command::new("cmd");
-        cmd.raw_arg(windows_terminal_args(title.as_deref(), &command));
+        cmd.raw_arg(windows_console_args(title.as_deref(), &command));
+        cmd.creation_flags(CREATE_NEW_CONSOLE);
         // Start in the user's home, not in Atomic Chat's install folder.
         if let Some(home) = agent_home_dir().ok().filter(|h| Path::new(h).is_dir()) {
             cmd.current_dir(home);
@@ -7035,8 +7041,14 @@ pub async fn open_agent_terminal(
         if let Some(ref proxy) = proxy {
             apply_proxy_env(&mut cmd, proxy);
         }
-        cmd.spawn()
+        let child = cmd
+            .spawn()
             .map_err(|e| format!("Failed to open terminal: {}", e))?;
+        if let Some(a) = agent.as_ref() {
+            super::agent_sessions::track_console(&a.agent_id, a.model.clone(), child.id());
+        }
+        // The console outlives this handle; nothing waits on it.
+        drop(child);
         // The line can carry the server key: log that it opened, not what it runs.
         log::info!("Opened cmd for an agent terminal");
         return Ok(TerminalOutcome::Opened);
@@ -7060,6 +7072,28 @@ pub async fn open_agent_terminal(
 
     #[allow(unreachable_code)]
     Ok(TerminalOutcome::Opened)
+}
+
+/// The agents `open_agent_terminal` opened that still run, with the model each
+/// was opened for. A model switch asks before it cuts them off.
+#[tauri::command]
+pub async fn list_agent_terminals() -> Vec<super::agent_sessions::AgentSessionInfo> {
+    tokio::task::spawn_blocking(super::agent_sessions::running)
+        .await
+        .unwrap_or_default()
+}
+
+/// Stop the agent `open_agent_terminal` opened as `agent_id`, with everything
+/// it started, so it can be opened again for another model. Answers whether
+/// it was running. On macOS its Terminal tab stays, and the next open of the
+/// agent runs there.
+#[tauri::command]
+pub async fn stop_agent_terminal(agent_id: String) -> Result<bool, String> {
+    tokio::task::spawn_blocking(move || {
+        super::agent_sessions::stop(&agent_id, super::agent_sessions::STOP_GRACE)
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 /// Launchers JetBrains IDEs ship, IntelliJ IDEA first: the executable in each
@@ -7271,35 +7305,30 @@ fn editor_command(os: HostOs, launcher: &Path) -> std::process::Command {
     Command::new(launcher)
 }
 
-/// The arguments after `cmd` that open a titled console running `command`:
-/// `/C start "<title>" cmd /K "<command>"`.
+/// The arguments after `cmd` that run `command` in the console it is given
+/// (`CREATE_NEW_CONSOLE`), titled: `/K "title <title>& <command>"`.
 ///
-/// Two cmd.exe parsers read the line. The inner `cmd /K` strips the outer
-/// pair of quotes around `command`, so `command` keeps its own quoting (a
-/// quoted absolute launcher path followed by arguments). The outer `cmd /C`
-/// sees the same text first, where a `&`, `|`, `<`, `>`, `^`, `(` or `)` that
-/// falls outside its idea of quotes would split or redirect the line; those
-/// are `^`-escaped for it, and reach the inner one as plain characters.
+/// `cmd /K` strips the outer pair of quotes and runs the rest as written, so
+/// `command` keeps its own quoting (a quoted absolute launcher path followed
+/// by arguments) and its `&` separators. The title is read by `title` up to
+/// the next separator, so it keeps only characters that cannot end it,
+/// redirect it or expand.
 #[cfg_attr(not(windows), allow(dead_code))]
-fn windows_terminal_args(title: Option<&str>, command: &str) -> String {
+fn windows_console_args(title: Option<&str>, command: &str) -> String {
     let title: String = title
         .unwrap_or("")
         .chars()
-        .filter(|c| !matches!(c, '"' | '%') && !c.is_control())
+        .filter(|c| {
+            !matches!(c, '"' | '%' | '&' | '|' | '<' | '>' | '^' | '(' | ')') && !c.is_control()
+        })
         .take(120)
         .collect();
-    let wrapped = format!("\"{}\"", command);
-    let mut escaped = String::with_capacity(wrapped.len() + 8);
-    let mut quoted = false;
-    for c in wrapped.chars() {
-        if c == '"' {
-            quoted = !quoted;
-        } else if !quoted && matches!(c, '&' | '|' | '<' | '>' | '^' | '(' | ')') {
-            escaped.push('^');
-        }
-        escaped.push(c);
+    let title = title.trim();
+    if title.is_empty() {
+        format!("/K \"{}\"", command)
+    } else {
+        format!("/K \"title {}& {}\"", title, command)
     }
-    format!("/C start \"{}\" cmd /K {}", title.trim(), escaped)
 }
 
 /// Launch a GUI editor for the "IDEs & Editors" integrations (VS Code,
@@ -7775,32 +7804,33 @@ mod tests {
     }
 
     #[test]
-    fn windows_terminal_line_keeps_quoted_launchers_intact() {
+    fn windows_console_line_keeps_quoted_launchers_intact() {
         assert_eq!(
-            windows_terminal_args(Some("Atomic Chat – Codex"), "codex"),
-            r#"/C start "Atomic Chat – Codex" cmd /K "codex""#
+            windows_console_args(Some("Atomic Chat – Codex"), "codex"),
+            r#"/K "title Atomic Chat – Codex& codex""#
         );
-        // A quoted absolute path with spaces and an argument: the inner
-        // `cmd /K` strips only the outer pair.
+        // A quoted absolute path with spaces and an argument: `cmd /K` strips
+        // only the outer pair.
         assert_eq!(
-            windows_terminal_args(
+            windows_console_args(
                 Some("Atomic Chat – OpenClaw"),
                 r#""C:\Users\John Smith\.openclaw\bin\openclaw.cmd" chat"#
             ),
-            r#"/C start "Atomic Chat – OpenClaw" cmd /K ""C:\Users\John Smith\.openclaw\bin\openclaw.cmd" chat""#
+            r#"/K "title Atomic Chat – OpenClaw& "C:\Users\John Smith\.openclaw\bin\openclaw.cmd" chat""#
         );
-        // Metacharacters the outer `cmd /C` reads outside quotes are escaped
-        // for it; the inner one sees them inside the launcher's quotes.
+        // No outer parser any more: metacharacters inside the launcher's own
+        // quotes are left as they are.
         assert_eq!(
-            windows_terminal_args(None, r#""C:\R&D (x86)\claude.exe""#),
-            r#"/C start "" cmd /K ""C:\R^&D ^(x86^)\claude.exe"""#
+            windows_console_args(None, r#""C:\R&D (x86)\claude.exe""#),
+            r#"/K ""C:\R&D (x86)\claude.exe"""#
         );
+        // A title cannot end the `title` command, redirect it or expand.
         assert_eq!(
-            windows_terminal_args(
-                Some(r#"Say "hi" %PATH%"#),
+            windows_console_args(
+                Some(r#"Say "hi" %PATH% & (x) | y"#),
                 "powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand JABlAA=="
             ),
-            r#"/C start "Say hi PATH" cmd /K "powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand JABlAA==""#
+            r#"/K "title Say hi PATH  x  y& powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand JABlAA==""#
         );
     }
 }
