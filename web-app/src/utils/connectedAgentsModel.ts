@@ -5,12 +5,11 @@
  * it, and every connected agent still asking for the old id got 404 (B02, QA
  * 2.3.2). The configs follow the served model instead: each change of it is
  * written into every agent Atomic Chat connected, so the agent's next launch
- * asks for the model actually served. An agent already running keeps the
- * model it read when it started; the toast says to restart it.
+ * asks for the model actually served. An agent Atomic Chat opened is asked
+ * about and restarted by the switch itself (`agentSwitchGuard.ts`); the
+ * change is written without a toast (ADR 2026-11-09).
  * ADR 2026-11-03-keep-connected-agents-on-the-model-the-server-serves.
  */
-
-import { toast } from 'sonner'
 
 import {
   INTEGRATION_AGENTS,
@@ -19,26 +18,14 @@ import {
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServerSetup } from '@/hooks/useServerSetup'
-import i18n from '@/i18n/setup'
 import { isEmbeddingOnlyModel } from '@/lib/answerable-model'
 import { writeAgentConfig } from '@/lib/integration-agent-setup'
-import { compactModelDisplayName } from '@/lib/model-display-name'
-import {
-  AGENTS_MODEL_TOAST_ID,
-  consumeQuietAgentsToast,
-} from '@/utils/agentSwitchGuard'
 import { isLocalProvider } from '@/utils/registerRemoteProvider'
 import {
   servedContextLength,
   servedModel,
   servedModelId,
 } from '@/utils/servedModel'
-
-/**
- * One toast at a time: a newer change replaces the one before, and so does a
- * switch that restarted the running agents (`agentSwitchGuard.ts`).
- */
-const TOAST_ID = AGENTS_MODEL_TOAST_ID
 
 /** The connected agents whose config Atomic Chat writes, in connection order. */
 export function connectedConfigurableAgents(): IntegrationAgent[] {
@@ -87,8 +74,8 @@ function findChatModel(modelId: string): Model | undefined {
 
 /**
  * Keep the connected agents on the model the server serves: whenever it
- * changes to another local chat model a provider lists, point them at it and
- * say so once. The model served at subscription is taken as the one they use.
+ * changes to another local chat model a provider lists, point them at it.
+ * The model served at subscription is taken as the one they use.
  * Writes run one after another; one overtaken by a newer change is dropped.
  * Returns the unsubscribe.
  */
@@ -101,21 +88,8 @@ export function syncConnectedAgentsWithServedModel(): () => void {
 
   const point = async (model: string) => {
     if (model !== wanted || model === current) return
-    const written = await pointConnectedAgentsAt(model)
+    await pointConnectedAgentsAt(model)
     current = model
-    // A switch that restarted the running agents announces them itself.
-    if (consumeQuietAgentsToast(model)) return
-    if (written.length === 0) return
-    const listed = findChatModel(model)
-    toast.info(
-      i18n.t('api:connected.modelSwitched', {
-        model: compactModelDisplayName(listed ?? { id: model }),
-      }),
-      {
-        id: TOAST_ID,
-        description: i18n.t('api:connected.modelSwitchedDesc'),
-      }
-    )
   }
 
   return useLocalApiServer.subscribe((state) => {

@@ -223,9 +223,7 @@
     "disconnectTitle": "Déconnecter {{name}} ?",
     "cancel": "Annuler",
     "disconnectFailed": "Impossible de déconnecter {{name}}",
-    "empty": "Aucun outil connecté pour l'instant.",
-    "modelSwitched": "Les outils connectés utilisent maintenant {{model}}",
-    "modelSwitchedDesc": "Redémarrez un outil déjà lancé pour qu'il passe à ce modèle."
+    "empty": "Aucun outil connecté pour l'instant."
   },
   "agentSwitch": {
     "title": "Passer les agents en cours sur {{model}} ?",

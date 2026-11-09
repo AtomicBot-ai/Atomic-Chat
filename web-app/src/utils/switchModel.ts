@@ -13,7 +13,6 @@ import i18n from '@/i18n/setup'
 import type { IntegrationAgent } from '@/constants/integrations'
 import {
   decideAgentsBeforeSwitch,
-  quietAgentsToastFor,
   reopenAgentsAfterSwitch,
   reportAgentsStopped,
   stopAgentsForSwitch,
@@ -32,7 +31,6 @@ import {
 } from '@/lib/model-lifecycle'
 import {
   isKeylessRemoteProvider,
-  isLocalProvider,
   isSubscriptionProvider,
   registerRemoteProvider,
 } from '@/utils/registerRemoteProvider'
@@ -876,14 +874,7 @@ export async function switchToModel(params: {
     // asks again for the agents that still run.
     if (mySeq !== switchSeq) return
     const restarted = agents.kind === 'restart' ? agents.agents : []
-    if (restarted.length > 0) {
-      // The connected agents follow a local model by themselves, with a
-      // toast saying a running one needs a restart; this one restarts them.
-      if (isLocalProvider(params.providerName)) {
-        quietAgentsToastFor(params.modelId)
-      }
-      await stopAgentsForSwitch(restarted)
-    }
+    if (restarted.length > 0) await stopAgentsForSwitch(restarted)
 
     try {
       await doSwitchToModel(params, () => mySeq !== switchSeq, engineStart)
@@ -896,7 +887,6 @@ export async function switchToModel(params: {
         clearFailedSelection(params.providerName, params.modelId)
       }
       if (restarted.length > 0) {
-        quietAgentsToastFor(null)
         // A newer switch took over: the agents open on what it serves.
         if (mySeq !== switchSeq) reopenAgentsWhenSettled(restarted)
         else reportAgentsStopped(restarted)

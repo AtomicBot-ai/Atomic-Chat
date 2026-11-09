@@ -17,9 +17,7 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 
 import {
   answerAgentSwitch,
-  consumeQuietAgentsToast,
   decideAgentsBeforeSwitch,
-  quietAgentsToastFor,
   registerAgentReopen,
   reopenAgentsAfterSwitch,
   reportAgentsStopped,
@@ -206,15 +204,5 @@ describe('asking before a switch cuts off running agents', () => {
     // Same id as the follow toast, so it replaces rather than stacks.
     expect(options).toMatchObject({ id: 'connected-agents-model' })
     expect(options.description).toContain('Codex CLI')
-  })
-
-  it('quiets the follow toast for one model, once', () => {
-    quietAgentsToastFor(GEMMA.modelId)
-    expect(consumeQuietAgentsToast(QWEN.modelId)).toBe(false)
-    expect(consumeQuietAgentsToast(GEMMA.modelId)).toBe(true)
-    expect(consumeQuietAgentsToast(GEMMA.modelId)).toBe(false)
-    quietAgentsToastFor(GEMMA.modelId)
-    quietAgentsToastFor(null)
-    expect(consumeQuietAgentsToast(GEMMA.modelId)).toBe(false)
   })
 })

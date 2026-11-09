@@ -68,7 +68,7 @@ export const useAgentSwitchQuestion = create<AgentSwitchState>(() => ({
   pending: null,
 }))
 
-/** The toast id `connectedAgentsModel.ts` uses, so one replaces the other. */
+/** One toast for the restarted agents: the stop notice replaces it. */
 export const AGENTS_MODEL_TOAST_ID = 'connected-agents-model'
 
 /** The agents Atomic Chat opened that still run. Never throws. */
@@ -199,25 +199,6 @@ export function registerAgentReopen(reopen: ReopenAgent): () => void {
   return () => {
     if (reopenAgent === reopen) reopenAgent = null
   }
-}
-
-/**
- * The model `connectedAgentsModel.ts` should not announce: the agents
- * restarted for it are announced here instead, and its "restart a running
- * tool" would be wrong.
- */
-let quietModel: string | null = null
-
-/** Mark `model`'s switch as announced by the restart; `null` takes it back. */
-export function quietAgentsToastFor(model: string | null): void {
-  quietModel = model
-}
-
-/** Whether the toast for `model` was taken over by a restart (once). */
-export function consumeQuietAgentsToast(model: string): boolean {
-  if (quietModel !== model) return false
-  quietModel = null
-  return true
 }
 
 function names(agents: IntegrationAgent[]): string {

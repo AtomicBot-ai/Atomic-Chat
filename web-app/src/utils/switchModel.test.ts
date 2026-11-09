@@ -140,7 +140,6 @@ vi.mock('@/hooks/useThreads', () => ({
 
 vi.mock('@/utils/registerRemoteProvider', () => ({
   isKeylessRemoteProvider: vi.fn(() => false),
-  isLocalProvider: vi.fn((name: string) => name !== 'openai'),
   isSubscriptionProvider: vi.fn((name: string) => name === 'chatgpt'),
   registerRemoteProvider: vi.fn(),
 }))
@@ -154,7 +153,6 @@ const agentGuard = vi.hoisted(() => ({
       | { kind: 'restart'; agents: Array<{ id: string; name: string }> }
     > => ({ kind: 'proceed' })
   ),
-  quietAgentsToastFor: vi.fn(),
   reopenAgentsAfterSwitch: vi.fn(async () => {}),
   reportAgentsStopped: vi.fn(),
   stopAgentsForSwitch: vi.fn(async () => {}),
@@ -2055,7 +2053,6 @@ describe('switchToModel with agents Atomic Chat opened', () => {
     ]
     await settle()
 
-    expect(agentGuard.quietAgentsToastFor).toHaveBeenCalledWith('shared-model')
     expect(agentGuard.stopAgentsForSwitch).toHaveBeenCalledWith([CODEX])
     // Stopped before their model went away.
     expect(
@@ -2068,7 +2065,7 @@ describe('switchToModel with agents Atomic Chat opened', () => {
     expect(agentGuard.reportAgentsStopped).not.toHaveBeenCalled()
   })
 
-  it('takes agents to a cloud model the user confirmed, leaving the follow toast alone', async () => {
+  it('takes agents to a cloud model the user confirmed', async () => {
     agentGuard.decideAgentsBeforeSwitch.mockResolvedValue({
       kind: 'restart',
       agents: [CODEX],
@@ -2094,7 +2091,6 @@ describe('switchToModel with agents Atomic Chat opened', () => {
       modelProviderState.providers.pop()
     }
 
-    expect(agentGuard.quietAgentsToastFor).not.toHaveBeenCalled()
     expect(agentGuard.stopAgentsForSwitch).toHaveBeenCalledWith([CODEX])
     // Stopped before the cloud switch unloaded every local model.
     expect(
@@ -2161,7 +2157,6 @@ describe('switchToModel with agents Atomic Chat opened', () => {
     ).rejects.toThrow()
     await settle()
 
-    expect(agentGuard.quietAgentsToastFor).toHaveBeenLastCalledWith(null)
     expect(agentGuard.reportAgentsStopped).toHaveBeenCalledWith([CODEX])
     expect(agentGuard.reopenAgentsAfterSwitch).not.toHaveBeenCalled()
   })

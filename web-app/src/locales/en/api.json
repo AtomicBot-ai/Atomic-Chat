@@ -222,9 +222,7 @@
     "disconnectTitle": "Disconnect {{name}}?",
     "cancel": "Cancel",
     "disconnectFailed": "Could not disconnect {{name}}",
-    "empty": "No tools connected yet.",
-    "modelSwitched": "Connected tools now use {{model}}",
-    "modelSwitchedDesc": "Restart a tool that is already running to switch it over."
+    "empty": "No tools connected yet."
   },
   "agentSwitch": {
     "title": "Switch running agents to {{model}}?",
