@@ -100,6 +100,7 @@ const CLOUD_REASONING_PROVIDERS = new Set<string>([
   'openai',
   'openrouter',
   'perplexity',
+  'standardcompute',
   'together',
   'xai',
 ])
