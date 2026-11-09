@@ -151,3 +151,23 @@ Dev (`make dev-windows-cpu` / `yarn dev`) and the installed `Atomic Chat.exe` **
 ### Custom data folder
 
 If a user has relocated the data folder via `Settings → Advanced → Change data folder location` (`change_app_data_folder`), the uninstaller and `make clean-windows-all` **do not** delete that custom path — only the default `%APPDATA%\Atomic Chat\` is cleaned. Removing a custom data folder is the user's responsibility.
+
+## FastFlowLM desktop development
+
+FastFlowLM is offered by core on Windows 11/Linux x64 with AMD XDNA2. macOS can run contract and frontend checks, but cannot establish desktop NPU acceptance. Production uses the core binary pair and public SDK pinned to `0.22.0`.
+
+For an unreleased core, import both binaries together; the explicit version also controls the Tauri build's handshake stamp:
+
+```bash
+ATOMIC_CORE_VERSION=<version> \
+ATOMIC_CORE_LOCAL=<absolute-cli-binary> \
+ATOMIC_APP_CORE_LOCAL=<absolute-app-core-binary> make download-core
+```
+
+Keep `ATOMIC_CORE_VERSION` in the process environment when building Tauri against that pair. Omit all three overrides and run `make download-core` to return to the production pin. No environment override is stored in the repository.
+
+Use `VITE_ATOMIC_MODEL_CATALOG_URL=file://<absolute-conf-checkout>/catalog.json` for the frontend's complete shared catalog. Start the app with `ATOMIC_FASTFLOWLM_MANIFEST_URL=file://<absolute-conf-checkout>/backends/fastflowlm-manifest.json` and `ATOMIC_FASTFLOWLM_ENVIRONMENT_MANIFEST_URL=file://<absolute-environment-manifest>` for core's build/environment sources. These are development overrides; do not change production URLs. Restart Vite after changing its `VITE_` source.
+
+The existing application data folder contains `fastflowlm/models/<variant>` for accepted model files and `fastflowlm/transfers/<variant>` for download/publication/removal journals, staging and previous copies. Resume reads the saved plan even if conf has changed. Startup recovers already persisted mutations; unfinished byte transfers return paused. Do not remove these journals to clear a busy model: they carry the maintenance request identity and may protect the previous valid installation.
+
+The NPU preparation panel shows core's manual driver guidance. Its commands are display-only. Consent to automatic memory-limit preparation is bound to the displayed account, service, plan digest and revision. The trusted helper's original receipt is recovered after a lost response; an unknown launch is not repeated. Test actual UAC/pkexec and desktop restart/reboot on the target OS before claiming acceptance. Never use a root or shell probe as evidence for the app's runtime account.

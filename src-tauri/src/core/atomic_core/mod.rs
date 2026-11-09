@@ -24,6 +24,8 @@ pub mod api_requests;
 pub mod client;
 pub mod cloud;
 pub mod commands;
+pub mod fastflowlm_models;
+pub mod fastflowlm_host_step;
 pub mod host_step;
 #[cfg(windows)]
 pub mod host_step_windows;

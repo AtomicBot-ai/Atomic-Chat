@@ -736,6 +736,19 @@ pub fn _get_client_for_item(
 /// multi-connection download: HTTP/2 would multiplex them over one TCP
 /// connection, and the per-connection cap is exactly what they are there to
 /// get around.
+pub(super) fn headers_for_item(item: &DownloadItem, headers: &HeaderMap) -> Result<HeaderMap, String> {
+    let mut scoped = headers.clone();
+    if let Some(authorization) = &item.hf_authorization {
+        let allowed = Url::parse(&item.url).is_ok_and(|url| url.scheme() == "https" && url.port_or_known_default() == Some(443) && matches!(url.host_str(), Some("huggingface.co" | "hf.co")));
+        if allowed {
+            let mut value = HeaderValue::from_str(&authorization.0).map_err(|_| "Invalid Hugging Face authorization header.".to_string())?;
+            value.set_sensitive(true);
+            scoped.insert(reqwest::header::AUTHORIZATION, value);
+        }
+    }
+    Ok(scoped)
+}
+
 pub(super) fn build_client_for_item(
     item: &DownloadItem,
     header_map: &HeaderMap,
@@ -753,7 +766,7 @@ pub(super) fn build_client_for_item(
         // dropped the mapping, a laptop that slept); the body watchdog in
         // `next_chunk_with_watchdog` is what bounds the wait in practice.
         .tcp_keepalive(Duration::from_secs(30))
-        .default_headers(header_map.clone());
+        .default_headers(headers_for_item(item, header_map)?);
     if http1_only {
         client_builder = client_builder.http1_only();
     }

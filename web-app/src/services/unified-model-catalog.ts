@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { fetch as fetchTauri } from '@tauri-apps/plugin-http'
 import {
   loadAtomicModelCatalog,
+  configureAtomicModelCatalogSource,
   projectAtomicModelCollection,
   atomicModelCatalogStatus,
   atomicModelCatalogBaseline,
@@ -12,6 +13,7 @@ import {
 import { useProxyConfig } from '@/hooks/useProxyConfig'
 
 const url = import.meta.env.VITE_ATOMIC_MODEL_CATALOG_URL as string | undefined
+configureAtomicModelCatalogSource(url)
 
 /** Detach cancellation after consuming the native response; a later timeout must not close an already released resource. */
 export async function nativeMetadata(

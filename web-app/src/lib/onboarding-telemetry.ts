@@ -405,7 +405,7 @@ export type RecommendedModelImpression = {
   position: number
   /** Upper-case to match `recommended_model_clicked.format`. The older
    *  `setup_local_model_run.format` is lower-case; do not mix them. */
-  format: 'GGUF' | 'MLX' | null
+  format: 'GGUF' | 'MLX' | 'FLM' | null
   /** Which list the row was in: a download suggestion, an already-installed
    *  recommendation, or a model the scanners found on disk. */
   section: 'pending' | 'installed' | 'detected'
@@ -419,7 +419,14 @@ export type RecommendedModelImpression = {
  * call, so all the `??`s belong on this side.
  */
 export function buildRecommendedImpressions(lists: {
-  pending: { startId?: string | null; model?: { is_mlx?: boolean } | null }[]
+  pending: {
+    startId?: string | null
+    model?: {
+      is_mlx?: boolean
+      is_fastflowlm?: boolean
+      fastflowlm?: unknown
+    } | null
+  }[]
   installed?: { startId: string; provider: string }[]
   detected?: { id: string; format: string }[]
 }): RecommendedModelImpression[] {
@@ -432,7 +439,12 @@ export function buildRecommendedImpressions(lists: {
     impressions.push({
       modelId: row.startId,
       position,
-      format: row.model?.is_mlx ? 'MLX' : 'GGUF',
+      format:
+        row.model?.fastflowlm || row.model?.is_fastflowlm
+          ? 'FLM'
+          : row.model?.is_mlx
+            ? 'MLX'
+            : 'GGUF',
       section: 'pending',
     })
   })
@@ -440,7 +452,12 @@ export function buildRecommendedImpressions(lists: {
     impressions.push({
       modelId: row.startId,
       position,
-      format: row.provider === 'mlx' ? 'MLX' : 'GGUF',
+      format:
+        row.provider === 'fastflowlm'
+          ? 'FLM'
+          : row.provider === 'mlx'
+            ? 'MLX'
+            : 'GGUF',
       section: 'installed',
     })
   })
@@ -485,7 +502,7 @@ export function captureRecommendedModelsShown(
 /** A row of the picker was clicked, before any download starts. */
 export function captureRecommendedModelClicked(params: {
   modelId: string
-  format: 'GGUF' | 'MLX'
+  format: 'GGUF' | 'MLX' | 'FLM'
   sizeGb?: number
   position: number
 }): void {

@@ -134,5 +134,23 @@
   "prismSetupPlanChanged": "Der Plan hat sich geändert, während du ihn angesehen hast. Prüfe ihn und starte erneut.",
   "prismSetupStart": "Einrichten",
   "prismStage_installing_engine": "PrismML-Engine wird installiert",
-  "prismCurated": "Bonsai-Modelle für PrismML"
+  "prismCurated": "Bonsai-Modelle für PrismML",
+  "fastflowlm": {
+    "catalog": "All FastFlowLM models",
+    "install": "Download",
+    "resume": "Resume",
+    "setup": "Set up FastFlowLM",
+    "checking": "Checking compatibility…",
+    "qualification": "Listed by upstream; hardware compatibility depends on this computer.",
+    "installed": "Installed",
+    "gated": "Accept the model license on Hugging Face and add your token in Settings.",
+    "license": "License",
+    "context": "Context",
+    "download": "Download size",
+    "update": "Update model",
+    "setToken": "Set Hugging Face token",
+    "selectionUnavailable": "The selected model is unavailable in this catalog. Choose another model.",
+    "checkFailed": "Could not check the FastFlowLM model. Try again.",
+    "installingEngine": "Installing FastFlowLM…"
+  }
 }

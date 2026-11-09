@@ -61,6 +61,12 @@ function SourceLink({ model }: { model: CatalogModel }) {
       </span>
     )
   }
+  if (model.is_fastflowlm || model.fastflowlm)
+    return (
+      <span className="inline-flex h-9 shrink-0 items-center rounded-full border border-border px-3 text-xs text-muted-foreground">
+        FastFlowLM
+      </span>
+    )
   return (
     <a
       href={`https://huggingface.co/${liteRt ? liteRt.repo : geniex?.gguf ? geniex.gguf.repo : hubRepoId(model)}`}
@@ -161,7 +167,12 @@ export function ModelDetailPanel({
       t('hub:table.column.thisDevice'),
       facts.fit ? (
         <FitBadge fit={facts.fit} className="px-1.5 py-0.5 text-[10px]" />
-      ) : model.is_managed || foundry || liteRt || geniex ? (
+      ) : model.is_managed ||
+        foundry ||
+        liteRt ||
+        geniex ||
+        model.fastflowlm ||
+        model.is_fastflowlm ? (
         t('hub:table.deviceInCard')
       ) : cardLoading ? (
         pending('w-16')

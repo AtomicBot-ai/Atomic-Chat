@@ -38,6 +38,8 @@ export function hubModelName(model: CatalogModel, pick?: StaffPick): string {
     foundryLocalOf(model)?.name ||
     liteRtLmOf(model)?.name ||
     geniexOf(model)?.name ||
+    model.fastflowlm?.name ||
+    (model.is_fastflowlm ? model.description : undefined) ||
     pick?.title ||
     extractModelName(model.model_name) ||
     model.model_name
@@ -108,7 +110,10 @@ export function hubModelFacts(
 
   let sizeBytes: number | undefined
   let sizeText: string | undefined
-  if (model.is_managed) {
+  if (model.fastflowlm) {
+    sizeBytes = model.fastflowlm.files.reduce((sum, file) => sum + file.size, 0)
+    sizeText = formatBytes(sizeBytes)
+  } else if (model.is_managed) {
     sizeBytes = managedWeights ?? undefined
     sizeText = sizeBytes ? formatBytes(sizeBytes) : undefined
   } else if (geniex) {
@@ -123,7 +128,13 @@ export function hubModelFacts(
     sizeBytes = parseFileSizeToBytes(sizeText)
   }
 
-  const verdictInCard = model.is_managed || !!foundry || !!liteRt || !!geniex
+  const verdictInCard =
+    model.is_managed ||
+    !!foundry ||
+    !!liteRt ||
+    !!geniex ||
+    !!model.fastflowlm ||
+    !!model.is_fastflowlm
   const fit =
     !verdictInCard && sizeBytes && options.budgetBytes > 0
       ? estimateFit(sizeBytes, options.budgetBytes)
@@ -139,7 +150,18 @@ export function hubModelFacts(
     // model's are read from the file after download.
     capabilities: deriveCapabilities(
       model,
-      liteRt ? liteRtCategories(liteRt) : geniex ? geniexCategories(geniex) : options.categories
+      model.fastflowlm
+        ? [
+            ...(model.fastflowlm.capabilities.tools ? ['tools' as const] : []),
+            ...(model.fastflowlm.capabilities.reasoning
+              ? ['reasoning' as const]
+              : []),
+          ]
+        : liteRt
+          ? liteRtCategories(liteRt)
+          : geniex
+            ? geniexCategories(geniex)
+            : options.categories
     ),
     sizeText,
     sizeBytes,

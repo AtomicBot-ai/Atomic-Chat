@@ -9,6 +9,7 @@ import {
   expectSameHeight,
   expectVerticallyCentered,
   setFontSize,
+  setTheme,
   settle,
   withTranslations,
   XL_FONT_SIZE,
@@ -48,6 +49,7 @@ describe('HubFilters layout', () => {
         'llamacpp',
         'atomic-prism',
         'foundry-local',
+        'fastflowlm',
       ].map((provider) => ({ provider, models: [], settings: [] }) as never),
     })
   })
@@ -95,6 +97,7 @@ describe('HubFilters layout', () => {
 
     it(`holds every engine and format name in the Filters menu without a sideways scrollbar (${label})`, async () => {
       setFontSize(size)
+      setTheme(label === 'Extra Large' ? 'dark' : 'light')
       const user = userEvent.setup()
       render(
         withTranslations(
@@ -111,6 +114,9 @@ describe('HubFilters layout', () => {
       // Every name keeps to the menu's width; the menu scrolls down, never
       // sideways.
       expectNoHorizontalOverflow(menu)
+      expect(
+        within(menu).getAllByRole('menuitemradio', { name: 'FastFlowLM' })
+      ).toHaveLength(2)
       // No option wraps: the longest is as tall as GGUF's.
       expectSameHeight(
         [
@@ -119,6 +125,7 @@ describe('HubFilters layout', () => {
           'PrismML llama.cpp',
           'TensorRT-LLM',
           'Foundry Local',
+          'FastFlowLM',
         ].flatMap((name) =>
           within(menu).getAllByRole('menuitemradio', { name })
         )

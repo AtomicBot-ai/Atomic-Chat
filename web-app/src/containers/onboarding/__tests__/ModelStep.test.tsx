@@ -1,14 +1,43 @@
 import '@/test/telemetry-ready'
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import {
+  fireEvent,
+  render,
+  screen,
+  within,
+  waitFor,
+} from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import posthog from 'posthog-js'
 
 import type { LocalModelCandidate } from '@/services/models/localScan'
 import type { CatalogModel, ModelQuant } from '@/services/models/types'
+import { installFastFlowLmEngine } from '@/services/engine-builds/fastflowlm'
+import { installFastFlowLm } from '@/services/fastflowlm/install'
+import { checkFastFlowLmModel } from '@/services/fastflowlm/core'
+import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useOnboardingStore } from '@/stores/onboarding-store'
 
 import type { DownloadOption, ModelOption } from '../useModelOptions'
+
+vi.mock('@/containers/fastflowlm/FastFlowLmEnginePanel', () => ({
+  FastFlowLmEnginePanel: () => <div>FLM engine installation</div>,
+}))
+vi.mock('@/containers/fastflowlm/FastFlowLmPreparation', () => ({
+  FastFlowLmPreparation: () => <div>NPU preparation</div>,
+}))
+vi.mock('@/services/engine-builds/fastflowlm', () => ({
+  installFastFlowLmEngine: vi.fn(),
+  useFastFlowLmEngineInstallStore: (select: (state: unknown) => unknown) =>
+    select({ installing: false }),
+}))
+vi.mock('@/services/fastflowlm/core', () => ({
+  checkFastFlowLmModel: vi.fn(async () => ({
+    verdict: 'environment-not-ready',
+    reason: 'Prepare the NPU first',
+  })),
+}))
+vi.mock('@/services/fastflowlm/install', () => ({ installFastFlowLm: vi.fn() }))
 
 const mocks = vi.hoisted(() => ({
   options: {} as Record<string, unknown>,
@@ -17,8 +46,10 @@ const mocks = vi.hoisted(() => ({
   importBackground: vi.fn(),
   engineImport: vi.fn(async () => undefined),
   cancel: vi.fn(),
+  toastError: vi.fn(),
 }))
 
+vi.mock('sonner', () => ({ toast: { error: mocks.toastError } }))
 vi.mock('posthog-js', () => ({
   default: { capture: vi.fn() },
 }))
@@ -35,7 +66,8 @@ vi.mock('@/i18n/react-i18next-compat', () => ({
   }),
 }))
 vi.mock('@/hooks/useServiceHub', () => ({ useServiceHub: () => ({}) }))
-vi.mock('@/lib/downloadCancellation', () => ({
+vi.mock('@/lib/downloadCancellation', async (original) => ({
+  ...(await original<object>()),
   cancelDownload: mocks.cancel,
 }))
 vi.mock('../useModelOptions', () => ({
@@ -454,4 +486,36 @@ describe('model step', () => {
       expect.objectContaining({ key: 'chat', taskId: 'Mistral-7B-Q4_K_M' }),
     ])
   })
+})
+
+it('offers the usual models without an FLM catalog or setup panel', () => {
+  useOnboardingStore.getState().reset()
+  withOptions({ recommended: [download()], huggingFace: [fromHub] })
+  // Ignore even a stale injected shelf from an earlier QA build.
+  mocks.options.fastflowlm = [
+    download({ title: 'FLM catalog row', provider: 'fastflowlm' }),
+  ]
+  render(<ModelStep next={vi.fn()} handOff={vi.fn()} />)
+  expect(screen.getByRole('radio', { name: /Qwen3.5/ })).toBeVisible()
+  expect(screen.getByRole('radio', { name: /Mistral/ })).toBeVisible()
+  expect(screen.queryByText('FLM catalog row')).not.toBeInTheDocument()
+  expect(screen.queryByText('NPU preparation')).not.toBeInTheDocument()
+  expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+})
+
+it('ignores an earlier QA FLM selection and downloads the ordinary selected model', () => {
+  useOnboardingStore.getState().reset()
+  useOnboardingStore.getState().selectModelOption('fastflowlm:old')
+  withOptions({ recommended: [download()] })
+  const next = vi.fn()
+  render(<ModelStep next={next} handOff={vi.fn()} />)
+  expect(screen.getByRole('radio', { name: /Qwen3.5/ })).toHaveAttribute(
+    'aria-checked',
+    'true'
+  )
+  fireEvent.click(screen.getByRole('button', { name: /onboarding:continue/ }))
+  expect(next).toHaveBeenCalledWith('download')
+  expect(useOnboardingStore.getState().choice?.provider).toBe(
+    'llamacpp-upstream'
+  )
 })

@@ -195,6 +195,22 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@atomic-chat/core@npm:0.22.0":
+  version: 0.22.0
+  resolution: "@atomic-chat/core@npm:0.22.0"
+  dependencies:
+    "@ai-sdk/openai-compatible": "npm:^1.0.28"
+    ai: "npm:^5.0.121"
+    smol-toml: "npm:^1.9.1"
+    tar: "npm:^7.4.3"
+    yaml: "npm:^2.8.1"
+    yauzl: "npm:^3.2.0"
+  bin:
+    atomic-chat-core: dist/cli/bin.js
+  checksum: 10c0/9d1dcbbdb56d8c6eb2477d14b046727f9a7ecac9bc778f03ccb971582c508e8aeb99f579222ca470d832a92c79a8c6482f0faf3448b3f909a511cd4d7c6c7cab
+  languageName: node
+  linkType: hard
+
 "@babel/code-frame@npm:^7.10.4, @babel/code-frame@npm:^7.27.1":
   version: 7.27.1
   resolution: "@babel/code-frame@npm:7.27.1"
@@ -2953,6 +2969,7 @@ __metadata:
     "@ai-sdk/openai-compatible": "npm:^1.0.28"
     "@ai-sdk/react": "npm:^2.0.109"
     "@ai-sdk/xai": "npm:^2.0.0"
+    "@atomic-chat/core": "npm:0.22.0"
     "@dnd-kit/core": "npm:6.3.1"
     "@dnd-kit/modifiers": "npm:9.0.0"
     "@dnd-kit/sortable": "npm:10.0.0"
@@ -16638,6 +16655,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"pend@npm:~1.2.0":
+  version: 1.2.0
+  resolution: "pend@npm:1.2.0"
+  checksum: 10c0/8a87e63f7a4afcfb0f9f77b39bb92374afc723418b9cb716ee4257689224171002e07768eeade4ecd0e86f1fa3d8f022994219fb45634f2dbd78c6803e452458
+  languageName: node
+  linkType: hard
+
 "performance-now@npm:^2.1.0":
   version: 2.1.0
   resolution: "performance-now@npm:2.1.0"
@@ -18798,6 +18822,13 @@ __metadata:
   version: 1.5.0
   resolution: "smob@npm:1.5.0"
   checksum: 10c0/a1067f23265812de8357ed27312101af49b89129eb973e3f26ab5856ea774f88cace13342e66e32470f933ccfa916e0e9d0f7ca8bbd4f92dfab2af45c15956c2
+  languageName: node
+  linkType: hard
+
+"smol-toml@npm:^1.9.1":
+  version: 1.9.1
+  resolution: "smol-toml@npm:1.9.1"
+  checksum: 10c0/8acccf7bbc063f29405f58f5014ab39bf4eb9d7f0e000e5e3f140f7d4d6ead5696681a7c15260d1f2910213012c0af43b31a05bf94f704b0bdf39989fba08c02
   languageName: node
   linkType: hard
 
@@ -21530,6 +21561,24 @@ __metadata:
   version: 4.0.0
   resolution: "yallist@npm:4.0.0"
   checksum: 10c0/2286b5e8dbfe22204ab66e2ef5cc9bbb1e55dfc873bbe0d568aa943eb255d131890dfd5bf243637273d31119b870f49c18fcde2c6ffbb7a7a092b870dc90625a
+  languageName: node
+  linkType: hard
+
+"yaml@npm:^2.8.1":
+  version: 2.9.1
+  resolution: "yaml@npm:2.9.1"
+  bin:
+    yaml: bin.mjs
+  checksum: 10c0/9d06676ef02b89559a8b10a71882bd2cdae81e8393dc8dbc871615c3259475d9609ad973d19cb3c9e71e72d6206e3d1e7aa241c7e55f3d16fd2e77db305827d6
+  languageName: node
+  linkType: hard
+
+"yauzl@npm:^3.2.0":
+  version: 3.4.0
+  resolution: "yauzl@npm:3.4.0"
+  dependencies:
+    pend: "npm:~1.2.0"
+  checksum: 10c0/17a98c42c0065e8af429eb8a61f7a0e4562181ed54080366b838f34f741b6829f167f804787c86b7646bb042707f35871739f053de0548285e405a2eae4da025
   languageName: node
   linkType: hard
 

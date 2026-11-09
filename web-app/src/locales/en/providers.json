@@ -716,5 +716,63 @@
     "installedModels": "Installed models: {{models}}",
     "noModels": "none",
     "openEnginePage": "Models and all settings"
+  },
+  "fastflowlm": {
+    "engine": {
+      "title": "FastFlowLM engine",
+      "notInstalled": "FastFlowLM is not installed",
+      "installDescription": "Verified FastFlowLM {{version}}, about {{size}} to download. NPU readiness is checked separately.",
+      "install": "Install {{version}}",
+      "installing": "Downloading… {{percent}}%",
+      "noBuild": "No verified FastFlowLM build is available for this computer.",
+      "installed": "FastFlowLM {{version}}",
+      "installedDescription": "Local-only engine build for AMD XDNA2. Models are installed separately by Atomic Chat.",
+      "update": "Update to {{version}}",
+      "checking": "Checking what is installed…",
+      "checkAgain": "Check again"
+    },
+    "preparation": "AMD NPU preparation",
+    "checking": "Checking the NPU…",
+    "ready": "NPU ready",
+    "blocked": "NPU preparation required",
+    "action-required": "Memory limit preparation available",
+    "checkAgain": "Check again",
+    "prepare": "Review memory limit changes",
+    "approve": "Approve and request system permission",
+    "continue": "Continue preparation",
+    "nextLoad": "Launch settings apply when the model is loaded again.",
+    "operation": {
+      "checking": "Checking the runtime account…",
+      "awaiting-consent": "Review the system changes",
+      "preparing-host": "Waiting for system authorization or the helper result",
+      "reboot-required": "Restart the computer, then continue",
+      "relogin-required": "Sign out and back in, then continue",
+      "verifying": "Verifying the runtime account…",
+      "ready": "Preparation complete",
+      "failed": "Preparation failed",
+      "cancelled": "Preparation cancelled"
+    },
+    "cancel": "Cancel preparation",
+    "account": "Runtime account: {{account}} · {{service}}",
+    "blockers": {
+      "driver-missing": "Install the AMD NPU driver, then check again.",
+      "driver-problem": "The NPU driver reports a problem. Reinstall or repair it, then restart.",
+      "driver-unknown": "The NPU driver status could not be confirmed.",
+      "xdna2-not-found": "No supported AMD XDNA2 NPU was found.",
+      "platform-unsupported": "FastFlowLM requires Windows 11 or Linux x64 with AMD XDNA2.",
+      "engine-not-installed": "Install the FastFlowLM engine first.",
+      "memlock-too-low": "The runtime memory lock limit is too low. Review the proposed change.",
+      "device-access-denied": "The runtime account cannot access the NPU device.",
+      "xrt-device-unavailable": "XRT cannot see the NPU. Follow the driver setup instructions.",
+      "probe-inconclusive": "The NPU check did not finish. Check again.",
+      "privileged-account": "Run Atomic Chat under a regular user account.",
+      "account-unknown": "The runtime account could not be confirmed.",
+      "driver-version-unconfirmed": "The installed driver version could not be confirmed.",
+      "device-busy": "The NPU is busy. Close the other NPU application, then check again."
+    },
+    "authorization": {
+      "terminal": "Complete authorization in the system terminal, then choose Continue preparation.",
+      "manual": "No automatic password prompt is available. Run this command in a terminal, then choose Continue preparation. Enter your password only in the terminal."
+    }
   }
 }

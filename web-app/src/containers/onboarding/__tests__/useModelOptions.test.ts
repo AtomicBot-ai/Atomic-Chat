@@ -7,6 +7,7 @@ import type { CatalogModel } from '@/services/models/types'
 
 const mocks = vi.hoisted(() => ({
   scan: vi.fn(),
+  flmHub: vi.fn(),
   recommended: [] as { rec: Record<string, unknown>; model: unknown }[],
   picks: [] as { pick: Record<string, unknown>; model: unknown }[],
   providers: [] as unknown[],
@@ -21,6 +22,10 @@ const mocks = vi.hoisted(() => ({
   >,
 }))
 
+vi.mock('@/hooks/useFastFlowLmHub', () => ({
+  useFastFlowLmHubVisible: () => true,
+  useFastFlowLmHub: mocks.flmHub,
+}))
 vi.mock('@/i18n/react-i18next-compat', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }))
@@ -117,6 +122,7 @@ describe('model step options', () => {
     ]
     mocks.picks = []
     mocks.sources = []
+    mocks.flmHub.mockClear()
     useModelProvider.setState({ providers: [] } as never)
     useHardware.setState((state) => ({
       hardwareData: {
@@ -124,6 +130,28 @@ describe('model step options', () => {
         cpu: { ...state.hardwareData.cpu, name: 'Apple M2' },
       },
     }))
+  })
+
+  it('does not fetch or offer FLM models during onboarding, including installed variants', async () => {
+    useModelProvider.setState({
+      providers: [
+        {
+          provider: 'fastflowlm',
+          active: true,
+          models: [{ id: 'qwen', name: 'Qwen FLM' }],
+        },
+      ],
+    } as never)
+    const { result } = renderHook(() => useModelOptions())
+    await waitFor(() => expect(result.current.ready).toBe(true))
+    expect(result.current.onDevice).toEqual([])
+    expect(
+      result.current.recommended.every(
+        (model) => model.provider !== 'fastflowlm'
+      )
+    ).toBe(true)
+    expect(result.current).not.toHaveProperty('fastflowlm')
+    expect(mocks.flmHub).not.toHaveBeenCalled()
   })
 
   it('waits for the on-disk scan before showing the list', async () => {

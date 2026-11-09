@@ -1,0 +1,107 @@
+[
+  {
+    "key": "ctx_len",
+    "title": "Context Length",
+    "description": "Maximum prompt plus reply length in tokens. 0 uses the model limit. Rounded up to a power of two (minimum 512), then capped to the largest power of two within the model limit. Applies from the next model load.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 0,
+      "placeholder": "0",
+      "type": "number",
+      "min": 0,
+      "max": 1048576,
+      "textAlign": "right"
+    }
+  },
+  {
+    "key": "pmode",
+    "title": "NPU Power Mode",
+    "description": "NPU power profile. Performance is the FLM default; choose a lower-power profile or Turbo when appropriate for the host. Applies from the next model load.",
+    "controllerType": "dropdown",
+    "controllerProps": {
+      "value": "performance",
+      "options": [
+        {
+          "value": "powersaver",
+          "name": "Powersaver"
+        },
+        {
+          "value": "balanced",
+          "name": "Balanced"
+        },
+        {
+          "value": "performance",
+          "name": "Performance"
+        },
+        {
+          "value": "turbo",
+          "name": "Turbo"
+        }
+      ]
+    }
+  },
+  {
+    "key": "prefill_chunk_len",
+    "title": "Prefill Chunk Length",
+    "description": "Tokens processed per prompt-reading pass. 0 keeps the model default. Other values round up to a power of two, with a minimum of 512. This does not change the context limit. Applies from the next model load.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 0,
+      "type": "number",
+      "min": 0,
+      "max": 1048576,
+      "step": 1
+    }
+  },
+  {
+    "key": "prefix_cache_mb",
+    "title": "Prefix Cache Limit (MiB)",
+    "description": "Maximum host memory used to reuse previously processed prompts on supported models. This is a limit, not a reservation. Applies from the next model load.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 4096,
+      "type": "number",
+      "min": 0,
+      "max": 2147483647,
+      "step": 1
+    }
+  },
+  {
+    "key": "prefix_slots",
+    "title": "Prefix Cache Slots",
+    "description": "Maximum number of saved prompt prefixes on supported models. 0 disables prefix caching. Applies from the next model load.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 8,
+      "type": "number",
+      "min": 0,
+      "max": 32,
+      "step": 1
+    }
+  },
+  {
+    "key": "prefix_min_gain",
+    "title": "Prefix Cache Minimum Gain",
+    "description": "Save a prefix only when it adds this many tokens beyond an existing cached prefix. 0 saves every eligible prompt; larger values reduce saves at the cost of more repeated prompt processing. Applies from the next model load.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 128,
+      "type": "number",
+      "min": 0,
+      "max": 2147483647,
+      "step": 1
+    }
+  },
+  {
+    "key": "timeout",
+    "title": "FastFlowLM load timeout",
+    "description": "Maximum time in seconds to load the selected checkpoint on the NPU.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 600,
+      "placeholder": "e.g 600",
+      "type": "number",
+      "textAlign": "right"
+    }
+  }
+]

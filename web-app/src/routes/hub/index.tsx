@@ -1,3 +1,7 @@
+import {
+  useFastFlowLmHub,
+  useFastFlowLmHubVisible,
+} from '@/hooks/useFastFlowLmHub'
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import {
@@ -617,6 +621,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   const foundryLocalHubVisible = useFoundryLocalHubVisible()
   const liteRtLmHubVisible = useLiteRtLmHubVisible()
   const geniexHubVisible = useGeniexHubVisible()
+  const fastFlowLmHubVisible = useFastFlowLmHubVisible()
   const availableFormats = useMemo(
     () =>
       hubFormats({
@@ -626,6 +631,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
         foundryLocal: foundryLocalHubVisible,
         liteRtLm: liteRtLmHubVisible,
         geniex: geniexHubVisible,
+        fastFlowLm: fastFlowLmHubVisible,
       }),
     [
       visibleManaged,
@@ -633,6 +639,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
       foundryLocalHubVisible,
       liteRtLmHubVisible,
       geniexHubVisible,
+      fastFlowLmHubVisible,
     ]
   )
   const filters = useMemo(
@@ -760,6 +767,8 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   )
   // GenieX lists conf's curated GGUF models and AI Hub bundles, then the Hugging Face GGUF
   // repositories the catalog search finds, read by its own client (change add-geniex-runtime).
+  const fastFlowLmFormat = filters.formats[0] === 'fastflowlm'
+  const fastFlowLm = useFastFlowLmHub(fastFlowLmFormat && !showOnlyDownloaded)
   const geniexFormat = filters.formats[0] === 'geniex'
   const geniex = useGeniexHub(
     geniexFormat && !showOnlyDownloaded,
@@ -767,7 +776,11 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   )
   // Formats whose list is their own: nothing is asked of Hugging Face under them.
   const ownListFormat =
-    prismFormat || foundryFormat || liteRtFormat || geniexFormat
+    prismFormat ||
+    foundryFormat ||
+    liteRtFormat ||
+    geniexFormat ||
+    fastFlowLmFormat
 
   // Under a managed engine's format the engine's state comes first: what blocks
   // it, or nothing at all until the core has answered. "Downloaded" lists what
@@ -1081,6 +1094,22 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
       }))
     }
 
+    if (fastFlowLmFormat) {
+      const words = debouncedSearchValue
+        .toLowerCase()
+        .split(/\s+/)
+        .filter(Boolean)
+      return fastFlowLm.models
+        .filter((model) =>
+          words.every((word: string) =>
+            `${model.model_name} ${model.description}`
+              .toLowerCase()
+              .includes(word)
+          )
+        )
+        .map((model) => ({ model, section: t('hub:fastflowlm.catalog') }))
+    }
+
     if (geniexFormat) {
       // The GGUF shelf (curated, then Hugging Face) and the AI Hub shelf for this chip, each
       // narrowed by name. Sizes are a model's own file or bundle, so the fit filter does not apply;
@@ -1276,6 +1305,8 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     liteRtFormat,
     liteRtLm.curated,
     liteRtLm.huggingFace,
+    fastFlowLmFormat,
+    fastFlowLm.models,
     geniexFormat,
     geniex.curated,
     geniex.huggingFace,
@@ -1635,18 +1666,20 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     managedFormat && !isSearchMode && (managedCurated.loading || feed.loading)
   const showSkeleton =
     listItems.length === 0 &&
-    (prismFormat
-      ? prismFamilies.loading
-      : foundryFormat
-        ? foundryLocal.loading
-        : liteRtFormat
-          ? liteRtLm.loading
-          : geniexFormat
-            ? geniex.loading
-            : (loading && !isSearchMode) ||
-              hfSearching ||
-              uncensoredLoading ||
-              managedLoading)
+    (fastFlowLmFormat
+      ? fastFlowLm.loading
+      : prismFormat
+        ? prismFamilies.loading
+        : foundryFormat
+          ? foundryLocal.loading
+          : liteRtFormat
+            ? liteRtLm.loading
+            : geniexFormat
+              ? geniex.loading
+              : (loading && !isSearchMode) ||
+                hfSearching ||
+                uncensoredLoading ||
+                managedLoading)
 
   return (
     <div className="grid h-svh w-full min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)]">

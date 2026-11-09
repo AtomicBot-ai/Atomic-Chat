@@ -615,5 +615,63 @@
     "installedModels": "Установленные модели: {{models}}",
     "noModels": "нет",
     "openEnginePage": "Модели и все настройки"
+  },
+  "fastflowlm": {
+    "engine": {
+      "title": "Движок FastFlowLM",
+      "notInstalled": "FastFlowLM не установлен",
+      "installDescription": "Проверенная сборка FastFlowLM {{version}}, загрузка около {{size}}. Готовность NPU проверяется отдельно.",
+      "install": "Установить {{version}}",
+      "installing": "Загрузка… {{percent}}%",
+      "noBuild": "Для этого компьютера нет проверенной сборки FastFlowLM.",
+      "installed": "FastFlowLM {{version}}",
+      "installedDescription": "Локальный движок для AMD XDNA2. Модели устанавливаются отдельно через Atomic Chat.",
+      "update": "Обновить до {{version}}",
+      "checking": "Проверка установки…",
+      "checkAgain": "Проверить снова"
+    },
+    "preparation": "Подготовка AMD NPU",
+    "checking": "Проверка NPU…",
+    "ready": "NPU готов",
+    "blocked": "Нужна подготовка NPU",
+    "action-required": "Можно настроить лимит закреплённой памяти",
+    "checkAgain": "Проверить снова",
+    "prepare": "Посмотреть изменения лимита памяти",
+    "approve": "Подтвердить и запросить права системы",
+    "continue": "Продолжить подготовку",
+    "cancel": "Отменить подготовку",
+    "account": "Учётная запись: {{account}} · {{service}}",
+    "nextLoad": "Параметры запуска применятся при следующей загрузке модели.",
+    "operation": {
+      "checking": "Проверка учётной записи движка…",
+      "awaiting-consent": "Проверьте системные изменения",
+      "preparing-host": "Ожидание системного разрешения или результата помощника",
+      "reboot-required": "Перезагрузите компьютер, затем продолжите",
+      "relogin-required": "Выйдите из учётной записи и войдите снова, затем продолжите",
+      "verifying": "Проверка окружения движка…",
+      "ready": "Подготовка завершена",
+      "failed": "Не удалось завершить подготовку",
+      "cancelled": "Подготовка отменена"
+    },
+    "blockers": {
+      "driver-missing": "Установите драйвер AMD NPU, затем повторите проверку.",
+      "driver-problem": "The NPU driver reports a problem. Reinstall or repair it, then restart.",
+      "driver-unknown": "The NPU driver status could not be confirmed.",
+      "xdna2-not-found": "Поддерживаемый AMD XDNA2 NPU не найден.",
+      "platform-unsupported": "FastFlowLM требует Windows 11 или Linux x64 с AMD XDNA2.",
+      "engine-not-installed": "Сначала установите движок FastFlowLM.",
+      "memlock-too-low": "Лимит закреплённой памяти слишком мал. Проверьте предлагаемое изменение.",
+      "device-access-denied": "У учётной записи движка нет доступа к NPU.",
+      "xrt-device-unavailable": "XRT не видит NPU. Выполните инструкции по установке драйвера.",
+      "probe-inconclusive": "Не удалось завершить проверку NPU. Повторите её.",
+      "privileged-account": "Запустите Atomic Chat от обычного пользователя.",
+      "account-unknown": "Не удалось определить учётную запись движка.",
+      "driver-version-unconfirmed": "Не удалось подтвердить версию драйвера.",
+      "device-busy": "NPU занят. Закройте другое приложение, использующее NPU, и повторите проверку."
+    },
+    "authorization": {
+      "terminal": "Завершите авторизацию в открывшемся системном терминале, затем нажмите «Продолжить подготовку».",
+      "manual": "Автоматический запрос пароля недоступен. Выполните эту команду в терминале, затем нажмите «Продолжить подготовку». Пароль вводится только в терминале."
+    }
   }
 }

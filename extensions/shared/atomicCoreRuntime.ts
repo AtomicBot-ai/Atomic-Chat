@@ -32,6 +32,7 @@ export type CoreProvider =
   | 'foundry-local'
   | 'litert-lm'
   | 'geniex'
+  | 'fastflowlm'
 
 export type Invoke = <T>(
   command: string,

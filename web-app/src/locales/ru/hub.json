@@ -333,5 +333,23 @@
       "precision": "Точность {{precision}}",
       "context": "Контекст {{context}} токенов"
     }
+  },
+  "fastflowlm": {
+    "catalog": "Все модели FastFlowLM",
+    "install": "Скачать",
+    "resume": "Продолжить",
+    "setup": "Настроить FastFlowLM",
+    "checking": "Проверка совместимости…",
+    "qualification": "Модель из каталога разработчика; совместимость зависит от вашего компьютера.",
+    "installed": "Установлена",
+    "gated": "Примите лицензию модели на Hugging Face и добавьте токен в настройках.",
+    "license": "Лицензия",
+    "context": "Контекст",
+    "download": "Размер загрузки",
+    "update": "Обновить модель",
+    "setToken": "Настроить токен Hugging Face",
+    "selectionUnavailable": "Выбранная модель отсутствует в этом каталоге. Выберите другую модель.",
+    "checkFailed": "Не удалось проверить модель FastFlowLM. Повторите попытку.",
+    "installingEngine": "Установка FastFlowLM…"
   }
 }

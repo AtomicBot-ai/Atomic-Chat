@@ -31,6 +31,8 @@ const mocks = vi.hoisted(() => ({
   setLastServerModels: vi.fn(),
   syncActiveModelsFromEngines: vi.fn(),
   getProviderByName: vi.fn(),
+  providerList: [] as ModelProvider[],
+  engines: new Map<string, unknown>(),
   lastServerModels: [] as { model: string; provider: string }[],
   defaultModelLocalApiServer: null as {
     model: string
@@ -82,7 +84,7 @@ vi.mock('@/hooks/useThreads', () => ({
 
 vi.mock('@/hooks/useModelProvider', () => {
   const state = {
-    providers: [],
+    providers: mocks.providerList,
     selectedModel: null,
     selectedProvider: 'llamacpp-upstream',
     getProviderByName: mocks.getProviderByName,
@@ -202,6 +204,7 @@ vi.mock('@/utils/switchModel', () => ({
 }))
 
 vi.mock('@janhq/core', () => ({
+  EngineManager: { instance: () => ({ engines: mocks.engines }) },
   AppEvent: { onModelImported: 'onModelImported' },
   ModelEvent: { OnAutoIncreasedCtxLen: 'OnAutoIncreasedCtxLen' },
   events: {
@@ -245,6 +248,8 @@ describe('DataProvider', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.providerList.length = 0
+    mocks.engines.clear()
     mocks.enableOnStartup = true
     mocks.lastServerModels = []
     mocks.defaultModelLocalApiServer = null
@@ -292,6 +297,41 @@ describe('DataProvider', () => {
         getActiveModels,
       } as unknown as ReturnType<ServiceHub['models']>,
     })
+  })
+
+  it('publishes FLM settings before discovery settles and preserves its cached models', async () => {
+    mocks.enableOnStartup = false
+    mocks.engines.set('fastflowlm', {
+      isHidden: () => false,
+      refreshVisibility: async () => true,
+      getSettings: async () => [{ key: 'ctx_len' }],
+    })
+    const cached = {
+      provider: 'fastflowlm',
+      models: [{ id: 'npu-model' }],
+      settings: [],
+    } as unknown as ModelProvider
+    mocks.providerList.push(cached)
+    getProviders.mockImplementation((publish) => {
+      publish({
+        provider: 'fastflowlm',
+        models: [],
+        settings: [{ key: 'ctx_len', controller_props: { value: 0 } }],
+      })
+      return new Promise(() => {})
+    })
+    const view = render(<DataProvider />)
+    await waitFor(() =>
+      expect(mocks.setProviders).toHaveBeenCalledWith([
+        expect.objectContaining({
+          provider: 'fastflowlm',
+          models: cached.models,
+          settings: [expect.objectContaining({ key: 'ctx_len' })],
+        }),
+      ])
+    )
+    await waitFor(() => expect(getProviders).toHaveBeenCalledTimes(2))
+    view.unmount()
   })
 
   it('hydrates startup stores from service data while rendering no UI', async () => {

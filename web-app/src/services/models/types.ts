@@ -77,6 +77,8 @@ export interface CatalogModel {
    * A GenieX model (change `add-geniex-runtime`), listed under the "GenieX" format from conf's
    * curated list (a GGUF file or a Qualcomm AI Hub bundle) or a GGUF repository on Hugging Face.
    */
+  fastflowlm?: import('@atomic-chat/core/contracts').FastFlowLmDefinition
+  is_fastflowlm?: boolean
   is_geniex?: boolean
   geniex?: GeniexHubModel
 }

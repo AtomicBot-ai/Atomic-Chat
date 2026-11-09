@@ -8,6 +8,7 @@ import sglangSettings from './core-settings-schema/sglang.json'
 import foundryLocalSettings from './core-settings-schema/foundry-local.json'
 import liteRtLmSettings from './core-settings-schema/litert-lm.json'
 import geniexSettings from './core-settings-schema/geniex.json'
+import fastFlowLmSettings from './core-settings-schema/fastflowlm.json'
 
 import { sameSettingValue } from '@/lib/model-settings-defaults'
 
@@ -55,6 +56,7 @@ const ENGINE_DEFAULTS: Record<string, Record<string, unknown>> = {
   // Its `device` (NPU, GPU, CPU, hybrid) is a choice for this computer, kept on reset like
   // llama.cpp's GPU (change add-geniex-runtime).
   'geniex': toDefaults(geniexSettings as SettingDefinition[]),
+  'fastflowlm': toDefaults(fastFlowLmSettings as SettingDefinition[]),
 }
 
 const defaultsFor = (providerName: string) =>

@@ -116,6 +116,10 @@ pub fn claim(step_id: &str) -> Option<StepClaim> {
     Some(StepClaim(step_id.to_string()))
 }
 
+pub(super) fn is_claimed(step_id: &str) -> bool {
+    IN_FLIGHT.lock().map_or(true, |steps| steps.iter().any(|step| step == step_id))
+}
+
 /// The step as the core hands it out on `pending_host_step`, plus the operation it belongs to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HostStep {

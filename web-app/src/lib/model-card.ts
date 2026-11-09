@@ -232,6 +232,7 @@ export type ModelFormat =
   | 'foundry-local'
   | 'litert-lm'
   | 'geniex'
+  | 'fastflowlm'
 
 /**
  * The format a card is shown under. A managed engine's checkpoint is one for every managed engine
@@ -244,6 +245,7 @@ export function modelFormat(
   if (model.is_foundry_local) return 'foundry-local'
   if (model.is_litert_lm) return 'litert-lm'
   if (model.is_geniex) return 'geniex'
+  if (model.fastflowlm || model.is_fastflowlm) return 'fastflowlm'
   if (model.is_managed) return managedFormat
   if (model.is_mlx || model.library_name?.toLowerCase() === 'mlx') return 'mlx'
   return 'gguf'

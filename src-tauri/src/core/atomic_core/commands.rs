@@ -514,7 +514,7 @@ async fn pending_host_step(
 
 /// The CLI core beside the core this app runs: the bundled pair, or the local build that
 /// ATOMIC_CORE_CMD points at in development.
-fn host_step_executor<R: Runtime>(app: &AppHandle<R>) -> Result<std::path::PathBuf, CoreError> {
+pub(super) fn host_step_executor<R: Runtime>(app: &AppHandle<R>) -> Result<std::path::PathBuf, CoreError> {
     let resource_dir = app.path().resource_dir().unwrap_or_default();
     let command = super::launch::resolve_core_command(
         &resource_dir,

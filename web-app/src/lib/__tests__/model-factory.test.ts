@@ -280,7 +280,9 @@ describe('ModelFactory', () => {
     })
 
     it('should throw when Apple Intelligence is not enabled', async () => {
-      mockedInvoke.mockResolvedValueOnce({ status: 'appleIntelligenceNotEnabled' })
+      mockedInvoke.mockResolvedValueOnce({
+        status: 'appleIntelligenceNotEnabled',
+      })
 
       await expect(
         ModelFactory.createModel('apple/on-device', foundationModelsProvider)
@@ -525,7 +527,11 @@ describe('ModelFactory tensorrt-llm provider', () => {
     const send = () =>
       chatFetch('http://localhost:4001/v1/chat/completions', {
         method: 'POST',
-        body: JSON.stringify({ model: 'm', messages: [], response_format: responseFormat }),
+        body: JSON.stringify({
+          model: 'm',
+          messages: [],
+          response_format: responseFormat,
+        }),
       })
 
     await send()
@@ -548,7 +554,11 @@ describe('ModelFactory tensorrt-llm provider', () => {
     })
     await plainFetch('http://localhost:4001/v1/chat/completions', {
       method: 'POST',
-      body: JSON.stringify({ model: 'm', messages: [], response_format: responseFormat }),
+      body: JSON.stringify({
+        model: 'm',
+        messages: [],
+        response_format: responseFormat,
+      }),
     })
     expect(JSON.parse(sent[1])).not.toHaveProperty('response_format')
   })
@@ -912,7 +922,10 @@ describe('ModelFactory geniex provider (change add-geniex-runtime)', () => {
       messages: [{ role: 'user', content: 'hi' }],
       stream: true,
       stream_options: { include_usage: true },
-      response_format: { type: 'json_schema', json_schema: { name: 'a', schema: { type: 'object' } } },
+      response_format: {
+        type: 'json_schema',
+        json_schema: { name: 'a', schema: { type: 'object' } },
+      },
       tools: [{ type: 'function', function: { name: 'f', parameters: {} } }],
       tool_choice: 'auto',
       chat_template_kwargs: { enable_thinking: false },
@@ -923,7 +936,10 @@ describe('ModelFactory geniex provider (change add-geniex-runtime)', () => {
       messages: [{ role: 'user', content: 'hi' }],
       stream: true,
       stream_options: { include_usage: true },
-      response_format: { type: 'json_schema', json_schema: { name: 'a', schema: { type: 'object' } } },
+      response_format: {
+        type: 'json_schema',
+        json_schema: { name: 'a', schema: { type: 'object' } },
+      },
       tools: [{ type: 'function', function: { name: 'f', parameters: {} } }],
       tool_choice: 'auto',
       chat_template_kwargs: { enable_thinking: false },
@@ -1051,7 +1067,11 @@ describe('createLocalStreamingFetch cancellation', () => {
 
   /** A stream that has sent one chunk and stays open, and the cancels asked for. */
   const openStream = () => {
-    const calls: { streamId?: string; cancelled: string[]; channel?: ChunkChannel } = {
+    const calls: {
+      streamId?: string
+      cancelled: string[]
+      channel?: ChunkChannel
+    } = {
       cancelled: [],
     }
     mockedInvoke.mockImplementation((command, args) => {
@@ -1378,5 +1398,124 @@ describe('createMistralFetch', () => {
         { type: 'reasoning', text: 'Two plus two.' },
       ])
     })
+  })
+})
+
+describe('ModelFactory fastflowlm provider (change add-fastflowlm-runtime)', () => {
+  const fastflowlmProvider = {
+    provider: 'fastflowlm',
+    base_url: 'http://example.invalid/v1',
+    api_key: '',
+    settings: [],
+    models: [],
+    active: true,
+  } as unknown as ProviderObject
+
+  const session = {
+    pid: 7171,
+    port: 4303,
+    model_id: 'qwen3-4b',
+    api_key: 'fastflowlm-key',
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockStartModel.mockResolvedValue(undefined)
+    seedServiceHub({
+      models: {
+        startModel: mockStartModel,
+      } as ModelsService,
+    })
+    ModelFactory.invalidateLocalSessionCache('fastflowlm')
+  })
+
+  async function fastflowlmModel(
+    route: (command: string, args: Record<string, unknown>) => unknown
+  ) {
+    mockedInvoke.mockImplementation(async (command, args) =>
+      route(command, (args ?? {}) as Record<string, unknown>)
+    )
+    const { OpenAICompatibleChatLanguageModel } = await import(
+      '@ai-sdk/openai-compatible'
+    )
+    await ModelFactory.createModel('qwen3-4b', fastflowlmProvider, {
+      temperature: 0.7,
+      top_k: 20,
+      repeat_penalty: 1.1,
+      n_predict: -1,
+      cache_prompt: true,
+      reasoning_format: 'deepseek',
+    })
+    const [modelId, config] = vi.mocked(OpenAICompatibleChatLanguageModel).mock
+      .calls[0] as unknown as [
+      string,
+      {
+        provider: string
+        url: (options: { path: string }) => string
+        headers: () => Record<string, string>
+        fetch: typeof fetch
+      },
+    ]
+    return { modelId, config }
+  }
+
+  it('starts the model through the core and talks to its session gateway with the session key', async () => {
+    // Resolve the core gateway rather than addressing the NPU process directly.
+    const { modelId, config } = await fastflowlmModel((command) =>
+      command === 'resolve_local_session' ? session : null
+    )
+
+    expect(mockStartModel).toHaveBeenCalledWith(fastflowlmProvider, 'qwen3-4b')
+    expect(modelId).toBe('qwen3-4b')
+    expect(config.provider).toBe('fastflowlm')
+    expect(config.url({ path: '/chat/completions' })).toBe(
+      'http://127.0.0.1:4303/v1/chat/completions'
+    )
+    expect(config.headers().Authorization).toBe('Bearer fastflowlm-key')
+  })
+
+  it('forwards AbortSignal to one native stream and cancels without replay', async () => {
+    const controller = new AbortController()
+    let streamCalls = 0
+    const { config } = await fastflowlmModel((command, args) => {
+      if (command === 'resolve_local_session') return session
+      if (command === 'stream_local_http') {
+        streamCalls++
+        queueMicrotask(() =>
+          (
+            args.onChunk as { onmessage: (chunk: { data: string }) => void }
+          ).onmessage({ data: 'data: {"choices":[]}\n\n' })
+        )
+        return new Promise(() => {})
+      }
+      if (command === 'cancel_local_stream') return null
+      return null
+    })
+    const response = config.fetch('http://127.0.0.1:4303/v1/chat/completions', {
+      method: 'POST',
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: 'qwen3-4b',
+        messages: [{ role: 'user', content: 'hello' }],
+        stream: true,
+      }),
+    })
+    expect((await response).status).toBe(200)
+    controller.abort()
+    controller.abort()
+    expect(streamCalls).toBe(1)
+    expect(
+      mockedInvoke.mock.calls.filter(
+        ([command]) => command === 'cancel_local_stream'
+      )
+    ).toHaveLength(1)
+  })
+
+  it('fails with the provider named when the core serves no session after the start', async () => {
+    mockedInvoke.mockResolvedValue(null)
+
+    await expect(
+      ModelFactory.createModel('qwen3-4b', fastflowlmProvider)
+    ).rejects.toThrow('No running FastFlowLM session found for model: qwen3-4b')
   })
 })

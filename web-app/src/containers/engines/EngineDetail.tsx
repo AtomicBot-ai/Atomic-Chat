@@ -11,6 +11,8 @@ import { hubEngine } from '@/lib/hub-model-engines'
 import { LiteRtLmEnginePanel } from '@/containers/litert-lm/LiteRtLmEnginePanel'
 import { GeniexDevices } from '@/containers/geniex/GeniexDevices'
 import { GeniexEnginePanel } from '@/containers/geniex/GeniexEnginePanel'
+import { FastFlowLmEnginePanel } from '@/containers/fastflowlm/FastFlowLmEnginePanel'
+import { FastFlowLmPreparation } from '@/containers/fastflowlm/FastFlowLmPreparation'
 import { useEngineVersionsStore } from '@/stores/engine-versions-store'
 import { ManagedEngineHubLink } from '@/containers/managed-engine/ManagedEngineHubLink'
 import { ManagedEngineSettingsCard } from '@/containers/managed-engine/ManagedEngineSettingsCard'
@@ -142,7 +144,11 @@ const MODEL_ACTION_BUTTON_CLASS = 'w-28'
  * leaves it out. GenieX's `device` (NPU, GPU, CPU, hybrid; change add-geniex-runtime) is a choice
  * made here, so it stays.
  */
-const DEVICE_CHOSEN_ON_HARDWARE_PAGE = new Set(['llamacpp', 'llamacpp-upstream', 'atomic-prism'])
+const DEVICE_CHOSEN_ON_HARDWARE_PAGE = new Set([
+  'llamacpp',
+  'llamacpp-upstream',
+  'atomic-prism',
+])
 
 /**
  * The models an engine has, named under its settings where they unfold in
@@ -1990,6 +1996,12 @@ export function EngineDetail({
             )}
             {/* GenieX: the SDK and the devices its library found come before its settings and models. */}
             {providerName === 'geniex' && <GeniexEnginePanel />}
+            {providerName === 'fastflowlm' && (
+              <>
+                <FastFlowLmEnginePanel />
+                <FastFlowLmPreparation />
+              </>
+            )}
             {providerName === 'geniex' && (
               // Read again when the active build changes: a new build is probed afresh at its install.
               <GeniexDevices key={geniexBuild ?? 'none'} />
@@ -2067,6 +2079,11 @@ export function EngineDetail({
                   ) : undefined
                 }
               >
+                {providerName === 'fastflowlm' && (
+                  <p className="mb-3 text-sm text-muted-foreground">
+                    {t('providers:fastflowlm.nextLoad')}
+                  </p>
+                )}
                 {provider?.settings.map((setting, settingIndex) => {
                   // Concurrent Mode is not offered: its rows stay in the core's
                   // schema, and both llama.cpp extensions switch a stored
@@ -2825,7 +2842,8 @@ export function EngineDetail({
                             provider.provider !== 'mlx' &&
                             provider.provider !== 'foundry-local' &&
                             provider.provider !== 'litert-lm' &&
-                            provider.provider !== 'geniex' && (
+                            provider.provider !== 'geniex' &&
+                            provider.provider !== 'fastflowlm' && (
                               <>
                                 <Button
                                   variant="secondary"
@@ -2855,7 +2873,8 @@ export function EngineDetail({
                               provider.provider === 'mlx' ||
                               provider.provider === 'foundry-local' ||
                               provider.provider === 'litert-lm' ||
-                              provider.provider === 'geniex') &&
+                              provider.provider === 'geniex' ||
+                              provider.provider === 'fastflowlm') &&
                             !hasDownloadedModels && (
                               <Button
                                 variant="default"

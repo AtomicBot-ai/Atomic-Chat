@@ -1,3 +1,4 @@
+import { isFastFlowLmDownloadId } from '@/lib/fastflowlm/download-id'
 import type { ServiceHub } from '@/services'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { isAudioDownloadTaskId } from '@/lib/audio/models'
@@ -62,7 +63,10 @@ export function pauseDownload(
     markPausedDownload(download.name)
     markResumableDownload(download.name)
   }
-  if (isDiffusionModelDownloadTaskId(download.id)) {
+  if (
+    isDiffusionModelDownloadTaskId(download.id) ||
+    isFastFlowLmDownloadId(download.id)
+  ) {
     void cancelTransfer(download.id)
   } else {
     void serviceHub.models().abortDownload(download.name)

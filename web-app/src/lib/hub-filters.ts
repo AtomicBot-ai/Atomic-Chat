@@ -18,11 +18,7 @@ import {
 import { getMlxTotalFileSize, getTotalDownloadFileSize } from '@/lib/models'
 import type { CatalogModel } from '@/services/models/types'
 
-export type HubSortKey =
-  | 'recommended'
-  | 'likes'
-  | 'downloads'
-  | 'last-modified'
+export type HubSortKey = 'recommended' | 'likes' | 'downloads' | 'last-modified'
 
 export const HUB_SORT_KEYS: readonly HubSortKey[] = [
   'recommended',
@@ -65,6 +61,7 @@ const ALL_FORMATS: readonly ModelFormat[] = [
   'foundry-local',
   'litert-lm',
   'geniex',
+  'fastflowlm',
 ]
 
 const isFormat = (value: unknown): value is ModelFormat =>
@@ -81,6 +78,7 @@ export const HUB_FORMAT_LABELS: Record<ModelFormat, string> = {
   'foundry-local': 'Foundry Local',
   'litert-lm': 'LiteRT-LM',
   'geniex': 'GenieX',
+  'fastflowlm': 'FastFlowLM',
 }
 
 /** Whether the format is a managed engine's (its provider id): a safetensors checkpoint's. */
@@ -104,6 +102,7 @@ export function hubFormats(options: {
   foundryLocal?: boolean
   liteRtLm?: boolean
   geniex?: boolean
+  fastFlowLm?: boolean
 }): ModelFormat[] {
   return [
     'gguf',
@@ -115,6 +114,7 @@ export function hubFormats(options: {
     ...(options.foundryLocal ? (['foundry-local'] as const) : []),
     ...(options.liteRtLm ? (['litert-lm'] as const) : []),
     ...(options.geniex ? (['geniex'] as const) : []),
+    ...(options.fastFlowLm ? (['fastflowlm'] as const) : []),
   ]
 }
 

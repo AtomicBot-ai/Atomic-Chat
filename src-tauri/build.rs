@@ -65,6 +65,13 @@ fn load_dotenv() {
 /// read with `option_env!`, and a build without it simply cannot handshake —
 /// which is the right outcome for a tree that has no pin.
 fn stamp_core_version() {
+    // The explicit development version must match download-core.mjs. The release pin stays intact.
+    println!("cargo:rerun-if-env-changed=ATOMIC_CORE_VERSION");
+    if let Ok(version) = std::env::var("ATOMIC_CORE_VERSION") {
+        assert!(!version.trim().is_empty(), "ATOMIC_CORE_VERSION must not be empty");
+        println!("cargo:rustc-env=ATOMIC_CORE_VERSION={version}");
+        return;
+    }
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
     let pkg_path = Path::new(&manifest_dir).join("../package.json");
     println!("cargo:rerun-if-changed={}", pkg_path.display());

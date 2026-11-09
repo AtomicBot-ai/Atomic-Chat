@@ -22,6 +22,7 @@ export const HUB_ENGINES = [
   { id: 'foundry-local', format: 'foundry-local' },
   { id: 'litert-lm', format: 'litert-lm' },
   { id: 'geniex', format: 'geniex' },
+  { id: 'fastflowlm', format: 'fastflowlm' },
 ] as const satisfies readonly { id: string; format: ModelFormat }[]
 
 export type HubEngine = (typeof HUB_ENGINES)[number]
@@ -48,6 +49,7 @@ export function modelEngineIds(
   if (model.is_foundry_local) return ['foundry-local']
   if (model.is_litert_lm) return ['litert-lm']
   if (model.is_geniex) return ['geniex']
+  if (model.fastflowlm || model.is_fastflowlm) return ['fastflowlm']
   if (model.is_managed) {
     const engine = hubEngine(
       isManagedProvider(format) ? format : model.managed?.curatedBy

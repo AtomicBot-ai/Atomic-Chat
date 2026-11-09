@@ -682,6 +682,7 @@ type CachedLocalProvider =
   | 'foundry-local'
   | 'litert-lm'
   | 'geniex'
+  | 'fastflowlm'
   | ManagedProviderId
 
 /** How an error about a missing session names the engine, e.g. "No running MLX session". */
@@ -690,6 +691,7 @@ function sessionEngineLabel(providerName: CachedLocalProvider): string {
   if (providerName === 'foundry-local') return 'Foundry Local '
   if (providerName === 'litert-lm') return 'LiteRT-LM '
   if (providerName === 'geniex') return 'GenieX '
+  if (providerName === 'fastflowlm') return 'FastFlowLM '
   const managed = managedEngine(providerName)
   return managed ? `${managed.label} ` : ''
 }
@@ -832,7 +834,13 @@ export function createLocalStreamingFetch(
 
     const channel = new Channel<{ data: string; done?: boolean }>()
     let firstChunkMarked = false
-    channel.onmessage = ({ data, done: last }: { data: string; done?: boolean }) => {
+    channel.onmessage = ({
+      data,
+      done: last,
+    }: {
+      data: string
+      done?: boolean
+    }) => {
       if (data) chunks.push(data)
       // The end of the stream arrives here, after the last chunk and in order
       // with it. See `markDone` below for why the command's return is not it.
@@ -1401,6 +1409,9 @@ export class ModelFactory {
       case 'geniex':
         return this.createGeniexModel(modelId, provider, localInjected)
 
+      case 'fastflowlm':
+        return this.createFastFlowLmModel(modelId, provider, localInjected)
+
       case 'foundation-models':
         return this.createFoundationModelsModel(
           modelId,
@@ -1793,6 +1804,42 @@ export class ModelFactory {
 
     return new OpenAICompatibleChatLanguageModel(modelId, {
       provider: 'geniex',
+      headers: () => ({
+        Authorization: `Bearer ${sessionInfo.api_key}`,
+        Origin: 'tauri://localhost',
+      }),
+      url: ({ path }) =>
+        new URL(`http://127.0.0.1:${sessionInfo.port}/v1${path}`).toString(),
+      includeUsage: true,
+      fetch: liveFetch,
+      metadataExtractor: providerMetadataExtractor,
+    })
+  }
+
+  private static async createFastFlowLmModel(
+    modelId: string,
+    provider?: ProviderObject,
+    parameters: Record<string, unknown> = {}
+  ): Promise<LanguageModel> {
+    const sessionInfo = await ModelFactory.resolveLocalSession(
+      'fastflowlm',
+      modelId,
+      provider
+    )
+    const liveFetch = createHoldingFetch(
+      'fastflowlm',
+      modelId,
+      createLiveSessionFetch(
+        createEngineErrorFetch(
+          createLocalStreamingFetch(httpFetch, parameters, async (body) => body)
+        ),
+        () =>
+          ModelFactory.resolveFreshLocalSession('fastflowlm', modelId, provider)
+      )
+    )
+
+    return new OpenAICompatibleChatLanguageModel(modelId, {
+      provider: 'fastflowlm',
       headers: () => ({
         Authorization: `Bearer ${sessionInfo.api_key}`,
         Origin: 'tauri://localhost',
