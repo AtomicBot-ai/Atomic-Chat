@@ -35,8 +35,9 @@ title: 'Sign Windows builds with the Azure Key Vault key through GitHub OIDC'
   - Anyone who can run a workflow in the `codesign` environment can sign with the company certificate.
     The environment has no branch or reviewer rules today; restricting it to `main` and release tags
     would leave only release runs able to sign.
-  - `sign.ps1` fails the bundler on any error. Tauri hides a failing command's output unless verbose, so
-    the script also appends to `$RUNNER_TEMP/codesign.log`, which the build step prints on failure.
+  - `sign.ps1` fails the bundler on any error. Tauri hides a failing command's output unless verbose, and
+    makensis signs the uninstaller out of its sight, so the script also appends to
+    `$RUNNER_TEMP/codesign.log`, which the build steps print after bundling.
   - AzureSignTool also runs on arm64, so the ARM64 signing jobs could move onto `windows-11-arm` later;
     tauri-cli 2.8.4 still cannot sign inside an arm64 build (it cannot find signtool there).
 - **Owner:** team

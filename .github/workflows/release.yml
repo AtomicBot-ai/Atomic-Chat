@@ -1057,12 +1057,12 @@ jobs:
 
           yarn tauri build --config $signConfigPath
           $exitCode = $LASTEXITCODE
-          if ($exitCode -ne 0) {
-            # Tauri hides a failing signCommand's output; sign.ps1 keeps a copy.
-            $log = Join-Path $env:RUNNER_TEMP 'codesign.log'
-            if (Test-Path -LiteralPath $log) { Write-Host '::group::codesign.log'; Get-Content -LiteralPath $log | Write-Host; Write-Host '::endgroup::' }
-            throw "tauri build failed (exit code: $exitCode)"
-          }
+          # sign.ps1's record of every file it signed, the uninstaller too
+          # (makensis signs that one, out of Tauri's sight). It is also the only
+          # place a failing signCommand's output shows: Tauri hides it.
+          $log = Join-Path $env:RUNNER_TEMP 'codesign.log'
+          if (Test-Path -LiteralPath $log) { Write-Host '::group::codesign.log'; Get-Content -LiteralPath $log | Write-Host; Write-Host '::endgroup::' }
+          if ($exitCode -ne 0) { throw "tauri build failed (exit code: $exitCode)" }
 
       - name: Upload Rust debug files to Sentry (Windows)
         continue-on-error: true
@@ -1143,11 +1143,10 @@ jobs:
         run: |
           yarn tauri bundle --bundles nsis --config src-tauri/tauri.windows.msstore.conf.json --config $env:TAURI_SIGN_CONFIG
           $exitCode = $LASTEXITCODE
-          if ($exitCode -ne 0) {
-            $log = Join-Path $env:RUNNER_TEMP 'codesign.log'
-            if (Test-Path -LiteralPath $log) { Write-Host '::group::codesign.log'; Get-Content -LiteralPath $log | Write-Host; Write-Host '::endgroup::' }
-            throw "tauri bundle failed (exit code: $exitCode)"
-          }
+          # See "Build and sign app"; the log holds that step's files too.
+          $log = Join-Path $env:RUNNER_TEMP 'codesign.log'
+          if (Test-Path -LiteralPath $log) { Write-Host '::group::codesign.log'; Get-Content -LiteralPath $log | Write-Host; Write-Host '::endgroup::' }
+          if ($exitCode -ne 0) { throw "tauri bundle failed (exit code: $exitCode)" }
 
           $setup = @(Get-ChildItem -Path src-tauri/target/release/bundle/nsis -Filter '*-setup.exe')
           if ($setup.Count -ne 1) { throw "Expected one NSIS installer from tauri bundle, found $($setup.Count)" }

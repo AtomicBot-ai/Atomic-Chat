@@ -16,9 +16,9 @@
 # Needs AzureSignTool and signtool on PATH, and AZURE_CLIENT_ID,
 # AZURE_TENANT_ID, AZURE_KEY_VAULT and AZURE_CODESIGN_CERT in the environment
 # (the codesign environment's variables). Any failure exits 1, which fails the
-# bundler. Tauri shows a failing command's output only with --verbose, so every
-# line also goes to $RUNNER_TEMP/codesign.log, which release.yml prints when the
-# build fails.
+# bundler. Tauri shows a failing command's output only with --verbose, and the
+# uninstaller is signed by makensis out of its sight, so every line also goes to
+# $RUNNER_TEMP/codesign.log, which release.yml prints after each bundling step.
 
 param(
   [Parameter(Mandatory = $true)]
