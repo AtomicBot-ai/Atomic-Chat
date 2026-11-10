@@ -20,6 +20,7 @@ import { usePrismHubVisible } from '@/hooks/useModelSetup'
 import { useFoundryLocalHubVisible } from '@/hooks/useFoundryLocalHub'
 import { useLiteRtLmHubVisible } from '@/hooks/useLiteRtLmHub'
 import { useGeniexHubVisible } from '@/hooks/useGeniexHub'
+import { useFastFlowLmHubVisible } from '@/hooks/useFastFlowLmHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
   HUB_FORMAT_LABELS,
@@ -92,6 +93,7 @@ export function HubFilters({
   const foundryLocalVisible = useFoundryLocalHubVisible()
   const liteRtLmVisible = useLiteRtLmHubVisible()
   const geniexVisible = useGeniexHubVisible()
+  const fastFlowLmVisible = useFastFlowLmHubVisible()
   const availableFormats = hubFormats({
     mlx: IS_MACOS,
     managed: visibleManaged,
@@ -99,6 +101,7 @@ export function HubFilters({
     foundryLocal: foundryLocalVisible,
     liteRtLm: liteRtLmVisible,
     geniex: geniexVisible,
+    fastFlowLm: fastFlowLmVisible,
   })
   const engines = useHubEngines(availableFormats)
   const sortKeys = HUB_SORT_KEYS.filter(

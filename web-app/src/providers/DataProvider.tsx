@@ -157,6 +157,7 @@ const SESSION_CACHED_PROVIDERS = [
   'foundry-local',
   'litert-lm',
   'geniex',
+  'fastflowlm',
 ] as const
 
 /** Those, and every managed engine (`isManagedProvider`). */
@@ -372,18 +373,29 @@ export function DataProvider() {
 
   useEffect(() => {
     console.log('Initializing DataProvider...')
+    const publishSettings = (provider: ModelProvider) => {
+      // A settings-only publication must preserve the last known library.
+      const state = useModelProvider.getState()
+      state.setProviders([
+        {
+          ...provider,
+          models:
+            state.providers.find((p) => p.provider === provider.provider)
+              ?.models ?? [],
+        },
+      ])
+    }
+    // Visibility and settings must not wait for any engine's model scan.
+    void refreshAppManagedProviders(() =>
+      serviceHub.providers().getProviders(publishSettings)
+    ).catch((error) =>
+      console.warn('Could not refresh gated providers:', error)
+    )
     serviceHub
       .providers()
-      .getProviders()
+      .getProviders(publishSettings)
       .then((providers) => {
         setProviders(providers)
-        // An engine that decides its own visibility (TensorRT-LLM) answers after its probe, which
-        // runs in the background so it does not hold the app start up.
-        void refreshAppManagedProviders(() =>
-          serviceHub.providers().getProviders()
-        ).catch((error) =>
-          console.warn('Could not refresh gated providers:', error)
-        )
         // Register active remote providers with the backend
         providers.forEach((provider) => {
           if (provider.active) {

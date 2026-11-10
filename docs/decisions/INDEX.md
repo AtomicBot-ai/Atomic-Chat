@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-526 records, 2026-05-19 → 2026-11-09.
+531 records, 2026-05-19 → 2026-11-09.
 
 ---
 
@@ -244,7 +244,17 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-05-22** — [Ship `janhq/llama.cpp` cudart DLLs with every Windows CUDA backend](2026-05-22-ship-janhq-llama-cpp-cudart-dlls-with-every-windows-cuda-backend.md)
 - **2026-05-19** — [Windows uses upstream `ggml-org/llama.cpp`, not the TurboQuant fork](2026-05-19-windows-uses-upstream-ggml-org-llama-cpp-not-the-turboquant-fork.md)
 
-## Models, Hub & downloads (51)
+## Models, Hub & downloads (56)
+
+- **2026-11-09** — [Offer FastFlowLM in the Model Hub, outside onboarding](2026-11-09-offer-fastflowlm-in-the-hub-only.md) — remove onboarding FLM offers and restore the registered engine/format in Hub filters.
+
+- **2026-11-09** — [Keep onboarding model-first and install the model's engine](2026-11-09-keep-onboarding-model-first.md) — remove the engine picker, retain model choices, and install/check FLM before downloading a model.
+
+- **2026-11-09** — [Preserve FastFlowLM desktop handoff invariants](2026-11-09-preserve-fastflowlm-desktop-handoff-invariants.md) — independent settings, serialized discovery, source-bound catalogs, engine-scoped onboarding and terminal authorization.
+
+- **2026-11-09** — [Acknowledge FastFlowLM maintenance before finalizing](2026-11-09-acknowledge-fastflowlm-maintenance-before-finalizing.md) — recover rollback guards, publish same-digest replacements and inherit engine launch settings.
+
+- **2026-11-09** — [Install FastFlowLM models in the desktop](2026-11-09-install-fastflowlm-models-in-the-desktop.md) — shared catalog/SDK builders, durable desktop-owned downloads, maintenance recovery and separate NPU residency.
 
 - **2026-11-05** — [Discover GenieX bundles in Qualcomm releases](2026-11-05-discover-geniex-qualcomm-bundles.md)
 

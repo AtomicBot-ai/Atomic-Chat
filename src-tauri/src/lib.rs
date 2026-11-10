@@ -304,6 +304,11 @@ pub fn run() {
         // The privileged step of a TensorRT-LLM setup (pkexec on Linux, UAC on Windows; elsewhere
         // it answers unavailable).
         core::atomic_core::commands::atomic_core_run_host_step,
+        core::atomic_core::fastflowlm_models::atomic_fastflowlm_install_model,
+        core::atomic_core::fastflowlm_host_step::atomic_fastflowlm_run_host_step,
+        core::atomic_core::fastflowlm_models::atomic_fastflowlm_install_jobs,
+        core::atomic_core::fastflowlm_models::atomic_fastflowlm_recover_mutations,
+        core::atomic_core::fastflowlm_models::atomic_fastflowlm_remove_model,
         // The progress bar's "restart now" (Windows) / "sign out now" (Linux) for a managed setup.
         core::atomic_core::commands::atomic_core_finish_session_step,
     ]);

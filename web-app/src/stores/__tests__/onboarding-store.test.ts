@@ -181,3 +181,37 @@ describe('onboarding store', () => {
     })
   })
 })
+
+it('persists the selected model across a relaunch without an engine choice', async () => {
+  const store = useOnboardingStore.getState()
+  store.reset()
+  store.selectModelOption('fastflowlm:qwen')
+  const persisted = localStorage.getItem(localStorageKey.onboarding)!
+  store.reset()
+  localStorage.setItem(localStorageKey.onboarding, persisted)
+  await useOnboardingStore.persist.rehydrate()
+  expect(useOnboardingStore.getState().selectedModelKey).toBe('fastflowlm:qwen')
+  expect(saved()).not.toHaveProperty('modelEngine')
+})
+
+it('migrates the QA engine selection to its selected model without losing onboarding jobs', async () => {
+  useOnboardingStore.getState().reset()
+  localStorage.setItem(
+    localStorageKey.onboarding,
+    JSON.stringify({
+      version: 1,
+      state: {
+        phase: 'active',
+        modelEngine: 'fastflowlm',
+        modelSelections: { fastflowlm: 'fastflowlm:qwen' },
+        jobs: [chat],
+      },
+    })
+  )
+  await useOnboardingStore.persist.rehydrate()
+  expect(useOnboardingStore.getState()).toMatchObject({
+    selectedModelKey: 'fastflowlm:qwen',
+    jobs: [chat],
+  })
+  expect(saved()).not.toHaveProperty('modelEngine')
+})

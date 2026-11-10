@@ -7,6 +7,7 @@ import { ManagedDownloadOptions } from '@/containers/hub/ManagedDownloadOptions'
 import { FoundryLocalDownloadOptions } from '@/containers/hub/FoundryLocalDownloadOptions'
 import { LiteRtLmDownloadOptions } from '@/containers/hub/LiteRtLmDownloadOptions'
 import { GeniexDownloadOptions } from '@/containers/hub/GeniexDownloadOptions'
+import { FastFlowLmDownloadOptions } from '@/containers/hub/FastFlowLmDownloadOptions'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
@@ -111,6 +112,9 @@ export function DownloadOptionsSelect({
     return <LiteRtLmDownloadOptions model={model} sectionRef={sectionRef} />
   }
   // GenieX: a GGUF's devices with the core's verdicts, or this chip's AI Hub bundle.
+  if (model.fastflowlm || model.is_fastflowlm) {
+    return <FastFlowLmDownloadOptions model={model} sectionRef={sectionRef} />
+  }
   if (model.is_geniex) {
     return <GeniexDownloadOptions model={model} sectionRef={sectionRef} />
   }

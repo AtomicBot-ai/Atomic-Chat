@@ -75,9 +75,7 @@ function extractModelIds(rawText: string, providerLabel: string): string[] {
   }
 
   const obj =
-    data && typeof data === 'object'
-      ? (data as Record<string, unknown>)
-      : null
+    data && typeof data === 'object' ? (data as Record<string, unknown>) : null
 
   const idOf = (model: unknown): string =>
     typeof model === 'string'
@@ -139,7 +137,9 @@ function modelsRequest(provider: ModelProvider): {
   const baseUrl = (provider.base_url ?? '').trim().replace(/\/+$/, '')
   const primaryUrl = `${baseUrl}/models`
   const hasV1Segment = /\/v1(\/|$)/.test(baseUrl)
-  const urls = hasV1Segment ? [primaryUrl] : [primaryUrl, `${baseUrl}/v1/models`]
+  const urls = hasV1Segment
+    ? [primaryUrl]
+    : [primaryUrl, `${baseUrl}/v1/models`]
 
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -320,7 +320,10 @@ type ProbedEngine = {
 }
 
 const PROBE_TTL_MS = 60_000
-const probeCache = new Map<string, { at: number; result: Promise<ModelProbe> }>()
+const probeCache = new Map<
+  string,
+  { at: number; result: Promise<ModelProbe> }
+>()
 
 /** Test hook: forget every cached probe. */
 export const resetModelProbeCache = () => probeCache.clear()
@@ -339,7 +342,12 @@ export function probeModel(
   model: { id: string; sizeBytes?: number },
   want: { tools: boolean; reasoning: boolean }
 ): Promise<ModelProbe> {
-  const key = JSON.stringify([providerName, model.id, model.sizeBytes ?? null, want])
+  const key = JSON.stringify([
+    providerName,
+    model.id,
+    model.sizeBytes ?? null,
+    want,
+  ])
   const cached = probeCache.get(key)
   if (cached && Date.now() - cached.at < PROBE_TTL_MS) return cached.result
 
@@ -349,7 +357,10 @@ export function probeModel(
       try {
         probe.tools = Boolean(await engine.isToolSupported(model.id))
       } catch (error) {
-        console.warn(`Failed to check tool support for model ${model.id}:`, error)
+        console.warn(
+          `Failed to check tool support for model ${model.id}:`,
+          error
+        )
         // Continue without tool capabilities if check fails
       }
     }
@@ -357,7 +368,10 @@ export function probeModel(
       try {
         probe.reasoning = await engine.getReasoningControls(model.id)
       } catch (error) {
-        console.warn(`Failed to detect reasoning controls for model ${model.id}:`, error)
+        console.warn(
+          `Failed to detect reasoning controls for model ${model.id}:`,
+          error
+        )
         // Continue without an effort selector if detection fails
       }
     }
@@ -373,7 +387,27 @@ export class TauriProvidersService extends DefaultProvidersService {
     return fetchTauri as typeof fetch
   }
 
-  async getProviders(): Promise<ModelProvider[]> {
+  private latestDiscovery?: Promise<ModelProvider[]>
+
+  async getProviders(
+    onSettings?: (provider: ModelProvider) => void
+  ): Promise<ModelProvider[]> {
+    const pending = this.discoverProviders(onSettings)
+    this.latestDiscovery = pending
+    let observed = pending
+    let providers = await observed
+    // Another engine can hold an older aggregate response after the FLM scan finished.
+    // All overlapping consumers must publish the newest discovery, regardless of completion order.
+    while (this.latestDiscovery !== observed) {
+      observed = this.latestDiscovery!
+      providers = await observed
+    }
+    return providers
+  }
+
+  private async discoverProviders(
+    onSettings?: (provider: ModelProvider) => void
+  ): Promise<ModelProvider[]> {
     try {
       const registryProviders = await ensureRegistryLoaded()
       const builtinProviders = registryProviders
@@ -397,7 +431,10 @@ export class TauriProvidersService extends DefaultProvidersService {
                   ({
                     id: model,
                     name: model,
-                    capabilities: getModelCapabilities(provider.provider, model),
+                    capabilities: getModelCapabilities(
+                      provider.provider,
+                      model
+                    ),
                   }) as Model
               )
             }
@@ -410,101 +447,125 @@ export class TauriProvidersService extends DefaultProvidersService {
         })
         .filter(Boolean)
 
-      const runtimeProviders: ModelProvider[] = []
-      for (const [providerName, value] of EngineManager.instance().engines) {
-        // An engine that cannot run or be set up here (TensorRT-LLM without an NVIDIA GPU).
-        if (isEngineHidden(value)) continue
-        const models = await value.list() ?? [] 
-        const provider: ModelProvider = {
-          active: false,
-          persist: true,
-          provider: providerName,
-          base_url:
-            'inferenceUrl' in value
-              ? (value.inferenceUrl as string).replace('/chat/completions', '')
-              : '',
-          settings: (await value.getSettings()).map((setting) => {
-            return {
-              key: setting.key,
-              title: setting.title,
-              description: setting.description,
-              controller_type: setting.controllerType as unknown,
-              controller_props: setting.controllerProps as unknown,
+      const runtimeProviders = await Promise.all(
+        [...EngineManager.instance().engines]
+          .filter(([, engine]) => !isEngineHidden(engine))
+          .map(async ([providerName, value]) => {
+            const readSettings = async () =>
+              (await value.getSettings()).map((setting) => {
+                return {
+                  key: setting.key,
+                  title: setting.title,
+                  description: setting.description,
+                  controller_type: setting.controllerType as unknown,
+                  controller_props: setting.controllerProps as unknown,
+                }
+              }) as ProviderSetting[]
+            const provider: ModelProvider = {
+              active: false,
+              persist: true,
+              provider: providerName,
+              base_url:
+                'inferenceUrl' in value
+                  ? (value.inferenceUrl as string).replace(
+                      '/chat/completions',
+                      ''
+                    )
+                  : '',
+              settings: await readSettings(),
+              models: [],
             }
-          }) as ProviderSetting[],
-          models: await Promise.all(
-            models.map(async (model) => {
-              let capabilities: string[] = []
+            // Settings do not depend on model discovery or hardware readiness.
+            onSettings?.(provider)
+            const models = (await value.list()) ?? []
+            provider.models = await Promise.all(
+              models.map(async (model) => {
+                let capabilities: string[] = []
 
-              if ('capabilities' in model && Array.isArray(model.capabilities)) {
-                capabilities = [...(model.capabilities as string[])]
-              }
-              // Both answers come from the model file; see `probeModel`.
-              const probe = await probeModel(providerName, value, model, {
-                tools: !capabilities.includes(ModelCapabilities.TOOLS),
-                reasoning: !model.embedding && !model.decision,
+                if (
+                  'capabilities' in model &&
+                  Array.isArray(model.capabilities)
+                ) {
+                  capabilities = [...(model.capabilities as string[])]
+                }
+                // Both answers come from the model file; see `probeModel`.
+                const probe = await probeModel(providerName, value, model, {
+                  tools: !capabilities.includes(ModelCapabilities.TOOLS),
+                  reasoning: !model.embedding && !model.decision,
+                })
+                if (probe.tools) capabilities.push(ModelCapabilities.TOOLS)
+
+                // Add embeddings capability for embedding models
+                if (
+                  model.embedding &&
+                  !capabilities.includes(ModelCapabilities.EMBEDDINGS)
+                ) {
+                  capabilities = [...capabilities, ModelCapabilities.EMBEDDINGS]
+                }
+
+                // Which reasoning knobs the model's chat template understands.
+                // Drives the effort selector in the chat input.
+                const reasoning = probe.reasoning
+
+                return {
+                  id: model.id,
+                  model: model.id,
+                  name: model.name,
+                  description: model.description,
+                  capabilities,
+                  reasoning,
+                  embedding: model.embedding, // Preserve embedding flag for filtering in UI
+                  // Decision GGUFs belong in the decision selectors, outside chat.
+                  decision: model.decision,
+                  // Origin of an imported model, for the UI badge — and for
+                  // `model_load.import_source`, which is the only way to tell an
+                  // imported model from a re-load of one downloaded earlier.
+                  source: (model as { source?: Model['source'] }).source,
+                  // On-disk size, summed across shards when the engine imported
+                  // it. Dropped here until now, which is why `model_load` had no
+                  // size at all and `size_bucket` existed only on downloads.
+                  sizeBytes: (model as { sizeBytes?: number }).sizeBytes,
+                  // Broken-link flag: keep out of auto-start, flag in the UI.
+                  missing: (model as { missing?: boolean }).missing,
+                  // Absolute weights path, for deduping scan candidates.
+                  path: (model as { path?: string }).path,
+                  provider: providerName,
+                  // FLM launch settings belong to its engine schema, not the generic model defaults.
+                  settings:
+                    providerName === 'fastflowlm'
+                      ? {}
+                      : Object.values(modelSettings).reduce(
+                          (acc, setting) => {
+                            let value = setting.controller_props.value
+                            // A missing or unusable context length gets the default;
+                            // a value the user set is theirs. This used to overwrite
+                            // every model's `ctx_len` with 16384 on every load, so
+                            // the setting could be edited but never kept (ATO-465).
+                            if (
+                              setting.key === 'ctx_len' &&
+                              !isUsableCtxLen(value)
+                            ) {
+                              value = DEFAULT_CTX_LEN
+                            }
+                            acc[setting.key] = {
+                              ...setting,
+                              controller_props: {
+                                ...setting.controller_props,
+                                value: value,
+                              },
+                            }
+                            return acc
+                          },
+                          {} as Record<string, ProviderSetting>
+                        ),
+                } as Model
               })
-              if (probe.tools) capabilities.push(ModelCapabilities.TOOLS)
-
-              // Add embeddings capability for embedding models
-              if (model.embedding && !capabilities.includes(ModelCapabilities.EMBEDDINGS)) {
-                capabilities = [...capabilities, ModelCapabilities.EMBEDDINGS]
-              }
-
-              // Which reasoning knobs the model's chat template understands.
-              // Drives the effort selector in the chat input.
-              const reasoning = probe.reasoning
-
-              return {
-                id: model.id,
-                model: model.id,
-                name: model.name,
-                description: model.description,
-                capabilities,
-                reasoning,
-                embedding: model.embedding, // Preserve embedding flag for filtering in UI
-                // A decision GGUF: offered in the decision selectors, kept out of chat.
-                decision: model.decision,
-                // Origin of an imported model, for the UI badge — and for
-                // `model_load.import_source`, which is the only way to tell an
-                // imported model from a re-load of one downloaded earlier.
-                source: (model as { source?: Model['source'] }).source,
-                // On-disk size, summed across shards when the engine imported
-                // it. Dropped here until now, which is why `model_load` had no
-                // size at all and `size_bucket` existed only on downloads.
-                sizeBytes: (model as { sizeBytes?: number }).sizeBytes,
-                // Broken-link flag: keep out of auto-start, flag in the UI.
-                missing: (model as { missing?: boolean }).missing,
-                // Absolute weights path, for deduping scan candidates.
-                path: (model as { path?: string }).path,
-                provider: providerName,
-                settings: Object.values(modelSettings).reduce(
-                  (acc, setting) => {
-                    let value = setting.controller_props.value
-                    // A missing or unusable context length gets the default;
-                    // a value the user set is theirs. This used to overwrite
-                    // every model's `ctx_len` with 16384 on every load, so
-                    // the setting could be edited but never kept (ATO-465).
-                    if (setting.key === 'ctx_len' && !isUsableCtxLen(value)) {
-                      value = DEFAULT_CTX_LEN
-                    }
-                    acc[setting.key] = {
-                      ...setting,
-                      controller_props: {
-                        ...setting.controller_props,
-                        value: value,
-                      },
-                    }
-                    return acc
-                  },
-                  {} as Record<string, ProviderSetting>
-                ),
-              } as Model
-            })
-          ),
-        }
-        runtimeProviders.push(provider)
-      }
+            )
+            // Discovery may take long enough for the user to edit an already visible setting.
+            provider.settings = await readSettings()
+            return provider
+          })
+      )
 
       return runtimeProviders.concat(builtinProviders as ModelProvider[])
     } catch (error: unknown) {

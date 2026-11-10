@@ -13,7 +13,10 @@ import type { GeniexChip } from '@/services/geniex/types'
 import { isManagedProvider } from '@/lib/managed-engines'
 import type { ModelFormat } from '@/lib/model-card'
 import type { GpuFacts } from '@/services/managed-environment/types'
-import type { CatalogModel, HuggingFaceFeedFormat } from '@/services/models/types'
+import type {
+  CatalogModel,
+  HuggingFaceFeedFormat,
+} from '@/services/models/types'
 
 /**
  * Bytes per parameter by safetensors dtype, as Hugging Face's listing counts parameters. `U8` of
@@ -42,7 +45,8 @@ const DTYPE_BYTES: Record<string, number> = {
  * A dtype not listed here (a newer packed format) counts at one byte: the estimate may only ever
  * be low, never hide a model that would fit.
  */
-const bytesOf = (dtype: string) => (dtype.startsWith('F8_') ? 1 : (DTYPE_BYTES[dtype] ?? 1))
+const bytesOf = (dtype: string) =>
+  dtype.startsWith('F8_') ? 1 : (DTYPE_BYTES[dtype] ?? 1)
 
 /** Σ parameters × bytes per dtype, or null when the listing carries no parameters. */
 export function estimateWeightBytes(parameters: Record<string, number> | undefined): number | null {
@@ -109,26 +113,56 @@ export interface HubListSources {
 export function hubListSources(format: ModelFormat): HubListSources {
   // Every managed engine lists the same safetensors feed, narrowed by its own descriptor.
   if (isManagedProvider(format)) {
-    return { staffPicks: false, catalog: false, curated: true, feedFormat: 'safetensors', prefilter: true }
+    return {
+      staffPicks: false,
+      catalog: false,
+      curated: true,
+      feedFormat: 'safetensors',
+      prefilter: true,
+    }
   }
   // Foundry Local lists conf's curated models, then Microsoft's catalog (`foundryLocalRows`); the
   // route asks Hugging Face nothing under it, as under PrismML.
   if (format === 'foundry-local') {
-    return { staffPicks: false, catalog: false, curated: true, feedFormat: 'gguf', prefilter: false }
+    return {
+      staffPicks: false,
+      catalog: false,
+      curated: true,
+      feedFormat: 'gguf',
+      prefilter: false,
+    }
   }
   // LiteRT-LM lists conf's curated models, then its Hugging Face organisations' `litert-lm`
   // repositories (`liteRtLmRows`); nothing from the GGUF feed or search.
   if (format === 'litert-lm') {
-    return { staffPicks: false, catalog: false, curated: true, feedFormat: 'gguf', prefilter: false }
+    return {
+      staffPicks: false,
+      catalog: false,
+      curated: true,
+      feedFormat: 'gguf',
+      prefilter: false,
+    }
   }
   // GenieX lists conf's curated GGUF models and bundles, then the Hugging Face GGUF repositories
   // its own client reads trees for (`geniexRows`); nothing from the GGUF feed or search.
-  if (format === 'geniex') {
-    return { staffPicks: false, catalog: false, curated: true, feedFormat: 'gguf', prefilter: false }
+  if (format === 'geniex' || format === 'fastflowlm') {
+    return {
+      staffPicks: false,
+      catalog: false,
+      curated: true,
+      feedFormat: 'gguf',
+      prefilter: false,
+    }
   }
   // PrismML lists the Bonsai families of the core's model rules, and nothing else.
   if (format === 'atomic-prism') {
-    return { staffPicks: false, catalog: false, curated: true, feedFormat: 'gguf', prefilter: false }
+    return {
+      staffPicks: false,
+      catalog: false,
+      curated: true,
+      feedFormat: 'gguf',
+      prefilter: false,
+    }
   }
   return {
     staffPicks: true,
@@ -203,7 +237,10 @@ export function foundryLocalRows(options: {
     models
       .filter((model) => foundryLocalMatches(model, query))
       .map((model): FoundryLocalRow => ({ model, section }))
-  return [...pick(options.curated, 'curated'), ...pick(options.catalog, 'microsoft')]
+  return [
+    ...pick(options.curated, 'curated'),
+    ...pick(options.catalog, 'microsoft'),
+  ]
 }
 
 export interface GeniexRow {
@@ -238,7 +275,11 @@ export function geniexRows(options: {
     if (!fields || !variant) return []
     return [{ ...model, geniex: { ...fields, variants: [variant] } }]
   })
-  return [...pick(options.curated, 'gguf'), ...pick(options.huggingFace, 'gguf'), ...pick(bundles, 'aihub')]
+  return [
+    ...pick(options.curated, 'gguf'),
+    ...pick(options.huggingFace, 'gguf'),
+    ...pick(bundles, 'aihub'),
+  ]
 }
 
 export interface LiteRtLmRow {
@@ -262,5 +303,8 @@ export function liteRtLmRows(options: {
     models
       .filter((model) => liteRtLmMatches(model, query))
       .map((model): LiteRtLmRow => ({ model, section }))
-  return [...pick(options.curated, 'curated'), ...pick(options.huggingFace, 'huggingface')]
+  return [
+    ...pick(options.curated, 'curated'),
+    ...pick(options.huggingFace, 'huggingface'),
+  ]
 }

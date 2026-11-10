@@ -139,5 +139,23 @@
   "prismSetupPlanChanged": "你檢視時計畫已變更。請確認後重新開始。",
   "prismSetupStart": "設定",
   "prismStage_installing_engine": "正在安裝 PrismML 引擎",
-  "prismCurated": "適用於 PrismML 的 Bonsai 模型"
+  "prismCurated": "適用於 PrismML 的 Bonsai 模型",
+  "fastflowlm": {
+    "catalog": "All FastFlowLM models",
+    "install": "Download",
+    "resume": "Resume",
+    "setup": "Set up FastFlowLM",
+    "checking": "Checking compatibility…",
+    "qualification": "Listed by upstream; hardware compatibility depends on this computer.",
+    "installed": "Installed",
+    "gated": "Accept the model license on Hugging Face and add your token in Settings.",
+    "license": "License",
+    "context": "Context",
+    "download": "Download size",
+    "update": "Update model",
+    "setToken": "Set Hugging Face token",
+    "selectionUnavailable": "The selected model is unavailable in this catalog. Choose another model.",
+    "checkFailed": "Could not check the FastFlowLM model. Try again.",
+    "installingEngine": "Installing FastFlowLM…"
+  }
 }

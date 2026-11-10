@@ -18,6 +18,7 @@ export type EngineBuildId =
   | 'foundry-local'
   | 'litert-lm'
   | 'geniex'
+  | 'fastflowlm'
 
 /**
  * `downloaded` — installed by the core under its data folder, removable;

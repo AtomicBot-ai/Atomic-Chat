@@ -65,7 +65,14 @@ export function managedProviderIds(): string[] {
 export const sanitizeMlxId = (id: string): string =>
   id.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9\-_./]/g, '')
 
-type InstalledKind = 'gguf' | 'mlx' | 'managed' | 'foundry-local' | 'litert-lm' | 'geniex'
+type InstalledKind =
+  | 'gguf'
+  | 'mlx'
+  | 'managed'
+  | 'foundry-local'
+  | 'litert-lm'
+  | 'geniex'
+  | 'fastflowlm'
 type InstalledModel = { model: Model; kind: InstalledKind }
 
 /**
@@ -79,12 +86,14 @@ function collectLocalModels(providers: readonly ModelProvider[]): {
   foundry: Map<string, InstalledModel>
   liteRt: Map<string, InstalledModel>
   geniex: Map<string, InstalledModel>
+  fastFlowLm: Map<string, InstalledModel>
 } {
   const local = new Map<string, InstalledModel>()
   const managed = new Map<string, InstalledModel>()
   const foundry = new Map<string, InstalledModel>()
   const liteRt = new Map<string, InstalledModel>()
   const geniex = new Map<string, InstalledModel>()
+  const fastFlowLm = new Map<string, InstalledModel>()
 
   const add = (
     out: Map<string, InstalledModel>,
@@ -111,8 +120,9 @@ function collectLocalModels(providers: readonly ModelProvider[]): {
   add(foundry, modelsOf(FOUNDRY_LOCAL_PROVIDER), 'foundry-local')
   add(liteRt, modelsOf(LITERT_LM_PROVIDER), 'litert-lm')
   add(geniex, modelsOf(GENIEX_PROVIDER), 'geniex')
+  add(fastFlowLm, modelsOf('fastflowlm'), 'fastflowlm')
 
-  return { local, managed, foundry, liteRt, geniex }
+  return { local, managed, foundry, liteRt, geniex, fastFlowLm }
 }
 
 /**
@@ -229,6 +239,14 @@ function synthesizeEntry(id: string, installed: InstalledModel): CatalogModel {
     }
   }
 
+  if (installed.kind === 'fastflowlm')
+    return {
+      ...base,
+      model_name: `fastflowlm/${id}`,
+      description: installed.model.name || id,
+      is_fastflowlm: true,
+    }
+
   if (installed.kind === 'geniex') {
     return {
       model_name: `geniex/${id}`,
@@ -292,8 +310,16 @@ export function collectInstalledModels(
   catalog: readonly CatalogModel[],
   providers: readonly ModelProvider[]
 ): CatalogModel[] {
-  const { local, managed, foundry, liteRt, geniex } = collectLocalModels(providers)
-  if (local.size === 0 && managed.size === 0 && foundry.size === 0 && liteRt.size === 0 && geniex.size === 0) {
+  const { local, managed, foundry, liteRt, geniex, fastFlowLm } =
+    collectLocalModels(providers)
+  if (
+    local.size === 0 &&
+    managed.size === 0 &&
+    foundry.size === 0 &&
+    liteRt.size === 0 &&
+    geniex.size === 0 &&
+    fastFlowLm.size === 0
+  ) {
     return []
   }
 
@@ -303,7 +329,14 @@ export function collectInstalledModels(
   for (const entry of catalog) {
     // A Foundry Local, LiteRT-LM or GenieX model is never claimed by a catalog entry: it is listed
     // by its own row.
-    if (entry.is_foundry_local || entry.is_litert_lm || entry.is_geniex) continue
+    if (
+      entry.is_foundry_local ||
+      entry.is_litert_lm ||
+      entry.is_geniex ||
+      entry.fastflowlm ||
+      entry.is_fastflowlm
+    )
+      continue
     const [installed, taken] = entry.is_managed
       ? [managed, claimed.managed]
       : [local, claimed.local]
@@ -319,6 +352,7 @@ export function collectInstalledModels(
     [foundry, new Set<string>()],
     [liteRt, new Set<string>()],
     [geniex, new Set<string>()],
+    [fastFlowLm, new Set<string>()],
   ] as const) {
     for (const [id, model] of installed) {
       if (taken.has(id)) continue

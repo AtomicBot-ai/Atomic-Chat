@@ -120,6 +120,7 @@ const localProviders = (): string[] => [
   'foundry-local',
   'litert-lm',
   'geniex',
+  'fastflowlm',
   ...managedEngines().map((engine) => engine.id),
 ]
 type LocalProviderName = string
@@ -951,11 +952,18 @@ export class DefaultModelsService implements ModelsService {
   ): Promise<void> {
     const activeByProvider = await this.getLocalActiveModelsByProvider()
     await Promise.all(
-      activeByProvider.flatMap(({ provider, models }) =>
-        models
-          .filter((model) => !(provider === providerName && model === modelId))
-          .map((model) => this.stopModel(model, provider))
-      )
+      activeByProvider
+        .filter(
+          ({ provider }) =>
+            (provider === 'fastflowlm') === (providerName === 'fastflowlm')
+        )
+        .flatMap(({ provider, models }) =>
+          models
+            .filter(
+              (model) => !(provider === providerName && model === modelId)
+            )
+            .map((model) => this.stopModel(model, provider))
+        )
     )
   }
 
@@ -990,18 +998,22 @@ export class DefaultModelsService implements ModelsService {
       return keyMappings[key] || key
     }
 
-    const settings = modelConfig?.settings
-      ? Object.fromEntries(
-          Object.entries(modelConfig.settings).map(([key, value]) => [
-            mapSettingKey(key),
-            value.controller_props?.value,
-          ])
-        )
-      : undefined
+    // FLM's seven launch settings come from core's provider settings. Ignore legacy
+    // generic model bags too, so a cached 16384 default cannot shadow engine ctx_len=0.
+    const settings =
+      provider.provider !== 'fastflowlm' && modelConfig?.settings
+        ? Object.fromEntries(
+            Object.entries(modelConfig.settings).map(([key, value]) => [
+              mapSettingKey(key),
+              value.controller_props?.value,
+            ])
+          )
+        : undefined
 
     // A chat model and an image model share one GPU: the image side makes
     // room before it loads (lib/diffusion/arbiter.ts), and so does this side.
-    await makeRoomForChatModel(engine, model)
+    if (provider.provider !== 'fastflowlm')
+      await makeRoomForChatModel(engine, model)
 
     return engine
       .load(model, settings, false, bypassAutoUnload, options)

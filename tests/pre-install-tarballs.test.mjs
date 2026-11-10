@@ -36,10 +36,10 @@ function extensionPackages() {
     .map((path) => JSON.parse(readFileSync(path, 'utf8')))
 }
 
-test('every bundled extension still publishes under its legacy @janhq name', () => {
+test('legacy extensions retain their names and new FastFlowLM uses the Atomic namespace', () => {
   const wrong = extensionPackages()
     .map((pkg) => pkg.name)
-    .filter((name) => !name.startsWith('@janhq/'))
+    .filter((name) => !name.startsWith('@janhq/') && name !== '@atomic-chat/fastflowlm-extension')
 
   assert.deepEqual(
     wrong,
@@ -214,3 +214,8 @@ test('the bare-import check recognises what it must and only that', () => {
   )
 })
 
+
+test('Windows and Linux build FastFlowLM while macOS excludes it', () => {
+  for (const platform of ['win32', 'linux']) assert.ok(builtHere(platform).some((pkg) => pkg.name === '@atomic-chat/fastflowlm-extension'))
+  assert.ok(!builtHere('darwin').some((pkg) => pkg.name === '@atomic-chat/fastflowlm-extension'))
+})

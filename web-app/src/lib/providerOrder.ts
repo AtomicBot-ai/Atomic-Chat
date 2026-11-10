@@ -29,6 +29,7 @@ const PROVIDER_PRIORITY: Record<string, number> = {
   'litert-lm': 7,
   // Qualcomm GenieX, registered by the core on Snapdragon X only (change add-geniex-runtime).
   'geniex': 8,
+  'fastflowlm': 9,
 }
 
 /**

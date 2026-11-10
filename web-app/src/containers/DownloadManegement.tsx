@@ -1,3 +1,4 @@
+import { isFastFlowLmDownloadId } from '@/lib/fastflowlm/download-id'
 import {
   useDownloadStore,
   type DownloadProgressProps,
@@ -141,6 +142,7 @@ function downloadRowName(
     (isFoundryLocalDownloadId(id) && origins[id]) ||
     (isLiteRtLmDownloadId(id) && origins[id]) ||
     (isGeniexDownloadId(id) && origins[id]) ||
+    (isFastFlowLmDownloadId(id) && origins[id]) ||
     (isEmbeddingDownloadTaskId(id) &&
       embeddingCatalog.models.find(
         (model) => embeddingDownloadTaskId(model.id) === id

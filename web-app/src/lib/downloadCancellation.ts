@@ -1,3 +1,4 @@
+import { isFastFlowLmDownloadId } from '@/lib/fastflowlm/download-id'
 import type { ServiceHub } from '@/services'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { isAudioDownloadTaskId } from '@/lib/audio/models'
@@ -107,6 +108,7 @@ export function cancelDownload(
     isManagedDownloadId(download.id) ||
     isFoundryLocalDownloadId(download.id) ||
     isLiteRtLmDownloadId(download.id) ||
+    isFastFlowLmDownloadId(download.id) ||
     isGeniexDownloadId(download.id)
   ) {
     void cancelTransfer(download.id)

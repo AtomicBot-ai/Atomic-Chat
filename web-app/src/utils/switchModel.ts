@@ -278,6 +278,7 @@ const LOCAL_PROVIDERS = [
   'foundry-local',
   'litert-lm',
   'geniex',
+  'fastflowlm',
 ] as const
 
 /** Every local engine provider, the managed engines last. */
@@ -1111,6 +1112,8 @@ async function doSwitchToModel(
     //    the turn without a reply. A Cancel or a newer switch ends the wait.
     const stopsModel = (ref: ModelRef) =>
       isLocalEngineProvider(ref.provider) &&
+      (!isLocal ||
+        (ref.provider === 'fastflowlm') === (providerName === 'fastflowlm')) &&
       !(isLocal && ref.provider === providerName && ref.modelId === modelId)
     if (heldModels().some(stopsModel)) {
       setLoadingModelProgress({ kind: 'unloadingPrevious' })
@@ -1128,9 +1131,9 @@ async function doSwitchToModel(
       await serviceHub.models().stopAllModelsExcept(modelId, providerName)
       const stillActive = await serviceHub
         .models()
-        .getActiveModels(providerName)
+        .getActiveModels()
         .catch(() => [] as string[])
-      setActiveModels(stillActive.filter((m) => m === modelId))
+      setActiveModels(stillActive)
       console.log('[switchToModel] Other local models stopped')
     } else {
       await serviceHub.models().stopAllModels()
@@ -1418,7 +1421,9 @@ export type OomRetryStep =
   | { kind: 'fit_target'; from: number; to: number }
 
 function modelSettingNumber(
-  model: { settings?: Record<string, { controller_props?: { value?: unknown } }> } | undefined,
+  model:
+    | { settings?: Record<string, { controller_props?: { value?: unknown } }> }
+    | undefined,
   key: string
 ): number | undefined {
   const raw = model?.settings?.[key]?.controller_props?.value
@@ -1626,7 +1631,11 @@ async function loadLocalModelWithOomRetry(args: {
       applyOomRetryStep(serviceHub, provider, modelId, step)
       // Said at once: the next attempt reports its own steps only once the
       // engine reaches them.
-      onProgress?.({ kind: 'loadingWeights', cachedFraction: null, retry: step.kind })
+      onProgress?.({
+        kind: 'loadingWeights',
+        cachedFraction: null,
+        retry: step.kind,
+      })
       emitModelLoadRetry({
         modelId,
         providerName,
@@ -1641,11 +1650,7 @@ async function loadLocalModelWithOomRetry(args: {
   return undefined
 }
 
-const OOM_CODES = new Set([
-  'OUT_OF_MEMORY',
-  'OutOfMemory',
-  'OOM',
-])
+const OOM_CODES = new Set(['OUT_OF_MEMORY', 'OutOfMemory', 'OOM'])
 
 const OOM_MESSAGE_PATTERNS = [
   'out of memory',
@@ -1663,7 +1668,7 @@ function toErrorObject(error: unknown): ErrorObject {
     const message =
       typeof candidate.message === 'string' && candidate.message.length > 0
         ? candidate.message
-        : candidate.toString?.() ?? 'Unknown error'
+        : (candidate.toString?.() ?? 'Unknown error')
     return {
       code: typeof candidate.code === 'string' ? candidate.code : undefined,
       message,

@@ -136,6 +136,30 @@ describe('HubFilters', () => {
     useModelLikes.setState({ liked: [], onlyLiked: false })
   })
 
+  it('offers registered FastFlowLM before installation and couples its engine and format filters', async () => {
+    const user = userEvent.setup()
+    withProviders('llamacpp-upstream', 'fastflowlm')
+    const { onChange } = renderFilters()
+    const menu = await openFilters(user)
+    const entries = within(menu).getAllByRole('menuitemradio', {
+      name: 'FastFlowLM',
+    })
+    expect(entries).toHaveLength(2)
+    const engines = groupWith(menu, 'hub:filters.allEngines')
+    await user.click(
+      within(engines).getByRole('menuitemradio', { name: 'FastFlowLM' })
+    )
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ engine: 'fastflowlm', formats: ['fastflowlm'] })
+    )
+    const reopened = await openFilters(user)
+    expect(
+      within(reopened)
+        .getAllByRole('menuitemradio', { name: 'FastFlowLM' })
+        .every((item) => item.getAttribute('aria-checked') === 'true')
+    ).toBe(true)
+  })
+
   it('offers neither a format nor an engine where only GGUF on llama.cpp exists', async () => {
     // IS_MACOS is false in the vitest define block: no MLX.
     const user = userEvent.setup()

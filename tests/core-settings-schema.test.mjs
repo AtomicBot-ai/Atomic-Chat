@@ -21,6 +21,7 @@ const SCHEMAS = [
   'foundry-local',
   'litert-lm',
   'geniex',
+  'fastflowlm',
 ]
 // Each is also registered by its engine extension from that extension's own settings.json.
 const EXTENSION_SCHEMAS = SCHEMAS

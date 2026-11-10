@@ -1,5 +1,18 @@
 use super::helpers::*;
 use super::models::*;
+
+#[test]
+fn fastflowlm_auth_stays_on_https_huggingface_and_is_redacted() {
+    let mut item = preflight_test_item("https://huggingface.co/FastFlowLM/Qwen3/resolve/commit/config.json".into(), Some(5));
+    item.hf_authorization = Some(HuggingFaceAuthorization("Bearer secret-hf-token".into()));
+    let headers = reqwest::header::HeaderMap::new();
+    assert_eq!(headers_for_item(&item, &headers).unwrap()[reqwest::header::AUTHORIZATION], "Bearer secret-hf-token");
+    for url in ["https://raw.githubusercontent.com/ROCm/FastFlowLM/commit/kernel", "https://cdn.example/model", "http://huggingface.co/model", "https://huggingface.co:8080/model"] {
+        item.url = url.into();
+        assert!(!headers_for_item(&item, &headers).unwrap().contains_key(reqwest::header::AUTHORIZATION));
+    }
+    assert!(!format!("{item:?}").contains("secret-hf-token"));
+}
 use crate::core::app::commands::get_jan_data_folder_path;
 use hyper::body::Bytes;
 use hyper::header::{CONTENT_LENGTH, CONTENT_RANGE, RANGE};
@@ -153,6 +166,7 @@ async fn a_resume_waits_for_the_cancelled_writer_and_cancellation_does_not_wait_
         size: Some(6),
         model_id: Some("test/model".to_string()),
         resume_key: None,
+        hf_authorization: None,
     };
     let app = mock_app();
 
@@ -270,6 +284,7 @@ fn preflight_test_item(url: String, size: Option<u64>) -> DownloadItem {
         size,
         model_id: None,
         resume_key: None,
+        hf_authorization: None,
     }
 }
 
@@ -445,6 +460,7 @@ async fn download_succeeds_when_preflight_head_always_fails() {
         size: None,
         model_id: Some("test/ato-302".to_string()),
         resume_key: None,
+        hf_authorization: None,
     };
     let app = mock_app();
 
@@ -592,6 +608,7 @@ async fn changed_remote_artifact_fails_once_and_keeps_partial_bytes() {
             size: Some(8),
             model_id: None,
             resume_key: None,
+            hf_authorization: None,
         };
         let partial = &b"abcdef"[..offset];
         let saved_identity = if same_identity {
@@ -682,6 +699,7 @@ async fn run_interrupted_download_test(
         size: Some(6),
         model_id: Some("test/model".to_string()),
         resume_key: None,
+        hf_authorization: None,
     };
     let app = mock_app();
     download_single_file_for_test(app.handle().clone(), &item, &save_path, 6)
@@ -888,6 +906,7 @@ fn test_download_item_with_ssl_proxy() {
         size: None,
         model_id: None,
         resume_key: None,
+        hf_authorization: None,
     };
 
     assert!(download_item.proxy.is_some());
@@ -909,6 +928,7 @@ fn test_client_creation_with_ssl_settings() {
         size: None,
         model_id: None,
         resume_key: None,
+        hf_authorization: None,
     };
 
     let header_map = HeaderMap::new();
@@ -958,6 +978,7 @@ fn test_download_item_creation() {
         size: None,
         model_id: None,
         resume_key: None,
+        hf_authorization: None,
     };
 
     assert_eq!(item.url, "https://example.com/file.tar.gz");
@@ -1027,6 +1048,7 @@ async fn downloads_model_fixture_and_enforces_size_and_hash_contract() {
         size: Some(6),
         model_id: Some("fixture/tiny-model".to_string()),
         resume_key: None,
+        hf_authorization: None,
     };
     let app = mock_app();
 
@@ -1314,6 +1336,7 @@ fn test_item(url: String, save_path: &std::path::Path, size: u64) -> DownloadIte
         size: Some(size),
         model_id: Some("test/model".to_string()),
         resume_key: None,
+        hf_authorization: None,
     }
 }
 
@@ -1886,6 +1909,7 @@ async fn a_cancelled_multi_connection_download_keeps_its_map_and_resumes_from_it
 fn keyed_item(url: String, save_path: &std::path::Path, key: Option<&str>) -> DownloadItem {
     DownloadItem {
         resume_key: key.map(str::to_string),
+        hf_authorization: None,
         ..test_item(url, save_path, SEGMENTED_TEST_SIZE as u64)
     }
 }
@@ -2188,6 +2212,7 @@ async fn the_hugging_face_token_does_not_follow_a_redirect_to_another_host() {
         size: None,
         model_id: None,
         resume_key: None,
+        hf_authorization: None,
     };
     let mut headers = HashMap::new();
     headers.insert("Authorization".to_string(), "Bearer hf_secret".to_string());
@@ -2320,6 +2345,7 @@ async fn a_finished_hf_file_is_reused_only_after_content_verification() {
         proxy: None,
         model_id: None,
         resume_key: None,
+        hf_authorization: None,
     };
     let cancel = CancellationToken::new();
     assert!(
@@ -2361,6 +2387,7 @@ async fn a_resumed_task_keeps_a_file_it_had_finished_and_fetches_only_the_rest()
         size: Some(body.len() as u64),
         model_id: Some("test/voxtral".to_string()),
         resume_key: None,
+        hf_authorization: None,
     };
     let items = vec![item("model.gguf", &model), item("mmproj.gguf", &mmproj)];
 
@@ -2982,4 +3009,15 @@ mod disk_reliability {
         assert_eq!(value["fs_name"], serde_json::Value::Null);
         assert_eq!(value["volume_root"], serde_json::Value::Null);
     }
+}
+
+#[tokio::test]
+async fn fastflowlm_segmented_payload_requires_its_final_sha256() {
+    let body=segmented_test_body();let server=spawn_range_server(body.clone(),true).await;
+    let save_path=test_download_path("flm-weights.bin");
+    download_segmented_for_test(&server,&save_path,false,CancellationToken::new(),segmented_test_tuning()).await.unwrap();
+    let mut item=test_item(server.url.clone(),&save_path,body.len() as u64);
+    item.sha256=Some("0".repeat(64));let app=mock_app();
+    assert!(validate_downloaded_file_for_test(&item,&save_path,app.handle()).await.unwrap_err().contains("Hash verification failed"));
+    server.handle.abort();let _=tokio::fs::remove_dir_all(save_path.parent().unwrap()).await;
 }

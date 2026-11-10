@@ -110,6 +110,9 @@ export function getProviderLogo(provider: string) {
     // A monogram too: GenieX, Qualcomm and Snapdragon are Qualcomm's marks (change add-geniex-runtime).
     case 'geniex':
       return '/images/model-provider/geniex.svg'
+    // An original NPU chip mark; do not reuse AMD's logo or arrow symbol.
+    case 'fastflowlm':
+      return '/images/model-provider/fastflowlm.svg'
     case 'anthropic':
       return '/images/model-provider/anthropic.svg'
     case 'huggingface':
@@ -244,6 +247,8 @@ export const getProviderTitle = (provider: string) => {
       return 'Foundry Local'
     case 'litert-lm':
       return 'LiteRT-LM'
+    case 'fastflowlm':
+      return 'FastFlowLM'
     case 'geniex':
       return 'GenieX'
     // The media engine, named on the engine-update banner. Not a chat provider.

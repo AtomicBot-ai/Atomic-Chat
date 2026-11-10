@@ -106,7 +106,7 @@ export type ModelOption =
       fit: FitLevel | null
       bestFit: boolean
       /** Which list offers it: the device's offers or Hugging Face's. */
-      source: 'recommended' | 'huggingface'
+      source: 'recommended' | 'huggingface' | 'catalog'
       /** The row's index across both lists, as impressions report it. */
       position: number
     })

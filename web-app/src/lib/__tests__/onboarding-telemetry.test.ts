@@ -583,3 +583,7 @@ describe('first-run step funnel', () => {
     })
   })
 })
+
+it('classifies FLM catalog and installed NPU models independently from GGUF', () => {
+  expect(buildRecommendedImpressions({ pending: [{ startId: 'qwen-flm', model: { is_fastflowlm: true } }], installed: [{ startId: 'qwen-flm', provider: 'fastflowlm' }] }).map((row) => row.format)).toEqual(['FLM', 'FLM'])
+})

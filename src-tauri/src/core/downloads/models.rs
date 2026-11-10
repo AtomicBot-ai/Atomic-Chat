@@ -67,6 +67,15 @@ pub struct DownloadItem {
     /// bytes already on disk are kept. Without it the URL itself is the key.
     #[serde(default)]
     pub resume_key: Option<String>,
+    /// Native-only Hugging Face authorization. It is never deserialized, persisted or logged.
+    #[serde(skip)]
+    pub hf_authorization: Option<HuggingFaceAuthorization>,
+}
+
+#[derive(Clone)]
+pub struct HuggingFaceAuthorization(pub String);
+impl std::fmt::Debug for HuggingFaceAuthorization {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str("<redacted>") }
 }
 
 impl DownloadItem {

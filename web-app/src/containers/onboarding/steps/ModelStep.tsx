@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { EngineManager } from '@janhq/core'
 import { ArrowRight, Check, Laptop, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
@@ -69,10 +69,13 @@ export function ModelStep({ next }: StepProps) {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
   const choice = useOnboardingStore((state) => state.choice)
-  // What is on the machine is preselected; otherwise the best fit is.
-  const [pickedKey, setPickedKey] = useState<string | null>(null)
-  // Once a row is picked (here, or earlier in the run), a hardware probe that
-  // answers late no longer replaces the recommendation under it.
+  const savedKey = useOnboardingStore((state) => state.selectedModelKey)
+  // Earlier QA builds offered FLM here. Their selection must not block the restored onboarding.
+  const pickedKey =
+    savedKey?.startsWith('fastflowlm:') ||
+    savedKey?.startsWith('library:fastflowlm:')
+      ? null
+      : savedKey
   const options = useModelOptions({
     keepRecommendation: pickedKey !== null || choice !== null,
   })
@@ -81,14 +84,17 @@ export function ModelStep({ next }: StepProps) {
     () => [...options.onDevice, ...options.recommended, ...options.huggingFace],
     [options.onDevice, options.recommended, options.huggingFace]
   )
-
   const chosenKey = choice
-    ? all.find((option) =>
-        option.matchIds.some((id) => choice.matchIds.includes(id))
+    ? all.find(
+        (option) =>
+          option.provider === choice.provider &&
+          option.matchIds.some((id) => choice.matchIds.includes(id))
       )?.key
     : undefined
-  const selected =
-    all.find((option) => option.key === (pickedKey ?? chosenKey)) ?? all[0]
+  const selected = pickedKey
+    ? all.find((option) => option.key === pickedKey)
+    : (all.find((option) => option.key === chosenKey) ?? all[0])
+  const unavailableSelection = pickedKey !== null && !selected
 
   // Detected models land in the library whichever way the step is left.
   const detectedRef = useRef(options.detected)
@@ -271,15 +277,16 @@ export function ModelStep({ next }: StepProps) {
     return true
   }
 
-  const proceed = () => {
+  const proceed = async () => {
+    if (unavailableSelection) return
     if (!selected) {
       next('no_model')
       return
     }
     const store = useOnboardingStore.getState()
     const alreadyChosen =
-      store.choice?.matchIds.some((id) => selected.matchIds.includes(id)) ??
-      false
+      store.choice?.provider === selected.provider &&
+      store.choice.matchIds.some((id) => selected.matchIds.includes(id))
     if (alreadyChosen) {
       next('continue')
       return
@@ -359,7 +366,9 @@ export function ModelStep({ next }: StepProps) {
         role="radio"
         aria-checked={checked}
         className="ob-model"
-        onClick={() => setPickedKey(option.key)}
+        onClick={() => {
+          useOnboardingStore.getState().selectModelOption(option.key)
+        }}
       >
         <span className="ob-model-icon">
           <OptionIcon option={option} />
@@ -467,6 +476,11 @@ export function ModelStep({ next }: StepProps) {
                 options.huggingFace
               )}
           </div>
+          {unavailableSelection && (
+            <p role="alert" className="ob-note">
+              {t('hub:fastflowlm.selectionUnavailable')}
+            </p>
+          )}
           <div className="ob-model-actionbar">
             <div>
               {selected && (
@@ -483,7 +497,12 @@ export function ModelStep({ next }: StepProps) {
                 </>
               )}
             </div>
-            <button type="button" className="ob-primary" onClick={proceed}>
+            <button
+              type="button"
+              className="ob-primary"
+              disabled={unavailableSelection}
+              onClick={proceed}
+            >
               {continueLabel}
               <ArrowRight size={17} aria-hidden="true" />
             </button>

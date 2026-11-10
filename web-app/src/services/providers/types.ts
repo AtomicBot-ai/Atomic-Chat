@@ -21,7 +21,9 @@ export type EndpointCheckResult = {
 }
 
 export interface ProvidersService {
-  getProviders(): Promise<ModelProvider[]>
+  getProviders(
+    onSettings?: (provider: ModelProvider) => void
+  ): Promise<ModelProvider[]>
   fetchModelsFromProvider(provider: ModelProvider): Promise<string[]>
   checkProviderEndpoint(provider: ModelProvider): Promise<EndpointCheckResult>
   /**
@@ -32,6 +34,9 @@ export interface ProvidersService {
     provider: ModelProvider,
     url: string
   ): Promise<EndpointCheckResult>
-  updateSettings(providerName: string, settings: ProviderSetting[]): Promise<void>
+  updateSettings(
+    providerName: string,
+    settings: ProviderSetting[]
+  ): Promise<void>
   fetch(): typeof fetch
 }

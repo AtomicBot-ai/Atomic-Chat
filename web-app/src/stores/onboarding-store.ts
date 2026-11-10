@@ -44,6 +44,7 @@ type OnboardingData = {
   step: OnboardingStepId | null
   startedAt: number | null
   choice: OnboardingChoice | null
+  selectedModelKey: string | null
   jobs: OnboardingJob[]
   permissions: Partial<Record<string, OnboardingPermissionResult>>
   /**
@@ -62,6 +63,7 @@ type OnboardingState = OnboardingData & {
   begin: (variant: OnboardingVariant, step: OnboardingStepId) => void
   goTo: (step: OnboardingStepId) => void
   choose: (choice: OnboardingChoice | null) => void
+  selectModelOption: (key: string) => void
   /**
    * Adds a job — a chat model at the front, anything else at the end — or
    * replaces the one with the same key in its place.
@@ -87,6 +89,7 @@ const initialData: OnboardingData = {
   step: null,
   startedAt: null,
   choice: null,
+  selectedModelKey: null,
   jobs: [],
   permissions: {},
   clouds: [],
@@ -107,6 +110,7 @@ export const useOnboardingStore = create<OnboardingState>()(
         ),
       goTo: (step) => set({ step }),
       choose: (choice) => set({ choice }),
+      selectModelOption: (selectedModelKey) => set({ selectedModelKey }),
       enqueue: (job) =>
         set((state) => {
           const index = state.jobs.findIndex(
@@ -164,13 +168,28 @@ export const useOnboardingStore = create<OnboardingState>()(
     {
       name: localStorageKey.onboarding,
       storage: createJSONStorage(() => localStorage),
-      version: 1,
+      version: 2,
+      migrate: (persisted) => {
+        const saved = persisted as OnboardingData & {
+          modelEngine?: string
+          modelSelections?: Record<string, string>
+        }
+        const { modelEngine, modelSelections, ...state } = saved
+        return {
+          ...state,
+          selectedModelKey:
+            saved.selectedModelKey ??
+            (modelEngine ? modelSelections?.[modelEngine] : null) ??
+            null,
+        }
+      },
       partialize: (state): OnboardingData => ({
         variant: state.variant,
         phase: state.phase,
         step: state.step,
         startedAt: state.startedAt,
         choice: state.choice,
+        selectedModelKey: state.selectedModelKey,
         jobs: state.jobs,
         permissions: state.permissions,
         clouds: state.clouds,

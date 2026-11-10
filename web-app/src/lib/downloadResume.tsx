@@ -1,3 +1,6 @@
+import { useModelProvider } from '@/hooks/useModelProvider'
+import { isFastFlowLmDownloadId } from '@/lib/fastflowlm/download-id'
+import { resumeFastFlowLmDownload } from '@/services/fastflowlm/install'
 import { IconCheck } from '@tabler/icons-react'
 import { toast } from 'sonner'
 
@@ -37,6 +40,21 @@ export function resumeDownload(
     useDownloadStore.getState()
   const imageCatalog = useImageGenerationStore.getState().catalog
   const huggingfaceToken = useGeneralSetting.getState().huggingfaceToken
+
+  if (isFastFlowLmDownloadId(download.id)) {
+    clearPausedDownload(download.id)
+    markResumableDownload(download.id)
+    void resumeFastFlowLmDownload(download.id, huggingfaceToken)
+      .then(async () => {
+        useModelProvider
+          .getState()
+          .setProviders(await serviceHub.providers().getProviders())
+      })
+      .catch((error) => {
+        toast.error(String(error))
+      })
+    return
+  }
 
   const savedDiffusion = readDiffusionDownloadRequest(download.id)
   const diffusionTarget = savedDiffusion ? {

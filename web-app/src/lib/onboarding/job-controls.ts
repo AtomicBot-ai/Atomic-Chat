@@ -1,3 +1,4 @@
+import { isFastFlowLmDownloadId } from '@/lib/fastflowlm/download-id'
 /**
  * Pause, Resume and Retry for a first run's downloads, shared by the run's
  * strip (setup screen and handoff panel) and the composer's model picker, so
@@ -65,7 +66,7 @@ export function resumeOnboardingJob(
  */
 export function resumeChatJob(job: OnboardingJob, deps: ControlDeps): boolean {
   const store = useDownloadStore.getState()
-  if (!store.resumeParams[job.taskId]) {
+  if (!isFastFlowLmDownloadId(job.taskId) && !store.resumeParams[job.taskId]) {
     const known = knownResumeParams.get(job.taskId)
     if (!known) return false
     store.setResumeParams(job.taskId, known)

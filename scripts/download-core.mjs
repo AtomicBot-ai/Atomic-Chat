@@ -9,7 +9,7 @@
 //
 //   node scripts/download-core.mjs                 # the version pinned in package.json
 //   node scripts/download-core.mjs --version 0.2.0 # an explicit one
-//   ATOMIC_CORE_LOCAL=/path/to/cli ATOMIC_APP_CORE_LOCAL=/path/to/app-core node scripts/download-core.mjs
+//   ATOMIC_CORE_VERSION=0.22.0 ATOMIC_CORE_LOCAL=/path/to/cli ATOMIC_APP_CORE_LOCAL=/path/to/app-core node scripts/download-core.mjs
 //
 // `SKIP_BINARIES=1` skips it, matching `download-bin.mjs`.
 import { createHash } from 'node:crypto'
@@ -25,7 +25,7 @@ const CACHE_DIR = path.join(ROOT, 'scripts/dist/core')
 const pkg = JSON.parse(readFileSync(path.join(ROOT, 'package.json'), 'utf8'))
 const CONFIG = pkg.atomicCore ?? {}
 const argVersion = process.argv.indexOf('--version')
-const VERSION = argVersion > -1 ? process.argv[argVersion + 1] : (CONFIG.version ?? '')
+const VERSION = argVersion > -1 ? process.argv[argVersion + 1] : (process.env.ATOMIC_CORE_VERSION ?? CONFIG.version ?? '')
 const REPO = CONFIG.repo ?? 'AtomicBot-ai/atomic-chat-core'
 const BASE = CONFIG.baseUrl ?? `https://github.com/${REPO}/releases/download/v${VERSION}`
 
@@ -85,10 +85,14 @@ async function main() {
   const locals = [process.env.ATOMIC_CORE_LOCAL, process.env.ATOMIC_APP_CORE_LOCAL]
   if (locals.some(Boolean)) {
     if (locals.some((path) => !path)) throw new Error('Set ATOMIC_CORE_LOCAL and ATOMIC_APP_CORE_LOCAL together')
+    // Validate the whole pair before replacing either bundled binary.
+    for (const local of locals) {
+      if (!existsSync(local)) throw new Error(`Local core binary does not exist: ${local}`)
+      verifyBinaryVersion(local)
+    }
     for (const [index, name] of names.entries()) {
       const local = locals[index]
       const output = path.join(BIN_DIR, outputName(name))
-      if (!existsSync(local)) throw new Error(`Local core binary does not exist: ${local}`)
       copyFileSync(local, output)
       if (process.platform !== 'win32') chmodSync(output, 0o755)
       verifyBinaryVersion(output)

@@ -139,5 +139,23 @@
   "prismSetupPlanChanged": "Plán se změnil, zatímco jste ho prohlíželi. Zkontrolujte ho a začněte znovu.",
   "prismSetupStart": "Nainstalovat",
   "prismStage_installing_engine": "Instalace enginu PrismML",
-  "prismCurated": "Modely Bonsai pro PrismML"
+  "prismCurated": "Modely Bonsai pro PrismML",
+  "fastflowlm": {
+    "catalog": "All FastFlowLM models",
+    "install": "Download",
+    "resume": "Resume",
+    "setup": "Set up FastFlowLM",
+    "checking": "Checking compatibility…",
+    "qualification": "Listed by upstream; hardware compatibility depends on this computer.",
+    "installed": "Installed",
+    "gated": "Accept the model license on Hugging Face and add your token in Settings.",
+    "license": "License",
+    "context": "Context",
+    "download": "Download size",
+    "update": "Update model",
+    "setToken": "Set Hugging Face token",
+    "selectionUnavailable": "The selected model is unavailable in this catalog. Choose another model.",
+    "checkFailed": "Could not check the FastFlowLM model. Try again.",
+    "installingEngine": "Installing FastFlowLM…"
+  }
 }
