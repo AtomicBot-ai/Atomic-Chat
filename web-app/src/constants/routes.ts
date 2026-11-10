@@ -8,6 +8,7 @@ export const route = {
   projectDetail: '/project/$projectId',
   settings: {
     index: '/settings',
+    account: '/settings/account',
     model_providers: '/settings/providers',
     providers: '/settings/providers/$providerName',
     general: '/settings/general',

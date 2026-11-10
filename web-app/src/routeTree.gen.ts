@@ -39,6 +39,7 @@ import { Route as SettingsGeneralRouteImport } from './routes/settings/general'
 import { Route as SettingsExtensionsRouteImport } from './routes/settings/extensions'
 import { Route as SettingsAttachmentsRouteImport } from './routes/settings/attachments'
 import { Route as SettingsAssistantRouteImport } from './routes/settings/assistant'
+import { Route as SettingsAccountRouteImport } from './routes/settings/account'
 import { Route as ProjectProjectIdRouteImport } from './routes/project/$projectId'
 import { Route as LocalApiServerLogsRouteImport } from './routes/local-api-server/logs'
 import { Route as ImagesWorkflowRouteImport } from './routes/images/$workflow'
@@ -199,6 +200,11 @@ const SettingsAssistantRoute = SettingsAssistantRouteImport.update({
   path: '/settings/assistant',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SettingsAccountRoute = SettingsAccountRouteImport.update({
+  id: '/settings/account',
+  path: '/settings/account',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProjectProjectIdRoute = ProjectProjectIdRouteImport.update({
   id: '/project/$projectId',
   path: '/project/$projectId',
@@ -259,6 +265,7 @@ export interface FileRoutesByFullPath {
   '/images/$workflow': typeof ImagesWorkflowRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
+  '/settings/account': typeof SettingsAccountRoute
   '/settings/assistant': typeof SettingsAssistantRoute
   '/settings/attachments': typeof SettingsAttachmentsRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
@@ -300,6 +307,7 @@ export interface FileRoutesByTo {
   '/images/$workflow': typeof ImagesWorkflowRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
+  '/settings/account': typeof SettingsAccountRoute
   '/settings/assistant': typeof SettingsAssistantRoute
   '/settings/attachments': typeof SettingsAttachmentsRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
@@ -342,6 +350,7 @@ export interface FileRoutesById {
   '/images/$workflow': typeof ImagesWorkflowRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
+  '/settings/account': typeof SettingsAccountRoute
   '/settings/assistant': typeof SettingsAssistantRoute
   '/settings/attachments': typeof SettingsAttachmentsRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
@@ -385,6 +394,7 @@ export interface FileRouteTypes {
     | '/images/$workflow'
     | '/local-api-server/logs'
     | '/project/$projectId'
+    | '/settings/account'
     | '/settings/assistant'
     | '/settings/attachments'
     | '/settings/extensions'
@@ -426,6 +436,7 @@ export interface FileRouteTypes {
     | '/images/$workflow'
     | '/local-api-server/logs'
     | '/project/$projectId'
+    | '/settings/account'
     | '/settings/assistant'
     | '/settings/attachments'
     | '/settings/extensions'
@@ -467,6 +478,7 @@ export interface FileRouteTypes {
     | '/images/$workflow'
     | '/local-api-server/logs'
     | '/project/$projectId'
+    | '/settings/account'
     | '/settings/assistant'
     | '/settings/attachments'
     | '/settings/extensions'
@@ -509,6 +521,7 @@ export interface RootRouteChildren {
   ImagesWorkflowRoute: typeof ImagesWorkflowRoute
   LocalApiServerLogsRoute: typeof LocalApiServerLogsRoute
   ProjectProjectIdRoute: typeof ProjectProjectIdRoute
+  SettingsAccountRoute: typeof SettingsAccountRoute
   SettingsAssistantRoute: typeof SettingsAssistantRoute
   SettingsAttachmentsRoute: typeof SettingsAttachmentsRoute
   SettingsExtensionsRoute: typeof SettingsExtensionsRoute
@@ -750,6 +763,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsAssistantRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/settings/account': {
+      id: '/settings/account'
+      path: '/settings/account'
+      fullPath: '/settings/account'
+      preLoaderRoute: typeof SettingsAccountRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/project/$projectId': {
       id: '/project/$projectId'
       path: '/project/$projectId'
@@ -829,6 +849,7 @@ const rootRouteChildren: RootRouteChildren = {
   ImagesWorkflowRoute: ImagesWorkflowRoute,
   LocalApiServerLogsRoute: LocalApiServerLogsRoute,
   ProjectProjectIdRoute: ProjectProjectIdRoute,
+  SettingsAccountRoute: SettingsAccountRoute,
   SettingsAssistantRoute: SettingsAssistantRoute,
   SettingsAttachmentsRoute: SettingsAttachmentsRoute,
   SettingsExtensionsRoute: SettingsExtensionsRoute,

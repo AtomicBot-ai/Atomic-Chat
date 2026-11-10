@@ -254,6 +254,19 @@ pub fn run() {
         core::mcp::oauth::mcp_oauth_login,
         core::mcp::oauth::mcp_oauth_cancel,
         core::mcp::oauth::mcp_oauth_logout,
+        // Atomic Chat account (desktop only for now)
+        core::account::commands::account_status,
+        core::account::commands::account_providers,
+        core::account::commands::account_email_start,
+        core::account::commands::account_email_verify,
+        core::account::commands::account_google_login,
+        core::account::commands::account_cancel_login,
+        core::account::commands::account_logout,
+        core::account::commands::account_profile,
+        core::account::commands::account_update_profile,
+        core::account::commands::account_sessions,
+        core::account::commands::account_revoke_session,
+        core::account::commands::account_delete,
         // Threads
         core::threads::commands::list_threads,
         core::threads::commands::create_thread,
@@ -513,6 +526,7 @@ pub fn run() {
         // The last TensorRT-LLM models root the core named (outside the data folder on Windows).
         .manage(core::filesystem::model_roots::CoreModelRoot::default())
         .manage(core::chat_exec::ChatExecState::default())
+        .manage(core::account::AccountState::default())
         .manage(AppState {
             app_token: Some(generate_app_token()),
             mcp_servers: Arc::new(Mutex::new(HashMap::new())),

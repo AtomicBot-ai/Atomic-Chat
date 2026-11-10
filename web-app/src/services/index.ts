@@ -23,6 +23,7 @@ import { DefaultAssistantsService } from './assistants/default'
 import { DefaultDialogService } from './dialog/default'
 import { DefaultOpenerService } from './opener/default'
 import { DefaultAuthService } from './auth/default'
+import { DefaultAccountService } from './account/default'
 import { DefaultUpdaterService } from './updater/default'
 import { DefaultPathService } from './path/default'
 import { DefaultCoreService } from './core/default'
@@ -65,6 +66,7 @@ import type { AssistantsService } from './assistants/types'
 import type { DialogService } from './dialog/types'
 import type { OpenerService } from './opener/types'
 import type { AuthService } from './auth/types'
+import type { AccountService } from './account/types'
 import type { UpdaterService } from './updater/types'
 import type { PathService } from './path/types'
 import type { CoreService } from './core/types'
@@ -88,6 +90,7 @@ export interface ServiceHub {
   dialog(): DialogService
   opener(): OpenerService
   auth(): AuthService
+  account(): AccountService
   updater(): UpdaterService
   path(): PathService
   core(): CoreService
@@ -121,6 +124,7 @@ class PlatformServiceHub implements ServiceHub {
   private dialogService: DialogService = new DefaultDialogService()
   private openerService: OpenerService = new DefaultOpenerService()
   private authService: AuthService = new DefaultAuthService()
+  private accountService: AccountService = new DefaultAccountService()
   private updaterService: UpdaterService = new DefaultUpdaterService()
   private pathService: PathService = new DefaultPathService()
   private coreService: CoreService = new DefaultCoreService()
@@ -165,6 +169,7 @@ class PlatformServiceHub implements ServiceHub {
           dialogModule,
           openerModule,
           authModule,
+          accountModule,
           updaterModule,
           pathModule,
           coreModule,
@@ -188,6 +193,7 @@ class PlatformServiceHub implements ServiceHub {
           import('./dialog/tauri'),
           import('./opener/tauri'),
           import('./auth/tauri'),
+          import('./account/tauri'),
           import('./updater/tauri'),
           import('./path/tauri'),
           import('./core/tauri'),
@@ -212,6 +218,7 @@ class PlatformServiceHub implements ServiceHub {
         this.dialogService = new dialogModule.TauriDialogService()
         this.openerService = new openerModule.TauriOpenerService()
         this.authService = new authModule.TauriAuthService()
+        this.accountService = new accountModule.TauriAccountService()
         this.updaterService = new updaterModule.TauriUpdaterService()
         this.pathService = new pathModule.TauriPathService()
         this.coreService = new coreModule.TauriCoreService()
@@ -354,6 +361,10 @@ class PlatformServiceHub implements ServiceHub {
 
   auth(): AuthService {
     return this.authService
+  }
+
+  account(): AccountService {
+    return this.accountService
   }
 
   updater(): UpdaterService {

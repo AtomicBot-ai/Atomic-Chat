@@ -95,4 +95,8 @@ export enum PlatformFeature {
   // Running terminal commands and scripts from chat. Needs native process
   // spawning, so desktop only.
   CHAT_EXEC = 'chatExec',
+
+  // Signing in to an Atomic Chat account (email code or Google). The Rust
+  // side keeps the session; unfinished, so dev desktop builds only.
+  ACCOUNTS = 'accounts',
 }

@@ -159,6 +159,8 @@ const platform = vi.hoisted(() => ({
   audioGeneration: false,
   localApiServer: true,
   httpsProxy: true,
+  // The rail's account item has its own suite (NavigationRail.test.tsx).
+  accounts: false,
 }))
 vi.mock('@/lib/platform/const', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/platform/const')>()

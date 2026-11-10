@@ -28,10 +28,12 @@ pub const JAN_DATA_SUBDIRS: &[&str] = &[
 ];
 
 /// Files at the data folder's top level that a factory reset removes: the MCP configuration and
-/// OAuth tokens, the agent's approval allowlist, the ChatGPT subscription's tokens, the Local API
-/// server's last address for the CLI, and `store.json`, where the app records its migrations.
+/// OAuth tokens, the agent's approval allowlist, the Atomic Chat account session, the ChatGPT
+/// subscription's tokens, the Local API server's last address for the CLI, and `store.json`, where
+/// the app records its migrations.
 pub const JAN_DATA_FILES: &[&str] = &[
     "agent-approval-allowlist.json",
+    "atomic-account.json",
     "atomic-chatgpt-auth.json",
     "atomic-mcp-oauth.json",
     "local-api-server.json",
@@ -67,6 +69,7 @@ mod tests {
             );
         }
         for file in [
+            "atomic-account.json",
             "atomic-chatgpt-auth.json",
             "atomic-mcp-oauth.json",
             "mcp_config.json",

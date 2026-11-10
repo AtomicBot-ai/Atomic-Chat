@@ -112,4 +112,12 @@ export const PlatformFeatures: Record<PlatformFeature, boolean> = {
   // Commands and scripts from chat — desktop platforms only.
   [PlatformFeature.CHAT_EXEC]:
     isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid(),
+
+  // Atomic Chat account sign-in — desktop only, and dev builds only while it
+  // is unfinished.
+  [PlatformFeature.ACCOUNTS]:
+    import.meta.env.DEV &&
+    isPlatformTauri() &&
+    !isPlatformIOS() &&
+    !isPlatformAndroid(),
 }

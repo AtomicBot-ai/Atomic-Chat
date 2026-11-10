@@ -1,8 +1,9 @@
-import { useState, type ReactNode } from 'react'
-import { Link } from '@tanstack/react-router'
+import { useEffect, useState, type ReactNode } from 'react'
+import { Link, useLocation } from '@tanstack/react-router'
 import {
   Blocks,
   CircleHelp,
+  CircleUserRound,
   Github,
   Mail,
   MessageCircle,
@@ -11,7 +12,7 @@ import {
 } from 'lucide-react'
 import { IconBrandDiscord } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
-import type { NavigationSection } from '@/lib/navigation'
+import { isPathActive, type NavigationSection } from '@/lib/navigation'
 import { route } from '@/constants/routes'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useServiceHub } from '@/hooks/useServiceHub'
@@ -28,6 +29,11 @@ import {
 } from '@/components/ui/popover'
 import { SupportChatSheet } from '@/containers/support/SupportChatSheet'
 import { useSupportChatStore } from '@/stores/support-chat-store'
+import { AccountAvatar } from '@/containers/account/AccountAvatar'
+import { useAccountStore } from '@/stores/account-store'
+import { accountLabel } from '@/lib/account'
+import { PlatformFeatures } from '@/lib/platform/const'
+import { PlatformFeature } from '@/lib/platform/types'
 
 const DISCORD_URL = 'https://discord.com/invite/8wGSsvmg4V'
 const NEW_ISSUE_URL = 'https://github.com/AtomicBot-ai/Atomic-Chat/issues/new'
@@ -35,6 +41,9 @@ const SUPPORT_EMAIL = 'mailto:support@atomic.chat'
 
 const railButton =
   'flex size-10 items-center justify-center rounded-xl text-sidebar-foreground/60 transition-colors hover:bg-sidebar-foreground/8 hover:text-sidebar-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+
+const railButtonActive =
+  'bg-sidebar-foreground/15 text-sidebar-foreground shadow-xs'
 
 const helpItem =
   'flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm hover:bg-foreground/8 focus-visible:bg-foreground/8 focus-visible:outline-none [&>svg]:shrink-0 [&>svg]:opacity-70'
@@ -45,6 +54,11 @@ export function NavigationRail({ section }: { section: NavigationSection }) {
   const [helpOpen, setHelpOpen] = useState(false)
   const setSupportOpen = useSupportChatStore((state) => state.setSheetOpen)
   const { setOpen, setOpenMobile, isMobile } = useSidebar()
+  const { pathname } = useLocation()
+  const accountsEnabled = PlatformFeatures[PlatformFeature.ACCOUNTS]
+  // The account page sits under Settings, but the account item is the one lit.
+  const onAccount =
+    accountsEnabled && isPathActive(pathname, route.settings.account)
   // Picking a section always shows its sidebar, even if it was collapsed.
   const reveal = () => (isMobile ? setOpenMobile(true) : setOpen(true))
 
@@ -62,21 +76,18 @@ export function NavigationRail({ section }: { section: NavigationSection }) {
     id: NavigationSection,
     label: string,
     to: string,
-    icon: ReactNode
+    icon: ReactNode,
+    active = section === id
   ) => (
     <Tooltip key={id}>
       <TooltipTrigger asChild>
         <Link
           to={to}
           aria-label={label}
-          aria-current={section === id ? 'page' : undefined}
+          aria-current={active ? 'page' : undefined}
           data-testid={`rail-${id}`}
           onClick={reveal}
-          className={cn(
-            railButton,
-            section === id &&
-              'bg-sidebar-foreground/15 text-sidebar-foreground shadow-xs'
-          )}
+          className={cn(railButton, active && railButtonActive)}
         >
           {icon}
         </Link>
@@ -129,6 +140,9 @@ export function NavigationRail({ section }: { section: NavigationSection }) {
         )}
       </div>
       <div className="mt-auto flex flex-col gap-2">
+        {accountsEnabled && (
+          <AccountRailItem active={onAccount} onPick={reveal} />
+        )}
         <Popover open={helpOpen} onOpenChange={setHelpOpen}>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -204,11 +218,68 @@ export function NavigationRail({ section }: { section: NavigationSection }) {
           'settings',
           t('common:settings'),
           route.settings.general,
-          <Settings size={20} strokeWidth={1.7} />
+          <Settings size={20} strokeWidth={1.7} />,
+          section === 'settings' && !onAccount
         )}
       </div>
       {/* Portalled to the body; mounted here with the menu that opens it. */}
       <SupportChatSheet />
     </nav>
+  )
+}
+
+/**
+ * The account entry at the top of the rail's bottom group: the avatar once
+ * signed in, a "Sign in" person icon before. It is always mounted, so it is
+ * what reads the account status and starts following its changes.
+ */
+function AccountRailItem({
+  active,
+  onPick,
+}: {
+  active: boolean
+  onPick: () => void
+}) {
+  const { t } = useTranslation()
+  const status = useAccountStore((state) => state.status)
+  const hydrate = useAccountStore((state) => state.hydrate)
+
+  useEffect(() => {
+    void hydrate()
+  }, [hydrate])
+
+  const user = status.signedIn ? status.user : null
+  const tooltip = user ? accountLabel(user) : t('common:navigation.signIn')
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Link
+          to={route.settings.account}
+          aria-label={
+            user
+              ? t('common:navigation.account')
+              : t('common:navigation.signIn')
+          }
+          aria-current={active ? 'page' : undefined}
+          data-testid="rail-account"
+          onClick={onPick}
+          className={cn(railButton, active && railButtonActive)}
+        >
+          {user ? (
+            <AccountAvatar
+              user={user}
+              className="size-7"
+              fallbackClassName="text-xs"
+            />
+          ) : (
+            <CircleUserRound size={20} strokeWidth={1.7} />
+          )}
+        </Link>
+      </TooltipTrigger>
+      <TooltipContent side="right" sideOffset={12}>
+        {tooltip}
+      </TooltipContent>
+    </Tooltip>
   )
 }
