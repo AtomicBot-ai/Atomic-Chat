@@ -1046,10 +1046,16 @@ export default class llamacpp_upstream_extension extends AIEngine {
         ?.trim()
       const macHostVariant = IS_MAC ? hostVariant : undefined
       // Windows and Linux on ARM ship `win-cpu-arm64` / `linux-cpu-arm64` as
-      // their bundled build, so the arch is read off it the same way.
+      // their bundled build, so the arch is read off it the same way. Keep
+      // these lists in step with the core's `staticLatestVariants`.
       const localStaticVariants: string[] = IS_WINDOWS
         ? hostVariant?.endsWith('-arm64')
-          ? ['win-cpu-arm64', 'win-opencl-adreno-arm64', 'win-cuda-13-arm64']
+          ? [
+              'win-cpu-arm64',
+              'win-opencl-adreno-arm64',
+              'win-cuda-13-arm64',
+              'win-vulkan-arm64',
+            ]
           : [
               'win-cpu-x64',
               'win-cuda-12-x64',
@@ -1060,7 +1066,13 @@ export default class llamacpp_upstream_extension extends AIEngine {
         : IS_LINUX
           ? hostVariant?.endsWith('-arm64')
             ? ['linux-cpu-arm64', 'linux-vulkan-arm64', 'linux-cuda-13-arm64']
-            : ['linux-cpu-x64', 'linux-vulkan-x64']
+            : [
+                'linux-cpu-x64',
+                'linux-cuda-12-x64',
+                'linux-cuda-13-x64',
+                'linux-rocm-10.0-x64',
+                'linux-vulkan-x64',
+              ]
           : macHostVariant === 'macos-arm64'
             ? [macHostVariant]
             : []
@@ -2676,10 +2688,13 @@ export default class llamacpp_upstream_extension extends AIEngine {
     // are named `llama-bXXXX-bin-ubuntu-{vulkan,}-x64.tar.gz` on Linux, but
     // the extension stores backends under `linux-vulkan-x64` / `linux-cpu-x64`
     // so that backend resolution — here and in the core — finds them by the
-    // correct internal id. The arm64 CUDA 13 tarball keeps its CUDA id.
+    // correct internal id. The CUDA tarballs (x64 CUDA 12 / 13, arm64 CUDA 13)
+    // and the ROCm one keep their GPU id.
     const backendIdentifier =
       IS_LINUX && rawBackendIdentifier.startsWith('ubuntu-')
-        ? /^ubuntu-cuda-13\.\d+-arm64$/.test(rawBackendIdentifier)
+        ? /^ubuntu-(cuda-(12|13)\.\d+-(x64|arm64)|rocm-10\.0-x64)$/.test(
+            rawBackendIdentifier
+          )
           ? rawBackendIdentifier.replace(/^ubuntu-/, 'linux-')
           : rawBackendIdentifier.includes('vulkan')
             ? `linux-vulkan-${rawBackendIdentifier.includes('arm64') ? 'arm64' : 'x64'}`

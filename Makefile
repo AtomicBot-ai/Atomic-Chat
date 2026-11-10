@@ -1119,7 +1119,7 @@ else ifeq ($(OS),Windows_NT)
 		echo "Using manually specified backend: $$BACKEND"; \
 	elif [ "$$IS_ARM64" = "true" ]; then \
 		BACKEND="win-cpu-arm64"; \
-		echo "Windows ARM64 host: bundling $$BACKEND (OpenCL Adreno / CUDA are picked at runtime)"; \
+		echo "Windows ARM64 host: bundling $$BACKEND (OpenCL Adreno / CUDA / Vulkan are picked at runtime)"; \
 	else \
 		NV_DRIVER=$$(powershell -NoProfile -Command "try { $$g = Get-CimInstance Win32_VideoController -EA Stop | Where-Object { $$_.Name -match 'NVIDIA' } | Select-Object -First 1; if($$g -and $$g.DriverVersion){ $$r = $$g.DriverVersion -replace '\\.','' ; if($$r.Length -ge 5){ $$nv=$$r.Substring($$r.Length-5); $$maj=$$nv.Substring(0,3).TrimStart('0'); $$min=$$nv.Substring(3,2); if(-not $$maj){$$maj='0'}; Write-Output \"$$maj.$$min\" } } } catch {}" 2>/dev/null); \
 		HAS_VULKAN=$$(powershell -NoProfile -Command "if(Test-Path \"$$env:SystemRoot\\System32\\vulkan-1.dll\"){'true'}else{'false'}" 2>/dev/null); \
@@ -1169,7 +1169,7 @@ else ifeq ($(shell uname -s),Linux)
 	@mkdir -p src-tauri/resources/llamacpp-backend-upstream
 	@# Upstream remains the Linux default and bundles its CPU-only build
 	@# for the host arch. NVIDIA / AMD / Intel users
-	@# get `linux-vulkan-*` (and on arm64 `linux-cuda-13.*-arm64`) at runtime
+	@# get `linux-cuda-*`, `linux-rocm-*` or `linux-vulkan-*` at runtime
 	@# through the "Find optimal backend" flow — we deliberately do NOT
 	@# auto-detect GPU at build time, since the bundled artefact is meant to
 	@# be the offline fallback that works on any host.
