@@ -15,6 +15,7 @@ describe('vendored engine lists', () => {
       'foundry-local',
       'litert-lm',
       'geniex',
+      'fastflowlm',
       'tensorrt-llm',
       'vllm',
       'sglang',
@@ -37,6 +38,12 @@ describe('vendored engine lists', () => {
     expect(ENGINE_IDS.indexOf('geniex')).toBe(ENGINE_IDS.indexOf('litert-lm') + 1)
     expect(ENGINE_KINDS['geniex']).toBe('engine-build')
     expect(ENGINE_UPDATE_ORDER.indexOf('geniex')).toBe(ENGINE_UPDATE_ORDER.indexOf('litert-lm') + 1)
+  })
+
+  it('lists FastFlowLM as an engine build right after GenieX, in the banner’s order too', () => {
+    expect(ENGINE_IDS.indexOf('fastflowlm')).toBe(ENGINE_IDS.indexOf('geniex') + 1)
+    expect(ENGINE_KINDS['fastflowlm']).toBe('engine-build')
+    expect(ENGINE_UPDATE_ORDER.indexOf('fastflowlm')).toBe(ENGINE_UPDATE_ORDER.indexOf('geniex') + 1)
   })
 
   it('offers a Foundry Local update in the engine banner’s order', () => {

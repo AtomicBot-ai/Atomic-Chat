@@ -36,6 +36,7 @@ export const ENGINE_UPDATE_ORDER: readonly EngineId[] = [
   'foundry-local',
   'litert-lm',
   'geniex',
+  'fastflowlm',
   'tensorrt-llm',
   'vllm',
   'sglang',

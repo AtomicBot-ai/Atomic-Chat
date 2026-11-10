@@ -215,3 +215,17 @@ it('migrates the QA engine selection to its selected model without losing onboar
   })
   expect(saved()).not.toHaveProperty('modelEngine')
 })
+
+it('migrates a pre-FastFlowLM state with no engine choice to no selected model, keeping its jobs', async () => {
+  useOnboardingStore.getState().reset()
+  localStorage.setItem(
+    localStorageKey.onboarding,
+    JSON.stringify({ version: 1, state: { phase: 'active', jobs: [chat] } })
+  )
+  await useOnboardingStore.persist.rehydrate()
+  expect(useOnboardingStore.getState()).toMatchObject({
+    phase: 'active',
+    selectedModelKey: null,
+    jobs: [chat],
+  })
+})

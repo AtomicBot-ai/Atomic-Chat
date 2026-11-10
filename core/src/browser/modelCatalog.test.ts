@@ -4,8 +4,10 @@ import {
   atomicModelCatalogSnapshot,
   atomicModelCatalogStatus,
   clearAtomicModelCatalogCache,
+  configureAtomicModelCatalogSource,
   loadAtomicModelCatalog,
 } from './modelCatalog'
+import { ATOMIC_MODEL_CATALOG_URL } from './catalogProtocol'
 beforeEach(() => {
   const values = new Map<string, string>()
   vi.stubGlobal('localStorage', {
@@ -32,9 +34,9 @@ it('isolates override catalogs from production in memory and persisted storage',
   expect(reloaded.atomicModelCatalogSnapshot({ url })).toEqual(dev)
 })
 
+// The source is configured on the same module instance the loader below uses: a dynamic import
+// after the test above reset the modules would configure a fresh copy the loader never sees.
 it('keeps planners on the configured source without reusing it for explicit production requests', async () => {
-  const { configureAtomicModelCatalogSource } = await import('./modelCatalog')
-  const { ATOMIC_MODEL_CATALOG_URL } = await import('./catalogProtocol')
   const dev = { ...atomicModelCatalogBaseline(), updated_at: '2026-10-01T00:00:00Z' }
   const production = atomicModelCatalogBaseline()
   try {

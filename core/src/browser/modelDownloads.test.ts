@@ -17,6 +17,7 @@ import {
   loadAtomicModelCollection,
 } from './modelCatalog'
 import {
+  ATOMIC_MODEL_CATALOG_URL,
   atomicModelRevision,
   parseAtomicModelCatalog,
   projectAtomicModelCollection,
@@ -251,7 +252,12 @@ describe('unified catalog contract and fallback', () => {
       entry.definition.repo = `moved/${role}`
       entry.definition.revision = B
       file.path = `weights/${role}.gguf`
-      localStorage.setItem('atomic_unified_model_catalog_v1', JSON.stringify({ catalog }))
+      // A cache entry names its source; an unbound one is refused as a possible override.
+      clearAtomicModelCatalogCache()
+      localStorage.setItem(
+        'atomic_unified_model_catalog_v1',
+        JSON.stringify({ url: ATOMIC_MODEL_CATALOG_URL, at: Date.now(), catalog })
+      )
       expect(atomicAuxiliaryModel(id).revision).toBe(B)
       expect(atomicAuxiliaryFile(oldRepo, variant)).toMatchObject({
         repo: `moved/${role}`,
