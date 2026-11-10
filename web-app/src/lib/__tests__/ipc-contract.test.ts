@@ -28,6 +28,15 @@ const EXPECTED_DESKTOP_ONLY = new Set([
   'atomic_core_run_host_step',
   // Restarting Windows or ending the Linux session after a host step that needs it.
   'atomic_core_finish_session_step',
+  // FastFlowLM, the core's AMD NPU runtime: the desktop app owns its model
+  // transfers and publication (the core only checks and guards models), and
+  // runs its privileged host step (installing the AMD NPU driver, or the Linux
+  // memlock limit). Mobile ships neither the core nor an NPU runtime.
+  'atomic_fastflowlm_install_jobs',
+  'atomic_fastflowlm_install_model',
+  'atomic_fastflowlm_recover_mutations',
+  'atomic_fastflowlm_remove_model',
+  'atomic_fastflowlm_run_host_step',
   // ChatGPT subscription sign-in. Desktop only on purpose: the OAuth callback
   // needs a loopback listener on a fixed port, and the refresh token needs a
   // mode-0600 file. `PlatformFeature.CHATGPT_SUBSCRIPTION` gates the UI to

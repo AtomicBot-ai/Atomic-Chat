@@ -93,19 +93,24 @@ it('publishes FLM settings while its model readiness scan is still pending', asy
       },
     ],
   ])
-  const publish = vi.fn()
-  const providers = new TauriProvidersService().getProviders(publish)
+  const published: ModelProvider[] = []
+  const providers = new TauriProvidersService().getProviders((provider) =>
+    published.push({ ...provider })
+  )
   await vi.waitFor(() =>
-    expect(publish).toHaveBeenCalledWith(
-      expect.objectContaining({
+    expect(published).toMatchObject([
+      {
         provider: 'fastflowlm',
         models: [],
-        settings: [expect.objectContaining({ key: 'ctx_len' })],
-      })
-    )
+        settings: [{ key: 'ctx_len', controller_props: { value: 0 } }],
+      },
+    ])
   )
   finish([])
-  await providers
+  // The finished discovery returns the settings it published early.
+  expect(
+    (await providers).find((p) => p.provider === 'fastflowlm')?.settings
+  ).toEqual(published[0].settings)
 })
 
 it('does not overwrite FLM settings edited while its model scan was pending', async () => {
@@ -152,15 +157,15 @@ it('publishes FLM settings even while an earlier engine has not completed discov
       },
     ],
   ])
-  const publish = vi.fn()
-  void new TauriProvidersService().getProviders(publish)
+  const published = new Map<string, ModelProvider>()
+  void new TauriProvidersService().getProviders((provider) => {
+    published.set(provider.provider, { ...provider })
+  })
   await vi.waitFor(() =>
-    expect(publish).toHaveBeenCalledWith(
-      expect.objectContaining({
-        provider: 'fastflowlm',
-        settings: [expect.objectContaining({ key: 'ctx_len' })],
-      })
-    )
+    expect(published.get('fastflowlm')).toMatchObject({
+      models: [],
+      settings: [{ key: 'ctx_len', controller_props: { value: 0 } }],
+    })
   )
 })
 
