@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-532 records, 2026-05-19 → 2026-11-10.
+533 records, 2026-05-19 → 2026-11-10.
 
 ---
 
@@ -356,8 +356,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-10** — [Throttle crashloop `model_load` failure spam client-side; confirm `model_load.status` / api 404-noise are already-fixed-pending-rollout, not code bugs (ATO-130: ATO-133 + ATO-131 + ATO-132)](2026-06-10-throttle-crashloop-model-load-failure-spam-client-side-confirm.md)
 - **2026-06-09** — [Add zero-PII Sentry crash/error tracking to both the React frontend and the Rust/Tauri desktop, gated behind `productAnalytic` (ATO-113)](2026-06-09-add-zero-pii-sentry-crash-error-tracking-to-both-the-react.md)
 
-## Packaging, installers, autostart & platform policy (34)
+## Packaging, installers, autostart & platform policy (35)
 
+- **2026-11-10** — [Sign the Windows ARM64 build on the arm64 runner](2026-11-10-sign-windows-arm64-on-the-arm64-runner.md) — `build-windows-arm64` signs every PE through the same signCommand as x64 (`TAURI_WINDOWS_SIGNTOOL_PATH` points the bundler at signtool); the two x64 signing jobs are gone.
 - **2026-11-10** — [Sign Windows builds with the Azure Key Vault key through GitHub OIDC](2026-11-10-sign-windows-builds-with-azure-key-vault.md) — AzureSignTool replaces DigiCert KeyLocker in every Windows signing step; jobs run in the `codesign` environment with `id-token: write`; `sign.ps1` fetches its token just in time inside `tauri build`. Supersedes the signing tool of 2026-10-22.
 - **2026-11-06** — [Submit every published release to the Microsoft Store](2026-11-06-submit-published-releases-to-the-microsoft-store.md) — `msstore.yml`'s submit job points Partner Center at the uploaded installer, rewrites "What's new" and submits; it skips while another submission is in certification; `make release-prod` follows the run.
 - **2026-10-30** — [Correct the Windows publisher without changing installation identity](2026-10-30-correct-windows-publisher-without-changing-install-identity.md)
