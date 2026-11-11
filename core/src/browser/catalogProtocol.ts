@@ -35,6 +35,7 @@ const fields: Record<string, string> = {
   'litert-lm-models': 'models',
   'geniex-models': 'models',
   'foundry-local-models': 'models',
+  'fastflowlm-models': 'models',
 }
 const record = (v: unknown): v is AtomicCatalogRecord =>
   v !== null && typeof v === 'object' && !Array.isArray(v)

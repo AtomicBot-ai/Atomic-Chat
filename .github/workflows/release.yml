@@ -689,16 +689,32 @@ jobs:
             release-files/*
 
   # ──────────────────────────────────────────────────────────────
-  # Windows  (x86_64 — NSIS + MSI, DigiCert KeyLocker code signing)
+  # Windows  (x86_64 — NSIS + MSI, Azure Key Vault code signing)
   # ──────────────────────────────────────────────────────────────
   build-windows:
     if: github.event_name == 'push' || inputs.build_windows
-    # Pinned to windows-2022 — DigiCert KSP is incompatible with Server 2025
+    # Pinned to windows-2022, the image warm-cache.yml warms this job's Rust
+    # cache on.
     runs-on: windows-2022
     # A green run is ~40min. The ceiling exists so a hung step fails the job in
     # an hour instead of running to GitHub's 6h default.
     timeout-minutes: 75
     needs: create-draft-release
+    # Signs through Azure Key Vault: the code signing app's OIDC federated
+    # credential is bound to this environment, which also holds the AZURE_*
+    # variables. Job-level permissions replace the workflow's; this job only
+    # reads the repository, and the OIDC token is what signs in to Azure.
+    environment: codesign
+    permissions:
+      contents: read
+      id-token: write
+    # Read by src-tauri/sign.ps1 and scripts/ci/get-keyvault-token.ps1, in this
+    # job's steps and inside `tauri build`.
+    env:
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_KEY_VAULT: ${{ vars.AZURE_KEY_VAULT }}
+      AZURE_CODESIGN_CERT: ${{ vars.AZURE_CODESIGN_CERT }}
     outputs:
       # The installers go to upload-windows as this artifact; it uploads them
       # to the draft once gate-windows has passed too.
@@ -755,68 +771,27 @@ jobs:
 
           node scripts/set-cargo-package-version.mjs src-tauri/Cargo.toml "$NEW_VERSION"
 
-      # ── DigiCert KeyLocker setup ──────────────────────────────
-      - name: Setup DigiCert KeyLocker
+      # ── Code signing setup (Azure Key Vault) ──────────────────
+      # The certificate's private key is non-exportable in Azure Key Vault:
+      # AzureSignTool hashes each file here and Key Vault signs the digest.
+      # src-tauri/sign.ps1 signs one file, with an access token it gets just in
+      # time from scripts/ci/get-keyvault-token.ps1 (GitHub OIDC, no stored
+      # secret): the bundler signs near the end of a long `tauri build`, after
+      # a token fetched up front could have expired.
+      - name: Install AzureSignTool
         shell: pwsh
-        env:
-          SM_API_KEY: ${{ secrets.SM_API_KEY }}
-          SM_CLIENT_CERT_FILE_B64: ${{ secrets.SM_CLIENT_CERT_FILE_B64 }}
         run: |
-          $headers = @{ "x-api-key" = $env:SM_API_KEY }
-          $msi = "$env:TEMP\smtools.msi"
           $maxAttempts = 5
           for ($i = 1; $i -le $maxAttempts; $i++) {
-            try {
-              Invoke-WebRequest -Uri "https://one.digicert.com/signingmanager/api-ui/v1/releases/smtools-windows-x64.msi/download" `
-                -Headers $headers -OutFile $msi
-              if ((Get-Item $msi).Length -gt 0) { break }
-              throw "Downloaded file is empty"
-            } catch {
-              Write-Host "smtools download attempt $i/$maxAttempts failed: $($_.Exception.Message)"
-              if ($i -eq $maxAttempts) { throw }
-              Start-Sleep -Seconds ($i * 10)
-            }
+            dotnet tool install --global AzureSignTool --version 7.0.1
+            if ($LASTEXITCODE -eq 0) { break }
+            Write-Host "AzureSignTool install attempt $i/$maxAttempts failed"
+            if ($i -eq $maxAttempts) { throw "Could not install AzureSignTool" }
+            Start-Sleep -Seconds ($i * 10)
           }
-          Start-Process msiexec.exe -ArgumentList "/i", $msi, "/quiet", "/norestart" -Wait
-          Remove-Item $msi
+          echo "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
-          $smctlDir = "C:\Program Files\DigiCert\DigiCert One Signing Manager Tools"
-          echo "$smctlDir" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-
-          $certBytes = [Convert]::FromBase64String($env:SM_CLIENT_CERT_FILE_B64)
-          $certPath = "$env:RUNNER_TEMP\digicert_client_cert.p12"
-          [IO.File]::WriteAllBytes($certPath, $certBytes)
-          echo "SM_CLIENT_CERT_FILE=$certPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-      - name: Verify DigiCert KeyLocker
-        shell: pwsh
-        env:
-          SM_HOST: https://clientauth.one.digicert.com
-          SM_API_KEY: ${{ secrets.SM_API_KEY }}
-          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
-        run: |
-          smctl healthcheck
-
-      - name: Sync certificates to Windows store
-        shell: pwsh
-        env:
-          SM_HOST: https://clientauth.one.digicert.com
-          SM_API_KEY: ${{ secrets.SM_API_KEY }}
-          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
-        run: |
-          $output = smctl windows certsync 2>&1
-          $output | ForEach-Object { Write-Host $_ }
-          if ($LASTEXITCODE -ne 0) { throw "smctl windows certsync failed" }
-
-          # smctl does not pass a cert selector to signtool, so capture the
-          # synced code-signing certificate's SHA1 fingerprint and hand it to
-          # signtool explicitly in the signing step (via /sha1).
-          $m = [regex]::Match(($output -join "`n"), '(?i)fingerprint[^0-9A-Fa-f]*([0-9A-Fa-f]{40})')
-          if (-not $m.Success) { throw "Could not extract SHA1 fingerprint from certsync output" }
-          $fingerprint = $m.Groups[1].Value
-          echo "SM_CODE_SIGNING_CERT_SHA1_HASH=$fingerprint" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          Write-Host "Captured code-signing certificate SHA1: $fingerprint"
-
+      # Signing goes through AzureSignTool; signtool only verifies (sign.ps1).
       - name: Setup Windows SDK signtool
         shell: pwsh
         run: |
@@ -833,7 +808,28 @@ jobs:
             exit 1
           }
 
-      # ── Build (without code signing — signing happens post-build) ──
+      # Fails in the first minutes rather than after the build when the OIDC
+      # sign-in, the vault or the certificate is wrong. The token it fetches is
+      # cached for sign.ps1, and masked in the log from here on.
+      - name: Check access to the code signing certificate
+        shell: pwsh
+        run: |
+          $token = & ./scripts/ci/get-keyvault-token.ps1
+          Write-Host "::add-mask::$token"
+          $uri = "https://$($env:AZURE_KEY_VAULT).vault.azure.net/certificates/$($env:AZURE_CODESIGN_CERT)?api-version=7.4"
+          $bundle = Invoke-RestMethod -Uri $uri -Headers @{ Authorization = "Bearer $token" }
+          # Accept the DER bytes in base64 or base64url.
+          $cer = $bundle.cer.Replace('-', '+').Replace('_', '/')
+          $cer = $cer.PadRight($cer.Length + (4 - $cer.Length % 4) % 4, '=')
+          $cert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new([Convert]::FromBase64String($cer))
+          Write-Host "Certificate $($env:AZURE_CODESIGN_CERT) in $($env:AZURE_KEY_VAULT): $($cert.Subject)"
+          Write-Host "Thumbprint $($cert.Thumbprint), valid $($cert.NotBefore.ToString('u')) to $($cert.NotAfter.ToString('u')), enabled: $($bundle.attributes.enabled)"
+          if (-not $bundle.attributes.enabled) { throw "The code signing certificate is disabled in Key Vault" }
+          if ($cert.NotAfter -le (Get-Date)) { throw "The code signing certificate expired on $($cert.NotAfter.ToString('u'))" }
+          # The publisher "Verify every PE inside the Windows installers is signed" expects.
+          if ($cert.Subject -notmatch 'CN=AtomicMail Systems OU') { throw "Unexpected code signing certificate subject: $($cert.Subject)" }
+
+      # ── Build ─────────────────────────────────────────────────
       - name: Configure Yarn
         run: |
           corepack enable
@@ -867,30 +863,18 @@ jobs:
       - name: Download the pinned atomic-chat-core release
         run: yarn download:core
 
-      # The core pair ships as bundle resources, and "Sign Windows binaries
-      # with DigiCert" below runs after `tauri build`, when they are already
-      # packed inside the installers — so they are signed here, before
-      # bundling. Bun keeps the payload in a `.bun` PE section, which the
-      # appended Authenticode signature leaves intact; --verify-only runs both
-      # signed binaries to prove it.
-      - name: Sign the atomic-chat-core binaries with DigiCert
+      # The core pair ships as bundle resources. It is signed here, before
+      # bundling, with the script the bundler signs with (the bundler then
+      # finds it signed and leaves it alone), so that --verify-only can prove
+      # the signed binaries still run: Bun keeps the payload in a `.bun` PE
+      # section, which the appended Authenticode signature leaves intact.
+      - name: Sign the atomic-chat-core binaries
         shell: pwsh
-        env:
-          SM_API_KEY: ${{ secrets.SM_API_KEY }}
-          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
-          SM_HOST: https://clientauth.one.digicert.com
         run: |
-          if (-not $env:SM_CODE_SIGNING_CERT_SHA1_HASH) {
-            throw "SM_CODE_SIGNING_CERT_SHA1_HASH is not set (certsync did not capture a fingerprint)"
-          }
           foreach ($name in @('atomic-chat-core.exe', 'atomic-chat-app-core.exe')) {
             $path = "src-tauri\resources\bin\$name"
-            Write-Host "Signing: $path"
-            signtool sign /sha1 "$env:SM_CODE_SIGNING_CERT_SHA1_HASH" `
-              /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 "$path"
-            if ($LASTEXITCODE -ne 0) { throw "signtool sign failed for $path" }
-            signtool verify /pa "$path"
-            if ($LASTEXITCODE -ne 0) { throw "Signature verification failed for $path" }
+            & ./src-tauri/sign.ps1 -Target $path
+            if ($LASTEXITCODE -ne 0) { throw "Signing failed for $path" }
           }
           node scripts/download-core.mjs --verify-only
           if ($LASTEXITCODE -ne 0) { throw "A signed atomic-chat-core binary no longer runs" }
@@ -1011,8 +995,9 @@ jobs:
       # .exe/.dll under resources, the NSIS plugins, the uninstaller, the
       # installer and the MSI. Files that already carry a valid signature (the
       # core pair, cloudflared, wxc-exec, the mirrored llama.cpp trees) are left
-      # alone. The command is the signtool call the installers were signed with
-      # before, and it is passed here only, so local builds stay unsigned.
+      # alone. The command is src-tauri/sign.ps1 (AzureSignTool against the Key
+      # Vault certificate, token fetched just in time), and it is passed here
+      # only, so local builds stay unsigned.
       - name: Check Windows publisher identity
         shell: pwsh
         run: |
@@ -1030,9 +1015,6 @@ jobs:
       - name: Build and sign app
         shell: pwsh
         env:
-          SM_API_KEY: ${{ secrets.SM_API_KEY }}
-          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
-          SM_HOST: https://clientauth.one.digicert.com
           # ATO-113: source-map generation + @sentry/vite-plugin push peak heap
           # past Node's ~2GB default.
           NODE_OPTIONS: "--max-old-space-size=8192"
@@ -1053,16 +1035,17 @@ jobs:
           SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
           SENTRY_PROJECT_FRONTEND: ${{ secrets.SENTRY_PROJECT_FRONTEND }}
         run: |
-          if (-not $env:SM_CODE_SIGNING_CERT_SHA1_HASH) {
-            throw "SM_CODE_SIGNING_CERT_SHA1_HASH is not set (certsync did not capture a fingerprint)"
-          }
+          # Tauri also writes this command into the NSIS script that signs the
+          # uninstaller (!uninstfinalize), quoting each argument the way Rust's
+          # Debug does, which doubles backslashes: the script path goes in with
+          # forward slashes.
+          $signScript = (Resolve-Path -LiteralPath src-tauri/sign.ps1).Path -replace '\\', '/'
           $signConfig = @{
             bundle = @{
               windows = @{
                 signCommand = @{
-                  cmd  = 'signtool'
-                  args = @('sign', '/sha1', $env:SM_CODE_SIGNING_CERT_SHA1_HASH,
-                    '/fd', 'SHA256', '/tr', 'http://timestamp.digicert.com', '/td', 'SHA256', '%1')
+                  cmd  = 'pwsh'
+                  args = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $signScript, '%1')
                 }
               }
             }
@@ -1073,7 +1056,13 @@ jobs:
           "TAURI_SIGN_CONFIG=$signConfigPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
           yarn tauri build --config $signConfigPath
-          if ($LASTEXITCODE -ne 0) { throw "tauri build failed (exit code: $LASTEXITCODE)" }
+          $exitCode = $LASTEXITCODE
+          # sign.ps1's record of every file it signed, the uninstaller too
+          # (makensis signs that one, out of Tauri's sight). It is also the only
+          # place a failing signCommand's output shows: Tauri hides it.
+          $log = Join-Path $env:RUNNER_TEMP 'codesign.log'
+          if (Test-Path -LiteralPath $log) { Write-Host '::group::codesign.log'; Get-Content -LiteralPath $log | Write-Host; Write-Host '::endgroup::' }
+          if ($exitCode -ne 0) { throw "tauri build failed (exit code: $exitCode)" }
 
       - name: Upload Rust debug files to Sentry (Windows)
         continue-on-error: true
@@ -1151,13 +1140,13 @@ jobs:
       - name: Bundle the Microsoft Store installer
         if: github.event_name == 'push' || inputs.build_windows_msstore
         shell: pwsh
-        env:
-          SM_API_KEY: ${{ secrets.SM_API_KEY }}
-          SM_CLIENT_CERT_PASSWORD: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
-          SM_HOST: https://clientauth.one.digicert.com
         run: |
           yarn tauri bundle --bundles nsis --config src-tauri/tauri.windows.msstore.conf.json --config $env:TAURI_SIGN_CONFIG
-          if ($LASTEXITCODE -ne 0) { throw "tauri bundle failed (exit code: $LASTEXITCODE)" }
+          $exitCode = $LASTEXITCODE
+          # See "Build and sign app"; the log holds that step's files too.
+          $log = Join-Path $env:RUNNER_TEMP 'codesign.log'
+          if (Test-Path -LiteralPath $log) { Write-Host '::group::codesign.log'; Get-Content -LiteralPath $log | Write-Host; Write-Host '::endgroup::' }
+          if ($exitCode -ne 0) { throw "tauri bundle failed (exit code: $exitCode)" }
 
           $setup = @(Get-ChildItem -Path src-tauri/target/release/bundle/nsis -Filter '*-setup.exe')
           if ($setup.Count -ne 1) { throw "Expected one NSIS installer from tauri bundle, found $($setup.Count)" }
@@ -1232,74 +1221,40 @@ jobs:
             release-files/*
 
   # ──────────────────────────────────────────────────────────────
-  # Windows ARM64  (aarch64 — NSIS only, DigiCert KeyLocker code signing)
+  # Windows ARM64  (aarch64 — NSIS only, Azure Key Vault code signing)
   # Only the upstream llama.cpp engine ships here: TurboQuant, stable-diffusion.cpp
   # and cloudflared publish no Windows arm64 build. WiX (MSI) has no arm64 support.
   #
-  # Signing runs on x64 runners, before and after the arm64 build: the DigiCert
-  # KSP is x64-only and signtool under emulation on windows-11-arm hangs in it.
-  # Authenticode does not care which architecture the signed PE targets.
+  # Signed on the arm64 runner itself, exactly like build-windows: the core
+  # pair through src-tauri/sign.ps1 before bundling, then every PE the bundler
+  # ships (app binary, bun/uv sidecars, unsigned resources, NSIS plugins, the
+  # uninstaller and the installer) through the same signCommand. AzureSignTool
+  # is a .NET tool, so it runs natively here. The split across x64 runners this
+  # replaces dated from DigiCert KeyLocker, whose KSP was x64-only, and left
+  # everything inside the arm64 installer unsigned.
   # ──────────────────────────────────────────────────────────────
-  sign-windows-arm64-core:
-    if: github.event_name == 'push' || inputs.build_windows_arm64
-    runs-on: windows-latest
-    timeout-minutes: 20
-    needs: create-draft-release
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      # The same checks as scripts/download-core.mjs, which picks the host's
-      # arch and cannot run an arm64 binary here.
-      - name: Download the pinned arm64 atomic-chat-core release
-        shell: pwsh
-        run: |
-          $ProgressPreference = 'SilentlyContinue'
-          $pkg = Get-Content package.json -Raw | ConvertFrom-Json
-          $version = $pkg.atomicCore.version
-          $base = "https://github.com/$($pkg.atomicCore.repo)/releases/download/v$version"
-          New-Item -ItemType Directory -Force -Path core | Out-Null
-          # Saved to disk: GitHub serves release assets as octet-stream, for
-          # which Invoke-WebRequest's .Content is a byte array, not text.
-          Invoke-WebRequest "$base/SHA256SUMS" -OutFile SHA256SUMS
-          $sums = @{}
-          foreach ($line in Get-Content SHA256SUMS) {
-            if ($line.Trim() -match '^([0-9a-f]{64})\s+\*?(.+)$') { $sums[$Matches[2]] = $Matches[1] }
-          }
-          foreach ($name in @('atomic-chat-core', 'atomic-chat-app-core')) {
-            $asset = "$name-$version-aarch64-pc-windows-msvc.exe"
-            if (-not $sums.ContainsKey($asset)) { throw "$asset is not listed in SHA256SUMS" }
-            Invoke-WebRequest "$base/$asset" -OutFile "core\$name.exe"
-            $actual = (Get-FileHash "core\$name.exe" -Algorithm SHA256).Hash.ToLower()
-            if ($actual -ne $sums[$asset]) { throw "$asset failed its checksum: expected $($sums[$asset]), got $actual" }
-            Write-Host "Verified $asset"
-          }
-
-      - name: Sign the arm64 atomic-chat-core binaries
-        uses: ./.github/actions/windows-code-sign
-        with:
-          path: core
-          recurse: "false"
-          sm-api-key: ${{ secrets.SM_API_KEY }}
-          sm-client-cert-b64: ${{ secrets.SM_CLIENT_CERT_FILE_B64 }}
-          sm-client-cert-password: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: windows-arm64-core-signed
-          path: core/*.exe
-          retention-days: 1
-          # A re-run of this job replaces the binaries of the attempt before it.
-          overwrite: true
-
   build-windows-arm64:
     if: github.event_name == 'push' || inputs.build_windows_arm64
     runs-on: windows-11-arm
     timeout-minutes: 90
-    needs: [create-draft-release, sign-windows-arm64-core]
+    needs: create-draft-release
+    # Signs through Azure Key Vault (see build-windows) and uploads the
+    # installer to the draft release, hence contents: write.
+    environment: codesign
+    permissions:
+      contents: write
+      id-token: write
     env:
       TARGET: aarch64-pc-windows-msvc
       BUNDLE_DIR: src-tauri/target/aarch64-pc-windows-msvc/release/bundle
+      # Read by src-tauri/sign.ps1 and scripts/ci/get-keyvault-token.ps1.
+      AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+      AZURE_KEY_VAULT: ${{ vars.AZURE_KEY_VAULT }}
+      AZURE_CODESIGN_CERT: ${{ vars.AZURE_CODESIGN_CERT }}
+    outputs:
+      win_sig: ${{ steps.metadata.outputs.win_sig }}
+      exe_name: ${{ steps.metadata.outputs.exe_name }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -1353,7 +1308,67 @@ jobs:
           '
           node scripts/set-cargo-package-version.mjs src-tauri/Cargo.toml "$NEW_VERSION"
 
-      # ── Build (unsigned — sign-windows-arm64-installer signs it on x64) ──
+      # ── Code signing setup (Azure Key Vault, as in build-windows) ──
+      # The windows-11-arm image is not guaranteed to carry a .NET SDK;
+      # AzureSignTool needs one (it runs as a native arm64 .NET tool).
+      - name: Setup .NET for AzureSignTool
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Install AzureSignTool
+        shell: pwsh
+        run: |
+          $maxAttempts = 5
+          for ($i = 1; $i -le $maxAttempts; $i++) {
+            dotnet tool install --global AzureSignTool --version 7.0.1
+            if ($LASTEXITCODE -eq 0) { break }
+            Write-Host "AzureSignTool install attempt $i/$maxAttempts failed"
+            if ($i -eq $maxAttempts) { throw "Could not install AzureSignTool" }
+            Start-Sleep -Seconds ($i * 10)
+          }
+          echo "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      # Signing goes through AzureSignTool; signtool only verifies (sign.ps1).
+      # The native arm64 signtool when the SDK has one, else the x64 one
+      # (Windows on Arm runs it emulated).
+      - name: Setup Windows SDK signtool
+        shell: pwsh
+        run: |
+          $all = Get-ChildItem -Path "C:\Program Files (x86)\Windows Kits\10\bin" `
+            -Recurse -Filter "signtool.exe" -ErrorAction SilentlyContinue
+          $byVersion = { [version]($_.FullName -replace '.*\\(\d+\.\d+\.\d+\.\d+)\\.*', '$1') }
+          $signtoolPath = $all | Where-Object { $_.FullName -like "*\arm64\*" } | Sort-Object $byVersion -Descending | Select-Object -First 1
+          if (-not $signtoolPath) {
+            $signtoolPath = $all | Where-Object { $_.FullName -like "*\x64\*" } | Sort-Object $byVersion -Descending | Select-Object -First 1
+          }
+          if (-not $signtoolPath) { Write-Error "signtool.exe not found in Windows SDK"; exit 1 }
+          Write-Host "Found signtool at: $($signtoolPath.DirectoryName)"
+          echo "$($signtoolPath.DirectoryName)" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          # The bundler runs `signtool verify` to skip already-signed files, and
+          # its own lookup (registry + OS bitness) finds no signtool on an arm64
+          # host; tauri-bundler 2.x reads this variable first.
+          "TAURI_WINDOWS_SIGNTOOL_PATH=$($signtoolPath.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      # Same early check as build-windows: fails in the first minutes when the
+      # OIDC sign-in, the vault or the certificate is wrong.
+      - name: Check access to the code signing certificate
+        shell: pwsh
+        run: |
+          $token = & ./scripts/ci/get-keyvault-token.ps1
+          Write-Host "::add-mask::$token"
+          $uri = "https://$($env:AZURE_KEY_VAULT).vault.azure.net/certificates/$($env:AZURE_CODESIGN_CERT)?api-version=7.4"
+          $bundle = Invoke-RestMethod -Uri $uri -Headers @{ Authorization = "Bearer $token" }
+          $cer = $bundle.cer.Replace('-', '+').Replace('_', '/')
+          $cer = $cer.PadRight($cer.Length + (4 - $cer.Length % 4) % 4, '=')
+          $cert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new([Convert]::FromBase64String($cer))
+          Write-Host "Certificate $($env:AZURE_CODESIGN_CERT) in $($env:AZURE_KEY_VAULT): $($cert.Subject)"
+          Write-Host "Thumbprint $($cert.Thumbprint), valid $($cert.NotBefore.ToString('u')) to $($cert.NotAfter.ToString('u')), enabled: $($bundle.attributes.enabled)"
+          if (-not $bundle.attributes.enabled) { throw "The code signing certificate is disabled in Key Vault" }
+          if ($cert.NotAfter -le (Get-Date)) { throw "The code signing certificate expired on $($cert.NotAfter.ToString('u'))" }
+          if ($cert.Subject -notmatch 'CN=AtomicMail Systems OU') { throw "Unexpected code signing certificate subject: $($cert.Subject)" }
+
+      # ── Build ─────────────────────────────────────────────────
       - name: Configure Yarn
         run: |
           corepack enable
@@ -1412,14 +1427,19 @@ jobs:
       - name: Download the pinned atomic-chat-core release
         run: yarn download:core
 
-      - name: Use the core binaries signed on x64
-        uses: actions/download-artifact@v4
-        with:
-          name: windows-arm64-core-signed
-          path: src-tauri/resources/bin
-
-      - name: Check the signed core binaries still run
-        run: node scripts/download-core.mjs --verify-only
+      # As in build-windows: signed before bundling with the script the
+      # bundler signs with (the bundler then leaves them alone), so that
+      # --verify-only can prove the signed arm64 binaries still run here.
+      - name: Sign the atomic-chat-core binaries
+        shell: pwsh
+        run: |
+          foreach ($name in @('atomic-chat-core.exe', 'atomic-chat-app-core.exe')) {
+            $path = "src-tauri\resources\bin\$name"
+            & ./src-tauri/sign.ps1 -Target $path
+            if ($LASTEXITCODE -ne 0) { throw "Signing failed for $path" }
+          }
+          node scripts/download-core.mjs --verify-only
+          if ($LASTEXITCODE -ne 0) { throw "A signed atomic-chat-core binary no longer runs" }
 
       - name: Download upstream llamacpp backend (manifest resolver)
         shell: bash
@@ -1468,7 +1488,8 @@ jobs:
       - name: Copy assets to Tauri
         run: yarn copy:assets:tauri
 
-      - name: Build app (unsigned)
+      - name: Build and sign app
+        shell: pwsh
         env:
           # ATO-113: source-map generation + @sentry/vite-plugin push peak heap
           # past Node's ~2GB default.
@@ -1486,7 +1507,28 @@ jobs:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
           SENTRY_PROJECT_FRONTEND: ${{ secrets.SENTRY_PROJECT_FRONTEND }}
-        run: yarn tauri build --target aarch64-pc-windows-msvc --bundles nsis --config src-tauri/tauri.windows-arm64.conf.json
+        run: |
+          # The same signCommand as build-windows (see its comment on the
+          # forward slashes Tauri's NSIS !uninstfinalize line needs).
+          $signScript = (Resolve-Path -LiteralPath src-tauri/sign.ps1).Path -replace '\\', '/'
+          $signConfig = @{
+            bundle = @{
+              windows = @{
+                signCommand = @{
+                  cmd  = 'pwsh'
+                  args = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $signScript, '%1')
+                }
+              }
+            }
+          }
+          $signConfigPath = Join-Path $env:RUNNER_TEMP 'tauri-sign.conf.json'
+          $signConfig | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $signConfigPath -Encoding utf8
+
+          yarn tauri build --target aarch64-pc-windows-msvc --bundles nsis --config src-tauri/tauri.windows-arm64.conf.json --config $signConfigPath
+          $exitCode = $LASTEXITCODE
+          $log = Join-Path $env:RUNNER_TEMP 'codesign.log'
+          if (Test-Path -LiteralPath $log) { Write-Host '::group::codesign.log'; Get-Content -LiteralPath $log | Write-Host; Write-Host '::endgroup::' }
+          if ($exitCode -ne 0) { throw "tauri build failed (exit code: $exitCode)" }
 
       - name: Upload Rust debug files to Sentry (Windows ARM64)
         continue-on-error: true
@@ -1504,75 +1546,66 @@ jobs:
             --org "$SENTRY_ORG" --project "$SENTRY_PROJECT_DESKTOP" \
             src-tauri/target/aarch64-pc-windows-msvc/release
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: windows-arm64-nsis-unsigned
-          path: ${{ env.BUNDLE_DIR }}/nsis/*-setup.exe
-          if-no-files-found: error
-          retention-days: 1
-          # A re-run of this job replaces the installer of the attempt before it.
-          overwrite: true
-
-      - name: Build summary
-        if: always()
-        uses: ./.github/actions/build-summary
-        with:
-          rust-cache-hit: ${{ steps.rust-cache.outputs.cache-hit }}
-          files: |
-            src-tauri/target/aarch64-pc-windows-msvc/release/Atomic-Chat.exe
-            ${{ env.BUNDLE_DIR }}/nsis/*-setup.exe
-
-  sign-windows-arm64-installer:
-    if: github.event_name == 'push' || inputs.build_windows_arm64
-    runs-on: windows-latest
-    timeout-minutes: 20
-    needs: [create-draft-release, build-windows-arm64]
-    outputs:
-      win_sig: ${{ steps.metadata.outputs.win_sig }}
-      exe_name: ${{ steps.metadata.outputs.exe_name }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: windows-arm64-nsis-unsigned
-          path: nsis
-
-      - name: Sign Windows ARM64 installer with DigiCert
-        uses: ./.github/actions/windows-code-sign
-        with:
-          path: nsis
-          recurse: "false"
-          sm-api-key: ${{ secrets.SM_API_KEY }}
-          sm-client-cert-b64: ${{ secrets.SM_CLIENT_CERT_FILE_B64 }}
-          sm-client-cert-password: ${{ secrets.SM_CLIENT_CERT_PASSWORD }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
-      # The CLI version matches yarn.lock, so the .sig is what `yarn tauri` would write.
       - name: Recreate updater signature after code signing
         shell: bash
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          for exe in nsis/*-setup.exe; do
+          for exe in "$BUNDLE_DIR"/nsis/*-setup.exe; do
             [ -f "$exe" ] || continue
             rm -f "${exe}.sig"
-            npx --yes @tauri-apps/cli@2.8.4 signer sign --private-key "$TAURI_SIGNING_PRIVATE_KEY" --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" "$exe"
+            yarn tauri signer sign --private-key "$TAURI_SIGNING_PRIVATE_KEY" --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" "$exe"
             echo "Created new .sig for: $(basename "$exe")"
           done
+
+      # The same check as build-windows: every PE the arm64 installer installs
+      # carries a valid signature and the installer itself ours.
+      - name: Verify every PE inside the Windows ARM64 installer is signed
+        shell: pwsh
+        run: |
+          $sevenZip = (Get-Command 7z -ErrorAction SilentlyContinue).Source
+          if (-not $sevenZip -and (Test-Path "$env:ProgramFiles\7-Zip\7z.exe")) { $sevenZip = "$env:ProgramFiles\7-Zip\7z.exe" }
+          if (-not $sevenZip) {
+            choco install 7zip.install -y --no-progress | Out-Null
+            $sevenZip = "$env:ProgramFiles\7-Zip\7z.exe"
+          }
+          if (-not (Test-Path $sevenZip)) { throw "7-Zip is not available to unpack the installer" }
+          $failures = @()
+          foreach ($installer in (Get-ChildItem -Path "$env:BUNDLE_DIR/nsis" -Filter '*-setup.exe')) {
+            $sig = Get-AuthenticodeSignature -LiteralPath $installer.FullName
+            Write-Host "$($installer.Name): $($sig.Status); signer: $($sig.SignerCertificate.Subject)"
+            if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'CN=AtomicMail Systems OU') {
+              $failures += "$($installer.Name) is $($sig.Status), signed by '$($sig.SignerCertificate.Subject)'"
+            }
+            $dir = Join-Path $env:RUNNER_TEMP "unpacked-$($installer.BaseName)"
+            & $sevenZip x $installer.FullName "-o$dir" -y -bso0 -bsp0
+            if ($LASTEXITCODE -ne 0) { throw "7z could not unpack $($installer.Name)" }
+            $pe = @(Get-ChildItem -LiteralPath $dir -Recurse -File | Where-Object { $_.Extension -in '.exe', '.dll' })
+            if (-not ($pe | Where-Object Name -eq 'Atomic-Chat.exe')) { $failures += "$($installer.Name) holds no Atomic-Chat.exe" }
+            foreach ($file in $pe) {
+              $fileSig = Get-AuthenticodeSignature -LiteralPath $file.FullName
+              $relative = $file.FullName.Substring($dir.Length + 1)
+              Write-Host ("  {0,-12} {1}" -f $fileSig.Status, $relative)
+              if ($fileSig.Status -eq 'Valid') { continue }
+              if ($relative -like '$PLUGINSDIR\*') {
+                Write-Host "::warning::$($installer.Name): installer plugin $relative is $($fileSig.Status)"
+              } else {
+                $failures += "$($installer.Name): $relative is $($fileSig.Status)"
+              }
+            }
+          }
+          if ($failures.Count -gt 0) {
+            $failures | ForEach-Object { Write-Host "::error::$_" }
+            throw "$($failures.Count) signature problem(s) in the Windows ARM64 installer"
+          }
 
       - name: Collect artifact metadata
         id: metadata
         shell: bash
         run: |
-          cd nsis
-          EXE_NAME=$(ls *.exe | head -1)
+          cd "$BUNDLE_DIR/nsis"
+          EXE_NAME=$(ls *-setup.exe | head -1)
           WIN_SIG=$(cat "${EXE_NAME}.sig" 2>/dev/null || echo "")
           echo "exe_name=${EXE_NAME}" >> "$GITHUB_OUTPUT"
           echo "win_sig=${WIN_SIG}" >> "$GITHUB_OUTPUT"
@@ -1584,8 +1617,17 @@ jobs:
           release-id: ${{ needs.create-draft-release.outputs.release_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           files: |
-            nsis/${{ steps.metadata.outputs.exe_name }}
-            ${{ steps.metadata.outputs.win_sig != '' && format('nsis/{0}.sig', steps.metadata.outputs.exe_name) || '' }}
+            ${{ env.BUNDLE_DIR }}/nsis/${{ steps.metadata.outputs.exe_name }}
+            ${{ steps.metadata.outputs.win_sig != '' && format('{0}/nsis/{1}.sig', env.BUNDLE_DIR, steps.metadata.outputs.exe_name) || '' }}
+
+      - name: Build summary
+        if: always()
+        uses: ./.github/actions/build-summary
+        with:
+          rust-cache-hit: ${{ steps.rust-cache.outputs.cache-hit }}
+          files: |
+            src-tauri/target/aarch64-pc-windows-msvc/release/Atomic-Chat.exe
+            ${{ env.BUNDLE_DIR }}/nsis/*-setup.exe
 
   # ──────────────────────────────────────────────────────────────
   # Linux  (x86_64 — AppImage, upstream ggml-org/llama.cpp, CPU-only bundled)
@@ -2589,9 +2631,9 @@ jobs:
   publish-latest-json:
     if: |
       always() && needs.create-draft-release.result == 'success' &&
-      (needs.upload-macos.result == 'success' || needs.upload-windows.result == 'success' || needs.sign-windows-arm64-installer.result == 'success' || needs.upload-linux-x64.result == 'success' || needs.build-linux-arm64.result == 'success')
+      (needs.upload-macos.result == 'success' || needs.upload-windows.result == 'success' || needs.build-windows-arm64.result == 'success' || needs.upload-linux-x64.result == 'success' || needs.build-linux-arm64.result == 'success')
     runs-on: ubuntu-latest
-    needs: [create-draft-release, upload-macos, upload-windows, sign-windows-arm64-installer, upload-linux-x64, build-linux-arm64]
+    needs: [create-draft-release, upload-macos, upload-windows, build-windows-arm64, upload-linux-x64, build-linux-arm64]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -2605,9 +2647,9 @@ jobs:
           WIN_SIG: ${{ needs.upload-windows.outputs.win_sig }}
           EXE_NAME: ${{ needs.upload-windows.outputs.exe_name }}
           WIN_RESULT: ${{ needs.upload-windows.result }}
-          WIN_ARM_SIG: ${{ needs.sign-windows-arm64-installer.outputs.win_sig }}
-          WIN_ARM_EXE_NAME: ${{ needs.sign-windows-arm64-installer.outputs.exe_name }}
-          WIN_ARM_RESULT: ${{ needs.sign-windows-arm64-installer.result }}
+          WIN_ARM_SIG: ${{ needs.build-windows-arm64.outputs.win_sig }}
+          WIN_ARM_EXE_NAME: ${{ needs.build-windows-arm64.outputs.exe_name }}
+          WIN_ARM_RESULT: ${{ needs.build-windows-arm64.result }}
           LINUX_SIG: ${{ needs.upload-linux-x64.outputs.linux_sig }}
           APPIMAGE_NAME: ${{ needs.upload-linux-x64.outputs.appimage_name }}
           LINUX_RESULT: ${{ needs.upload-linux-x64.result }}
@@ -2725,7 +2767,7 @@ jobs:
   notify-finish:
     if: always()
     runs-on: ubuntu-latest
-    needs: [create-draft-release, gate-macos, build-macos, upload-macos, gate-windows, build-windows, upload-windows, sign-windows-arm64-core, build-windows-arm64, sign-windows-arm64-installer, gate-linux, build-linux-x64, upload-linux-x64, build-linux-arm64, publish-latest-json]
+    needs: [create-draft-release, gate-macos, build-macos, upload-macos, gate-windows, build-windows, upload-windows, build-windows-arm64, gate-linux, build-linux-x64, upload-linux-x64, build-linux-arm64, publish-latest-json]
     env:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -2741,7 +2783,7 @@ jobs:
           # then build, then upload/signing), else the last one's result.
           MAC_RESULT: ${{ needs.gate-macos.result != 'success' && needs.gate-macos.result || needs.build-macos.result != 'success' && needs.build-macos.result || needs.upload-macos.result }}
           WIN_RESULT: ${{ needs.gate-windows.result != 'success' && needs.gate-windows.result || needs.build-windows.result != 'success' && needs.build-windows.result || needs.upload-windows.result }}
-          WIN_ARM_RESULT: ${{ needs.sign-windows-arm64-core.result != 'success' && needs.sign-windows-arm64-core.result || needs.build-windows-arm64.result != 'success' && needs.build-windows-arm64.result || needs.sign-windows-arm64-installer.result }}
+          WIN_ARM_RESULT: ${{ needs.build-windows-arm64.result }}
           LINUX_RESULT: ${{ needs.gate-linux.result != 'success' && needs.gate-linux.result || needs.build-linux-x64.result != 'success' && needs.build-linux-x64.result || needs.upload-linux-x64.result }}
           LINUX_ARM_RESULT: ${{ needs.build-linux-arm64.result }}
           LATEST_JSON_RESULT: ${{ needs.publish-latest-json.result }}

@@ -447,6 +447,47 @@ describe('llamacpp_extension', () => {
       expect(extension['updateSettings']).not.toHaveBeenCalled()
     })
 
+    it.each([
+      ['ubuntu-cuda-12.8-x64', 'linux-cuda-12.8-x64'],
+      ['ubuntu-cuda-13.5-x64', 'linux-cuda-13.5-x64'],
+      ['ubuntu-cuda-13.5-arm64', 'linux-cuda-13.5-arm64'],
+      ['ubuntu-rocm-10.0-x64', 'linux-rocm-10.0-x64'],
+      ['ubuntu-vulkan-x64', 'linux-vulkan-x64'],
+      ['ubuntu-sycl-fp16-x64', 'linux-cpu-x64'],
+    ])(
+      'installs a Linux %s tarball under the %s id',
+      async (infix, backend) => {
+        vi.stubGlobal('IS_LINUX', true)
+        try {
+          const archiveName = `llama-b12244-bin-${infix}.tar.gz`
+          const archivePath = `/downloads/${archiveName}`
+          const backendDir = `/data/llamacpp-upstream/backends/b12244/${backend}`
+          vi.mocked(basename).mockResolvedValue(archiveName)
+          vi.mocked(getBackendDir).mockResolvedValue(backendDir)
+          vi.mocked(joinPath).mockImplementation(async (parts: string[]) =>
+            parts.join('/')
+          )
+          vi.mocked(fs.existsSync).mockImplementation(
+            (path: string) =>
+              path === archivePath ||
+              path === `${backendDir}/build/bin/llama-server`
+          )
+          extension['config'] = {} as any
+          extension['configureBackends'] = vi.fn().mockResolvedValue(undefined)
+          extension['setStoredBackendType'] = vi.fn()
+          extension['getSettings'] = vi.fn().mockResolvedValue([])
+          extension['updateSettings'] = vi.fn().mockResolvedValue(undefined)
+
+          await expect(extension.installBackend(archivePath)).resolves.toBe(
+            `b12244/${backend}`
+          )
+          expect(getBackendDir).toHaveBeenCalledWith(backend, 'b12244')
+        } finally {
+          vi.stubGlobal('IS_LINUX', false)
+        }
+      }
+    )
+
     it('rejects an import when normalization leaves no llama-server binary', async () => {
       const archivePath = '/downloads/llama-b9702-bin-macos-arm64.tar.gz'
       const backendDir = '/data/llamacpp-upstream/backends/b9702/macos-arm64'

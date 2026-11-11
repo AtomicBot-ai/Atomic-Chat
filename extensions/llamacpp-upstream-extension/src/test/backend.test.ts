@@ -106,6 +106,15 @@ describe('Backend functions', () => {
       )
     })
 
+    it('uses upstream ubuntu tarball names for the Linux x64 CUDA builds', () => {
+      expect(getBackendArchiveName('b12244', 'linux-cuda-12.8-x64')).toBe(
+        'llama-b12244-bin-ubuntu-cuda-12.8-x64.tar.gz'
+      )
+      expect(getBackendDownloadUrl('b12244', 'linux-cuda-13.5-x64')).toBe(
+        'https://github.com/ggml-org/llama.cpp/releases/download/b12244/llama-b12244-bin-ubuntu-cuda-13.5-x64.tar.gz'
+      )
+    })
+
     it('uses upstream tarball names for macOS backend archives', () => {
       expect(getBackendArchiveName('b9702', 'macos-arm64')).toBe(
         'llama-b9702-bin-macos-arm64.tar.gz'
@@ -178,12 +187,34 @@ describe('Backend functions', () => {
       expect(friendlyBackendLabel('linux-vulkan-arm64')).toBe('Vulkan')
     })
 
+    it('resolves each Linux x64 CUDA family only against its own toolkit on x64', () => {
+      const remote = [
+        { version: 'b12244', backend: 'linux-cuda-13.5-arm64', order: 0 },
+        { version: 'b12244', backend: 'linux-cuda-13.5-x64', order: 0 },
+        { version: 'b12244', backend: 'linux-cuda-12.8-x64', order: 0 },
+        { version: 'b12244', backend: 'win-cuda-12.4-x64', order: 0 },
+      ]
+      expect(resolveGpuFamilyConcrete('linux-cuda-13-x64', remote)).toBe(
+        'b12244/linux-cuda-13.5-x64'
+      )
+      expect(resolveGpuFamilyConcrete('linux-cuda-12-x64', remote)).toBe(
+        'b12244/linux-cuda-12.8-x64'
+      )
+      expect(
+        isConcreteOfGpuFamily('linux-cuda-13-x64', 'linux-cuda-13.5-arm64')
+      ).toBe(false)
+      expect(cudaFamilyMajor('linux-cuda-12-x64')).toBe('12')
+      expect(friendlyBackendLabel('linux-cuda-12-x64')).toBe('CUDA 12')
+      expect(friendlyBackendLabel('linux-cuda-13.5-x64')).toBe('CUDA 13')
+    })
+
     it('labels the Windows arm64 variants', () => {
       expect(friendlyBackendLabel('win-cpu-arm64')).toBe('CPU')
       expect(friendlyBackendLabel('win-opencl-adreno-arm64')).toBe(
         'OpenCL (Adreno)'
       )
       expect(friendlyBackendLabel('win-cuda-13-arm64')).toBe('CUDA 13')
+      expect(friendlyBackendLabel('win-vulkan-arm64')).toBe('Vulkan')
     })
 
     it('resolves the version-less ROCm family to the published HIP asset', () => {

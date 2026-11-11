@@ -1,10 +1,17 @@
 name: "Windows - Code Signing"
-description: "Authenticode-sign Windows binaries with the DigiCert KeyLocker signtool KSP"
+description: "Authenticode-sign Windows binaries with the code signing key in Azure Key Vault"
 
-# Same action as AtomicBot-ai/atomic-chat-conf's (itself ported from
-# atomic-llama-cpp-turboquant); keep the copies in step. Run it on an x64
-# runner only: the DigiCert KSP is x64-only, and signtool under emulation on
-# windows-11-arm hangs inside it.
+# The private key lives in an Azure Key Vault Premium HSM and never leaves it:
+# AzureSignTool hashes each file on the runner and asks Key Vault to sign the
+# digest. The job signs in to Azure through GitHub OIDC (no stored secret), so
+# the calling job needs `permissions: id-token: write` and must run in the
+# `codesign` environment, which the app's federated credential is bound to.
+# The identifiers come from that environment's variables.
+#
+# Same action as AtomicBot-ai/atomic-chat-conf's; keep the copies in step.
+# It fetches one access token per call, which suits short jobs: build-windows
+# signs inside a long `tauri build` and fetches its token just in time instead
+# (src-tauri/sign.ps1, scripts/ci/get-keyvault-token.ps1).
 
 inputs:
   path:
@@ -14,80 +21,46 @@ inputs:
     description: "Descend into subdirectories when collecting binaries"
     required: false
     default: "true"
-  sm-api-key:
-    description: "DigiCert KeyLocker API key (secrets.SM_API_KEY)"
+  client-id:
+    description: "Entra application (client) ID that may sign (vars.AZURE_CLIENT_ID)"
     required: true
-  sm-client-cert-b64:
-    description: "Base64 DigiCert client authentication certificate (secrets.SM_CLIENT_CERT_FILE_B64)"
+  tenant-id:
+    description: "Entra tenant ID (vars.AZURE_TENANT_ID)"
     required: true
-  sm-client-cert-password:
-    description: "Password for the client authentication certificate (secrets.SM_CLIENT_CERT_PASSWORD)"
+  key-vault:
+    description: "Key Vault name (vars.AZURE_KEY_VAULT)"
+    required: true
+  certificate:
+    description: "Certificate name in the Key Vault (vars.AZURE_CODESIGN_CERT)"
     required: true
 
 runs:
   using: "composite"
   steps:
-    - name: Setup DigiCert KeyLocker
+    - name: Sign in to Azure (OIDC)
+      uses: azure/login@v2
+      with:
+        client-id: ${{ inputs.client-id }}
+        tenant-id: ${{ inputs.tenant-id }}
+        allow-no-subscriptions: true
+
+    - name: Install AzureSignTool
       shell: pwsh
-      env:
-        SM_API_KEY: ${{ inputs.sm-api-key }}
-        SM_CLIENT_CERT_FILE_B64: ${{ inputs.sm-client-cert-b64 }}
       run: |
-          $headers = @{ "x-api-key" = $env:SM_API_KEY }
-          $msi = "$env:TEMP\smtools.msi"
           $maxAttempts = 5
           for ($i = 1; $i -le $maxAttempts; $i++) {
-            try {
-              Invoke-WebRequest -Uri "https://one.digicert.com/signingmanager/api-ui/v1/releases/smtools-windows-x64.msi/download" `
-                -Headers $headers -OutFile $msi
-              if ((Get-Item $msi).Length -gt 0) { break }
-              throw "Downloaded file is empty"
-            } catch {
-              Write-Host "smtools download attempt $i/$maxAttempts failed: $($_.Exception.Message)"
-              if ($i -eq $maxAttempts) { throw }
-              Start-Sleep -Seconds ($i * 10)
-            }
+            dotnet tool install --global AzureSignTool --version 7.0.1
+            if ($LASTEXITCODE -eq 0) { break }
+            Write-Host "AzureSignTool install attempt $i/$maxAttempts failed"
+            if ($i -eq $maxAttempts) { throw "Could not install AzureSignTool" }
+            Start-Sleep -Seconds ($i * 10)
           }
-          Start-Process msiexec.exe -ArgumentList "/i", $msi, "/quiet", "/norestart" -Wait
-          Remove-Item $msi
-
-          echo "C:\Program Files\DigiCert\DigiCert One Signing Manager Tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-
-          $certBytes = [Convert]::FromBase64String($env:SM_CLIENT_CERT_FILE_B64)
-          $certPath = "$env:RUNNER_TEMP\digicert_client_cert.p12"
-          [IO.File]::WriteAllBytes($certPath, $certBytes)
-          echo "SM_CLIENT_CERT_FILE=$certPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-    - name: Verify DigiCert KeyLocker
-      shell: pwsh
-      env:
-        SM_HOST: https://clientauth.one.digicert.com
-        SM_API_KEY: ${{ inputs.sm-api-key }}
-        SM_CLIENT_CERT_PASSWORD: ${{ inputs.sm-client-cert-password }}
-      run: |
-          smctl healthcheck
-
-    - name: Sync certificate to Windows store
-      shell: pwsh
-      env:
-        SM_HOST: https://clientauth.one.digicert.com
-        SM_API_KEY: ${{ inputs.sm-api-key }}
-        SM_CLIENT_CERT_PASSWORD: ${{ inputs.sm-client-cert-password }}
-      run: |
-          $output = smctl windows certsync 2>&1
-          $output | ForEach-Object { Write-Host $_ }
-          if ($LASTEXITCODE -ne 0) { throw "smctl windows certsync failed" }
-
-          # certsync installs the KSP and the cert but cannot hand signtool a
-          # selector, so capture the SHA1 fingerprint and pass it via /sha1.
-          $m = [regex]::Match(($output -join "`n"), '(?i)fingerprint[^0-9A-Fa-f]*([0-9A-Fa-f]{40})')
-          if (-not $m.Success) { throw "Could not extract SHA1 fingerprint from certsync output" }
-          echo "SM_CODE_SIGNING_CERT_SHA1_HASH=$($m.Groups[1].Value)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          Write-Host "Captured code-signing certificate SHA1: $($m.Groups[1].Value)"
+          echo "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
     - name: Setup Windows SDK signtool
       shell: pwsh
       run: |
+          # Only used to verify signatures; signing goes through AzureSignTool.
           $signtoolPath = Get-ChildItem -Path "C:\Program Files (x86)\Windows Kits\10\bin" `
             -Recurse -Filter "signtool.exe" -ErrorAction SilentlyContinue |
             Where-Object { $_.FullName -like "*\x64\*" } |
@@ -103,23 +76,18 @@ runs:
     - name: Sign binaries
       shell: pwsh
       env:
-        SM_HOST: https://clientauth.one.digicert.com
-        SM_API_KEY: ${{ inputs.sm-api-key }}
-        SM_CLIENT_CERT_PASSWORD: ${{ inputs.sm-client-cert-password }}
         SIGN_PATH: ${{ inputs.path }}
         SIGN_RECURSE: ${{ inputs.recurse }}
+        KEY_VAULT: ${{ inputs.key-vault }}
+        CERT_NAME: ${{ inputs.certificate }}
       run: |
-          if (-not $env:SM_CODE_SIGNING_CERT_SHA1_HASH) {
-            throw "SM_CODE_SIGNING_CERT_SHA1_HASH is not set (certsync did not capture a fingerprint)"
-          }
-
           $dir = Resolve-Path -LiteralPath $env:SIGN_PATH
           $recurse = $env:SIGN_RECURSE -ne 'false'
           $files = Get-ChildItem -Path $dir -File -Recurse:$recurse |
             Where-Object { $_.Extension -in '.exe', '.dll' }
           if (-not $files) { throw "No .exe/.dll found under $dir" }
 
-          $signed = 0
+          $toSign = @()
           $skipped = 0
           foreach ($f in $files) {
             # CUDA and HIP redistributables arrive signed by their vendor;
@@ -129,17 +97,35 @@ runs:
               $skipped++
               continue
             }
-
-            Write-Host "Signing: $($f.Name)"
-            signtool sign /sha1 "$env:SM_CODE_SIGNING_CERT_SHA1_HASH" `
-              /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $f.FullName
-            if ($LASTEXITCODE -ne 0) { throw "signtool sign failed for $($f.FullName)" }
-            signtool verify /pa $f.FullName
-            if ($LASTEXITCODE -ne 0) { throw "Signature verification failed for $($f.FullName)" }
-            $signed++
+            $toSign += $f
           }
 
-          Write-Host "Signed $signed file(s), skipped $skipped already-signed file(s)"
+          if ($toSign.Count -gt 0) {
+            $token = az account get-access-token --resource https://vault.azure.net --query accessToken -o tsv
+            if ($LASTEXITCODE -ne 0 -or -not $token) { throw "Could not get a Key Vault access token" }
+            Write-Host "::add-mask::$token"
+
+            $list = Join-Path $env:RUNNER_TEMP "sign-list.txt"
+            $toSign.FullName | Out-File -FilePath $list -Encoding utf8
+            Write-Host "Signing $($toSign.Count) file(s) with $env:CERT_NAME from $env:KEY_VAULT"
+            AzureSignTool sign `
+              --azure-key-vault-url "https://$env:KEY_VAULT.vault.azure.net" `
+              --azure-key-vault-certificate $env:CERT_NAME `
+              --azure-key-vault-accesstoken $token `
+              --file-digest sha256 `
+              --timestamp-rfc3161 http://timestamp.digicert.com `
+              --timestamp-digest sha256 `
+              --max-degree-of-parallelism 4 `
+              --input-file-list $list
+            if ($LASTEXITCODE -ne 0) { throw "AzureSignTool failed (exit $LASTEXITCODE)" }
+          }
+
+          foreach ($f in $toSign) {
+            signtool verify /pa $f.FullName | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "Signature verification failed for $($f.FullName)" }
+          }
+
+          Write-Host "Signed $($toSign.Count) file(s), skipped $skipped already-signed file(s)"
 
     - name: Report signature status
       shell: pwsh

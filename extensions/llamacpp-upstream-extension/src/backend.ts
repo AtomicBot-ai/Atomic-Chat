@@ -239,8 +239,9 @@ export async function deleteBackendPack(
  * Whitelist is deliberately narrow: `s390x`, `snapdragon-arm64`,
  * `rocm-7.2-x64` and `openvino-2026.0-x64` are dropped here. Adding
  * one is a one-line edit in this map + a feature detector in the Rust
- * `get_supported_features`. The arm64 CUDA 13 build carries its toolkit
- * minor, so it is matched by `LINUX_CUDA_BACKEND_RE` instead.
+ * `get_supported_features`. The CUDA builds (x64 CUDA 12 and 13, arm64
+ * CUDA 13) carry their toolkit minor, so they are matched by
+ * `LINUX_CUDA_BACKEND_RE` instead.
  */
 const LINUX_UPSTREAM_ASSET_BY_BACKEND: Record<string, string> = {
   'linux-cpu-x64': 'ubuntu-x64',
@@ -248,7 +249,7 @@ const LINUX_UPSTREAM_ASSET_BY_BACKEND: Record<string, string> = {
   'linux-cpu-arm64': 'ubuntu-arm64',
   'linux-vulkan-arm64': 'ubuntu-vulkan-arm64',
 }
-const LINUX_CUDA_BACKEND_RE = /^linux-cuda-(13\.\d+)-arm64$/
+const LINUX_CUDA_BACKEND_RE = /^linux-cuda-((?:12|13)\.\d+)-(x64|arm64)$/
 
 /**
  * The manifest as the core resolved it for this platform and architecture, as
@@ -309,7 +310,7 @@ export function getBackendArchiveName(
   const linuxCuda = LINUX_CUDA_BACKEND_RE.exec(backend)
   const linuxInfix =
     LINUX_UPSTREAM_ASSET_BY_BACKEND[backend] ??
-    (linuxCuda ? `ubuntu-cuda-${linuxCuda[1]}-arm64` : undefined)
+    (linuxCuda ? `ubuntu-cuda-${linuxCuda[1]}-${linuxCuda[2]}` : undefined)
   if (linuxInfix) {
     return `llama-${version}-bin-${linuxInfix}.tar.gz`
   }
@@ -377,12 +378,14 @@ export function requiredDiskSpaceForBackend(
 
 /**
  * Matches a *minor-less* CUDA family id (e.g. `win-cuda-13-x64`,
- * `win-cuda-12-x64`, `win-cuda-13-arm64`, `linux-cuda-13-arm64`). These are
+ * `win-cuda-12-x64`, `win-cuda-13-arm64`, `linux-cuda-12-x64`,
+ * `linux-cuda-13-x64`, `linux-cuda-13-arm64`). These are
  * the family ids the Rust matrix (`determine_supported_backends`) and the TS
  * dropdown `staticVariants` emit — the concrete minor (`13.3`, `12.4`) is only
  * known once the ggml-org release stream is queried (ATO-105/ATO-174).
  */
-const CUDA_FAMILY_RE = /^(win-cuda-(\d+)-(x64|arm64)|linux-cuda-(\d+)-(arm64))$/
+const CUDA_FAMILY_RE =
+  /^(win-cuda-(\d+)-(x64|arm64)|linux-cuda-(\d+)-(x64|arm64))$/
 
 /**
  * The ROCm equivalent. HIP has no major to pin at all: upstream publishes a
