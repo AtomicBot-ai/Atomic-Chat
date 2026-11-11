@@ -63,7 +63,7 @@
   },
   "toast": {
     "sessionLost": "Vous avez été déconnecté",
-    "sessionLostDesc": "Reconnectez-vous dans Paramètres → Compte."
+    "sessionLostDesc": "Reconnectez-vous depuis Compte dans la barre latérale."
   },
   "errors": {
     "invalidCode": "Code incorrect. Réessayez.",

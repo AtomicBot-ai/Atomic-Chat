@@ -63,7 +63,7 @@
   },
   "toast": {
     "sessionLost": "You were signed out",
-    "sessionLostDesc": "Sign in again in Settings → Account."
+    "sessionLostDesc": "Sign in again from Account in the sidebar."
   },
   "errors": {
     "invalidCode": "Wrong code. Try again.",

@@ -1,0 +1,19 @@
+{
+  "title": "Un compte. Tous vos appareils.",
+  "lead": "Connectez-vous pour synchroniser vos conversations et accéder à cet ordinateur où que vous soyez. Vos modèles continuent de se télécharger.",
+  "sync": {
+    "title": "Synchronisation privée",
+    "reason": "Reprenez n’importe quelle conversation sur vos autres appareils. Chiffrée de bout en bout : vous seul pouvez la lire."
+  },
+  "remote": {
+    "title": "Accès à distance",
+    "reason": "Utilisez les modèles de cet ordinateur depuis votre téléphone ou un autre portable, où que vous soyez."
+  },
+  "everywhere": {
+    "title": "Une seule connexion partout",
+    "reason": "Le même compte pour l’application de bureau, Atomic Server et le mobile."
+  },
+  "signedIn": "Connecté",
+  "ready": "Votre compte est prêt sur cet appareil.",
+  "skip": "Passer"
+}

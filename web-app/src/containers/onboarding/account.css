@@ -1,0 +1,195 @@
+/* Tailwind's layer order, stated first: this file can load before index.css,
+ * and a layer it used first would otherwise come before `base`. */
+@layer theme, base, components, utilities;
+
+/* The account step (`steps/AccountStep`): three benefit cards on the
+ * permissions list's surface, then the sign-in row, built from the shell's
+ * theme variables (`onboarding.css`) so it follows both themes. The sign-in
+ * row's controls are at least the 42px of `.ob-primary` and stretch to the
+ * tallest of them; Google's button gets its size through its class names,
+ * since its Tailwind utilities outrank this layer, and keeps its brand
+ * colours in either theme. This file
+ * loads ahead of `onboarding.css`, so a rule that refines one of its classes
+ * is scoped to win on specificity. */
+@layer components {
+  .ob-account-benefits {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .ob-account-benefit {
+    min-width: 0;
+    padding: 18px 18px 20px;
+    border: 1px solid var(--ob-surface-line);
+    border-radius: 14px;
+    background: var(--ob-surface);
+  }
+  /* The app sizes every lucide icon at 14px in the base layer. */
+  .ob-account-benefit > svg {
+    width: 22px;
+    height: 22px;
+    margin-bottom: 14px;
+    color: var(--ob-icon-text);
+  }
+  .ob-account-benefit p {
+    margin-top: 5px;
+    color: var(--ob-subtle);
+    font-size: calc(var(--font-size-base) * 0.75);
+  }
+
+  .ob-account-sign-in {
+    margin-top: 26px;
+  }
+  /* Stretched, so Google's button and the field match the step's buttons,
+   * which grow past 42px with the interface font. */
+  .ob-account-methods {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 12px 16px;
+  }
+  .ob-account-waiting {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 42px;
+    padding: 0 8px 0 14px;
+    border: 1px solid var(--ob-surface-line);
+    border-radius: 25px;
+    color: var(--ob-text);
+    font-size: calc(var(--font-size-base) * 0.8125);
+  }
+  .ob-account-waiting > svg {
+    width: 16px;
+    height: 16px;
+    color: var(--ob-muted);
+  }
+  .ob-account-waiting .ob-text {
+    padding: 8px 10px;
+  }
+  .ob-account-or {
+    align-self: center;
+    color: var(--ob-subtle);
+    font-size: calc(var(--font-size-base) * 0.75);
+  }
+  .ob-account-field {
+    display: flex;
+    flex: 1 1 300px;
+    gap: 10px;
+    min-width: 0;
+    max-width: 440px;
+  }
+  .ob-account-field input {
+    flex: 1;
+    min-width: 0;
+    min-height: 42px;
+    padding: 0 13px;
+    border: 1px solid var(--ob-surface-line);
+    border-radius: 9px;
+    background: var(--ob-bg);
+    color: var(--ob-text);
+    font-size: calc(var(--font-size-base) * 0.8125);
+  }
+  .ob-account-field input[aria-invalid='true'] {
+    border-color: var(--ob-warn-line);
+  }
+  #ob-account-code {
+    flex: 0 1 180px;
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.3em;
+  }
+  .ob-account-field .ob-secondary {
+    flex-shrink: 0;
+  }
+  .ob-account-field .ob-secondary > svg {
+    width: 15px;
+    height: 15px;
+  }
+  .ob-account-code label {
+    display: block;
+    margin-bottom: 12px;
+    color: var(--ob-text);
+    font-size: calc(var(--font-size-base) * 0.875);
+  }
+  .ob-account-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 18px;
+    margin-top: 6px;
+  }
+  .ob-account-sign-in small {
+    display: block;
+    min-height: 1.5em;
+    margin-top: 8px;
+    color: var(--ob-tag-text);
+    font-size: calc(var(--font-size-base) * 0.75);
+    line-height: 1.5;
+  }
+  .ob-account-sign-in small.is-error {
+    color: var(--ob-warn);
+  }
+
+  .ob-account-ready {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    max-width: 540px;
+    margin-top: 26px;
+    padding: 16px 18px;
+    border: 1px solid var(--ob-selected-line);
+    border-radius: 12px;
+    background: var(--ob-selected);
+  }
+  .ob-account-who {
+    flex: 1;
+    min-width: 0;
+  }
+  .ob-account-who strong,
+  .ob-account-who small {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ob-account-who strong {
+    font-weight: 550;
+  }
+  .ob-account-who small {
+    margin-top: 2px;
+    color: var(--ob-muted);
+    font-size: calc(var(--font-size-base) * 0.75);
+  }
+  .ob-account-ready .ob-granted {
+    flex-shrink: 0;
+    min-height: 0;
+    padding: 6px 12px;
+    background: var(--ob-tag);
+    color: var(--ob-tag-text);
+  }
+  .ob-account-ready .ob-granted > svg {
+    width: 14px;
+    height: 14px;
+  }
+}
+
+@media (max-width: 720px) {
+  .ob-account-benefits {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ob-account-benefit {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: 14px;
+  }
+  .ob-account-benefit > svg {
+    grid-row: span 2;
+    margin-bottom: 0;
+  }
+  .ob-account-benefit p {
+    grid-column: 2;
+  }
+}

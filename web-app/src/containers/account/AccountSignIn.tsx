@@ -1,22 +1,14 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Loader2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { CardItem } from '@/containers/Card'
 import { Input } from '@/components/ui/input'
-import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { accountErrorMessage, formatCountdown } from '@/lib/account'
+import { formatCountdown } from '@/lib/account'
 import { cn } from '@/lib/utils'
-import { toAccountError } from '@/services/account/errors'
-import type { AccountStatus, EmailChallenge } from '@/services/account/types'
+import type { AccountStatus } from '@/services/account/types'
 import { GoogleSignInButton } from './GoogleSignInButton'
-
-const CODE_LENGTH = 6
-// Loose on purpose: the backend has the final word (`invalid_request`).
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-
-type Busy = 'google' | 'send' | 'verify' | 'resend' | null
+import { CODE_LENGTH, useAccountSignIn } from './useAccountSignIn'
 
 /**
  * Signing in with Google or a one-time email code. Also the re-auth step of
@@ -38,175 +30,29 @@ export function AccountSignIn({
   className?: string
 }) {
   const { t } = useTranslation()
-  const account = useServiceHub().account()
+  const {
+    googleAvailable,
+    step,
+    email,
+    editEmail,
+    code,
+    changeCode,
+    busy,
+    working,
+    error,
+    notice,
+    resendLeft,
+    signInWithGoogle,
+    cancelGoogle,
+    sendCode,
+    submitCode,
+    resend,
+    changeEmail,
+  } = useAccountSignIn({
+    lockedEmail,
+    onSignedIn: (status) => onSignedIn(status),
+  })
 
-  const [providers, setProviders] = useState<string[] | null>(null)
-  const [email, setEmail] = useState(lockedEmail ?? '')
-  const [challenge, setChallenge] = useState<EmailChallenge | null>(null)
-  const [code, setCode] = useState('')
-  const [busy, setBusy] = useState<Busy>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
-  const [resendAt, setResendAt] = useState(0)
-  const [now, setNow] = useState(() => Date.now())
-
-  const mounted = useRef(true)
-  const googlePending = useRef(false)
-
-  useEffect(() => {
-    mounted.current = true
-    let cancelled = false
-    account
-      .providers()
-      .then((list) => !cancelled && setProviders(list))
-      // Without the list, keep offering both: Google is hidden only when the
-      // backend says it is off, never over a slow or failed request.
-      .catch(() => {})
-    return () => {
-      cancelled = true
-      mounted.current = false
-      // Leaving mid-Google (page change, dialog closed) ends that attempt.
-      if (googlePending.current) void account.cancelLogin().catch(() => {})
-    }
-  }, [account])
-
-  // Ticks only while a resend countdown is running.
-  useEffect(() => {
-    if (resendAt <= Date.now()) return
-    const timer = window.setInterval(() => {
-      const current = Date.now()
-      setNow(current)
-      if (current >= resendAt) window.clearInterval(timer)
-    }, 1000)
-    return () => window.clearInterval(timer)
-  }, [resendAt])
-
-  const startCountdown = (seconds: number) => {
-    const current = Date.now()
-    setNow(current)
-    setResendAt(current + Math.max(0, seconds) * 1000)
-  }
-
-  const resendLeft = Math.max(0, Math.ceil((resendAt - now) / 1000))
-  const googleAvailable = providers === null || providers.includes('google')
-  const step = challenge ? 'code' : 'email'
-
-  const fail = (raw: unknown, overrides?: Record<string, string>) => {
-    const accountError = toAccountError(raw)
-    setError(accountErrorMessage(t, accountError, overrides))
-    return accountError
-  }
-
-  const signInWithGoogle = async () => {
-    setBusy('google')
-    setError(null)
-    setNotice(null)
-    googlePending.current = true
-    try {
-      const status = await account.googleLogin()
-      googlePending.current = false
-      if (mounted.current) onSignedIn(status)
-    } catch (raw) {
-      googlePending.current = false
-      if (mounted.current) fail(raw)
-    } finally {
-      if (mounted.current) setBusy(null)
-    }
-  }
-
-  const cancelGoogle = () => {
-    // The pending login rejects with `cancelled`, which says nothing.
-    void account.cancelLogin().catch(() => {})
-  }
-
-  const sendCode = async (event?: FormEvent) => {
-    event?.preventDefault()
-    const address = email.trim()
-    if (!EMAIL_PATTERN.test(address)) {
-      setError(t('account:errors.invalidEmail'))
-      return
-    }
-    setBusy('send')
-    setError(null)
-    setNotice(null)
-    try {
-      const next = await account.emailStart(address)
-      if (!mounted.current) return
-      setEmail(address)
-      setChallenge(next)
-      setCode('')
-      startCountdown(next.resendIn)
-    } catch (raw) {
-      if (mounted.current)
-        fail(raw, { invalid_request: 'account:errors.invalidEmail' })
-    } finally {
-      if (mounted.current) setBusy(null)
-    }
-  }
-
-  const resend = async () => {
-    setBusy('resend')
-    setError(null)
-    setNotice(null)
-    try {
-      const next = await account.emailStart(email)
-      if (!mounted.current) return
-      setChallenge(next)
-      setCode('')
-      startCountdown(next.resendIn)
-      setNotice(t('account:signIn.codeResent'))
-    } catch (raw) {
-      if (!mounted.current) return
-      const accountError = fail(raw)
-      if (accountError.code === 'rate_limited' && accountError.retryAfter)
-        startCountdown(accountError.retryAfter)
-    } finally {
-      if (mounted.current) setBusy(null)
-    }
-  }
-
-  const verify = async (value: string) => {
-    if (!challenge) return
-    setBusy('verify')
-    setError(null)
-    setNotice(null)
-    try {
-      const status = await account.emailVerify(challenge.challengeId, value)
-      if (mounted.current) onSignedIn(status)
-    } catch (raw) {
-      if (!mounted.current) return
-      const accountError = fail(raw)
-      setCode('')
-      if (accountError.code === 'too_many_attempts') {
-        // This challenge is spent: start over from the address.
-        setChallenge(null)
-      } else if (
-        accountError.code === 'code_expired' ||
-        accountError.code === 'invalid_challenge'
-      ) {
-        // A new code is the only way on; don't make them wait for it.
-        setResendAt(0)
-      }
-    } finally {
-      if (mounted.current) setBusy(null)
-    }
-  }
-
-  const changeCode = (value: string) => {
-    const digits = value.replace(/\D/g, '').slice(0, CODE_LENGTH)
-    setCode(digits)
-    if (digits.length === CODE_LENGTH && busy === null) void verify(digits)
-  }
-
-  const changeEmail = () => {
-    setChallenge(null)
-    setCode('')
-    setError(null)
-    setNotice(null)
-    setResendAt(0)
-  }
-
-  const working = busy !== null
   const rows = variant === 'rows'
 
   const googleControl =
@@ -253,10 +99,7 @@ export function AccountSignIn({
       readOnly={lockedEmail !== undefined}
       aria-invalid={error !== null || undefined}
       className={rows ? 'w-56' : undefined}
-      onChange={(event) => {
-        setEmail(event.target.value)
-        if (error) setError(null)
-      }}
+      onChange={(event) => editEmail(event.target.value)}
       disabled={busy === 'google'}
     />
   )
@@ -333,11 +176,6 @@ export function AccountSignIn({
       )}
     </span>
   )
-
-  const submitCode = (event: FormEvent) => {
-    event.preventDefault()
-    if (code.length === CODE_LENGTH && !working) void verify(code)
-  }
 
   const message = (error || notice) && (
     <p

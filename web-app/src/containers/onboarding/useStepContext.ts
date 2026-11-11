@@ -1,6 +1,7 @@
 import { localStorageKey } from '@/constants/localStorage'
 import type { StepContext } from '@/lib/onboarding/steps'
 
+import { useAccountStepOffered } from './steps/accountAvailability'
 import { useCloudProviderCount } from './steps/cloudAvailability'
 import { useMediaCardCount } from './steps/mediaAvailability'
 import { usePermissionRowCount } from './steps/permissionsAvailability'
@@ -21,5 +22,6 @@ export function useStepContext(): StepContext {
     cloudProviders: useCloudProviderCount(),
     mediaCards: useMediaCardCount(),
     localApiServer: useLocalApiServerOffered(),
+    accounts: useAccountStepOffered(),
   }
 }
