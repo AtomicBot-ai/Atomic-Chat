@@ -93,4 +93,37 @@ describe('account store', () => {
     })
     warn.mockRestore()
   })
+
+  it('keeps the devices list only for the user who is still signed in', async () => {
+    await useAccountStore.getState().hydrate()
+    const sessions = [
+      {
+        id: 's1',
+        clientType: 'desktop' as const,
+        deviceName: 'MacBook',
+        platform: 'macos',
+        appVersion: '2.4.0',
+        authMethod: 'email',
+        createdAt: '2026-11-01T10:00:00Z',
+        lastUsedAt: '2026-11-11T10:00:00Z',
+        expiresAt: '2026-12-01T10:00:00Z',
+        current: true,
+      },
+    ]
+
+    useAccountStore.getState().setDevices('someone-else', sessions)
+    expect(useAccountStore.getState().devices).toBeNull()
+    useAccountStore.getState().setDevices(ada.id, sessions)
+    expect(useAccountStore.getState().devices).toEqual({
+      userId: ada.id,
+      sessions,
+    })
+
+    // A profile refresh of the same user keeps it.
+    useAccountStore.getState().setStatus(signedIn)
+    expect(useAccountStore.getState().devices).not.toBeNull()
+    // Signing out drops it.
+    emit({ status: signedOut, reason: 'signedOut' })
+    expect(useAccountStore.getState().devices).toBeNull()
+  })
 })

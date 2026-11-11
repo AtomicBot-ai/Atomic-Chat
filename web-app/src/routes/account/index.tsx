@@ -7,17 +7,17 @@ import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const Route = createFileRoute(route.settings.account as any)({
-  // Behind the dev-only accounts flag: a stray link lands on General.
+export const Route = createFileRoute(route.account.index as any)({
+  // Behind the dev-only accounts flag: a stray link lands on the home page.
   beforeLoad: () => {
     if (!PlatformFeatures[PlatformFeature.ACCOUNTS]) {
-      throw redirect({ to: route.settings.general })
+      throw redirect({ to: route.home })
     }
   },
-  component: AccountSettings,
+  component: AccountOverview,
 })
 
-function AccountSettings() {
+function AccountOverview() {
   const { t } = useTranslation()
 
   return (
@@ -25,7 +25,7 @@ function AccountSettings() {
       <HeaderPage>
         <div className="flex items-center gap-2 w-full">
           <span className="font-medium text-base font-studio">
-            {t('common:settings')}
+            {t('common:navigation.account')}
           </span>
         </div>
       </HeaderPage>

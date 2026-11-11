@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import { page } from '@vitest/browser/context'
 
 import type {
@@ -19,10 +19,11 @@ import {
   settle,
   withTranslations,
 } from '@/test/layout'
+import { AccountDevices } from './AccountDevices'
 import { AccountPage } from './AccountPage'
 
+// The account section has no contextual sidebar: the page takes the rest.
 const RAIL = 60
-const SIDEBAR = 240
 
 // Worst-case copy: a long name, a long address and a long device name.
 const user = {
@@ -82,7 +83,7 @@ for (const width of [1024, 1280]) {
   for (const font of [DEFAULT_FONT_SIZE, XL_FONT_SIZE]) {
     for (const theme of ['light', 'dark'] as const) {
       describe(`${width}px / ${font} / ${theme}`, () => {
-        it('keeps the signed-in page inside the settings column', async () => {
+        it('keeps the signed-in page inside its column', async () => {
           await page.viewport(width, 900)
           setFontSize(font)
           setTheme(theme)
@@ -90,7 +91,7 @@ for (const width of [1024, 1280]) {
           render(
             withTranslations(
               <main
-                style={{ width: width - RAIL - SIDEBAR }}
+                style={{ width: width - RAIL }}
                 className="flex flex-col gap-3 p-4"
                 data-testid="page"
               >
@@ -99,7 +100,7 @@ for (const width of [1024, 1280]) {
             )
           )
           const rows = await screen.findAllByTestId('account-device')
-          await screen.findByText(/Google · ada@gmail/)
+          await screen.findByTestId('account-name')
           await settle()
 
           expectNoHorizontalOverflow(screen.getByTestId('page'))
@@ -108,7 +109,7 @@ for (const width of [1024, 1280]) {
           expect(rows).toHaveLength(3)
         })
 
-        it('keeps the sign-in form inside the settings column', async () => {
+        it('keeps the sign-in form inside its column', async () => {
           await page.viewport(width, 900)
           setFontSize(font)
           setTheme(theme)
@@ -116,7 +117,7 @@ for (const width of [1024, 1280]) {
           render(
             withTranslations(
               <main
-                style={{ width: width - RAIL - SIDEBAR }}
+                style={{ width: width - RAIL }}
                 className="flex flex-col gap-3 p-4"
                 data-testid="page"
               >
@@ -128,6 +129,45 @@ for (const width of [1024, 1280]) {
           await settle()
 
           expectNoHorizontalOverflow(screen.getByTestId('page'))
+        })
+
+        it('keeps the devices card as tall while its row loads', async () => {
+          await page.viewport(width, 900)
+          setFontSize(font)
+          setTheme(theme)
+          let answer!: (sessions: AccountSession[]) => void
+          seedServiceHub({
+            account: {
+              sessions: vi.fn(
+                () =>
+                  new Promise<AccountSession[]>((resolve) => {
+                    answer = resolve
+                  })
+              ),
+            } as unknown as AccountService,
+          })
+          render(
+            withTranslations(
+              <div style={{ width: width - RAIL }} data-testid="devices">
+                <AccountDevices />
+              </div>
+            )
+          )
+          await screen.findByTestId('account-devices-loading')
+          await settle()
+          const card = screen.getByTestId('devices')
+          const loading = card.getBoundingClientRect().height
+
+          // Signed in, this device is always on the list: one row.
+          await act(async () =>
+            answer([
+              session({ id: 'a', current: true, deviceName: 'MacBook Pro' }),
+            ])
+          )
+          await screen.findByTestId('account-device')
+          await settle()
+
+          expect(card.getBoundingClientRect().height).toBeCloseTo(loading, 0)
         })
       })
     }

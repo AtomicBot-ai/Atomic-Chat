@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Link, useLocation } from '@tanstack/react-router'
+import { Link } from '@tanstack/react-router'
 import {
   Blocks,
   CircleHelp,
@@ -12,7 +12,7 @@ import {
 } from 'lucide-react'
 import { IconBrandDiscord } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
-import { isPathActive, type NavigationSection } from '@/lib/navigation'
+import type { NavigationSection } from '@/lib/navigation'
 import { route } from '@/constants/routes'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useServiceHub } from '@/hooks/useServiceHub'
@@ -54,11 +54,7 @@ export function NavigationRail({ section }: { section: NavigationSection }) {
   const [helpOpen, setHelpOpen] = useState(false)
   const setSupportOpen = useSupportChatStore((state) => state.setSheetOpen)
   const { setOpen, setOpenMobile, isMobile } = useSidebar()
-  const { pathname } = useLocation()
   const accountsEnabled = PlatformFeatures[PlatformFeature.ACCOUNTS]
-  // The account page sits under Settings, but the account item is the one lit.
-  const onAccount =
-    accountsEnabled && isPathActive(pathname, route.settings.account)
   // Picking a section always shows its sidebar, even if it was collapsed.
   const reveal = () => (isMobile ? setOpenMobile(true) : setOpen(true))
 
@@ -140,9 +136,7 @@ export function NavigationRail({ section }: { section: NavigationSection }) {
         )}
       </div>
       <div className="mt-auto flex flex-col gap-2">
-        {accountsEnabled && (
-          <AccountRailItem active={onAccount} onPick={reveal} />
-        )}
+        {accountsEnabled && <AccountRailItem active={section === 'account'} />}
         <Popover open={helpOpen} onOpenChange={setHelpOpen}>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -218,8 +212,7 @@ export function NavigationRail({ section }: { section: NavigationSection }) {
           'settings',
           t('common:settings'),
           route.settings.general,
-          <Settings size={20} strokeWidth={1.7} />,
-          section === 'settings' && !onAccount
+          <Settings size={20} strokeWidth={1.7} />
         )}
       </div>
       {/* Portalled to the body; mounted here with the menu that opens it. */}
@@ -230,16 +223,12 @@ export function NavigationRail({ section }: { section: NavigationSection }) {
 
 /**
  * The account entry at the top of the rail's bottom group: the avatar once
- * signed in, a "Sign in" person icon before. It is always mounted, so it is
- * what reads the account status and starts following its changes.
+ * signed in, a "Sign in" person icon before. It opens the Account section,
+ * which has no sidebar, so it leaves the sidebar's open state alone.
+ * It is always mounted, so it is what reads the account status and starts
+ * following its changes.
  */
-function AccountRailItem({
-  active,
-  onPick,
-}: {
-  active: boolean
-  onPick: () => void
-}) {
+function AccountRailItem({ active }: { active: boolean }) {
   const { t } = useTranslation()
   const status = useAccountStore((state) => state.status)
   const hydrate = useAccountStore((state) => state.hydrate)
@@ -255,7 +244,7 @@ function AccountRailItem({
     <Tooltip>
       <TooltipTrigger asChild>
         <Link
-          to={route.settings.account}
+          to={route.account.index}
           aria-label={
             user
               ? t('common:navigation.account')
@@ -263,7 +252,6 @@ function AccountRailItem({
           }
           aria-current={active ? 'page' : undefined}
           data-testid="rail-account"
-          onClick={onPick}
           className={cn(railButton, active && railButtonActive)}
         >
           {user ? (

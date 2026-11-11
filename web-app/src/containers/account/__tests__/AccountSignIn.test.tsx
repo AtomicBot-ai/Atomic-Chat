@@ -224,6 +224,23 @@ describe('AccountSignIn', () => {
     expect(screen.getByLabelText('Email')).toBeInTheDocument()
   })
 
+  it('keeps Continue with Google when the provider list cannot be loaded', async () => {
+    account = mockAccount()
+    account.providers.mockRejectedValueOnce({
+      code: 'network',
+      message: 'offline',
+      attemptsLeft: null,
+      retryAfter: null,
+    })
+    seedServiceHub({ account: account as unknown as AccountService })
+    await renderSignIn()
+
+    expect(
+      screen.getByRole('button', { name: 'Continue with Google' })
+    ).toBeEnabled()
+    expect(screen.getByText('or')).toBeInTheDocument()
+  })
+
   it('signs in with Google and lets a pending attempt be cancelled quietly', async () => {
     let reject: (reason: unknown) => void = () => {}
     account.googleLogin.mockImplementationOnce(

@@ -24,6 +24,7 @@ import { Route as ConnectorsIndexRouteImport } from './routes/connectors/index'
 import { Route as CloudIndexRouteImport } from './routes/cloud/index'
 import { Route as AudiosIndexRouteImport } from './routes/audios/index'
 import { Route as ApiIndexRouteImport } from './routes/api/index'
+import { Route as AccountIndexRouteImport } from './routes/account/index'
 import { Route as ThreadsThreadIdRouteImport } from './routes/threads/$threadId'
 import { Route as SettingsVoiceRouteImport } from './routes/settings/voice'
 import { Route as SettingsShortcutsRouteImport } from './routes/settings/shortcuts'
@@ -39,7 +40,6 @@ import { Route as SettingsGeneralRouteImport } from './routes/settings/general'
 import { Route as SettingsExtensionsRouteImport } from './routes/settings/extensions'
 import { Route as SettingsAttachmentsRouteImport } from './routes/settings/attachments'
 import { Route as SettingsAssistantRouteImport } from './routes/settings/assistant'
-import { Route as SettingsAccountRouteImport } from './routes/settings/account'
 import { Route as ProjectProjectIdRouteImport } from './routes/project/$projectId'
 import { Route as LocalApiServerLogsRouteImport } from './routes/local-api-server/logs'
 import { Route as ImagesWorkflowRouteImport } from './routes/images/$workflow'
@@ -125,6 +125,11 @@ const ApiIndexRoute = ApiIndexRouteImport.update({
   path: '/api/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AccountIndexRoute = AccountIndexRouteImport.update({
+  id: '/account/',
+  path: '/account/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ThreadsThreadIdRoute = ThreadsThreadIdRouteImport.update({
   id: '/threads/$threadId',
   path: '/threads/$threadId',
@@ -200,11 +205,6 @@ const SettingsAssistantRoute = SettingsAssistantRouteImport.update({
   path: '/settings/assistant',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SettingsAccountRoute = SettingsAccountRouteImport.update({
-  id: '/settings/account',
-  path: '/settings/account',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ProjectProjectIdRoute = ProjectProjectIdRouteImport.update({
   id: '/project/$projectId',
   path: '/project/$projectId',
@@ -265,7 +265,6 @@ export interface FileRoutesByFullPath {
   '/images/$workflow': typeof ImagesWorkflowRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
-  '/settings/account': typeof SettingsAccountRoute
   '/settings/assistant': typeof SettingsAssistantRoute
   '/settings/attachments': typeof SettingsAttachmentsRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
@@ -281,6 +280,7 @@ export interface FileRoutesByFullPath {
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/settings/voice': typeof SettingsVoiceRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
+  '/account/': typeof AccountIndexRoute
   '/api/': typeof ApiIndexRoute
   '/audios/': typeof AudiosIndexRoute
   '/cloud/': typeof CloudIndexRoute
@@ -307,7 +307,6 @@ export interface FileRoutesByTo {
   '/images/$workflow': typeof ImagesWorkflowRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
-  '/settings/account': typeof SettingsAccountRoute
   '/settings/assistant': typeof SettingsAssistantRoute
   '/settings/attachments': typeof SettingsAttachmentsRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
@@ -323,6 +322,7 @@ export interface FileRoutesByTo {
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/settings/voice': typeof SettingsVoiceRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
+  '/account': typeof AccountIndexRoute
   '/api': typeof ApiIndexRoute
   '/audios': typeof AudiosIndexRoute
   '/cloud': typeof CloudIndexRoute
@@ -350,7 +350,6 @@ export interface FileRoutesById {
   '/images/$workflow': typeof ImagesWorkflowRoute
   '/local-api-server/logs': typeof LocalApiServerLogsRoute
   '/project/$projectId': typeof ProjectProjectIdRoute
-  '/settings/account': typeof SettingsAccountRoute
   '/settings/assistant': typeof SettingsAssistantRoute
   '/settings/attachments': typeof SettingsAttachmentsRoute
   '/settings/extensions': typeof SettingsExtensionsRoute
@@ -366,6 +365,7 @@ export interface FileRoutesById {
   '/settings/shortcuts': typeof SettingsShortcutsRoute
   '/settings/voice': typeof SettingsVoiceRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
+  '/account/': typeof AccountIndexRoute
   '/api/': typeof ApiIndexRoute
   '/audios/': typeof AudiosIndexRoute
   '/cloud/': typeof CloudIndexRoute
@@ -394,7 +394,6 @@ export interface FileRouteTypes {
     | '/images/$workflow'
     | '/local-api-server/logs'
     | '/project/$projectId'
-    | '/settings/account'
     | '/settings/assistant'
     | '/settings/attachments'
     | '/settings/extensions'
@@ -410,6 +409,7 @@ export interface FileRouteTypes {
     | '/settings/shortcuts'
     | '/settings/voice'
     | '/threads/$threadId'
+    | '/account/'
     | '/api/'
     | '/audios/'
     | '/cloud/'
@@ -436,7 +436,6 @@ export interface FileRouteTypes {
     | '/images/$workflow'
     | '/local-api-server/logs'
     | '/project/$projectId'
-    | '/settings/account'
     | '/settings/assistant'
     | '/settings/attachments'
     | '/settings/extensions'
@@ -452,6 +451,7 @@ export interface FileRouteTypes {
     | '/settings/shortcuts'
     | '/settings/voice'
     | '/threads/$threadId'
+    | '/account'
     | '/api'
     | '/audios'
     | '/cloud'
@@ -478,7 +478,6 @@ export interface FileRouteTypes {
     | '/images/$workflow'
     | '/local-api-server/logs'
     | '/project/$projectId'
-    | '/settings/account'
     | '/settings/assistant'
     | '/settings/attachments'
     | '/settings/extensions'
@@ -494,6 +493,7 @@ export interface FileRouteTypes {
     | '/settings/shortcuts'
     | '/settings/voice'
     | '/threads/$threadId'
+    | '/account/'
     | '/api/'
     | '/audios/'
     | '/cloud/'
@@ -521,7 +521,6 @@ export interface RootRouteChildren {
   ImagesWorkflowRoute: typeof ImagesWorkflowRoute
   LocalApiServerLogsRoute: typeof LocalApiServerLogsRoute
   ProjectProjectIdRoute: typeof ProjectProjectIdRoute
-  SettingsAccountRoute: typeof SettingsAccountRoute
   SettingsAssistantRoute: typeof SettingsAssistantRoute
   SettingsAttachmentsRoute: typeof SettingsAttachmentsRoute
   SettingsExtensionsRoute: typeof SettingsExtensionsRoute
@@ -537,6 +536,7 @@ export interface RootRouteChildren {
   SettingsShortcutsRoute: typeof SettingsShortcutsRoute
   SettingsVoiceRoute: typeof SettingsVoiceRoute
   ThreadsThreadIdRoute: typeof ThreadsThreadIdRoute
+  AccountIndexRoute: typeof AccountIndexRoute
   ApiIndexRoute: typeof ApiIndexRoute
   AudiosIndexRoute: typeof AudiosIndexRoute
   CloudIndexRoute: typeof CloudIndexRoute
@@ -658,6 +658,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/account/': {
+      id: '/account/'
+      path: '/account'
+      fullPath: '/account/'
+      preLoaderRoute: typeof AccountIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/threads/$threadId': {
       id: '/threads/$threadId'
       path: '/threads/$threadId'
@@ -763,13 +770,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsAssistantRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/settings/account': {
-      id: '/settings/account'
-      path: '/settings/account'
-      fullPath: '/settings/account'
-      preLoaderRoute: typeof SettingsAccountRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/project/$projectId': {
       id: '/project/$projectId'
       path: '/project/$projectId'
@@ -849,7 +849,6 @@ const rootRouteChildren: RootRouteChildren = {
   ImagesWorkflowRoute: ImagesWorkflowRoute,
   LocalApiServerLogsRoute: LocalApiServerLogsRoute,
   ProjectProjectIdRoute: ProjectProjectIdRoute,
-  SettingsAccountRoute: SettingsAccountRoute,
   SettingsAssistantRoute: SettingsAssistantRoute,
   SettingsAttachmentsRoute: SettingsAttachmentsRoute,
   SettingsExtensionsRoute: SettingsExtensionsRoute,
@@ -865,6 +864,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsShortcutsRoute: SettingsShortcutsRoute,
   SettingsVoiceRoute: SettingsVoiceRoute,
   ThreadsThreadIdRoute: ThreadsThreadIdRoute,
+  AccountIndexRoute: AccountIndexRoute,
   ApiIndexRoute: ApiIndexRoute,
   AudiosIndexRoute: AudiosIndexRoute,
   CloudIndexRoute: CloudIndexRoute,

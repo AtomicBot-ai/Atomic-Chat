@@ -250,49 +250,52 @@ export function LeftSidebar() {
     <>
       <NavigationRail section={section} />
       <WindowTitlebar section={section} />
-      <div
-        className={cn('relative', compact && sidebarOpen ? 'z-[45]' : 'z-30')}
-      >
-        <Sidebar variant="floating" collapsible="offcanvas">
-          <SidebarHeader className="gap-0 px-3 pb-2 pt-3">
-            <div className="flex items-center justify-between px-1 pb-1">
-              <h2 className="font-studio truncate text-lg font-semibold">
-                {t(SECTION_TITLES[section])}
-              </h2>
+      {/* The account is one page for now: it has nothing to list beside it. */}
+      {section !== 'account' && (
+        <div
+          className={cn('relative', compact && sidebarOpen ? 'z-[45]' : 'z-30')}
+        >
+          <Sidebar variant="floating" collapsible="offcanvas">
+            <SidebarHeader className="gap-0 px-3 pb-2 pt-3">
+              <div className="flex items-center justify-between px-1 pb-1">
+                <h2 className="font-studio truncate text-lg font-semibold">
+                  {t(SECTION_TITLES[section])}
+                </h2>
+                {section === 'chat' && (
+                  <button
+                    type="button"
+                    aria-label={t('common:navigation.searchChats')}
+                    title={t('common:navigation.searchChats')}
+                    onClick={() => setSearchOpen(true)}
+                    className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-foreground/8"
+                  >
+                    <Search size={16} />
+                  </button>
+                )}
+              </div>
+            </SidebarHeader>
+            <SidebarContent
+              // Rows measure the sidebar's width (`@…/sidebar`) to decide what
+              // fits beside a name.
+              className="@container/sidebar mask-b-from-95%"
+              aria-label={t(SECTION_TITLES[section])}
+            >
               {section === 'chat' && (
-                <button
-                  type="button"
-                  aria-label={t('common:navigation.searchChats')}
-                  title={t('common:navigation.searchChats')}
-                  onClick={() => setSearchOpen(true)}
-                  className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-foreground/8"
-                >
-                  <Search size={16} />
-                </button>
+                <WorkspaceNavigation
+                  onCreateProject={() => setProjectDialogOpen(true)}
+                />
               )}
-            </div>
-          </SidebarHeader>
-          <SidebarContent
-            // Rows measure the sidebar's width (`@…/sidebar`) to decide what
-            // fits beside a name.
-            className="@container/sidebar mask-b-from-95%"
-            aria-label={t(SECTION_TITLES[section])}
-          >
-            {section === 'chat' && (
-              <WorkspaceNavigation
-                onCreateProject={() => setProjectDialogOpen(true)}
-              />
-            )}
-            {section === 'server' && <ServerNavigation />}
-            {section === 'models' && <ModelsNavigation />}
-            {section === 'settings' && <SettingsNavigation />}
-          </SidebarContent>
-          <SidebarRail
-            aria-label={t('common:navigation.resizeSidebar')}
-            title={t('common:navigation.resizeSidebarHint')}
-          />
-        </Sidebar>
-      </div>
+              {section === 'server' && <ServerNavigation />}
+              {section === 'models' && <ModelsNavigation />}
+              {section === 'settings' && <SettingsNavigation />}
+            </SidebarContent>
+            <SidebarRail
+              aria-label={t('common:navigation.resizeSidebar')}
+              title={t('common:navigation.resizeSidebarHint')}
+            />
+          </Sidebar>
+        </div>
+      )}
       <AddProjectDialog
         open={projectDialogOpen}
         onOpenChange={setProjectDialogOpen}

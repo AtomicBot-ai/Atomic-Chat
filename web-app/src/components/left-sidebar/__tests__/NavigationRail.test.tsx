@@ -154,11 +154,12 @@ describe('NavigationRail account item', () => {
     expect(account.status).not.toHaveBeenCalled()
   })
 
-  it('links to Settings → Account and comes first in the bottom group', async () => {
+  it('links to the Account section and comes first in the bottom group', async () => {
     render(<NavigationRail section="chat" />)
 
     const item = screen.getByTestId('rail-account')
-    expect(item).toHaveAttribute('href', '/settings/account')
+    expect(item).toHaveAttribute('href', '/account/')
+    expect(item).not.toHaveAttribute('aria-current')
     expect(item.parentElement?.firstElementChild).toBe(item)
     await waitFor(() => expect(account.status).toHaveBeenCalledTimes(1))
     expect(account.onChanged).toHaveBeenCalledTimes(1)
@@ -186,9 +187,9 @@ describe('NavigationRail account item', () => {
     expect(item.querySelector('.lucide-circle-user-round')).toBeNull()
   })
 
-  it('is the lit item on the account page, not Settings', async () => {
-    location.pathname = '/settings/account'
-    render(<NavigationRail section="settings" />)
+  it('is the lit item while the Account section is open', async () => {
+    location.pathname = '/account/'
+    render(<NavigationRail section="account" />)
 
     expect(screen.getByTestId('rail-account')).toHaveAttribute(
       'aria-current',

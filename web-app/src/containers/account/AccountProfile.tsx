@@ -10,7 +10,6 @@ import { accountErrorMessage, accountLabel } from '@/lib/account'
 import { useAccountStore } from '@/stores/account-store'
 import { toAccountError } from '@/services/account/errors'
 import type {
-  AccountIdentity,
   AccountProfile as AccountProfileData,
   AccountUser,
 } from '@/services/account/types'
@@ -18,28 +17,16 @@ import { AccountAvatar } from './AccountAvatar'
 
 const NAME_MAX = 100
 
-function methodLabel(
-  t: (key: string) => string,
-  identity: AccountIdentity
-): string {
-  if (identity.provider === 'google') return t('account:profile.methodGoogle')
-  if (identity.provider === 'email') return t('account:profile.methodEmail')
-  return identity.provider
-}
-
 /**
- * Who is signed in: picture, display name (editable in place), email, the
- * ways the account can sign in, and signing out of this device.
+ * Who is signed in: picture, display name (editable in place), email, and
+ * signing out of this device.
  */
 export function AccountProfile({
   user,
-  profile,
   profileError,
   onProfileUpdated,
 }: {
   user: AccountUser
-  /** `null` until `account_profile` has answered. */
-  profile: AccountProfileData | null
   /** Why `account_profile` failed, already worded. */
   profileError: string | null
   onProfileUpdated: (profile: AccountProfileData) => void
@@ -94,8 +81,6 @@ export function AccountProfile({
       setSigningOut(false)
     }
   }
-
-  const identities = profile?.identities ?? []
 
   return (
     <Card title={t('account:profile.title')}>
@@ -184,30 +169,11 @@ export function AccountProfile({
         )}
       </div>
 
-      <CardItem
-        title={t('account:profile.methods')}
-        description={
-          profile ? (
-            <span className="flex flex-wrap gap-1.5 pt-0.5">
-              {identities.map((identity) => (
-                <span
-                  key={`${identity.provider}:${identity.email ?? ''}`}
-                  className="inline-block max-w-full truncate rounded-full bg-foreground/8 px-2 py-0.5 text-xs font-medium text-foreground"
-                  title={identity.email ?? undefined}
-                >
-                  {identity.email && identity.email !== user.email
-                    ? `${methodLabel(t, identity)} · ${identity.email}`
-                    : methodLabel(t, identity)}
-                </span>
-              ))}
-            </span>
-          ) : profileError ? (
-            <span className="text-destructive">{profileError}</span>
-          ) : (
-            <span className="inline-block h-4 w-24 animate-pulse rounded bg-foreground/8" />
-          )
-        }
-      />
+      {profileError && (
+        <p role="alert" className="-mt-1 mb-3 text-sm text-destructive">
+          {profileError}
+        </p>
+      )}
 
       <CardItem
         title={t('account:profile.signOut')}

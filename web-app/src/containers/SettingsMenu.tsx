@@ -1,5 +1,5 @@
 import { useLocation } from '@tanstack/react-router'
-import { Bot, CircleUserRound, Plug, Puzzle } from 'lucide-react'
+import { Bot, Plug, Puzzle } from 'lucide-react'
 import { route } from '@/constants/routes'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
@@ -10,8 +10,6 @@ import {
   NewBadge,
 } from '@/components/left-sidebar/NavRow'
 import { isPathActive } from '@/lib/navigation'
-import { PlatformFeatures } from '@/lib/platform/const'
-import { PlatformFeature } from '@/lib/platform/types'
 
 /**
  * The Settings section of the contextual sidebar: app preferences, then the
@@ -35,15 +33,6 @@ export function SettingsNavigation() {
   return (
     <>
       <SidebarMenu className="px-2">
-        {PlatformFeatures[PlatformFeature.ACCOUNTS] && (
-          <NavRow
-            to={route.settings.account}
-            label={t('common:navigation.account')}
-            icon={<CircleUserRound size={16} />}
-            active={isPathActive(pathname, route.settings.account)}
-            testId="settings-account"
-          />
-        )}
         {preferences.map(([label, to]) => (
           <NavRow
             key={to}

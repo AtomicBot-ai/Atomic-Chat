@@ -27,6 +27,8 @@ describe('navigationSection', () => {
     ['/settings/providers/llamacpp-upstream', 'models'],
     ['/settings/media', 'models'],
     ['/settings/voice', 'models'],
+    ['/account/', 'account'],
+    ['/account', 'account'],
     ['/settings/general', 'settings'],
     ['/settings/hardware', 'settings'],
     ['/settings/assistant', 'settings'],

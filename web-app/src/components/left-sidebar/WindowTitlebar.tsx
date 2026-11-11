@@ -38,17 +38,20 @@ export function WindowTitlebar({ section }: { section: NavigationSection }) {
       // drag handler leaves clickable.
       {...(IS_MACOS ? { 'data-tauri-drag-region': true } : {})}
     >
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <SidebarTrigger
-            aria-label={t('common:navigation.toggleSidebar')}
-            className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-sidebar-foreground/8!"
-          />
-        </TooltipTrigger>
-        <TooltipContent side="bottom">
-          {t('common:navigation.toggleSidebar')}
-        </TooltipContent>
-      </Tooltip>
+      {/* The account section has no sidebar to toggle. */}
+      {section !== 'account' && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <SidebarTrigger
+              aria-label={t('common:navigation.toggleSidebar')}
+              className="size-7 shrink-0 rounded-md text-muted-foreground hover:bg-sidebar-foreground/8!"
+            />
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            {t('common:navigation.toggleSidebar')}
+          </TooltipContent>
+        </Tooltip>
+      )}
       {section === 'chat' && collapsed && (
         <Tooltip>
           <TooltipTrigger asChild>

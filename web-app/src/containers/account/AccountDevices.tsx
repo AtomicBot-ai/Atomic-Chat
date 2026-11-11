@@ -9,6 +9,7 @@ import { accountErrorMessage, platformLabel } from '@/lib/account'
 import { formatTimeAgo } from '@/lib/model-card'
 import { toAccountError } from '@/services/account/errors'
 import type { AccountError, AccountSession } from '@/services/account/types'
+import { useAccountStore } from '@/stores/account-store'
 
 const MOBILE_PLATFORMS = new Set(['ios', 'android'])
 
@@ -25,20 +26,29 @@ export function AccountDevices() {
   const { t, i18n } = useTranslation()
   const account = useServiceHub().account()
 
-  const [sessions, setSessions] = useState<AccountSession[] | null>(null)
+  const userId = useAccountStore((state) =>
+    state.status.signedIn ? (state.status.user?.id ?? null) : null
+  )
+  const setDevices = useAccountStore((state) => state.setDevices)
+  // The list from the last visit, shown while it is refreshed in place.
+  const [sessions, setSessions] = useState<AccountSession[] | null>(() => {
+    const cached = useAccountStore.getState().devices
+    return cached && cached.userId === userId ? cached.sessions : null
+  })
   const [loadError, setLoadError] = useState<AccountError | null>(null)
   const [revoking, setRevoking] = useState<string | null>(null)
   const [revokeError, setRevokeError] = useState<AccountError | null>(null)
 
   const load = useCallback(async () => {
     try {
-      const list = await account.sessions()
-      setSessions(sortSessions(list))
+      const list = sortSessions(await account.sessions())
+      setSessions(list)
       setLoadError(null)
+      if (userId) setDevices(userId, list)
     } catch (raw) {
       setLoadError(toAccountError(raw))
     }
-  }, [account])
+  }, [account, userId, setDevices])
 
   useEffect(() => {
     void load()
@@ -91,13 +101,26 @@ export function AccountDevices() {
       </p>
 
       {sessions === null && !loadError && (
-        <div className="flex flex-col gap-3" aria-hidden>
-          {[0, 1].map((row) => (
-            <div key={row} className="flex items-center gap-3">
-              <span className="size-8 shrink-0 animate-pulse rounded-lg bg-foreground/8" />
-              <span className="h-4 w-40 animate-pulse rounded bg-foreground/8" />
+        // One row shaped like a device row (this device is always listed),
+        // with the same type, so the card keeps its height when it loads.
+        <div
+          className="flex min-w-0 items-center gap-3"
+          data-testid="account-devices-loading"
+          aria-hidden
+        >
+          <span className="size-8 shrink-0 animate-pulse rounded-lg bg-foreground/8" />
+          <div className="min-w-0 flex-1">
+            <div className="font-medium">
+              <span className="inline-block w-40 animate-pulse rounded bg-foreground/8 leading-none">
+                &nbsp;
+              </span>
             </div>
-          ))}
+            <div>
+              <span className="inline-block w-56 animate-pulse rounded bg-foreground/8 leading-none">
+                &nbsp;
+              </span>
+            </div>
+          </div>
         </div>
       )}
 

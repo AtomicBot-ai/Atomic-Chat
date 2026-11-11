@@ -114,6 +114,10 @@ describe('SettingsNavigation', () => {
     expect(screen.queryByText('common:https_proxy')).not.toBeInTheDocument()
     expect(screen.queryByText('common:modelProviders')).not.toBeInTheDocument()
     expect(screen.queryByText('common:privacy')).not.toBeInTheDocument()
+    // The account has its own rail section.
+    expect(
+      screen.queryByText('common:navigation.account')
+    ).not.toBeInTheDocument()
   })
 
   it('highlights the open page', () => {

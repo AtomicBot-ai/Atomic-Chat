@@ -6,9 +6,11 @@ export const route = {
   appLogs: '/logs',
   project: '/project',
   projectDetail: '/project/$projectId',
+  account: {
+    index: '/account/',
+  },
   settings: {
     index: '/settings',
-    account: '/settings/account',
     model_providers: '/settings/providers',
     providers: '/settings/providers/$providerName',
     general: '/settings/general',

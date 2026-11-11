@@ -6,10 +6,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { accountErrorMessage } from '@/lib/account'
 import { useAccountStore } from '@/stores/account-store'
 import { toAccountError } from '@/services/account/errors'
-import type {
-  AccountError,
-  AccountProfile as AccountProfileData,
-} from '@/services/account/types'
+import type { AccountError } from '@/services/account/types'
 import { AccountDevices } from './AccountDevices'
 import { AccountProfile } from './AccountProfile'
 import { AccountSignIn } from './AccountSignIn'
@@ -35,7 +32,6 @@ export function AccountPage() {
   const setStatus = useAccountStore((state) => state.setStatus)
   const setUser = useAccountStore((state) => state.setUser)
 
-  const [profile, setProfile] = useState<AccountProfileData | null>(null)
   const [profileError, setProfileError] = useState<AccountError | null>(null)
 
   const user = status.signedIn ? status.user : null
@@ -49,13 +45,11 @@ export function AccountPage() {
   useEffect(() => {
     if (!userId) return
     let cancelled = false
-    setProfile(null)
     setProfileError(null)
     account
       .profile()
       .then((next) => {
         if (cancelled) return
-        setProfile(next)
         setUser(next.user)
       })
       .catch((raw) => {
@@ -73,11 +67,8 @@ export function AccountPage() {
 
   if (!user) {
     return (
-      <Card title={t('account:signIn.title')}>
-        <p className="mb-4 text-muted-foreground">
-          {t('account:signIn.description')}
-        </p>
-        <AccountSignIn onSignedIn={setStatus} />
+      <Card title={t('common:navigation.account')}>
+        <AccountSignIn variant="rows" onSignedIn={setStatus} />
       </Card>
     )
   }
@@ -86,14 +77,10 @@ export function AccountPage() {
     <>
       <AccountProfile
         user={user}
-        profile={profile}
         profileError={
           profileError ? accountErrorMessage(t, profileError) : null
         }
-        onProfileUpdated={(next) => {
-          setProfile(next)
-          setUser(next.user)
-        }}
+        onProfileUpdated={(next) => setUser(next.user)}
       />
       <AccountDevices />
       <Card title={t('account:danger.title')}>

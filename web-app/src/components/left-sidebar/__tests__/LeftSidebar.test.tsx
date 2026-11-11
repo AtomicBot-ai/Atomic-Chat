@@ -235,7 +235,9 @@ describe('LeftSidebar', () => {
     it('lists new chat, media, pins, projects and recents', () => {
       render(<LeftSidebar />)
 
-      expect(screen.getByText('common:navigation.workspace')).toBeInTheDocument()
+      expect(
+        screen.getByText('common:navigation.workspace')
+      ).toBeInTheDocument()
       expect(screen.getByText('common:newChat')).toBeInTheDocument()
       expect(screen.getByTestId('images-link')).toHaveAttribute(
         'href',
@@ -454,6 +456,18 @@ describe('LeftSidebar', () => {
         'data-active',
         'false'
       )
+    })
+  })
+
+  describe('Account', () => {
+    it('has no contextual sidebar and nothing to toggle', () => {
+      at('/account/')
+      render(<LeftSidebar />)
+
+      expect(screen.queryByTestId('sidebar-content')).not.toBeInTheDocument()
+      expect(
+        screen.queryByLabelText('common:navigation.toggleSidebar')
+      ).not.toBeInTheDocument()
     })
   })
 

@@ -1,7 +1,5 @@
 {
   "signIn": {
-    "title": "Se connecter à Atomic Chat",
-    "description": "Utilisez votre compte Google ou recevez un code à usage unique par e-mail.",
     "google": "Continuer avec Google",
     "googleWaiting": "Terminez la connexion dans votre navigateur",
     "cancel": "Annuler",
@@ -15,7 +13,11 @@
     "resend": "Renvoyer le code",
     "resendIn": "Renvoyer le code dans {{time}}",
     "codeResent": "Nous vous avons envoyé un nouveau code.",
-    "differentEmail": "Utiliser une autre adresse e-mail"
+    "differentEmail": "Utiliser une autre adresse e-mail",
+    "googleRowTitle": "Se connecter",
+    "googleRowDesc": "Continuez avec le compte Google que vous utilisez déjà.",
+    "emailRowTitle": "Code par e-mail",
+    "emailRowDesc": "Nous vous enverrons un code à 6 chiffres par e-mail."
   },
   "profile": {
     "title": "Profil",
@@ -26,9 +28,6 @@
     "editName": "Modifier le nom affiché",
     "save": "Enregistrer",
     "cancel": "Annuler",
-    "methods": "Méthodes de connexion",
-    "methodGoogle": "Google",
-    "methodEmail": "Code par e-mail",
     "signOut": "Se déconnecter",
     "signOutDesc": "Déconnectez votre compte de cet appareil. Vos discussions et vos modèles restent ici."
   },

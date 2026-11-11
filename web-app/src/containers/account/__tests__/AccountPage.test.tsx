@@ -1,4 +1,11 @@
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import {
+  act,
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -63,6 +70,9 @@ function mockAccount(status: AccountStatus) {
         deviceName: 'home-server',
         platform: 'atc-linux',
         appVersion: '0.2.13',
+        // Used before Office PC, so the order does not hang on which fixture
+        // happened to be built a millisecond later.
+        lastUsedAt: new Date(Date.now() - 60_000).toISOString(),
       }),
     ]),
     revokeSession: vi.fn(async () => {}),
@@ -93,21 +103,30 @@ describe('AccountPage', () => {
   it('offers sign-in while signed out', async () => {
     await renderPage({ signedIn: false, user: null })
 
+    // Settings rows. Without Google (this mock offers only email), the email
+    // row is the sign-in row itself.
+    expect(await screen.findByText('Sign in')).toBeInTheDocument()
+    expect(screen.queryByText('Email code')).not.toBeInTheDocument()
     expect(
-      await screen.findByText('Sign in to Atomic Chat')
+      within(screen.getByTestId('account-sign-in')).getByRole('textbox', {
+        name: 'Email',
+      })
     ).toBeInTheDocument()
-    expect(screen.getByTestId('account-sign-in')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Send code' })
+    ).toBeInTheDocument()
     expect(account.profile).not.toHaveBeenCalled()
   })
 
-  it('shows the profile, its sign-in methods and the devices once signed in', async () => {
+  it('shows the profile and the devices once signed in', async () => {
     await renderPage({ signedIn: true, user: ada })
 
     expect(await screen.findByTestId('account-name')).toHaveTextContent(
       'Ada Lovelace'
     )
-    expect(await screen.findByText('Google')).toBeInTheDocument()
-    expect(screen.getByText('Email code')).toBeInTheDocument()
+    expect(screen.getByText('ada@example.com')).toBeInTheDocument()
+    // Sign-in methods are not listed on the page.
+    expect(screen.queryByText('Email code')).not.toBeInTheDocument()
     expect(account.profile).toHaveBeenCalledTimes(1)
 
     const rows = await screen.findAllByTestId('account-device')
@@ -123,6 +142,42 @@ describe('AccountPage', () => {
     expect(
       screen.getByRole('button', { name: 'Delete account' })
     ).toBeInTheDocument()
+  })
+
+  it('holds one device-shaped row in place while the list loads', async () => {
+    const pending = new Promise<AccountSession[]>(() => {})
+    account = mockAccount({ signedIn: true, user: ada })
+    account.sessions.mockReturnValue(pending)
+    seedServiceHub({ account: account as unknown as AccountService })
+    await act(async () => {
+      render(
+        <TranslationContext.Provider value={{ t: i18n.t, i18n }}>
+          <AccountPage />
+        </TranslationContext.Provider>
+      )
+    })
+
+    expect(screen.getByTestId('account-devices-loading')).toBeInTheDocument()
+    expect(screen.queryByTestId('account-device')).not.toBeInTheDocument()
+  })
+
+  it('shows the last list at once on the next visit, then refreshes it', async () => {
+    await renderPage({ signedIn: true, user: ada })
+    expect(await screen.findAllByTestId('account-device')).toHaveLength(3)
+    cleanup()
+
+    const pending = new Promise<AccountSession[]>(() => {})
+    account.sessions.mockReturnValueOnce(pending)
+    render(
+      <TranslationContext.Provider value={{ t: i18n.t, i18n }}>
+        <AccountPage />
+      </TranslationContext.Provider>
+    )
+
+    expect(screen.getAllByTestId('account-device')).toHaveLength(3)
+    expect(
+      screen.queryByTestId('account-devices-loading')
+    ).not.toBeInTheDocument()
   })
 
   it('signs another device out and reloads the list', async () => {

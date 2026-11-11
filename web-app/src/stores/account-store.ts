@@ -6,6 +6,7 @@ import i18n from '@/i18n/setup'
 import {
   SIGNED_OUT,
   type AccountChangedEvent,
+  type AccountSession,
   type AccountStatus,
   type AccountUser,
 } from '@/services/account/types'
@@ -27,6 +28,12 @@ type AccountStore = {
   setStatus: (status: AccountStatus) => void
   /** A fresher copy of the signed-in user, e.g. from `account_profile`. */
   setUser: (user: AccountUser) => void
+  /**
+   * The devices list as last loaded, so the account page shows it at once on
+   * the next visit and refreshes it in place. Only for the user it belongs to.
+   */
+  devices: { userId: string; sessions: AccountSession[] } | null
+  setDevices: (userId: string, sessions: AccountSession[]) => void
 }
 
 const SESSION_LOST_TOAST_ID = 'account-session-lost'
@@ -37,9 +44,21 @@ let unsubscribe: (() => void) | null = null
 // overwrite what the event said.
 let eventCount = 0
 
+/** The cached devices list survives only while the same user stays signed in. */
+function devicesFor(
+  status: AccountStatus,
+  devices: AccountStore['devices']
+): AccountStore['devices'] {
+  return status.signedIn && status.user?.id === devices?.userId ? devices : null
+}
+
 function onAccountChanged(event: AccountChangedEvent) {
   eventCount += 1
-  useAccountStore.setState({ status: event.status, hydrated: true })
+  useAccountStore.setState((state) => ({
+    status: event.status,
+    hydrated: true,
+    devices: devicesFor(event.status, state.devices),
+  }))
   if (event.reason === 'sessionLost') {
     toast.warning(i18n.t('account:toast.sessionLost'), {
       id: SESSION_LOST_TOAST_ID,
@@ -60,7 +79,11 @@ async function runHydration(): Promise<void> {
     }
     const before = eventCount
     const status = await account.status()
-    if (eventCount === before) useAccountStore.setState({ status })
+    if (eventCount === before)
+      useAccountStore.setState((state) => ({
+        status,
+        devices: devicesFor(status, state.devices),
+      }))
   } catch (error) {
     console.warn('Failed to read the account status:', error)
   } finally {
@@ -71,18 +94,30 @@ async function runHydration(): Promise<void> {
 export const useAccountStore = create<AccountStore>()((set, get) => ({
   status: SIGNED_OUT,
   hydrated: false,
+  devices: null,
 
   hydrate: () => {
     hydration ??= runHydration()
     return hydration
   },
 
-  setStatus: (status) => set({ status, hydrated: true }),
+  setStatus: (status) =>
+    set((state) => ({
+      status,
+      hydrated: true,
+      devices: devicesFor(status, state.devices),
+    })),
 
   setUser: (user) => {
     const { status } = get()
     if (!status.signedIn || status.user?.id !== user.id) return
     set({ status: { signedIn: true, user } })
+  },
+
+  setDevices: (userId, sessions) => {
+    const { status } = get()
+    if (!status.signedIn || status.user?.id !== userId) return
+    set({ devices: { userId, sessions } })
   },
 }))
 
@@ -92,5 +127,9 @@ export function resetAccountStore(): void {
   unsubscribe = null
   hydration = null
   eventCount = 0
-  useAccountStore.setState({ status: SIGNED_OUT, hydrated: false })
+  useAccountStore.setState({
+    status: SIGNED_OUT,
+    hydrated: false,
+    devices: null,
+  })
 }
