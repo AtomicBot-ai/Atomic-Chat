@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   FLUX3_IMAGE_ENGINE_TAG,
+  MINIMAX_H3_IMAGE_ENGINE_TAG,
   MODERN_IMAGE_ENGINE_TAG,
   requiredEngineTag,
   supportsDiffusionFamily,
@@ -15,6 +16,9 @@ describe('requiredEngineTag', () => {
     ])
       expect(requiredEngineTag(family), family).toBe(MODERN_IMAGE_ENGINE_TAG)
     expect(requiredEngineTag('flux.3-klein')).toBe(FLUX3_IMAGE_ENGINE_TAG)
+    expect(requiredEngineTag('minimax-h3-image')).toBe(
+      MINIMAX_H3_IMAGE_ENGINE_TAG
+    )
     for (const family of [
       'z-image',
       'flux.1',
@@ -41,6 +45,22 @@ describe('supportsDiffusionFamily', () => {
       'master-982-0518b34-a1234567',
     ])
       expect(supportsDiffusionFamily('flux.3-klein', tag), tag).toBe(true)
+  })
+
+  it('holds MiniMax-H3-Image to build 1088, the one that added it upstream', () => {
+    for (const tag of [
+      'master-1028-37bc88b-a5f9a63b',
+      'master-1079-a3c49b1',
+      'master-1087-f8417d0',
+      'unknown',
+    ])
+      expect(supportsDiffusionFamily('minimax-h3-image', tag), tag).toBe(false)
+    for (const tag of [
+      'master-1088-32d516c',
+      'master-1088-32d516c-a1234567',
+      'master-1100-abcdef0',
+    ])
+      expect(supportsDiffusionFamily('minimax-h3-image', tag), tag).toBe(true)
   })
 
   it('keeps the 883 floor for Qwen Image 2.1 and Krea 2 Turbo', () => {

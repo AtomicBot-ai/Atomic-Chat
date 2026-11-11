@@ -2,12 +2,15 @@
 export const MODERN_IMAGE_ENGINE_TAG = 'master-883-137f740'
 /** The first upstream build that runs FLUX.3 Image Klein (leejet/stable-diffusion.cpp#2143). */
 export const FLUX3_IMAGE_ENGINE_TAG = 'master-968-8cd731e'
+/** The first upstream build that runs MiniMax-H3-Image (leejet/stable-diffusion.cpp#2324). */
+export const MINIMAX_H3_IMAGE_ENGINE_TAG = 'master-1088-32d516c'
 
 const REQUIRED_ENGINE_TAGS: ReadonlyMap<string, string> = new Map([
   ['qwen-image-2.1', MODERN_IMAGE_ENGINE_TAG],
   ['qwen-image-2.1-turbo', MODERN_IMAGE_ENGINE_TAG],
   ['krea-2-turbo', MODERN_IMAGE_ENGINE_TAG],
   ['flux.3-klein', FLUX3_IMAGE_ENGINE_TAG],
+  ['minimax-h3-image', MINIMAX_H3_IMAGE_ENGINE_TAG],
 ])
 
 function buildOf(tag: string): number | null {
