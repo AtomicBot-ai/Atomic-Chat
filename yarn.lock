@@ -195,9 +195,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@atomic-chat/core@npm:0.22.6":
-  version: 0.22.6
-  resolution: "@atomic-chat/core@npm:0.22.6"
+"@atomic-chat/core@npm:0.22.7":
+  version: 0.22.7
+  resolution: "@atomic-chat/core@npm:0.22.7"
   dependencies:
     "@ai-sdk/openai-compatible": "npm:^1.0.28"
     ai: "npm:^5.0.121"
@@ -207,7 +207,7 @@ __metadata:
     yauzl: "npm:^3.2.0"
   bin:
     atomic-chat-core: dist/cli/bin.js
-  checksum: 10c0/f551666c50626b63782816f063bfbe4ef82c3931363acca2a1a7d0b1166491beacf89d831b81758d959ed84cde9ed7d12bdddd8a7c88dd172f2463fb5b539129
+  checksum: 10c0/8ffad819c9b16b5a1d29e4e6baa46cb64028d514b749021823be2ec459cbeff17ce9ad783101168603c99590216758cf11900875fe350504f9bc9a2d6d3768e8
   languageName: node
   linkType: hard
 
@@ -2969,7 +2969,7 @@ __metadata:
     "@ai-sdk/openai-compatible": "npm:^1.0.28"
     "@ai-sdk/react": "npm:^2.0.109"
     "@ai-sdk/xai": "npm:^2.0.0"
-    "@atomic-chat/core": "npm:0.22.6"
+    "@atomic-chat/core": "npm:0.22.7"
     "@dnd-kit/core": "npm:6.3.1"
     "@dnd-kit/modifiers": "npm:9.0.0"
     "@dnd-kit/sortable": "npm:10.0.0"
