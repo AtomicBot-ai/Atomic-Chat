@@ -137,8 +137,8 @@ export function isSourceImagePath(path: string): boolean {
  * instruction edits need a model trained on reference images. Qwen Image 2.1
  * additionally needs its `--llm_vision` projector at runtime; the plugin
  * removes those workflows from loaded capabilities when it is absent.
- * MiniMax-H3-Image creates and edits with one checkpoint, and its H3 encoder
- * GGUF carries the vision tower itself.
+ * MiniMax-H3-Image and P-H3-Image create and edit with one checkpoint each,
+ * and their catalog encoders carry the vision tower (and P-H3's connector).
  */
 export function workflowsForFamily(family: string): ImageWorkflowId[] {
   switch (family) {
@@ -155,6 +155,7 @@ export function workflowsForFamily(family: string): ImageWorkflowId[] {
     case 'qwen-image-2.1':
     case 'qwen-image-2.1-turbo':
     case 'minimax-h3-image':
+    case 'p-h3-image':
       return ['create', 'reference', 'edit']
     case 'krea-2-turbo':
     case 'flux.3-klein':

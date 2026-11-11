@@ -91,6 +91,9 @@ describe('workflowsForFamily', () => {
       'edit',
     ])
     expect(familySupportsWorkflow('minimax-h3-image', 'transform')).toBe(false)
+    expect(workflowsForFamily('p-h3-image')).toEqual(
+      workflowsForFamily('minimax-h3-image')
+    )
     expect(familySupportsWorkflow('krea-2-turbo', 'transform')).toBe(false)
     expect(familySupportsWorkflow('z-image', 'edit')).toBe(false)
     expect(workflowsForFamily('wan2.2-ti2v-5b')).toEqual(['create'])
