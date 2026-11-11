@@ -74,6 +74,7 @@ export interface FoundryLocalAcceleratorsEvent {
 export interface FoundryLocalCheckRequest {
   execution_provider: string
   device: string
+  min_runtime_version?: string
 }
 
 export type FoundryLocalCheckVerdict =
@@ -82,6 +83,7 @@ export type FoundryLocalCheckVerdict =
   | 'accelerator-unavailable'
   | 'platform-unsupported'
   | 'engine-not-installed'
+  | 'engine-update-required'
 
 /** Whether a variant would run here: platform, installed build, last probe, NPU — no network. */
 export interface FoundryLocalCheckResult {

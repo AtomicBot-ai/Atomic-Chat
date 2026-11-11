@@ -297,6 +297,9 @@
     "checking": "Checking…",
     "runsHere": "Runs on this computer",
     "installEngine": "Install Foundry",
+    "updateEngine": "Update Foundry",
+    "runtimeRequired": "Foundry Local {{active}} is active. This model requires {{minimum}} or newer.",
+    "noCompatibleUpdate": "No compatible Foundry Local update is available for this computer.",
     "prepareAccelerator": "Prepare the accelerator",
     "sourceUnavailable": "The Foundry Local model source is unavailable."
   },

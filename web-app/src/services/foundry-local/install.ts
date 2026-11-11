@@ -6,7 +6,8 @@
  * 1. the core's verdict on the variant (`POST /models/foundry-local/check`): only `ok` downloads —
  *    the card sends the person to the provider page for an engine or accelerator that is missing;
  * 2. resolve: `resolver.url_template` of conf's list, region by region, answers a short-lived SAS
- *    link to the variant's blob container and the variant's `kvTags`;
+ *    link to the variant's blob container and the variant's `kvTags`. Check its runtime minimum
+ *    before opening the blob container, including after refreshing an expired link;
  * 3. the files: a curated variant's paths, sizes and sha256 come from the list; a catalog variant's
  *    from the container's listing under `kvTags.directoryPath`, checked by size only (as Microsoft's
  *    own client does);
@@ -24,6 +25,7 @@ import { DownloadEvent, events, fs, getJanDataFolderPath } from '@janhq/core'
 import { isDownloadCancellationError } from '@/lib/downloadCancellation'
 import { foundryLocalDownloadId } from '@/lib/foundry-local/download-id'
 import { variantLabel } from '@/lib/foundry-local/hub'
+import { minimumFoundryRuntimeVersion } from '@/lib/foundry-local/version'
 import {
   isTransferValidationError,
   transferFiles,
@@ -43,7 +45,10 @@ import type {
 
 /** The variant cannot run here yet: the card leads to the provider page instead. */
 export class FoundryLocalNotReadyError extends Error {
-  constructor(readonly check: FoundryLocalCheckResult) {
+  constructor(
+    readonly check: FoundryLocalCheckResult,
+    readonly minimumRuntimeVersion?: string
+  ) {
     super(check.reason ?? `Foundry Local cannot run this variant here (${check.verdict}).`)
     this.name = 'FoundryLocalNotReadyError'
   }
@@ -225,10 +230,23 @@ export async function installFoundryLocalVariant(
   deps: FoundryLocalInstallDeps = defaultFoundryLocalInstallDeps()
 ): Promise<{ modelId: string }> {
   const { model, variant, list } = request
-  const check = await deps.check({ execution_provider: variant.execution_provider, device: variant.device })
+  const checkRequest = { execution_provider: variant.execution_provider, device: variant.device }
+  const check = await deps.check(checkRequest)
   if (check.verdict !== 'ok') throw new FoundryLocalNotReadyError(check)
 
-  let resolved = await resolveVariant(list, variant.asset_id, deps)
+  let minimum: string | null = null
+  const resolveForTransfer = async () => {
+    const link = await resolveVariant(list, variant.asset_id, deps)
+    // A renewed SAS link still points at the same revision and may omit its metadata.
+    minimum = minimumFoundryRuntimeVersion(link.kvTags.minFLVersion) ?? minimum
+    if (minimum) {
+      const verdict = await deps.check({ ...checkRequest, min_runtime_version: minimum })
+      if (verdict.verdict !== 'ok') throw new FoundryLocalNotReadyError(verdict, minimum)
+    }
+    return link
+  }
+
+  let resolved = await resolveForTransfer()
   const prefix = variant.path_prefix ?? tagString(resolved.kvTags, 'directoryPath') ?? ''
   const files: PlannedFile[] = variant.files
     ? variant.files.map((file) => ({ path: file.path, size: file.size, sha256: file.sha256 }))
@@ -283,7 +301,7 @@ export async function installFoundryLocalVariant(
         if (!isExpiredLink(error) || relinks >= MAX_RELINKS) throw error
         // The SAS link lives a few hours: a fresh one points at the same files, and the
         // resume keys keep what is already on disk.
-        resolved = await resolveVariant(list, variant.asset_id, deps)
+        resolved = await resolveForTransfer()
       }
     }
     // Last: this file turns the folder into a model for the core and the extension.

@@ -10,6 +10,9 @@
 
 import { invoke } from '@tauri-apps/api/core'
 
+import { foundryRuntimeMeetsMinimum } from '@/lib/foundry-local/version'
+import { engineVersions } from '@/services/engines/core'
+
 import type {
   FoundryLocalAccelerators,
   FoundryLocalCheckRequest,
@@ -44,9 +47,36 @@ export function prepareFoundryLocalAccelerators(
   )
 }
 
-/** Whether a variant would run on this machine, by its accelerator and device. */
-export function checkFoundryLocalVariant(
+/** Whether a variant would run on this machine, including the model's minimum runtime when known. */
+export async function checkFoundryLocalVariant(
   request: FoundryLocalCheckRequest
 ): Promise<FoundryLocalCheckResult> {
-  return call('POST', '/models/foundry-local/check', request)
+  const path = '/models/foundry-local/check'
+  const { min_runtime_version: minimum, ...legacyRequest } = request
+  try {
+    return await call('POST', path, request)
+  } catch (error) {
+    const refusal = error as { code?: unknown; message?: unknown } | null
+    if (
+      !minimum ||
+      refusal?.code !== 'INVALID_ARGUMENT' ||
+      refusal.message !== 'The request has fields this core does not know: min_runtime_version.'
+    ) throw error
+  }
+
+  const legacy = await call<FoundryLocalCheckResult>('POST', path, legacyRequest)
+  if (legacy.verdict === 'engine-not-installed' || legacy.verdict === 'platform-unsupported') return legacy
+
+  const versions = await engineVersions().catch(() => null)
+  const active = versions?.engines.find((entry) => entry.engine === 'foundry-local')?.active?.version
+  const meetsMinimum = active ? foundryRuntimeMeetsMinimum(active, minimum) : null
+  if (meetsMinimum === null) {
+    throw new Error(`A newer Atomic Chat core is needed to verify the Foundry Local runtime requirement (${minimum} or newer).`)
+  }
+  if (meetsMinimum) return legacy
+  return {
+    ...legacy,
+    verdict: 'engine-update-required',
+    reason: `Foundry Local ${active?.replace(/^v/, '')} is active; this model requires ${minimum} or newer.`,
+  }
 }

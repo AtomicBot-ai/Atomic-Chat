@@ -104,4 +104,49 @@ describe('Foundry Local core client', () => {
       },
     ])
   })
+
+  const minimumRequest = { execution_provider: 'cpu', device: 'cpu', min_runtime_version: '2.4.0' }
+  const unknownMinimum = {
+    code: 'INVALID_ARGUMENT',
+    message: 'The request has fields this core does not know: min_runtime_version.',
+  }
+  const ok = { verdict: 'ok', reason: null, accelerator: null }
+
+  it.each([
+    ['v2.1.0', 'engine-update-required'],
+    ['v2.4.0', 'ok'],
+    ['v2.10.0', 'ok'],
+  ])('checks the active runtime %s when an old core rejects the new field', async (version, verdict) => {
+    answer = ({ path, body }) => {
+      if (path === '/engines/versions') {
+        return { engines: [{ engine: 'foundry-local', active: { version, variant: 'macos-arm64' } }] }
+      }
+      if (body === minimumRequest) throw unknownMinimum
+      return ok
+    }
+
+    await expect(checkFoundryLocalVariant(minimumRequest)).resolves.toMatchObject({ verdict })
+    expect(calls).toMatchObject([
+      { path: '/models/foundry-local/check', body: minimumRequest },
+      { path: '/models/foundry-local/check', body: { execution_provider: 'cpu', device: 'cpu' } },
+      { path: '/engines/versions' },
+    ])
+    expect(calls[1].body).not.toHaveProperty('min_runtime_version')
+  })
+
+  it('requires a newer core when the old core cannot report the active runtime version', async () => {
+    answer = ({ path, body }) => {
+      if (path === '/engines/versions') return { engines: [] }
+      if (body === minimumRequest) throw unknownMinimum
+      return ok
+    }
+    await expect(checkFoundryLocalVariant(minimumRequest)).rejects.toThrow(/newer Atomic Chat core.*2\.4\.0/i)
+  })
+
+  it('does not downgrade the request on other validation errors', async () => {
+    const error = { code: 'INVALID_ARGUMENT', message: 'min_runtime_version must be a version in X.Y.Z format.' }
+    answer = () => { throw error }
+    await expect(checkFoundryLocalVariant(minimumRequest)).rejects.toEqual(error)
+    expect(calls).toHaveLength(1)
+  })
 })
