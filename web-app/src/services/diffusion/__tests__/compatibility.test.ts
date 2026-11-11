@@ -19,6 +19,7 @@ describe('requiredEngineTag', () => {
     expect(requiredEngineTag('minimax-h3-image')).toBe(
       MINIMAX_H3_IMAGE_ENGINE_TAG
     )
+    expect(requiredEngineTag('p-h3-image')).toBe(MINIMAX_H3_IMAGE_ENGINE_TAG)
     for (const family of [
       'z-image',
       'flux.1',
@@ -53,14 +54,22 @@ describe('supportsDiffusionFamily', () => {
       'master-1079-a3c49b1',
       'master-1087-f8417d0',
       'unknown',
-    ])
+    ]) {
       expect(supportsDiffusionFamily('minimax-h3-image', tag), tag).toBe(false)
+      // P-H3-Image arrived in 1048 but shares the H3 floor.
+      expect(supportsDiffusionFamily('p-h3-image', tag), tag).toBe(false)
+    }
+    expect(supportsDiffusionFamily('p-h3-image', 'master-1048-3e92bf9')).toBe(
+      false
+    )
     for (const tag of [
       'master-1088-32d516c',
       'master-1088-32d516c-a1234567',
       'master-1100-abcdef0',
-    ])
+    ]) {
       expect(supportsDiffusionFamily('minimax-h3-image', tag), tag).toBe(true)
+      expect(supportsDiffusionFamily('p-h3-image', tag), tag).toBe(true)
+    }
   })
 
   it('keeps the 883 floor for Qwen Image 2.1 and Krea 2 Turbo', () => {

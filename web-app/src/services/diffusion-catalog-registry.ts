@@ -160,6 +160,7 @@ export const DIFFUSION_FAMILY_IDS: readonly DiffusionFamilyId[] = [
   'flux.2-klein',
   'flux.3-klein',
   'minimax-h3-image',
+  'p-h3-image',
   'flux.1',
   'flux.1-uncensored',
   'flux.1-abliterated',
