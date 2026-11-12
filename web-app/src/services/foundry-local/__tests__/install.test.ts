@@ -186,7 +186,7 @@ describe('installFoundryLocalVariant', () => {
     expect(yaml[0].path).toBe('/data/foundry-local/models/qwen3-0.6b-generic-gpu/model.yml')
   })
 
-  it('writes the variant’s context, the list’s capabilities and the resolve answer’s reasoning markers', async () => {
+  it('writes the variant’s context, capabilities and published tool and reasoning markers', async () => {
     const { deps, yaml } = fakeDeps()
 
     await installFoundryLocalVariant({ model: curatedModel, variant: curatedVariant, list }, deps)
@@ -204,6 +204,8 @@ describe('installFoundryLocalVariant', () => {
         asset_version: '2',
         context_length: 4096,
         tools: true,
+        tool_call_start: '<tool_call>',
+        tool_call_end: '</tool_call>',
         reasoning: true,
         reasoning_start: '<think>',
         reasoning_end: '</think>',
