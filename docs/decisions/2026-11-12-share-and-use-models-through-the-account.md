@@ -27,7 +27,7 @@ title: "Share and use models through the Atomic Chat account"
     - It holds the device's X25519 private key, the keys this host issued, the keys this device received, the open pairing code's secrets and the host's endpoint sequence number.
     - It is bound to the signed-in user: another account starts empty. A factory reset deletes it.
     - Sign-out, a lost session, deletion or a new sign-in wipe what was shared and received, because the backend has already revoked it. The device key stays.
-  - **Core hook** (atomic-chat-core PR #98, planned v0.23.0): `PUT /atomic/v1/server/client-keys {keys}` replaces an in-memory list of extra keys.
+  - **Core hook** (atomic-chat-core PR #98, released in v0.23.0): `PUT /atomic/v1/server/client-keys {keys}` replaces an in-memory list of extra keys.
     - The public listener accepts them next to its own `api_key`, and only when it has one. Extra keys never close an open server.
     - The app pushes the list on every change and on every `atomic-core://snapshot`, because a restarted core starts empty.
     - The core knows nothing about accounts.
@@ -43,7 +43,7 @@ title: "Share and use models through the Atomic Chat account"
     - en/fr/ru strings. Behind `PlatformFeature.ACCOUNTS`.
 - **Consequences:**
   - Remote access works between two desktops of one account today. atc and mobile need their own clients of the same protocol.
-  - Until core v0.23.0 is released and pinned, a host's devices get `401` from its public API: the old core has no `client-keys` route, so the push fails and the Share card shows the error.
+  - The app pins core v0.23.0 or later. An older core has no `client-keys` route: the push fails, the Share card shows the error, and the host's devices get `401`.
   - The page never receives a key or an address (`RemoteStatus`). The provider's base URL, which is the tunnel URL, is visible on the Endpoints page of the device that uses it.
   - Quick tunnel limits from [2026-09-17](2026-09-17-expose-the-local-api-server-through-a-cloudflare-tunnel-and-on-the-lan.md) still apply. Named tunnels would only change what goes into the sealed list.
   - Not done:
