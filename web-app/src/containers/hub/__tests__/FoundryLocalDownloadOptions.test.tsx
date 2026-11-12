@@ -34,6 +34,9 @@ vi.mock('@/services/foundry-local/curated', async (importOriginal) => ({
 }))
 
 import { FoundryLocalDownloadOptions } from '../FoundryLocalDownloadOptions'
+import { foundryLocalDownloadId } from '@/lib/foundry-local/download-id'
+import { FoundryLocalNotReadyError } from '@/services/foundry-local/install'
+import { useEngineVersionsStore } from '@/stores/engine-versions-store'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { seedServiceHub } from '@/test/service-hub'
@@ -97,11 +100,57 @@ const option = (id: string) => screen.getByRole('radio', { name: new RegExp(id) 
 beforeEach(() => {
   vi.clearAllMocks()
   useModelProvider.setState({ providers: [] })
-  useDownloadStore.setState({ downloads: {}, localDownloadingModels: new Set() })
+  useDownloadStore.setState({ downloads: {}, localDownloadingModels: new Set(), resumableDownloads: new Set() })
+  useEngineVersionsStore.setState({ engines: {}, error: null })
   seedServiceHub({ providers: { getProviders: vi.fn(async () => []) } as unknown as ProvidersService })
 })
 
 describe('FoundryLocalDownloadOptions', () => {
+  it.each([
+    ['v2.10.0', true],
+    ['v2.3.0', false],
+    [null, false],
+  ])('offers an update only if the host target %s meets the resolved minimum', async (target, canUpdate) => {
+    verdicts({})
+    const active = { version: 'v2.1.0', variant: 'macos-arm64' }
+    const latest = target ? { ...active, version: target } : null
+    useEngineVersionsStore.setState({
+      engines: {
+        'foundry-local': {
+          engine: 'foundry-local', kind: 'engine-build', active_choice: 'core',
+          builds: [], active, latest,
+          update: { needed: !!latest, target: latest, apply: 'swap' },
+          source: 'remote', source_error: null, error: null,
+        },
+      },
+    })
+    const reason = 'Foundry Local 2.1.0 is active; this model requires 2.4.0 or newer.'
+    installer.installFoundryLocalVariant.mockRejectedValueOnce(new FoundryLocalNotReadyError({
+      verdict: 'engine-update-required', reason, accelerator: 'WebGpuExecutionProvider',
+    }, '2.4.0'))
+    const id = foundryLocalDownloadId('qwen2.5-7b-instruct-generic-gpu')
+    useDownloadStore.getState().markResumableDownload(id)
+    const user = userEvent.setup()
+
+    render(<FoundryLocalDownloadOptions model={model()} platform="macos-arm64" />)
+    await user.click(await screen.findByRole('button', { name: 'hub:download' }))
+
+    expect(await within(option('generic-gpu')).findByText(
+      'hub:foundryLocal.runtimeRequired {"active":"2.1.0","minimum":"2.4.0"}'
+    )).toBeInTheDocument()
+    expect(within(screen.getByTestId('foundry-local-actions')).queryByRole('button', { name: 'hub:download' })).not.toBeInTheDocument()
+    expect(useDownloadStore.getState().resumableDownloads.has(id)).toBe(true)
+    const update = screen.queryByRole('button', { name: 'hub:foundryLocal.updateEngine' })
+    if (canUpdate) {
+      expect(update).toBeInTheDocument()
+      await user.click(update!)
+      expect(navigate).toHaveBeenCalledWith({ to: '/settings/providers', search: { openEngine: 'foundry-local' } })
+    } else {
+      expect(update).not.toBeInTheDocument()
+      expect(within(option('generic-gpu')).getByText('hub:foundryLocal.noCompatibleUpdate')).toBeInTheDocument()
+    }
+  })
+
   it('on Windows x64 with a prepared NPU picks the OpenVINO NPU variant and hides the arm64 one', async () => {
     verdicts({})
 

@@ -370,7 +370,8 @@ impl ControlClient {
 
 /// Calls whose deadline is the core's own: a model load, an embedding batch, a backend or
 /// engine-build install and an engine update (which downloads the new build inside the call) can
-/// all legitimately outlast `CALL_TIMEOUT`. The image-model load answers only once `sd-server`
+/// all legitimately outlast `CALL_TIMEOUT`. Foundry accelerator preparation also downloads
+/// native runtime libraries before it answers. The image-model load answers only once `sd-server`
 /// is ready; the core's own budget for that (600 s by default, `startupTimeoutSecs`) starts at the
 /// spawn, after it has cancelled a running job, torn the old session down and checked the files,
 /// so any client deadline of the same length would fire first and hide the core's own error. An
@@ -382,7 +383,8 @@ fn control_call_timeout(method: &reqwest::Method, path: &str) -> Option<Duration
                 && path.ends_with("/install"))
             || (path.starts_with("/engines/") && path.ends_with("/update"))
             || path == "/diffusion/model/load"
-            || path == "/audio/model/load")
+            || path == "/audio/model/load"
+            || path == "/runtimes/foundry-local/accelerators/prepare")
     {
         None
     } else {
@@ -468,6 +470,19 @@ mod tests {
         let foreign = error_from_body(reqwest::StatusCode::BAD_GATEWAY, "<html>proxy</html>");
         assert_eq!(foreign.code, "HTTP_502");
         assert!(foreign.details.unwrap().contains("proxy"));
+    }
+
+    #[test]
+    fn foundry_cuda_prepare_waits_for_the_core_result() {
+        let prepare = "/runtimes/foundry-local/accelerators/prepare";
+        assert_eq!(control_call_timeout(&reqwest::Method::POST, prepare), None);
+        assert_eq!(
+            control_call_timeout(
+                &reqwest::Method::GET,
+                "/runtimes/foundry-local/accelerators"
+            ),
+            Some(CALL_TIMEOUT)
+        );
     }
 
     #[test]

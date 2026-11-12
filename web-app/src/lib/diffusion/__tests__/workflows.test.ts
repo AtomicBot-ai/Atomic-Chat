@@ -85,6 +85,15 @@ describe('workflowsForFamily', () => {
     expect(workflowsForFamily('krea-2-turbo')).toEqual(['create'])
     expect(workflowsForFamily('flux.3-klein')).toEqual(['create'])
     expect(familySupportsWorkflow('flux.3-klein', 'edit')).toBe(false)
+    expect(workflowsForFamily('minimax-h3-image')).toEqual([
+      'create',
+      'reference',
+      'edit',
+    ])
+    expect(familySupportsWorkflow('minimax-h3-image', 'transform')).toBe(false)
+    expect(workflowsForFamily('p-h3-image')).toEqual(
+      workflowsForFamily('minimax-h3-image')
+    )
     expect(familySupportsWorkflow('krea-2-turbo', 'transform')).toBe(false)
     expect(familySupportsWorkflow('z-image', 'edit')).toBe(false)
     expect(workflowsForFamily('wan2.2-ti2v-5b')).toEqual(['create'])
