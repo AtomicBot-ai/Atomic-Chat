@@ -201,6 +201,8 @@ function modelYml(
   tags: KvTags
 ): Record<string, unknown> {
   const contextLength = variant.context_length ?? model.context_length ?? tagNumber(tags, 'contextLength')
+  const toolCallStart = tagString(tags, 'toolCallStart')
+  const toolCallEnd = tagString(tags, 'toolCallEnd')
   const reasoningStart = tagString(tags, 'reasoningStart')
   const reasoningEnd = tagString(tags, 'reasoningEnd')
   return {
@@ -216,6 +218,9 @@ function modelYml(
       asset_version: variant.version,
       ...(contextLength ? { context_length: contextLength } : {}),
       tools: model.tools ?? tagBoolean(tags, 'supportsToolCalling') ?? false,
+      ...(toolCallStart && toolCallEnd
+        ? { tool_call_start: toolCallStart, tool_call_end: toolCallEnd }
+        : {}),
       reasoning: model.reasoning ?? tagBoolean(tags, 'supportsReasoning') ?? false,
       ...(reasoningStart && reasoningEnd
         ? { reasoning_start: reasoningStart, reasoning_end: reasoningEnd }
