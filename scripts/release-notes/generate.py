@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
-"""Generate polished release notes via OpenAI from git log between two tags.
+"""Generate polished release notes via AI/ML API from git log between two tags.
+
+AI/ML API (aimlapi.com) is OpenAI-compatible; the default model is the one the
+atomic-hatchet-pipeline agents run on.
 
 Reads env vars:
-    OPENAI_API_KEY   required
-    OPENAI_MODEL     default "gpt-4o-mini"
-    OPENAI_BASE_URL  default "https://api.openai.com/v1"
-    CURR_TAG         required, e.g. "v1.1.64"
-    PREV_TAG         optional, resolved from git history if absent
-    REPO             optional, e.g. "AtomicBot-ai/Atomic-Chat"
-    GH_TOKEN         optional; enables GitHub API lookups for PR authors
-                     (Contributors section) and for fetching recent published
-                     releases used as few-shot style exemplars.
+    AIMLAPI_API_KEY      required
+    RELEASE_NOTES_MODEL  default "z-ai/glm-5.3-flash"
+    AIMLAPI_BASE_URL     default "https://api.aimlapi.com/v1"
+    CURR_TAG             required, e.g. "v1.1.64"
+    PREV_TAG             optional, resolved from git history if absent
+    REPO                 optional, e.g. "AtomicBot-ai/Atomic-Chat"
+    GH_TOKEN             optional; enables GitHub API lookups for PR authors
+                         (Contributors section) and for fetching recent
+                         published releases used as few-shot style exemplars.
 
 The generated notes are produced in the style of our most recent *published*
 releases (fetched via the GitHub API as few-shot examples) so the output
@@ -28,6 +31,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -312,7 +316,11 @@ def _render_style_examples(examples: list[tuple[str, str]]) -> str:
     )
 
 
-def _call_openai(api_key: str, base_url: str, model: str, user_content: str) -> str:
+DEFAULT_BASE_URL = "https://api.aimlapi.com/v1"
+DEFAULT_MODEL = "z-ai/glm-5.3-flash"
+
+
+def _call_llm(api_key: str, base_url: str, model: str, user_content: str) -> str:
     payload = {
         "model": model,
         "messages": [
@@ -327,17 +335,28 @@ def _call_openai(api_key: str, base_url: str, model: str, user_content: str) -> 
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
+            # AI/ML API sits behind Cloudflare, which rejects urllib's default
+            # "Python-urllib/x.y" User-Agent with HTTP 403 (error code 1010).
+            "User-Agent": "atomic-chat-release-notes",
         },
     )
-    with urllib.request.urlopen(req, timeout=60) as resp:
+    started = time.monotonic()
+    with urllib.request.urlopen(req, timeout=300) as resp:
         body = json.loads(resp.read().decode("utf-8"))
-    return body["choices"][0]["message"]["content"].strip()
+    logger.info(
+        "LLM answered in %.0fs, usage: %s",
+        time.monotonic() - started,
+        json.dumps(body.get("usage") or {}),
+    )
+    # Reasoning models return their thinking in a separate
+    # `reasoning_content` field; only `content` is the answer.
+    return (body["choices"][0]["message"].get("content") or "").strip()
 
 
 def main() -> int:
-    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    api_key = os.environ.get("AIMLAPI_API_KEY", "").strip()
     if not api_key:
-        logger.error("OPENAI_API_KEY is not set")
+        logger.error("AIMLAPI_API_KEY is not set")
         return 1
 
     curr_tag = os.environ.get("CURR_TAG", "").strip()
@@ -345,8 +364,9 @@ def main() -> int:
         logger.error("CURR_TAG is not set")
         return 1
 
-    base_url = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1").strip()
-    model = os.environ.get("OPENAI_MODEL", "gpt-5-mini").strip() or "gpt-5-mini"
+    base_url = os.environ.get("AIMLAPI_BASE_URL", "").strip() or DEFAULT_BASE_URL
+    model = os.environ.get("RELEASE_NOTES_MODEL", "").strip() or DEFAULT_MODEL
+    logger.info("Model       : %s", model)
     repo = os.environ.get("REPO", "").strip()
     gh_token = os.environ.get("GH_TOKEN", "").strip() or None
 
@@ -379,21 +399,27 @@ def main() -> int:
     user_content = "\n".join(user_parts)
 
     try:
-        notes = _call_openai(api_key, base_url, model, user_content)
+        notes = _call_llm(api_key, base_url, model, user_content)
     except urllib.error.HTTPError as exc:
         body = ""
         try:
             body = exc.read().decode("utf-8", errors="replace")
         except Exception:
             pass
-        logger.error("OpenAI HTTP %s: %s — body: %s", exc.code, exc.reason, body)
+        logger.error("AI/ML API HTTP %s: %s — body: %s", exc.code, exc.reason, body)
         return 1
-    except (urllib.error.URLError, KeyError, json.JSONDecodeError) as exc:
-        logger.error("OpenAI call failed: %s", exc)
+    except (
+        urllib.error.URLError,
+        KeyError,
+        IndexError,
+        json.JSONDecodeError,
+        TimeoutError,
+    ) as exc:
+        logger.error("AI/ML API call failed: %s", exc)
         return 1
 
     if not notes:
-        logger.error("OpenAI returned empty content")
+        logger.error("AI/ML API returned empty content")
         return 1
 
     contributors = _collect_contributors(repo, prev_tag, curr_tag, gh_token)
