@@ -17,6 +17,7 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { listedModels } from '@/lib/cloud-model-catalog'
 import { isProviderConnected } from '@/lib/cloud-providers'
 import { isMediaConnected } from '@/lib/media-models'
+import { isAccountManagedProvider } from '@/lib/account-remote-providers'
 import { cn, getProviderLogo, getProviderTitle } from '@/lib/utils'
 import { useEndpointCheckStore } from '@/stores/endpoint-check-store'
 import { useProviderKeyStatus } from '@/stores/provider-key-status-store'
@@ -29,7 +30,8 @@ type EndpointCardProps = {
   connectingMedia?: boolean
   onConnectMedia: () => void
   onPing: () => void
-  onConfigure: () => void
+  /** Absent for a provider the account manages: its address and key are kept for it. */
+  onConfigure?: () => void
   /** Absent for a provider the catalogue ships: only one's own can go. */
   onRemove?: () => void
   /** The endpoint's model cards, shown while expanded; none, no toggle. */
@@ -171,6 +173,14 @@ export function EndpointCard({
           >
             {hasAddress ? provider.base_url : t('endpoints:noAddress')}
           </p>
+          {isAccountManagedProvider(provider) && (
+            <p
+              className="truncate text-xs text-muted-foreground"
+              data-testid="endpoint-managed"
+            >
+              {t('endpoints:managedByAccount')}
+            </p>
+          )}
           <p
             role="status"
             className={cn(
@@ -238,6 +248,10 @@ export function EndpointCard({
             size="icon-sm"
             variant="ghost"
             aria-label={t('endpoints:actions.configure', { name: title })}
+            aria-hidden={!onConfigure}
+            tabIndex={onConfigure ? undefined : -1}
+            disabled={!onConfigure}
+            className={cn(!onConfigure && 'invisible')}
             onClick={onConfigure}
           >
             <Settings2 size={15} aria-hidden />

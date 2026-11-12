@@ -54,7 +54,7 @@ fn app_version<R: Runtime>(app: &AppHandle<R>) -> String {
 
 /// An authenticated call ending in `invalid_grant` has just cleared the
 /// session: tell the UI it is signed out.
-async fn announce_if_lost<R: Runtime, T>(
+pub(in crate::core::account) async fn announce_if_lost<R: Runtime, T>(
     app: &AppHandle<R>,
     state: &AccountState,
     result: Result<T, AccountError>,

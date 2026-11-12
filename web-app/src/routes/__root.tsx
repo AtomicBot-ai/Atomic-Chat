@@ -26,6 +26,7 @@ import { AnalyticProvider } from '@/providers/AnalyticProvider'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useTrayStatusSync } from '@/hooks/useTrayStatusSync'
 import { useRemoteAccessSync } from '@/hooks/useRemoteAccessSync'
+import { useAccountRemoteSync } from '@/hooks/useAccountRemoteSync'
 import { useManagedEnvironmentSync } from '@/hooks/useManagedEnvironmentSync'
 import { useFastFlowLmSync } from '@/hooks/useFastFlowLmSync'
 import { useEngineVersionsSync } from '@/hooks/useEngineVersionsSync'
@@ -90,6 +91,9 @@ const AppLayout = () => {
   // starts the tunnel with the Local API Server when asked to. No-op wherever
   // there is no Local API Server (mobile, web).
   useRemoteAccessSync()
+  // Remote access through the account: request toasts on any page, and the
+  // "<computer> (remote)" providers kept in step. No-op without the accounts flag.
+  useAccountRemoteSync()
   // Follows the core's TensorRT-LLM environment and its setup for the whole session, so the
   // provider page finds a running setup as it is. No-op off Linux.
   useManagedEnvironmentSync()

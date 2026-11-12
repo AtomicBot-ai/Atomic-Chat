@@ -60,6 +60,11 @@ const MESSAGE_KEYS: Record<string, string> = {
   server_error: 'account:errors.serverError',
   network: 'account:errors.network',
   timeout: 'account:errors.timeout',
+  // Remote access through the account.
+  own_host: 'account:errors.ownHost',
+  limit_reached: 'account:errors.limitReached',
+  already_paired: 'account:errors.alreadyPaired',
+  host_not_found: 'account:errors.hostNotFound',
 }
 
 /**

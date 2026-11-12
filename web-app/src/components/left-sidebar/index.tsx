@@ -3,6 +3,7 @@ import {
   Activity,
   AudioLines,
   Blocks,
+  CircleUserRound,
   Clapperboard,
   Cloud,
   Cpu,
@@ -15,6 +16,7 @@ import {
   Settings2,
   Shield,
   Wifi,
+  Workflow,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -211,10 +213,34 @@ function ModelsNavigation() {
   )
 }
 
+function AccountNavigation() {
+  const { t } = useTranslation()
+  const { pathname } = useLocation()
+
+  return (
+    <SidebarMenu className="px-2">
+      <NavRow
+        to={route.account.index}
+        label={t('common:navigation.overview')}
+        icon={<CircleUserRound size={16} />}
+        active={isPathActive(pathname, route.account.index)}
+      />
+      <NavRow
+        to={route.account.remote}
+        label={t('common:navigation.remoteModels')}
+        icon={<Workflow size={16} />}
+        active={isPathActive(pathname, route.account.remote)}
+        testId="account-remote-link"
+      />
+    </SidebarMenu>
+  )
+}
+
 const SECTION_TITLES = {
   chat: 'common:navigation.workspace',
   server: 'common:navigation.server',
   models: 'common:navigation.modelsHub',
+  account: 'common:navigation.account',
   settings: 'common:settings',
 } as const
 
@@ -250,52 +276,50 @@ export function LeftSidebar() {
     <>
       <NavigationRail section={section} />
       <WindowTitlebar section={section} />
-      {/* The account is one page for now: it has nothing to list beside it. */}
-      {section !== 'account' && (
-        <div
-          className={cn('relative', compact && sidebarOpen ? 'z-[45]' : 'z-30')}
-        >
-          <Sidebar variant="floating" collapsible="offcanvas">
-            <SidebarHeader className="gap-0 px-3 pb-2 pt-3">
-              <div className="flex items-center justify-between px-1 pb-1">
-                <h2 className="font-studio truncate text-lg font-semibold">
-                  {t(SECTION_TITLES[section])}
-                </h2>
-                {section === 'chat' && (
-                  <button
-                    type="button"
-                    aria-label={t('common:navigation.searchChats')}
-                    title={t('common:navigation.searchChats')}
-                    onClick={() => setSearchOpen(true)}
-                    className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-foreground/8"
-                  >
-                    <Search size={16} />
-                  </button>
-                )}
-              </div>
-            </SidebarHeader>
-            <SidebarContent
-              // Rows measure the sidebar's width (`@…/sidebar`) to decide what
-              // fits beside a name.
-              className="@container/sidebar mask-b-from-95%"
-              aria-label={t(SECTION_TITLES[section])}
-            >
+      <div
+        className={cn('relative', compact && sidebarOpen ? 'z-[45]' : 'z-30')}
+      >
+        <Sidebar variant="floating" collapsible="offcanvas">
+          <SidebarHeader className="gap-0 px-3 pb-2 pt-3">
+            <div className="flex items-center justify-between px-1 pb-1">
+              <h2 className="font-studio truncate text-lg font-semibold">
+                {t(SECTION_TITLES[section])}
+              </h2>
               {section === 'chat' && (
-                <WorkspaceNavigation
-                  onCreateProject={() => setProjectDialogOpen(true)}
-                />
+                <button
+                  type="button"
+                  aria-label={t('common:navigation.searchChats')}
+                  title={t('common:navigation.searchChats')}
+                  onClick={() => setSearchOpen(true)}
+                  className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-foreground/8"
+                >
+                  <Search size={16} />
+                </button>
               )}
-              {section === 'server' && <ServerNavigation />}
-              {section === 'models' && <ModelsNavigation />}
-              {section === 'settings' && <SettingsNavigation />}
-            </SidebarContent>
-            <SidebarRail
-              aria-label={t('common:navigation.resizeSidebar')}
-              title={t('common:navigation.resizeSidebarHint')}
-            />
-          </Sidebar>
-        </div>
-      )}
+            </div>
+          </SidebarHeader>
+          <SidebarContent
+            // Rows measure the sidebar's width (`@…/sidebar`) to decide what
+            // fits beside a name.
+            className="@container/sidebar mask-b-from-95%"
+            aria-label={t(SECTION_TITLES[section])}
+          >
+            {section === 'chat' && (
+              <WorkspaceNavigation
+                onCreateProject={() => setProjectDialogOpen(true)}
+              />
+            )}
+            {section === 'server' && <ServerNavigation />}
+            {section === 'models' && <ModelsNavigation />}
+            {section === 'account' && <AccountNavigation />}
+            {section === 'settings' && <SettingsNavigation />}
+          </SidebarContent>
+          <SidebarRail
+            aria-label={t('common:navigation.resizeSidebar')}
+            title={t('common:navigation.resizeSidebarHint')}
+          />
+        </Sidebar>
+      </div>
       <AddProjectDialog
         open={projectDialogOpen}
         onOpenChange={setProjectDialogOpen}

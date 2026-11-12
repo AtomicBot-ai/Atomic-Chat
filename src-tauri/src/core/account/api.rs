@@ -240,16 +240,30 @@ impl AccountApi {
         format!("{}{path}", self.base.as_str().trim_end_matches('/'))
     }
 
-    async fn call(
+    pub(in crate::core::account) async fn call(
         &self,
         method: Method,
         path: &str,
         bearer: Option<&str>,
         body: Option<serde_json::Value>,
     ) -> Result<String, AccountError> {
+        self.call_timed(method, path, bearer, body, REQUEST_TIMEOUT)
+            .await
+    }
+
+    /// `call` with its own deadline, for long-polls that wait on the server.
+    pub(in crate::core::account) async fn call_timed(
+        &self,
+        method: Method,
+        path: &str,
+        bearer: Option<&str>,
+        body: Option<serde_json::Value>,
+        timeout: Duration,
+    ) -> Result<String, AccountError> {
         let mut request = self
             .http
             .request(method, self.url(path))
+            .timeout(timeout)
             .header(header::ACCEPT, "application/json");
         if let Some(token) = bearer {
             request = request.header(header::AUTHORIZATION, format!("Bearer {token}"));
@@ -278,14 +292,26 @@ impl AccountApi {
         }
     }
 
-    async fn call_json<T: DeserializeOwned>(
+    pub(in crate::core::account) async fn call_json<T: DeserializeOwned>(
         &self,
         method: Method,
         path: &str,
         bearer: Option<&str>,
         body: Option<serde_json::Value>,
     ) -> Result<T, AccountError> {
-        let text = self.call(method, path, bearer, body).await?;
+        self.call_json_timed(method, path, bearer, body, REQUEST_TIMEOUT)
+            .await
+    }
+
+    pub(in crate::core::account) async fn call_json_timed<T: DeserializeOwned>(
+        &self,
+        method: Method,
+        path: &str,
+        bearer: Option<&str>,
+        body: Option<serde_json::Value>,
+        timeout: Duration,
+    ) -> Result<T, AccountError> {
+        let text = self.call_timed(method, path, bearer, body, timeout).await?;
         serde_json::from_str(&text).map_err(|e| {
             AccountError::new(
                 codes::UNEXPECTED,

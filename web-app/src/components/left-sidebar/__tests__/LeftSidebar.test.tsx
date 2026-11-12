@@ -460,14 +460,32 @@ describe('LeftSidebar', () => {
   })
 
   describe('Account', () => {
-    it('has no contextual sidebar and nothing to toggle', () => {
+    it('lists Overview and Remote models, and lights the open one', () => {
       at('/account/')
-      render(<LeftSidebar />)
-
-      expect(screen.queryByTestId('sidebar-content')).not.toBeInTheDocument()
+      const { unmount } = render(<LeftSidebar />)
+      expect(rowFor('common:navigation.overview')).toHaveAttribute(
+        'data-active',
+        'true'
+      )
+      expect(rowFor('common:navigation.remoteModels')).toHaveAttribute(
+        'data-active',
+        'false'
+      )
       expect(
-        screen.queryByLabelText('common:navigation.toggleSidebar')
-      ).not.toBeInTheDocument()
+        screen.getByLabelText('common:navigation.toggleSidebar')
+      ).toBeInTheDocument()
+      unmount()
+
+      at('/account/remote')
+      render(<LeftSidebar />)
+      expect(rowFor('common:navigation.remoteModels')).toHaveAttribute(
+        'data-active',
+        'true'
+      )
+      expect(rowFor('common:navigation.overview')).toHaveAttribute(
+        'data-active',
+        'false'
+      )
     })
   })
 

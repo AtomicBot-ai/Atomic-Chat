@@ -88,6 +88,97 @@
     "serverError": "Something went wrong on our side. Try again later.",
     "network": "Can't reach Atomic Chat. Check your connection and try again.",
     "timeout": "Signing in took too long. Try again.",
-    "unexpected": "Something went wrong. Try again."
+    "unexpected": "Something went wrong. Try again.",
+    "ownHost": "That's this computer's own code.",
+    "limitReached": "That computer already shares with the most devices it can.",
+    "alreadyPaired": "This device already has access to that computer.",
+    "hostNotFound": "That computer no longer shares its models."
+  },
+  "remote": {
+    "pageTitle": "Remote models",
+    "signedOutTitle": "Remote models",
+    "signedOutDesc": "Sign in to share this computer's models with your other devices and to use theirs.",
+    "unknownDevice": "Unknown device",
+    "unknownComputer": "Your computer",
+    "share": {
+      "title": "Share this computer's models",
+      "description": "Your devices signed in to this account can chat with the models on this computer. You allow each device once, and it gets its own key.",
+      "toggle": "Share this computer's models",
+      "addDevice": "Add a device",
+      "reach": {
+        "internet": "Reachable from anywhere",
+        "internetAndLan": "Reachable from anywhere and on your local network",
+        "lanOnly": "Reachable on your local network only",
+        "starting": "Connecting to the internet…",
+        "tunnelError": "Remote access failed. Check Server → Remote access.",
+        "unreachable": "Not reachable yet. Turn on remote access or the local network.",
+        "serverStopped": "The local API server is stopped."
+      },
+      "noServerKey": "This computer's API has no key, so devices' keys are not checked. Set a key in Server → Configuration.",
+      "syncError": "Can't reach your account: {{reason}}",
+      "serverFailed": "The local API server didn't start, so this computer can't share its models.",
+      "requestsTitle": "Asking for access",
+      "checkCode": "Check code {{code}} — it must match the device",
+      "allow": "Allow",
+      "deny": "Deny",
+      "devicesTitle": "Devices with access",
+      "noDevices": "No device has access yet.",
+      "since": "since {{time}}",
+      "revoke": "Revoke",
+      "revokeDevice": "Revoke access for {{name}}",
+      "keyTitle": "Protect this computer's API with a key",
+      "keyDescription": "Sharing checks a key on every request from another device. Atomic Chat will create a key for this computer's API; local tools that use it, such as coding agents, will need that key too.",
+      "keyConfirm": "Create key and share",
+      "keyCancel": "Cancel"
+    },
+    "add": {
+      "title": "Add a device",
+      "description": "On your phone or other computer, open Atomic Chat → Account → Remote models, then scan this code or type it.",
+      "orType": "or type",
+      "expiresIn": "Expires in {{time}}",
+      "expired": "This code has expired.",
+      "newCode": "New code",
+      "cancel": "Cancel",
+      "close": "Done",
+      "done": "{{name}} can now use this computer's models."
+    },
+    "use": {
+      "title": "Use models from your other computers",
+      "description": "Computers signed in to this account that share their models. Once connected, each one shows up as a provider.",
+      "refresh": "Refresh",
+      "noHosts": "None of your other computers shares its models yet.",
+      "online": "Online",
+      "offline": "Offline",
+      "lastSeen": "Last seen {{time}}",
+      "connect": "Connect",
+      "disconnect": "Disconnect",
+      "cancel": "Cancel",
+      "remove": "Remove",
+      "removeHost": "Remove {{name}} from your account",
+      "waiting": "Waiting for approval…",
+      "confirmOnHost": "Allow it on {{name}}: check code {{code}}",
+      "connecting": "Connecting…",
+      "connectedLan": "Connected on your local network",
+      "connectedInternet": "Connected over the internet",
+      "codeLabel": "Pairing code",
+      "codePlaceholder": "Code from the other computer, e.g. BCDF-GHJK",
+      "pair": "Pair",
+      "invalidCode": "This code is wrong, used or expired.",
+      "ownHost": "That's this computer's own code.",
+      "limitReached": "That computer already shares with the most devices it can."
+    },
+    "toast": {
+      "request": "{{name}} asks to use this computer's models",
+      "requestDesc": "Check code {{code}}",
+      "review": "Review"
+    },
+    "ended": {
+      "denied": "{{name}} declined access.",
+      "expired": "The request to {{name}} expired.",
+      "revoked": "Access to {{name}} was revoked.",
+      "hostSignedOut": "{{name}} stopped sharing.",
+      "untrusted": "The key from {{name}} could not be verified, so it was refused.",
+      "other": "Access to {{name}} ended."
+    }
   }
 }

@@ -134,7 +134,7 @@ pub fn save(data_dir: &Path, file: &AccountFile) -> Result<(), String> {
 
 /// The mode is set when the file is opened, so the secret is never briefly
 /// world-readable.
-fn write_owner_only(path: &Path, bytes: &[u8]) -> Result<(), String> {
+pub(in crate::core::account) fn write_owner_only(path: &Path, bytes: &[u8]) -> Result<(), String> {
     #[cfg(unix)]
     {
         use std::io::Write;

@@ -34,6 +34,7 @@ pub const JAN_DATA_SUBDIRS: &[&str] = &[
 pub const JAN_DATA_FILES: &[&str] = &[
     "agent-approval-allowlist.json",
     "atomic-account.json",
+    "atomic-remote.json",
     "atomic-chatgpt-auth.json",
     "atomic-mcp-oauth.json",
     "local-api-server.json",
@@ -70,6 +71,7 @@ mod tests {
         }
         for file in [
             "atomic-account.json",
+            "atomic-remote.json",
             "atomic-chatgpt-auth.json",
             "atomic-mcp-oauth.json",
             "mcp_config.json",

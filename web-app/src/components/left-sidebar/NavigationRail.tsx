@@ -136,7 +136,9 @@ export function NavigationRail({ section }: { section: NavigationSection }) {
         )}
       </div>
       <div className="mt-auto flex flex-col gap-2">
-        {accountsEnabled && <AccountRailItem active={section === 'account'} />}
+        {accountsEnabled && (
+          <AccountRailItem active={section === 'account'} onOpen={reveal} />
+        )}
         <Popover open={helpOpen} onOpenChange={setHelpOpen}>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -223,12 +225,18 @@ export function NavigationRail({ section }: { section: NavigationSection }) {
 
 /**
  * The account entry at the top of the rail's bottom group: the avatar once
- * signed in, a "Sign in" person icon before. It opens the Account section,
- * which has no sidebar, so it leaves the sidebar's open state alone.
+ * signed in, a "Sign in" person icon before. It opens the Account section
+ * and, like the other rail items, shows that section's sidebar.
  * It is always mounted, so it is what reads the account status and starts
  * following its changes.
  */
-function AccountRailItem({ active }: { active: boolean }) {
+function AccountRailItem({
+  active,
+  onOpen,
+}: {
+  active: boolean
+  onOpen: () => void
+}) {
   const { t } = useTranslation()
   const status = useAccountStore((state) => state.status)
   const hydrate = useAccountStore((state) => state.hydrate)
@@ -252,6 +260,7 @@ function AccountRailItem({ active }: { active: boolean }) {
           }
           aria-current={active ? 'page' : undefined}
           data-testid="rail-account"
+          onClick={onOpen}
           className={cn(railButton, active && railButtonActive)}
         >
           {user ? (

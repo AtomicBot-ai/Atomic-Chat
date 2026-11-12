@@ -21,23 +21,23 @@ use crate::core::auth::chatgpt::derive_challenge;
 // A fake account API
 
 #[derive(Debug, Clone)]
-struct Seen {
-    method: String,
-    path: String,
-    auth: Option<String>,
-    body: Value,
+pub(super) struct Seen {
+    pub(super) method: String,
+    pub(super) path: String,
+    pub(super) auth: Option<String>,
+    pub(super) body: Value,
 }
 
-type Reply = (u16, Value);
+pub(super) type Reply = (u16, Value);
 type Handler = Arc<dyn Fn(&Seen) -> Reply + Send + Sync>;
 
-struct Fake {
-    base: Url,
-    seen: Arc<Mutex<Vec<Seen>>>,
+pub(super) struct Fake {
+    pub(super) base: Url,
+    pub(super) seen: Arc<Mutex<Vec<Seen>>>,
 }
 
 impl Fake {
-    fn requests(&self, path: &str) -> Vec<Seen> {
+    pub(super) fn requests(&self, path: &str) -> Vec<Seen> {
         self.seen
             .lock()
             .unwrap()
@@ -47,12 +47,12 @@ impl Fake {
             .collect()
     }
 
-    fn state(&self) -> AccountState {
+    pub(super) fn state(&self) -> AccountState {
         AccountState::with_api(AccountApi::new(self.base.clone()).unwrap())
     }
 }
 
-fn spawn_fake(handler: impl Fn(&Seen) -> Reply + Send + Sync + 'static) -> Fake {
+pub(super) fn spawn_fake(handler: impl Fn(&Seen) -> Reply + Send + Sync + 'static) -> Fake {
     let handler: Handler = Arc::new(handler);
     let seen = Arc::new(Mutex::new(Vec::<Seen>::new()));
     let seen_for_server = seen.clone();
@@ -108,7 +108,7 @@ fn spawn_fake(handler: impl Fn(&Seen) -> Reply + Send + Sync + 'static) -> Fake 
     }
 }
 
-fn token_response(n: usize, expires_in: i64) -> Value {
+pub(super) fn token_response(n: usize, expires_in: i64) -> Value {
     json!({
         "token_type": "Bearer",
         "access_token": format!("access-{n}"),

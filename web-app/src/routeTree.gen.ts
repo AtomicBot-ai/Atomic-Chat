@@ -47,6 +47,7 @@ import { Route as HubModelIdRouteImport } from './routes/hub/$modelId'
 import { Route as ApiModelRouteImport } from './routes/api/model'
 import { Route as ApiConnectionsRouteImport } from './routes/api/connections'
 import { Route as ApiActivityRouteImport } from './routes/api/activity'
+import { Route as AccountRemoteRouteImport } from './routes/account/remote'
 import { Route as SettingsProvidersIndexRouteImport } from './routes/settings/providers/index'
 import { Route as SettingsProvidersProviderNameRouteImport } from './routes/settings/providers/$providerName'
 
@@ -240,6 +241,11 @@ const ApiActivityRoute = ApiActivityRouteImport.update({
   path: '/api/activity',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AccountRemoteRoute = AccountRemoteRouteImport.update({
+  id: '/account/remote',
+  path: '/account/remote',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SettingsProvidersIndexRoute = SettingsProvidersIndexRouteImport.update({
   id: '/settings/providers/',
   path: '/settings/providers/',
@@ -258,6 +264,7 @@ export interface FileRoutesByFullPath {
   '/logs': typeof LogsRoute
   '/onboarding': typeof OnboardingRoute
   '/system-monitor': typeof SystemMonitorRoute
+  '/account/remote': typeof AccountRemoteRoute
   '/api/activity': typeof ApiActivityRoute
   '/api/connections': typeof ApiConnectionsRoute
   '/api/model': typeof ApiModelRoute
@@ -300,6 +307,7 @@ export interface FileRoutesByTo {
   '/logs': typeof LogsRoute
   '/onboarding': typeof OnboardingRoute
   '/system-monitor': typeof SystemMonitorRoute
+  '/account/remote': typeof AccountRemoteRoute
   '/api/activity': typeof ApiActivityRoute
   '/api/connections': typeof ApiConnectionsRoute
   '/api/model': typeof ApiModelRoute
@@ -343,6 +351,7 @@ export interface FileRoutesById {
   '/logs': typeof LogsRoute
   '/onboarding': typeof OnboardingRoute
   '/system-monitor': typeof SystemMonitorRoute
+  '/account/remote': typeof AccountRemoteRoute
   '/api/activity': typeof ApiActivityRoute
   '/api/connections': typeof ApiConnectionsRoute
   '/api/model': typeof ApiModelRoute
@@ -387,6 +396,7 @@ export interface FileRouteTypes {
     | '/logs'
     | '/onboarding'
     | '/system-monitor'
+    | '/account/remote'
     | '/api/activity'
     | '/api/connections'
     | '/api/model'
@@ -429,6 +439,7 @@ export interface FileRouteTypes {
     | '/logs'
     | '/onboarding'
     | '/system-monitor'
+    | '/account/remote'
     | '/api/activity'
     | '/api/connections'
     | '/api/model'
@@ -471,6 +482,7 @@ export interface FileRouteTypes {
     | '/logs'
     | '/onboarding'
     | '/system-monitor'
+    | '/account/remote'
     | '/api/activity'
     | '/api/connections'
     | '/api/model'
@@ -514,6 +526,7 @@ export interface RootRouteChildren {
   LogsRoute: typeof LogsRoute
   OnboardingRoute: typeof OnboardingRoute
   SystemMonitorRoute: typeof SystemMonitorRoute
+  AccountRemoteRoute: typeof AccountRemoteRoute
   ApiActivityRoute: typeof ApiActivityRoute
   ApiConnectionsRoute: typeof ApiConnectionsRoute
   ApiModelRoute: typeof ApiModelRoute
@@ -819,6 +832,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiActivityRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/account/remote': {
+      id: '/account/remote'
+      path: '/account/remote'
+      fullPath: '/account/remote'
+      preLoaderRoute: typeof AccountRemoteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/settings/providers/': {
       id: '/settings/providers/'
       path: '/settings/providers'
@@ -842,6 +862,7 @@ const rootRouteChildren: RootRouteChildren = {
   LogsRoute: LogsRoute,
   OnboardingRoute: OnboardingRoute,
   SystemMonitorRoute: SystemMonitorRoute,
+  AccountRemoteRoute: AccountRemoteRoute,
   ApiActivityRoute: ApiActivityRoute,
   ApiConnectionsRoute: ApiConnectionsRoute,
   ApiModelRoute: ApiModelRoute,

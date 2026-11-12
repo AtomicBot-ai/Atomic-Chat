@@ -22,8 +22,9 @@ import {
 import { AccountDevices } from './AccountDevices'
 import { AccountPage } from './AccountPage'
 
-// The account section has no contextual sidebar: the page takes the rest.
+// The account section's sidebar (Overview, Remote models) docks beside the rail.
 const RAIL = 60
+const SIDEBAR = 240
 
 // Worst-case copy: a long name, a long address and a long device name.
 const user = {
@@ -91,7 +92,7 @@ for (const width of [1024, 1280]) {
           render(
             withTranslations(
               <main
-                style={{ width: width - RAIL }}
+                style={{ width: width - RAIL - SIDEBAR }}
                 className="flex flex-col gap-3 p-4"
                 data-testid="page"
               >
@@ -117,7 +118,7 @@ for (const width of [1024, 1280]) {
           render(
             withTranslations(
               <main
-                style={{ width: width - RAIL }}
+                style={{ width: width - RAIL - SIDEBAR }}
                 className="flex flex-col gap-3 p-4"
                 data-testid="page"
               >
@@ -148,7 +149,10 @@ for (const width of [1024, 1280]) {
           })
           render(
             withTranslations(
-              <div style={{ width: width - RAIL }} data-testid="devices">
+              <div
+                style={{ width: width - RAIL - SIDEBAR }}
+                data-testid="devices"
+              >
                 <AccountDevices />
               </div>
             )

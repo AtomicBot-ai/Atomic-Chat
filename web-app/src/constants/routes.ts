@@ -8,6 +8,7 @@ export const route = {
   projectDetail: '/project/$projectId',
   account: {
     index: '/account/',
+    remote: '/account/remote',
   },
   settings: {
     index: '/settings',

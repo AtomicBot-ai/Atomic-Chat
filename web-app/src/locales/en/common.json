@@ -874,6 +874,7 @@
     "notSelected": "Not selected",
     "configuration": "Configuration",
     "remoteAccess": "Remote access",
+    "remoteModels": "Remote models",
     "activity": "Activity",
     "connections": "Connections",
     "connectionsCount": "{{count}} set up",

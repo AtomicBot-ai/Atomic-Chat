@@ -588,6 +588,7 @@ decision is reversed, add a new one that says which record it supersedes.
 
 ## Other (24)
 
+- **2026-11-12** — [Share and use models through the Atomic Chat account](2026-11-12-share-and-use-models-through-the-account.md) — host + client of the backend's remote access API in Rust (`account/remote/`, HPKE keys per device, sealed addresses, `atomic-remote.json`); core `PUT /server/client-keys`; sharing needs the server key; "<computer> (remote)" managed providers; Account sidebar is back (Overview, Remote models).
 - **2026-11-11** — [Give the account its own section and an onboarding step](2026-11-11-give-the-account-its-own-section-and-an-onboarding-step.md) — avatar opens `/account/` (no sidebar yet); optional `account` step between media and purpose (full variant, accounts flag); shared `useAccountSignIn`; cached Devices list.
 - **2026-11-10** — [Sign in to an Atomic Chat account from the desktop app](2026-11-10-sign-in-to-an-atomic-chat-account.md) — Rust owns the session (0600 file, single-flight refresh, no tokens over IPC); Google via loopback; rail avatar → Settings → Account; dev-only flag.
 - **2026-11-04** — [Keep an isolated profile's webview storage in the profile](2026-11-04-keep-an-isolated-profiles-webview-storage-in-the-profile.md) — `ATOMIC_CHAT_PROFILE_DIR` windows get their own WebKit store (random id kept in the profile) and WebView2/WebKitGTK directory; single-instance lock unchanged.

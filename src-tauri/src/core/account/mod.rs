@@ -12,6 +12,7 @@ pub mod api;
 pub mod client_info;
 pub mod commands;
 pub mod google;
+pub mod remote;
 pub mod state;
 pub mod store;
 

@@ -6,6 +6,8 @@
  * DTOs. Every command rejects with an `AccountError` object.
  */
 
+import type { RemoteAccessService } from './remote-types'
+
 /** Why a command failed. `code` is the backend's or one of the client's own. */
 export interface AccountError {
   /**
@@ -85,7 +87,8 @@ export interface AccountChangedEvent {
 
 export const SIGNED_OUT: AccountStatus = { signedIn: false, user: null }
 
-export interface AccountService {
+/** The account, and remote access through it (`remote-types.ts`). */
+export interface AccountService extends RemoteAccessService {
   /** What is on disk; no network. */
   status(): Promise<AccountStatus>
   /** Sign-in methods the backend offers, e.g. `["email", "google"]`. */

@@ -20,8 +20,28 @@ import type {
   AccountStatus,
   EmailChallenge,
 } from './types'
+import type {
+  RemoteConnectionEnded,
+  RemoteConnectionView,
+  RemoteHostInfo,
+  RemotePairing,
+  RemoteProviderConnection,
+  RemoteStatus,
+} from './remote-types'
 
 const CHANGED_EVENT = 'account-changed'
+const REMOTE_CHANGED_EVENT = 'account-remote-changed'
+const REMOTE_CONNECTIONS_EVENT = 'account-remote-connections'
+const REMOTE_CONNECTION_ENDED_EVENT = 'account-remote-connection-ended'
+
+async function follow<T>(
+  event: string,
+  callback: (payload: T) => void
+): Promise<() => void> {
+  const unlisten = await listen<T>(event, (e) => callback(e.payload))
+  const detach = createSafeUnlisten(unlisten)
+  return () => void detach()
+}
 
 async function call<T>(command: string, args?: InvokeArgs): Promise<T> {
   try {
@@ -88,5 +108,71 @@ export class TauriAccountService extends DefaultAccountService {
     )
     const detach = createSafeUnlisten(unlisten)
     return () => void detach()
+  }
+
+  async remoteStatus(): Promise<RemoteStatus> {
+    return call<RemoteStatus>('account_remote_status')
+  }
+
+  async remoteConnections(): Promise<RemoteProviderConnection[]> {
+    return call<RemoteProviderConnection[]>('account_remote_connections')
+  }
+
+  async remoteSetSharing(enabled: boolean): Promise<RemoteStatus> {
+    return call<RemoteStatus>('account_remote_set_sharing', { enabled })
+  }
+
+  async remotePairingCode(): Promise<RemotePairing> {
+    return call<RemotePairing>('account_remote_pairing_code')
+  }
+
+  async remoteClosePairingCode(): Promise<void> {
+    await call<void>('account_remote_close_pairing_code')
+  }
+
+  async remoteDecide(grantId: string, allow: boolean): Promise<RemoteStatus> {
+    return call<RemoteStatus>('account_remote_decide', { grantId, allow })
+  }
+
+  async remoteRevoke(grantId: string): Promise<RemoteStatus> {
+    return call<RemoteStatus>('account_remote_revoke', { grantId })
+  }
+
+  async remoteHosts(): Promise<RemoteHostInfo[]> {
+    return call<RemoteHostInfo[]>('account_remote_hosts')
+  }
+
+  async remoteRequest(hostId: string): Promise<RemoteConnectionView> {
+    return call<RemoteConnectionView>('account_remote_request', { hostId })
+  }
+
+  async remotePair(input: string): Promise<RemoteConnectionView> {
+    return call<RemoteConnectionView>('account_remote_pair', { input })
+  }
+
+  async remoteDisconnect(hostId: string): Promise<RemoteStatus> {
+    return call<RemoteStatus>('account_remote_disconnect', { hostId })
+  }
+
+  async remoteRemoveHost(hostId: string): Promise<RemoteStatus> {
+    return call<RemoteStatus>('account_remote_remove_host', { hostId })
+  }
+
+  async onRemoteChanged(
+    callback: (status: RemoteStatus) => void
+  ): Promise<() => void> {
+    return follow(REMOTE_CHANGED_EVENT, callback)
+  }
+
+  async onRemoteConnections(
+    callback: (connections: RemoteProviderConnection[]) => void
+  ): Promise<() => void> {
+    return follow(REMOTE_CONNECTIONS_EVENT, callback)
+  }
+
+  async onRemoteConnectionEnded(
+    callback: (event: RemoteConnectionEnded) => void
+  ): Promise<() => void> {
+    return follow(REMOTE_CONNECTION_ENDED_EVENT, callback)
   }
 }

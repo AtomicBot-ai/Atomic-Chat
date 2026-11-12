@@ -5,17 +5,20 @@ import { toast } from 'sonner'
 import { useFavoriteModel } from '@/hooks/useFavoriteModel'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useTranslation } from '@/i18n/react-i18next-compat'
+import { isAccountManagedProvider } from '@/lib/account-remote-providers'
 import { isKnownProvider } from '@/stores/provider-registry-store'
 
 /**
  * Only a provider the user added can be deleted: never one the catalogue
- * ships, never a local engine.
+ * ships, never a local engine, never one remote access through the account
+ * keeps (it goes when that computer is disconnected).
  */
 export function canDeleteProvider(
   provider: ProviderObject | undefined
 ): provider is ProviderObject {
   return (
     provider !== undefined &&
+    !isAccountManagedProvider(provider) &&
     !isKnownProvider(provider.provider) &&
     !EngineManager.instance().get(provider.provider)
   )
