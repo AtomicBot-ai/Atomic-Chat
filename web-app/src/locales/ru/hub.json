@@ -287,6 +287,9 @@
     "checking": "Проверка…",
     "runsHere": "Работает на этом компьютере",
     "installEngine": "Установить Foundry",
+    "updateEngine": "Обновить Foundry",
+    "runtimeRequired": "Активна Foundry Local {{active}}. Модели нужна версия {{minimum}} или новее.",
+    "noCompatibleUpdate": "Для этого компьютера нет подходящего обновления Foundry Local.",
     "prepareAccelerator": "Подготовить ускоритель",
     "sourceUnavailable": "Источник моделей Foundry Local недоступен."
   },

@@ -297,6 +297,9 @@
     "checking": "Vérification…",
     "runsHere": "Fonctionne sur cet ordinateur",
     "installEngine": "Installer Foundry",
+    "updateEngine": "Mettre à jour Foundry",
+    "runtimeRequired": "Foundry Local {{active}} est actif. Ce modèle nécessite la version {{minimum}} ou plus récente.",
+    "noCompatibleUpdate": "Aucune mise à jour compatible de Foundry Local n'est disponible pour cet ordinateur.",
     "prepareAccelerator": "Préparer l'accélérateur",
     "sourceUnavailable": "La source de modèles Foundry Local est indisponible."
   },

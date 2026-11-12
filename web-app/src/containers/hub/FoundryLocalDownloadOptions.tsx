@@ -22,21 +22,24 @@ import {
   pickDefaultVariant,
   variantLabel,
 } from '@/lib/foundry-local/hub'
+import { foundryRuntimeMeetsMinimum } from '@/lib/foundry-local/version'
 import { cn, formatBytes } from '@/lib/utils'
 import { checkFoundryLocalVariant } from '@/services/foundry-local/core'
 import { fetchFoundryLocalList } from '@/services/foundry-local/curated'
-import { installFoundryLocalVariant } from '@/services/foundry-local/install'
+import { FoundryLocalNotReadyError, installFoundryLocalVariant } from '@/services/foundry-local/install'
 import type {
   FoundryLocalCheckResult,
   FoundryLocalHubModel,
   FoundryLocalHubVariant,
 } from '@/services/foundry-local/types'
 import type { CatalogModel } from '@/services/models/types'
+import { useEngineVersionsStore } from '@/stores/engine-versions-store'
 import { switchToModel } from '@/utils/switchModel'
 
 const PROVIDER = 'foundry-local'
 
 type Verdicts = Record<string, FoundryLocalCheckResult | { error: string }>
+type RuntimeRequirement = { minimum: string; reason: string }
 
 const verdictOf = (verdicts: Verdicts, variant: FoundryLocalHubVariant): string | undefined => {
   const entry = verdicts[variant.id]
@@ -75,11 +78,31 @@ export function FoundryLocalDownloadOptions({
   )
   const [verdicts, setVerdicts] = useState<Verdicts>({})
   const [picked, setPicked] = useState<string | null>(null)
+  const [runtimeRequirements, setRuntimeRequirements] = useState<Record<string, RuntimeRequirement>>({})
+  const versions = useEngineVersionsStore((state) => state.engines[PROVIDER])
+  const activeVersion = versions?.active?.version
+  const updateVersion = versions?.update.needed ? versions.update.target?.version : undefined
+
+  const rememberRequirement = useCallback((assetId: string, minimum: string, reason: string) => {
+    setRuntimeRequirements((previous) => ({ ...previous, [assetId]: { minimum, reason } }))
+  }, [])
+
+  const blockedByRuntime = (variant: FoundryLocalHubVariant) => {
+    const requirement = runtimeRequirements[variant.asset_id]
+    if (!requirement || (activeVersion && foundryRuntimeMeetsMinimum(activeVersion, requirement.minimum))) {
+      return undefined
+    }
+    return {
+      ...requirement,
+      canUpdate: !!updateVersion && foundryRuntimeMeetsMinimum(updateVersion, requirement.minimum) === true,
+    }
+  }
+
+  useEffect(() => setPicked(null), [variants])
 
   useEffect(() => {
     let cancelled = false
     setVerdicts({})
-    setPicked(null)
     void Promise.all(
       variants.map(async (variant) => {
         try {
@@ -99,7 +122,7 @@ export function FoundryLocalDownloadOptions({
     return () => {
       cancelled = true
     }
-  }, [variants])
+  }, [activeVersion, variants])
 
   const providers = useModelProvider((state) => state.providers)
   const downloadedIds = useMemo(
@@ -166,7 +189,12 @@ export function FoundryLocalDownloadOptions({
                       <span className="text-xs text-muted-foreground">{formatBytes(variant.size_bytes)}</span>
                     )}
                   </span>
-                  <VerdictLine entry={entry} downloaded={downloadedIds.has(variant.id)} />
+                  <VerdictLine
+                    entry={entry}
+                    downloaded={downloadedIds.has(variant.id)}
+                    runtimeBlock={blockedByRuntime(variant)}
+                    activeVersion={activeVersion}
+                  />
                 </button>
               )
             })}
@@ -190,6 +218,8 @@ export function FoundryLocalDownloadOptions({
                 variant={selected}
                 verdict={verdicts[selected.id]}
                 downloaded={downloadedIds.has(selected.id)}
+                runtimeBlock={blockedByRuntime(selected)}
+                onRuntimeRequirement={rememberRequirement}
               />
             </ActionColumn>
           )}
@@ -202,11 +232,30 @@ export function FoundryLocalDownloadOptions({
 function VerdictLine({
   entry,
   downloaded,
+  runtimeBlock,
+  activeVersion,
 }: {
   entry: Verdicts[string] | undefined
   downloaded: boolean
+  runtimeBlock?: RuntimeRequirement & { canUpdate: boolean }
+  activeVersion?: string
 }) {
   const { t } = useTranslation()
+  if (!downloaded && runtimeBlock) {
+    return (
+      <span role="status" className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
+        <span className="block">
+          {activeVersion
+            ? t('hub:foundryLocal.runtimeRequired', {
+              active: activeVersion.replace(/^v/, ''),
+              minimum: runtimeBlock.minimum,
+            })
+            : runtimeBlock.reason}
+        </span>
+        {!runtimeBlock.canUpdate && t('hub:foundryLocal.noCompatibleUpdate')}
+      </span>
+    )
+  }
   const text = downloaded
     ? t('hub:foundryLocal.downloaded')
     : !entry
@@ -225,19 +274,28 @@ function Action({
   variant,
   verdict,
   downloaded,
+  runtimeBlock,
+  onRuntimeRequirement,
 }: {
   fields: FoundryLocalHubModel
   variant: FoundryLocalHubVariant
   verdict: Verdicts[string] | undefined
   downloaded: boolean
+  runtimeBlock?: RuntimeRequirement & { canUpdate: boolean }
+  onRuntimeRequirement: (assetId: string, minimum: string, reason: string) => void
 }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const toProviderPage = () => navigate(engineSettingsLink(PROVIDER))
 
   if (downloaded) return <NewChatButton modelId={variant.id} />
-  if (!verdict || 'error' in verdict) return null
-  if (verdict.verdict === 'engine-not-installed') {
+  const status = verdict && 'verdict' in verdict ? verdict.verdict : undefined
+  const settingsAction = runtimeBlock
+    ? runtimeBlock.canUpdate && t('hub:foundryLocal.updateEngine')
+    : status === 'engine-not-installed'
+      ? t('hub:foundryLocal.installEngine')
+      : status === 'accelerator-not-prepared' && t('hub:foundryLocal.prepareAccelerator')
+  if (settingsAction) {
     return (
       <Button
         size="sm"
@@ -247,34 +305,29 @@ function Action({
         // `h-auto!`: the shell's control-height rule in index.css pins `sm` buttons to one line.
         className="h-auto! max-w-full whitespace-normal py-1.5 text-center"
       >
-        {t('hub:foundryLocal.installEngine')}
+        {settingsAction}
       </Button>
     )
   }
-  if (verdict.verdict === 'accelerator-not-prepared') {
-    return (
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={toProviderPage}
-        // The column is fixed; a long label wraps inside it rather than spilling over the list.
-        // `h-auto!`: the shell's control-height rule in index.css pins `sm` buttons to one line.
-        className="h-auto! max-w-full whitespace-normal py-1.5 text-center"
-      >
-        {t('hub:foundryLocal.prepareAccelerator')}
-      </Button>
-    )
-  }
-  if (verdict.verdict !== 'ok') return null
-  return <DownloadButton fields={fields} variant={variant} />
+  if (runtimeBlock || status !== 'ok') return null
+  return (
+    <DownloadButton
+      key={variant.asset_id}
+      fields={fields}
+      variant={variant}
+      onRuntimeRequirement={onRuntimeRequirement}
+    />
+  )
 }
 
 function DownloadButton({
   fields,
   variant,
+  onRuntimeRequirement,
 }: {
   fields: FoundryLocalHubModel
   variant: FoundryLocalHubVariant
+  onRuntimeRequirement: (assetId: string, minimum: string, reason: string) => void
 }) {
   const { t } = useTranslation()
   const serviceHub = useServiceHub()
@@ -296,7 +349,6 @@ function DownloadButton({
     const store = useDownloadStore.getState()
     setInstalling(true)
     setFailure(null)
-    store.clearResumableDownload(downloadId)
     // The download panel names the row after this, not after the id.
     store.setDownloadOrigin(downloadId, `${fields.name} (${variantLabel(variant)})`)
     store.addLocalDownloadingModel(downloadId)
@@ -304,18 +356,27 @@ function DownloadButton({
       const { list } = await fetchFoundryLocalList()
       if (!list) throw new Error(t('hub:foundryLocal.sourceUnavailable'))
       await installFoundryLocalVariant({ model: fields, variant, list })
+      store.clearResumableDownload(downloadId)
       // A variant is a model once `model.yml` is written: list it, so the card offers a chat.
       useModelProvider.getState().setProviders(await serviceHub.providers().getProviders())
     } catch (error) {
       // A cancel is the person's own doing, not a failure to report.
       if (!wasDownloadCancellationRequested(downloadId) && !isDownloadCancellationError(error)) {
-        setFailure(error instanceof Error ? error.message : String(error))
+        if (
+          error instanceof FoundryLocalNotReadyError &&
+          error.check.verdict === 'engine-update-required' &&
+          error.minimumRuntimeVersion
+        ) {
+          onRuntimeRequirement(variant.asset_id, error.minimumRuntimeVersion, error.message)
+        } else {
+          setFailure(error instanceof Error ? error.message : String(error))
+        }
       }
     } finally {
       useDownloadStore.getState().removeLocalDownloadingModel(downloadId)
       setInstalling(false)
     }
-  }, [downloadId, fields, variant, serviceHub, t])
+  }, [downloadId, fields, variant, serviceHub, t, onRuntimeRequirement])
 
   return (
     <div className="flex w-full flex-col items-end gap-2">

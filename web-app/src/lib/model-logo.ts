@@ -161,6 +161,9 @@ const ICON_KEY_LOGOS: Readonly<Record<string, string>> = {
   'openmoss': '/images/model-provider/openmoss.webp',
   'acestep': '/images/model-provider/acestep.webp',
   'huggingface': '/images/model-provider/huggingface.svg',
+  // Image model makers without a mark of their own: their Hugging Face
+  // organization avatar, like the audio makers above.
+  'pruna': '/images/model-provider/pruna.webp',
 }
 
 // Icon key per image/video family id. The catalog is remote and its display
@@ -172,6 +175,8 @@ export const DIFFUSION_FAMILY_ICON_KEYS: Readonly<
   'z-image': 'z-image',
   'flux.2-klein': 'bfl',
   'flux.3-klein': 'bfl',
+  'minimax-h3-image': 'minimax',
+  'p-h3-image': 'pruna',
   'flux.1': 'bfl',
   'flux.1-uncensored': 'bfl',
   'flux.1-abliterated': 'bfl',

@@ -110,6 +110,53 @@ function fakeDeps(overrides: Partial<FoundryLocalInstallDeps> = {}) {
 }
 
 describe('installFoundryLocalVariant', () => {
+  it('checks the resolved revision minimum before listing files or touching the partial download', async () => {
+    const check = {
+      verdict: 'engine-update-required',
+      reason: 'Foundry Local 2.1.0 is active; this model requires 2.4.0 or newer.',
+      accelerator: 'WebGpuExecutionProvider',
+    } as const
+    const { deps } = fakeDeps({
+      check: vi.fn(async (request) => request.min_runtime_version ? check : {
+        verdict: 'ok', reason: null, accelerator: null,
+      }),
+      getText: vi.fn(async () => ({
+        status: 200,
+        text: JSON.stringify({
+          ...resolved,
+          modelEntity: { kvTags: { ...resolved.modelEntity.kvTags, minFLVersion: '2.4.0' } },
+        }),
+      })),
+      hasPartial: vi.fn(async () => true),
+    })
+
+    await expect(
+      installFoundryLocalVariant({ model: catalogModel, variant: catalogVariant, list }, deps)
+    ).rejects.toMatchObject({ check, minimumRuntimeVersion: '2.4.0' })
+    expect(deps.getText).toHaveBeenCalledExactlyOnceWith(expect.stringContaining(encodeURIComponent(ASSET)))
+    expect(deps.check).toHaveBeenLastCalledWith({
+      execution_provider: 'webgpu', device: 'gpu', min_runtime_version: '2.4.0',
+    })
+    expect(deps.hasPartial).not.toHaveBeenCalled()
+    expect(deps.transfer).not.toHaveBeenCalled()
+    expect(deps.writeYaml).not.toHaveBeenCalled()
+  })
+
+  it.each([undefined, '', 'bad', '0.0.0'])('downloads when minFLVersion is %s', async (minimum) => {
+    const { deps } = fakeDeps({
+      getText: vi.fn(async () => ({
+        status: 200,
+        text: JSON.stringify({
+          ...resolved,
+          modelEntity: { kvTags: { ...resolved.modelEntity.kvTags, minFLVersion: minimum } },
+        }),
+      })),
+    })
+    await installFoundryLocalVariant({ model: curatedModel, variant: curatedVariant, list }, deps)
+    expect(deps.check).toHaveBeenCalledExactlyOnceWith({ execution_provider: 'webgpu', device: 'gpu' })
+    expect(deps.transfer).toHaveBeenCalledOnce()
+  })
+
   it('asks the verdict, resolves, downloads every file under one task, and writes model.yml last', async () => {
     const { deps, steps, transfers, yaml } = fakeDeps()
 
@@ -188,10 +235,26 @@ describe('installFoundryLocalVariant', () => {
 
   it('resolves again on an expired link and downloads on, under the same keys', async () => {
     let transfers = 0
+    const answer = (signature: string) => ({
+      status: 200,
+      text: JSON.stringify({
+        ...resolved,
+        blobSasUri: `${CONTAINER}?sig=${signature}`,
+        modelEntity: { kvTags: { ...resolved.modelEntity.kvTags, minFLVersion: '2.4.0' } },
+      }),
+    })
     const { deps, steps } = fakeDeps({
-      transfer: vi.fn(async () => {
+      getText: vi.fn()
+        .mockResolvedValueOnce(answer('expired'))
+        .mockResolvedValueOnce(answer('fresh')),
+      existingSize: async (path) => path.endsWith('genai_config.json') ? 1752 : null,
+      hasPartial: async () => true,
+      freeSpace: async () => ({ available: 0, headroom: 0 }),
+      transfer: vi.fn(async (items, _taskId, options) => {
         transfers += 1
         steps.push('transfer')
+        expect(options.resume).toBe(true)
+        expect(items.map((item) => item.resume_key)).toEqual(['foundry-local/qwen3-0.6b-generic-gpu/model.onnx'])
         if (transfers === 1) {
           throw new Error('Failed to resume download: HTTP status 403 Forbidden, <Error><Code>AuthenticationFailed</Code></Error>')
         }
@@ -200,10 +263,40 @@ describe('installFoundryLocalVariant', () => {
 
     await installFoundryLocalVariant({ model: curatedModel, variant: curatedVariant, list }, deps)
 
-    expect(steps).toEqual(['check', 'resolve eastus', 'transfer', 'resolve eastus', 'transfer', 'model.yml'])
+    expect(steps).toEqual(['check', 'check', 'transfer', 'check', 'transfer', 'model.yml'])
+    expect(vi.mocked(deps.getText).mock.calls.map(([url]) => url)).toEqual([
+      expect.stringContaining(encodeURIComponent(ASSET)),
+      expect.stringContaining(encodeURIComponent(ASSET)),
+    ])
     const [first, second] = vi.mocked(deps.transfer).mock.calls.map((call) => call[0])
     expect(second.map((item) => item.resume_key)).toEqual(first.map((item) => item.resume_key))
-    expect(vi.mocked(deps.transfer).mock.calls[1][2]).toMatchObject({ resume: true })
+    expect(second[0]).toMatchObject({ save_path: first[0].save_path, url: `${CONTAINER}/v2/model.onnx?sig=fresh` })
+  })
+
+  it('stops resuming if the runtime changes while the SAS link is refreshed', async () => {
+    const first = {
+      ...resolved,
+      modelEntity: { kvTags: { ...resolved.modelEntity.kvTags, minFLVersion: '2.4.0' } },
+    }
+    const { deps } = fakeDeps({
+      getText: vi.fn()
+        .mockResolvedValueOnce({ status: 200, text: JSON.stringify(first) })
+        .mockResolvedValueOnce({ status: 200, text: JSON.stringify(resolved) }),
+      check: vi.fn()
+        .mockResolvedValueOnce({ verdict: 'ok', reason: null, accelerator: null })
+        .mockResolvedValueOnce({ verdict: 'ok', reason: null, accelerator: null })
+        .mockResolvedValueOnce({
+          verdict: 'engine-update-required', reason: 'Active 2.1.0, needs 2.4.0', accelerator: null,
+        }),
+      transfer: vi.fn(async () => { throw new Error('HTTP status 403 Forbidden') }),
+    })
+
+    await expect(
+      installFoundryLocalVariant({ model: curatedModel, variant: curatedVariant, list }, deps)
+    ).rejects.toMatchObject({ check: { verdict: 'engine-update-required' }, minimumRuntimeVersion: '2.4.0' })
+    expect(deps.check).toHaveBeenLastCalledWith(expect.objectContaining({ min_runtime_version: '2.4.0' }))
+    expect(deps.transfer).toHaveBeenCalledOnce()
+    expect(deps.writeYaml).not.toHaveBeenCalled()
   })
 
   it('tries the next region when one does not answer', async () => {

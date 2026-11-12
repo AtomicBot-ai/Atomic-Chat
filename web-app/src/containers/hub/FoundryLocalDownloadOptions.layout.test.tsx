@@ -16,6 +16,8 @@ import { useModelProvider } from '@/hooks/useModelProvider'
 import { foundryLocalDownloadId } from '@/lib/foundry-local/download-id'
 import { seedServiceHub } from '@/test/service-hub'
 import type { CatalogModel } from '@/services/models/types'
+import { FoundryLocalNotReadyError, installFoundryLocalVariant } from '@/services/foundry-local/install'
+import { useEngineVersionsStore } from '@/stores/engine-versions-store'
 import { FoundryLocalDownloadOptions } from './FoundryLocalDownloadOptions'
 
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }))
@@ -26,6 +28,13 @@ vi.mock('@/services/foundry-local/core', () => ({
     reason: verdict.value === 'ok' ? null : 'WebGpuExecutionProvider is not prepared yet.',
     accelerator: null,
   })),
+}))
+vi.mock('@/services/foundry-local/install', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/foundry-local/install')>()),
+  installFoundryLocalVariant: vi.fn(),
+}))
+vi.mock('@/services/foundry-local/curated', () => ({
+  fetchFoundryLocalList: vi.fn(async () => ({ list: {} })),
 }))
 
 const variant = (id: string, execution_provider: 'webgpu' | 'cpu', device: 'gpu' | 'cpu') => ({
@@ -184,6 +193,45 @@ for (const language of ['en', 'ru']) {
 
         expectNoHorizontalOverflow(screen.getByTestId('foundry-local-actions'))
         expectNoHorizontalOverflow(screen.getByTestId('panel-frame'))
+      })
+
+      it('fits the Foundry runtime requirement and update action at desktop widths', async () => {
+        setTheme('dark')
+        useModelProvider.setState({ providers: [] })
+        const active = { version: 'v2.1.0', variant: 'macos-arm64' }
+        const target = { ...active, version: 'v2.4.0' }
+        useEngineVersionsStore.setState({
+          engines: {
+            'foundry-local': {
+              engine: 'foundry-local', kind: 'engine-build', active_choice: 'core',
+              builds: [], active, latest: target,
+              update: { needed: true, target, apply: 'swap' },
+              source: 'remote', source_error: null, error: null,
+            },
+          },
+        })
+        vi.mocked(installFoundryLocalVariant).mockRejectedValueOnce(
+          new FoundryLocalNotReadyError({
+            verdict: 'engine-update-required', reason: null, accelerator: 'WebGpuExecutionProvider',
+          }, '2.4.0')
+        )
+
+        render(withTranslations(
+          <div data-testid="panel-frame" style={{ width: panelWidth(1024) }}>
+            <FoundryLocalDownloadOptions model={MODEL} platform="macos-arm64" />
+          </div>
+        ))
+        const frame = screen.getByTestId('panel-frame')
+        const download = await screen.findByRole('button', { name: i18n.t('hub:download') })
+        fireEvent.click(download)
+        await screen.findByRole('button', { name: i18n.t('hub:foundryLocal.updateEngine') })
+        expect(screen.getByRole('status')).toHaveTextContent(/2\.1\.0.*2\.4\.0/)
+        for (const width of [1024, 1280]) {
+          frame.style.width = `${panelWidth(width)}px`
+          expectNoHorizontalOverflow(frame)
+          expectNoHorizontalOverflow(screen.getByTestId('foundry-local-actions'))
+        }
+        useEngineVersionsStore.setState({ engines: {} })
       })
     })
   }
