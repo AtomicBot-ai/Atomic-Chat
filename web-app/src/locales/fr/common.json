@@ -876,10 +876,13 @@
     "notSelected": "Non sélectionné",
     "configuration": "Configuration",
     "remoteAccess": "Accès à distance",
+    "remoteModels": "Modèles à distance",
     "activity": "Activité",
     "connections": "Connexions",
     "connectionsCount": "{{count}} configurée(s)",
-    "configured": "Configuré"
+    "configured": "Configuré",
+    "account": "Compte",
+    "signIn": "Se connecter"
   },
   "support": {
     "title": "Support Atomic Chat",

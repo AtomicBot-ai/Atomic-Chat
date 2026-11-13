@@ -102,6 +102,13 @@ type ProviderObject = {
   media?: ProviderMedia
   /** A server that only generates media (Automatic1111 / Forge): no chat models card. */
   media_only?: boolean
+  /**
+   * Made by remote access through the account: another computer of the
+   * account this device is connected to. Its address and key are kept current
+   * by the app (`lib/account-remote-providers.ts`), so the user cannot edit or
+   * remove it; disconnecting on Account → Remote models removes it.
+   */
+  account_remote?: { host_id: string }
 }
 
 /**

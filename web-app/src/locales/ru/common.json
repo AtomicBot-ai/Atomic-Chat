@@ -784,6 +784,7 @@
     "notSelected": "Не выбрана",
     "configuration": "Настройки",
     "remoteAccess": "Удалённый доступ",
+    "remoteModels": "Удалённые модели",
     "activity": "Активность",
     "connections": "Подключения",
     "connectionsCount": "настроено: {{count}}",

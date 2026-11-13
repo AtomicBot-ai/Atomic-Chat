@@ -49,5 +49,6 @@
     "description": "This removes the endpoint, its models and its configuration.",
     "cancel": "Cancel",
     "confirm": "Remove endpoint"
-  }
+  },
+  "managedByAccount": "Managed by your account · disconnect it on Account → Remote models"
 }

@@ -186,6 +186,17 @@ pub async fn factory_reset<R: Runtime>(
 
     let _ = stop_mcp_servers_with_context(&app_handle, &state, ShutdownContext::FactoryReset).await;
 
+    // Sign this device out of the Atomic Chat account while its session file still exists, so the
+    // reset does not leave a live session on the server. Best effort and bounded: offline, the
+    // reset goes on and the session expires on its own.
+    if let Some(account) = app_handle.try_state::<crate::core::account::AccountState>() {
+        let _ = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            account.logout(&data_folder),
+        )
+        .await;
+    }
+
     {
         let mut active_servers = state.mcp_active_servers.lock().await;
         active_servers.clear();

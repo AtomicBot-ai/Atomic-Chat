@@ -254,6 +254,32 @@ pub fn run() {
         core::mcp::oauth::mcp_oauth_login,
         core::mcp::oauth::mcp_oauth_cancel,
         core::mcp::oauth::mcp_oauth_logout,
+        // Atomic Chat account (desktop only for now)
+        core::account::commands::account_status,
+        core::account::commands::account_providers,
+        core::account::commands::account_email_start,
+        core::account::commands::account_email_verify,
+        core::account::commands::account_google_login,
+        core::account::commands::account_cancel_login,
+        core::account::commands::account_logout,
+        core::account::commands::account_profile,
+        core::account::commands::account_update_profile,
+        core::account::commands::account_sessions,
+        core::account::commands::account_revoke_session,
+        core::account::commands::account_delete,
+        // Remote access through the account (desktop only)
+        core::account::remote::commands::account_remote_status,
+        core::account::remote::commands::account_remote_connections,
+        core::account::remote::commands::account_remote_set_sharing,
+        core::account::remote::commands::account_remote_pairing_code,
+        core::account::remote::commands::account_remote_close_pairing_code,
+        core::account::remote::commands::account_remote_decide,
+        core::account::remote::commands::account_remote_revoke,
+        core::account::remote::commands::account_remote_hosts,
+        core::account::remote::commands::account_remote_request,
+        core::account::remote::commands::account_remote_pair,
+        core::account::remote::commands::account_remote_disconnect,
+        core::account::remote::commands::account_remote_remove_host,
         // Threads
         core::threads::commands::list_threads,
         core::threads::commands::create_thread,
@@ -513,6 +539,8 @@ pub fn run() {
         // The last TensorRT-LLM models root the core named (outside the data folder on Windows).
         .manage(core::filesystem::model_roots::CoreModelRoot::default())
         .manage(core::chat_exec::ChatExecState::default())
+        .manage(core::account::AccountState::default())
+        .manage(core::account::remote::RemoteState::default())
         .manage(AppState {
             app_token: Some(generate_app_token()),
             mcp_servers: Arc::new(Mutex::new(HashMap::new())),
@@ -637,6 +665,11 @@ pub fn run() {
             // the reaper has already decided which processes a live core owns.
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             crate::core::atomic_core::commands::init(app.handle());
+
+            // Remote access through the account: resume sharing and the
+            // connections to other computers, and follow sign-in changes.
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
+            crate::core::account::remote::commands::init(app.handle());
 
             // Same rationale for the agent's own children, which the backend
             // reaper cannot recognise: they are arbitrary user commands, so

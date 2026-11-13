@@ -3,7 +3,12 @@
  * contextual sidebar uses to highlight its rows.
  */
 
-export type NavigationSection = 'chat' | 'server' | 'models' | 'settings'
+export type NavigationSection =
+  | 'chat'
+  | 'server'
+  | 'models'
+  | 'account'
+  | 'settings'
 
 /** The icon rail's width, in CSS px. */
 export const NAVIGATION_RAIL_WIDTH = 60
@@ -41,6 +46,7 @@ const matchesPath = (pathname: string, path: string) =>
 export function navigationSection(pathname: string): NavigationSection {
   if (MODELS_PATHS.some((path) => matchesPath(pathname, path))) return 'models'
   if (SERVER_PATHS.some((path) => matchesPath(pathname, path))) return 'server'
+  if (matchesPath(pathname, '/account')) return 'account'
   if (
     matchesPath(pathname, '/settings') ||
     matchesPath(pathname, '/connectors') ||
