@@ -22,6 +22,8 @@
    "disable-maap": "true",
    "reasoningEnd": "</think>",
    "promptTemplate": "{\"system\": \"<|im_start|>system\\n{Content}<|im_end|>\", \"user\": \"<|im_start|>user\\n{Content}<|im_end|>\", \"assistant\": \"<|im_start|>assistant\\n{Content}<|im_end|>\", \"prompt\": \"<|im_start|>user\\n{Content}<|im_end|>\\n<|im_start|>assistant\"}",
+   "toolCallStart": "<tool_call>",
+   "toolCallEnd": "</tool_call>",
    "reasoningStart": "<think>",
    "supportsReasoning": "true",
    "toolCallEnd": "</tool_call>",

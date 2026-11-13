@@ -2,7 +2,9 @@ import { act, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useModelProvider } from '@/hooks/useModelProvider'
+import type { AudioStatus } from '@/services/audio/types'
 import type { EngineBuild, EngineVersions } from '@/services/engines/types'
+import { useAudioGenerationStore } from '@/stores/audio-generation-store'
 import { useEngineVersionsStore } from '@/stores/engine-versions-store'
 
 vi.mock('@/i18n/react-i18next-compat', () => ({
@@ -138,6 +140,53 @@ describe('the audio engine row', () => {
     expect(row.textContent).toContain('audio.cpp')
     expect(row.textContent).toContain('audios:engine.rowDescription')
     expect(within(row).getByRole('status')).toBeTruthy()
+  })
+
+  it('unfolds to Install while no build is on this computer', () => {
+    const bind = vi.fn(async () => {})
+    const installEngine = vi.fn(async () => {})
+    useAudioGenerationStore.setState({
+      bind,
+      installEngine,
+      core: 'ready',
+      status: {
+        install: { state: 'not-installed' },
+        model: { state: 'unloaded', loaded: null },
+        activeJob: null,
+        outputDir: '/audios',
+        idleUnloadSecs: 600,
+      } as AudioStatus,
+      hostBackendId: 'macos-arm64',
+      hostBackendResolved: true,
+      engineDownloadBytes: 70_064_498,
+    })
+    act(() =>
+      useEngineVersionsStore.setState({
+        engines: {
+          'audio-cpp': {
+            ...versions('audio-cpp', [], null),
+            kind: 'engine-build',
+            active_choice: 'core',
+          },
+        },
+        error: null,
+      })
+    )
+
+    render(<InferenceEnginesOverview />)
+
+    const row = screen.getByTestId('engine-row-audio-cpp')
+    expect(within(row).getByRole('status').dataset.status).toBe('notInstalled')
+    act(() =>
+      within(row)
+        .getByRole('button', { name: 'providers:overview.expandSettings' })
+        .click()
+    )
+
+    expect(bind).toHaveBeenCalledTimes(1)
+    expect(within(row).queryByTestId('engine-builds-audio-cpp')).toBeNull()
+    act(() => within(row).getByTestId('audio-engine-install').click())
+    expect(installEngine).toHaveBeenCalledTimes(1)
   })
 })
 

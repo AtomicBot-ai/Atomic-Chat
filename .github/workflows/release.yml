@@ -159,13 +159,14 @@ jobs:
           echo "Previous published release: ${PREV_TAG:-<none>}"
           echo "prev_tag=$PREV_TAG" >> "$GITHUB_OUTPUT"
 
-      - name: Generate release notes via OpenAI
+      - name: Generate release notes via AI/ML API
         id: gen
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_MODEL: ${{ vars.RELEASE_NOTES_MODEL || 'gpt-5-mini' }}
-          OPENAI_BASE_URL: ${{ vars.OPENAI_BASE_URL || 'https://api.openai.com/v1' }}
+          AIMLAPI_API_KEY: ${{ secrets.AIMLAPI_API_KEY }}
+          RELEASE_NOTES_MODEL: ${{ vars.RELEASE_NOTES_MODEL || 'z-ai/glm-5.3-flash' }}
           CURR_TAG: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
+          # A manual run's draft has no git tag yet: end the range at this run's commit.
+          CURR_REF: ${{ github.sha }}
           PREV_TAG: ${{ steps.prev.outputs.prev_tag }}
           REPO: ${{ github.repository }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

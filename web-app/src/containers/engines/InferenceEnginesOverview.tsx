@@ -23,6 +23,7 @@ import {
 import HeaderPage from '@/containers/HeaderPage'
 import ProvidersAvatar from '@/containers/ProvidersAvatar'
 import { VoiceSettingsPanel } from '@/containers/VoiceSettingsPanel'
+import { AudioEngineNotice } from '@/containers/audios/AudioEngineNotice'
 import { EngineDetail } from '@/containers/engines/EngineDetail'
 import { MediaSettingsPanel } from '@/containers/images/MediaSettingsPanel'
 import { useBackendUpdater } from '@/hooks/useBackendUpdater'
@@ -48,6 +49,7 @@ import { sortProvidersForSettings } from '@/lib/providerOrder'
 import { refreshAppManagedProviders } from '@/lib/provider-visibility'
 import { cn, getProviderTitle } from '@/lib/utils'
 import type { EngineId, EngineVersions } from '@/services/engines/types'
+import { useAudioGenerationStore } from '@/stores/audio-generation-store'
 import { useEngineVersionsStore } from '@/stores/engine-versions-store'
 
 /** The media engine's name, as Settings → Media names it. */
@@ -167,6 +169,25 @@ function FindOptimalBackendButton({ providerName }: { providerName: string }) {
       )}
       <span>{optimal.label}</span>
     </Button>
+  )
+}
+
+/**
+ * The audio row's settings: what stands between this computer and the engine
+ * (Install with its size, the download's progress, no build for this
+ * computer, a core without audio), the same notice as the Audios studio's,
+ * then the installed builds. Without the notice a computer with no build
+ * unfolds to nothing and has no way to install one here.
+ */
+function AudioEnginePanel() {
+  useEffect(() => {
+    void useAudioGenerationStore.getState().bind()
+  }, [])
+  return (
+    <>
+      <AudioEngineNotice />
+      <InstalledEngineBuilds engine={AUDIO_ENGINE} />
+    </>
   )
 }
 
@@ -519,7 +540,7 @@ export function InferenceEnginesOverview({
               status={statusOf(AUDIO_ENGINE)}
               onUpdate={onUpdate(AUDIO_ENGINE)}
             >
-              <InstalledEngineBuilds engine={AUDIO_ENGINE} />
+              <AudioEnginePanel />
             </EngineRow>
           </Group>
         )}
