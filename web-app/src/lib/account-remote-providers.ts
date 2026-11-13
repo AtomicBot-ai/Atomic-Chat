@@ -3,7 +3,8 @@
  * device is connected to, named "<computer> (remote)". Rust tells which
  * connections are ready (`account-remote-connections`); this keeps
  * `useModelProvider` in step: adds, follows a new address or key, refreshes
- * the model list, and removes the provider once the access ends.
+ * the model list (also when the host sends a newer address list, or when
+ * the person asks), and removes the provider once the access ends.
  *
  * A managed provider carries `account_remote.host_id`; the Endpoints page
  * shows it read-only (`isAccountManagedProvider`).
@@ -45,6 +46,14 @@ export function managedProviderName(
 
 type Deps = Pick<ServiceHub, 'providers'>
 
+export interface SyncOptions {
+  /** List every live provider's models again, even when nothing changed. */
+  refreshModels?: boolean
+}
+
+/** The address list number each host was last synced with. Memory only. */
+const syncedSeq = new Map<string, number>()
+
 async function refreshModels(name: string, hub: Deps): Promise<void> {
   const current = useModelProvider.getState().getProviderByName(name)
   if (!current) return
@@ -59,7 +68,7 @@ async function refreshModels(name: string, hub: Deps): Promise<void> {
     }))
     useModelProvider.getState().updateProvider(name, { models })
   } catch (error) {
-    // The host may be asleep; its models come with the next address change.
+    // The host may be asleep; its models come with its next address list.
     console.warn(`[remote] could not list the models of ${name}:`, error)
   }
 }
@@ -76,7 +85,8 @@ async function register(name: string): Promise<void> {
 
 async function syncOnce(
   connections: RemoteProviderConnection[],
-  hub: Deps
+  hub: Deps,
+  options: SyncOptions
 ): Promise<void> {
   const store = () => useModelProvider.getState()
 
@@ -138,7 +148,12 @@ async function syncOnce(
         changed = true
       }
       if ((current?.models.length ?? 0) === 0) changed = true
+      // A newer address list: the host may serve other models now.
+      const seen = syncedSeq.get(connection.hostId)
+      if (seen !== undefined && connection.endpointsSeq > seen) changed = true
+      if (options.refreshModels) changed = true
     }
+    syncedSeq.set(connection.hostId, connection.endpointsSeq)
     if (!changed) continue
     // Registered first, so the proxy knows the address; then again with the
     // model ids it routes by.
@@ -148,6 +163,8 @@ async function syncOnce(
   }
 
   const live = new Set(connections.map((c) => c.hostId))
+  for (const hostId of Array.from(syncedSeq.keys()))
+    if (!live.has(hostId)) syncedSeq.delete(hostId)
   const stale = store().providers.filter(
     (p) => p.account_remote?.host_id && !live.has(p.account_remote.host_id)
   )
@@ -162,8 +179,9 @@ let queue: Promise<void> = Promise.resolve()
 /** One sync at a time, in the order the lists arrived. */
 export function syncAccountRemoteProviders(
   connections: RemoteProviderConnection[],
-  hub: Deps
+  hub: Deps,
+  options: SyncOptions = {}
 ): Promise<void> {
-  queue = queue.catch(() => {}).then(() => syncOnce(connections, hub))
+  queue = queue.catch(() => {}).then(() => syncOnce(connections, hub, options))
   return queue
 }

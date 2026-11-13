@@ -104,6 +104,10 @@ pub struct ProviderConnection {
     pub host_name: String,
     pub base_url: String,
     pub api_key: String,
+    /// The sequence number of the host's address list. A newer list (the
+    /// host restarted its server, say) makes the webview list the models
+    /// again, even when the picked address stays the same.
+    pub endpoints_seq: u64,
 }
 
 #[derive(Default)]
@@ -418,6 +422,7 @@ pub(super) fn provider_connections(file: &RemoteFile) -> Vec<ProviderConnection>
                 host_name: c.host_name.clone(),
                 base_url: c.base_url.clone()?,
                 api_key: c.api_key.clone()?,
+                endpoints_seq: c.last_seq,
             })
         })
         .collect()

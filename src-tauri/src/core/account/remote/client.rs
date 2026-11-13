@@ -148,7 +148,7 @@ pub struct ClientCtx<'a> {
 pub enum Round {
     /// Nothing for the provider list.
     Quiet,
-    /// The key or the picked address changed.
+    /// The key, the picked address or the host's address list changed.
     ConnectionsChanged,
     /// The connection is over; its task ends.
     Ended(String),
@@ -300,7 +300,7 @@ impl ClientCtx<'_> {
                         .and_then(|c| c.api_key)
                         .unwrap_or_default();
                     let picked = pick_base_url(&list, &api_key).await;
-                    let moved = self
+                    let accepted = self
                         .remote
                         .update(self.data_dir, |f| {
                             let Some(c) = f.connections.iter_mut().find(|c| c.grant_id == grant_id)
@@ -311,13 +311,13 @@ impl ClientCtx<'_> {
                             c.endpoints = list.clone();
                             // Offline (no address): keep the last one, so the
                             // provider stays and works again when it is back.
-                            let next = picked.clone().or_else(|| c.base_url.clone());
-                            let moved = next != c.base_url;
-                            c.base_url = next;
-                            moved
+                            c.base_url = picked.clone().or_else(|| c.base_url.clone());
+                            true
                         })
                         .await;
-                    changed |= moved;
+                    // A newer list counts even with the same address: the
+                    // provider lists the host's models again.
+                    changed |= accepted;
                 }
                 Ok(if changed {
                     Round::ConnectionsChanged

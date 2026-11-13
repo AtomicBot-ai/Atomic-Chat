@@ -34,6 +34,7 @@ title: "Share and use models through the Atomic Chat account"
   - **Sharing needs the server's own key.** Turning sharing on generates one if there is none, after a dialog explaining that local tools will need it too. It then starts the server (restarting one that runs without its key) and the tunnel (with auto-start), then registers the host. Turning it off pauses: keys leave the core, the host goes offline, grants stay. Revoke ends one device.
   - **Managed providers.** A ready connection becomes a provider named "<computer> (remote)" (suffixed on a clash). It carries `ProviderObject.account_remote.host_id`.
     - `lib/account-remote-providers.ts` follows `account-remote-connections`: it adds the provider, follows a new address or key, refreshes models from `/models`, registers it with the core, and removes it when access ends.
+    - It lists the models again when the host sends a newer address list (`endpointsSeq`), even at the same address, and for every connected computer when the person clicks refresh on the Remote models page.
     - The Endpoints page shows it read-only: no Configure, no Remove.
     - Its key sits in localStorage like every provider key, the one value that crosses IPC.
   - **UI.** The Account section gets its sidebar back, with Overview and Remote models (`/account/remote`). The page has a "Share this computer's models" card and a "Use models from your other computers" card.

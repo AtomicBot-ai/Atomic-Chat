@@ -37,6 +37,12 @@ vi.mock('@/hooks/useRemoteAccess', () => ({
   },
 }))
 
+const remoteSync = vi.hoisted(() => vi.fn(async () => {}))
+vi.mock('@/lib/account-remote-providers', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/account-remote-providers')>()),
+  syncAccountRemoteProviders: remoteSync,
+}))
+
 const platform = vi.hoisted(() => ({
   accounts: true,
   localApiServer: true,
@@ -148,7 +154,16 @@ function mockAccount(status: AccountStatus, remote: RemoteStatus) {
     })),
     remoteDisconnect: vi.fn(async () => EMPTY_REMOTE_STATUS),
     remoteRemoveHost: vi.fn(async () => EMPTY_REMOTE_STATUS),
+    remoteConnections: vi.fn(async () => [studioConnection]),
   }
+}
+
+const studioConnection = {
+  hostId: 'host-studio',
+  hostName: 'Studio Mac',
+  baseUrl: 'http://192.168.1.5:1337/v1',
+  apiKey: 'sk-atomic-studio',
+  endpointsSeq: 1,
 }
 
 let account: ReturnType<typeof mockAccount>
@@ -350,6 +365,37 @@ describe('RemoteModelsPage', () => {
       .click(within(hosts[0]).getByRole('button', { name: 'Connect' }))
 
     expect(account.remoteRequest).toHaveBeenCalledWith('host-studio')
+  })
+
+  it('refresh lists the computers and their models again, spinning meanwhile', async () => {
+    let finish = () => {}
+    remoteSync.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve
+        })
+    )
+    await renderPage(signedIn, EMPTY_REMOTE_STATUS)
+    account.remoteHosts.mockClear()
+    const button = screen.getByTestId('remote-refresh')
+
+    await userEvent.setup().click(button)
+
+    await waitFor(() =>
+      expect(remoteSync).toHaveBeenCalledWith(
+        [studioConnection],
+        expect.anything(),
+        { refreshModels: true }
+      )
+    )
+    expect(account.remoteHosts).toHaveBeenCalledTimes(1)
+    expect(button).toBeDisabled()
+    expect(button.querySelector('svg')).toHaveClass('animate-spin')
+
+    await act(async () => finish())
+
+    await waitFor(() => expect(button).toBeEnabled())
+    expect(button.querySelector('svg')).not.toHaveClass('animate-spin')
   })
 
   it('shows the check code to confirm on the host while a request waits', async () => {

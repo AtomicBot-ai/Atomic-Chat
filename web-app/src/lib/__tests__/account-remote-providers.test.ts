@@ -30,20 +30,30 @@ const studio: RemoteProviderConnection = {
   hostName: 'Studio Mac',
   baseUrl: 'https://first-words.trycloudflare.com/v1',
   apiKey: 'sk-atomic-first',
+  endpointsSeq: 1,
 }
 
 const byName = (name: string) =>
   useModelProvider.getState().getProviderByName(name)
 
-const sync = (connections: RemoteProviderConnection[]) =>
+const sync = (
+  connections: RemoteProviderConnection[],
+  options?: Parameters<typeof syncAccountRemoteProviders>[2]
+) =>
   syncAccountRemoteProviders(
     connections,
-    hub as unknown as Parameters<typeof syncAccountRemoteProviders>[1]
+    hub as unknown as Parameters<typeof syncAccountRemoteProviders>[1],
+    options
   )
 
+const modelIds = () =>
+  byName('Studio Mac (remote)')?.models.map((m) => m.id) ?? []
+
 describe('account remote providers', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     useModelProvider.setState({ providers: [] })
+    // Forget the address list numbers an earlier test left behind.
+    await sync([])
     registry.register.mockClear()
     registry.unregister.mockClear()
     fetchModels.mockClear()
@@ -139,5 +149,42 @@ describe('account remote providers', () => {
     // The next list tries again.
     await sync([studio])
     expect(byName('Studio Mac (remote)')?.models).toHaveLength(2)
+  })
+
+  it('lists the models again when asked, though the address and key are unchanged', async () => {
+    // Connected while the host served nothing yet.
+    fetchModels.mockResolvedValueOnce([])
+    await sync([studio])
+    expect(modelIds()).toEqual([])
+    fetchModels.mockClear()
+    registry.register.mockClear()
+
+    await sync([studio], { refreshModels: true })
+
+    expect(fetchModels).toHaveBeenCalledTimes(1)
+    expect(modelIds()).toEqual(['qwen3-8b', 'gemma-3'])
+    expect(registry.register).toHaveBeenCalledTimes(2)
+
+    fetchModels.mockResolvedValueOnce(['llama-4'])
+    await sync([studio])
+    expect(modelIds()).toEqual(['qwen3-8b', 'gemma-3'])
+    await sync([studio], { refreshModels: true })
+    expect(modelIds()).toEqual(['llama-4'])
+  })
+
+  it('lists the models again for a newer address list at the same address', async () => {
+    await sync([studio])
+    fetchModels.mockClear()
+    fetchModels.mockResolvedValueOnce(['llama-4'])
+
+    await sync([{ ...studio, endpointsSeq: 2 }])
+
+    expect(fetchModels).toHaveBeenCalledTimes(1)
+    expect(modelIds()).toEqual(['llama-4'])
+    expect(byName('Studio Mac (remote)')?.base_url).toBe(studio.baseUrl)
+
+    // The same list again changes nothing.
+    await sync([{ ...studio, endpointsSeq: 2 }])
+    expect(fetchModels).toHaveBeenCalledTimes(1)
   })
 })

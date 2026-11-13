@@ -7,7 +7,9 @@ import { Card } from '@/containers/Card'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { accountErrorMessage, platformLabel } from '@/lib/account'
+import { syncAccountRemoteProviders } from '@/lib/account-remote-providers'
 import { formatTimeAgo } from '@/lib/model-card'
+import { cn } from '@/lib/utils'
 import { toAccountError } from '@/services/account/errors'
 import type {
   RemoteConnectionView,
@@ -56,11 +58,13 @@ function ConnectionState({ connection }: { connection: RemoteConnectionView }) {
  */
 export function OtherComputers() {
   const { t, i18n } = useTranslation()
-  const account = useServiceHub().account()
+  const hub = useServiceHub()
+  const account = hub.account()
   const connections = useAccountRemoteStore((state) => state.status.connections)
   const setStatus = useAccountRemoteStore((state) => state.setStatus)
 
   const [hosts, setHosts] = useState<RemoteHostInfo[] | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
   const [loadError, setLoadError] = useState<AccountError | null>(null)
   const [busyHost, setBusyHost] = useState<string | null>(null)
   const [actionError, setActionError] = useState<AccountError | null>(null)
@@ -84,6 +88,20 @@ export function OtherComputers() {
   useEffect(() => {
     void load()
   }, [load, connectionKey])
+
+  /** The computers, and the models of every connected one, listed again. */
+  const refresh = async () => {
+    setRefreshing(true)
+    try {
+      await load()
+      const ready = await account.remoteConnections()
+      await syncAccountRemoteProviders(ready, hub, { refreshModels: true })
+    } catch (error) {
+      console.warn('[remote] could not refresh the remote models:', error)
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   const run = async (hostId: string, action: () => Promise<unknown>) => {
     setBusyHost(hostId)
@@ -137,10 +155,13 @@ export function OtherComputers() {
           size="icon-sm"
           className="shrink-0"
           aria-label={t('account:remote.use.refresh')}
+          aria-busy={refreshing}
           title={t('account:remote.use.refresh')}
-          onClick={() => void load()}
+          disabled={refreshing}
+          onClick={() => void refresh()}
+          data-testid="remote-refresh"
         >
-          <RefreshCw size={14} />
+          <RefreshCw size={14} className={cn(refreshing && 'animate-spin')} />
         </Button>
       </div>
 

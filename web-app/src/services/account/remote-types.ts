@@ -109,6 +109,11 @@ export interface RemoteProviderConnection {
   hostName: string
   baseUrl: string
   apiKey: string
+  /**
+   * The sequence number of the host's address list. A newer one lists the
+   * host's models again, even when the address stays the same.
+   */
+  endpointsSeq: number
 }
 
 /** Payload of `account-remote-connection-ended`. */

@@ -246,6 +246,13 @@ impl Setup {
             .expect("allow a shown request");
     }
 
+    async fn client_round(&self) -> Round {
+        self.client()
+            .round(GRANT_ID, 0, &CancellationToken::new())
+            .await
+            .expect("client round")
+    }
+
     async fn host_round(&self, uploaded: &mut Option<UploadMark>) -> Option<u64> {
         self.host()
             .round(None, 0, uploaded, &Notify::new(), &CancellationToken::new())
@@ -604,6 +611,47 @@ async fn pairing_by_code_collects_the_key_confirms_it_and_follows_the_address() 
         "the code is dropped once used"
     );
     assert!(file.connections[0].acked);
+}
+
+/// The host sent a newer address list with the same address (its server
+/// restarted, say): the connection is announced again with the newer
+/// number, so the provider lists the host's models again.
+#[tokio::test]
+async fn a_newer_address_list_is_announced_even_with_the_same_address() {
+    let s = setup().await;
+    s.world.lock().unwrap().client_grant = Some(approved_client_grant("code"));
+    s.client()
+        .pair(&protocol::parse_pair_input("BCDF-GHJK").unwrap())
+        .await
+        .unwrap();
+    let phone = DeviceKey::from_secret_b64(&s.file().await.device_secret.unwrap()).unwrap();
+    let (grant, _) = active_client_grant(&phone, Some(b"BCDFGHJK"), "code");
+    let envelope = grant["credential"]["envelope"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    s.world.lock().unwrap().client_grant = Some(grant);
+    assert_eq!(s.client_round().await, Round::ConnectionsChanged);
+    let first = s.remote.provider_connections(&s.dir).await;
+    assert_eq!(first[0].endpoints_seq, 1);
+
+    // The same list again: nothing to announce.
+    assert_eq!(s.client_round().await, Round::Quiet);
+
+    let secret = protocol::open_credential(&phone, GRANT_ID, &envelope)
+        .unwrap()
+        .grant_secret_bytes()
+        .unwrap();
+    let blob =
+        protocol::seal_endpoints(&secret, GRANT_ID, 2, &online("host-words").endpoints).unwrap();
+    s.world.lock().unwrap().client_grant.as_mut().unwrap()["endpoints"]["blob"] = json!(blob);
+
+    assert_eq!(s.client_round().await, Round::ConnectionsChanged);
+    let second = s.remote.provider_connections(&s.dir).await;
+    assert_eq!(second[0].base_url, first[0].base_url);
+    assert_eq!(second[0].api_key, first[0].api_key);
+    assert_eq!(second[0].endpoints_seq, 2);
+    assert_ne!(second, first, "the newer list is announced");
 }
 
 #[tokio::test]
