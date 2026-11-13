@@ -2,10 +2,12 @@
 //! what it does about the answer.
 //!
 //! The host decides. A code pairing is honoured only when the device's proof
-//! checks out against the code this computer showed; a request only after
-//! the person clicked "Allow". Each device then gets its own key for the
-//! public API, sealed to the device, and its own sealed copy of the current
-//! addresses. Keys of grants that are no longer live leave the core at once.
+//! checks out against the code this computer showed; a request only when the
+//! person clicked "Allow" here, for the device and the key its check code
+//! covered. An `approved` the account service reports on its own gets
+//! nothing. Each device then gets its own key for the public API, sealed to
+//! the device, and its own sealed copy of the current addresses. Keys of
+//! grants that are no longer live leave the core at once.
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -13,11 +15,11 @@ use std::path::Path;
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
-use super::api::{remote_codes, status, HostSync};
+use super::api::{remote_codes, status, HostGrant, HostSync};
 use super::core_env::{HostEnv, Reachability};
 use super::protocol::{self, Credential, Endpoint};
 use super::state::{pending_requests, RemoteState};
-use super::store::{HostRecord, IssuedKey, RemoteFile};
+use super::store::{AllowedRequest, HostRecord, IssuedKey, RemoteFile};
 use crate::core::account::api::{codes, AccountError};
 use crate::core::account::AccountState;
 use crate::core::auth::state::now_unix;
@@ -49,7 +51,9 @@ impl std::fmt::Debug for IssueOrder {
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct HostPlan {
-    /// Code pairings whose proof does not check out.
+    /// Approved grants this computer did not approve: a code pairing whose
+    /// proof does not check out, a request nobody allowed here (for that
+    /// device and key), a method it does not know.
     pub deny: Vec<String>,
     pub issue: Vec<IssueOrder>,
     /// Active grants this computer holds no key for (its file was lost):
@@ -57,6 +61,8 @@ pub struct HostPlan {
     pub revoke_unknown: Vec<String>,
     /// Issued keys whose grant is no longer live.
     pub dropped: Vec<String>,
+    /// The open code expired past its grace. (A used one is cleared once its
+    /// device got the key.)
     pub clear_pairing: bool,
 }
 
@@ -73,6 +79,16 @@ fn pairing_secrets(file: &RemoteFile, now: i64) -> Vec<Vec<u8>> {
         secrets.push(qr);
     }
     secrets
+}
+
+/// The person allowed this very request here: same grant, same device, same
+/// key as the check code showed.
+fn allowed_here(file: &RemoteFile, grant: &HostGrant) -> bool {
+    file.allowed.iter().any(|a| {
+        a.grant_id == grant.id
+            && a.client_device_id == grant.client.id
+            && a.client_public_key == grant.client_public_key
+    })
 }
 
 /// Pure: what to do about a sync answer.
@@ -92,22 +108,22 @@ pub fn plan_host(sync: &HostSync, file: &RemoteFile, now: i64) -> HostPlan {
                     client_public_key: grant.client_public_key.clone(),
                     mac_secret,
                 };
-                if grant.method == status::METHOD_CODE {
-                    let matched = grant.proof.as_deref().and_then(|proof| {
-                        secrets.iter().find(|secret| {
-                            protocol::verify_pair_proof(secret, &grant.client_public_key, proof)
-                        })
-                    });
-                    match matched {
-                        Some(secret) => {
-                            plan.issue.push(order(Some(secret.clone())));
-                            plan.clear_pairing = true;
+                match grant.method.as_str() {
+                    status::METHOD_CODE => {
+                        let matched = grant.proof.as_deref().and_then(|proof| {
+                            secrets.iter().find(|secret| {
+                                protocol::verify_pair_proof(secret, &grant.client_public_key, proof)
+                            })
+                        });
+                        match matched {
+                            Some(secret) => plan.issue.push(order(Some(secret.clone()))),
+                            None => plan.deny.push(grant.id.clone()),
                         }
-                        None => plan.deny.push(grant.id.clone()),
                     }
-                } else {
-                    // A request this computer approved itself.
-                    plan.issue.push(order(None));
+                    status::METHOD_REQUEST if allowed_here(file, grant) => {
+                        plan.issue.push(order(None))
+                    }
+                    _ => plan.deny.push(grant.id.clone()),
                 }
             }
             status::ACTIVE if !issued(&grant.id) => plan.revoke_unknown.push(grant.id.clone()),
@@ -212,6 +228,48 @@ impl HostCtx<'_> {
         Ok(record)
     }
 
+    /// Allow or deny a device that asked. Only a request shown here now can
+    /// be allowed, and it is written down first, with the device and the key
+    /// its check code covered: only that grant, with that key, gets a key
+    /// later, whatever the account service reports.
+    pub async fn decide(&self, grant_id: &str, allow: bool) -> Result<(), AccountError> {
+        if allow {
+            let shown = self
+                .remote
+                .memory()
+                .requests
+                .into_iter()
+                .find(|r| r.grant_id == grant_id);
+            let Some(request) = shown else {
+                return Err(AccountError::new(
+                    remote_codes::GRANT_NOT_FOUND,
+                    "no such request is waiting here",
+                ));
+            };
+            let record = AllowedRequest {
+                grant_id: request.grant_id,
+                client_device_id: request.client_device_id,
+                client_public_key: request.client_public_key,
+                allowed_at: now_unix(),
+            };
+            self.remote
+                .update(self.data_dir, |f| f.allow_request(record))
+                .await;
+        }
+        let id = grant_id.to_string();
+        let result = self
+            .account
+            .authed(self.data_dir, |api, token| {
+                let id = id.clone();
+                async move { api.remote_decide(&token, &id, allow).await }
+            })
+            .await;
+        self.remote
+            .set_memory(|m| m.requests.retain(|r| r.grant_id != grant_id));
+        self.remote.host_wake.notify_one();
+        result
+    }
+
     /// Hand the core the keys of every live grant.
     pub async fn push_keys(&self) {
         let keys = self
@@ -294,7 +352,7 @@ impl HostCtx<'_> {
         };
 
         for grant_id in &plan.deny {
-            log::info!("[remote] denying grant {grant_id}: its pairing proof does not check out");
+            log::info!("[remote] denying grant {grant_id}: it was not approved on this computer");
             let id = grant_id.clone();
             keep(
                 self.account
@@ -396,6 +454,21 @@ impl HostCtx<'_> {
             }
         }
 
+        // A used code is done once its device holds the key; a failed upload
+        // keeps it for the next round.
+        let code_used = plan
+            .issue
+            .iter()
+            .any(|o| o.mac_secret.is_some() && activated.contains(&o.grant_id));
+        // Allowed requests wait only while their grant does, and until their
+        // key is out.
+        let waiting: BTreeSet<&str> = sync
+            .grants
+            .iter()
+            .filter(|g| matches!(g.status.as_str(), status::PENDING | status::APPROVED))
+            .map(|g| g.id.as_str())
+            .filter(|id| !activated.contains(*id))
+            .collect();
         // Keep shown names current; drop keys of grants that ended.
         let renamed: Vec<_> = sync
             .grants
@@ -409,7 +482,7 @@ impl HostCtx<'_> {
             })
             .collect();
         let dropped = plan.dropped.clone();
-        let clear_pairing = plan.clear_pairing;
+        let clear_pairing = plan.clear_pairing || code_used;
         let removed = self
             .remote
             .update(self.data_dir, |f| {
@@ -419,6 +492,7 @@ impl HostCtx<'_> {
                         key.client_platform = platform.clone();
                     }
                 }
+                f.allowed.retain(|a| waiting.contains(a.grant_id.as_str()));
                 let before = f.issued.len();
                 f.issued.retain(|k| !dropped.contains(&k.grant_id));
                 if clear_pairing {
@@ -499,6 +573,7 @@ mod tests {
     use crate::core::account::remote::store::PairingRecord;
 
     const HOST: &str = "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
+    const DEVICE: &str = "11111111-2222-4333-8444-555555555555";
     const DEVICE_PUBLIC: &str = "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9_AsrhtHHw";
 
     fn grant(id: &str, status: &str, method: &str, proof: Option<String>) -> HostGrant {
@@ -507,7 +582,7 @@ mod tests {
             status: status.to_string(),
             method: method.to_string(),
             client: DeviceInfo {
-                id: "11111111-2222-4333-8444-555555555555".to_string(),
+                id: DEVICE.to_string(),
                 client_type: "mobile".to_string(),
                 device_name: Some("Ann's iPhone".to_string()),
                 platform: Some("ios".to_string()),
@@ -547,6 +622,15 @@ mod tests {
         (file, qr.to_vec())
     }
 
+    fn allowed(grant_id: &str, device_id: &str, public_key: &str) -> AllowedRequest {
+        AllowedRequest {
+            grant_id: grant_id.to_string(),
+            client_device_id: device_id.to_string(),
+            client_public_key: public_key.to_string(),
+            allowed_at: 0,
+        }
+    }
+
     fn issued(grant_id: &str) -> IssuedKey {
         IssuedKey {
             grant_id: grant_id.to_string(),
@@ -572,7 +656,8 @@ mod tests {
         assert_eq!(plan.issue.len(), 1);
         assert_eq!(plan.issue[0].mac_secret.as_deref(), Some(qr.as_slice()));
         assert!(plan.deny.is_empty());
-        assert!(plan.clear_pairing);
+        // The code is cleared once the key is out, by the round, not the plan.
+        assert!(!plan.clear_pairing);
     }
 
     #[test]
@@ -636,18 +721,77 @@ mod tests {
     }
 
     #[test]
-    fn an_approved_request_gets_a_key_without_a_mac_and_pending_ones_wait() {
+    fn a_request_allowed_here_gets_a_key_without_a_mac_and_pending_ones_wait() {
+        let file = RemoteFile {
+            allowed: vec![allowed("g1", DEVICE, DEVICE_PUBLIC)],
+            ..RemoteFile::default()
+        };
         let plan = plan_host(
             &sync(vec![
                 grant("g1", "approved", "request", None),
                 grant("g2", "pending", "request", None),
             ]),
-            &RemoteFile::default(),
+            &file,
             0,
         );
         assert_eq!(plan.issue.len(), 1);
         assert_eq!(plan.issue[0].grant_id, "g1");
         assert!(plan.issue[0].mac_secret.is_none());
+        assert!(plan.deny.is_empty());
+    }
+
+    /// The account service says "approved", but this computer never allowed
+    /// that grant for that device and key: it gets nothing and is denied.
+    #[test]
+    fn an_approved_request_not_allowed_here_for_that_device_and_key_is_denied() {
+        let other_key = "A".repeat(43);
+        let cases: [(&str, Vec<AllowedRequest>); 4] = [
+            ("nobody allowed anything here", vec![]),
+            (
+                "another grant was allowed",
+                vec![allowed("g9", DEVICE, DEVICE_PUBLIC)],
+            ),
+            (
+                "the key changed after the check code",
+                vec![allowed("g1", DEVICE, &other_key)],
+            ),
+            (
+                "another device was allowed",
+                vec![allowed(
+                    "g1",
+                    "99999999-2222-4333-8444-555555555555",
+                    DEVICE_PUBLIC,
+                )],
+            ),
+        ];
+        for (name, allowed) in cases {
+            let file = RemoteFile {
+                allowed,
+                ..RemoteFile::default()
+            };
+            let plan = plan_host(
+                &sync(vec![grant("g1", "approved", "request", None)]),
+                &file,
+                0,
+            );
+            assert!(plan.issue.is_empty(), "{name}: issued a key");
+            assert_eq!(plan.deny, ["g1"], "{name}: not denied");
+        }
+    }
+
+    #[test]
+    fn an_approved_grant_of_an_unknown_method_is_denied() {
+        let now = 1_000;
+        let (mut file, qr) = file_with_code(now);
+        file.allowed = vec![allowed("g1", DEVICE, DEVICE_PUBLIC)];
+        let proof = protocol::pair_proof(&qr, DEVICE_PUBLIC);
+        let plan = plan_host(
+            &sync(vec![grant("g1", "approved", "anything", Some(proof))]),
+            &file,
+            now,
+        );
+        assert!(plan.issue.is_empty());
+        assert_eq!(plan.deny, ["g1"]);
     }
 
     #[test]

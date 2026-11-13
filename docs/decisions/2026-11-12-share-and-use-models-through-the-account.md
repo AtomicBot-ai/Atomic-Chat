@@ -12,8 +12,8 @@ title: "Share and use models through the Atomic Chat account"
   - No client spoke it yet. The desktop already had an account session in Rust ([2026-11-10](2026-11-10-sign-in-to-an-atomic-chat-account.md)).
 - **Decision:** The desktop app speaks the protocol in both roles. All of it lives in the app's Rust, like the account. The core gets one thin hook.
   - **Host ("Share this computer's models").** `src-tauri/src/core/account/remote/host.rs` registers the device and the host, then long-polls `POST /v1/remote/host/sync`. That call is also the heartbeat, carrying the tunnel and LAN state read from the core.
-    - The host honours a code pairing only when the device's proof matches the code letters or the QR secret it showed.
-    - It honours a request only after the person clicked "Allow" with the check code (SAS) on both screens.
+    - The host honours a code pairing only when the device's proof matches the code letters or the QR secret it showed. The code is forgotten once that device's key is uploaded, not before: a failed upload can retry.
+    - It honours a request only after the person clicked "Allow" with the check code (SAS) on both screens. "Allow" works only for a request shown now, and writes down the grant, the device and the public key the check code covered before it calls `approve`. Only an `approved` request matching that record gets a key. The host does not trust the service's `approved` on its own: a forged grant, or a key swapped after "Allow", is denied. So is any method other than `code` and `request`. A record goes once its key is out or its grant is no longer pending or approved.
     - Each device gets its own `sk-atomic-…` key and `grant_secret`, sealed with HPKE to the device's X25519 key. A code pairing adds a MAC.
     - Every active device gets a sealed address list (`ChaCha20-Poly1305`, HKDF of the grant secret). The list is the tunnel URL plus prefix, then LAN URLs. It is re-sealed with a higher sequence number whenever the tunnel URL or LAN changes.
     - A grant that leaves the live list loses its key at once. `host_not_found` (removed from another device) stops sharing.
@@ -24,9 +24,9 @@ title: "Share and use models through the Atomic Chat account"
     - A closed grant drops the connection.
   - **Crypto** is `protocol.rs`. It is checked against vectors from the backend's reference `tests/remote_protocol.py`. New crates, approved by the user: `hpke` 0.12 (shares `rand_core` 0.6 with `rand` 0.8, and brings the X25519 key, so no direct `x25519-dalek`), `chacha20poly1305`, `hkdf`.
   - **Storage** is `atomic-remote.json` in the data folder: mode 0600, temp file then rename, like `atomic-account.json`.
-    - It holds the device's X25519 private key, the keys this host issued, the keys this device received, the open pairing code's secrets and the host's endpoint sequence number.
+    - It holds the device's X25519 private key, the requests allowed here and not yet given their key, the keys this host issued, the keys this device received, the open pairing code's secrets and the host's endpoint sequence number.
     - It is bound to the signed-in user: another account starts empty. A factory reset deletes it.
-    - Sign-out, a lost session, deletion or a new sign-in wipe what was shared and received, because the backend has already revoked it. The device key stays.
+    - Sign-out, a lost session, deletion or a new sign-in wipe what was shared and received, because the backend has already revoked it. The device key stays. Sign-out tells the backend through the refreshing call path, so an idle app's expired access token still ends the backend session.
   - **Core hook** (atomic-chat-core PR #98, released in v0.23.0): `PUT /atomic/v1/server/client-keys {keys}` replaces an in-memory list of extra keys.
     - The public listener accepts them next to its own `api_key`, and only when it has one. Extra keys never close an open server.
     - The app pushes the list on every change and on every `atomic-core://snapshot`, because a restarted core starts empty.

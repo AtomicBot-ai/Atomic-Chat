@@ -7,12 +7,13 @@ use serde_json::{json, Value};
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
+use super::api::remote_codes;
 use super::client::{client_codes, ClientCtx, Round};
 use super::core_env::{HostEnv, Reachability};
 use super::host::{HostCtx, UploadMark};
 use super::protocol::{self, DeviceKey, Endpoint, EndpointKind};
 use super::state::{build_status, HostMemory, RemoteState};
-use super::store::{self, PairingRecord, RemoteFile, REMOTE_FILE_NAME};
+use super::store::{self, AllowedRequest, PairingRecord, RemoteFile, REMOTE_FILE_NAME};
 use crate::core::account::tests::{spawn_fake, token_response, Fake, Seen};
 use crate::core::account::AccountState;
 use crate::core::auth::state::now_unix;
@@ -29,6 +30,8 @@ struct World {
     state_version: u64,
     /// For the client side: the grant a device reads.
     client_grant: Option<Value>,
+    /// When set, a credential upload fails with this status.
+    credential_fails: Option<u16>,
 }
 
 fn host_grant(status: &str, method: &str, public_key: &str, proof: Option<&str>) -> Value {
@@ -75,6 +78,12 @@ fn spawn_world(world: Arc<Mutex<World>>) -> Fake {
                 }),
             ),
             ("PUT", p) if p.ends_with("/credential") => {
+                if let Some(status) = w.credential_fails {
+                    return (
+                        status,
+                        json!({"error": "server_error", "detail": "try again"}),
+                    );
+                }
                 for g in w.grants.iter_mut() {
                     g["status"] = json!("active");
                     g["needs_credential"] = json!(false);
@@ -82,6 +91,13 @@ fn spawn_world(world: Arc<Mutex<World>>) -> Fake {
                 (204, Value::Null)
             }
             ("PUT", "/v1/remote/host/endpoints") => (204, Value::Null),
+            ("POST", p) if p.ends_with("/approve") => {
+                for g in w.grants.iter_mut() {
+                    g["status"] = json!("approved");
+                    g["needs_credential"] = json!(true);
+                }
+                (204, Value::Null)
+            }
             ("POST", p) if p.ends_with("/deny") => {
                 w.grants.clear();
                 (204, Value::Null)
@@ -218,6 +234,18 @@ impl Setup {
         qr.to_vec()
     }
 
+    /// A device asks; the round shows it here and the person clicks "Allow".
+    async fn ask_and_allow(&self, phone: &DeviceKey) {
+        self.remote.update(&self.dir, |f| f.sharing = true).await;
+        self.world.lock().unwrap().grants =
+            vec![host_grant("pending", "request", &phone.public_b64(), None)];
+        self.host_round(&mut None).await;
+        self.host()
+            .decide(GRANT_ID, true)
+            .await
+            .expect("allow a shown request");
+    }
+
     async fn host_round(&self, uploaded: &mut Option<UploadMark>) -> Option<u64> {
         self.host()
             .round(None, 0, uploaded, &Notify::new(), &CancellationToken::new())
@@ -307,9 +335,7 @@ async fn a_proof_that_does_not_check_out_is_denied_and_gets_nothing() {
 async fn new_addresses_are_resealed_with_a_higher_number_and_a_gone_grant_loses_its_key() {
     let s = setup().await;
     let phone = DeviceKey::generate();
-    s.remote.update(&s.dir, |f| f.sharing = true).await;
-    s.world.lock().unwrap().grants =
-        vec![host_grant("approved", "request", &phone.public_b64(), None)];
+    s.ask_and_allow(&phone).await;
 
     let mut uploaded = None;
     s.host_round(&mut uploaded).await;
@@ -351,6 +377,140 @@ async fn new_addresses_are_resealed_with_a_higher_number_and_a_gone_grant_loses_
         s.core.pushed.lock().unwrap().last().unwrap(),
         &Vec::<String>::new()
     );
+}
+
+#[tokio::test]
+async fn allow_writes_the_device_and_key_down_before_approving_and_the_key_clears_it() {
+    let s = setup().await;
+    let phone = DeviceKey::generate();
+    s.ask_and_allow(&phone).await;
+
+    let approve = s
+        .fake
+        .requests(&format!("/v1/remote/grants/{GRANT_ID}/approve"));
+    assert_eq!(approve.len(), 1);
+    let file = s.file().await;
+    assert_eq!(file.allowed.len(), 1);
+    assert_eq!(file.allowed[0].grant_id, GRANT_ID);
+    assert_eq!(file.allowed[0].client_device_id, PHONE_ID);
+    assert_eq!(file.allowed[0].client_public_key, phone.public_b64());
+    assert!(
+        s.remote.memory().requests.is_empty(),
+        "a decided request leaves the list"
+    );
+
+    s.host_round(&mut None).await;
+    let file = s.file().await;
+    assert_eq!(file.issued.len(), 1, "the allowed device got its key");
+    assert!(
+        file.allowed.is_empty(),
+        "a request is done once its key is out"
+    );
+}
+
+#[tokio::test]
+async fn only_a_request_shown_here_can_be_allowed() {
+    let s = setup().await;
+    s.remote.update(&s.dir, |f| f.sharing = true).await;
+
+    let err = s.host().decide(GRANT_ID, true).await.unwrap_err();
+    assert!(err.is(remote_codes::GRANT_NOT_FOUND));
+    assert!(s
+        .fake
+        .requests(&format!("/v1/remote/grants/{GRANT_ID}/approve"))
+        .is_empty());
+    assert!(s.file().await.allowed.is_empty());
+}
+
+/// A compromised or buggy account service reports an `approved` request
+/// with its own key: nobody clicked "Allow" here, so it gets nothing.
+#[tokio::test]
+async fn an_approved_request_nobody_allowed_here_is_denied_and_gets_nothing() {
+    let s = setup().await;
+    let intruder = DeviceKey::generate();
+    s.remote.update(&s.dir, |f| f.sharing = true).await;
+    s.world.lock().unwrap().grants = vec![host_grant(
+        "approved",
+        "request",
+        &intruder.public_b64(),
+        None,
+    )];
+
+    s.host_round(&mut None).await;
+    assert_eq!(
+        s.fake
+            .requests(&format!("/v1/remote/grants/{GRANT_ID}/deny"))
+            .len(),
+        1
+    );
+    assert!(s
+        .fake
+        .requests(&format!("/v1/remote/grants/{GRANT_ID}/credential"))
+        .is_empty());
+    assert!(s.fake.requests("/v1/remote/host/endpoints").is_empty());
+    assert!(s.file().await.issued.is_empty());
+}
+
+#[tokio::test]
+async fn a_key_swapped_after_allow_is_denied_and_gets_nothing() {
+    let s = setup().await;
+    let phone = DeviceKey::generate();
+    s.ask_and_allow(&phone).await;
+    // The check code covered the phone's key; the grant now carries another.
+    let swapped = DeviceKey::generate();
+    s.world.lock().unwrap().grants[0]["client_public_key"] = json!(swapped.public_b64());
+
+    s.host_round(&mut None).await;
+    assert_eq!(
+        s.fake
+            .requests(&format!("/v1/remote/grants/{GRANT_ID}/deny"))
+            .len(),
+        1
+    );
+    assert!(s
+        .fake
+        .requests(&format!("/v1/remote/grants/{GRANT_ID}/credential"))
+        .is_empty());
+    assert!(s.file().await.issued.is_empty());
+}
+
+#[tokio::test]
+async fn a_used_code_stays_open_until_its_key_is_uploaded() {
+    let s = setup().await;
+    let phone = DeviceKey::generate();
+    let qr = s.open_code().await;
+    let proof = protocol::pair_proof(&qr, &phone.public_b64());
+    {
+        let mut w = s.world.lock().unwrap();
+        w.grants = vec![host_grant(
+            "approved",
+            "code",
+            &phone.public_b64(),
+            Some(&proof),
+        )];
+        w.credential_fails = Some(503);
+    }
+
+    let failed = s
+        .host()
+        .round(
+            None,
+            0,
+            &mut None,
+            &Notify::new(),
+            &CancellationToken::new(),
+        )
+        .await;
+    assert!(failed.is_err(), "the failed upload is reported");
+    let file = s.file().await;
+    assert!(file.pairing.is_some(), "the code still proves the device");
+    assert!(file.issued.is_empty());
+
+    s.world.lock().unwrap().credential_fails = None;
+    s.host_round(&mut None).await;
+    let file = s.file().await;
+    assert_eq!(file.issued.len(), 1);
+    assert!(file.pairing.is_none(), "a redeemed code is forgotten");
 }
 
 /// What a host puts in a device's mailbox.
@@ -557,6 +717,51 @@ fn the_file_is_owner_only_and_belongs_to_one_account() {
 
     std::fs::write(tmp.path().join(REMOTE_FILE_NAME), "{not json").unwrap();
     assert_eq!(store::load(tmp.path()), RemoteFile::default());
+}
+
+#[test]
+fn allowed_requests_round_trip_and_end_with_access() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut file = RemoteFile {
+        user_id: Some("user-1".to_string()),
+        sharing: true,
+        ..RemoteFile::default()
+    };
+    file.allow_request(AllowedRequest {
+        grant_id: GRANT_ID.to_string(),
+        client_device_id: PHONE_ID.to_string(),
+        client_public_key: "old-key".to_string(),
+        allowed_at: 1,
+    });
+    file.allow_request(AllowedRequest {
+        grant_id: GRANT_ID.to_string(),
+        client_device_id: PHONE_ID.to_string(),
+        client_public_key: "new-key".to_string(),
+        allowed_at: 2,
+    });
+    assert_eq!(file.allowed.len(), 1, "allowing again replaces the record");
+    assert_eq!(file.allowed[0].client_public_key, "new-key");
+
+    store::save(tmp.path(), &file).unwrap();
+    assert_eq!(store::load(tmp.path()), file);
+
+    // A file written before allowed records existed still reads.
+    let mut old: Value =
+        serde_json::from_str(&std::fs::read_to_string(tmp.path().join(REMOTE_FILE_NAME)).unwrap())
+            .unwrap();
+    old.as_object_mut().unwrap().remove("allowed");
+    std::fs::write(tmp.path().join(REMOTE_FILE_NAME), old.to_string()).unwrap();
+    let loaded = store::load(tmp.path());
+    assert!(loaded.allowed.is_empty());
+    assert!(loaded.sharing);
+
+    let mut ended = file.clone();
+    ended.end_access();
+    assert!(ended.allowed.is_empty());
+
+    let mut switched = file;
+    assert!(switched.bind_user("user-2"));
+    assert!(switched.allowed.is_empty());
 }
 
 #[test]

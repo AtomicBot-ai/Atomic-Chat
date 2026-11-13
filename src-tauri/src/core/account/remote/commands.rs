@@ -175,7 +175,8 @@ pub async fn account_remote_close_pairing_code<R: Runtime>(
     }
 }
 
-/// Allow or deny a device that asked for access.
+/// Allow or deny a device that asked for access. Only a request shown here
+/// can be allowed; see `HostCtx::decide`.
 #[tauri::command]
 pub async fn account_remote_decide<R: Runtime>(
     app: AppHandle<R>,
@@ -185,15 +186,15 @@ pub async fn account_remote_decide<R: Runtime>(
     allow: bool,
 ) -> Result<RemoteStatus, AccountError> {
     let dir = data_dir(&app);
-    let id = grant_id.clone();
-    let result = account
-        .authed(&dir, |api, token| {
-            let id = id.clone();
-            async move { api.remote_decide(&token, &id, allow).await }
-        })
-        .await;
-    remote.set_memory(|m: &mut HostMemory| m.requests.retain(|r| r.grant_id != grant_id));
-    remote.host_wake.notify_one();
+    let env = CoreEnv::new(app.clone());
+    let ctx = HostCtx {
+        remote: &remote,
+        account: &account,
+        data_dir: &dir,
+        env: &env,
+        host_name: host_name(),
+    };
+    let result = ctx.decide(&grant_id, allow).await;
     announce(&app).await;
     announce_if_lost(&app, &account, result).await?;
     Ok(remote.status(&dir).await)
@@ -373,6 +374,7 @@ pub async fn account_remote_remove_host<R: Runtime>(
                 f.sharing = false;
                 f.host = None;
                 f.pairing = None;
+                f.allowed.clear();
                 f.issued.clear();
             }
             own

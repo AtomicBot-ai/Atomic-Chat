@@ -2,9 +2,10 @@
 //! only, next to `atomic-account.json` and written the same way (temp file,
 //! then rename).
 //!
-//! It holds the device's X25519 private key, the keys this computer handed
-//! out as a host, and the keys it received as a client. It belongs to one
-//! account: a different signed-in user starts from an empty file.
+//! It holds the device's X25519 private key, the requests the person allowed
+//! here, the keys this computer handed out as a host, and the keys it
+//! received as a client. It belongs to one account: a different signed-in
+//! user starts from an empty file.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -47,6 +48,17 @@ pub struct IssuedKey {
     pub api_key: String,
     pub grant_secret: String,
     pub issued_at: i64,
+}
+
+/// A request the person allowed on this computer ("Allow"). Only that grant
+/// may get a key, and only for the device and the key its check code covered:
+/// an `approved` the account service reports on its own gets nothing.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AllowedRequest {
+    pub grant_id: String,
+    pub client_device_id: String,
+    pub client_public_key: String,
+    pub allowed_at: i64,
 }
 
 impl std::fmt::Debug for IssuedKey {
@@ -124,6 +136,9 @@ pub struct RemoteFile {
     pub host: Option<HostRecord>,
     #[serde(default)]
     pub pairing: Option<PairingRecord>,
+    /// Requests allowed here and not yet given their key.
+    #[serde(default)]
+    pub allowed: Vec<AllowedRequest>,
     #[serde(default)]
     pub issued: Vec<IssuedKey>,
     /// The last sequence number the host sealed endpoints with. Monotonic
@@ -139,6 +154,7 @@ impl std::fmt::Debug for RemoteFile {
         f.debug_struct("RemoteFile")
             .field("user_id", &self.user_id)
             .field("sharing", &self.sharing)
+            .field("allowed", &self.allowed.len())
             .field("issued", &self.issued.len())
             .field("connections", &self.connections.len())
             .finish_non_exhaustive()
@@ -156,6 +172,7 @@ impl Default for RemoteFile {
             sharing: false,
             host: None,
             pairing: None,
+            allowed: Vec::new(),
             issued: Vec::new(),
             endpoints_seq: 0,
             connections: Vec::new(),
@@ -170,6 +187,7 @@ impl RemoteFile {
         self.sharing = false;
         self.host = None;
         self.pairing = None;
+        self.allowed.clear();
         self.issued.clear();
         self.connections.clear();
     }
@@ -197,8 +215,16 @@ impl RemoteFile {
     fn is_blank(&self) -> bool {
         self.device_secret.is_none()
             && self.host.is_none()
+            && self.allowed.is_empty()
             && self.issued.is_empty()
             && self.connections.is_empty()
+    }
+
+    /// Note that the person allowed this request, for the device and the key
+    /// the check code they compared covered. Replaces an earlier record.
+    pub fn allow_request(&mut self, request: AllowedRequest) {
+        self.allowed.retain(|a| a.grant_id != request.grant_id);
+        self.allowed.push(request);
     }
 
     /// The keys core must accept besides the server's own.

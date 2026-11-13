@@ -27,6 +27,12 @@ pub struct PendingRequest {
     /// The same 6 digits the device shows.
     pub check_code: String,
     pub created_at: String,
+    /// What the check code covered, as the last sync gave it: "Allow" writes
+    /// down this device and key, and only they get a key. Memory only.
+    #[serde(skip)]
+    pub client_device_id: String,
+    #[serde(skip)]
+    pub client_public_key: String,
 }
 
 /// A device this host gave a key.
@@ -429,6 +435,8 @@ pub(super) fn pending_requests(sync: &HostSync) -> Vec<PendingRequest> {
             client_type: g.client.client_type.clone(),
             check_code: protocol::sas(&sync.host.id, &g.client.id, &g.client_public_key),
             created_at: g.created_at.clone(),
+            client_device_id: g.client.id.clone(),
+            client_public_key: g.client_public_key.clone(),
         })
         .collect()
 }

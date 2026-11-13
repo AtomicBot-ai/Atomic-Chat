@@ -589,6 +589,29 @@ async fn sign_out_is_local_even_when_the_server_fails() {
     );
 }
 
+/// An idle app's access token has run out: sign-out refreshes it first, so
+/// the backend really ends the session, and with it this host and its grants.
+#[tokio::test]
+async fn sign_out_refreshes_an_expired_access_token_first() {
+    let verify = verify_handler(60);
+    let fake = spawn_fake(move |seen| {
+        verify(seen).unwrap_or_else(|| match seen.path.as_str() {
+            "/v1/auth/token" => (200, token_response(1, 900)),
+            "/v1/auth/logout" => (204, Value::Null),
+            _ => (404, Value::Null),
+        })
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let state = fake.state();
+    // 60 s of life is inside the refresh margin.
+    signed_in(dir.path(), &state).await;
+
+    assert!(!state.logout(dir.path()).await.signed_in);
+    assert_eq!(fake.requests("/v1/auth/token").len(), 1);
+    let logout = &fake.requests("/v1/auth/logout")[0];
+    assert_eq!(logout.auth.as_deref(), Some("Bearer access-1"));
+}
+
 #[tokio::test]
 async fn revoking_this_device_is_a_sign_out() {
     let verify = verify_handler(900);
