@@ -220,6 +220,7 @@ impl ClientCtx<'_> {
         let version = grant.version;
         let status_now = grant.status.clone();
         let host_name = grant.host.name.clone();
+        let host_offline = !grant.host.online;
         match step {
             Step::Waiting => {
                 self.remote
@@ -228,6 +229,7 @@ impl ClientCtx<'_> {
                             c.version = Some(version);
                             c.status = status_now;
                             c.host_name = host_name;
+                            c.host_offline = host_offline;
                         }
                     })
                     .await;
@@ -256,22 +258,29 @@ impl ClientCtx<'_> {
                 ack,
                 endpoints,
             } => {
-                let mut changed = credential.is_some();
                 // Saved before the ack: once acknowledged, the server copy is gone.
-                self.remote
+                let online_changed = self
+                    .remote
                     .update(self.data_dir, |f| {
-                        if let Some(c) = f.connections.iter_mut().find(|c| c.grant_id == grant_id) {
-                            if let Some((api_key, grant_secret)) = &credential {
-                                c.api_key = Some(api_key.clone());
-                                c.grant_secret = Some(grant_secret.clone());
-                                c.pair_secret = None;
-                            }
-                            c.version = Some(version);
-                            c.status = status_now;
-                            c.host_name = host_name;
+                        let Some(c) = f.connections.iter_mut().find(|c| c.grant_id == grant_id)
+                        else {
+                            return false;
+                        };
+                        if let Some((api_key, grant_secret)) = &credential {
+                            c.api_key = Some(api_key.clone());
+                            c.grant_secret = Some(grant_secret.clone());
+                            c.pair_secret = None;
                         }
+                        c.version = Some(version);
+                        c.status = status_now;
+                        c.host_name = host_name;
+                        let changed = c.host_offline != host_offline;
+                        c.host_offline = host_offline;
+                        changed
                     })
                     .await;
+                // A key, or the host going offline or coming back.
+                let mut changed = credential.is_some() || online_changed;
                 if ack {
                     let id = grant_id.to_string();
                     let acked = self
@@ -374,6 +383,7 @@ impl ClientCtx<'_> {
             status: grant.status.clone(),
             ready: false,
             via: None,
+            offline: false,
             check_code: Some(protocol::sas(&grant.host.id, &device_id, &key.public_b64())),
         })
     }
@@ -402,6 +412,7 @@ impl ClientCtx<'_> {
             status: grant.status.clone(),
             ready: false,
             via: None,
+            offline: false,
             check_code: None,
         })
     }
@@ -422,6 +433,7 @@ impl ClientCtx<'_> {
             endpoints: Vec::new(),
             base_url: None,
             status: grant.status.clone(),
+            host_offline: !grant.host.online,
         };
         self.remote
             .update(self.data_dir, |f| {
@@ -485,6 +497,7 @@ mod tests {
             endpoints: Vec::new(),
             base_url: None,
             status: "approved".to_string(),
+            host_offline: false,
         }
     }
 

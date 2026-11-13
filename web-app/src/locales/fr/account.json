@@ -129,7 +129,10 @@
       "keyTitle": "Protéger l'API de cet ordinateur par une clé",
       "keyDescription": "Le partage vérifie une clé à chaque requête d'un autre appareil. Atomic Chat va créer une clé pour l'API de cet ordinateur ; les outils locaux qui l'utilisent, comme les agents de code, en auront aussi besoin.",
       "keyConfirm": "Créer la clé et partager",
-      "keyCancel": "Annuler"
+      "keyCancel": "Annuler",
+      "stopTitle": "Arrêter de partager les modèles de cet ordinateur ?",
+      "stopDescription": "Chaque appareil perd l'accès et devra être associé à nouveau.",
+      "stopConfirm": "Arrêter le partage"
     },
     "add": {
       "title": "Ajouter un appareil",
@@ -165,12 +168,16 @@
       "pair": "Appairer",
       "invalidCode": "Ce code est erroné, déjà utilisé ou expiré.",
       "ownHost": "C'est le code de cet ordinateur.",
-      "limitReached": "Cet ordinateur partage déjà avec le nombre maximal d'appareils."
+      "limitReached": "Cet ordinateur partage déjà avec le nombre maximal d'appareils.",
+      "hostOffline": "Hors ligne, en attente de son retour"
     },
     "toast": {
       "request": "{{name}} demande à utiliser les modèles de cet ordinateur",
       "requestDesc": "Code de vérification {{code}}",
-      "review": "Voir"
+      "review": "Voir",
+      "deviceLeft": "{{name}} s'est déconnecté",
+      "offline": "{{name}} est hors ligne",
+      "offlineDesc": "Ses modèles reviendront avec lui."
     },
     "ended": {
       "denied": "{{name}} a refusé l'accès.",
@@ -178,7 +185,8 @@
       "revoked": "L'accès à {{name}} a été révoqué.",
       "hostSignedOut": "{{name}} a cessé de partager.",
       "untrusted": "La clé de {{name}} n'a pas pu être vérifiée, elle a donc été refusée.",
-      "other": "L'accès à {{name}} a pris fin."
+      "other": "L'accès à {{name}} a pris fin.",
+      "byHost": "{{name}} a mis fin à votre accès."
     }
   }
 }

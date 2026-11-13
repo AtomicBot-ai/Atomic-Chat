@@ -5,7 +5,9 @@
 //! - `account-remote-changed` with a `RemoteStatus` (the page);
 //! - `account-remote-connections` with the ready connections (the managed
 //!   providers);
-//! - `account-remote-connection-ended` with `{hostName, reason}` (a toast).
+//! - `account-remote-connection-ended` with `{hostName, reason}` (a toast);
+//! - `account-remote-device-left` with `{grantId, deviceName}` when a device's
+//!   access to this computer ends from its side (a toast).
 
 use std::path::PathBuf;
 use std::sync::OnceLock;
@@ -29,6 +31,7 @@ use crate::core::auth::state::data_dir_for;
 pub const REMOTE_CHANGED_EVENT: &str = "account-remote-changed";
 pub const REMOTE_CONNECTIONS_EVENT: &str = "account-remote-connections";
 pub const REMOTE_CONNECTION_ENDED_EVENT: &str = "account-remote-connection-ended";
+pub const REMOTE_DEVICE_LEFT_EVENT: &str = "account-remote-device-left";
 
 const CORE_SNAPSHOT_EVENT: &str = "atomic-core://snapshot";
 const CORE_TUNNEL_EVENT: &str = "atomic-core://remote-access:status";
@@ -93,7 +96,7 @@ struct ConnectionEnded {
     reason: String,
 }
 
-fn is_session_over(err: &AccountError) -> bool {
+pub(super) fn is_session_over(err: &AccountError) -> bool {
     err.is(codes::INVALID_GRANT) || err.is(codes::NOT_SIGNED_IN)
 }
 
@@ -154,6 +157,11 @@ async fn host_loop<R: Runtime>(app: AppHandle<R>, cancel: CancellationToken) {
         let result = ctx
             .round(after, wait, &mut uploaded, &remote.host_wake, &cancel)
             .await;
+        for left in remote.take_left() {
+            if let Err(err) = app.emit(REMOTE_DEVICE_LEFT_EVENT, &left) {
+                log::warn!("[remote] cannot announce a device that left: {err}");
+            }
+        }
         match result {
             Ok(Some(version)) => {
                 after = Some(version);
@@ -178,6 +186,7 @@ async fn host_loop<R: Runtime>(app: AppHandle<R>, cancel: CancellationToken) {
                         f.sharing = false;
                         f.host = None;
                         f.pairing = None;
+                        f.allowed.clear();
                         f.issued.clear();
                     })
                     .await;

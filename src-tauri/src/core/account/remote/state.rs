@@ -76,6 +76,10 @@ pub struct ConnectionView {
     pub ready: bool,
     /// `lan` or `tunnel` once an address is picked.
     pub via: Option<String>,
+    /// Has a key, but the host cannot be reached now: it is offline, or it
+    /// sent an empty address list (its server stopped). It comes back by
+    /// itself.
+    pub offline: bool,
     /// For a request: the digits to compare with the host's screen.
     pub check_code: Option<String>,
 }
@@ -104,6 +108,9 @@ pub struct ProviderConnection {
     pub host_name: String,
     pub base_url: String,
     pub api_key: String,
+    /// The host can be reached now (see `ConnectionView::offline`). Coming
+    /// back lists its models again.
+    pub online: bool,
     /// The sequence number of the host's address list. A newer list (the
     /// host restarted its server, say) makes the webview list the models
     /// again, even when the picked address stays the same.
@@ -123,6 +130,17 @@ pub(super) struct HostMemory {
     pub requests: Vec<PendingRequest>,
     pub pairing_open: bool,
     pub error: Option<String>,
+    /// Devices whose access ended from their side since the last announce.
+    pub left: Vec<DeviceLeft>,
+}
+
+/// A device whose access to this computer ended from its side (it
+/// disconnected, signed out or was revoked elsewhere), for a toast.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DeviceLeft {
+    pub grant_id: String,
+    pub device_name: Option<String>,
 }
 
 #[derive(Default)]
@@ -182,6 +200,14 @@ impl RemoteState {
         if let Ok(mut memory) = self.memory.lock() {
             f(&mut memory);
         }
+    }
+
+    /// The devices that left since the last call.
+    pub(super) fn take_left(&self) -> Vec<DeviceLeft> {
+        self.memory
+            .lock()
+            .map(|mut m| std::mem::take(&mut m.left))
+            .unwrap_or_default()
     }
 
     /// The signed-in user's id, with the file bound to it.
@@ -358,8 +384,15 @@ fn connection_view(
         status: conn.status.clone(),
         ready: conn.api_key.is_some() && conn.base_url.is_some(),
         via,
+        offline: conn.api_key.is_some() && unreachable(conn),
         check_code,
     }
+}
+
+/// The host cannot be reached now: the account service says it is offline,
+/// or its latest address list is empty (its server stopped).
+fn unreachable(conn: &super::store::Connection) -> bool {
+    conn.host_offline || (conn.last_seq > 0 && conn.endpoints.is_empty())
 }
 
 pub(super) fn build_status(file: &RemoteFile, memory: &HostMemory, now: i64) -> RemoteStatus {
@@ -422,6 +455,7 @@ pub(super) fn provider_connections(file: &RemoteFile) -> Vec<ProviderConnection>
                 host_name: c.host_name.clone(),
                 base_url: c.base_url.clone()?,
                 api_key: c.api_key.clone()?,
+                online: !unreachable(c),
                 endpoints_seq: c.last_seq,
             })
         })

@@ -20,6 +20,7 @@ import {
 import {
   EMPTY_REMOTE_STATUS,
   type RemoteConnectionEnded,
+  type RemoteDeviceLeft,
   type RemoteConnectionView,
   type RemoteHostInfo,
   type RemotePairing,
@@ -150,6 +151,12 @@ export class DefaultAccountService implements AccountService {
 
   async onRemoteConnectionEnded(
     _callback: (event: RemoteConnectionEnded) => void
+  ): Promise<() => void> {
+    return () => {}
+  }
+
+  async onRemoteDeviceLeft(
+    _callback: (event: RemoteDeviceLeft) => void
   ): Promise<() => void> {
     return () => {}
   }

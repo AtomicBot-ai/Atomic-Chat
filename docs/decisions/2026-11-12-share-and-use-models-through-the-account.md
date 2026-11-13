@@ -21,7 +21,8 @@ title: "Share and use models through the Atomic Chat account"
     - It opens the credential and refuses one whose code-pairing MAC does not match: it revokes it rather than trust the service. Then it acknowledges it.
     - It ignores an address list whose sequence number is not newer.
     - It picks the first LAN address that answers `GET /models` with the key within 1.5 s, else the tunnel. It re-checks every 3 minutes.
-    - A closed grant drops the connection.
+    - A closed grant drops the connection, with a toast that names the host ("<host> ended your access", "<host> stopped sharing").
+    - A host the service shows offline (no heartbeat for 90 s) or that sent an empty address list (its server stopped) reads "Offline" instead of "Connected", with one toast when it goes. Its provider stays; when the host is back the provider lists its models again.
   - **Crypto** is `protocol.rs`. It is checked against vectors from the backend's reference `tests/remote_protocol.py`. New crates, approved by the user: `hpke` 0.12 (shares `rand_core` 0.6 with `rand` 0.8, and brings the X25519 key, so no direct `x25519-dalek`), `chacha20poly1305`, `hkdf`.
   - **Storage** is `atomic-remote.json` in the data folder: mode 0600, temp file then rename, like `atomic-account.json`.
     - It holds the device's X25519 private key, the requests allowed here and not yet given their key, the keys this host issued, the keys this device received, the open pairing code's secrets and the host's endpoint sequence number.
@@ -31,7 +32,7 @@ title: "Share and use models through the Atomic Chat account"
     - The public listener accepts them next to its own `api_key`, and only when it has one. Extra keys never close an open server.
     - The app pushes the list on every change and on every `atomic-core://snapshot`, because a restarted core starts empty.
     - The core knows nothing about accounts.
-  - **Sharing needs the server's own key.** Turning sharing on generates one if there is none, after a dialog explaining that local tools will need it too. It then starts the server (restarting one that runs without its key) and the tunnel (with auto-start), then registers the host. Turning it off pauses: keys leave the core, the host goes offline, grants stay. Revoke ends one device.
+  - **Sharing needs the server's own key.** Turning sharing on generates one if there is none, after a dialog explaining that local tools will need it too. It then starts the server (restarting one that runs without its key) and the tunnel (with auto-start), then registers the host. Turning it off ends every device's access, after a confirmation when any device has it: the keys leave the core first, a waiting request is denied and every other live grant of this host is revoked (`revoked_by_user`), so each device sees its access end and pairs again next time. The host record stays, so sharing again sends no "new computer" email. Revoke ends one device. A device whose access ends from its side (Disconnect, sign-out, a revoke elsewhere) raises "<device> disconnected" on the host.
   - **Managed providers.** A ready connection becomes a provider named "<computer> (remote)" (suffixed on a clash). It carries `ProviderObject.account_remote.host_id`.
     - `lib/account-remote-providers.ts` follows `account-remote-connections`: it adds the provider, follows a new address or key, refreshes models from `/models`, registers it with the core, and removes it when access ends.
     - It lists the models again when the host sends a newer address list (`endpointsSeq`), even at the same address, and for every connected computer when the person clicks refresh on the Remote models page.

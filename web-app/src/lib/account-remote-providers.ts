@@ -3,8 +3,9 @@
  * device is connected to, named "<computer> (remote)". Rust tells which
  * connections are ready (`account-remote-connections`); this keeps
  * `useModelProvider` in step: adds, follows a new address or key, refreshes
- * the model list (also when the host sends a newer address list, or when
- * the person asks), and removes the provider once the access ends.
+ * the model list (also when the host sends a newer address list, comes back
+ * online, or when the person asks), and removes the provider once the access
+ * ends. An offline host keeps its provider: it works again when it is back.
  *
  * A managed provider carries `account_remote.host_id`; the Endpoints page
  * shows it read-only (`isAccountManagedProvider`).
@@ -51,8 +52,8 @@ export interface SyncOptions {
   refreshModels?: boolean
 }
 
-/** The address list number each host was last synced with. Memory only. */
-const syncedSeq = new Map<string, number>()
+/** What each host was last synced with. Memory only. */
+const synced = new Map<string, { seq: number; online: boolean }>()
 
 async function refreshModels(name: string, hub: Deps): Promise<void> {
   const current = useModelProvider.getState().getProviderByName(name)
@@ -148,12 +149,17 @@ async function syncOnce(
         changed = true
       }
       if ((current?.models.length ?? 0) === 0) changed = true
-      // A newer address list: the host may serve other models now.
-      const seen = syncedSeq.get(connection.hostId)
-      if (seen !== undefined && connection.endpointsSeq > seen) changed = true
+      // A newer address list, or back online: the host may serve other
+      // models now.
+      const seen = synced.get(connection.hostId)
+      if (seen && connection.endpointsSeq > seen.seq) changed = true
+      if (seen && !seen.online && connection.online) changed = true
       if (options.refreshModels) changed = true
     }
-    syncedSeq.set(connection.hostId, connection.endpointsSeq)
+    synced.set(connection.hostId, {
+      seq: connection.endpointsSeq,
+      online: connection.online,
+    })
     if (!changed) continue
     // Registered first, so the proxy knows the address; then again with the
     // model ids it routes by.
@@ -163,8 +169,8 @@ async function syncOnce(
   }
 
   const live = new Set(connections.map((c) => c.hostId))
-  for (const hostId of Array.from(syncedSeq.keys()))
-    if (!live.has(hostId)) syncedSeq.delete(hostId)
+  for (const hostId of Array.from(synced.keys()))
+    if (!live.has(hostId)) synced.delete(hostId)
   const stale = store().providers.filter(
     (p) => p.account_remote?.host_id && !live.has(p.account_remote.host_id)
   )

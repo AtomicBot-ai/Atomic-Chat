@@ -99,6 +99,7 @@ export function ShareThisComputer() {
   const sharing = useSharing(control)
 
   const [adding, setAdding] = useState(false)
+  const [confirmStop, setConfirmStop] = useState(false)
   const [busyGrant, setBusyGrant] = useState<string | null>(null)
   const [actionError, setActionError] = useState<AccountError | null>(null)
 
@@ -141,9 +142,12 @@ export function ShareThisComputer() {
           disabled={sharing.working}
           aria-label={t('account:remote.share.toggle')}
           data-testid="share-switch"
-          onCheckedChange={(next) =>
-            next ? sharing.enable() : void sharing.disable()
-          }
+          onCheckedChange={(next) => {
+            if (next) sharing.enable()
+            // Off ends every device's access: ask first when any has it.
+            else if (status.devices.length > 0) setConfirmStop(true)
+            else void sharing.disable()
+          }}
         />
       </div>
 
@@ -311,6 +315,34 @@ export function ShareThisComputer() {
       )}
 
       <AddDeviceDialog open={adding} onOpenChange={setAdding} />
+
+      <Dialog open={confirmStop} onOpenChange={setConfirmStop}>
+        <DialogContent
+          className="sm:max-w-md"
+          data-testid="stop-sharing-dialog"
+        >
+          <DialogHeader>
+            <DialogTitle>{t('account:remote.share.stopTitle')}</DialogTitle>
+            <DialogDescription>
+              {t('account:remote.share.stopDescription')}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setConfirmStop(false)}>
+              {t('account:remote.share.keyCancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                setConfirmStop(false)
+                void sharing.disable()
+              }}
+            >
+              {t('account:remote.share.stopConfirm')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={sharing.keyPrompt}

@@ -6,6 +6,7 @@ import i18n from '@/i18n/setup'
 import {
   EMPTY_REMOTE_STATUS,
   type RemoteConnectionEnded,
+  type RemoteDeviceLeft,
   type RemoteStatus,
 } from '@/services/account/remote-types'
 
@@ -56,7 +57,8 @@ function announceNewRequests(status: RemoteStatus) {
 const ENDED_REASON_KEYS: Record<string, string> = {
   denied: 'account:remote.ended.denied',
   expired: 'account:remote.ended.expired',
-  revoked_by_user: 'account:remote.ended.revoked',
+  // The host revoked it or stopped sharing.
+  revoked_by_user: 'account:remote.ended.byHost',
   signed_out: 'account:remote.ended.hostSignedOut',
   key_changed: 'account:remote.ended.revoked',
   not_collected: 'account:remote.ended.expired',
@@ -74,8 +76,43 @@ function onConnectionEnded(event: RemoteConnectionEnded) {
   }
 }
 
-function apply(status: RemoteStatus) {
+/** A device's access to this computer ended from its side. */
+function onDeviceLeft(event: RemoteDeviceLeft) {
+  const name =
+    event.deviceName?.trim() || i18n.t('account:remote.unknownDevice')
+  toast.info(i18n.t('account:remote.toast.deviceLeft', { name }), {
+    id: `remote-left-${event.grantId}`,
+  })
+}
+
+/**
+ * A computer this device uses went offline: once, when it goes. Its toast
+ * leaves when it comes back.
+ */
+function announceOffline(before: RemoteStatus, after: RemoteStatus) {
+  for (const connection of after.connections) {
+    const id = `remote-offline-${connection.grantId}`
+    const was = before.connections.find((c) => c.grantId === connection.grantId)
+    if (connection.offline && was && !was.offline) {
+      toast.info(
+        i18n.t('account:remote.toast.offline', {
+          name: connection.hostName || i18n.t('account:remote.unknownComputer'),
+        }),
+        { id, description: i18n.t('account:remote.toast.offlineDesc') }
+      )
+    } else if (!connection.offline && was?.offline) {
+      toast.dismiss(id)
+    }
+  }
+}
+
+function announce(status: RemoteStatus) {
   announceNewRequests(status)
+  announceOffline(useAccountRemoteStore.getState().status, status)
+}
+
+function apply(status: RemoteStatus) {
+  announce(status)
   useAccountRemoteStore.setState({ status, hydrated: true })
 }
 
@@ -88,6 +125,7 @@ async function runHydration(): Promise<void> {
         apply(status)
       })
       await account.onRemoteConnectionEnded(onConnectionEnded)
+      await account.onRemoteDeviceLeft(onDeviceLeft)
     } catch (error) {
       console.warn('Failed to follow remote access changes:', error)
     }
@@ -110,7 +148,7 @@ export const useAccountRemoteStore = create<AccountRemoteStore>()((set) => ({
     return hydration
   },
   setStatus: (status) => {
-    announceNewRequests(status)
+    announce(status)
     set({ status, hydrated: true })
   },
 }))

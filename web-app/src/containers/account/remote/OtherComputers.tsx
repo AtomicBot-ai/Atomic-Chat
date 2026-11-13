@@ -42,6 +42,12 @@ function ConnectionState({ connection }: { connection: RemoteConnectionView }) {
   }
   if (!connection.ready)
     return <span>{t('account:remote.use.connecting')}</span>
+  if (connection.offline)
+    return (
+      <span className="text-muted-foreground" data-testid="connection-offline">
+        {t('account:remote.use.hostOffline')}
+      </span>
+    )
   return (
     <span className="text-emerald-700 dark:text-emerald-300">
       {connection.via === 'lan'

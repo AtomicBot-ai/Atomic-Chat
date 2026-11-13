@@ -57,6 +57,11 @@ export interface RemoteConnectionView {
   /** It has a key and an address. */
   ready: boolean
   via: 'lan' | 'tunnel' | null
+  /**
+   * It has a key, but the host can't be reached now (offline, or its server
+   * stopped). It comes back by itself.
+   */
+  offline: boolean
   /** For a request still waiting: the digits to compare on the host. */
   checkCode: string | null
 }
@@ -109,11 +114,19 @@ export interface RemoteProviderConnection {
   hostName: string
   baseUrl: string
   apiKey: string
+  /** The host can be reached now; coming back lists its models again. */
+  online: boolean
   /**
    * The sequence number of the host's address list. A newer one lists the
    * host's models again, even when the address stays the same.
    */
   endpointsSeq: number
+}
+
+/** Payload of `account-remote-device-left`: a device's access to this computer ended from its side. */
+export interface RemoteDeviceLeft {
+  grantId: string
+  deviceName: string | null
 }
 
 /** Payload of `account-remote-connection-ended`. */
@@ -146,5 +159,8 @@ export interface RemoteAccessService {
   ): Promise<() => void>
   onRemoteConnectionEnded(
     callback: (event: RemoteConnectionEnded) => void
+  ): Promise<() => void>
+  onRemoteDeviceLeft(
+    callback: (event: RemoteDeviceLeft) => void
   ): Promise<() => void>
 }

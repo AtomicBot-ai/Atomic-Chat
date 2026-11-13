@@ -22,6 +22,7 @@ import type {
 } from './types'
 import type {
   RemoteConnectionEnded,
+  RemoteDeviceLeft,
   RemoteConnectionView,
   RemoteHostInfo,
   RemotePairing,
@@ -33,6 +34,7 @@ const CHANGED_EVENT = 'account-changed'
 const REMOTE_CHANGED_EVENT = 'account-remote-changed'
 const REMOTE_CONNECTIONS_EVENT = 'account-remote-connections'
 const REMOTE_CONNECTION_ENDED_EVENT = 'account-remote-connection-ended'
+const REMOTE_DEVICE_LEFT_EVENT = 'account-remote-device-left'
 
 async function follow<T>(
   event: string,
@@ -174,5 +176,11 @@ export class TauriAccountService extends DefaultAccountService {
     callback: (event: RemoteConnectionEnded) => void
   ): Promise<() => void> {
     return follow(REMOTE_CONNECTION_ENDED_EVENT, callback)
+  }
+
+  async onRemoteDeviceLeft(
+    callback: (event: RemoteDeviceLeft) => void
+  ): Promise<() => void> {
+    return follow(REMOTE_DEVICE_LEFT_EVENT, callback)
   }
 }

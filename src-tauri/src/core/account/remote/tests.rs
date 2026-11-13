@@ -32,6 +32,8 @@ struct World {
     client_grant: Option<Value>,
     /// When set, a credential upload fails with this status.
     credential_fails: Option<u16>,
+    /// `GET /v1/remote/grants`: every grant of the account.
+    account_grants: Vec<Value>,
 }
 
 fn host_grant(status: &str, method: &str, public_key: &str, proof: Option<&str>) -> Value {
@@ -109,6 +111,7 @@ fn spawn_world(world: Arc<Mutex<World>>) -> Fake {
                 }
                 (204, Value::Null)
             }
+            ("GET", "/v1/remote/grants") => (200, json!({"grants": w.account_grants})),
             ("POST", "/v1/remote/pair") => (201, w.client_grant.clone().unwrap()),
             ("POST", p) if p.ends_with("/requests") => (201, w.client_grant.clone().unwrap()),
             ("GET", p) if p.starts_with("/v1/remote/grants/") => match &w.client_grant {
@@ -520,6 +523,106 @@ async fn a_used_code_stays_open_until_its_key_is_uploaded() {
     assert!(file.pairing.is_none(), "a redeemed code is forgotten");
 }
 
+fn account_grant(id: &str, host_id: &str, status: &str) -> Value {
+    json!({
+        "id": id, "status": status, "status_reason": null, "method": "request",
+        "host_id": host_id, "host_name": "Studio Mac",
+        "client": {"id": PHONE_ID, "client_type": "mobile", "device_name": "Ann's iPhone", "platform": "ios"},
+        "created_at": "2026-11-12T10:00:00Z", "decided_at": null, "updated_at": "2026-11-12T10:00:00Z"
+    })
+}
+
+/// Off is not a pause: every device's key leaves the core at once, a waiting
+/// request is denied and every other live grant of this host is revoked, so
+/// each device sees its access end. Grants of other hosts stay; the host
+/// record stays too.
+#[tokio::test]
+async fn stopping_sharing_ends_every_devices_access() {
+    let s = setup().await;
+    let phone = DeviceKey::generate();
+    s.ask_and_allow(&phone).await;
+    s.host_round(&mut None).await;
+    assert_eq!(s.file().await.issued.len(), 1);
+    const PENDING_ID: &str = "eeeeeeee-0000-4000-8000-000000000005";
+    const OTHER_ID: &str = "ffffffff-0000-4000-8000-000000000006";
+    const ENDED_ID: &str = "abababab-0000-4000-8000-000000000007";
+    s.world.lock().unwrap().account_grants = vec![
+        account_grant(GRANT_ID, HOST_ID, "active"),
+        account_grant(PENDING_ID, HOST_ID, "pending"),
+        account_grant(ENDED_ID, HOST_ID, "revoked"),
+        account_grant(OTHER_ID, "99999999-0000-4000-8000-000000000009", "active"),
+    ];
+
+    s.host().stop_sharing().await.expect("stop sharing");
+
+    let file = s.file().await;
+    assert!(!file.sharing);
+    assert!(file.issued.is_empty() && file.allowed.is_empty());
+    assert!(file.host.is_some(), "the host record stays");
+    assert_eq!(
+        s.core.pushed.lock().unwrap().last().unwrap(),
+        &Vec::<String>::new(),
+        "the keys left the core"
+    );
+    let deleted = |id: &str| {
+        s.fake
+            .requests(&format!("/v1/remote/grants/{id}"))
+            .iter()
+            .filter(|r| r.method == "DELETE")
+            .count()
+    };
+    assert_eq!(deleted(GRANT_ID), 1);
+    assert_eq!(
+        s.fake
+            .requests(&format!("/v1/remote/grants/{PENDING_ID}/deny"))
+            .len(),
+        1
+    );
+    assert_eq!(deleted(PENDING_ID), 0);
+    assert_eq!(deleted(ENDED_ID), 0);
+    assert_eq!(deleted(OTHER_ID), 0, "another computer's grant stays");
+    assert!(
+        s.fake
+            .requests("/v1/remote/host")
+            .iter()
+            .all(|r| r.method != "DELETE"),
+        "the host stays in the account"
+    );
+}
+
+/// A device ends its access from its side (Disconnect, sign-out, a revoke
+/// elsewhere): its grant leaves the sync, its key goes, and the page gets
+/// one "<device> disconnected" toast. A key this computer removed itself
+/// (its own Revoke) makes no toast.
+#[tokio::test]
+async fn a_device_that_leaves_is_announced_once() {
+    let s = setup().await;
+    let phone = DeviceKey::generate();
+    s.ask_and_allow(&phone).await;
+    s.host_round(&mut None).await;
+    assert_eq!(s.file().await.issued.len(), 1);
+
+    s.world.lock().unwrap().grants.clear();
+    s.host_round(&mut None).await;
+
+    assert!(s.file().await.issued.is_empty());
+    let left = s.remote.take_left();
+    assert_eq!(left.len(), 1);
+    assert_eq!(left[0].grant_id, GRANT_ID);
+    assert_eq!(left[0].device_name.as_deref(), Some("Ann's iPhone"));
+    s.host_round(&mut None).await;
+    assert!(s.remote.take_left().is_empty(), "announced once");
+
+    // Revoked here: the key is gone before the round sees the grant end.
+    let other = DeviceKey::generate();
+    s.ask_and_allow(&other).await;
+    s.host_round(&mut None).await;
+    s.remote.update(&s.dir, |f| f.issued.clear()).await;
+    s.world.lock().unwrap().grants.clear();
+    s.host_round(&mut None).await;
+    assert!(s.remote.take_left().is_empty());
+}
+
 /// What a host puts in a device's mailbox.
 fn active_client_grant(
     phone: &DeviceKey,
@@ -652,6 +755,62 @@ async fn a_newer_address_list_is_announced_even_with_the_same_address() {
     assert_eq!(second[0].api_key, first[0].api_key);
     assert_eq!(second[0].endpoints_seq, 2);
     assert_ne!(second, first, "the newer list is announced");
+}
+
+/// The host stops (its app quit, it sleeps): the account service shows it
+/// offline 90 s after its last heartbeat. The connection stays, but says
+/// offline instead of connected, and comes back by itself. An empty address
+/// list (the host's server stopped) means the same.
+#[tokio::test]
+async fn an_offline_host_is_not_shown_as_connected_and_comes_back() {
+    let s = setup().await;
+    s.world.lock().unwrap().client_grant = Some(approved_client_grant("code"));
+    s.client()
+        .pair(&protocol::parse_pair_input("BCDF-GHJK").unwrap())
+        .await
+        .unwrap();
+    let phone = DeviceKey::from_secret_b64(&s.file().await.device_secret.unwrap()).unwrap();
+    let (grant, _) = active_client_grant(&phone, Some(b"BCDFGHJK"), "code");
+    let envelope = grant["credential"]["envelope"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    s.world.lock().unwrap().client_grant = Some(grant);
+    s.client_round().await;
+    let view = || async {
+        build_status(&s.file().await, &HostMemory::default(), 0).connections[0].clone()
+    };
+    assert!(view().await.ready && !view().await.offline);
+
+    let set_online = |online: bool| {
+        s.world.lock().unwrap().client_grant.as_mut().unwrap()["host"]["online"] = json!(online)
+    };
+    set_online(false);
+    assert_eq!(s.client_round().await, Round::ConnectionsChanged);
+    assert!(view().await.offline);
+    let connections = s.remote.provider_connections(&s.dir).await;
+    assert_eq!(connections.len(), 1, "the provider stays");
+    assert!(!connections[0].online);
+    assert_eq!(s.client_round().await, Round::Quiet, "no change, no news");
+
+    set_online(true);
+    assert_eq!(s.client_round().await, Round::ConnectionsChanged);
+    assert!(!view().await.offline);
+    assert!(s.remote.provider_connections(&s.dir).await[0].online);
+
+    // Online, but its server stopped: it sends an empty address list.
+    let secret = protocol::open_credential(&phone, GRANT_ID, &envelope)
+        .unwrap()
+        .grant_secret_bytes()
+        .unwrap();
+    let blob = protocol::seal_endpoints(&secret, GRANT_ID, 2, &[]).unwrap();
+    s.world.lock().unwrap().client_grant.as_mut().unwrap()["endpoints"]["blob"] = json!(blob);
+    s.client_round().await;
+    assert!(view().await.offline);
+    assert!(
+        view().await.ready,
+        "the last address is kept for its return"
+    );
 }
 
 #[tokio::test]
@@ -839,6 +998,7 @@ fn the_page_never_sees_keys_or_addresses() {
             endpoints: online("hidden-words").endpoints,
             base_url: Some("https://hidden-words.trycloudflare.com/v1".to_string()),
             status: "active".to_string(),
+            host_offline: false,
         }],
         ..RemoteFile::default()
     };

@@ -102,6 +102,10 @@ pub struct Connection {
     /// The grant status last seen.
     #[serde(default)]
     pub status: String,
+    /// The account service last said the host is offline (no heartbeat for
+    /// 90 s: it quit, sleeps or lost its network).
+    #[serde(default)]
+    pub host_offline: bool,
 }
 
 impl std::fmt::Debug for Connection {

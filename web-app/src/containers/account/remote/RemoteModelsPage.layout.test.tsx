@@ -96,6 +96,7 @@ const status: RemoteStatus = {
       status: 'pending',
       ready: false,
       via: null,
+      offline: false,
       checkCode: '482915',
     },
     {
@@ -105,6 +106,7 @@ const status: RemoteStatus = {
       status: 'active',
       ready: true,
       via: 'lan',
+      offline: false,
       checkCode: null,
     },
   ],
@@ -140,6 +142,7 @@ function seed() {
       remoteStatus: vi.fn(async () => status),
       onRemoteChanged: vi.fn(async () => () => {}),
       onRemoteConnectionEnded: vi.fn(async () => () => {}),
+      onRemoteDeviceLeft: vi.fn(async () => () => {}),
       remoteHosts: vi.fn(async () => [
         host('h1', LONG_HOST, true),
         host('h2', 'Studio', true),

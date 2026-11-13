@@ -1,12 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const toast = vi.hoisted(() => ({ info: vi.fn(), error: vi.fn() }))
+const toast = vi.hoisted(() => ({
+  info: vi.fn(),
+  error: vi.fn(),
+  dismiss: vi.fn(),
+}))
 vi.mock('sonner', () => ({ toast }))
 
 const account = vi.hoisted(() => ({
   remoteStatus: vi.fn(),
   onRemoteChanged: vi.fn(),
   onRemoteConnectionEnded: vi.fn(),
+  onRemoteDeviceLeft: vi.fn(),
 }))
 vi.mock('@/hooks/useServiceHub', () => ({
   getServiceHub: () => ({ account: () => account }),
@@ -15,6 +20,8 @@ vi.mock('@/hooks/useServiceHub', () => ({
 import {
   EMPTY_REMOTE_STATUS,
   type RemoteConnectionEnded,
+  type RemoteConnectionView,
+  type RemoteDeviceLeft,
   type RemoteStatus,
 } from '@/services/account/remote-types'
 import {
@@ -39,6 +46,23 @@ const asking = (grantId: string): RemoteStatus => ({
 
 let changed: (status: RemoteStatus) => void
 let ended: (event: RemoteConnectionEnded) => void
+let left: (event: RemoteDeviceLeft) => void
+
+const using = (offline: boolean): RemoteStatus => ({
+  ...EMPTY_REMOTE_STATUS,
+  connections: [
+    {
+      grantId: 'g-use',
+      hostId: 'host-studio',
+      hostName: 'Studio Mac',
+      status: 'active',
+      ready: true,
+      via: 'lan',
+      offline,
+      checkCode: null,
+    } satisfies RemoteConnectionView,
+  ],
+})
 
 describe('account remote store', () => {
   beforeEach(() => {
@@ -51,6 +75,10 @@ describe('account remote store', () => {
     })
     account.onRemoteConnectionEnded.mockImplementation(async (cb) => {
       ended = cb
+      return () => {}
+    })
+    account.onRemoteDeviceLeft.mockImplementation(async (cb) => {
+      left = cb
       return () => {}
     })
   })
@@ -112,5 +140,67 @@ describe('account remote store', () => {
     expect(toast.error.mock.calls[0][0]).toBe(
       'The key from Studio Mac could not be verified, so it was refused.'
     )
+  })
+
+  it("names the computer that ended this device's access", async () => {
+    await useAccountRemoteStore.getState().hydrate()
+
+    ended({ hostName: 'Studio Mac', reason: 'revoked_by_user' })
+    ended({ hostName: 'Studio Mac', reason: 'signed_out' })
+
+    expect(toast.info.mock.calls.map((call) => call[0])).toEqual([
+      'Studio Mac ended your access.',
+      'Studio Mac stopped sharing.',
+    ])
+  })
+
+  it('says when a device disconnected from this computer', async () => {
+    await useAccountRemoteStore.getState().hydrate()
+
+    left({ grantId: 'g7', deviceName: "Ann's iPhone" })
+    left({ grantId: 'g8', deviceName: null })
+
+    expect(toast.info.mock.calls).toEqual([
+      ["Ann's iPhone disconnected", { id: 'remote-left-g7' }],
+      ['Unknown device disconnected', { id: 'remote-left-g8' }],
+    ])
+  })
+
+  it('says once when a computer in use goes offline, and clears it when it is back', async () => {
+    await useAccountRemoteStore.getState().hydrate()
+
+    changed(using(false))
+    changed(using(true))
+    changed(using(true))
+
+    expect(toast.info.mock.calls).toEqual([
+      [
+        'Studio Mac is offline',
+        {
+          id: 'remote-offline-g-use',
+          description: 'Its models come back when it does.',
+        },
+      ],
+    ])
+    expect(useAccountRemoteStore.getState().status.connections[0].offline).toBe(
+      true
+    )
+
+    changed(using(false))
+    expect(toast.dismiss.mock.calls).toEqual([['remote-offline-g-use']])
+    expect(useAccountRemoteStore.getState().status.connections[0].offline).toBe(
+      false
+    )
+  })
+
+  it('does not announce a computer that was already offline at start', async () => {
+    account.remoteStatus.mockResolvedValue(using(true))
+
+    await useAccountRemoteStore.getState().hydrate()
+
+    expect(useAccountRemoteStore.getState().status.connections[0].offline).toBe(
+      true
+    )
+    expect(toast.info.mock.calls).toEqual([])
   })
 })

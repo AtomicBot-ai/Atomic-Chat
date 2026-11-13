@@ -30,6 +30,7 @@ const studio: RemoteProviderConnection = {
   hostName: 'Studio Mac',
   baseUrl: 'https://first-words.trycloudflare.com/v1',
   apiKey: 'sk-atomic-first',
+  online: true,
   endpointsSeq: 1,
 }
 
@@ -186,5 +187,19 @@ describe('account remote providers', () => {
     // The same list again changes nothing.
     await sync([{ ...studio, endpointsSeq: 2 }])
     expect(fetchModels).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps an offline computer and lists its models again when it is back', async () => {
+    await sync([studio])
+    fetchModels.mockClear()
+
+    await sync([{ ...studio, online: false }])
+    expect(byName('Studio Mac (remote)')).toBeDefined()
+    expect(fetchModels).not.toHaveBeenCalled()
+
+    fetchModels.mockResolvedValueOnce(['llama-4'])
+    await sync([studio])
+    expect(fetchModels).toHaveBeenCalledTimes(1)
+    expect(modelIds()).toEqual(['llama-4'])
   })
 })

@@ -25,8 +25,9 @@ import { useAccountRemoteStore } from '@/stores/account-remote-store'
  * without one first gets a generated key (after the person agreed: local
  * tools need it too). Then the server runs with that key, the tunnel starts
  * (and restarts with the app), and the Rust side registers this computer as
- * a host. Off pauses sharing; the tunnel is left as it is, since Remote
- * access may be in use for other things.
+ * a host. Off ends every device's access (each pairs again next time); the
+ * tunnel is left as it is, since Remote access may be in use for other
+ * things.
  */
 export function useSharing(server: LocalApiServerControl) {
   const hub = useServiceHub()

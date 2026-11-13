@@ -129,7 +129,10 @@
       "keyTitle": "Protect this computer's API with a key",
       "keyDescription": "Sharing checks a key on every request from another device. Atomic Chat will create a key for this computer's API; local tools that use it, such as coding agents, will need that key too.",
       "keyConfirm": "Create key and share",
-      "keyCancel": "Cancel"
+      "keyCancel": "Cancel",
+      "stopTitle": "Stop sharing this computer's models?",
+      "stopDescription": "Every device loses access and must pair again.",
+      "stopConfirm": "Stop sharing"
     },
     "add": {
       "title": "Add a device",
@@ -165,12 +168,16 @@
       "pair": "Pair",
       "invalidCode": "This code is wrong, used or expired.",
       "ownHost": "That's this computer's own code.",
-      "limitReached": "That computer already shares with the most devices it can."
+      "limitReached": "That computer already shares with the most devices it can.",
+      "hostOffline": "Offline, waiting for it to come back"
     },
     "toast": {
       "request": "{{name}} asks to use this computer's models",
       "requestDesc": "Check code {{code}}",
-      "review": "Review"
+      "review": "Review",
+      "deviceLeft": "{{name}} disconnected",
+      "offline": "{{name}} is offline",
+      "offlineDesc": "Its models come back when it does."
     },
     "ended": {
       "denied": "{{name}} declined access.",
@@ -178,7 +185,8 @@
       "revoked": "Access to {{name}} was revoked.",
       "hostSignedOut": "{{name}} stopped sharing.",
       "untrusted": "The key from {{name}} could not be verified, so it was refused.",
-      "other": "Access to {{name}} ended."
+      "other": "Access to {{name}} ended.",
+      "byHost": "{{name}} ended your access."
     }
   }
 }

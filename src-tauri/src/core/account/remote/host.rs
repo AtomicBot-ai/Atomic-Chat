@@ -18,7 +18,7 @@ use tokio_util::sync::CancellationToken;
 use super::api::{remote_codes, status, HostGrant, HostSync};
 use super::core_env::{HostEnv, Reachability};
 use super::protocol::{self, Credential, Endpoint};
-use super::state::{pending_requests, RemoteState};
+use super::state::{pending_requests, DeviceLeft, RemoteState};
 use super::store::{AllowedRequest, HostRecord, IssuedKey, RemoteFile};
 use crate::core::account::api::{codes, AccountError};
 use crate::core::account::AccountState;
@@ -270,6 +270,80 @@ impl HostCtx<'_> {
         result
     }
 
+    /// Sharing off ends every device's access. Their keys leave the core
+    /// first; then each live grant of this host is denied (a request still
+    /// waiting) or revoked (`revoked_by_user`), so every device sees its
+    /// access end and pairs again next time. The host record stays, so
+    /// sharing again sends no "new computer" email. A grant the service
+    /// could not end is revoked by the next round (no key for it here).
+    pub async fn stop_sharing(&self) -> Result<(), AccountError> {
+        let (host_id, had_code) = self
+            .remote
+            .update(self.data_dir, |f| {
+                f.sharing = false;
+                f.issued.clear();
+                f.allowed.clear();
+                let had_code = f.pairing.take().is_some();
+                (f.host.as_ref().map(|h| h.host_id.clone()), had_code)
+            })
+            .await;
+        self.remote.set_memory(|m| {
+            m.requests.clear();
+            m.pairing_open = false;
+            m.error = None;
+        });
+        self.push_keys().await;
+        if had_code {
+            let _ = self
+                .account
+                .authed(self.data_dir, |api, token| async move {
+                    api.remote_close_pairing_code(&token).await
+                })
+                .await;
+        }
+        let Some(host_id) = host_id else {
+            return Ok(());
+        };
+        let grants = self
+            .account
+            .authed(self.data_dir, |api, token| async move {
+                api.remote_grants(&token).await
+            })
+            .await?;
+        let mut first_error: Option<AccountError> = None;
+        for grant in grants
+            .iter()
+            .filter(|g| g.host_id == host_id && status::is_live(&g.status))
+        {
+            let (id, pending) = (grant.id.clone(), grant.status == status::PENDING);
+            let result = self
+                .account
+                .authed(self.data_dir, |api, token| {
+                    let id = id.clone();
+                    async move {
+                        if pending {
+                            api.remote_decide(&token, &id, false).await
+                        } else {
+                            api.remote_revoke_grant(&token, &id).await
+                        }
+                    }
+                })
+                .await;
+            match result {
+                Ok(()) => {}
+                Err(err) if is_grant_race(&err) => {}
+                Err(err) if is_fatal(&err) => return Err(err),
+                Err(err) => {
+                    first_error.get_or_insert(err);
+                }
+            }
+        }
+        match first_error {
+            Some(err) => Err(err),
+            None => Ok(()),
+        }
+    }
+
     /// Hand the core the keys of every live grant.
     pub async fn push_keys(&self) {
         let keys = self
@@ -483,7 +557,7 @@ impl HostCtx<'_> {
             .collect();
         let dropped = plan.dropped.clone();
         let clear_pairing = plan.clear_pairing || code_used;
-        let removed = self
+        let (removed, left) = self
             .remote
             .update(self.data_dir, |f| {
                 for (id, name, platform) in &renamed {
@@ -493,14 +567,27 @@ impl HostCtx<'_> {
                     }
                 }
                 f.allowed.retain(|a| waiting.contains(a.grant_id.as_str()));
-                let before = f.issued.len();
+                // Their grant ended from the device's side: this computer's own
+                // revoke and "stop sharing" remove the key before it gets here.
+                let left: Vec<DeviceLeft> = f
+                    .issued
+                    .iter()
+                    .filter(|k| dropped.contains(&k.grant_id))
+                    .map(|k| DeviceLeft {
+                        grant_id: k.grant_id.clone(),
+                        device_name: k.client_name.clone(),
+                    })
+                    .collect();
                 f.issued.retain(|k| !dropped.contains(&k.grant_id));
                 if clear_pairing {
                     f.pairing = None;
                 }
-                before != f.issued.len()
+                (!left.is_empty(), left)
             })
             .await;
+        if !left.is_empty() {
+            self.remote.set_memory(|m| m.left.extend(left));
+        }
         if keys_changed || removed {
             self.push_keys().await;
         }

@@ -10,7 +10,9 @@ use super::client::ClientCtx;
 use super::core_env::CoreEnv;
 use super::host::HostCtx;
 use super::protocol;
-use super::runtime::{self, announce, data_dir, host_name, start_client, start_host};
+use super::runtime::{
+    self, announce, data_dir, host_name, is_session_over, start_client, start_host,
+};
 use super::state::{
     ConnectionView, HostMemory, PairingView, ProviderConnection, RemoteState, RemoteStatus,
 };
@@ -37,9 +39,9 @@ pub async fn account_remote_connections<R: Runtime>(
 }
 
 /// Turn sharing on or off. The webview has already made sure the server has
-/// its own key and that the server and the tunnel run. Off pauses: the host
-/// stays in the account and its devices keep their grants, but the core
-/// stops accepting their keys and the host shows offline.
+/// its own key and that the server and the tunnel run. Off ends every
+/// device's access (see `HostCtx::stop_sharing`); the host stays in the
+/// account, and devices pair again next time.
 #[tauri::command]
 pub async fn account_remote_set_sharing<R: Runtime>(
     app: AppHandle<R>,
@@ -61,24 +63,6 @@ pub async fn account_remote_set_sharing<R: Runtime>(
         }
     } else {
         remote.stop_host();
-        let had_code = remote
-            .update(&dir, |f| {
-                f.sharing = false;
-                f.pairing.take().is_some()
-            })
-            .await;
-        if had_code {
-            let _ = account
-                .authed(&dir, |api, token| async move {
-                    api.remote_close_pairing_code(&token).await
-                })
-                .await;
-        }
-        remote.set_memory(|m| {
-            m.requests.clear();
-            m.pairing_open = false;
-            m.error = None;
-        });
         let env = CoreEnv::new(app.clone());
         let ctx = HostCtx {
             remote: &remote,
@@ -87,7 +71,16 @@ pub async fn account_remote_set_sharing<R: Runtime>(
             env: &env,
             host_name: host_name(),
         };
-        ctx.push_keys().await;
+        match ctx.stop_sharing().await {
+            Ok(()) => {}
+            Err(err) if is_session_over(&err) => {
+                announce(&app).await;
+                return announce_if_lost(&app, &account, Err(err)).await;
+            }
+            // The keys are already gone here; the grants left are revoked
+            // when sharing is next turned on.
+            Err(err) => log::warn!("[remote] not every device's access ended: {err}"),
+        }
     }
     announce(&app).await;
     Ok(remote.status(&dir).await)

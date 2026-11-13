@@ -119,6 +119,7 @@ function mockAccount(status: AccountStatus, remote: RemoteStatus) {
     remoteStatus: vi.fn(async () => remote),
     onRemoteChanged: vi.fn(async () => () => {}),
     onRemoteConnectionEnded: vi.fn(async () => () => {}),
+    onRemoteDeviceLeft: vi.fn(async () => () => {}),
     remoteSetSharing: vi.fn(async (enabled: boolean) => ({
       ...(enabled ? sharing : EMPTY_REMOTE_STATUS),
     })),
@@ -141,6 +142,7 @@ function mockAccount(status: AccountStatus, remote: RemoteStatus) {
       status: 'pending',
       ready: false,
       via: null,
+      offline: false,
       checkCode: '482915',
     })),
     remotePair: vi.fn(async () => ({
@@ -150,6 +152,7 @@ function mockAccount(status: AccountStatus, remote: RemoteStatus) {
       status: 'approved',
       ready: false,
       via: null,
+      offline: false,
       checkCode: null,
     })),
     remoteDisconnect: vi.fn(async () => EMPTY_REMOTE_STATUS),
@@ -163,6 +166,7 @@ const studioConnection = {
   hostName: 'Studio Mac',
   baseUrl: 'http://192.168.1.5:1337/v1',
   apiKey: 'sk-atomic-studio',
+  online: true,
   endpointsSeq: 1,
 }
 
@@ -313,6 +317,49 @@ describe('RemoteModelsPage', () => {
     expect(screen.queryByTestId('remote-device')).not.toBeInTheDocument()
   })
 
+  it("asks before turning sharing off ends the devices' access", async () => {
+    await renderPage(signedIn, {
+      ...sharing,
+      devices: [
+        {
+          grantId: 'g2',
+          deviceName: 'Office PC',
+          platform: 'windows',
+          issuedAt: 1,
+        },
+      ],
+    })
+    const user = userEvent.setup()
+
+    await user.click(screen.getByTestId('share-switch'))
+    const dialog = await screen.findByTestId('stop-sharing-dialog')
+    expect(dialog).toHaveTextContent(
+      'Every device loses access and must pair again.'
+    )
+    expect(account.remoteSetSharing).not.toHaveBeenCalled()
+
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    expect(account.remoteSetSharing).not.toHaveBeenCalled()
+
+    await user.click(screen.getByTestId('share-switch'))
+    await user.click(
+      within(await screen.findByTestId('stop-sharing-dialog')).getByRole(
+        'button',
+        { name: 'Stop sharing' }
+      )
+    )
+    expect(account.remoteSetSharing).toHaveBeenCalledWith(false)
+  })
+
+  it('turns sharing off without asking when no device has access', async () => {
+    await renderPage(signedIn, sharing)
+
+    await userEvent.setup().click(screen.getByTestId('share-switch'))
+
+    expect(account.remoteSetSharing).toHaveBeenCalledWith(false)
+    expect(screen.queryByTestId('stop-sharing-dialog')).not.toBeInTheDocument()
+  })
+
   it('opens a pairing code with its QR, and closes an unused code', async () => {
     await renderPage(signedIn, sharing)
     const user = userEvent.setup()
@@ -409,6 +456,7 @@ describe('RemoteModelsPage', () => {
           status: 'pending',
           ready: false,
           via: null,
+          offline: false,
           checkCode: '482915',
         },
       ],
@@ -417,6 +465,31 @@ describe('RemoteModelsPage', () => {
     expect(await screen.findByTestId('connection-waiting')).toHaveTextContent(
       'Allow it on Studio Mac: check code 482915'
     )
+  })
+
+  it('does not call an offline computer connected', async () => {
+    await renderPage(signedIn, {
+      ...EMPTY_REMOTE_STATUS,
+      connections: [
+        {
+          grantId: 'g-act',
+          hostId: 'host-studio',
+          hostName: 'Studio Mac',
+          status: 'active',
+          ready: true,
+          via: 'lan',
+          offline: true,
+          checkCode: null,
+        },
+      ],
+    })
+
+    expect(await screen.findByTestId('connection-offline')).toHaveTextContent(
+      'Offline, waiting for it to come back'
+    )
+    expect(
+      screen.queryByText('Connected on your local network')
+    ).not.toBeInTheDocument()
   })
 
   it('pairs with a typed code and explains a wrong one', async () => {
