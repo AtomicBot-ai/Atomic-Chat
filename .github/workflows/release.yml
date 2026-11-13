@@ -165,6 +165,8 @@ jobs:
           AIMLAPI_API_KEY: ${{ secrets.AIMLAPI_API_KEY }}
           RELEASE_NOTES_MODEL: ${{ vars.RELEASE_NOTES_MODEL || 'z-ai/glm-5.3-flash' }}
           CURR_TAG: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
+          # A manual run's draft has no git tag yet: end the range at this run's commit.
+          CURR_REF: ${{ github.sha }}
           PREV_TAG: ${{ steps.prev.outputs.prev_tag }}
           REPO: ${{ github.repository }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

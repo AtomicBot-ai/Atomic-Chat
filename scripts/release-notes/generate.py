@@ -9,6 +9,10 @@ Reads env vars:
     RELEASE_NOTES_MODEL  default "z-ai/glm-5.3-flash"
     AIMLAPI_BASE_URL     default "https://api.aimlapi.com/v1"
     CURR_TAG             required, e.g. "v1.1.64"
+    CURR_REF             optional, default "HEAD"; the commit the range ends
+                         at when CURR_TAG is not a git tag yet. A manual
+                         (workflow_dispatch) release only creates a draft,
+                         and a draft gets its tag when it is published.
     PREV_TAG             optional, resolved from git history if absent
     REPO                 optional, e.g. "AtomicBot-ai/Atomic-Chat"
     GH_TOKEN             optional; enables GitHub API lookups for PR authors
@@ -85,6 +89,16 @@ FALLBACK EXAMPLE (only when no real examples are provided):
 
 def _run(cmd: list[str]) -> str:
     return subprocess.run(cmd, check=True, capture_output=True, text=True).stdout.strip()
+
+
+def _is_commit(rev: str) -> bool:
+    return (
+        subprocess.run(
+            ["git", "rev-parse", "--verify", "--quiet", f"{rev}^{{commit}}"],
+            capture_output=True,
+        ).returncode
+        == 0
+    )
 
 
 def _resolve_prev_tag(curr_tag: str) -> str | None:
@@ -341,7 +355,8 @@ def _call_llm(api_key: str, base_url: str, model: str, user_content: str) -> str
         },
     )
     started = time.monotonic()
-    with urllib.request.urlopen(req, timeout=300) as resp:
+    # GLM-5.3-Flash reasons for minutes on a big range (222 s for v2.4.4).
+    with urllib.request.urlopen(req, timeout=600) as resp:
         body = json.loads(resp.read().decode("utf-8"))
     logger.info(
         "LLM answered in %.0fs, usage: %s",
@@ -370,12 +385,18 @@ def main() -> int:
     repo = os.environ.get("REPO", "").strip()
     gh_token = os.environ.get("GH_TOKEN", "").strip() or None
 
-    prev_tag = os.environ.get("PREV_TAG", "").strip() or _resolve_prev_tag(curr_tag)
+    # The git range ends at the tag when it exists, else at CURR_REF.
+    curr_ref = curr_tag
+    if not _is_commit(curr_tag):
+        curr_ref = os.environ.get("CURR_REF", "").strip() or "HEAD"
+        logger.info("Tag %s does not exist yet; the range ends at %s", curr_tag, curr_ref)
+
+    prev_tag = os.environ.get("PREV_TAG", "").strip() or _resolve_prev_tag(curr_ref)
     logger.info("Previous tag: %s", prev_tag or "(none — first release)")
     logger.info("Current tag : %s", curr_tag)
 
     try:
-        commits = _collect_commits(prev_tag, curr_tag)
+        commits = _collect_commits(prev_tag, curr_ref)
     except subprocess.CalledProcessError as exc:
         logger.error("git log failed: %s", exc.stderr)
         return 1
@@ -422,7 +443,7 @@ def main() -> int:
         logger.error("AI/ML API returned empty content")
         return 1
 
-    contributors = _collect_contributors(repo, prev_tag, curr_tag, gh_token)
+    contributors = _collect_contributors(repo, prev_tag, curr_ref, gh_token)
     if contributors:
         logger.info("Contributors resolved: %s", ", ".join(contributors))
     contributors_md = _render_contributors_section(contributors)
