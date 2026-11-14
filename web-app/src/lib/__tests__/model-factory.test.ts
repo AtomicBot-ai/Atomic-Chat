@@ -162,6 +162,7 @@ describe('ModelFactory', () => {
       ['aimlapi', false],
       ['openrouter', false],
       ['edenai', false],
+      ['standardcompute', false],
       ['custom', true],
     ])(
       'forwards local-only parameters to %s: %s',

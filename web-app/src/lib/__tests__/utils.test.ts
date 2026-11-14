@@ -27,6 +27,9 @@ describe('getProviderLogo', () => {
     expect(getProviderLogo('edenai')).toBe(
       '/images/model-provider/edenai.svg'
     )
+    expect(getProviderLogo('standardcompute')).toBe(
+      '/images/model-provider/standardcompute.svg'
+    )
     expect(getProviderLogo('nvidia')).toBe('/images/model-provider/nvidia.svg')
     expect(getProviderLogo('aimlapi')).toBe(
       '/images/model-provider/aimlapi.svg'
@@ -93,6 +96,7 @@ describe('getProviderTitle', () => {
     expect(getProviderTitle('litert-lm')).toBe('LiteRT-LM')
     expect(getProviderTitle('geniex')).toBe('GenieX')
     expect(getProviderTitle('edenai')).toBe('Eden AI')
+    expect(getProviderTitle('standardcompute')).toBe('Standard Compute')
     expect(getProviderTitle('automatic1111')).toBe('Automatic1111 / Forge')
     expect(getProviderTitle('sdcpp-server')).toBe('stable-diffusion.cpp server')
   })
