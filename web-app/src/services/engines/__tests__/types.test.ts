@@ -16,6 +16,7 @@ describe('vendored engine lists', () => {
       'litert-lm',
       'geniex',
       'fastflowlm',
+      'strata',
       'tensorrt-llm',
       'vllm',
       'sglang',
@@ -44,6 +45,11 @@ describe('vendored engine lists', () => {
     expect(ENGINE_IDS.indexOf('fastflowlm')).toBe(ENGINE_IDS.indexOf('geniex') + 1)
     expect(ENGINE_KINDS['fastflowlm']).toBe('engine-build')
     expect(ENGINE_UPDATE_ORDER.indexOf('fastflowlm')).toBe(ENGINE_UPDATE_ORDER.indexOf('geniex') + 1)
+  })
+
+  it('lists Strata as a core-managed engine build and offers its updates', () => {
+    expect(ENGINE_KINDS['strata']).toBe('engine-build')
+    expect(ENGINE_UPDATE_ORDER).toContain('strata')
   })
 
   it('offers a Foundry Local update in the engine banner’s order', () => {

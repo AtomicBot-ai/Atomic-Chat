@@ -1,4 +1,5 @@
-import { render, screen, within } from '@testing-library/react'
+import { useState } from 'react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
@@ -13,13 +14,18 @@ import {
 } from '@/test/layout'
 import type { HubEngineId } from '@/lib/hub-model-engines'
 import type { CatalogModel } from '@/services/models/types'
+import i18n from '@/i18n/setup'
+import { strataCatalogRows } from '@/services/strata/catalog'
+import strataFixture from '@/services/strata/__tests__/fixtures/catalog.json'
 import { LocalModelTable, type LocalModelTableItem } from './LocalModelTable'
 
 // The open row's download options are measured by their own layout tests;
 // here they are a block of their usual height.
 vi.mock('@/containers/hub/DownloadOptionsSelect', () => ({
-  DownloadOptionsSelect: () => (
-    <section className="h-24 rounded-lg border border-border" />
+  DownloadOptionsSelect: ({ model }: { model: CatalogModel }) => (
+    <section className="h-24 rounded-lg border border-border">
+      {model.strata?.variant_id}
+    </section>
   ),
 }))
 // Parameter counts come from Hugging Face for names that carry none; none here.
@@ -84,7 +90,7 @@ const ITEMS: LocalModelTableItem[] = [
   },
 ]
 
-function renderTable(width: number, selected: string | null = null) {
+function renderTable(width: number, selected: string | null = null, items = ITEMS) {
   return render(
     withTranslations(
       <div
@@ -93,7 +99,7 @@ function renderTable(width: number, selected: string | null = null) {
       >
         <div data-testid="list" style={{ width }}>
           <LocalModelTable
-            items={ITEMS}
+            items={items}
             selected={selected}
             onSelect={() => {}}
             budgetBytes={24 * GB}
@@ -144,6 +150,69 @@ describe('LocalModelTable layout', () => {
   })
   afterEach(() => {
     setFontSize(DEFAULT_FONT_SIZE)
+  })
+
+  it('keeps the chosen Strata quant when opening the row', async () => {
+    const [model] = strataCatalogRows(strataFixture)
+    const primary = model.strata!
+    const alternative = {
+      ...primary,
+      variant_id: 'iq3-s-dflash2',
+      name: 'Qwen3.8 Flash-Next IQ3_S',
+      requirements: { ...primary.requirements, download_bytes: 89 * GB },
+    }
+    const items = [{ model: { ...model, strataVariants: [primary, alternative] } }]
+    function Table() {
+      const [selected, setSelected] = useState<string | null>(null)
+      return (
+        <div data-testid="list" style={{ width: listWidth(1024) }}>
+          <LocalModelTable
+            items={items}
+            selected={selected}
+            onSelect={setSelected}
+            budgetBytes={24 * GB}
+            availableEngines={new Set(['strata'])}
+          />
+        </div>
+      )
+    }
+
+    setFontSize(XL_FONT_SIZE)
+    render(withTranslations(<Table />))
+    const quant = screen.getByRole('combobox', { name: 'Quantization' })
+    fireEvent.change(quant, { target: { value: alternative.variant_id } })
+    expect(quant).toHaveValue(alternative.variant_id)
+    await settle()
+    expectNoHorizontalOverflow(screen.getByTestId('list'))
+
+    fireEvent.click(screen.getByRole('button', { name: /expand.*Qwen3.8 Flash-Next IQ3_S/i }))
+    expect(screen.getByText(alternative.variant_id)).toBeVisible()
+  })
+
+  it.each([
+    [1024, XL_FONT_SIZE, 'dark'],
+    [1280, DEFAULT_FONT_SIZE, 'light'],
+  ] as const)('keeps the Strata disk warning inside its cell at %ipx', async (width, size, theme) => {
+    const [model] = strataCatalogRows(strataFixture)
+    const name = 'DeepSeekV4.1-Flash-1017 2.00 bpw'
+    await i18n.changeLanguage('ru')
+    try {
+      setFontSize(size)
+      setTheme(theme)
+      renderTable(listWidth(width), null, [{
+        model: { ...model, strata: { ...model.strata!, name } },
+        strataDiskBlocked: true,
+      }])
+      await settle()
+
+      const warning = screen.getByText('Не хватает места на диске')
+      expect(warning).toBeVisible()
+      expectFits(warning, warning.closest('td')!)
+      expectWholeWords(warning)
+      expectNoHorizontalOverflow(screen.getByTestId('list'))
+    } finally {
+      await i18n.changeLanguage('en')
+    }
   })
 
   for (const [label, size] of [

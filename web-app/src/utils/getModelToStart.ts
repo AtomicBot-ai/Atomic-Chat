@@ -17,6 +17,7 @@ const localProviderNames = [
   'foundry-local',
   'litert-lm',
   'geniex',
+  'strata',
 ] as const
 
 export const getLastUsedModel = (): {

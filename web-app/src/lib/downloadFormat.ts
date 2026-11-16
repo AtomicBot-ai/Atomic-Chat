@@ -113,6 +113,7 @@ export function downloadStageLabel(
   t: (key: string, vars?: Record<string, unknown>) => string,
   stage?: { kind: string; attempt: number; maxAttempts: number }
 ): string | null {
+  if (stage?.kind === 'strata-preparing') return t('hub:strata.preparing')
   if (stage?.kind === 'stalled') return t('common:downloadPanel.stalled')
   if (stage?.kind === 'retrying')
     return t('common:downloadPanel.retrying', {

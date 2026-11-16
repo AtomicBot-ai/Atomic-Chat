@@ -280,12 +280,10 @@ describe('the handoff panel', () => {
     expect(handoffPanelContent({ ...run, jobs: [] }, here)).toBe('ready')
   })
 
-  // The prototype offers "Back to setup" after every handoff to the chat:
-  // Skip setup, a cloud-only run, a download the user cancelled.
-  it('offers only the way back to setup with nothing to follow and no model ready', () => {
+  it('hides the panel with nothing to follow and no model ready', () => {
     const noModel = { ready: false, seenInApp: true }
-    expect(handoffPanelContent({ ...run, jobs: [] }, noModel)).toBe('setup')
-    expect(handoffPanelContent(settled, noModel)).toBe('setup')
+    expect(handoffPanelContent({ ...run, jobs: [] }, noModel)).toBeNull()
+    expect(handoffPanelContent(settled, noModel)).toBeNull()
     expect(
       handoffPanelContent({ ...run, jobs: [], panelDismissed: true }, noModel)
     ).toBeNull()

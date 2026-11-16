@@ -1,3 +1,4 @@
+import { cancelStrata, isStrataTaskId } from '@/services/strata/install'
 import { isFastFlowLmDownloadId } from '@/lib/fastflowlm/download-id'
 import type { ServiceHub } from '@/services'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
@@ -100,6 +101,8 @@ export function cancelDownload(
     isEngineUpdateTaskId(download.id)
   ) {
     void cancelEngineBuildDownload(download.id)
+  } else if (isStrataTaskId(download.id)) {
+    void cancelStrata(download.id).catch(console.warn)
   } else if (
     isDiffusionModelDownloadTaskId(download.id) ||
     isDecisionDownloadTaskId(download.id) ||

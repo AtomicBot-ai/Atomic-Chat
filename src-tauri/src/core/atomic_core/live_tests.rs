@@ -904,3 +904,211 @@ async fn the_privileged_step_runs_on_the_real_cli_core_and_reads_the_app_request
     assert_eq!(result["nonce"], "nonce-live");
     prepared.remove();
 }
+
+/// Exercises the actual desktop acquisition IPC against an app-scope core and a
+/// separately provisioned local Strata bundle. The supplied inputs are read-only.
+#[cfg(target_os = "macos")]
+#[tokio::test]
+#[ignore = "requires local weights, verified Strata and llama.cpp builds, and a compatible Mac"]
+async fn strata_desktop_import_prepare_and_chat() {
+    use super::commands::{resume, AtomicCoreClient};
+    use super::strata_models::{atomic_strata_acquire, atomic_strata_finish_install};
+    use crate::core::state::AppState;
+    use tauri::Manager;
+
+    let binary = core_binary().expect("ATOMIC_CORE_BIN");
+    let inputs =
+        PathBuf::from(std::env::var("ATOMIC_STRATA_SMOKE_SOURCES").expect("model source folder"));
+    let builds = PathBuf::from(
+        std::env::var("ATOMIC_STRATA_SMOKE_BUILDS").expect("verified Strata builds folder"),
+    );
+    let descriptor: Value = serde_json::from_slice(
+        &std::fs::read(
+            std::env::var("ATOMIC_STRATA_SMOKE_DESCRIPTOR").expect("pinned model descriptor"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let digest = std::env::var("ATOMIC_STRATA_SMOKE_DIGEST").expect("pinned source digest");
+    let model = descriptor["variant_id"].as_str().unwrap();
+    let live = LiveCore::new(&binary);
+    let strata = live.data.path().join("strata");
+    std::fs::create_dir(&strata).unwrap();
+
+    let status = std::process::Command::new("cp")
+        .arg("-R")
+        .arg(builds)
+        .arg(strata.join("backends"))
+        .status()
+        .expect("copy local build");
+    assert!(status.success());
+
+    let llama_build = PathBuf::from(
+        std::env::var("ATOMIC_STRATA_SMOKE_LLAMA_BUILD").expect("llama.cpp upstream bundle"),
+    );
+    let llama_weights = PathBuf::from(
+        std::env::var("ATOMIC_STRATA_SMOKE_LLAMA_WEIGHTS").expect("small llama.cpp model"),
+    );
+    let llama_version = std::fs::read_to_string(llama_build.join("version.txt")).unwrap();
+    let llama_variant = std::fs::read_to_string(llama_build.join("backend.txt")).unwrap();
+    let backend = format!("{}/{}", llama_version.trim(), llama_variant.trim());
+    // The upstream extension normally copies its bundled pack on startup.
+    let pack = live
+        .data
+        .path()
+        .join("llamacpp-upstream/backends")
+        .join(&backend);
+    std::fs::create_dir_all(pack.parent().unwrap()).unwrap();
+    assert!(std::process::Command::new("cp")
+        .arg("-R")
+        .arg(llama_build)
+        .arg(&pack)
+        .status()
+        .unwrap()
+        .success());
+    let llama_dir = live.data.path().join("llamacpp/models/strata-switch-smoke");
+    std::fs::create_dir_all(&llama_dir).unwrap();
+    let size = std::fs::copy(llama_weights, llama_dir.join("model.gguf")).unwrap();
+    std::fs::write(
+        llama_dir.join("model.yml"),
+        json!({
+            "model_path": "llamacpp/models/strata-switch-smoke/model.gguf",
+            "name": "Switch smoke", "size_bytes": size
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let app = tauri::test::mock_app();
+    app.manage(AppState::default());
+    app.manage(AtomicCoreClient::new(live.supervisor()));
+    resume(app.handle()).await;
+    let client = app.state::<AtomicCoreClient>();
+    client.call("PATCH", "/settings/strata", Some(json!({
+        "values": { "context_length": 4096, "memory_mode": "ssd", "vision": "off", "timeout": 900 }
+    }))).await.expect("local Strata settings");
+    client
+        .call(
+            "PATCH",
+            "/settings/llamacpp-upstream",
+            Some(json!({
+                "values": { "version_backend": backend }
+            })),
+        )
+        .await
+        .expect("configure local llama.cpp pack");
+    let catalog = client
+        .call("POST", "/engine-builds/strata/catalog", Some(json!({})))
+        .await
+        .unwrap();
+    assert!(catalog["active"].is_object(), "{catalog}");
+    let request = uuid::Uuid::new_v4().to_string();
+    let plan = json!({ "descriptor": descriptor, "source_digest": digest, "request_id": request });
+    let job = atomic_strata_acquire(
+        app.handle().clone(),
+        app.state(),
+        model.into(),
+        Some(plan),
+        None,
+        None,
+        Some(inputs.to_string_lossy().into_owned()),
+    )
+    .await
+    .expect("desktop import");
+    assert_eq!(job["state"], "files-ready");
+    eprintln!("Strata desktop import completed");
+
+    let operation = client
+        .call(
+            "POST",
+            "/strata/preparations",
+            Some(json!({
+                "request_id": request, "model_id": model, "source_digest": digest,
+            })),
+        )
+        .await
+        .expect("start preparation");
+    let id = operation["operation_id"].as_str().unwrap();
+    tokio::time::timeout(Duration::from_secs(900), async {
+        loop {
+            let op = client
+                .call("GET", &format!("/strata/preparations/{id}"), None)
+                .await
+                .unwrap();
+            if op["state"] == "ready" {
+                break;
+            }
+            assert!(
+                matches!(
+                    op["state"].as_str(),
+                    Some("queued" | "preparing" | "verifying")
+                ),
+                "{op}"
+            );
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        }
+    })
+    .await
+    .expect("prepare within 15 minutes");
+    atomic_strata_finish_install(app.handle().clone(), app.state(), model.into())
+        .await
+        .unwrap();
+    eprintln!("Strata desktop preparation confirmed ready");
+
+    let load = client
+        .call(
+            "POST",
+            &format!("/models/strata/{model}/load"),
+            Some(json!({})),
+        )
+        .await
+        .unwrap();
+    let session = &load["session"];
+    let key = session["api_key"].as_str().unwrap();
+    let port = session["port"].as_u64().unwrap();
+    let completion: Value = reqwest::Client::new()
+        .post(format!("http://127.0.0.1:{port}/v1/chat/completions"))
+        .bearer_auth(key)
+        .json(&json!({
+            "model": model, "reasoning_effort": "none", "max_tokens": 64, "temperature": 0,
+            "messages": [{ "role": "user", "content": "What is 2+2? Reply with one digit." }]
+        }))
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert!(completion["choices"][0]["message"]["content"]
+        .as_str()
+        .is_some_and(|text| text.contains('4')));
+    eprintln!("Strata desktop gateway answered correctly");
+    let next = client
+        .call(
+            "POST",
+            "/models/llamacpp-upstream/strata-switch-smoke/load",
+            Some(json!({ "overrides": { "ctx_size": 512 } })),
+        )
+        .await
+        .expect("switch to llama.cpp");
+    assert_eq!(next["session"]["model_id"], "strata-switch-smoke");
+    let sessions = client.call("GET", "/sessions", None).await.unwrap();
+    let sessions = sessions["sessions"].as_array().unwrap();
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0]["provider"], "llamacpp-upstream");
+    assert!(
+        client
+            .call(
+                "POST",
+                "/models/llamacpp-upstream/strata-switch-smoke/unload",
+                Some(json!({}))
+            )
+            .await
+            .unwrap()["success"]
+            == true
+    );
+    eprintln!("Switched from Strata to llama.cpp and unloaded the remaining session");
+    client.stop_for_live_test().await;
+}

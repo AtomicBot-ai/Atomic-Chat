@@ -1,0 +1,89 @@
+[
+  {
+    "key": "context_length",
+    "title": "Context length",
+    "description": "Applies from the next model load. The selected model and build must support the value.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 0,
+      "type": "number",
+      "min": 0,
+      "max": 2147483647
+    }
+  },
+  {
+    "key": "gpu_id",
+    "title": "GPU",
+    "description": "Applies from the next model load. The selected model and build must support the value.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": ""
+    }
+  },
+  {
+    "key": "memory_mode",
+    "title": "Memory mode",
+    "description": "Applies from the next model load. The selected model and build must support the value.",
+    "controllerType": "dropdown",
+    "controllerProps": {
+      "value": "auto",
+      "options": [
+        {
+          "name": "Auto",
+          "value": "auto"
+        },
+        {
+          "name": "Ram",
+          "value": "ram"
+        },
+        {
+          "name": "Ssd",
+          "value": "ssd"
+        }
+      ]
+    }
+  },
+  {
+    "key": "parallel_requests",
+    "title": "Parallel requests",
+    "description": "Applies from the next model load. The selected model and build must support the value.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 1,
+      "type": "number",
+      "min": 1,
+      "max": 32
+    }
+  },
+  {
+    "key": "vision",
+    "title": "Vision",
+    "description": "Applies from the next model load. The selected model and build must support the value.",
+    "controllerType": "dropdown",
+    "controllerProps": {
+      "value": "auto",
+      "options": [
+        {
+          "name": "Auto",
+          "value": "auto"
+        },
+        {
+          "name": "Off",
+          "value": "off"
+        }
+      ]
+    }
+  },
+  {
+    "key": "timeout",
+    "title": "Load timeout (seconds)",
+    "description": "Applies from the next model load. The selected model and build must support the value.",
+    "controllerType": "input",
+    "controllerProps": {
+      "value": 1800,
+      "type": "number",
+      "min": 1,
+      "max": 86400
+    }
+  }
+]

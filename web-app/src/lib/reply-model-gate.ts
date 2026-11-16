@@ -261,6 +261,7 @@ const DEFAULT_LOCAL_ENGINES: readonly string[] = [
   'foundry-local',
   'litert-lm',
   'geniex',
+  'strata',
 ]
 
 /**

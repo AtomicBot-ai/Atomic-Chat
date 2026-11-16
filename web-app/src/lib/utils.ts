@@ -247,6 +247,8 @@ export const getProviderTitle = (provider: string) => {
       return 'Foundry Local'
     case 'litert-lm':
       return 'LiteRT-LM'
+    case 'strata':
+      return 'Strata'
     case 'fastflowlm':
       return 'FastFlowLM'
     case 'geniex':

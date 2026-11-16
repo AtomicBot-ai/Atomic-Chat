@@ -1519,3 +1519,92 @@ describe('ModelFactory fastflowlm provider (change add-fastflowlm-runtime)', () 
     ).rejects.toThrow('No running FastFlowLM session found for model: qwen3-4b')
   })
 })
+
+describe('ModelFactory Strata provider', () => {
+  it('retargets chat to the current core gateway, forwards tool results and cancels its stream', async () => {
+    vi.clearAllMocks()
+    seedServiceHub({ models: { startModel: mockStartModel } as ModelsService })
+    const provider = {
+      provider: 'strata',
+      base_url: 'http://example.invalid/v1',
+      api_key: '',
+      settings: [],
+      models: [],
+      active: true,
+    } as unknown as ProviderObject
+    const modelId = 'iq3-xxs-dflash2'
+    const first = { pid: 101, port: 4303, model_id: modelId, api_key: 'first' }
+    const second = { ...first, port: 4304, api_key: 'next' }
+    let current = first
+    mockedInvoke.mockImplementation(async (command, args) => {
+      if (command === 'resolve_local_session') return current
+      if (command === 'stream_local_http') {
+        if (String(args?.body).includes('response_format')) {
+          throw 'HTTP 400: {"error":{"message":"Strata cannot combine JSON output with tools."}}'
+        }
+        queueMicrotask(() =>
+          (
+            args?.onChunk as { onmessage: (chunk: { data: string }) => void }
+          ).onmessage({ data: 'data: {"choices":[]}\n\n' })
+        )
+        return new Promise(() => {})
+      }
+      return undefined
+    })
+    const { OpenAICompatibleChatLanguageModel } = await import(
+      '@ai-sdk/openai-compatible'
+    )
+    await ModelFactory.createModel(modelId, provider)
+    expect(mockStartModel).toHaveBeenCalledWith(provider, modelId)
+    const config = vi.mocked(OpenAICompatibleChatLanguageModel).mock
+      .calls[0]?.[1] as {
+      provider: string
+      url: (args: { path: string }) => string
+      fetch: typeof fetch
+    }
+    expect(config.provider).toBe('strata')
+    current = second
+    const controller = new AbortController()
+    const messages = [{ role: 'tool', tool_call_id: 'tool-1', content: 'done' }]
+    const response = await config.fetch(
+      config.url({ path: '/chat/completions' }),
+      {
+        method: 'POST',
+        signal: controller.signal,
+        body: JSON.stringify({ model: modelId, messages, stream: true }),
+      }
+    )
+    expect(response.status).toBe(200)
+    controller.abort()
+    expect(mockedInvoke).toHaveBeenCalledWith('resolve_local_session', {
+      provider: 'strata',
+      modelId,
+    })
+    const streamCall = mockedInvoke.mock.calls.find(
+      ([command]) => command === 'stream_local_http'
+    )
+    expect(JSON.stringify(streamCall?.[1])).toContain('4304')
+    expect(JSON.stringify(streamCall?.[1])).toContain('Bearer next')
+    expect(JSON.stringify(streamCall?.[1])).toContain('tool-1')
+    expect(mockedInvoke).toHaveBeenCalledWith(
+      'cancel_local_stream',
+      expect.anything()
+    )
+
+    const refused = await config.fetch(
+      config.url({ path: '/chat/completions' }),
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          model: modelId,
+          messages,
+          response_format: { type: 'json_object' },
+        }),
+      }
+    )
+    expect(refused.status).toBe(400)
+    expect(await refused.text()).toContain(
+      'cannot combine JSON output with tools'
+    )
+  })
+})

@@ -1,3 +1,4 @@
+import { useStrataHub } from '@/hooks/useStrataHub'
 import {
   useFastFlowLmHub,
   useFastFlowLmHubVisible,
@@ -632,6 +633,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
         liteRtLm: liteRtLmHubVisible,
         geniex: geniexHubVisible,
         fastFlowLm: fastFlowLmHubVisible,
+        strata: IS_TAURI && !IS_IOS && !IS_ANDROID && (!IS_MACOS || IS_ARM64),
       }),
     [
       visibleManaged,
@@ -767,6 +769,18 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   )
   // GenieX lists conf's curated GGUF models and AI Hub bundles, then the Hugging Face GGUF
   // repositories the catalog search finds, read by its own client (change add-geniex-runtime).
+  const strataFormat = filters.formats[0] === 'strata'
+  const showStrataRecommended =
+    IS_MACOS &&
+    availableFormats.includes('strata') &&
+    filters.formats[0] === 'gguf' &&
+    !filters.engine &&
+    !debouncedSearchValue.trim() &&
+    !filters.uncensored
+  const strata = useStrataHub(
+    !showOnlyDownloaded && (strataFormat || showStrataRecommended),
+    IS_MACOS && strataFormat && !showOnlyDownloaded
+  )
   const fastFlowLmFormat = filters.formats[0] === 'fastflowlm'
   const fastFlowLm = useFastFlowLmHub(fastFlowLmFormat && !showOnlyDownloaded)
   const geniexFormat = filters.formats[0] === 'geniex'
@@ -780,6 +794,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     foundryFormat ||
     liteRtFormat ||
     geniexFormat ||
+    strataFormat ||
     fastFlowLmFormat
 
   // Under a managed engine's format the engine's state comes first: what blocks
@@ -1094,6 +1109,22 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
       }))
     }
 
+    if (strataFormat) {
+      const words = debouncedSearchValue.toLowerCase().split(/\s+/).filter(Boolean)
+      return strata.models
+        .filter((model) => words.every((word: string) =>
+          [model.model_name, model.description, ...(model.strataVariants?.map((variant) => variant.name) ?? [])]
+            .join(' ').toLowerCase().includes(word)
+        ))
+        .map((model) => ({
+          model,
+          section: 'Strata',
+          strataDiskBlocked: model.strataVariants
+            ? model.strataVariants.every((variant) => strata.diskBlocked.has(variant.variant_id))
+            : !!model.strata && strata.diskBlocked.has(model.strata.variant_id),
+        }))
+    }
+
     if (fastFlowLmFormat) {
       const words = debouncedSearchValue
         .toLowerCase()
@@ -1182,6 +1213,12 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
         pick: pickByRepo.get(model.model_name),
         section: t('hub:staffPicks'),
       }))
+      if (showStrataRecommended && strata.recommended) {
+        picks.unshift({
+          model: strata.recommended,
+          section: t('hub:staffPicks'),
+        })
+      }
 
       // The feed is already in Hugging Face's order for this sort, so it is
       // appended as a section rather than re-sorted into the picks. A repo
@@ -1305,6 +1342,11 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     liteRtFormat,
     liteRtLm.curated,
     liteRtLm.huggingFace,
+    strataFormat,
+    strata.models,
+    strata.recommended,
+    strata.diskBlocked,
+    showStrataRecommended,
     fastFlowLmFormat,
     fastFlowLm.models,
     geniexFormat,
@@ -1373,6 +1415,9 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
       (item) => item.model.model_name === selectedRepo
     )
     if (fromList) return fromList
+    if (strata.recommended && selectedRepo === strata.recommended.model_name) {
+      return { model: strata.recommended }
+    }
     const fromSources = sources.find((m) => m.model_name === selectedRepo)
     if (fromSources) {
       return { model: fromSources, pick: pickByRepo.get(selectedRepo) }
@@ -1381,7 +1426,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
       return { ...deepLinkedItem, pick: pickByRepo.get(selectedRepo) }
     }
     return null
-  }, [selectedRepo, listItems, sources, deepLinkedItem, pickByRepo])
+  }, [selectedRepo, listItems, strata.recommended, sources, deepLinkedItem, pickByRepo])
 
   // Deep link into a repo the catalog does not carry: resolve it from HF once.
   useEffect(() => {
@@ -1666,8 +1711,10 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     managedFormat && !isSearchMode && (managedCurated.loading || feed.loading)
   const showSkeleton =
     listItems.length === 0 &&
-    (fastFlowLmFormat
-      ? fastFlowLm.loading
+    (strataFormat
+      ? strata.loading
+      : fastFlowLmFormat
+        ? fastFlowLm.loading
       : prismFormat
         ? prismFamilies.loading
         : foundryFormat
@@ -1693,6 +1740,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
           <HubFilters
             state={filters}
             onChange={updateFilters}
+            showStrata={availableFormats.includes('strata')}
             showLikesSort={showLikesSort}
             showOnlyDownloaded={showOnlyDownloaded}
             onShowOnlyDownloadedChange={(checked) => {
@@ -1729,6 +1777,11 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
                 {t('hub:liteRtLm.huggingFaceUnavailable')}
               </p>
             )}
+          {strataFormat && !showOnlyDownloaded && strata.failed && (
+            <p className="px-2 pb-2 text-xs text-muted-foreground" role="status">
+              {t('hub:strata.catalogUnavailable')}
+            </p>
+          )}
           {geniexFormat && !showOnlyDownloaded && geniex.qualcommUnavailable && (
             <p className="px-2 pb-2 text-xs text-muted-foreground" role="status">{t('hub:geniex.qualcommUnavailable')}</p>
           )}
@@ -1767,7 +1820,8 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
                       !managedFormat &&
                       !foundryFormat &&
                       !liteRtFormat &&
-                      !geniexFormat
+                      !geniexFormat &&
+                      !strataFormat
                     ? t('hub:noFittingPicks')
                     : t('hub:noModels')
               }

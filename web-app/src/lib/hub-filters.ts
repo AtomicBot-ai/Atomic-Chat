@@ -62,6 +62,7 @@ const ALL_FORMATS: readonly ModelFormat[] = [
   'litert-lm',
   'geniex',
   'fastflowlm',
+  'strata',
 ]
 
 const isFormat = (value: unknown): value is ModelFormat =>
@@ -79,6 +80,7 @@ export const HUB_FORMAT_LABELS: Record<ModelFormat, string> = {
   'litert-lm': 'LiteRT-LM',
   'geniex': 'GenieX',
   'fastflowlm': 'FastFlowLM',
+  strata: 'Strata',
 }
 
 /** Whether the format is a managed engine's (its provider id): a safetensors checkpoint's. */
@@ -103,6 +105,7 @@ export function hubFormats(options: {
   liteRtLm?: boolean
   geniex?: boolean
   fastFlowLm?: boolean
+  strata?: boolean
 }): ModelFormat[] {
   return [
     'gguf',
@@ -115,6 +118,7 @@ export function hubFormats(options: {
     ...(options.liteRtLm ? (['litert-lm'] as const) : []),
     ...(options.geniex ? (['geniex'] as const) : []),
     ...(options.fastFlowLm ? (['fastflowlm'] as const) : []),
+    ...(options.strata ? (['strata'] as const) : []),
   ]
 }
 

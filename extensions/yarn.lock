@@ -35,6 +35,23 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@atomic-chat/strata-extension@workspace:strata-extension":
+  version: 0.0.0-use.local
+  resolution: "@atomic-chat/strata-extension@workspace:strata-extension"
+  dependencies:
+    "@janhq/core": ../../core/package.tgz
+    "@tauri-apps/api": "npm:2.8.0"
+    "@tauri-apps/plugin-http": "npm:2.5.7"
+    "@tauri-apps/plugin-log": "npm:^2.6.0"
+    cpx: "npm:1.5.0"
+    jsdom: "npm:26.1.0"
+    rimraf: "npm:3.0.2"
+    rolldown: "npm:1.0.0-beta.1"
+    typescript: "npm:5.9.2"
+    vitest: "npm:3.2.4"
+  languageName: unknown
+  linkType: soft
+
 "@csstools/color-helpers@npm:^5.1.0":
   version: 5.1.0
   resolution: "@csstools/color-helpers@npm:5.1.0"
@@ -384,6 +401,18 @@ __metadata:
 "@janhq/core@file:../../core/package.tgz::locator=%40atomic-chat%2Ffastflowlm-extension%40workspace%3Afastflowlm-extension":
   version: 0.1.10
   resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=f561a8&locator=%40atomic-chat%2Ffastflowlm-extension%40workspace%3Afastflowlm-extension"
+  dependencies:
+    rxjs: "npm:^7.8.1"
+    ulidx: "npm:^2.3.0"
+  peerDependencies:
+    react: 19.0.0
+  checksum: 10c0/2b5ef167c1a6a284732b95abad474b2fd822ee6e7e9abcc75605cefb3d223b1433285d754daec5db71eb5574cb35325bb6a1fc8a1db197df3e34b7ea5173341a
+  languageName: node
+  linkType: hard
+
+"@janhq/core@file:../../core/package.tgz::locator=%40atomic-chat%2Fstrata-extension%40workspace%3Astrata-extension":
+  version: 0.1.10
+  resolution: "@janhq/core@file:../../core/package.tgz#../../core/package.tgz::hash=f561a8&locator=%40atomic-chat%2Fstrata-extension%40workspace%3Astrata-extension"
   dependencies:
     rxjs: "npm:^7.8.1"
     ulidx: "npm:^2.3.0"

@@ -169,9 +169,11 @@ export const useModelProvider = create<ModelProviderState>()(
               const existingModel = models.find((m) => m.id === model.id)
               const mergedCapabilities = [
                 ...(model.capabilities || []),
-                ...(existingModel?.capabilities || []).filter(
-                  (cap) => !(model.capabilities || []).includes(cap)
-                ),
+                ...(provider.provider === 'strata'
+                  ? []
+                  : (existingModel?.capabilities || []).filter(
+                      (cap) => !(model.capabilities || []).includes(cap)
+                    )),
               ]
               return {
                 ...model,

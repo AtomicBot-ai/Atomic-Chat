@@ -7,6 +7,7 @@ import { ManagedDownloadOptions } from '@/containers/hub/ManagedDownloadOptions'
 import { FoundryLocalDownloadOptions } from '@/containers/hub/FoundryLocalDownloadOptions'
 import { LiteRtLmDownloadOptions } from '@/containers/hub/LiteRtLmDownloadOptions'
 import { GeniexDownloadOptions } from '@/containers/hub/GeniexDownloadOptions'
+import { StrataDownloadOptions } from '@/containers/hub/StrataDownloadOptions'
 import { FastFlowLmDownloadOptions } from '@/containers/hub/FastFlowLmDownloadOptions'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -27,6 +28,7 @@ import type { CatalogModel } from '@/services/models/types'
 
 export type DownloadOptionsSelectProps = {
   model: CatalogModel
+  onStrataVariantChange?: (id: string) => void
   /** Memory budget in bytes; 0 hides the fit indicators. */
   budgetBytes: number
 }
@@ -42,6 +44,7 @@ export type DownloadOptionsSelectProps = {
  */
 export function DownloadOptionsSelect({
   model,
+  onStrataVariantChange,
   budgetBytes,
 }: DownloadOptionsSelectProps) {
   const { t } = useTranslation()
@@ -112,6 +115,15 @@ export function DownloadOptionsSelect({
     return <LiteRtLmDownloadOptions model={model} sectionRef={sectionRef} />
   }
   // GenieX: a GGUF's devices with the core's verdicts, or this chip's AI Hub bundle.
+  if (model.strata) {
+    return (
+      <StrataDownloadOptions
+        descriptor={model.strata}
+        variants={model.strataVariants}
+        onVariantChange={onStrataVariantChange}
+      />
+    )
+  }
   if (model.fastflowlm || model.is_fastflowlm) {
     return <FastFlowLmDownloadOptions model={model} sectionRef={sectionRef} />
   }

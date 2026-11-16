@@ -121,6 +121,7 @@ const localProviders = (): string[] => [
   'litert-lm',
   'geniex',
   'fastflowlm',
+  'strata',
   ...managedEngines().map((engine) => engine.id),
 ]
 type LocalProviderName = string
@@ -998,10 +999,10 @@ export class DefaultModelsService implements ModelsService {
       return keyMappings[key] || key
     }
 
-    // FLM's seven launch settings come from core's provider settings. Ignore legacy
-    // generic model bags too, so a cached 16384 default cannot shadow engine ctx_len=0.
+    // FastFlowLM and Strata use their provider schemas for launch settings. The
+    // generic text-model settings can override defaults or add unsupported fields.
     const settings =
-      provider.provider !== 'fastflowlm' && modelConfig?.settings
+      provider.provider !== 'fastflowlm' && provider.provider !== 'strata' && modelConfig?.settings
         ? Object.fromEntries(
             Object.entries(modelConfig.settings).map(([key, value]) => [
               mapSettingKey(key),

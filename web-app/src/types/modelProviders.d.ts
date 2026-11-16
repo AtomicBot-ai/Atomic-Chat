@@ -32,6 +32,7 @@ type Model = {
   version?: number | string
   description?: string
   format?: string
+  strata?: import('@atomic-chat/core/contracts').StrataModelDescriptor
   capabilities?: string[]
   /**
    * Reasoning knobs the model's chat template understands, detected from that

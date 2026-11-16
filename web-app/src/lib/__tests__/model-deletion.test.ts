@@ -88,6 +88,24 @@ describe('deleteLocalModel', () => {
     expect(useModelProvider.getState().providers[0].models).toEqual([])
   })
 
+  it('keeps another provider’s model with the same id after Strata maintenance', async () => {
+    const llama = { ...provider('llamacpp-upstream', ['same-id']), persist: true }
+    const { serviceHub, models } = setup([
+      { ...provider('strata', []), persist: true },
+      llama,
+    ])
+    useAppState.setState({ activeModels: ['same-id'] })
+
+    await deleteLocalModel(serviceHub, 'same-id', 'strata')
+
+    expect(models.stopModel).not.toHaveBeenCalled()
+    expect(models.deleteModel).toHaveBeenCalledWith('same-id', 'strata')
+    expect(useModelProvider.getState().providers.find(
+      (item) => item.provider === 'llamacpp-upstream'
+    )?.models.map((model) => model.id)).toEqual(['same-id'])
+    expect(useModelProvider.getState().deletedModels).not.toContain('same-id')
+  })
+
   describe('tensorrt-llm (task 3.15)', () => {
     it('leaves stopping to the core and answers what the delete freed', async () => {
       const { serviceHub, models } = setup([

@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CatalogModel, HuggingFaceRepo } from '@/services/models/types'
 import type { ResolvedStaffPick } from '@/hooks/useStaffPicks'
+import type { StrataCheckResult } from '@atomic-chat/core/contracts'
+import strataFixture from '@/services/strata/__tests__/fixtures/catalog.json'
 
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
@@ -16,6 +18,10 @@ const mocks = vi.hoisted(() => ({
   mlxStaffPicks: [] as ResolvedStaffPick[],
   requestedPickFormats: [] as string[],
   sources: [] as CatalogModel[],
+  fetchStrataCatalog: vi.fn<() => Promise<CatalogModel[]>>(),
+  checkStrataModel: vi.fn<() => Promise<Pick<StrataCheckResult, 'verdict'>>>(),
+  getDiskSpaceInfo: vi.fn<() => Promise<{ free_bytes: number } | null>>(),
+  listStrataJobs: vi.fn<() => Promise<Array<{ model_id: string }>>>(),
   search_: vi.fn(() => [] as CatalogModel[]),
   fetchHuggingFaceRepo: vi.fn(async () => null),
   searchHuggingFaceCandidates: vi.fn(async () => [] as CatalogModel[]),
@@ -27,6 +33,20 @@ const mocks = vi.hoisted(() => ({
     rules_version: 1,
     families: [] as unknown[],
   })),
+}))
+
+vi.mock('@/services/strata/catalog', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/strata/catalog')>()),
+  fetchStrataCatalog: mocks.fetchStrataCatalog,
+}))
+vi.mock('@/services/strata/core', () => ({ checkStrataModel: mocks.checkStrataModel }))
+vi.mock('@/services/strata/install', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/strata/install')>()),
+  listStrataJobs: mocks.listStrataJobs,
+}))
+vi.mock('@/services/models/downloadPreflight', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/models/downloadPreflight')>()),
+  getDiskSpaceInfo: mocks.getDiskSpaceInfo,
 }))
 
 const tensorrtHub = vi.hoisted(() => ({
@@ -416,6 +436,7 @@ import {
 } from '../hub-session'
 import { useModelLikes } from '@/hooks/useModelLikes'
 import { resetHuggingFaceFeedForTest } from '@/hooks/useHuggingFaceFeed'
+import { strataCatalogRows } from '@/services/strata/catalog'
 import en from '@/locales/en/hub.json'
 
 const model = (name: string, extra: Partial<CatalogModel> = {}): CatalogModel =>
@@ -434,6 +455,37 @@ const HubPage = () => {
   const Component = (Route as unknown as { component: React.ComponentType })
     .component
   return <Component />
+}
+
+function macStrataCatalog() {
+  vi.stubGlobal('IS_TAURI', true)
+  vi.stubGlobal('IS_MACOS', true)
+  vi.stubGlobal('IS_ARM64', true)
+  const [qwen36] = strataCatalogRows(strataFixture)
+  const descriptor = qwen36.strata!
+  const metalModel = (
+    id: string,
+    name: string,
+    family: 'qwen38' | 'deepseek41',
+    bytes: number
+  ): CatalogModel => ({
+    model_name: `strata/${id}`,
+    description: name,
+    downloads: 0,
+    strata: {
+      ...descriptor,
+      variant_id: id,
+      name,
+      family,
+      compatible_variants: ['macos-arm64-metal'],
+      requirements: { ...descriptor.requirements, download_bytes: bytes },
+    },
+  })
+  mocks.fetchStrataCatalog.mockResolvedValue([
+    qwen36,
+    metalModel('iq3-xxs-dflash2', 'Qwen3.8-Flash-Next IQ3_XXS', 'qwen38', 78e9),
+    metalModel('ista-2-00bpw-dspark', 'DeepSeekV4.1-Flash-1017 2.00 bpw', 'deepseek41', 258e9),
+  ])
 }
 
 describe('/hub route', () => {
@@ -467,6 +519,10 @@ describe('/hub route', () => {
     mocks.voiceSupported = false
     mocks.audioSupported = false
     mocks.sources = []
+    mocks.fetchStrataCatalog.mockReset().mockResolvedValue([])
+    mocks.checkStrataModel.mockReset().mockResolvedValue({ verdict: 'ok' })
+    mocks.getDiskSpaceInfo.mockReset().mockResolvedValue(null)
+    mocks.listStrataJobs.mockReset().mockResolvedValue([])
     mocks.staffPicks = [
       {
         pick: { model_name: 'Qwen/Qwen3.5-4B-GGUF', title: 'Qwen3.5 4B' },
@@ -500,6 +556,46 @@ describe('/hub route', () => {
     }))
     mocks.fetchHuggingFaceRepo.mockImplementation(async () => null)
     resetHuggingFaceFeedForTest()
+  })
+
+  it('shows only Metal-compatible Strata rows on Apple Silicon and flags disk space before expansion', async () => {
+    macStrataCatalog()
+    setHubFormat('strata')
+    mocks.checkStrataModel.mockResolvedValue({ verdict: 'insufficient-disk' })
+
+    render(<HubPage />)
+
+    const deepSeek = (await screen.findByText('DeepSeekV4.1-Flash-1017 2.00 bpw')).closest('tr')!
+    expect(await within(deepSeek).findByText('hub:strata.insufficientDisk')).toBeVisible()
+    expect(screen.getByText('Qwen3.8-Flash-Next IQ3_XXS')).toBeVisible()
+    expect(screen.queryByText(/Qwen3\.6-35B/)).not.toBeInTheDocument()
+    expect(screen.queryByTestId('detail-panel')).not.toBeInTheDocument()
+  })
+
+  it('shows the DeepSeek disk warning before the Strata engine is installed', async () => {
+    macStrataCatalog()
+    setHubFormat('strata')
+    mocks.checkStrataModel.mockResolvedValue({ verdict: 'engine-not-installed' })
+    mocks.getDiskSpaceInfo.mockResolvedValue({ free_bytes: 110e9 })
+
+    render(<HubPage />)
+
+    const deepSeek = (await screen.findByText('DeepSeekV4.1-Flash-1017 2.00 bpw')).closest('tr')!
+    expect(await within(deepSeek).findByText('hub:strata.insufficientDisk')).toBeVisible()
+    const qwen = screen.getByText('Qwen3.8-Flash-Next IQ3_XXS').closest('tr')!
+    expect(within(qwen).queryByText('hub:strata.insufficientDisk')).not.toBeInTheDocument()
+  })
+
+  it('adds only the verified Qwen3.8 Strata variant to Mac recommendations', async () => {
+    macStrataCatalog()
+    render(<HubPage />)
+
+    const qwen = (await screen.findByText('Qwen3.8-Flash-Next IQ3_XXS')).closest('tr')!
+    const recommendation = screen.getByRole('heading', { name: 'hub:staffPicks' })
+    expect(qwen).toHaveTextContent('Strata')
+    expect(recommendation.closest('tr')!.nextElementSibling).toBe(qwen)
+    expect(screen.getByText('Qwen3.5 4B')).toBeVisible()
+    expect(screen.queryByText(/DeepSeekV4\.1|Qwen3\.6-35B/)).not.toBeInTheDocument()
   })
 
   it('drops a feed row from a fitting-only list once its size arrives and is too big', async () => {

@@ -136,6 +136,22 @@ describe('HubFilters', () => {
     useModelLikes.setState({ liked: [], onlyLiked: false })
   })
 
+  it('offers Strata as an engine and a format when the Hub supports it', async () => {
+    const user = userEvent.setup()
+    const { onChange } = renderFilters({}, { showStrata: true })
+    const menu = await openFilters(user)
+    const engines = groupWith(menu, 'hub:filters.allEngines')
+    const formats = groupWith(menu, 'GGUF')
+
+    expect(
+      within(formats).getByRole('menuitemradio', { name: 'Strata' })
+    ).toBeInTheDocument()
+    await user.click(within(engines).getByRole('menuitemradio', { name: 'Strata' }))
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ engine: 'strata', formats: ['strata'] })
+    )
+  })
+
   it('offers registered FastFlowLM before installation and couples its engine and format filters', async () => {
     const user = userEvent.setup()
     withProviders('llamacpp-upstream', 'fastflowlm')

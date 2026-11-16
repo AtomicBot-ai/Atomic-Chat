@@ -47,6 +47,7 @@ const FILTER_CHECKBOX_CLASS =
 export type HubFiltersProps = {
   state: HubFilterState
   onChange: (next: HubFilterState) => void
+  showStrata?: boolean
   /** Hide the Likes option when the current data carries no like counts. */
   showLikesSort?: boolean
   showOnlyDownloaded?: boolean
@@ -62,6 +63,7 @@ export type HubFiltersProps = {
 export function HubFilters({
   state,
   onChange,
+  showStrata = false,
   showLikesSort = false,
   showOnlyDownloaded = false,
   onShowOnlyDownloadedChange,
@@ -102,6 +104,7 @@ export function HubFilters({
     liteRtLm: liteRtLmVisible,
     geniex: geniexVisible,
     fastFlowLm: fastFlowLmVisible,
+    strata: showStrata,
   })
   const engines = useHubEngines(availableFormats)
   const sortKeys = HUB_SORT_KEYS.filter(
