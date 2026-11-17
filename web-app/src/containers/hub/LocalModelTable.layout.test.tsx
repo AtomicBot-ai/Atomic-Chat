@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { fireEvent, render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   DEFAULT_FONT_SIZE,
   expectFits,
   expectNoHorizontalOverflow,
+  expectOneLine,
   setFontSize,
   setTheme,
   settle,
@@ -152,20 +154,27 @@ describe('LocalModelTable layout', () => {
     setFontSize(DEFAULT_FONT_SIZE)
   })
 
-  it('keeps the chosen Strata quant when opening the row', async () => {
+  it.each([
+    [1024, XL_FONT_SIZE, 'dark'],
+    [1280, DEFAULT_FONT_SIZE, 'light'],
+  ] as const)('fits the Strata quant and size and keeps the selection at %ipx', async (width, size, theme) => {
     const [model] = strataCatalogRows(strataFixture)
-    const primary = model.strata!
+    const primary = {
+      ...model.strata!,
+      name: 'Qwen3.8-Flash-Next (Unsloth) UD-IQ4_XS',
+      variant_id: 'unsloth-ud-iq4-xs-dflash2',
+    }
     const alternative = {
       ...primary,
-      variant_id: 'iq3-s-dflash2',
-      name: 'Qwen3.8 Flash-Next IQ3_S',
+      variant_id: 'unsloth-ud-iq4-xs-v31-dflash2',
+      name: 'Qwen3.8-Flash-Next (Unsloth) UD-IQ4_XS-v31',
       requirements: { ...primary.requirements, download_bytes: 89 * GB },
     }
-    const items = [{ model: { ...model, strataVariants: [primary, alternative] } }]
+    const items = [{ model: { ...model, strata: primary, strataVariants: [primary, alternative] } }]
     function Table() {
       const [selected, setSelected] = useState<string | null>(null)
       return (
-        <div data-testid="list" style={{ width: listWidth(1024) }}>
+        <div data-testid="list" style={{ width: listWidth(width) }}>
           <LocalModelTable
             items={items}
             selected={selected}
@@ -177,15 +186,28 @@ describe('LocalModelTable layout', () => {
       )
     }
 
-    setFontSize(XL_FONT_SIZE)
+    setFontSize(size)
+    setTheme(theme)
     render(withTranslations(<Table />))
-    const quant = screen.getByRole('combobox', { name: 'Quantization' })
-    fireEvent.change(quant, { target: { value: alternative.variant_id } })
-    expect(quant).toHaveValue(alternative.variant_id)
+    const user = userEvent.setup()
+    const quant = screen.getByRole('button', { name: /^Quantization/ })
+    await user.click(quant)
+    const menu = await screen.findByRole('menu')
     await settle()
+    const option = within(menu).getByRole('menuitemradio', { name: /UD-IQ4_XS-v31.*89\.0 GB/ })
+    expectNoHorizontalOverflow(menu)
+    await user.click(option)
+    await settle()
+    const label = within(quant).getByText('UD-IQ4_XS-v31')
+    const downloadSize = within(quant).getByText('89.0 GB')
+    expectFits(label, quant)
+    expect(label.scrollWidth).toBeLessThanOrEqual(label.clientWidth + 1)
+    expectFits(downloadSize, quant)
+    expectOneLine(label)
+    expectOneLine(downloadSize)
     expectNoHorizontalOverflow(screen.getByTestId('list'))
 
-    fireEvent.click(screen.getByRole('button', { name: /expand.*Qwen3.8 Flash-Next IQ3_S/i }))
+    fireEvent.click(screen.getByRole('button', { name: /expand.*UD-IQ4_XS-v31/i }))
     expect(screen.getByText(alternative.variant_id)).toBeVisible()
   })
 

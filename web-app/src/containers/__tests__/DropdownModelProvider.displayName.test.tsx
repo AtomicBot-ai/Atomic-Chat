@@ -270,6 +270,29 @@ describe('DropdownModelProvider - Display Name Integration', () => {
     expect(screen.queryByDisplayValue('model1.gguf')).not.toBeInTheDocument()
   })
 
+  it('shows the Strata catalog name and keeps the variant ID in the tooltip', () => {
+    const model = {
+      id: 'ud-q4-k-xl-mtp',
+      strata: { name: 'Qwen3.6-35B-A3B UD-Q4_K_XL' },
+      capabilities: ['completion'],
+    }
+    const provider = { ...mockProviders[0], provider: 'strata', models: [model] }
+    mockModelProvider({
+      providers: [provider],
+      selectedProvider: provider.provider,
+      selectedModel: model,
+      getProviderByName: () => provider,
+      selectModelProvider: vi.fn(),
+      getModelBy: () => model,
+      updateProvider: vi.fn(),
+    })
+
+    renderPicker()
+
+    expect(screen.getAllByText(model.strata.name)).toHaveLength(2)
+    expect(screen.getAllByTitle(model.id)).toHaveLength(2)
+  })
+
   it('uses a compact label and keeps the full ID in the tooltip when no displayName is set', () => {
     mockModelProvider({
       providers: mockProviders,

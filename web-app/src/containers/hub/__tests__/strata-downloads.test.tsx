@@ -42,7 +42,8 @@ it('checks and downloads the selected Strata quant independently', async () => {
   vi.mocked(listStrataJobs).mockResolvedValue([])
   render(<StrataDownloadOptions descriptor={descriptor} variants={[descriptor, alternative]} />)
 
-  await user.selectOptions(screen.getByRole('combobox', { name: 'hub:strata.quantization' }), alternative.variant_id)
+  await user.click(screen.getByRole('button', { name: /^hub:strata.quantization/ }))
+  await user.click(await screen.findByRole('menuitemradio', { name: /^Q2_0/ }))
   await vi.waitFor(() => expect(checkStrataModel).toHaveBeenLastCalledWith({ descriptor: alternative }))
   const button = screen.getByRole('button', { name: 'hub:strata.install' })
   await vi.waitFor(() => expect(button).toBeEnabled())

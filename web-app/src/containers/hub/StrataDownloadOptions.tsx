@@ -1,18 +1,26 @@
 import { useEffect, useState } from 'react'
 import { strataCanonicalDescriptor } from '@atomic-chat/core/client'
 import { useNavigate } from '@tanstack/react-router'
+import { ChevronDown } from 'lucide-react'
 import type {
   StrataCheckResult,
   StrataModelDescriptor,
 } from '@atomic-chat/core/contracts'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { DeleteModelAction } from '@/containers/hub/DeleteModelAction'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { formatBytes } from '@/lib/utils'
+import { cn, formatBytes } from '@/lib/utils'
 import { engineBuildCatalog } from '@/services/engine-builds/core'
 import { installStrataEngine } from '@/services/strata/engine'
 import { checkStrataModel, syncStrataSettings } from '@/services/strata/core'
@@ -25,6 +33,11 @@ import {
 } from '@/services/strata/install'
 import { switchToModel } from '@/utils/switchModel'
 import { route } from '@/constants/routes'
+
+function quantLabel(name: string) {
+  // Catalog names carry the quant label as a suffix, including special precision profiles.
+  return name.match(/\b(?:(?:UD-)?I?Q\d(?:_[a-z0-9]+)+(?:-v\d+)?|NVFP4[- ][a-z0-9]+|Gyro-[SM]|\d+(?:\.\d+)? bpw|ISTA-DAS Coder)$/i)?.[0] ?? name
+}
 
 export function StrataQuantSelect({
   variants,
@@ -39,20 +52,45 @@ export function StrataQuantSelect({
 }) {
   const { t } = useTranslation()
   if (variants.length < 2) return null
+  const selected = variants.find((variant) => variant.variant_id === selectedId) ?? variants[0]!
+  const label = quantLabel(selected.name)
 
   return (
-    <select
-      aria-label={t('hub:strata.quantization')}
-      className={`w-full min-w-0 truncate rounded-md border bg-background px-2 py-1.5 ${className ?? ''}`}
-      value={selectedId}
-      onChange={(event) => onChange(event.target.value)}
-    >
-      {variants.map((variant) => (
-        <option key={variant.variant_id} value={variant.variant_id}>
-          {variant.name} · {formatBytes(variant.requirements.download_bytes)}
-        </option>
-      ))}
-    </select>
+    <DropdownMenu modal={false}>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className={cn('w-full min-w-0 justify-start rounded-md', className)}
+          aria-label={`${t('hub:strata.quantization')}: ${label}`}
+        >
+          <span className="min-w-0 flex-1 truncate text-left">{label}</span>
+          <span className="shrink-0 text-muted-foreground tabular-nums">
+            {formatBytes(selected.requirements.download_bytes)}
+          </span>
+          <ChevronDown aria-hidden="true" className="size-3.5 text-muted-foreground" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        className="w-max max-w-(--radix-dropdown-menu-content-available-width)"
+      >
+        <DropdownMenuRadioGroup value={selected.variant_id} onValueChange={onChange}>
+          {variants.map((variant) => (
+            <DropdownMenuRadioItem
+              key={variant.variant_id}
+              value={variant.variant_id}
+              className="justify-between gap-4"
+            >
+              <span className="min-w-0 break-words">{quantLabel(variant.name)}</span>
+              <span className="shrink-0 text-muted-foreground tabular-nums">
+                {formatBytes(variant.requirements.download_bytes)}
+              </span>
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 
