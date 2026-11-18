@@ -56,7 +56,8 @@ import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useSidebarDocked } from '@/components/ui/sidebar'
 import { useRunSettingsPanel } from '@/stores/run-settings-panel-store'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
-import { formatDownloadReadout } from '@/lib/downloadFormat'
+import { formatDownloadReadout, isStrataPreparation } from '@/lib/downloadFormat'
+import { isStrataTaskId } from '@/services/strata/install'
 import { cancelDownload } from '@/lib/downloadCancellation'
 import { isPausableDownload } from '@/lib/downloadControls'
 import {
@@ -376,6 +377,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   const { favoriteModels } = useFavoriteModel()
   const serviceHub = useServiceHub()
   const downloads = useDownloadStore((state) => state.downloads)
+  const downloadNames = useDownloadStore((state) => state.downloadOriginByModelId)
   const localDownloadingModels = useDownloadStore(
     (state) => state.localDownloadingModels
   )
@@ -1203,9 +1205,14 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                     data-testid="model-picker-downloading"
                   >
                     <div className="px-2 py-1 text-xs font-medium text-muted-foreground">
-                      {t('common:downloading')}
+                      {activeDownloads.some(({ stage }) =>
+                        isStrataPreparation(stage)
+                      )
+                        ? t('common:downloads')
+                        : t('common:downloading')}
                     </div>
                     {activeDownloads.map((download) => {
+                      const status = formatDownloadReadout(t, download)
                       return (
                         <div
                           key={download.id}
@@ -1217,15 +1224,20 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
                               className="truncate text-sm"
                               title={download.id}
                             >
-                              {qualifiedModelDisplayName({
-                                id: download.id,
-                              } as Model)}
+                              {(isStrataTaskId(download.id) &&
+                                downloadNames[download.id]) ||
+                                qualifiedModelDisplayName({
+                                  id: download.id,
+                                } as Model)}
                             </div>
                             <div
-                              className="truncate text-xs text-muted-foreground"
-                              title={formatDownloadReadout(t, download)}
+                              className={cn(
+                                'text-xs text-muted-foreground',
+                                !isStrataPreparation(download.stage) && 'truncate'
+                              )}
+                              title={status}
                             >
-                              {formatDownloadReadout(t, download)}
+                              {status}
                             </div>
                           </div>
                           <button

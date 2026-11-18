@@ -150,6 +150,30 @@ describe('DownloadPanel width', () => {
     expect(screen.getByRole('region')).toHaveClass(PANEL_WIDTH_CLASS)
   })
 
+  it('shows a preparation without inventing byte progress in the row or pill', () => {
+    render(
+      <DownloadPanel
+        items={[
+          row('strata-model-iq2-xs-dflash2', {
+            total: 65 * GB,
+            current: 0,
+            progress: 0,
+            stage: { kind: 'strata-preparing', attempt: 0, maxAttempts: 0 },
+          }),
+        ]}
+      />
+    )
+
+    expect(screen.getByText('hub:strata.preparingWithHint')).toBeInTheDocument()
+    expect(screen.getByRole('progressbar')).not.toHaveAttribute('aria-valuenow')
+    expect(screen.queryByText('0%')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByLabelText('common:downloadPanel.collapse'))
+    expect(screen.getByLabelText('common:downloadPanel.expand')).toHaveTextContent(
+      'hub:strata.preparing'
+    )
+  })
+
   it('opens again for a download that joins, and starts the next run in full', () => {
     const textDownload = row('text-model-q4_k_m')
     const imageDownload = row('diffusion-model-flux:q4')

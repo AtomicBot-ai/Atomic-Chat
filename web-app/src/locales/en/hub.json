@@ -382,6 +382,7 @@
     "install": "Download and prepare",
     "installEngine": "Install Strata engine",
     "preparing": "Preparing Strata model…",
+    "preparingWithHint": "Preparing Strata model. This can take a few minutes.",
     "acquiring": "Acquiring Strata model files…",
     "updateModel": "Update model",
     "engineTitle": "Strata engine",

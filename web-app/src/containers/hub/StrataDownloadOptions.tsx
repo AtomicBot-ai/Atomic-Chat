@@ -120,6 +120,7 @@ export function StrataDownloadOptions({
           variants={variants}
           selectedId={selected.variant_id}
           onChange={onVariantChange ?? setSelectedId}
+          className="max-w-72"
         />
       )}
       <StrataVariantDownloadOptions key={selected.variant_id} descriptor={selected} />
@@ -370,7 +371,7 @@ function StrataVariantDownloadOptions({ descriptor }: { descriptor: StrataModelD
             <>
               <span className="text-sm" role="status">
                 {progress.stage?.kind === 'strata-preparing'
-                  ? t('hub:strata.preparing')
+                  ? t('hub:strata.preparingWithHint')
                   : t('hub:strata.acquiring')}
               </span>
               <Button variant="outline" onClick={() => void cancelStrata(task)}>

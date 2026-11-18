@@ -13,6 +13,7 @@ import {
   CornerSlot,
 } from '@/containers/corner/cornerStack'
 import { useAutoCollapse } from '@/containers/corner/useAutoCollapse'
+import { isStrataPreparation } from '@/lib/downloadFormat'
 
 import {
   DownloadProgressRow,
@@ -33,7 +34,7 @@ function overallProgress(items: DownloadRowProps[]): number | null {
   let current = 0
   let total = 0
   for (const item of items) {
-    if (item.total > 0) {
+    if (item.total > 0 && !isStrataPreparation(item.stage)) {
       current += Math.min(item.current, item.total)
       total += item.total
     }
@@ -81,11 +82,20 @@ export function DownloadPanel({
 
   if (collapsed) {
     const progress = overallProgress(items)
+    const preparing = items.some(
+      ({ stage, paused }) => !paused && isStrataPreparation(stage)
+    )
+    const text =
+      progress !== null
+        ? `${Math.round(progress * 100)}%`
+        : preparing
+          ? t('hub:strata.preparing')
+          : null
     return (
       <CornerSlot order={CORNER_ORDER.downloads}>
         <CornerMini
           icon={<IconDownload size={15} aria-hidden />}
-          text={progress === null ? null : `${Math.round(progress * 100)}%`}
+          text={text}
           progress={progress}
           count={count}
           label={t('common:downloadPanel.expand')}

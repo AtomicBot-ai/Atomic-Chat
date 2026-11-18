@@ -3,10 +3,7 @@ import {
   parseStrataDescriptor,
   strataSourceDigest,
 } from '@atomic-chat/core/client'
-import type {
-  StrataModelDescriptor,
-  StrataPreparationOperation,
-} from '@atomic-chat/core/contracts'
+import type { StrataModelDescriptor } from '@atomic-chat/core/contracts'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import { useDownloadStore, type DownloadStage } from '@/hooks/useDownloadStore'
@@ -55,27 +52,17 @@ interface Run {
 const running = new Map<string, Run>()
 export const isStrataRunning = (taskId: string) => running.has(taskId)
 
-function preparing(
-  taskId: string,
-  total: number,
-  operation: StrataPreparationOperation
-) {
-  const size =
-    operation.total_bytes && operation.completed_bytes !== undefined
-      ? { transferred: operation.completed_bytes, total: operation.total_bytes }
-      : { transferred: 0, total }
+function preparing(taskId: string) {
   events.emit(DownloadEvent.onFileDownloadUpdate, {
     modelId: taskId,
-    size,
-    percent: size.total > 0 ? size.transferred / size.total : 0,
     downloadType: 'Model',
     stage: { kind: 'strata-preparing', attempt: 0, maxAttempts: 0 },
   })
 }
 
-async function prepare(job: StrataJob, run: Run, resume: boolean) {
+async function prepare(job: StrataJob, run: Run) {
   if (run.cancelled) throw new Error('Strata installation cancelled.')
-  const taskId = strataTaskId(job.model_id)
+  preparing(strataTaskId(job.model_id))
   let operation = await beginStrataPreparation({
     request_id: job.plan.request_id,
     model_id: job.model_id,
@@ -85,18 +72,12 @@ async function prepare(job: StrataJob, run: Run, resume: boolean) {
   run.operation = operation.operation_id
   if (
     !run.cancelled &&
-    resume &&
     ['interrupted', 'failed', 'cancelled'].includes(operation.state)
   ) {
     operation = await changeStrataPreparation(operation.operation_id, 'resume')
   }
   let cancellationSent = false
   while (['queued', 'preparing', 'verifying'].includes(operation.state)) {
-    preparing(
-      taskId,
-      job.plan.descriptor.requirements.download_bytes,
-      operation
-    )
     if (run.cancelled && !cancellationSent) {
       await changeStrataPreparation(operation.operation_id, 'cancel')
       cancellationSent = true
@@ -116,7 +97,7 @@ function start(
   id: string,
   descriptor: StrataModelDescriptor,
   acquire: () => Promise<StrataJob>,
-  resume: boolean
+  filesReady = false
 ): Promise<void> {
   const task = strataTaskId(id)
   const existing = running.get(task)
@@ -150,9 +131,9 @@ function start(
         }
       })
       if (run.cancelled) throw new Error('Strata installation cancelled.')
-      emitTransferProgress(task, 'Model', 0, total)
+      if (!filesReady) emitTransferProgress(task, 'Model', 0, total)
       const job = await acquire()
-      if (job.state !== 'ready') await prepare(job, run, resume)
+      if (job.state !== 'ready') await prepare(job, run)
       emitTransferSuccess(task, 'Model', total)
     } catch (error) {
       store.markResumableDownload(task)
@@ -202,8 +183,7 @@ export function installStrata(
         },
         importFolder
       )
-    },
-    true
+    }
   )
 }
 
@@ -223,7 +203,7 @@ export async function resumeStrata(taskId: string, token?: string) {
       job.state === 'files-ready'
         ? Promise.resolve(job)
         : acquire(job.model_id, token),
-    true
+    job.state === 'files-ready'
   )
 }
 

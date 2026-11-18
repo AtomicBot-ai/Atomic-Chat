@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import { emitTransferProgress } from '@/services/diffusion/transfer'
 import { strataCatalogRows } from '../catalog'
 import {
   cancelStrata,
@@ -70,6 +71,7 @@ describe('Strata preparation flow', () => {
       return undefined
     })
     await resumeStrata(`strata-model-${descriptor.variant_id}`)
+    expect(emitTransferProgress).not.toHaveBeenCalled()
     expect(invoke).not.toHaveBeenCalledWith(
       'atomic_strata_acquire',
       expect.anything()
