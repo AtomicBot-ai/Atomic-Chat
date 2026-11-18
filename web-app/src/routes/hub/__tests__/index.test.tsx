@@ -8,6 +8,7 @@ import strataFixture from '@/services/strata/__tests__/fixtures/catalog.json'
 
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
+  cpuArch: '',
   mediaSupported: false,
   decisionSupported: false,
   embeddingSupported: false,
@@ -187,14 +188,17 @@ vi.mock('@/containers/hub/ModelDetailPanel', () => ({
 
 vi.mock('@/containers/hub/HubFilters', () => ({
   HubFilters: ({
+    showStrata,
     showOnlyDownloaded,
     onShowOnlyDownloadedChange,
   }: {
+    showStrata?: boolean
     showOnlyDownloaded?: boolean
     onShowOnlyDownloadedChange?: (checked: boolean) => void
   }) => (
     <div
       data-testid="hub-filters"
+      data-strata={String(Boolean(showStrata))}
       data-installed={String(Boolean(showOnlyDownloaded))}
     >
       <button
@@ -387,7 +391,7 @@ vi.mock('@/hooks/useHardware', () => ({
     }) => unknown
   ) =>
     selector({
-      hardwareData: { total_memory: 64 * 1024, gpus: [], cpu: { arch: '' } },
+      hardwareData: { total_memory: 64 * 1024, gpus: [], cpu: { arch: mocks.cpuArch } },
     }),
 }))
 
@@ -460,7 +464,8 @@ const HubPage = () => {
 function macStrataCatalog() {
   vi.stubGlobal('IS_TAURI', true)
   vi.stubGlobal('IS_MACOS', true)
-  vi.stubGlobal('IS_ARM64', true)
+  vi.stubGlobal('IS_ARM64', false)
+  mocks.cpuArch = 'arm64'
   const [qwen36] = strataCatalogRows(strataFixture)
   const descriptor = qwen36.strata!
   const metalModel = (
@@ -518,6 +523,7 @@ describe('/hub route', () => {
     mocks.embeddingSupported = false
     mocks.voiceSupported = false
     mocks.audioSupported = false
+    mocks.cpuArch = ''
     mocks.sources = []
     mocks.fetchStrataCatalog.mockReset().mockResolvedValue([])
     mocks.checkStrataModel.mockReset().mockResolvedValue({ verdict: 'ok' })
@@ -558,13 +564,14 @@ describe('/hub route', () => {
     resetHuggingFaceFeedForTest()
   })
 
-  it('shows only Metal-compatible Strata rows on Apple Silicon and flags disk space before expansion', async () => {
+  it('offers Strata on Apple Silicon in a universal build and flags disk space before expansion', async () => {
     macStrataCatalog()
     setHubFormat('strata')
     mocks.checkStrataModel.mockResolvedValue({ verdict: 'insufficient-disk' })
 
     render(<HubPage />)
 
+    expect(screen.getByTestId('hub-filters')).toHaveAttribute('data-strata', 'true')
     const deepSeek = (await screen.findByText('DeepSeekV4.1-Flash-1017 2.00 bpw')).closest('tr')!
     expect(await within(deepSeek).findByText('hub:strata.insufficientDisk')).toBeVisible()
     expect(screen.getByText('Qwen3.8-Flash-Next IQ3_XXS')).toBeVisible()

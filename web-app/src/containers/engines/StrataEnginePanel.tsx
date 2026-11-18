@@ -39,7 +39,9 @@ export function StrataGpuSetting({
   }, [hardwareReady, serviceHub, setHardwareData])
 
   const options = [{ value: '', name: t('hub:strata.gpuAuto') }]
-  if (variant === 'macos-arm64-metal' || (hardware.os_type === 'macos' && hardware.cpu.arch === 'aarch64')) {
+  const isAppleSilicon = hardware.os_type === 'macos' &&
+    (hardware.cpu.arch === 'arm64' || hardware.cpu.arch === 'aarch64')
+  if (variant === 'macos-arm64-metal' || isAppleSilicon) {
     options.push({ value: 'apple:0', name: hardware.cpu.name || 'Apple GPU' })
   } else {
     const vendor = variant?.includes('cuda')

@@ -588,10 +588,11 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   const providers = useModelProvider((state) => state.providers)
   const setProviders = useModelProvider((state) => state.setProviders)
 
-  const { total_memory, gpus } = useHardware(
+  const { total_memory, gpus, cpuArch } = useHardware(
     useShallow((s) => ({
       total_memory: s.hardwareData.total_memory,
       gpus: s.hardwareData.gpus,
+      cpuArch: s.hardwareData.cpu.arch,
     }))
   )
   const budgetBytes = useMemo(
@@ -633,7 +634,11 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
         liteRtLm: liteRtLmHubVisible,
         geniex: geniexHubVisible,
         fastFlowLm: fastFlowLmHubVisible,
-        strata: IS_TAURI && !IS_IOS && !IS_ANDROID && (!IS_MACOS || IS_ARM64),
+        strata:
+          IS_TAURI &&
+          !IS_IOS &&
+          !IS_ANDROID &&
+          (!IS_MACOS || cpuArch === 'aarch64' || cpuArch === 'arm64'),
       }),
     [
       visibleManaged,
@@ -642,6 +647,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
       liteRtLmHubVisible,
       geniexHubVisible,
       fastFlowLmHubVisible,
+      cpuArch,
     ]
   )
   const filters = useMemo(
