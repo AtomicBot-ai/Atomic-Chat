@@ -302,12 +302,8 @@ export function OnboardingRuntime() {
     }
   }, [jobs])
 
-  // After a handoff to the chat the download panel shows the run's downloads;
-  // this panel offers Retry for one that was interrupted, says the model is
-  // ready once it is — also when it was before the handoff, as the prototype
-  // does — or, with neither, offers only the way back to setup, until it is
-  // dismissed. That is this session's only if it saw the setup screen or a
-  // download: a relaunch with nothing left to follow ends the run instead.
+  // The handoff panel offers Retry or announces a ready model in the
+  // session that saw the setup screen or a download.
   const [seenInApp, setSeenInApp] = useState(phase === 'active')
   const run = { phase, destination, panelDismissed, jobs }
   const panel = handoffPanelContent(run, { ready: !!ready, seenInApp })

@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-533 records, 2026-05-19 → 2026-11-10.
+536 records, 2026-05-19 → 2026-11-16.
 
 ---
 
@@ -573,6 +573,12 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-09-15** — [jan-cli keeps its file name and becomes a copy of the core](2026-09-15-jan-cli-keeps-its-name-and-becomes-the-core.md)
 - **2026-09-15** — [Sign the core with JIT entitlements and verify the universal artifact](2026-09-15-sign-the-core-with-jit-entitlements.md)
 - **2026-09-15** — [Pin the core version in the app and reject protocol mismatches](2026-09-15-pin-the-core-version-and-reject-mismatches.md)
+
+## Strata (3)
+
+- **2026-11-16** — [Group Strata quantizations in the Hub](2026-11-16-group-strata-quantizations-in-the-hub.md)
+- **2026-11-16** — [Curate Strata in the Mac Model Hub](2026-11-16-curate-strata-in-the-mac-model-hub.md)
+- **2026-11-16** — [Keep Strata source acquisition in desktop](2026-11-16-keep-strata-source-acquisition-in-desktop.md)
 
 ## Managed engines (2)
 

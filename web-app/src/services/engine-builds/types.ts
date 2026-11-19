@@ -19,6 +19,7 @@ export type EngineBuildId =
   | 'litert-lm'
   | 'geniex'
   | 'fastflowlm'
+  | 'strata'
 
 /**
  * `downloaded` — installed by the core under its data folder, removable;

@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-11-06T09:05:18Z",
+  "models": {
+    "strata-qwen36-ud-q4-k-xl": {
+      "kind": "strata",
+      "format": "strata",
+      "definition": {
+        "family": "qwen36",
+        "variant_id": "ud-q4-k-xl-mtp",
+        "name": "Qwen3.6-35B-A3B UD-Q4_K_XL",
+        "license": "Apache-2.0",
+        "gated": false,
+        "context_length": 8192,
+        "engine_release": "strata-0.1.59-r5",
+        "preparation_abi": "strata-v1",
+        "preparation_recipe_id": "strata-qwen36-v1",
+        "sources": [
+          {
+            "id": "weights",
+            "host": "huggingface",
+            "repo": "unsloth/Qwen3.6-35B-A3B-MTP-GGUF",
+            "revision": "5bc3e238d916f48a861bac2f8a1990a0e9b7e98d"
+          }
+        ],
+        "files": [
+          {
+            "source": "weights",
+            "source_path": "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+            "path": "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+            "size": 22853663008,
+            "sha256": "55983c5a75a1ab969824077b3bb3de4146e82a9234072b48ad4e8f92ad3fe9f1",
+            "role": "weights"
+          },
+          {
+            "source": "weights",
+            "source_path": "mmproj-F16.gguf",
+            "path": "mmproj-F16.gguf",
+            "size": 899283584,
+            "sha256": "71f3cbc1f7cc0f30d09d41cfa924c0060827ebc33bf15ace7e86661e856f0160",
+            "role": "vision"
+          }
+        ],
+        "inputs": {
+          "weights": ["Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf"],
+          "vision": "mmproj-F16.gguf",
+          "tokenizer_from": "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+          "chat_template_from": "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+          "drafter_embedded_in": "Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf",
+          "drafting": "mtp-embedded"
+        },
+        "compatible_variants": [
+          "linux-x64-cuda12",
+          "linux-x64-cuda13",
+          "linux-x64-halo",
+          "linux-x64-rx6000",
+          "linux-x64-rx7900",
+          "linux-x64-rx9070",
+          "linux-x64-rx9070-deepseek",
+          "windows-x64-cuda12",
+          "windows-x64-cuda13",
+          "windows-x64-rdna2",
+          "windows-x64-rdna3",
+          "windows-x64-rdna3-deepseek",
+          "windows-x64-rx9070"
+        ],
+        "capabilities": {
+          "chat": true,
+          "tools": true,
+          "reasoning": true,
+          "vision": true,
+          "structured_output": true
+        },
+        "capability_requirements": {
+          "vision": ["compatible-picture-reader"],
+          "structured_output": ["full-json-schema-validator"],
+          "drafting": ["verified-family-profile"]
+        },
+        "requirements": {
+          "download_bytes": 23752946592,
+          "memory_accounting": "separate-ram-vram-or-unified",
+          "resource_estimator": "strata-qwen36-v1",
+          "disk_components": [
+            "sources",
+            "derivatives",
+            "temporary",
+            "previous-installation"
+          ],
+          "memory_components": ["ram", "vram", "unified-memory"],
+          "memory_modes": ["auto", "ram"],
+          "requires_core_check": true
+        },
+        "qualification": {
+          "status": "upstream-supported",
+          "evidence": [
+            "https://github.com/Niko1221/Strata/blob/13eedf552417a6a791a7d13c6597e24300ee3a09/docs/CAPABILITIES.md",
+            "https://github.com/Niko1221/Strata/blob/13eedf552417a6a791a7d13c6597e24300ee3a09/docs/MODELS.md",
+            "https://github.com/Niko1221/Strata/blob/d2f096475817d4666c364c820b0ca830f751cfc5/setup.py"
+          ]
+        }
+      },
+      "variants": {
+        "ud-q4-k-xl-mtp": {
+          "family": "qwen36"
+        }
+      }
+    }
+  },
+  "collections": {
+    "strata-models": {
+      "header": {
+        "schema_version": 1
+      },
+      "entries": [
+        {
+          "model": "strata-qwen36-ud-q4-k-xl",
+          "variant": "ud-q4-k-xl-mtp"
+        }
+      ]
+    }
+  }
+}

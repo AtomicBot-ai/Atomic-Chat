@@ -228,25 +228,12 @@ export function handoffPanelTracksJobs(run: HandoffRun): boolean {
   )
 }
 
-/**
- * What the handoff panel has to say: a download that was interrupted, the
- * model ready, or — with neither — only the way back to setup.
- */
-export type HandoffPanelContent = 'interrupted' | 'ready' | 'setup'
+export type HandoffPanelContent = 'interrupted' | 'ready'
 
 /**
- * Whether the handoff panel shows, and what for. After a handoff to the chat
- * the global download panel lists the run's downloads like any other, so the
- * panel stays away while one is under way: two cards for one download is one
- * too many. It steps in for a download that was interrupted, which the
- * download panel no longer lists, to offer Retry; once the downloads are
- * over — or were over before the handoff — it says the chosen model is
- * ready, until dismissed. With nothing to follow and no model ready (Skip
- * setup, a cloud-only run) it still offers "Back to setup", as the prototype
- * does after every chat handoff. The ready note and the way back belong to
- * the app session that handed off or followed a download (`seenInApp`): a
- * later launch with nothing left to follow brings no news, and the run ends
- * without them.
+ * The global download panel handles in-flight downloads. The handoff panel
+ * offers Retry for interrupted downloads and announces a ready model during
+ * the session that handed off or followed the download.
  */
 export function handoffPanelContent(
   run: HandoffRun,
@@ -263,5 +250,5 @@ export function handoffPanelContent(
   ) {
     return null
   }
-  return ready ? 'ready' : 'setup'
+  return ready ? 'ready' : null
 }

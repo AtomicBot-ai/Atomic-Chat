@@ -36,10 +36,11 @@ function extensionPackages() {
     .map((path) => JSON.parse(readFileSync(path, 'utf8')))
 }
 
-test('legacy extensions retain their names and new FastFlowLM uses the Atomic namespace', () => {
+test('legacy extensions retain their names and Strata and FastFlowLM use the Atomic namespace', () => {
   const wrong = extensionPackages()
     .map((pkg) => pkg.name)
-    .filter((name) => !name.startsWith('@janhq/') && name !== '@atomic-chat/fastflowlm-extension')
+    .filter((name) => !name.startsWith('@janhq/') &&
+      !['@atomic-chat/fastflowlm-extension', '@atomic-chat/strata-extension'].includes(name))
 
   assert.deepEqual(
     wrong,
@@ -218,4 +219,11 @@ test('the bare-import check recognises what it must and only that', () => {
 test('Windows and Linux build FastFlowLM while macOS excludes it', () => {
   for (const platform of ['win32', 'linux']) assert.ok(builtHere(platform).some((pkg) => pkg.name === '@atomic-chat/fastflowlm-extension'))
   assert.ok(!builtHere('darwin').some((pkg) => pkg.name === '@atomic-chat/fastflowlm-extension'))
+})
+
+test('Strata ships one extension for each desktop OS', () => {
+  for (const platform of ['darwin', 'linux', 'win32']) {
+    const packages = builtHere(platform).filter((pkg) => pkg.engine === 'strata')
+    assert.deepEqual(packages.map((pkg) => pkg.name), ['@atomic-chat/strata-extension'])
+  }
 })

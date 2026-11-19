@@ -1,8 +1,10 @@
-import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowUpDown, ChevronRight, Heart } from 'lucide-react'
 import { ModelLogo } from '@/containers/ModelLogo'
 import { FitBadge } from '@/containers/hub/FitBadge'
 import { ModelDetailPanel } from '@/containers/hub/ModelDetailPanel'
+import { StrataQuantSelect } from '@/containers/hub/StrataDownloadOptions'
+import { useModelProvider } from '@/hooks/useModelProvider'
 import { PendingValue } from '@/containers/hub/PendingValue'
 import { isHuggingFaceCardFailed } from '@/hooks/useHuggingFaceFeed'
 import { useModelLikes } from '@/hooks/useModelLikes'
@@ -32,6 +34,7 @@ export type LocalModelTableItem = {
   model: CatalogModel
   pick?: StaffPick
   fromHuggingFace?: boolean
+  strataDiskBlocked?: boolean
   /**
    * The section the row belongs to (Recommended, More from Hugging Face, a curated list…). A
    * heading row is drawn wherever the section changes.
@@ -93,7 +96,7 @@ type Row = LocalModelTableItem & {
 
 /** Where Hugging Face's parameter count is asked for: a name that carries none. */
 const needsHubParams = (model: CatalogModel, facts: HubModelFacts) =>
-  !facts.params && !model.is_managed && !foundryLocalOf(model) && !liteRtLmOf(model) && !geniexOf(model)
+  !facts.params && !model.strata && !model.is_managed && !foundryLocalOf(model) && !liteRtLmOf(model) && !geniexOf(model)
 
 /**
  * Whose repository a row is, when the row is named after the repository: four uploads of one
@@ -104,7 +107,7 @@ const repoOwner = (
   model: CatalogModel,
   pick: StaffPick | undefined
 ): string | undefined => {
-  if (pick?.title || foundryLocalOf(model) || liteRtLmOf(model) || geniexOf(model)) return undefined
+  if (model.strata || pick?.title || foundryLocalOf(model) || liteRtLmOf(model) || geniexOf(model)) return undefined
   const repo = hubRepoId(model)
   const slash = repo.indexOf('/')
   return slash > 0 ? repo.slice(0, slash) : undefined
@@ -148,6 +151,13 @@ export function LocalModelTable({
     column: HubSortableColumn
     direction: 1 | -1
   } | null>(null)
+  const [selectedQuants, setSelectedQuants] = useState<Record<string, string>>({})
+  const installedStrata = useModelProvider((state) =>
+    state.providers.find((provider) => provider.provider === 'strata')?.models
+  )
+  const selectQuant = useCallback((modelId: string, variantId: string) => {
+    setSelectedQuants((current) => ({ ...current, [modelId]: variantId }))
+  }, [])
   const bodyRef = useRef<HTMLTableSectionElement>(null)
   const onVisibleRowsChangeRef = useRef(onVisibleRowsChange)
   const onEndVisibleChangeRef = useRef(onEndVisibleChange)
@@ -165,7 +175,12 @@ export function LocalModelTable({
   const rows = useMemo<Row[]>(() => {
     const ask = new Map<string, string>()
     const built = items.map((item) => {
-      const listed = hubModelFacts(item.model, {
+      const variants = item.model.strataVariants
+      const selectedVariant =
+        variants?.find((variant) => variant.variant_id === selectedQuants[item.model.model_name]) ??
+        variants?.find((variant) => installedStrata?.some((model) => model.id === variant.variant_id))
+      const model = selectedVariant ? { ...item.model, strata: selectedVariant } : item.model
+      const listed = hubModelFacts(model, {
         format: item.format ?? format,
         budgetBytes,
         categories: item.pick?.categories,
@@ -180,7 +195,8 @@ export function LocalModelTable({
         : listed
       return {
         ...item,
-        name: hubModelName(item.model, item.pick),
+        model,
+        name: hubModelName(model, item.pick),
         facts,
         engines: facts.engines.filter((id) => availableEngines.has(id)),
         // Until Hugging Face answers, rather than a "—" that turns into a number.
@@ -206,7 +222,7 @@ export function LocalModelTable({
         return order * sort.direction
       })
       .map((row) => ({ ...row, section: undefined }))
-  }, [items, format, budgetBytes, availableEngines, sort, hubParams])
+  }, [items, format, budgetBytes, availableEngines, sort, hubParams, selectedQuants, installedStrata])
 
   // The rows on screen are measured again only when the rows themselves change
   // (a page arrives, a sort, a row opens), not when a size fills in.
@@ -352,6 +368,7 @@ export function LocalModelTable({
                       >
                         <ModelDetailPanel
                           model={row.model}
+                          onStrataVariantChange={row.model.strataVariants ? (variant) => selectQuant(id, variant) : undefined}
                           name={row.name}
                           pickIcon={row.pick?.icon}
                           facts={row.facts}
@@ -371,6 +388,7 @@ export function LocalModelTable({
                       liked={isLiked}
                       onToggleLike={toggleLike}
                       onExpand={onSelect}
+                      onQuantChange={selectQuant}
                     />
                   )}
                 </Fragment>
@@ -415,6 +433,7 @@ type SummaryRowProps = {
   liked: boolean
   onToggleLike: (id: string) => void
   onExpand: (id: string) => void
+  onQuantChange: (modelId: string, variantId: string) => void
 }
 
 const SummaryRow = memo(function SummaryRow({
@@ -422,6 +441,7 @@ const SummaryRow = memo(function SummaryRow({
   liked,
   onToggleLike,
   onExpand,
+  onQuantChange,
 }: SummaryRowProps) {
   const { t } = useTranslation()
   const {
@@ -433,6 +453,7 @@ const SummaryRow = memo(function SummaryRow({
     engines,
     paramsLoading,
     cardLoading,
+    strataDiskBlocked,
   } = row
   const id = model.model_name
   const foundry = foundryLocalOf(model)
@@ -441,7 +462,7 @@ const SummaryRow = memo(function SummaryRow({
   const unknown = t('hub:table.unknown')
   const engineText = engines.map(hubEngineLabel).join(', ')
   const formatLabel = HUB_FORMAT_LABELS[facts.format]
-  const verdictInCard = model.is_managed || !!foundry || !!liteRt || !!geniex
+  const verdictInCard = !!model.strata || model.is_managed || !!foundry || !!liteRt || !!geniex
   const owner = repoOwner(model, pick)
 
   return (
@@ -451,69 +472,79 @@ const SummaryRow = memo(function SummaryRow({
       className="local-model-summary border-t border-border hover:bg-secondary/30"
     >
       <td className="p-2">
-        <button
-          type="button"
-          aria-expanded={false}
-          aria-label={t('hub:table.expand', {
-            name: owner ? hubRepoId(model) : name,
-          })}
-          onClick={() => onExpand(id)}
-          className="local-model-toggle flex w-full min-w-0 cursor-pointer items-center gap-2 py-2 text-left"
-        >
-          <ChevronRight size={13} />
-          <ModelLogo
-            author={model.developer}
-            name={model.model_name}
-            icon={pick?.icon}
-            fallback={fromHuggingFace ? 'huggingface' : 'letter'}
-            className="model-row-logo size-7 shrink-0 rounded-md"
-          />
-          <span className="min-w-0 flex-1 font-medium">
-            {name}
-            {fromHuggingFace && (
-              <img
-                src="/images/model-provider/huggingface.svg"
-                alt={t('hub:fromHuggingFace')}
-                title={t('hub:fromHuggingFace')}
-                className="ml-1 inline-block size-3.5"
-              />
-            )}
-            {owner && (
-              <span
-                className="model-row-owner mt-0.5 block truncate text-[10px] font-normal text-muted-foreground"
-                title={owner}
-              >
-                {owner}
+        <div className="min-w-0 flex-1">
+          <button
+            type="button"
+            aria-expanded={false}
+            aria-label={t('hub:table.expand', {
+              name: owner ? hubRepoId(model) : name,
+            })}
+            onClick={() => onExpand(id)}
+            className="local-model-toggle flex w-full min-w-0 cursor-pointer items-center gap-2 py-2 text-left"
+          >
+            <ChevronRight size={13} />
+            <ModelLogo
+              author={model.developer}
+              name={model.model_name}
+              icon={pick?.icon}
+              fallback={fromHuggingFace ? 'huggingface' : 'letter'}
+              className="model-row-logo size-7 shrink-0 rounded-md"
+            />
+            <span className="min-w-0 flex-1 font-medium">
+              {name}
+              {fromHuggingFace && (
+                <img
+                  src="/images/model-provider/huggingface.svg"
+                  alt={t('hub:fromHuggingFace')}
+                  title={t('hub:fromHuggingFace')}
+                  className="ml-1 inline-block size-3.5"
+                />
+              )}
+              {owner && (
+                <span
+                  className="model-row-owner mt-0.5 block truncate text-[10px] font-normal text-muted-foreground"
+                  title={owner}
+                >
+                  {owner}
+                </span>
+              )}
+              {foundry?.origin === 'microsoft' && (
+                <span className="mt-1 block text-[10px] font-normal text-muted-foreground">
+                  {t('hub:foundryLocal.microsoftCatalog')}
+                </span>
+              )}
+              {liteRt?.origin === 'huggingface' && (
+                <span className="mt-1 block text-[10px] font-normal text-muted-foreground">
+                  {t('hub:liteRtLm.notVerified')}
+                </span>
+              )}
+              {geniex?.origin === 'huggingface' && (
+                <span className="mt-1 block text-[10px] font-normal text-muted-foreground">
+                  {t('hub:geniex.notVerified')}
+                </span>
+              )}
+              <span className="model-inline-meta mt-1 text-[10px] font-normal text-muted-foreground">
+                {paramsLoading && !facts.params ? (
+                  <PendingValue className="h-2.5 w-6" />
+                ) : (
+                  (facts.params ?? '—')
+                )}{' '}
+                · {formatLabel}
               </span>
-            )}
-            {foundry?.origin === 'microsoft' && (
-              <span className="mt-1 block text-[10px] font-normal text-muted-foreground">
-                {t('hub:foundryLocal.microsoftCatalog')}
+              <span className="model-inline-engines mt-1 text-[10px] font-normal text-muted-foreground">
+                {engineText || unknown}
               </span>
-            )}
-            {liteRt?.origin === 'huggingface' && (
-              <span className="mt-1 block text-[10px] font-normal text-muted-foreground">
-                {t('hub:liteRtLm.notVerified')}
-              </span>
-            )}
-            {geniex?.origin === 'huggingface' && (
-              <span className="mt-1 block text-[10px] font-normal text-muted-foreground">
-                {t('hub:geniex.notVerified')}
-              </span>
-            )}
-            <span className="model-inline-meta mt-1 text-[10px] font-normal text-muted-foreground">
-              {paramsLoading && !facts.params ? (
-                <PendingValue className="h-2.5 w-6" />
-              ) : (
-                (facts.params ?? '—')
-              )}{' '}
-              · {formatLabel}
             </span>
-            <span className="model-inline-engines mt-1 text-[10px] font-normal text-muted-foreground">
-              {engineText || unknown}
-            </span>
-          </span>
-        </button>
+          </button>
+          {model.strata && model.strataVariants && (
+            <StrataQuantSelect
+              variants={model.strataVariants}
+              selectedId={model.strata.variant_id}
+              onChange={(variant) => onQuantChange(id, variant)}
+              className="mb-1 max-w-64"
+            />
+          )}
+        </div>
         <button
           type="button"
           aria-label={t(liked ? 'hub:table.unlike' : 'hub:table.like', {
@@ -550,9 +581,17 @@ const SummaryRow = memo(function SummaryRow({
       </td>
       <td
         className={cn('px-2', !facts.fit && 'text-muted-foreground')}
-        title={verdictInCard ? t('hub:table.deviceInCardHint') : undefined}
+        title={
+          verdictInCard && !strataDiskBlocked
+            ? t('hub:table.deviceInCardHint')
+            : undefined
+        }
       >
-        {facts.fit ? (
+        {strataDiskBlocked ? (
+          <span className="font-medium text-destructive">
+            {t('hub:strata.insufficientDisk')}
+          </span>
+        ) : facts.fit ? (
           <FitBadge fit={facts.fit} className="px-1.5 py-0.5 text-[10px]" />
         ) : verdictInCard ? (
           t('hub:table.deviceInCard')
@@ -588,6 +627,7 @@ function sameSummary(
     a.model === b.model &&
     a.pick === b.pick &&
     a.fromHuggingFace === b.fromHuggingFace &&
+    a.strataDiskBlocked === b.strataDiskBlocked &&
     a.facts.format === b.facts.format &&
     a.facts.params === b.facts.params &&
     a.facts.fit === b.facts.fit &&

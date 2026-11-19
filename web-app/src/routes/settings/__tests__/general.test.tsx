@@ -59,6 +59,12 @@ vi.mock('@/containers/dialogs/ChangeDataFolderLocation', () => ({
 }))
 
 const mockSetPreloadModelOnStartup = vi.hoisted(() => vi.fn())
+const thinking = vi.hoisted(() => ({
+  disableReasoning: true,
+  reasoningBudget: 'medium',
+  setDisableReasoning: vi.fn(),
+  setReasoningBudget: vi.fn(),
+}))
 
 vi.mock('@/hooks/useGeneralSetting', () => ({
   useGeneralSetting: () => ({
@@ -68,6 +74,7 @@ vi.mock('@/hooks/useGeneralSetting', () => ({
     setHuggingfaceToken: vi.fn(),
     preloadModelOnStartup: false,
     setPreloadModelOnStartup: mockSetPreloadModelOnStartup,
+    ...thinking,
   }),
 }))
 
@@ -268,15 +275,14 @@ global.VERSION = '1.0.0'
 global.IS_MACOS = false
 global.IS_WINDOWS = true
 global.AUTO_UPDATER_DISABLED = false
-global.window = {
-  ...global.window,
+Object.assign(window, {
   core: {
     api: {
       relaunch: vi.fn(),
       getConnectedServers: vi.fn().mockResolvedValue([]),
     },
   },
-}
+})
 
 // Mock navigator clipboard
 Object.assign(navigator, {
@@ -288,6 +294,8 @@ Object.assign(navigator, {
 describe('General Settings Route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    thinking.disableReasoning = true
+    thinking.reasoningBudget = 'medium'
     translation.french = false
     updater.packageManaged = false
     seedServiceHub({
@@ -338,13 +346,50 @@ describe('General Settings Route', () => {
       'Effort de réflexion (modèles locaux)',
     ])
       expect(screen.getByText(text)).toBeVisible()
+    const effort = screen.getByRole('button', {
+      name: /Effort de réflexion \(modèles locaux\)/,
+    })
+    fireEvent.keyDown(effort, { key: 'ArrowDown' })
     expect(
-      screen.getByRole('option', { name: 'Faible (256 jetons)' })
+      await screen.findByRole('menuitemradio', { name: 'Faible (256 jetons)' })
     ).toBeInTheDocument()
     expect(screen.queryByText('Contact Us')).toBeNull()
     expect(screen.queryByText('Thinking effort (local models)')).toBeNull()
     i18n.language = previousLanguage
   })
+
+  it.each([
+    { disabled: true, shown: 'Off', next: 'High' },
+    { disabled: false, shown: 'Medium', next: 'Off' },
+  ])(
+    'keeps General thinking effort in sync when changing $shown to $next',
+    async ({ disabled, shown, next }) => {
+      thinking.disableReasoning = disabled
+      const Component = GeneralRoute.component as React.ComponentType
+      await act(async () => {
+        render(<Component />)
+      })
+      const effort = screen.getByRole('button', {
+        name: /settings:general.thinkingEffort/,
+      })
+      expect(effort).toHaveTextContent(`settings:general.thinking${shown}`)
+      fireEvent.keyDown(effort, { key: 'ArrowDown' })
+      expect(
+        await screen.findByRole('menuitemradio', {
+          name: `settings:general.thinking${shown}`,
+        })
+      ).toHaveAttribute('aria-checked', 'true')
+      fireEvent.click(
+        screen.getByRole('menuitemradio', {
+          name: `settings:general.thinking${next}`,
+        })
+      )
+      expect(thinking.setDisableReasoning).toHaveBeenCalledWith(!disabled)
+      if (disabled)
+        expect(thinking.setReasoningBudget).toHaveBeenCalledWith('high')
+      else expect(thinking.setReasoningBudget).not.toHaveBeenCalled()
+    }
+  )
 
   it('should render the general settings page', async () => {
     const Component = GeneralRoute.component as React.ComponentType

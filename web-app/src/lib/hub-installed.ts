@@ -73,6 +73,7 @@ type InstalledKind =
   | 'litert-lm'
   | 'geniex'
   | 'fastflowlm'
+  | 'strata'
 type InstalledModel = { model: Model; kind: InstalledKind }
 
 /**
@@ -87,6 +88,7 @@ function collectLocalModels(providers: readonly ModelProvider[]): {
   liteRt: Map<string, InstalledModel>
   geniex: Map<string, InstalledModel>
   fastFlowLm: Map<string, InstalledModel>
+  strata: Map<string, InstalledModel>
 } {
   const local = new Map<string, InstalledModel>()
   const managed = new Map<string, InstalledModel>()
@@ -94,6 +96,7 @@ function collectLocalModels(providers: readonly ModelProvider[]): {
   const liteRt = new Map<string, InstalledModel>()
   const geniex = new Map<string, InstalledModel>()
   const fastFlowLm = new Map<string, InstalledModel>()
+  const strata = new Map<string, InstalledModel>()
 
   const add = (
     out: Map<string, InstalledModel>,
@@ -122,7 +125,9 @@ function collectLocalModels(providers: readonly ModelProvider[]): {
   add(geniex, modelsOf(GENIEX_PROVIDER), 'geniex')
   add(fastFlowLm, modelsOf('fastflowlm'), 'fastflowlm')
 
-  return { local, managed, foundry, liteRt, geniex, fastFlowLm }
+  add(strata, modelsOf('strata').filter((model) => !!model.strata), 'strata')
+
+  return { local, managed, foundry, liteRt, geniex, fastFlowLm, strata }
 }
 
 /**
@@ -239,6 +244,13 @@ function synthesizeEntry(id: string, installed: InstalledModel): CatalogModel {
     }
   }
 
+  if (installed.kind === 'strata')
+    return {
+      model_name: `strata/${id}`,
+      description: installed.model.name ?? id,
+      downloads: 0,
+      strata: installed.model.strata,
+    }
   if (installed.kind === 'fastflowlm')
     return {
       ...base,
@@ -310,7 +322,7 @@ export function collectInstalledModels(
   catalog: readonly CatalogModel[],
   providers: readonly ModelProvider[]
 ): CatalogModel[] {
-  const { local, managed, foundry, liteRt, geniex, fastFlowLm } =
+  const { local, managed, foundry, liteRt, geniex, fastFlowLm, strata } =
     collectLocalModels(providers)
   if (
     local.size === 0 &&
@@ -318,7 +330,8 @@ export function collectInstalledModels(
     foundry.size === 0 &&
     liteRt.size === 0 &&
     geniex.size === 0 &&
-    fastFlowLm.size === 0
+    fastFlowLm.size === 0 &&
+    strata.size === 0
   ) {
     return []
   }
@@ -333,6 +346,7 @@ export function collectInstalledModels(
       entry.is_foundry_local ||
       entry.is_litert_lm ||
       entry.is_geniex ||
+      entry.strata ||
       entry.fastflowlm ||
       entry.is_fastflowlm
     )
@@ -353,6 +367,7 @@ export function collectInstalledModels(
     [liteRt, new Set<string>()],
     [geniex, new Set<string>()],
     [fastFlowLm, new Set<string>()],
+    [strata, new Set<string>()],
   ] as const) {
     for (const [id, model] of installed) {
       if (taken.has(id)) continue

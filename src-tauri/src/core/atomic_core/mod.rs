@@ -25,6 +25,7 @@ pub mod client;
 pub mod cloud;
 pub mod commands;
 pub mod fastflowlm_models;
+pub mod strata_models;
 pub mod fastflowlm_host_step;
 pub mod host_step;
 #[cfg(windows)]

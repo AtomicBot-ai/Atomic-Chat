@@ -1,3 +1,4 @@
+import { isStrataTaskId } from '@/services/strata/install'
 import { isFastFlowLmDownloadId } from '@/lib/fastflowlm/download-id'
 import {
   useDownloadStore,
@@ -142,7 +143,7 @@ function downloadRowName(
     (isFoundryLocalDownloadId(id) && origins[id]) ||
     (isLiteRtLmDownloadId(id) && origins[id]) ||
     (isGeniexDownloadId(id) && origins[id]) ||
-    (isFastFlowLmDownloadId(id) && origins[id]) ||
+    ((isFastFlowLmDownloadId(id) || isStrataTaskId(id)) && origins[id]) ||
     (isEmbeddingDownloadTaskId(id) &&
       embeddingCatalog.models.find(
         (model) => embeddingDownloadTaskId(model.id) === id

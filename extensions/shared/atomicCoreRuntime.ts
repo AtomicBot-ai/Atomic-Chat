@@ -33,6 +33,7 @@ export type CoreProvider =
   | 'litert-lm'
   | 'geniex'
   | 'fastflowlm'
+  | 'strata'
 
 export type Invoke = <T>(
   command: string,
@@ -271,7 +272,7 @@ export interface CoreBackendUpdateCheckRequest {
  * (change `add-foundry-local`), the LiteRT-LM library (change `add-litert-lm-runtime`) and the
  * Qualcomm GenieX SDK (change `add-geniex-runtime`). snake_case on the wire.
  */
-export type CoreEngineBuildId = 'sd-cpp' | 'mlx' | 'foundry-local' | 'litert-lm' | 'geniex'
+export type CoreEngineBuildId = 'sd-cpp' | 'mlx' | 'foundry-local' | 'litert-lm' | 'geniex' | 'strata'
 
 export interface CoreEngineBuildRef {
   tag: string

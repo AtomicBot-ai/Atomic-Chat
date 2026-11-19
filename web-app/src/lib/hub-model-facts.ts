@@ -38,6 +38,7 @@ export function hubModelName(model: CatalogModel, pick?: StaffPick): string {
     foundryLocalOf(model)?.name ||
     liteRtLmOf(model)?.name ||
     geniexOf(model)?.name ||
+    model.strata?.name ||
     model.fastflowlm?.name ||
     (model.is_fastflowlm ? model.description : undefined) ||
     pick?.title ||
@@ -110,7 +111,10 @@ export function hubModelFacts(
 
   let sizeBytes: number | undefined
   let sizeText: string | undefined
-  if (model.fastflowlm) {
+  if (model.strata) {
+    sizeBytes = model.strata.requirements.download_bytes
+    sizeText = formatBytes(sizeBytes)
+  } else if (model.fastflowlm) {
     sizeBytes = model.fastflowlm.files.reduce((sum, file) => sum + file.size, 0)
     sizeText = formatBytes(sizeBytes)
   } else if (model.is_managed) {
@@ -133,6 +137,7 @@ export function hubModelFacts(
     !!foundry ||
     !!liteRt ||
     !!geniex ||
+    !!model.strata ||
     !!model.fastflowlm ||
     !!model.is_fastflowlm
   const fit =
@@ -150,7 +155,13 @@ export function hubModelFacts(
     // model's are read from the file after download.
     capabilities: deriveCapabilities(
       model,
-      model.fastflowlm
+      model.strata
+        ? [
+            ...(model.strata.capabilities.vision ? ['vision' as const] : []),
+            ...(model.strata.capabilities.tools ? ['tools' as const] : []),
+            ...(model.strata.capabilities.reasoning ? ['reasoning' as const] : []),
+          ]
+        : model.fastflowlm
         ? [
             ...(model.fastflowlm.capabilities.tools ? ['tools' as const] : []),
             ...(model.fastflowlm.capabilities.reasoning

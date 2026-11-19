@@ -212,13 +212,13 @@ function modelQuantLabel(id?: string): string | undefined {
 }
 
 /**
- * Compact label for the composer and its model picker. A user nickname wins;
- * otherwise strip the repository owner, file format and quantization. The
- * full technical id remains available in the element's title attribute.
+ * Compact label for the composer and its model picker. A user nickname wins,
+ * followed by the Strata catalog label. Model file ids use the short filename
+ * label. The full technical id remains available in the title attribute.
  */
 export function compactModelDisplayName(model: Model): string {
   const custom = model.displayName?.trim()
-  return custom || prettyModelName(model.id) || model.id
+  return custom || model.strata?.name || prettyModelName(model.id) || model.id
 }
 
 /**

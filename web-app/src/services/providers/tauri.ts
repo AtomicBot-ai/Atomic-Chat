@@ -512,6 +512,7 @@ export class TauriProvidersService extends DefaultProvidersService {
                   model: model.id,
                   name: model.name,
                   description: model.description,
+                  ...(providerName === 'strata' ? { strata: model.strata } : {}),
                   capabilities,
                   reasoning,
                   embedding: model.embedding, // Preserve embedding flag for filtering in UI
@@ -532,7 +533,7 @@ export class TauriProvidersService extends DefaultProvidersService {
                   provider: providerName,
                   // FLM launch settings belong to its engine schema, not the generic model defaults.
                   settings:
-                    providerName === 'fastflowlm'
+                    providerName === 'fastflowlm' || providerName === 'strata'
                       ? {}
                       : Object.values(modelSettings).reduce(
                           (acc, setting) => {

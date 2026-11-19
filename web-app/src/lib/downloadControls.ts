@@ -1,3 +1,4 @@
+import { cancelStrata, isStrataTaskId } from '@/services/strata/install'
 import { isFastFlowLmDownloadId } from '@/lib/fastflowlm/download-id'
 import type { ServiceHub } from '@/services'
 import { useDownloadStore } from '@/hooks/useDownloadStore'
@@ -63,7 +64,9 @@ export function pauseDownload(
     markPausedDownload(download.name)
     markResumableDownload(download.name)
   }
-  if (
+  if (isStrataTaskId(download.id)) {
+    void cancelStrata(download.id).catch(console.warn)
+  } else if (
     isDiffusionModelDownloadTaskId(download.id) ||
     isFastFlowLmDownloadId(download.id)
   ) {

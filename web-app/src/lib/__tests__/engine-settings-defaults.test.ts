@@ -157,3 +157,12 @@ describe('TensorRT-LLM defaults', () => {
     ).toEqual(['gpu', 0, 'burst', 600])
   })
 })
+
+it('resets Strata to the defaults supplied by its core schema', () => {
+  const reset = withDefaultEngineSettings('strata', [
+    setting('context_length', 4096),
+    setting('memory_mode', 'ssd'),
+    setting('parallel_requests', 4),
+  ])
+  expect(reset.map((item) => item.controller_props.value)).toEqual([0, 'auto', 1])
+})

@@ -171,3 +171,29 @@ Use `VITE_ATOMIC_MODEL_CATALOG_URL=file://<absolute-conf-checkout>/catalog.json`
 The existing application data folder contains `fastflowlm/models/<variant>` for accepted model files and `fastflowlm/transfers/<variant>` for download/publication/removal journals, staging and previous copies. Resume reads the saved plan even if conf has changed. Startup recovers already persisted mutations; unfinished byte transfers return paused. Do not remove these journals to clear a busy model: they carry the maintenance request identity and may protect the previous valid installation.
 
 The NPU preparation panel shows core's manual driver guidance. Its commands are display-only. Consent to automatic memory-limit preparation is bound to the displayed account, service, plan digest and revision. The trusted helper's original receipt is recovered after a lost response; an unknown launch is not repeated. Test actual UAC/pkexec and desktop restart/reboot on the target OS before claiming acceptance. Never use a root or shell probe as evidence for the app's runtime account.
+
+## Strata desktop development
+
+Strata uses the pinned `atomic-chat-core` and `atomic-chat-app-core` binaries
+and browser client from the same release. To develop against a local core,
+build its SDK and point the web workspace at that package. Set
+`ATOMIC_CORE_LOCAL` and `ATOMIC_APP_CORE_LOCAL` to the absolute paths of the
+matching host binaries, then run `make download-core`.
+
+The app defaults to the catalog and engine manifest on `atomic-chat-conf/main`.
+For a local desktop launch with test configuration, export these variables
+in the dev shell:
+
+- `ATOMIC_STRATA_MANIFEST_URL=file:///absolute/path/to/atomic-chat-conf/backends/strata-manifest.json`
+- `ATOMIC_MODEL_CATALOG_URL=file:///absolute/path/to/atomic-chat-conf/models/catalog.json`
+
+The first variable goes to the core owner. Vite passes the second one to the
+unified catalog reader. Use an installable manifest with a verified bundle
+for live testing.
+
+In the Hub, select Strata and open a model to see the core's compatibility and
+space check. Install the engine if prompted, then download the pinned files or
+select a folder containing the complete source set. Atomic Chat manages the
+bundled Python, prepares the model locally, and shows it in chat when core
+reports it ready. Resume interrupted acquisition or preparation from the
+model card or Downloads.
