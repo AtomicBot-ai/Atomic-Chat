@@ -45,6 +45,7 @@ const logger = {
 }
 
 interface FastFlowLmBlock {
+  context_length?: number
   variant_id: string
   capabilities: {
     chat: boolean
@@ -273,6 +274,7 @@ export default class FastFlowLmExtension extends AIEngine {
       name: yml.name ?? id,
       providerId: this.provider,
       port: 0,
+      contextLength: block.context_length,
       sizeBytes: yml.size_bytes ?? 0,
       path: await joinPath([modelsDir, id]),
       capabilities: capabilities.length > 0 ? capabilities : undefined,

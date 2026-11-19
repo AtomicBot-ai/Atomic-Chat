@@ -34,9 +34,10 @@ import {
 import { switchToModel } from '@/utils/switchModel'
 import { route } from '@/constants/routes'
 
-function quantLabel(name: string) {
-  // Catalog names carry the quant label as a suffix, including special precision profiles.
-  return name.match(/\b(?:(?:UD-)?I?Q\d(?:_[a-z0-9]+)+(?:-v\d+)?|NVFP4[- ][a-z0-9]+|Gyro-[SM]|\d+(?:\.\d+)? bpw|ISTA-DAS Coder)$/i)?.[0] ?? name
+function quantLabel({ name, inputs }: StrataModelDescriptor) {
+  const suffix = /\b(?:(?:UD-)?I?Q\d(?:_[a-z0-9]+)+(?:-v\d+)?|NVFP4[- ][a-z0-9]+|Gyro-[SM]|\d+(?:\.\d+)? bpw|ISTA-DAS Coder)$/i
+  const weightsName = inputs.weights[0]?.replace(/(?:-\d{5}-of-\d{5})?\.gguf$/i, '')
+  return name.match(suffix)?.[0] ?? weightsName?.match(suffix)?.[0] ?? name
 }
 
 export function StrataQuantSelect({
@@ -53,7 +54,7 @@ export function StrataQuantSelect({
   const { t } = useTranslation()
   if (variants.length < 2) return null
   const selected = variants.find((variant) => variant.variant_id === selectedId) ?? variants[0]!
-  const label = quantLabel(selected.name)
+  const label = quantLabel(selected)
 
   return (
     <DropdownMenu modal={false}>
@@ -82,7 +83,7 @@ export function StrataQuantSelect({
               value={variant.variant_id}
               className="justify-between gap-4"
             >
-              <span className="min-w-0 break-words">{quantLabel(variant.name)}</span>
+              <span className="min-w-0 break-words">{quantLabel(variant)}</span>
               <span className="shrink-0 text-muted-foreground tabular-nums">
                 {formatBytes(variant.requirements.download_bytes)}
               </span>

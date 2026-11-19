@@ -7,6 +7,8 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
+import { EngineContextEditor } from './EngineContextEditor'
+import { engineContext } from '@/lib/engine-context'
 import { Progress } from '@/components/ui/progress'
 import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
@@ -97,18 +99,11 @@ export function ContextSizeControl({
       : latestUsage.totalTokens + additionalTokens
   const completionTokens = Math.min(totalTokens, latestUsage.outputTokens)
   const promptTokens = Math.max(0, totalTokens - completionTokens)
-  const percentage = tokenData.maxTokens
-    ? (totalTokens / tokenData.maxTokens) * 100
-    : 0
-  const isOverLimit = percentage > 100
-  const progressTone =
-    percentage >= 90
-      ? 'bg-destructive'
-      : percentage >= 70
-        ? 'bg-orange-500'
-        : 'bg-emerald-500'
   const {
     available,
+    provider,
+    selectedModel,
+    strataMax,
     contextSetting,
     draft: draftContext,
     setDraft: setDraftContext,
@@ -120,11 +115,23 @@ export function ContextSizeControl({
     fitEnabled,
     setFit,
   } = useModelContextLength()
+  const engine = engineContext(provider, selectedModel, strataMax)
+  const capacity = engine ? engine.capacity : tokenData.maxTokens
+  const percentage = capacity ? (totalTokens / capacity) * 100 : 0
+  const isOverLimit = percentage > 100
+  const progressTone =
+    percentage >= 90
+      ? 'bg-destructive'
+      : percentage >= 70
+        ? 'bg-orange-500'
+        : 'bg-emerald-500'
   const { t } = useTranslation()
 
-  if (!available || !contextSetting) return null
+  if (!engine && (!available || !contextSetting)) return null
 
-  const percentageLabel = `${percentage.toFixed(1)}%`
+  const unknownCapacity = engine?.configured ? '—' : t('common:auto')
+  const percentageLabel =
+    engine && !capacity ? unknownCapacity : `${percentage.toFixed(1)}%`
 
   return (
     <Popover>
@@ -139,34 +146,36 @@ export function ContextSizeControl({
           <span className={cn(isOverLimit && 'text-destructive')}>
             {percentageLabel}
           </span>
-          <span className="relative size-4 shrink-0">
-            <svg className="size-4 -rotate-90" viewBox="0 0 16 16">
-              <circle
-                cx="8"
-                cy="8"
-                r="6"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                fill="none"
-                className="text-muted-foreground"
-              />
-              <circle
-                cx="8"
-                cy="8"
-                r="6"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                fill="none"
-                strokeDasharray={`${2 * Math.PI * 6}`}
-                strokeDashoffset={`${2 * Math.PI * 6 * (1 - Math.min(percentage, 100) / 100)}`}
-                className={cn(
-                  'transition-all duration-500 ease-out',
-                  isOverLimit ? 'stroke-destructive' : 'stroke-primary'
-                )}
-                style={{ transformOrigin: 'center' }}
-              />
-            </svg>
-          </span>
+          {(!engine || capacity) && (
+            <span className="relative size-4 shrink-0">
+              <svg className="size-4 -rotate-90" viewBox="0 0 16 16">
+                <circle
+                  cx="8"
+                  cy="8"
+                  r="6"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  fill="none"
+                  className="text-muted-foreground"
+                />
+                <circle
+                  cx="8"
+                  cy="8"
+                  r="6"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  fill="none"
+                  strokeDasharray={`${2 * Math.PI * 6}`}
+                  strokeDashoffset={`${2 * Math.PI * 6 * (1 - Math.min(percentage, 100) / 100)}`}
+                  className={cn(
+                    'transition-all duration-500 ease-out',
+                    isOverLimit ? 'stroke-destructive' : 'stroke-primary'
+                  )}
+                  style={{ transformOrigin: 'center' }}
+                />
+              </svg>
+            </span>
+          )}
         </Button>
       </PopoverTrigger>
       <PopoverContent
@@ -187,15 +196,19 @@ export function ContextSizeControl({
             </span>
             <span className="font-mono text-sm text-muted-foreground">
               {formatTokenCount(totalTokens)} /{' '}
-              {formatTokenCount(tokenData.maxTokens || 0)}
+              {engine && !capacity
+                ? unknownCapacity
+                : formatTokenCount(capacity || 0)}
             </span>
           </div>
-          <Progress
-            aria-label="Context usage"
-            value={Math.min(percentage, 100)}
-            className="h-1.5 bg-muted"
-            indicatorClassName={progressTone}
-          />
+          {(!engine || capacity) && (
+            <Progress
+              aria-label="Context usage"
+              value={Math.min(percentage, 100)}
+              className="h-1.5 bg-muted"
+              indicatorClassName={progressTone}
+            />
+          )}
         </div>
         <div className="space-y-2">
           <div className="flex items-center justify-between text-sm">
@@ -217,61 +230,74 @@ export function ContextSizeControl({
             </span>
           </div>
         </div>
-        <div className="space-y-4 border-t border-border pt-4">
-          <div>
-            <div className="flex items-center justify-between gap-3">
-              <div className="text-sm font-medium">{contextSetting.title}</div>
-              <div className="font-mono text-sm tabular-nums">
-                {formatContextSize(draftContext)}
+        {engine && provider && selectedModel ? (
+          <EngineContextEditor
+            key={JSON.stringify([provider.provider, selectedModel.id])}
+            providerId={provider.provider}
+            modelId={selectedModel.id}
+            context={engine}
+          />
+        ) : (
+          contextSetting && (
+            <div className="space-y-4 border-t border-border pt-4">
+              <div>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm font-medium">
+                    {contextSetting.title}
+                  </div>
+                  <div className="font-mono text-sm tabular-nums">
+                    {formatContextSize(draftContext)}
+                  </div>
+                </div>
+                {contextSetting.description && !fitEnabled && (
+                  <div className="mt-0.5 text-sm leading-snug text-muted-foreground">
+                    {contextSetting.description}
+                  </div>
+                )}
+              </div>
+              {fitAvailable && (
+                <label className="flex items-start justify-between gap-4 text-sm">
+                  <span className="min-w-0">
+                    <span className="block font-medium">
+                      {t('assistants:contextSizeFit')}
+                    </span>
+                    <span
+                      className="mt-0.5 block leading-snug text-muted-foreground"
+                      data-testid="context-size-fit-description"
+                    >
+                      {fitEnabled
+                        ? t('assistants:contextSizeFitOn')
+                        : t('assistants:contextSizeFitHint')}
+                    </span>
+                  </span>
+                  <Switch
+                    className="mt-0.5 shrink-0"
+                    aria-label={t('assistants:contextSizeFit')}
+                    checked={fitEnabled}
+                    onCheckedChange={setFit}
+                  />
+                </label>
+              )}
+              {/* Under fit the slider is not ignored silently, as it was: it is
+              disabled, and the number above it is the one the engine chose. */}
+              <Slider
+                aria-label={contextSetting.title}
+                className="w-full"
+                disabled={fitEnabled}
+                value={[Math.min(Math.max(draftContext, sliderMin), sliderMax)]}
+                min={sliderMin}
+                max={sliderMax}
+                step={sliderStep}
+                onValueChange={([value]) => setDraftContext(value)}
+                onValueCommit={([value]) => handleContextChange(value)}
+              />
+              <div className="flex justify-between font-mono text-[10px] text-muted-foreground">
+                <span>{formatContextSize(sliderMin)}</span>
+                <span>{formatContextSize(sliderMax)}</span>
               </div>
             </div>
-            {contextSetting.description && !fitEnabled && (
-              <div className="mt-0.5 text-sm leading-snug text-muted-foreground">
-                {contextSetting.description}
-              </div>
-            )}
-          </div>
-          {fitAvailable && (
-            <label className="flex items-start justify-between gap-4 text-sm">
-              <span className="min-w-0">
-                <span className="block font-medium">
-                  {t('assistants:contextSizeFit')}
-                </span>
-                <span
-                  className="mt-0.5 block leading-snug text-muted-foreground"
-                  data-testid="context-size-fit-description"
-                >
-                  {fitEnabled
-                    ? t('assistants:contextSizeFitOn')
-                    : t('assistants:contextSizeFitHint')}
-                </span>
-              </span>
-              <Switch
-                className="mt-0.5 shrink-0"
-                aria-label={t('assistants:contextSizeFit')}
-                checked={fitEnabled}
-                onCheckedChange={setFit}
-              />
-            </label>
-          )}
-          {/* Under fit the slider is not ignored silently, as it was: it is
-              disabled, and the number above it is the one the engine chose. */}
-          <Slider
-            aria-label={contextSetting.title}
-            className="w-full"
-            disabled={fitEnabled}
-            value={[Math.min(Math.max(draftContext, sliderMin), sliderMax)]}
-            min={sliderMin}
-            max={sliderMax}
-            step={sliderStep}
-            onValueChange={([value]) => setDraftContext(value)}
-            onValueCommit={([value]) => handleContextChange(value)}
-          />
-          <div className="flex justify-between font-mono text-[10px] text-muted-foreground">
-            <span>{formatContextSize(sliderMin)}</span>
-            <span>{formatContextSize(sliderMax)}</span>
-          </div>
-        </div>
+          )
+        )}
       </PopoverContent>
     </Popover>
   )

@@ -244,6 +244,13 @@ export default class StrataExtension extends AIEngine {
     }
   }
 
+  async getMaxCtxTrain(id: string): Promise<number | undefined> {
+    const result = await call<{ max_context_length: number }>(
+      'GET', '/models/strata/' + encodeURIComponent(id) + '/context-limit'
+    )
+    return result.max_context_length
+  }
+
   override async get(id: string): Promise<modelInfo | undefined> {
     const job = (await invoke<ReadyJob[]>('atomic_strata_jobs')).find(
       (job) => job.model_id === id

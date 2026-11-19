@@ -344,6 +344,7 @@ export interface CoreEngineUpdateResult {
 }
 
 export interface CoreModelCapabilities {
+  tools?: boolean
   modelId: string
   maxCtxTrain?: number
   mmprojExists: boolean

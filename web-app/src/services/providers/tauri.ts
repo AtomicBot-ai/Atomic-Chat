@@ -512,6 +512,9 @@ export class TauriProvidersService extends DefaultProvidersService {
                   model: model.id,
                   name: model.name,
                   description: model.description,
+                  ...(typeof model.contextLength === 'number'
+                    ? { contextLength: model.contextLength }
+                    : {}),
                   ...(providerName === 'strata' ? { strata: model.strata } : {}),
                   capabilities,
                   reasoning,
