@@ -49,6 +49,24 @@ describe('Strata Hub catalog', () => {
     ])
   })
 
+  it('groups configured variants by their weights repository and preserves independent install IDs', () => {
+    const [base] = strataCatalogRows(fixture)
+    const d = base.strata!
+    const configured = (variant_id: string, repo: string) => ({
+      ...base,
+      strata: {
+        ...d, variant_id, profile_id: d.variant_id,
+        sources: d.sources.map(source => source.id === 'weights' ? { ...source, repo } : source),
+      },
+    })
+    const a = configured('a-small', 'owner/model-a')
+    const b = configured('a-large', 'owner/model-a')
+    const c = configured('b-small', 'owner/model-b')
+    expect(groupStrataCatalogRows([base, a, b, c], d.compatible_variants[0])).toEqual([
+      base, { ...a, strataVariants: [a.strata, b.strata] }, c,
+    ])
+  })
+
   it('projects pinned variants with their full size and dedicated engine', () => {
     const [model] = strataCatalogRows(fixture)
     expect(model.model_name).toBe('strata/ud-q4-k-xl-mtp')
