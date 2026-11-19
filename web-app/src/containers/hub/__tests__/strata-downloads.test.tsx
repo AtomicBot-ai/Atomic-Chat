@@ -7,7 +7,7 @@ import { installStrata, listStrataJobs } from '@/services/strata/install'
 import { strataCatalogRows } from '@/services/strata/catalog'
 import fixture from '@/services/strata/__tests__/fixtures/catalog.json'
 import { useModelProvider } from '@/hooks/useModelProvider'
-import { StrataDownloadOptions } from '../StrataDownloadOptions'
+import { StrataDownloadOptions, StrataQuantSelect } from '../StrataDownloadOptions'
 
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }))
 vi.mock('@/hooks/useServiceHub', () => ({ useServiceHub: () => ({}) }))
@@ -57,6 +57,25 @@ afterEach(() => {
   cleanup()
   useModelProvider.setState({ providers: [] })
   vi.resetAllMocks()
+})
+
+it('shows three distinct quants for a shared DeepSeek card title', async () => {
+  const user = userEvent.setup()
+  const quants = ['IQ1_M', 'IQ2_XXS', 'IQ2_XS']
+  const variants = quants.map(quant => ({
+    ...descriptor,
+    name: 'DeepSeek-V4.1-Flash-1017 Uncensored',
+    variant_id: quant.toLowerCase(),
+    inputs: { ...descriptor.inputs, weights: [`DeepSeek-V4.1-Flash-1017-GSQ-RCO-${quant}-00001-of-00004.gguf`] },
+  }))
+  const onChange = vi.fn()
+  render(<StrataQuantSelect variants={variants} selectedId="iq2_xxs" onChange={onChange} />)
+  await user.click(screen.getByRole('button', { name: 'hub:strata.quantization: IQ2_XXS' }))
+  for (const quant of quants) {
+    expect(screen.getByRole('menuitemradio', { name: new RegExp('^' + quant + ' ') })).toBeVisible()
+  }
+  await user.click(screen.getByRole('menuitemradio', { name: /^IQ1_M / }))
+  expect(onChange).toHaveBeenCalledWith('iq1_m')
 })
 
 it('shows the refusal from core and disables acquisition for this model and backend', async () => {
