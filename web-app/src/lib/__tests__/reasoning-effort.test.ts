@@ -313,6 +313,7 @@ describe('remote reasoning', () => {
       'openrouter',
       'aimlapi',
       'edenai',
+      'standardcompute',
       'nvidia',
       'chatgpt',
     ]) {
