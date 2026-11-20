@@ -578,6 +578,7 @@ decision is reversed, add a new one that says which record it supersedes.
 ## Strata (3)
 
 - **2026-11-16** — [Group Strata quantizations in the Hub](2026-11-16-group-strata-quantizations-in-the-hub.md)
+- [2026-11-19 — Group configured Strata models by weights repository](2026-11-19-reuse-strata-profiles-from-the-model-catalog.md)
 - **2026-11-16** — [Curate Strata in the Mac Model Hub](2026-11-16-curate-strata-in-the-mac-model-hub.md)
 - **2026-11-16** — [Keep Strata source acquisition in desktop](2026-11-16-keep-strata-source-acquisition-in-desktop.md)
 
