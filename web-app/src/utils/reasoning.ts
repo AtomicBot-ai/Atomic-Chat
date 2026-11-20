@@ -20,24 +20,27 @@ function getReasoning(
  * @returns
  */
 export function removeReasoningContent(content: string): string {
-  // Reasoning content should not be sent to the model
-  if (content.includes('<think>')) {
-    const match = content.match(/<think>([\s\S]*?)<\/think>/)
-    if (match?.index !== undefined) {
-      const splitIndex = match.index + match[0].length
-      content = content.slice(splitIndex).trim()
-    }
-  }
-  if (content.includes('<|channel|>analysis<|message|>')) {
-    const match = content.match(
-      /<\|channel\|>analysis<\|message\|>([\s\S]*?)<\|start\|>assistant<\|channel\|>final<\|message\|>/
-    )
-    if (match?.index !== undefined) {
-      const splitIndex = match.index + match[0].length
-      content = content.slice(splitIndex).trim()
-    }
-  }
-  return content
+  // Reasoning content should not be sent to the model.
+  let result = content
+
+  // Strip every complete <think>…</think> block. A model can emit several
+  // reasoning spans across one turn, so this has to be global — the previous
+  // code only ever removed the first block.
+  result = result.replace(/<think>([\s\S]*?)<\/think>/g, '')
+
+  // Strip an unterminated <think>… block (streaming cut off before the
+  // closing tag) so partial reasoning still doesn't leak into the prompt.
+  result = result.replace(/<think>[\s\S]*$/, '')
+
+  // Same treatment for the DeepSeek <|channel|>analysis<|message|>…
+  // reasoning format.
+  result = result.replace(
+    /<\|channel\|>analysis<\|message\|>([\s\S]*?)<\|start\|>assistant<\|channel\|>final<\|message\|>/g,
+    ''
+  )
+  result = result.replace(/<\|channel\|>analysis<\|message\|>[\s\S]*$/, '')
+
+  return result.trim()
 }
 
 // Extract reasoning from a message (for completed responses)
