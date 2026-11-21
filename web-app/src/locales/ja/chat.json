@@ -1,4 +1,17 @@
 {
+  "agentError": {
+    "budgetTitle": "応答が長すぎました",
+    "budgetBody": "操作を完了する前にモデルの出力上限に達しました。推論レベルを下げるか、より小さなステップで依頼してみてください。",
+    "authTitle": "認証に失敗しました",
+    "authBody": "このプロバイダーの API キーを確認してから、もう一度お試しください。",
+    "timeoutTitle": "モデルの応答に時間がかかりすぎました",
+    "timeoutBody": "操作が完了する前にリクエストがタイムアウトしました。もう一度試すか、より小さなステップに分けてお試しください。",
+    "loopTitle": "エージェントが繰り返しの操作を停止しました",
+    "loopBody": "同じ操作で進展が見られなかったため、ループを防ぐために Atomic Chat が停止しました。もう一度試すか、別のアプローチを指示してください。",
+    "genericTitle": "操作を完了できませんでした",
+    "genericBody": "完了する前にモデルが停止しました。もう一度お試しください。繰り返す場合は、モデルを切り替えるか依頼内容を小さくしてください。",
+    "retry": "もう一度試す"
+  },
   "welcome": "こんにちは、何かお手伝いできることはありますか？",
   "description": "今日はどのようなご用件でしょうか？",
   "temporaryChat": "一時的なチャット",
@@ -17,27 +30,57 @@
     "downloadingTitle": "モデルをダウンロードしています",
     "downloadingDescription": "メッセージは保存され、モデルのダウンロードと起動が完了すると自動的に送信されます。",
     "downloadingSection": "モデルをダウンロード中",
+    "otherOptions": "チャットを始める他の方法",
     "gotIt": "わかりました",
     "backgroundStarted": "モデルの準備ができました。チャットをバックグラウンドで開始しました。",
     "backgroundFailed": "保留中のメッセージを送信できませんでした。チャットを開いてもう一度お試しください。",
     "recommendedForDevice": "お使いの端末におすすめ",
     "download": "ダウンロード",
+    "downloadSize": "{{size}} をダウンロード",
+    "downloadLabel": "{{name}} をダウンロード",
+    "findingRecommendation": "お使いのデバイスに最適なモデルを探しています…",
     "queuedNotice": "モデルの準備ができ次第、メッセージを送信します。",
     "startingNotice": "起動中",
     "addFolder": "モデルのフォルダを追加",
+    "folderTitle": "このコンピュータ上のモデル",
+    "folderHint": "フォルダーを選択すると追加されます",
     "folderScanning": "モデルを探しています…",
     "folderEmpty": "そのフォルダに対応するモデルはありません。"
+  },
+  "visionGate": {
+    "title": "{{model}} は画像を認識できません",
+    "titleNoModel": "このモデルは画像を認識できません",
+    "description": "現在チャット中のモデルはテキスト専用のため、画像を添付できません。ビジョン対応モデルをダウンロードすると、アプリが自動的に切り替えます。",
+    "sectionLabel": "このデバイス向けのビジョンモデル",
+    "visionCapable": "ビジョン",
+    "rowHint": "{{size}} · {{reason}}",
+    "installedHint": "このデバイスにインストール済み",
+    "download": "ダウンロード",
+    "downloadLabel": "{{name}} をダウンロード",
+    "downloading": "ダウンロード中…",
+    "downloadingPercent": "ダウンロード中… {{percent}}%",
+    "use": "使用",
+    "useLabel": "{{name}} を使用",
+    "finding": "このデバイス向けのビジョンモデルを探しています…",
+    "empty": "既知のビジョンモデルの中でこのデバイスに収まるものはありません。Hugging Face でより小さいモデルを探してください。",
+    "huggingFaceTitle": "Hugging Face の任意のビジョンモデル",
+    "huggingFaceHint": "モデル画面で GGUF ビルドを参照",
+    "huggingFaceLabel": "Hugging Face でビジョンモデルを参照",
+    "browse": "参照"
   },
   "newConversation": "新しい会話",
   "clearHistory": "履歴を消去",
   "activity": {
     "working": "処理中...",
     "completedActions": "{{count}}件の操作を完了",
+    "completedActions_one": "{{count}} 件の操作を完了",
+    "completedActions_other": "{{count}} 件の操作を完了",
     "reading": "読み込み中: {{count}}%",
     "reasoned": "推論完了",
     "thinking": "思考中...",
     "thinkingFor": "{{count}}秒間思考中…",
-    "thoughtFor": "{{count}}秒間考えました"
+    "thoughtFor": "{{count}}秒間考えました",
+    "loadingModel": "モデルを読み込み中…"
   },
   "docCitation": {
     "document": "ドキュメント",
@@ -55,6 +98,89 @@
   "toolCall": {
     "result": "{{count}}件の結果",
     "results": "{{count}}件の結果",
+    "file": "ファイル",
+    "action": "操作",
+    "locations": {
+      "home": "ホーム",
+      "desktop": "デスクトップ",
+      "documents": "ドキュメント",
+      "downloads": "ダウンロード"
+    },
+    "onDesktop": "{{folder}} の {{name}}",
+    "inFolder": "{{folder}} 内の {{name}}",
+    "withContext": "{{label}}: {{context}}",
+    "fallback": {
+      "running": "{{title}} — 実行中…",
+      "success": "{{title}} — 完了",
+      "error": "{{title}} — 失敗",
+      "denied": "{{title}} — 拒否されました",
+      "skipped": "{{title}} — 繰り返しの操作をスキップしました"
+    },
+    "actions": {
+      "write": {
+        "running": "{{target}} を作成中…",
+        "success": "{{target}} を作成しました",
+        "error": "{{target}} を作成できませんでした",
+        "denied": "{{target}} の作成が拒否されました",
+        "skipped": "同じファイル変更の繰り返しをスキップしました"
+      },
+      "read": {
+        "running": "{{target}} を読み込み中…",
+        "success": "{{target}} を読み込みました",
+        "error": "{{target}} を読み込めませんでした",
+        "denied": "{{target}} の読み込みが拒否されました",
+        "skipped": "同じファイルの読み込みの繰り返しをスキップしました"
+      },
+      "list": {
+        "running": "ファイルを確認中…",
+        "success": "ファイルを確認しました",
+        "error": "ファイルを確認できませんでした",
+        "denied": "ファイルの確認が拒否されました",
+        "skipped": "同じファイル一覧の取得の繰り返しをスキップしました"
+      },
+      "mkdir": {
+        "running": "フォルダーを作成中…",
+        "success": "フォルダーを作成しました",
+        "error": "フォルダーを作成できませんでした",
+        "denied": "フォルダーの作成が拒否されました",
+        "skipped": "繰り返しのフォルダー作成をスキップしました"
+      },
+      "shell": {
+        "running": "コマンドを実行中…",
+        "success": "コマンドを実行しました",
+        "error": "コマンドが失敗しました",
+        "denied": "コマンドが拒否されました",
+        "skipped": "同じコマンドの繰り返しをスキップしました"
+      },
+      "search": {
+        "running": "Web を検索中…",
+        "success": "Web を検索しました",
+        "error": "Web 検索に失敗しました",
+        "denied": "Web 検索が拒否されました",
+        "skipped": "同じ Web 検索の繰り返しをスキップしました"
+      },
+      "fetch": {
+        "running": "Web ページを読み込み中…",
+        "success": "Web ページを読み込みました",
+        "error": "Web ページを読み込めませんでした",
+        "denied": "Web ページの読み込みが拒否されました",
+        "skipped": "同じページの繰り返しの読み込みをスキップしました"
+      },
+      "script": {
+        "running": "{{target}} スクリプトを実行中…",
+        "success": "{{target}} スクリプトを実行しました",
+        "error": "{{target}} スクリプトが失敗しました",
+        "denied": "{{target}} スクリプトの実行が拒否されました",
+        "skipped": "同じスクリプトの繰り返しをスキップしました"
+      }
+    },
+    "exec": {
+      "openFolder": "フォルダーを開く",
+      "sandboxed": "Windows サンドボックス内で実行",
+      "exitCode": "終了コード {{code}}",
+      "timedOut": "タイムアウト",
+      "cancelled": "停止"
+    },
     "denied": "拒否されました"
   },
   "workspacePreview": {
@@ -65,7 +191,8 @@
     "agent": "エージェント",
     "turnOff": "エージェントモードをオフにする",
     "providerUnavailable": "エージェントモードには、ローカルモデルまたは API キーを設定したクラウドプロバイダーが必要です。",
-    "providerKeyMissing": "エージェントモードを使うには、設定でこのプロバイダーの API キーを追加してください。"
+    "providerKeyMissing": "エージェントモードを使うには、設定でこのプロバイダーの API キーを追加してください。",
+    "modelWithoutTools": "このモデルではツールを呼び出せないため、エージェントモードはオフになり、メッセージは通常のチャットとして送信されます。エージェントモードを使うにはツール呼び出しに対応したモデルを選択してください。"
   },
   "agentApprovals": {
     "manualSelected": "制限付き",
@@ -74,7 +201,11 @@
     "skipSelected": "フルアクセス",
     "skip": "フルアクセス",
     "skipDescription": "制限なし：インターネットやコンピューター上のあらゆるファイルを含め、どのツール呼び出しにも承認の確認はありません",
-    "menuTitle": "ツール呼び出しをどのように承認しますか？"
+    "menuTitle": "ツール呼び出しをどのように承認しますか？",
+    "skipConfirmTitle": "フルアクセスを有効にしますか？",
+    "skipConfirmBody": "確認プロンプトなしで、ツール呼び出しによってファイルの変更や削除、コマンドの実行、インターネットへのアクセスが可能になります。信頼できるタスクでのみ有効にしてください。",
+    "skipConfirmCancel": "キャンセル",
+    "skipConfirmAccept": "理解しました"
   },
   "agentApproval": {
     "title": "エージェントの承認が必要です",
@@ -171,12 +302,32 @@
     "chat": "チャットスレッド",
     "agent": "エージェントスレッド"
   },
+  "composer": {
+    "attachFiles": "ファイルを添付",
+    "supportedFiles": "対応ファイル",
+    "attachFailed": "ファイルの添付に失敗しました"
+  },
+  "attachmentPreview": {
+    "open": "開く",
+    "showInFolder": "フォルダーで表示",
+    "openPreview": "{{name}} をプレビュー",
+    "image": "画像",
+    "unsupported": "このファイル形式はプレビューできません。",
+    "failed": "このファイルをプレビューできませんでした。",
+    "missing": "このファイルは {{path}} に存在しません。",
+    "unplayable": "このメディア形式はここでは再生できません。",
+    "truncated": "ファイルの先頭 {{size}} を表示しています。",
+    "extracted": "ドキュメントからテキストを抽出しました。元のレイアウトを見るにはファイルを開いてください。",
+    "noText": "このドキュメントからテキストを抽出できませんでした。",
+    "videoModelNote": "モデルは動画を視聴できないため、ファイル名のみを参照します。"
+  },
   "turnRecovery": {
     "engineRestarting": "モデルエンジンが停止しました。再起動して再試行しています…",
     "engineGoneTitle": "モデルエンジンが停止しました",
     "engineGoneMessage": "回答が終わる前にローカルのモデルエンジンが停止しました。再試行するとエンジンを再起動し、メッセージを再送信します。",
     "engineRestartFailed": "モデルエンジンを自動で再起動できませんでした。もう一度再試行するか、入力欄でモデルを選び直してください。",
     "shortenHistory": "履歴を短くして再試行",
+    "historyShortened_one": "コンテキストに収めるため、古いメッセージ {{count}} 件を省略しました。",
     "historyShortened_other": "会話がコンテキストに収まるよう、古いメッセージ {{count}} 件を除外しました。",
     "historyCannotShorten": "除外できる古い履歴がありません。メッセージを短くするか添付ファイルを外してから、もう一度お試しください。",
     "contextNoMemory": "より大きなコンテキストに必要な空きメモリが足りません。",
@@ -189,5 +340,10 @@
     "genericMessage": "回答が終わる前にモデルがエラーを返しました。再試行するとメッセージを再送信します。エラーの内容は「詳細」で確認できます。",
     "settingsRestartTitle": "設定の変更によりモデルが再起動しました",
     "settingsRestartMessage": "回答中に設定を変更したため、{{model}} が再起動しました。再試行するとメッセージを再送信します。"
+  },
+  "queuedSend": {
+    "modelChanged": "メッセージは送信されませんでした: 別のモデルが選択されました。メッセージ入力欄に残っています。",
+    "modelLost": "メッセージは送信されませんでした: モデルが起動しませんでした。メッセージ入力欄に残っています。",
+    "modelStopped": "メッセージは送信されませんでした: モデルが停止されました。メッセージ入力欄に残っています。"
   }
 }

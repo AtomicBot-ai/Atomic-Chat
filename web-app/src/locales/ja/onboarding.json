@@ -1,0 +1,50 @@
+{
+  "back": "戻る",
+  "skipSetup": "セットアップをスキップ",
+  "continue": "続行",
+  "welcome": {
+    "logo": "Atomic Chat ロゴ",
+    "title": "Atomic Chat へようこそ。",
+    "lead": "あなた専用のプライベートなローカル AI。",
+    "leadDetail": "あらゆるハードウェアでオープンモデルを最も簡単に実行できます。",
+    "start": "セットアップを始める"
+  },
+  "download": {
+    "label": "モデルのダウンロード",
+    "progress": "{{name}} をダウンロード中",
+    "ready": "{{name}} の準備ができました",
+    "onDevice": "このデバイスで利用可能",
+    "queued": "待機中",
+    "interrupted": "ダウンロードが中断されました",
+    "withQueued": "{{readout}} · {{count}} 件待機中",
+    "pause": "ダウンロードを一時停止",
+    "resume": "ダウンロードを再開"
+  },
+  "model": {
+    "title": "モデルを選択",
+    "onDevice": "このデバイス上",
+    "recommended": "このデバイスにおすすめ",
+    "huggingFace": "Hugging Face",
+    "choose": "モデルを選択",
+    "downloaded": "ダウンロード済み",
+    "foundIn": "{{source}} で見つかりました",
+    "readyHere": "このデバイスで利用可能",
+    "size": "{{size}} ダウンロード",
+    "aboutMemory": "約 {{size}} GB メモリ",
+    "memory": "{{size}} GB メモリ",
+    "freeStorage": "空き容量 {{size}} GB",
+    "use": "{{name}} を使用",
+    "continueWithout": "モデルなしで続行",
+    "noRecommendations": "おすすめを表示するにはインターネット接続が必要です。後から「モデル」画面で追加できます。",
+    "tagline": {
+      "code": "コードの作成、解説、修正を行います",
+      "reasoning": "難しい問題を段階的に考え抜きます",
+      "agent": "ツールを使い、複数ステップのタスクを遂行します",
+      "vision": "テキストだけでなく画像についても会話できます",
+      "small": "少ないメモリ消費で素早く応答します",
+      "sparse": "小型モデル並みの速度で応答する大型モデル",
+      "large": "メモリに余裕のあるマシン向けのより深い回答",
+      "general": "汎用的なチャットと文章作成"
+    }
+  }
+}

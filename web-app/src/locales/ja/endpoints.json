@@ -1,0 +1,53 @@
+{
+  "title": "カスタムエンドポイント",
+  "description": "OpenAI互換サーバーやネットワーク上のモデルエンドポイントを接続します。",
+  "add": "新しいエンドポイントを追加",
+  "empty": {
+    "title": "どこで動いていても、あなたのモデルを",
+    "description": "最初のカスタムエンドポイントを追加してください。"
+  },
+  "noAddress": "アドレス未設定",
+  "status": {
+    "notChecked": "未確認",
+    "checking": "確認中…",
+    "connected": "接続済み · {{models}}",
+    "reachable": "Ping 成功 · {{latency}} ms · {{models}}",
+    "failed": "応答なし",
+    "unverified": "キー未確認",
+    "keyRejected": "キーが拒否されました"
+  },
+  "actions": {
+    "ping": "Ping",
+    "models": "モデル",
+    "showModels": "{{name}} のモデル",
+    "configure": "{{name}} を設定",
+    "remove": "{{name}} を削除"
+  },
+  "dialog": {
+    "addTitle": "新しいエンドポイントを追加",
+    "configureTitle": "エンドポイントを設定",
+    "description": "名前とサーバーのベース URL を入力してください。",
+    "name": "名前",
+    "namePlaceholder": "マイローカルサーバー",
+    "nameLocked": "この名前はエンドポイントを識別するため変更できません。",
+    "baseUrl": "ベース URL",
+    "baseUrlPlaceholder": "http://localhost:8080/v1",
+    "apiKey": "API キー（任意）",
+    "invalidUrl": "有効な HTTP または HTTPS の URL を入力してください。",
+    "ownServer": "これは Atomic Chat 自身のローカル API サーバー（{{url}}）です。カスタムエンドポイントには別のサーバーを指定してください。このアドレスへのリクエストはアプリ自身に戻ってしまいます。",
+    "localModelCollision": "「{{model}}」はローカルモデルでもあります。ローカル API サーバーは、サーバーページで選択されているプロバイダー（{{provider}}）にこのリクエストを送信します。",
+    "localModelCollisionEndpoint": "「{{model}}」はローカルモデルでもあります。ローカル API サーバーは、サーバーページで選択されているこのエンドポイントにリクエストを送信します。",
+    "localModelCollisionUnselected": "「{{model}}」はローカルモデルでもあります。サーバーページでプロバイダーが選択されるまで、ローカル API サーバーはこのエンドポイントにリクエストを送信します。",
+    "keyRejected": "{{name}} がリクエストを拒否しました。API キーを確認してください。",
+    "saveAnyway": "そのまま保存",
+    "checking": "確認中…",
+    "cancel": "キャンセル",
+    "save": "エンドポイントを保存"
+  },
+  "remove": {
+    "title": "{{name}} を削除しますか？",
+    "description": "このエンドポイント、そのモデル、および設定が削除されます。",
+    "cancel": "キャンセル",
+    "confirm": "エンドポイントを削除"
+  }
+}
