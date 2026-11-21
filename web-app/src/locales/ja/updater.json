@@ -4,8 +4,26 @@
   "nightlyBuild": "ナイトリービルド",
   "showReleaseNotes": "リリースノートを表示",
   "hideReleaseNotes": "リリースノートを非表示",
+  "openRelease": "リリースを開く",
   "remindMeLater": "後で通知",
   "downloading": "ダウンロード中...",
   "updateNow": "今すぐ更新",
-  "relaunchingWindows": "アップデートがインストールされました。アプリは自動的に再起動します。"
+  "update": "更新",
+  "starting": "開始中…",
+  "installing": "インストール中…",
+  "dismiss": "閉じる",
+  "relaunchingWindows": "アップデートがインストールされました。アプリは自動的に再起動します。",
+  "app": {
+    "title": "新しい Atomic Chat バージョン",
+    "subtitle": "新しいアプリのアップデートが利用可能です",
+    "moreHighlights": "他 {{count}} 件"
+  },
+  "engine": {
+    "title": "新しい {{engine}} アップデート",
+    "downloadSize": "{{size}} ダウンロード",
+    "noRestartNeeded": "更新後の再起動は不要です",
+    "restartRequired": "更新後に再起動が必要です",
+    "showWhatsNew": "新機能を表示",
+    "updateFailed": "エンジンの更新を開始できませんでした。もう一度お試しください。"
+  }
 }

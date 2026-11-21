@@ -12,6 +12,7 @@
   "importModelSuccess": "モデル{{provider}}は正常にインポートされました。",
   "importModelError": "モデルのインポートに失敗しました:",
   "stop": "停止",
+  "stopFailed": "モデルを停止できませんでした",
   "start": "開始",
   "noModelFound": "モデルが見つかりません",
   "noModelFoundDesc": "利用可能なモデルはここにリストされます。まだモデルがない場合は、ハブにアクセスしてダウンロードしてください。",
@@ -31,7 +32,9 @@
   "deleteModel": {
     "title": "モデルを削除: {{modelId}}",
     "description": "本当にこのモデルを削除しますか？この操作は元に戻せません。",
+    "managedShared": "このモデルは GPU エンジン（{{engines}}）の共有ストアにあるため、削除するとすべてのエンジンからエンジンキャッシュとともに削除されます。",
     "success": "モデル {{modelId}} は完全に削除されました。",
+    "successFreed": "モデル {{modelId}} を完全に削除しました（{{size}} を解放）。",
     "cancel": "キャンセル",
     "delete": "削除"
   },
@@ -43,6 +46,15 @@
     "confirmDescription": "本当にこのプロバイダーを削除しますか？この操作は元に戻せません。",
     "cancel": "キャンセル",
     "delete": "削除"
+  },
+  "engineSettings": "エンジン設定",
+  "resetEngineSettings": {
+    "reset": "設定をリセット",
+    "confirmTitle": "エンジン設定をリセットしますか？",
+    "confirmDescription": "環境変数や追加引数を含め、以下のすべての設定がデフォルトに戻ります。インストール済みのバックエンドと GPU の選択は維持されます。実行中のモデルがある場合は適用するために再起動されます。",
+    "cancel": "キャンセル",
+    "confirm": "リセット",
+    "success": "エンジン設定をデフォルトにリセットしました"
   },
   "editModel": {
     "title": "モデルを編集: {{modelId}}",
@@ -69,17 +81,486 @@
     "successDescription": "プロバイダーカタログを更新しました。",
     "errorDescription": "カタログを更新できませんでした。キャッシュまたは組み込みプロバイダーを使用しています。"
   },
-  "tensorrt": {
+  "vllm": {
+    "title": "vLLM エンジン",
+    "description": "Atomic Chat が NVIDIA GPU 上の Docker コンテナで実行するオープンソース推論エンジンです。",
+    "checking": "このコンピュータを確認中…",
     "checkAgain": "再確認",
-    "notInstalledWindows": "TensorRT-LLM はインストールされていません。インストールでは、必要に応じて WSL を有効にし、Docker と NVIDIA Container Toolkit を含む Atomic Chat 専用の WSL ディストリビューションを用意して、エンジンのイメージをダウンロードします。",
+    "blocked": "このコンピュータではまだ vLLM を実行できません:",
+    "notInstalled": "vLLM はインストールされていません。インストールするとエンジンイメージをダウンロードし、必要に応じて Docker と NVIDIA Container Toolkit をセットアップします。",
+    "install": "インストール…",
+    "installed": "vLLM はインストール済みです。",
+    "version": "インストール済みリリース: {{version}}",
+    "update": {
+      "available": "新しいリリースが利用可能です: {{version}}",
+      "button": "更新…",
+      "title": "vLLM を更新しますか？",
+      "body": "エンジンを一度削除し、新しいリリースから再インストールします。ダウンロード済みのモデルは保持されます。新しいエンジンイメージは約 {{size}} ダウンロードされ、セットアップが完了するまで vLLM モデルは読み込めません。",
+      "confirm": "更新"
+    },
+    "failed": "インストールが停止しました:",
+    "retry": "もう一度試す",
+    "newerPlan": "新しいプラン（例: 新しいエンジンリリース）でエンジンをセットアップできるようになりました。「インストール」で新しいプランからやり直し、「もう一度試す」で失敗した試行をそのまま再実行します。",
+    "cancel": "キャンセル",
+    "progress": "{{total}} 中 {{done}}",
+    "blocker": {
+      "ampere": "Atomic Chat の vLLM には Ampere 世代（RTX 30xx）以降の NVIDIA カード（Compute Capability {{required}} 以上）が必要です。このカードは {{actual}} です。"
+    },
     "plan": {
+      "title": "vLLM をインストール",
+      "intro": "このインストールによりこのコンピュータで行われる処理のすべてです。",
+      "noSystemChanges": "Docker と NVIDIA ランタイムはすでにセットアップ済みのため、システムへの変更はありません。",
+      "relogin": "システム変更の完了後、一度サインアウトしてサインインし直す必要があります。その後インストールは自動的に続行します。",
+      "download": "ダウンロード: {{size}}。",
+      "disk": "ディスク: {{path}} に {{required}}（空き容量 {{free}}）。",
+      "diskNoFree": "ディスク: {{path}} に {{required}}。",
+      "diskNoPath": "ディスク: Docker ストレージに {{required}} 必要（空き容量 {{free}}）。",
+      "diskUnknown": "ディスク: Docker ストレージに {{required}}。場所と空き容量は報告されませんでした。",
+      "notices": "ライセンスと通知",
+      "noticesMissing": "このエンジンのライセンスと通知は報告されませんでした。",
+      "warning": {
+        "addressPools": "このコンピュータ上の VPN または他のネットワーク（{{routes}}）が Docker の必要とするアドレスを使用しているため、インストール後に Docker の起動に失敗する可能性があります。",
+        "addressPoolsNoRoutes": "このコンピュータ上の VPN または他のネットワークが Docker の必要とするアドレスを使用しているため、インストール後に Docker の起動に失敗する可能性があります。",
+        "addressPoolsFix": "これを回避するには、VPN から Docker のアドレス範囲を除外するか、/etc/docker/daemon.json の \"default-address-pools\" で Docker に別の範囲を指定してください。このままインストールを続けることもできます。"
+      },
+      "cancel": "キャンセル",
+      "agree": "同意してインストール",
+      "reboot": "WSL を有効にした後、Windows の再起動が必要になる場合があります。再起動後に Atomic Chat を開くと、インストールは自動的に続行します。",
+      "wslDisk": "ディスク: {{path}} の Atomic Chat 用 WSL ディストリビューションに {{required}}（空き容量 {{free}}）。",
+      "wslDiskNoFree": "ディスク: {{path}} の Atomic Chat 用 WSL ディストリビューションに {{required}}。",
+      "wslDiskNoPath": "ディスク: Atomic Chat 用 WSL ディストリビューションに {{required}} 必要（空き容量 {{free}}）。",
+      "wslDiskUnknown": "ディスク: Atomic Chat 用 WSL ディストリビューションに {{required}}。場所と空き容量は報告されませんでした。"
+    },
+    "consent": {
+      "review": "プランを確認"
+    },
+    "hostStep": {
+      "waiting": "Docker と NVIDIA Container Toolkit をセットアップするためのシステムパスワードを待機中…",
+      "manual": "このデスクトップ環境では Atomic Chat がパスワードプロンプトを表示できません。ターミナルで次のコマンドを実行してください。完了するとインストールが続行します:",
+      "retry": "パスワードをもう一度求める",
+      "uac": {
+        "waiting": "WSL を有効にする Windows 管理者プロンプト（UAC）を承認してください。承認後、Windows が WSL をダウンロードしてインストールします。専用ウィンドウは表示されず、数分かかります。",
+        "manual": "ここでは Windows が Atomic Chat の管理者プロンプトを表示できません。管理者としてターミナルを開き、次のコマンドを実行して、求められた場合はコンピュータを再起動してから「再確認」を押してください:",
+        "retry": "承認をもう一度求める",
+        "running": "Windows が WSL をインストールしています。専用ウィンドウは表示されず数分かかりますが、完了すると Atomic Chat が自動的に続行します。"
+      },
+      "running": "Docker と NVIDIA Container Toolkit をインストールしています。数分かかりますが、インストールは自動的に続行します。"
+    },
+    "relogin": {
+      "title": "サインアウトしてサインインし直す",
+      "body": "docker グループに追加されました。次回のサインイン時に有効になります。サインインし直して Atomic Chat を開くと、インストールは自動的に続行します。",
+      "stillWaiting": "サインアウトしてサインインし直したのにまだ待機中の場合は、コンピュータを再起動してください。バックグラウンドで動き続けるセッション（リモートログインやサインアウト後も維持されるサービス）が古いグループ情報を保持していることがあります。"
+    },
+    "phase": {
+      "checking": "このコンピュータを確認中…",
+      "awaiting-consent": "同意を待機中",
+      "preparing-host": "Docker と NVIDIA Container Toolkit をセットアップ中",
+      "relogin-required": "再サインインを待機中",
+      "reboot-required": "再起動を待機中",
+      "preparing-environment": "Docker が GPU を認識しているか確認中",
+      "pulling-image": "エンジンイメージをダウンロード中",
+      "verifying": "エンジンイメージを検証中",
+      "activating": "インストールを完了中",
+      "removing": "エンジンを削除中",
+      "cancelling": "キャンセル中",
+      "ready": "インストール済み",
+      "removed": "削除済み",
+      "cancelled": "キャンセル済み",
+      "failed": "失敗"
+    },
+    "remove": {
+      "space": "エンジンイメージは Docker ストレージ内で約 {{size}} を使用しています。Atomic Chat をアンインストールしても解放されないため、先にここでエンジンを削除してください。",
+      "button": "エンジンを削除",
+      "title": "vLLM を削除しますか？",
+      "body": "エンジンイメージ、キャッシュ、およびインストールが削除されます。Docker、NVIDIA Container Toolkit、docker グループはこのコンピュータに残ります。",
+      "keepModels": "ダウンロード済みのモデルを保持する",
+      "modelsStay": "ダウンロード済みのモデルは保持されます（{{engines}} が使用します）。最後のエンジンを削除するときにのみ削除されます。",
+      "confirm": "削除",
+      "spaceWindows": "エンジンイメージは Atomic Chat の WSL ディストリビューション内で約 {{size}} を使用しています。Atomic Chat をアンインストールしてもイメージやディストリビューションは削除されないため、先にここでエンジンと環境を削除してください。",
+      "bodyWindows": "エンジンイメージ、キャッシュ、およびインストールが削除されます。Docker と NVIDIA Container Toolkit を含む Atomic Chat の WSL ディストリビューションは残ります（後で「環境を削除」から削除できます）。"
+    },
+    "settings": {
+      "title": "vLLM 設定",
+      "gpu": "GPU",
+      "gpuDefault": "読み込み時に空きメモリが最も多いカード",
+      "gpuMissing": "保存されていたカード {{gpu}} が現在このコンピュータにありません。次回の読み込みでは空きメモリが最も多いカードを使用し、その旨を通知します。",
+      "outputTooLong": "最大出力トークン数（{{output}}）はコンテキスト長（{{context}}）より小さくする必要があります。",
+      "logs": "モデルログ",
+      "viewLogs": "ログを表示",
+      "noLogs": "まだログはありません。このモデルは読み込まれていません。",
+      "gpuDescription": "モデルを読み込むカードです。変更は次回の読み込みから適用されます。",
+      "logsDescription": "モデルの実行中セッション、または前回の読み込み失敗時のエンジンログです。",
+      "logOf": "{{model}} のログ"
+    },
+    "notInstalledWindows": "vLLM はインストールされていません。インストールすると必要に応じて WSL を有効にし、Docker と NVIDIA Container Toolkit を含む Atomic Chat 専用の WSL ディストリビューションをセットアップして、エンジンイメージをダウンロードします。",
+    "reboot": {
+      "title": "コンピュータを再起動",
+      "body": "WSL が有効になりました。完了するには Windows の再起動が必要です。再起動後に Atomic Chat を開くと、再度確認することなくインストールが自動的に続行します。"
+    },
+    "phaseWindows": {
+      "preparing-host": "WSL を有効化中",
+      "preparing-environment": "Atomic Chat の WSL ディストリビューションをセットアップし、GPU の認識を確認中"
+    },
+    "removeEnvironment": {
+      "hint": "Atomic Chat の WSL ディストリビューション「{{name}}」は {{size}} を使用しています。Atomic Chat をアンインストールしても削除されません。",
+      "button": "環境を削除",
+      "title": "Atomic Chat の WSL ディストリビューションを削除しますか？",
+      "body": "{{path}} にあるディストリビューション「{{name}}」の登録が解除され、中のすべてが削除されて {{size}} が解放されます。他の WSL ディストリビューションには影響しません。",
+      "models": "以下のモデルも一緒に削除されます:",
+      "noModels": "中にモデルはありません。",
+      "uninstall": "Atomic Chat をアンインストールしても削除されないため、空き容量を取り戻すにはこの操作を行います。",
+      "confirm": "環境を削除",
+      "removing": "Atomic Chat の WSL ディストリビューションを削除中"
+    },
+    "bar": {
+      "hostStep": "システムパスワードプロンプトを承認してください。その後、Docker と NVIDIA Container Toolkit がインストールされます。数分かかりますが、インストールは自動的に続行します。",
+      "hostStepWindows": "Windows 管理者プロンプト（UAC）を承認してください。その後、Windows が WSL をダウンロードしてインストールします。専用ウィンドウは表示されず数分かかりますが、インストールは自動的に続行します。",
+      "reboot": "WSL が有効になりました。完了するには Windows を再起動してください。再起動後に Atomic Chat を開くとインストールが自動的に続行します。",
+      "relogin": "docker グループに追加されました。反映するにはサインアウトしてサインインし直してください。その後 Atomic Chat を開くとインストールが自動的に続行します。",
+      "restartNow": "今すぐ再起動",
+      "signOutNow": "今すぐサインアウト",
+      "later": "後で",
+      "details": "詳細",
+      "actionFailed": "ここから実行できませんでした（{{error}}）。手動で行ってください。その後インストールが続行します。"
+    },
+    "hub": {
+      "body": "vLLM モデルはモデルハブで選択してダウンロードでき、このコンピュータで動作するかどうかも確認されます。",
+      "action": "モデルハブでモデルを選択"
+    },
+    "troubleshooting": {
+      "title": "トラブルシューティング",
+      "description": "セットアップが停止した場合は、サポート用に診断情報をコピーするか、セットアップ状態をリセットしてやり直してください。リセットしてもインストール済みのものは保持されます。",
+      "overridesTitle": "このコンピュータはデフォルト以外のソースから vLLM 設定を読み込んでいます:",
+      "overridesHint": "これらの環境変数は通常テスト時の名残です。これらが設定されている間、Atomic Chat は vLLM 向けに公開されたアップデートを認識できません。環境変数から削除し、サインアウトしてサインインし直してからセットアップ状態をリセットしてください。",
+      "afterFailure": "前回のセットアップに失敗しました。失敗した試行を再試行するのではなく、現在利用可能な内容でセットアップするには「最初からやり直す」を選択してください。",
+      "copy": "診断情報をコピー",
+      "copied": "診断情報をクリップボードにコピーしました",
+      "copyFailed": "クリップボードに書き込めませんでした",
+      "unavailable": "診断情報を利用できません: {{reason}}",
+      "reset": "セットアップ状態をリセット",
+      "startOver": "最初からやり直す",
+      "running": "セットアップまたは削除が進行中です。先に完了またはキャンセルしてください。",
+      "confirmTitle": "vLLM のセットアップ状態をリセットしますか？",
+      "confirmBody": "完了または失敗したセットアップ試行はアーカイブされ、次回のセットアップはこのコンピュータの新規チェックから開始されます。WSL ディストリビューション、エンジンイメージ、モデルはそのまま残ります。",
+      "confirm": "リセット",
+      "cancel": "キャンセル",
+      "resetDone": "セットアップ状態をリセットしました（{{count}} 件の試行をアーカイブ）",
+      "resetFailed": "セットアップ状態をリセットできませんでした: {{reason}}"
+    },
+    "otherOperation": "現在 {{engine}} のセットアップまたは削除が進行中です（{{phase}}）。完了後に vLLM のインストールを開始できます。"
+  },
+  "sglang": {
+    "title": "SGLang エンジン",
+    "description": "Atomic Chat が NVIDIA GPU 上の Docker コンテナで実行するオープンソース推論エンジンです。",
+    "checking": "このコンピュータを確認中…",
+    "checkAgain": "再確認",
+    "blocked": "このコンピュータではまだ SGLang を実行できません:",
+    "notInstalled": "SGLang はインストールされていません。インストールするとエンジンイメージをダウンロードし、必要に応じて Docker と NVIDIA Container Toolkit をセットアップします。",
+    "install": "インストール…",
+    "installed": "SGLang はインストール済みです。",
+    "version": "インストール済みリリース: {{version}}",
+    "update": {
+      "available": "新しいリリースが利用可能です: {{version}}",
+      "button": "更新…",
+      "title": "SGLang を更新しますか？",
+      "body": "エンジンを一度削除し、新しいリリースから再インストールします。ダウンロード済みのモデルは保持されます。新しいエンジンイメージは約 {{size}} ダウンロードされ、セットアップが完了するまで SGLang モデルは読み込めません。",
+      "confirm": "更新"
+    },
+    "failed": "インストールが停止しました:",
+    "retry": "もう一度試す",
+    "newerPlan": "新しいプラン（例: 新しいエンジンリリース）でエンジンをセットアップできるようになりました。「インストール」で新しいプランからやり直し、「もう一度試す」で失敗した試行をそのまま再実行します。",
+    "cancel": "キャンセル",
+    "progress": "{{total}} 中 {{done}}",
+    "blocker": {
+      "ampere": "Atomic Chat の SGLang には Ampere 世代（RTX 30xx）以降の NVIDIA カード（Compute Capability {{required}} 以上）が必要です。このカードは {{actual}} です。"
+    },
+    "plan": {
+      "title": "SGLang をインストール",
+      "intro": "このインストールによりこのコンピュータで行われる処理のすべてです。",
+      "noSystemChanges": "Docker と NVIDIA ランタイムはすでにセットアップ済みのため、システムへの変更はありません。",
+      "relogin": "システム変更の完了後、一度サインアウトしてサインインし直す必要があります。その後インストールは自動的に続行します。",
+      "download": "ダウンロード: {{size}}。",
+      "disk": "ディスク: {{path}} に {{required}}（空き容量 {{free}}）。",
+      "diskNoFree": "ディスク: {{path}} に {{required}}。",
+      "diskNoPath": "ディスク: Docker ストレージに {{required}} 必要（空き容量 {{free}}）。",
+      "diskUnknown": "ディスク: Docker ストレージに {{required}}。場所と空き容量は報告されませんでした。",
+      "notices": "ライセンスと通知",
+      "noticesMissing": "このエンジンのライセンスと通知は報告されませんでした。",
+      "warning": {
+        "addressPools": "このコンピュータ上の VPN または他のネットワーク（{{routes}}）が Docker の必要とするアドレスを使用しているため、インストール後に Docker の起動に失敗する可能性があります。",
+        "addressPoolsNoRoutes": "このコンピュータ上の VPN または他のネットワークが Docker の必要とするアドレスを使用しているため、インストール後に Docker の起動に失敗する可能性があります。",
+        "addressPoolsFix": "これを回避するには、VPN から Docker のアドレス範囲を除外するか、/etc/docker/daemon.json の \"default-address-pools\" で Docker に別の範囲を指定してください。このままインストールを続けることもできます。"
+      },
+      "cancel": "キャンセル",
+      "agree": "同意してインストール",
+      "reboot": "WSL を有効にした後、Windows の再起動が必要になる場合があります。再起動後に Atomic Chat を開くと、インストールは自動的に続行します。",
+      "wslDisk": "ディスク: {{path}} の Atomic Chat 用 WSL ディストリビューションに {{required}}（空き容量 {{free}}）。",
+      "wslDiskNoFree": "ディスク: {{path}} の Atomic Chat 用 WSL ディストリビューションに {{required}}。",
+      "wslDiskNoPath": "ディスク: Atomic Chat 用 WSL ディストリビューションに {{required}} 必要（空き容量 {{free}}）。",
+      "wslDiskUnknown": "ディスク: Atomic Chat 用 WSL ディストリビューションに {{required}}。場所と空き容量は報告されませんでした。"
+    },
+    "consent": {
+      "review": "プランを確認"
+    },
+    "hostStep": {
+      "waiting": "Docker と NVIDIA Container Toolkit をセットアップするためのシステムパスワードを待機中…",
+      "manual": "このデスクトップ環境では Atomic Chat がパスワードプロンプトを表示できません。ターミナルで次のコマンドを実行してください。完了するとインストールが続行します:",
+      "retry": "パスワードをもう一度求める",
+      "uac": {
+        "waiting": "WSL を有効にする Windows 管理者プロンプト（UAC）を承認してください。承認後、Windows が WSL をダウンロードしてインストールします。専用ウィンドウは表示されず、数分かかります。",
+        "manual": "ここでは Windows が Atomic Chat の管理者プロンプトを表示できません。管理者としてターミナルを開き、次のコマンドを実行して、求められた場合はコンピュータを再起動してから「再確認」を押してください:",
+        "retry": "承認をもう一度求める",
+        "running": "Windows が WSL をインストールしています。専用ウィンドウは表示されず数分かかりますが、完了すると Atomic Chat が自動的に続行します。"
+      },
+      "running": "Docker と NVIDIA Container Toolkit をインストールしています。数分かかりますが、インストールは自動的に続行します。"
+    },
+    "relogin": {
+      "title": "サインアウトしてサインインし直す",
+      "body": "docker グループに追加されました。次回のサインイン時に有効になります。サインインし直して Atomic Chat を開くと、インストールは自動的に続行します。",
+      "stillWaiting": "サインアウトしてサインインし直したのにまだ待機中の場合は、コンピュータを再起動してください。バックグラウンドで動き続けるセッション（リモートログインやサインアウト後も維持されるサービス）が古いグループ情報を保持していることがあります。"
+    },
+    "phase": {
+      "checking": "このコンピュータを確認中…",
+      "awaiting-consent": "同意を待機中",
+      "preparing-host": "Docker と NVIDIA Container Toolkit をセットアップ中",
+      "relogin-required": "再サインインを待機中",
+      "reboot-required": "再起動を待機中",
+      "preparing-environment": "Docker が GPU を認識しているか確認中",
+      "pulling-image": "エンジンイメージをダウンロード中",
+      "verifying": "エンジンイメージを検証中",
+      "activating": "インストールを完了中",
+      "removing": "エンジンを削除中",
+      "cancelling": "キャンセル中",
+      "ready": "インストール済み",
+      "removed": "削除済み",
+      "cancelled": "キャンセル済み",
+      "failed": "失敗"
+    },
+    "remove": {
+      "space": "エンジンイメージは Docker ストレージ内で約 {{size}} を使用しています。Atomic Chat をアンインストールしても解放されないため、先にここでエンジンを削除してください。",
+      "button": "エンジンを削除",
+      "title": "SGLang を削除しますか？",
+      "body": "エンジンイメージ、キャッシュ、およびインストールが削除されます。Docker、NVIDIA Container Toolkit、docker グループはこのコンピュータに残ります。",
+      "keepModels": "ダウンロード済みのモデルを保持する",
+      "modelsStay": "ダウンロード済みのモデルは保持されます（{{engines}} が使用します）。最後のエンジンを削除するときにのみ削除されます。",
+      "confirm": "削除",
+      "spaceWindows": "エンジンイメージは Atomic Chat の WSL ディストリビューション内で約 {{size}} を使用しています。Atomic Chat をアンインストールしてもイメージやディストリビューションは削除されないため、先にここでエンジンと環境を削除してください。",
+      "bodyWindows": "エンジンイメージ、キャッシュ、およびインストールが削除されます。Docker と NVIDIA Container Toolkit を含む Atomic Chat の WSL ディストリビューションは残ります（後で「環境を削除」から削除できます）。"
+    },
+    "settings": {
+      "title": "SGLang 設定",
+      "gpu": "GPU",
+      "gpuDefault": "読み込み時に空きメモリが最も多いカード",
+      "gpuMissing": "保存されていたカード {{gpu}} が現在このコンピュータにありません。次回の読み込みでは空きメモリが最も多いカードを使用し、その旨を通知します。",
+      "outputTooLong": "最大出力トークン数（{{output}}）はコンテキスト長（{{context}}）より小さくする必要があります。",
+      "logs": "モデルログ",
+      "viewLogs": "ログを表示",
+      "noLogs": "まだログはありません。このモデルは読み込まれていません。",
+      "gpuDescription": "モデルを読み込むカードです。変更は次回の読み込みから適用されます。",
+      "logsDescription": "モデルの実行中セッション、または前回の読み込み失敗時のエンジンログです。",
+      "logOf": "{{model}} のログ"
+    },
+    "notInstalledWindows": "SGLang はインストールされていません。インストールすると必要に応じて WSL を有効にし、Docker と NVIDIA Container Toolkit を含む Atomic Chat 専用の WSL ディストリビューションをセットアップして、エンジンイメージをダウンロードします。",
+    "reboot": {
+      "title": "コンピュータを再起動",
+      "body": "WSL が有効になりました。完了するには Windows の再起動が必要です。再起動後に Atomic Chat を開くと、再度確認することなくインストールが自動的に続行します。"
+    },
+    "phaseWindows": {
+      "preparing-host": "WSL を有効化中",
+      "preparing-environment": "Atomic Chat の WSL ディストリビューションをセットアップし、GPU の認識を確認中"
+    },
+    "removeEnvironment": {
+      "hint": "Atomic Chat の WSL ディストリビューション「{{name}}」は {{size}} を使用しています。Atomic Chat をアンインストールしても削除されません。",
+      "button": "環境を削除",
+      "title": "Atomic Chat の WSL ディストリビューションを削除しますか？",
+      "body": "{{path}} にあるディストリビューション「{{name}}」の登録が解除され、中のすべてが削除されて {{size}} が解放されます。他の WSL ディストリビューションには影響しません。",
+      "models": "以下のモデルも一緒に削除されます:",
+      "noModels": "中にモデルはありません。",
+      "uninstall": "Atomic Chat をアンインストールしても削除されないため、空き容量を取り戻すにはこの操作を行います。",
+      "confirm": "環境を削除",
+      "removing": "Atomic Chat の WSL ディストリビューションを削除中"
+    },
+    "bar": {
+      "hostStep": "システムパスワードプロンプトを承認してください。その後、Docker と NVIDIA Container Toolkit がインストールされます。数分かかりますが、インストールは自動的に続行します。",
+      "hostStepWindows": "Windows 管理者プロンプト（UAC）を承認してください。その後、Windows が WSL をダウンロードしてインストールします。専用ウィンドウは表示されず数分かかりますが、インストールは自動的に続行します。",
+      "reboot": "WSL が有効になりました。完了するには Windows を再起動してください。再起動後に Atomic Chat を開くとインストールが自動的に続行します。",
+      "relogin": "docker グループに追加されました。反映するにはサインアウトしてサインインし直してください。その後 Atomic Chat を開くとインストールが自動的に続行します。",
+      "restartNow": "今すぐ再起動",
+      "signOutNow": "今すぐサインアウト",
+      "later": "後で",
+      "details": "詳細",
+      "actionFailed": "ここから実行できませんでした（{{error}}）。手動で行ってください。その後インストールが続行します。"
+    },
+    "hub": {
+      "body": "SGLang モデルはモデルハブで選択してダウンロードでき、このコンピュータで動作するかどうかも確認されます。",
+      "action": "モデルハブでモデルを選択"
+    },
+    "troubleshooting": {
+      "title": "トラブルシューティング",
+      "description": "セットアップが停止した場合は、サポート用に診断情報をコピーするか、セットアップ状態をリセットしてやり直してください。リセットしてもインストール済みのものは保持されます。",
+      "overridesTitle": "このコンピュータはデフォルト以外のソースから SGLang 設定を読み込んでいます:",
+      "overridesHint": "これらの環境変数は通常テスト時の名残です。これらが設定されている間、Atomic Chat は SGLang 向けに公開されたアップデートを認識できません。環境変数から削除し、サインアウトしてサインインし直してからセットアップ状態をリセットしてください。",
+      "afterFailure": "前回のセットアップに失敗しました。失敗した試行を再試行するのではなく、現在利用可能な内容でセットアップするには「最初からやり直す」を選択してください。",
+      "copy": "診断情報をコピー",
+      "copied": "診断情報をクリップボードにコピーしました",
+      "copyFailed": "クリップボードに書き込めませんでした",
+      "unavailable": "診断情報を利用できません: {{reason}}",
+      "reset": "セットアップ状態をリセット",
+      "startOver": "最初からやり直す",
+      "running": "セットアップまたは削除が進行中です。先に完了またはキャンセルしてください。",
+      "confirmTitle": "SGLang のセットアップ状態をリセットしますか？",
+      "confirmBody": "完了または失敗したセットアップ試行はアーカイブされ、次回のセットアップはこのコンピュータの新規チェックから開始されます。WSL ディストリビューション、エンジンイメージ、モデルはそのまま残ります。",
+      "confirm": "リセット",
+      "cancel": "キャンセル",
+      "resetDone": "セットアップ状態をリセットしました（{{count}} 件の試行をアーカイブ）",
+      "resetFailed": "セットアップ状態をリセットできませんでした: {{reason}}"
+    },
+    "otherOperation": "現在 {{engine}} のセットアップまたは削除が進行中です（{{phase}}）。完了後に SGLang のインストールを開始できます。"
+  },
+  "foundryLocal": {
+    "engine": {
+      "title": "Foundry Local エンジン",
+      "notInstalled": "Foundry Local はインストールされていません",
+      "installDescription": "Microsoft の Foundry Local ランタイム {{version}}（ダウンロード約 {{size}}）。インストール時に Microsoft のアクセラレータも準備します（CUDA は最大 2 GB、NPU プラグインは Windows 経由で提供されます）。Atomic Chat が検証し、各モデルを独立したプロセスで実行します。",
+      "install": "{{version}} をインストール",
+      "installing": "ダウンロード中… {{percent}}%",
+      "noBuild": "現在このコンピュータ向けの Foundry Local ビルドはありません。",
+      "installed": "Foundry Local {{version}}",
+      "installedDescription": "モデルを起動するランタイムです。アクセラレータは下で準備します。",
+      "update": "{{version}} に更新",
+      "checking": "インストール済みを確認中…"
+    },
+    "accelerators": {
+      "title": "アクセラレータ",
+      "description": "ここで Foundry Local がモデルを実行できるデバイスです。アクセラレータは「準備」を実行したときにのみ Microsoft からダウンロードされます。",
+      "ready": "準備完了",
+      "notPrepared": "未準備",
+      "preparing": "準備中…",
+      "downloading": "ダウンロード中… {{percent}}%",
+      "retry": "再試行",
+      "prepare": "準備",
+      "sizeWarning": "準備を実行すると Microsoft からダウンロードします（CUDA は最大 2 GB、WebGPU は約 10 MB）。NPU プラグインは Windows によってインストールされるため数分かかる場合があります。",
+      "busy": "アクセラレータはすでに準備中です。進捗は上に表示されています。",
+      "prepareFailed": "アクセラレータの準備に失敗しました: {{message}}",
+      "checkAgain": "再確認",
+      "none": "Foundry Local はここでアクセラレータを検出しませんでした。CPU モデルは引き続き実行できます。",
+      "device": "デバイス: {{device}}"
+    },
+    "telemetry": "Microsoft の Foundry Local ライブラリは常に 1 件の ProcessInfo イベント（アプリ名、OS とアーキテクチャ、プロセス名、仮想マシン／コンテナ内で動作しているか、CPU 数、メモリサイズ。デバイス ID は含みません）を送信します。Atomic Chat は任意のテレメトリをオフにしていますが、このイベントをオフにすることはできません。"
+  },
+  "liteRtLm": {
+    "engine": {
+      "title": "LiteRT-LM エンジン",
+      "notInstalled": "LiteRT-LM はインストールされていません",
+      "installDescription": "Google の LiteRT-LM ライブラリ {{version}}（ダウンロード約 {{size}}）。Atomic Chat が検証し、各モデルを独立したプロセスで実行します。",
+      "install": "{{version}} をインストール",
+      "installing": "ダウンロード中… {{percent}}%",
+      "noBuild": "現在このコンピュータ向けの LiteRT-LM ビルドはありません。",
+      "installed": "LiteRT-LM {{version}}",
+      "installedDescription": "CPU、GPU、または Intel NPU 上でモデルを起動するライブラリです。",
+      "update": "{{version}} に更新",
+      "checking": "インストール済みを確認中…",
+      "checkAgain": "再確認"
+    },
+    "accelerators": {
+      "title": "Intel NPU",
+      "description": "このコンピュータの Intel NPU 向けに構築されたモデルには Intel の OpenVINO ライブラリが必要です。準備を実行したときにのみダウンロードされます。",
+      "openvino": "Intel OpenVINO {{version}}",
+      "detail": "{{npu}} NPU 用、ダウンロード {{size}}",
+      "ready": "準備完了",
+      "notPrepared": "未準備",
+      "preparing": "準備中…",
+      "downloading": "ダウンロード中… {{percent}}%",
+      "retry": "再試行",
+      "prepare": "準備 ({{size}})",
+      "busy": "OpenVINO はすでに準備中です。進捗は上に表示されています。",
+      "prepareFailed": "OpenVINO の準備に失敗しました: {{message}}",
+      "checkAgain": "再確認"
+    }
+  },
+  "geniex": {
+    "engine": {
+      "title": "GenieX エンジン",
+      "notInstalled": "GenieX はインストールされていません",
+      "installDescription": "Qualcomm の GenieX SDK {{version}}（ダウンロード約 {{size}}）。Hexagon NPU および Adreno GPU ライブラリが含まれています。Atomic Chat が検証し、各モデルを独立したプロセスで実行します。管理者権限は不要です。",
+      "install": "{{version}} をインストール",
+      "installing": "ダウンロード中… {{percent}}%",
+      "noBuild": "現在このコンピュータ向けの GenieX ビルドはありません。",
+      "installed": "GenieX {{version}}",
+      "installedDescription": "Hexagon NPU、Adreno GPU、または CPU 上でモデルを起動する SDK です。",
+      "update": "{{version}} に更新",
+      "checking": "インストール済みを確認中…",
+      "checkAgain": "再確認"
+    },
+    "devices": {
+      "title": "デバイス",
+      "description": "SDK のインストール時に GenieX がこのコンピュータで検出したデバイスです。各デバイス用のライブラリは SDK に含まれているため、事前の準備は不要です。",
+      "npu": "Hexagon NPU",
+      "gpu": "Adreno GPU",
+      "detail": "GenieX {{version}} により検出",
+      "ready": "準備完了",
+      "none": "GenieX はここで NPU も GPU も検出しませんでした。モデルは CPU で引き続き実行できます。NPU を使うには、Windows Update またはノート PC メーカーから Qualcomm NPU ドライバーをインストールまたは更新してから、SDK を再インストールしてください。",
+      "npuDriverHint": "GenieX は Hexagon NPU を検出しませんでした。モデルは GPU と CPU で引き続き実行できます。NPU を使うには、Windows Update またはノート PC メーカーから Qualcomm NPU ドライバーをインストールまたは更新してから、SDK を再インストールしてください。",
+      "checkAgain": "再確認"
+    }
+  },
+  "tensorrt": {
+    "title": "TensorRT-LLM エンジン",
+    "description": "Atomic Chat が NVIDIA GPU 上の Docker コンテナで実行する NVIDIA の推論エンジンです。",
+    "checking": "このコンピュータを確認中…",
+    "checkAgain": "再確認",
+    "blocked": "このコンピュータではまだ TensorRT-LLM を実行できません:",
+    "notInstalled": "TensorRT-LLM はインストールされていません。インストールするとエンジンイメージをダウンロードし、必要に応じて Docker と NVIDIA Container Toolkit をセットアップします。",
+    "install": "インストール…",
+    "installed": "TensorRT-LLM はインストール済みです。",
+    "version": "インストール済みリリース: {{version}}",
+    "update": {
+      "available": "新しいリリースが利用可能です: {{version}}",
+      "button": "更新…",
+      "title": "TensorRT-LLM を更新しますか？",
+      "body": "エンジンを一度削除し、新しいリリースから再インストールします。ダウンロード済みのモデルは保持されます。新しいエンジンイメージは約 {{size}} ダウンロードされ、セットアップが完了するまで TensorRT-LLM モデルは読み込めません。",
+      "confirm": "更新"
+    },
+    "failed": "インストールが停止しました:",
+    "retry": "もう一度試す",
+    "newerPlan": "新しいプラン（例: 新しいエンジンリリース）でエンジンをセットアップできるようになりました。「インストール」で新しいプランからやり直し、「もう一度試す」で失敗した試行をそのまま再実行します。",
+    "cancel": "キャンセル",
+    "progress": "{{total}} 中 {{done}}",
+    "blocker": {
+      "ampere": "TensorRT-LLM には Ampere 世代（RTX 30xx）以降の NVIDIA カード（Compute Capability {{required}} 以上）が必要です。このカードは {{actual}} です。"
+    },
+    "plan": {
+      "title": "TensorRT-LLM をインストール",
+      "intro": "このインストールによりこのコンピュータで行われる処理のすべてです。",
+      "noSystemChanges": "Docker と NVIDIA ランタイムはすでにセットアップ済みのため、システムへの変更はありません。",
+      "relogin": "システム変更の完了後、一度サインアウトしてサインインし直す必要があります。その後インストールは自動的に続行します。",
+      "download": "ダウンロード: {{size}}。",
+      "disk": "ディスク: {{path}} に {{required}}（空き容量 {{free}}）。",
+      "diskNoFree": "ディスク: {{path}} に {{required}}。",
+      "diskNoPath": "ディスク: Docker ストレージに {{required}} 必要（空き容量 {{free}}）。",
+      "diskUnknown": "ディスク: Docker ストレージに {{required}}。場所と空き容量は報告されませんでした。",
+      "notices": "NVIDIA 利用規約と通知",
+      "noticesMissing": "このエンジンの NVIDIA 利用規約と通知は報告されませんでした。",
+      "warning": {
+        "addressPools": "このコンピュータ上の VPN または他のネットワーク（{{routes}}）が Docker の必要とするアドレスを使用しているため、インストール後に Docker の起動に失敗する可能性があります。",
+        "addressPoolsNoRoutes": "このコンピュータ上の VPN または他のネットワークが Docker の必要とするアドレスを使用しているため、インストール後に Docker の起動に失敗する可能性があります。",
+        "addressPoolsFix": "これを回避するには、VPN から Docker のアドレス範囲を除外するか、/etc/docker/daemon.json の \"default-address-pools\" で Docker に別の範囲を指定してください。このままインストールを続けることもできます。"
+      },
+      "cancel": "キャンセル",
+      "agree": "同意してインストール",
       "reboot": "WSL を有効にした後、Windows の再起動が必要になることがあります。再起動後に Atomic Chat を開くと、インストールは自動で続行されます。",
       "wslDisk": "ディスク: Atomic Chat の WSL ディストリビューション用に {{path}} で {{required}}、空き {{free}}。",
       "wslDiskNoFree": "ディスク: Atomic Chat の WSL ディストリビューション用に {{path}} で {{required}}。",
       "wslDiskNoPath": "ディスク: Atomic Chat の WSL ディストリビューション用に {{required}} が必要、空き {{free}}。",
       "wslDiskUnknown": "ディスク: Atomic Chat の WSL ディストリビューション用に {{required}}。場所と空き容量は報告されませんでした。"
     },
+    "consent": {
+      "review": "プランを確認"
+    },
     "hostStep": {
+      "waiting": "Docker と NVIDIA Container Toolkit をセットアップするためのシステムパスワードを待機中…",
+      "manual": "このデスクトップ環境では Atomic Chat がパスワードプロンプトを表示できません。ターミナルで次のコマンドを実行してください。完了するとインストールが続行します:",
+      "retry": "パスワードをもう一度求める",
       "uac": {
         "waiting": "WSL を有効にする Windows の管理者確認 (UAC) の承認を待っています…",
         "manual": "ここでは Windows が Atomic Chat の管理者確認を表示できません。管理者としてターミナルを開き、このコマンドを実行し、求められたらコンピューターを再起動してから「再確認」を押してください:",
@@ -88,6 +569,53 @@
       },
       "running": "Installing Docker and the NVIDIA Container Toolkit; this takes a few minutes, and the installation continues by itself."
     },
+    "relogin": {
+      "title": "サインアウトしてサインインし直す",
+      "body": "docker グループに追加されました。次回のサインイン時に有効になります。サインインし直して Atomic Chat を開くと、インストールは自動的に続行します。",
+      "stillWaiting": "サインアウトしてサインインし直したのにまだ待機中の場合は、コンピュータを再起動してください。バックグラウンドで動き続けるセッション（リモートログインやサインアウト後も維持されるサービス）が古いグループ情報を保持していることがあります。"
+    },
+    "phase": {
+      "checking": "このコンピュータを確認中…",
+      "awaiting-consent": "同意を待機中",
+      "preparing-host": "Docker と NVIDIA Container Toolkit をセットアップ中",
+      "relogin-required": "再サインインを待機中",
+      "reboot-required": "再起動を待機中",
+      "preparing-environment": "Docker が GPU を認識しているか確認中",
+      "pulling-image": "エンジンイメージをダウンロード中",
+      "verifying": "エンジンイメージを検証中",
+      "activating": "インストールを完了中",
+      "removing": "エンジンを削除中",
+      "cancelling": "キャンセル中",
+      "ready": "インストール済み",
+      "removed": "削除済み",
+      "cancelled": "キャンセル済み",
+      "failed": "失敗"
+    },
+    "remove": {
+      "space": "エンジンイメージは Docker ストレージ内で約 {{size}} を使用しています。Atomic Chat をアンインストールしても解放されないため、先にここでエンジンを削除してください。",
+      "button": "エンジンを削除",
+      "title": "TensorRT-LLM を削除しますか？",
+      "body": "エンジンイメージ、キャッシュ、およびインストールが削除されます。Docker、NVIDIA Container Toolkit、docker グループはこのコンピュータに残ります。",
+      "keepModels": "ダウンロード済みの TensorRT-LLM モデルを保持する",
+      "modelsStay": "ダウンロード済みのモデルは保持されます（{{engines}} が使用します）。最後のエンジンを削除するときにのみ削除されます。",
+      "confirm": "削除",
+      "spaceWindows": "エンジンイメージは Atomic Chat の WSL ディストリビューション内で約 {{size}} を使用しています。Atomic Chat をアンインストールしてもイメージやディストリビューションは削除されないため、先にここでエンジンと環境を削除してください。",
+      "bodyWindows": "エンジンイメージ、キャッシュ、およびインストールが削除されます。Docker と NVIDIA Container Toolkit を含む Atomic Chat の WSL ディストリビューションは残ります（後で「環境を削除」から削除できます）。"
+    },
+    "settings": {
+      "title": "TensorRT-LLM 設定",
+      "gpu": "GPU",
+      "gpuDefault": "読み込み時に空きメモリが最も多いカード",
+      "gpuMissing": "保存されていたカード {{gpu}} が現在このコンピュータにありません。次回の読み込みでは空きメモリが最も多いカードを使用し、その旨を通知します。",
+      "outputTooLong": "最大出力トークン数（{{output}}）はコンテキスト長（{{context}}）より小さくする必要があります。",
+      "logs": "モデルログ",
+      "viewLogs": "ログを表示",
+      "noLogs": "まだログはありません。このモデルは読み込まれていません。",
+      "gpuDescription": "モデルを読み込むカードです。変更は次回の読み込みから適用されます。",
+      "logsDescription": "モデルの実行中セッション、または前回の読み込み失敗時のエンジンログです。",
+      "logOf": "{{model}} のログ"
+    },
+    "notInstalledWindows": "TensorRT-LLM はインストールされていません。インストールでは、必要に応じて WSL を有効にし、Docker と NVIDIA Container Toolkit を含む Atomic Chat 専用の WSL ディストリビューションを用意して、エンジンのイメージをダウンロードします。",
     "reboot": {
       "title": "コンピューターを再起動してください",
       "body": "WSL が有効になりました。完了するには Windows の再起動が必要です。再起動後に Atomic Chat を開くと、改めて同意を求めることなくインストールが自動で続行されます。"
@@ -95,6 +623,17 @@
     "phaseWindows": {
       "preparing-host": "WSL を有効にしています",
       "preparing-environment": "Atomic Chat の WSL ディストリビューションを設定し、GPU が見えるか確認しています"
+    },
+    "removeEnvironment": {
+      "hint": "Atomic Chat の WSL ディストリビューション「{{name}}」は {{size}} を使用しています。Atomic Chat をアンインストールしても削除されません。",
+      "button": "環境を削除",
+      "title": "Atomic Chat の WSL ディストリビューションを削除しますか？",
+      "body": "{{path}} にあるディストリビューション「{{name}}」の登録が解除され、中のすべてが削除されて {{size}} が解放されます。他の WSL ディストリビューションには影響しません。",
+      "models": "以下の TensorRT-LLM モデルも一緒に削除されます:",
+      "noModels": "中に TensorRT-LLM モデルはありません。",
+      "uninstall": "Atomic Chat をアンインストールしても削除されないため、空き容量を取り戻すにはこの操作を行います。",
+      "confirm": "環境を削除",
+      "removing": "Atomic Chat の WSL ディストリビューションを削除中"
     },
     "bar": {
       "hostStep": "Approve the system password prompt. After that, Docker and the NVIDIA Container Toolkit are installed; this can take a few minutes, and the installation continues by itself.",
@@ -106,12 +645,77 @@
       "later": "Later",
       "details": "Details",
       "actionFailed": "Could not do it from here ({{error}}). Do it yourself; the installation continues afterwards."
-    }
+    },
+    "hub": {
+      "body": "TensorRT-LLM モデルはモデルハブで選択してダウンロードでき、このコンピュータで動作するかどうかも確認されます。",
+      "action": "モデルハブでモデルを選択"
+    },
+    "troubleshooting": {
+      "title": "トラブルシューティング",
+      "description": "セットアップが停止した場合は、サポート用に診断情報をコピーするか、セットアップ状態をリセットしてやり直してください。リセットしてもインストール済みのものは保持されます。",
+      "overridesTitle": "このコンピュータはデフォルト以外のソースから TensorRT-LLM 設定を読み込んでいます:",
+      "overridesHint": "これらの環境変数は通常テスト時の名残です。これらが設定されている間、Atomic Chat は TensorRT-LLM 向けに公開されたアップデートを認識できません。Windows の環境変数から削除し、サインアウトしてサインインし直してからセットアップ状態をリセットしてください。",
+      "afterFailure": "前回のセットアップに失敗しました。失敗した試行を再試行するのではなく、現在利用可能な内容でセットアップするには「最初からやり直す」を選択してください。",
+      "copy": "診断情報をコピー",
+      "copied": "診断情報をクリップボードにコピーしました",
+      "copyFailed": "クリップボードに書き込めませんでした",
+      "unavailable": "診断情報を利用できません: {{reason}}",
+      "reset": "セットアップ状態をリセット",
+      "startOver": "最初からやり直す",
+      "running": "セットアップまたは削除が進行中です。先に完了またはキャンセルしてください。",
+      "confirmTitle": "TensorRT-LLM のセットアップ状態をリセットしますか？",
+      "confirmBody": "完了または失敗したセットアップ試行はアーカイブされ、次回のセットアップはこのコンピュータの新規チェックから開始されます。WSL ディストリビューション、エンジンイメージ、モデルはそのまま残ります。",
+      "confirm": "リセット",
+      "cancel": "キャンセル",
+      "resetDone": "セットアップ状態をリセットしました（{{count}} 件の試行をアーカイブ）",
+      "resetFailed": "セットアップ状態をリセットできませんでした: {{reason}}"
+    },
+    "otherOperation": "現在 {{engine}} のセットアップまたは削除が進行中です（{{phase}}）。完了後に TensorRT-LLM のインストールを開始できます。"
+  },
+  "prismEngine": {
+    "description": "Bonsai モデルの実行に必要です。",
+    "noBuild": "このコンピュータ向けの検証済みビルドはまだありません。下の「未検証の PrismML ビルドを許可」をオンにしてください。",
+    "checkFailed": "PrismML ビルドを確認できませんでした: {{error}}",
+    "checkAgain": "再確認",
+    "install": "エンジンをインストール",
+    "installing": "インストール中…",
+    "installFailed": "エンジンをインストールできませんでした: {{error}}",
+    "findModels": "Bonsai モデル"
   },
   "overview": {
+    "language": "言語モデル",
+    "media": "メディアモデル",
+    "voice": "音声モデル",
+    "modelCountOne": "1 個のモデル",
+    "modelCountOther": "{{count}} 個のモデル",
+    "build": "ビルド {{version}}",
+    "mediaDescription": "画像と動画",
+    "voiceDescription": "{{model}} · 音声認識",
+    "enable": "{{name}} のオン／オフを切り替え",
+    "status": {
+      "disabled": "無効"
+    },
     "updateStatus": {
+      "updating": "更新中…",
+      "available": "アップデートあり",
+      "upToDate": "最新",
+      "notInstalled": "未インストール",
       "noActiveBuild": "有効なビルドなし"
-    }
+    },
+    "update": "更新",
+    "updateEngine": "{{name}} を更新",
+    "updateFailed": "エンジンを更新できませんでした",
+    "checkForUpdates": "アップデートを確認",
+    "checkFailed": "エンジンのアップデートを確認できませんでした",
+    "allUpToDate": "すべてのエンジンは最新です",
+    "updatesFound": "アップデートのあるエンジン: {{count}} 件",
+    "expandSettings": "{{name}} の設定を表示",
+    "collapseSettings": "{{name}} の設定を隠す",
+    "settingsOf": "{{name}} 設定",
+    "engineEnabled": "エンジン有効",
+    "installedModels": "インストール済みモデル: {{models}}",
+    "noModels": "なし",
+    "openEnginePage": "モデルとすべての設定"
   },
   "fastflowlm": {
     "engine": {

@@ -1,0 +1,101 @@
+{
+  "title": "コネクタ",
+  "addServer": "サーバーを追加",
+  "importConfig": "設定をインポート",
+  "connectSection": "MCP コネクタ",
+  "connectSectionDesc": "新しい MCP サーバーを接続し、既存のサーバーを管理します。",
+  "findMore": "さらに多くの MCP サーバーを探す:",
+  "advancedSection": "詳細",
+  "setUp": "セットアップ",
+  "connected": "接続済み",
+  "statusError": "エラー",
+  "statusInactive": "無効",
+  "statusConnecting": "接続中…",
+  "statusFailed": "接続できませんでした",
+  "statusErrorLabel": "MCP サーバーエラー: {{error}}",
+  "activation": {
+    "failed": "{{name}} を起動できませんでした",
+    "retry": "再試行",
+    "edit": "編集"
+  },
+  "by": "作成: {{name}}",
+  "featuredBadge": "注目",
+  "officialBadge": "公式",
+  "serverActions": "サーバー操作",
+  "enableConnector": "{{name}} を有効にする",
+  "editJson": "JSON を編集",
+  "tools": "ツール",
+  "logs": {
+    "show": "ログを表示",
+    "hide": "ログを隠す"
+  },
+  "oauth": {
+    "signIn": "サインイン",
+    "cancel": "キャンセル",
+    "failed": "サインインに失敗しました",
+    "comingSoon": "ブラウザでのサインインは近日公開予定です"
+  },
+  "secretDialog": {
+    "title": "{{name}} を接続",
+    "desc": "このコネクタの動作にはキーが必要です。キーはローカルの MCP 設定に保存されます。",
+    "connect": "接続",
+    "getKey": "API キーを取得"
+  },
+  "secrets": {
+    "firecrawlApiKey": "Firecrawl API キー",
+    "perplexityApiKey": "Perplexity API キー",
+    "zapierToken": "Zapier MCP トークン",
+    "resendApiKey": "Resend API キー"
+  },
+  "toast": {
+    "connected": "{{name}} を接続しました"
+  },
+  "descriptions": {
+    "exa": "AI 向けに構築された Web 検索とページクロール。キー不要ですぐに使えます。",
+    "github": "リポジトリ、Issue、プルリクエスト、コードを操作します。",
+    "linear": "Issue、プロジェクト、コメントの検索、作成、更新を行います。",
+    "notion": "ワークスペース内のページやデータベースを検索、閲覧、更新します。",
+    "sentry": "エラー、トレース、アプリケーションのパフォーマンスを調査します。",
+    "atlassian": "Jira の Issue、Confluence のページ、チームのナレッジを操作します。",
+    "atomicmail": "エージェントに専用の受信トレイを提供し、メールの閲覧・送信・管理を行います。キー不要です。",
+    "stripe": "顧客、決済、サブスクリプション、請求書を参照・管理します。",
+    "supabase": "データベースへのクエリ実行、プロジェクト管理、Supabase ドキュメントの参照を行います。",
+    "cloudflare": "アカウント全体の Workers、DNS、ストレージ、可観測性を管理します。",
+    "posthog": "プロダクト分析、フィーチャーフラグ、エラー、セッションデータを照会します。",
+    "paypal": "請求書の作成、注文や支払いの追跡、紛争の管理を行います。",
+    "trello": "ボード、リスト、カードの閲覧と更新を行います。",
+    "granola": "会議メモや文字起こしを検索して閲覧します。",
+    "calcom": "予約、イベントタイプ、空き時間を管理します。",
+    "airtable": "ベース内のレコードの閲覧、作成、更新を行います。",
+    "webflow": "サイト、CMS コレクション、ページを管理します。",
+    "firecrawl": "Web ページをスクレイピング、クロール、検索し、LLM 向けデータとして抽出します。",
+    "perplexity": "Perplexity による出典付きのリアルタイム Web リサーチ。",
+    "zapier": "Zapier MCP サーバー経由で数千のアプリにわたるアクションを実行します。",
+    "resend": "Resend API を通じてトランザクションメールを送信します。",
+    "shopify-dev": "アプリ開発向けの Shopify 開発者ドキュメントと GraphQL スキーマ。"
+  },
+  "taglines": {
+    "exa": "Web 検索",
+    "atomicmail": "メール",
+    "linear": "Issue とプロジェクト",
+    "notion": "ページとデータベース",
+    "sentry": "エラー監視",
+    "atlassian": "Jira と Confluence",
+    "stripe": "決済",
+    "supabase": "データベース",
+    "cloudflare": "エッジと DNS",
+    "posthog": "プロダクト分析",
+    "paypal": "決済",
+    "trello": "ボード",
+    "granola": "会議メモ",
+    "calcom": "スケジュール管理",
+    "airtable": "ベースとレコード",
+    "webflow": "サイトと CMS",
+    "firecrawl": "Web スクレイピング",
+    "perplexity": "Web リサーチ",
+    "zapier": "アプリ自動化",
+    "resend": "トランザクションメール",
+    "shopify-dev": "Shopify 開発者ドキュメント",
+    "github": "リポジトリとプルリクエスト"
+  }
+}

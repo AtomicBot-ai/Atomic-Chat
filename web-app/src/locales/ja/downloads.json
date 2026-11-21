@@ -1,8 +1,54 @@
 {
+  "title": "ダウンロード",
+  "summary": {
+    "totalStorage": "合計ストレージ",
+    "enginesNotCounted": "エンジンビルドは含まれません",
+    "items": "ダウンロード済みアイテム",
+    "freeSpace": "空き容量"
+  },
+  "search": "ダウンロードを検索…",
+  "searchLabel": "ダウンロードを検索",
+  "categoryLabel": "ダウンロードカテゴリ",
+  "category": {
+    "all": "すべてのダウンロード",
+    "local": "ローカルモデル",
+    "image": "画像",
+    "video": "動画",
+    "audio": "オーディオ",
+    "voice": "音声",
+    "engine": "エンジン"
+  },
+  "column": {
+    "download": "ダウンロード",
+    "storage": "ストレージ",
+    "actions": "操作"
+  },
   "kind": {
+    "embedding": "ドキュメント埋め込み",
+    "decision": "判定モデル",
+    "image": "画像生成",
+    "video": "動画生成",
+    "audio": "オーディオ生成",
+    "voice": "音声認識",
+    "engine": "推論エンジン",
     "partial": "未完了のダウンロード",
     "draft": "投機的デコーディング用のドラフトモデル"
   },
+  "unknownSize": "このアイテムのサイズは不明です",
+  "remove": "{{name}} を削除",
+  "removeTitle": "ダウンロードを削除",
+  "copyId": "{{name}} をコピー",
+  "idCopied": "モデル ID をコピーしました",
+  "confirm": {
+    "title": "{{name}} を削除しますか？",
+    "description": "このコンピュータから削除されます。後でいつでも再ダウンロードできます。",
+    "cancel": "キャンセル",
+    "remove": "削除"
+  },
+  "removed": "{{name}} を削除しました",
+  "removeFailed": "{{name}} を削除できませんでした",
+  "empty": "まだ何もダウンロードされていません。ダウンロードしたモデル、メディアモデル、エンジンがここに表示されます。",
+  "noMatch": "検索に一致するダウンロードはありません。",
   "blocked": {
     "draftInUse": "MLX の投機的デコーディングがオンになっています。ドラフトモデルを削除するには、MLX エンジンの設定でオフにしてください。"
   },

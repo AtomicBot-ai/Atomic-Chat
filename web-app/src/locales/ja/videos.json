@@ -54,7 +54,9 @@
       "noModel": "Download a video model first.",
       "modelLoading": "The model is still loading.",
       "emptyPrompt": "Write a prompt first.",
-      "busy": "A generation is already running."
+      "busy": "A generation is already running.",
+      "noSource": "最初に最初のフレームを選択してください。",
+      "unsupportedWorkflow": "このモデルはこのモードに対応していません。"
     }
   },
   "workflow": {
@@ -179,5 +181,14 @@
   "notifications": {
     "readyTitle": "Video ready",
     "readyBody": "Your clip is in the gallery."
+  },
+  "download": {
+    "finishingModel": "動画モデルを確認中",
+    "modelReady": "動画モデルの準備ができました"
+  },
+  "remote": {
+    "seconds": "{{seconds}} 秒",
+    "audio": "音声",
+    "firstFrame": "最初のフレーム"
   }
 }
