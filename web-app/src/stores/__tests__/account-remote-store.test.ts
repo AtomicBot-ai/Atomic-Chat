@@ -17,6 +17,18 @@ vi.mock('@/hooks/useServiceHub', () => ({
   getServiceHub: () => ({ account: () => account }),
 }))
 
+// The window's focus and the Settings switch, as the store reads them.
+const os = vi.hoisted(() => ({
+  away: false,
+  enabled: true,
+  show: vi.fn(async (_title: string, _body: string) => {}),
+}))
+vi.mock('@/lib/notifications', () => ({
+  isWindowAway: () => os.away,
+  desktopNotificationsEnabled: () => os.enabled,
+  showDesktopNotification: os.show,
+}))
+
 import {
   EMPTY_REMOTE_STATUS,
   type RemoteConnectionEnded,
@@ -29,19 +41,23 @@ import {
   useAccountRemoteStore,
 } from '@/stores/account-remote-store'
 
-const asking = (grantId: string): RemoteStatus => ({
+const DEVICE_NAMES: Record<string, string | null> = {
+  g1: "Ann's iPhone",
+  g2: 'Studio Mac',
+  g3: null,
+}
+
+const asking = (...grantIds: string[]): RemoteStatus => ({
   ...EMPTY_REMOTE_STATUS,
   sharing: true,
-  requests: [
-    {
-      grantId,
-      deviceName: "Ann's iPhone",
-      platform: 'ios',
-      clientType: 'mobile',
-      checkCode: '123456',
-      createdAt: '2026-11-12T10:00:00Z',
-    },
-  ],
+  requests: grantIds.map((grantId) => ({
+    grantId,
+    deviceName: DEVICE_NAMES[grantId] ?? null,
+    platform: 'ios',
+    clientType: 'mobile',
+    checkCode: '123456',
+    createdAt: '2026-11-12T10:00:00Z',
+  })),
 })
 
 let changed: (status: RemoteStatus) => void
@@ -68,6 +84,8 @@ describe('account remote store', () => {
   beforeEach(() => {
     resetAccountRemoteStoreForTests()
     vi.clearAllMocks()
+    os.away = false
+    os.enabled = true
     account.remoteStatus.mockResolvedValue(EMPTY_REMOTE_STATUS)
     account.onRemoteChanged.mockImplementation(async (cb) => {
       changed = cb
@@ -110,24 +128,89 @@ describe('account remote store', () => {
     expect(useAccountRemoteStore.getState().status.sharing).toBe(true)
   })
 
-  it('announces each device asking for access once', async () => {
+  it('tells the OS once per device asking while the window is away', async () => {
+    os.away = true
     await useAccountRemoteStore.getState().hydrate()
 
     changed(asking('g1'))
     changed(asking('g1'))
-    changed(asking('g2'))
+    changed(asking('g1', 'g2', 'g3'))
 
-    expect(toast.info).toHaveBeenCalledTimes(2)
-    expect(toast.info.mock.calls[0][1]).toMatchObject({
-      id: 'remote-request-g1',
-      description: expect.stringContaining('123456'),
-    })
-    expect(toast.info.mock.calls[1][0]).toBe(
-      "Ann's iPhone asks to use this computer's models"
-    )
-    expect(useAccountRemoteStore.getState().status.requests[0].grantId).toBe(
-      'g2'
-    )
+    expect(os.show.mock.calls).toEqual([
+      [
+        'Access request',
+        "Ann's iPhone asks to use this computer's models. Open Atomic Chat to allow or deny it.",
+      ],
+      [
+        'Access request',
+        "Studio Mac asks to use this computer's models. Open Atomic Chat to allow or deny it.",
+      ],
+      [
+        'Access request',
+        "iOS device asks to use this computer's models. Open Atomic Chat to allow or deny it.",
+      ],
+    ])
+    // The corner card is the in-app notice now, not a toast.
+    expect(toast.info.mock.calls).toEqual([])
+    expect(
+      useAccountRemoteStore.getState().status.requests.map((r) => r.grantId)
+    ).toEqual(['g1', 'g2', 'g3'])
+  })
+
+  it('tells the OS about a request that was already pending at start, once', async () => {
+    os.away = true
+    account.remoteStatus.mockResolvedValue(asking('g1'))
+
+    await useAccountRemoteStore.getState().hydrate()
+    changed(asking('g1'))
+
+    expect(os.show.mock.calls.map((call) => call[1])).toEqual([
+      "Ann's iPhone asks to use this computer's models. Open Atomic Chat to allow or deny it.",
+    ])
+  })
+
+  it('leaves a request to the corner card while the window is in front', async () => {
+    await useAccountRemoteStore.getState().hydrate()
+
+    changed(asking('g1'))
+    // Away later: the request was already announced, the card still has it.
+    os.away = true
+    changed(asking('g1'))
+
+    expect(os.show.mock.calls).toEqual([])
+    expect(useAccountRemoteStore.getState().status.requests).toHaveLength(1)
+    expect(useAccountRemoteStore.getState().acknowledgedRequests).toEqual([])
+  })
+
+  it('stays quiet when desktop notifications are off in Settings', async () => {
+    os.away = true
+    os.enabled = false
+    await useAccountRemoteStore.getState().hydrate()
+
+    changed(asking('g1'))
+
+    expect(os.show.mock.calls).toEqual([])
+    expect(useAccountRemoteStore.getState().status.requests).toHaveLength(1)
+  })
+
+  it('forgets acknowledged requests once they are allowed, denied or expired', async () => {
+    await useAccountRemoteStore.getState().hydrate()
+    changed(asking('g1', 'g2'))
+
+    const { acknowledgeRequests } = useAccountRemoteStore.getState()
+    acknowledgeRequests(['g1'])
+    acknowledgeRequests(['g1'])
+    expect(useAccountRemoteStore.getState().acknowledgedRequests).toEqual([
+      'g1',
+    ])
+
+    // g1 was decided; g2 still waits.
+    changed(asking('g2'))
+    expect(useAccountRemoteStore.getState().acknowledgedRequests).toEqual([])
+
+    acknowledgeRequests(['g2'])
+    useAccountRemoteStore.getState().setStatus(EMPTY_REMOTE_STATUS)
+    expect(useAccountRemoteStore.getState().acknowledgedRequests).toEqual([])
   })
 
   it('says when access ended, louder when a key was refused', async () => {
@@ -146,12 +229,51 @@ describe('account remote store', () => {
     await useAccountRemoteStore.getState().hydrate()
 
     ended({ hostName: 'Studio Mac', reason: 'revoked_by_user' })
-    ended({ hostName: 'Studio Mac', reason: 'signed_out' })
+    // The host is gone from the account (stopped sharing for good, removed,
+    // signed out): the server deleted the grant, so its read was a 404.
+    ended({ hostName: 'Studio Mac', reason: 'grant_not_found' })
 
     expect(toast.info.mock.calls.map((call) => call[0])).toEqual([
       'Studio Mac ended your access.',
       'Studio Mac stopped sharing.',
     ])
+  })
+
+  it('blames this computer, not the host, when its own session ended', async () => {
+    await useAccountRemoteStore.getState().hydrate()
+
+    ended({ hostName: 'Studio Mac', reason: 'signed_out' })
+
+    expect(toast.info.mock.calls.map((call) => call[0])).toEqual([
+      'This computer was signed out, so access to Studio Mac ended.',
+    ])
+  })
+
+  it('says a request expired whichever deadline closed it', async () => {
+    await useAccountRemoteStore.getState().hydrate()
+
+    ended({ hostName: 'Studio Mac', reason: 'not_answered' })
+    ended({ hostName: 'Studio Mac', reason: 'not_delivered' })
+    ended({ hostName: 'Studio Mac', reason: 'not_collected' })
+
+    expect(toast.info.mock.calls.map((call) => call[0])).toEqual([
+      'The request to Studio Mac expired.',
+      'The request to Studio Mac expired.',
+      'The request to Studio Mac expired.',
+    ])
+  })
+
+  it('stays quiet when pairing again replaced the old grant', async () => {
+    await useAccountRemoteStore.getState().hydrate()
+
+    ended({ hostName: 'Studio Mac', reason: 'replaced' })
+    ended({ hostName: 'Studio Mac', reason: 'denied' })
+
+    // Only the second ending is told.
+    expect(toast.info.mock.calls.map((call) => call[0])).toEqual([
+      'Studio Mac declined access.',
+    ])
+    expect(toast.error.mock.calls).toEqual([])
   })
 
   it('says when a device disconnected from this computer', async () => {

@@ -171,10 +171,16 @@
       "limitReached": "That computer already shares with the most devices it can.",
       "hostOffline": "Offline, waiting for it to come back"
     },
-    "toast": {
-      "request": "{{name}} asks to use this computer's models",
-      "requestDesc": "Check code {{code}}",
+    "notice": {
+      "title": "Access request",
+      "osBody": "{{name}} asks to use this computer's models. Open Atomic Chat to allow or deny it.",
+      "checkCode": "Check code {{code}}",
       "review": "Review",
+      "expand": "Show access requests",
+      "collapse": "Collapse access requests",
+      "dismiss": "Dismiss"
+    },
+    "toast": {
       "deviceLeft": "{{name}} disconnected",
       "offline": "{{name}} is offline",
       "offlineDesc": "Its models come back when it does."
@@ -183,7 +189,8 @@
       "denied": "{{name}} declined access.",
       "expired": "The request to {{name}} expired.",
       "revoked": "Access to {{name}} was revoked.",
-      "hostSignedOut": "{{name}} stopped sharing.",
+      "hostStopped": "{{name}} stopped sharing.",
+      "signedOut": "This computer was signed out, so access to {{name}} ended.",
       "untrusted": "The key from {{name}} could not be verified, so it was refused.",
       "other": "Access to {{name}} ended.",
       "byHost": "{{name}} ended your access."

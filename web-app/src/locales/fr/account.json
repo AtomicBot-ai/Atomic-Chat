@@ -171,10 +171,16 @@
       "limitReached": "Cet ordinateur partage déjà avec le nombre maximal d'appareils.",
       "hostOffline": "Hors ligne, en attente de son retour"
     },
-    "toast": {
-      "request": "{{name}} demande à utiliser les modèles de cet ordinateur",
-      "requestDesc": "Code de vérification {{code}}",
+    "notice": {
+      "title": "Demande d'accès",
+      "osBody": "{{name}} demande à utiliser les modèles de cet ordinateur. Ouvrez Atomic Chat pour l'autoriser ou la refuser.",
+      "checkCode": "Code de vérification {{code}}",
       "review": "Voir",
+      "expand": "Afficher les demandes d'accès",
+      "collapse": "Réduire les demandes d'accès",
+      "dismiss": "Ignorer"
+    },
+    "toast": {
       "deviceLeft": "{{name}} s'est déconnecté",
       "offline": "{{name}} est hors ligne",
       "offlineDesc": "Ses modèles reviendront avec lui."
@@ -183,7 +189,8 @@
       "denied": "{{name}} a refusé l'accès.",
       "expired": "La demande à {{name}} a expiré.",
       "revoked": "L'accès à {{name}} a été révoqué.",
-      "hostSignedOut": "{{name}} a cessé de partager.",
+      "hostStopped": "{{name}} a cessé de partager.",
+      "signedOut": "Cet ordinateur a été déconnecté du compte, l'accès à {{name}} a donc pris fin.",
       "untrusted": "La clé de {{name}} n'a pas pu être vérifiée, elle a donc été refusée.",
       "other": "L'accès à {{name}} a pris fin.",
       "byHost": "{{name}} a mis fin à votre accès."

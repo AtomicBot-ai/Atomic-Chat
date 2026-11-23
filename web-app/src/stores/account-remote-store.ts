@@ -4,6 +4,16 @@ import { create } from 'zustand'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import i18n from '@/i18n/setup'
 import {
+  desktopNotificationsEnabled,
+  isWindowAway,
+  showDesktopNotification,
+} from '@/lib/notifications'
+import {
+  keepPending,
+  requestDeviceName,
+  takeNewRequests,
+} from '@/lib/remoteRequestNotice'
+import {
   EMPTY_REMOTE_STATUS,
   type RemoteConnectionEnded,
   type RemoteDeviceLeft,
@@ -18,55 +28,64 @@ import {
 type AccountRemoteStore = {
   status: RemoteStatus
   hydrated: boolean
+  /**
+   * Pending requests the corner card leaves out: put away there, or seen on
+   * the Remote models page. Only ids still pending.
+   */
+  acknowledgedRequests: string[]
   /** Reads the status and starts following changes. Idempotent. */
   hydrate: () => Promise<void>
   setStatus: (status: RemoteStatus) => void
+  acknowledgeRequests: (grantIds: string[]) => void
 }
 
 let hydration: Promise<void> | null = null
 let eventCount = 0
-/** Requests already announced, so one toast per device asking. */
+/** Requests already announced, so one notification per device asking. */
 const announced = new Set<string>()
 
-/** Where a toast's "Review" goes; the root route sets it to a router navigation. */
-let openRemotePage: () => void = () => {}
-
-export function setRemotePageOpener(open: () => void) {
-  openRemotePage = open
-}
-
+/**
+ * A device asking for access while the window is away (hidden, minimized or
+ * behind another app): one OS notification per request. In front, the corner
+ * card (`RemoteRequestNotice`) or the Remote models page shows it instead.
+ */
 function announceNewRequests(status: RemoteStatus) {
-  for (const request of status.requests) {
-    if (announced.has(request.grantId)) continue
-    announced.add(request.grantId)
-    const name =
-      request.deviceName?.trim() || i18n.t('account:remote.unknownDevice')
-    toast.info(i18n.t('account:remote.toast.request', { name }), {
-      id: `remote-request-${request.grantId}`,
-      description: i18n.t('account:remote.toast.requestDesc', {
-        code: request.checkCode,
-      }),
-      action: {
-        label: i18n.t('account:remote.toast.review'),
-        onClick: () => openRemotePage(),
-      },
-    })
+  const fresh = takeNewRequests(status.requests, announced)
+  if (fresh.length === 0 || !isWindowAway()) return
+  if (!desktopNotificationsEnabled()) return
+  for (const request of fresh) {
+    void showDesktopNotification(
+      i18n.t('account:remote.notice.title'),
+      i18n.t('account:remote.notice.osBody', {
+        name: requestDeviceName(i18n.t, request),
+      })
+    )
   }
 }
 
 const ENDED_REASON_KEYS: Record<string, string> = {
   denied: 'account:remote.ended.denied',
   expired: 'account:remote.ended.expired',
-  // The host revoked it or stopped sharing.
-  revoked_by_user: 'account:remote.ended.byHost',
-  signed_out: 'account:remote.ended.hostSignedOut',
-  key_changed: 'account:remote.ended.revoked',
+  not_answered: 'account:remote.ended.expired',
+  not_delivered: 'account:remote.ended.expired',
   not_collected: 'account:remote.ended.expired',
+  // The host revoked it, or stopped sharing and so revoked every device.
+  revoked_by_user: 'account:remote.ended.byHost',
+  // The server deletes a host that stops sharing for good, is removed from
+  // the account, or signs out, and its grants with it: the grant read is a 404.
+  grant_not_found: 'account:remote.ended.hostStopped',
+  // Set on this device's own grants: this computer's session ended.
+  signed_out: 'account:remote.ended.signedOut',
+  key_changed: 'account:remote.ended.revoked',
   untrusted_credential: 'account:remote.ended.untrusted',
   unreadable_credential: 'account:remote.ended.untrusted',
 }
 
+/** Closed because this device paired with the same host again: the new grant carries on. */
+const SILENT_REASONS = new Set(['replaced'])
+
 function onConnectionEnded(event: RemoteConnectionEnded) {
+  if (SILENT_REASONS.has(event.reason)) return
   const key = ENDED_REASON_KEYS[event.reason] ?? 'account:remote.ended.other'
   const name = event.hostName || i18n.t('account:remote.unknownComputer')
   if (event.reason === 'untrusted_credential') {
@@ -111,9 +130,21 @@ function announce(status: RemoteStatus) {
   announceOffline(useAccountRemoteStore.getState().status, status)
 }
 
-function apply(status: RemoteStatus) {
+/** The new status, with the acknowledged requests that are still pending. */
+function next(status: RemoteStatus) {
   announce(status)
-  useAccountRemoteStore.setState({ status, hydrated: true })
+  return {
+    status,
+    hydrated: true,
+    acknowledgedRequests: keepPending(
+      useAccountRemoteStore.getState().acknowledgedRequests,
+      status.requests
+    ),
+  }
+}
+
+function apply(status: RemoteStatus) {
+  useAccountRemoteStore.setState(next(status))
 }
 
 async function runHydration(): Promise<void> {
@@ -143,14 +174,21 @@ async function runHydration(): Promise<void> {
 export const useAccountRemoteStore = create<AccountRemoteStore>()((set) => ({
   status: EMPTY_REMOTE_STATUS,
   hydrated: false,
+  acknowledgedRequests: [],
   hydrate: () => {
     hydration ??= runHydration()
     return hydration
   },
-  setStatus: (status) => {
-    announce(status)
-    set({ status, hydrated: true })
-  },
+  setStatus: (status) => set(next(status)),
+  acknowledgeRequests: (grantIds) =>
+    set((state) => {
+      const added = grantIds.filter(
+        (grantId) => !state.acknowledgedRequests.includes(grantId)
+      )
+      return added.length === 0
+        ? state
+        : { acknowledgedRequests: [...state.acknowledgedRequests, ...added] }
+    }),
 }))
 
 /** Tests only: forget the hydration and the announced requests. */
@@ -161,5 +199,6 @@ export function resetAccountRemoteStoreForTests() {
   useAccountRemoteStore.setState({
     status: EMPTY_REMOTE_STATUS,
     hydrated: false,
+    acknowledgedRequests: [],
   })
 }
