@@ -1,6 +1,6 @@
 [package]
 name = "Atomic-Chat"
-version = "0.6.599"
+version = "2.4.7"
 description = "Local AI app and inference engine for agents. Run open-weight LLMs locally, private, on your machine."
 authors = ["Atomic Chat <service@atomic.chat>"]
 license = "Apache-2.0"

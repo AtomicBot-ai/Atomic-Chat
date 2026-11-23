@@ -4,7 +4,7 @@ version = 3
 
 [[package]]
 name = "Atomic-Chat"
-version = "0.6.599"
+version = "2.4.7"
 dependencies = [
  "async-trait",
  "atomic-code-index",

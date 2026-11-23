@@ -158,6 +158,7 @@ const SESSION_CACHED_PROVIDERS = [
   'litert-lm',
   'geniex',
   'fastflowlm',
+  'strata',
 ] as const
 
 /** Those, and every managed engine (`isManagedProvider`). */

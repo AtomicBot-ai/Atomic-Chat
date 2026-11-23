@@ -100,8 +100,13 @@ export function downloadStatusLabel(
   }
 ): string {
   if (paused) return t('common:downloadPanel.paused')
+  if (isStrataPreparation(stage)) return t('hub:strata.preparing')
   if (total > 0) return `${Math.round(progress * 100)}%`
   return downloadStageLabel(t, stage) ?? t('common:downloadPanel.preparing')
+}
+
+export function isStrataPreparation(stage?: { kind: string }): boolean {
+  return stage?.kind === 'strata-preparing'
 }
 
 /**
@@ -113,6 +118,7 @@ export function downloadStageLabel(
   t: (key: string, vars?: Record<string, unknown>) => string,
   stage?: { kind: string; attempt: number; maxAttempts: number }
 ): string | null {
+  if (isStrataPreparation(stage)) return t('hub:strata.preparing')
   if (stage?.kind === 'stalled') return t('common:downloadPanel.stalled')
   if (stage?.kind === 'retrying')
     return t('common:downloadPanel.retrying', {
@@ -145,6 +151,8 @@ export function formatDownloadReadout(
     paused?: boolean
   }
 ): string {
+  if (!download.paused && isStrataPreparation(download.stage))
+    return t('hub:strata.preparingWithHint')
   // Before the first byte the status word already is the stage.
   const stageNote =
     download.paused || !(download.total > 0)
@@ -184,6 +192,8 @@ export function formatDownloadStatusLine(
   },
   { runningWord = true }: { runningWord?: boolean } = {}
 ): string {
+  if (!download.paused && isStrataPreparation(download.stage))
+    return t('hub:strata.preparingWithHint')
   const stageNote = download.paused
     ? null
     : downloadStageLabel(t, download.stage)

@@ -95,6 +95,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     define: {
+      'import.meta.env.ATOMIC_MODEL_CATALOG_URL': JSON.stringify(env.ATOMIC_MODEL_CATALOG_URL ?? ''),
       IS_TAURI: JSON.stringify(process.env.IS_TAURI),
       IS_DEV: JSON.stringify(process.env.IS_DEV),
       IS_WEB_APP: JSON.stringify(false),

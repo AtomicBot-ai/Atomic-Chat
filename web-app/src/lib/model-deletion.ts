@@ -43,7 +43,7 @@ export async function deleteLocalModel(
     // Unloading here first would mark the model stopped even when that stop
     // fails and the delete is refused, so it is left active until the delete
     // succeeds.
-    const stopsInCore = isManagedProvider(provider)
+    const stopsInCore = provider === 'strata' || isManagedProvider(provider)
     // A loaded model holds its weights open and keeps showing up as active in
     // the model picker, so unload it before the files go away. A failure here
     // is not fatal to the delete itself.
@@ -64,6 +64,16 @@ export async function deleteLocalModel(
       const state = useAppState.getState()
       state.setActiveModels(state.activeModels.filter((id) => id !== modelId))
     }
+  }
+
+  if (provider === 'strata') {
+    // A variant id may also be used by another provider.
+    const state = useModelProvider.getState()
+    if (state.selectedProvider === provider && state.selectedModel?.id === modelId) {
+      useModelProvider.setState({ selectedProvider: '', selectedModel: null })
+    }
+    await serviceHub.providers().getProviders().then((providers) => state.setProviders(providers))
+    return report
   }
 
   useFavoriteModel.getState().removeFavorite(modelId)

@@ -264,6 +264,29 @@ describe('DropdownModelProvider runnable model picker', () => {
     expect(within(downloads).getAllByRole('button')).toHaveLength(1)
   })
 
+  it('shows a Strata preparation by name without a download percentage', () => {
+    const id = 'strata-model-iq2-xs-dflash2'
+    useDownloadStore.setState({
+      downloads: {
+        [id]: {
+          ...runningDownload(id),
+          progress: 0,
+          current: 0,
+          stage: { kind: 'strata-preparing', attempt: 0, maxAttempts: 0 },
+        },
+      },
+      localDownloadingModels: new Set([id]),
+      downloadOriginByModelId: { [id]: 'Qwen3.8-Flash-Next IQ2_XS' },
+    })
+    render(<DropdownModelProvider />)
+
+    const list = screen.getByTestId('model-picker-downloading')
+    expect(list).toHaveTextContent('Qwen3.8-Flash-Next IQ2_XS')
+    expect(list).toHaveTextContent('hub:strata.preparingWithHint')
+    expect(list).not.toHaveTextContent('common:downloading')
+    expect(list).not.toHaveTextContent('0%')
+  })
+
   it('keeps a no-match search local and leaves the Hugging Face action available', () => {
     mockProviders([localProvider([{ id: 'Qwen3-Chat' }])])
     render(<DropdownModelProvider />)

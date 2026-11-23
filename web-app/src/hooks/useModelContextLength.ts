@@ -57,6 +57,7 @@ export function useModelContextLength() {
     FALLBACK_MAX_CONTEXT,
     configuredMax > 0 ? configuredMax : 0
   )
+  const [strataLimit, setStrataLimit] = useState<{ model: Model; max: number }>()
   const [maxContext, setMaxContext] = useState(fallbackMaxContext)
   const [draft, setDraft] = useState(contextValue > 0 ? contextValue : 0)
 
@@ -95,7 +96,7 @@ export function useModelContextLength() {
     setDraft(currentValue > 0 ? currentValue : 0)
     setMaxContext(fallbackMaxContext)
 
-    if (!selectedProvider || !selectedModel) return
+    if (!selectedProvider || (!LOCAL_CONTEXT_PROVIDERS.has(selectedProvider) && selectedProvider !== 'strata') || !selectedModel) return
 
     let cancelled = false
     const resolveMaxContext = async () => {
@@ -110,6 +111,9 @@ export function useModelContextLength() {
           const modelMax = await engine.getMaxCtxTrain(selectedModel.id)
           if (typeof modelMax === 'number' && modelMax > 0) {
             resolvedMax = modelMax
+            if (!cancelled && selectedProvider === 'strata') {
+              setStrataLimit({ model: selectedModel, max: modelMax })
+            }
           }
         }
       } catch (error) {
@@ -223,6 +227,7 @@ export function useModelContextLength() {
     provider,
     selectedModel,
     contextSetting,
+    strataMax: selectedModel && strataLimit?.model === selectedModel ? strataLimit.max : undefined,
     draft,
     setDraft,
     commit,

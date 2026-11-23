@@ -19,11 +19,8 @@ import './onboarding.css'
  * decides when it shows: not while a download is under way, which the
  * download panel lists, but for one that was interrupted, with Retry.
  *
- * With nothing left to download it only says the model is ready — or, with
- * no model ready either, shows only its links — and `yieldsCorner` gives the
- * corner to an update banner or the model reminder there: it comes back once
- * they are gone, until it is dismissed. An interrupted download never gives
- * way.
+ * The ready message yields the corner to an update banner or model reminder.
+ * An interrupted download keeps its Retry action visible.
  */
 export function OnboardingHandoffPanel({
   yieldsCorner = false,

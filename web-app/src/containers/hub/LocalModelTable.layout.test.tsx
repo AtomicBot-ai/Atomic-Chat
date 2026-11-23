@@ -1,10 +1,13 @@
-import { render, screen, within } from '@testing-library/react'
+import { useState } from 'react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   DEFAULT_FONT_SIZE,
   expectFits,
   expectNoHorizontalOverflow,
+  expectOneLine,
   setFontSize,
   setTheme,
   settle,
@@ -13,13 +16,18 @@ import {
 } from '@/test/layout'
 import type { HubEngineId } from '@/lib/hub-model-engines'
 import type { CatalogModel } from '@/services/models/types'
+import i18n from '@/i18n/setup'
+import { strataCatalogRows } from '@/services/strata/catalog'
+import strataFixture from '@/services/strata/__tests__/fixtures/catalog.json'
 import { LocalModelTable, type LocalModelTableItem } from './LocalModelTable'
 
 // The open row's download options are measured by their own layout tests;
 // here they are a block of their usual height.
 vi.mock('@/containers/hub/DownloadOptionsSelect', () => ({
-  DownloadOptionsSelect: () => (
-    <section className="h-24 rounded-lg border border-border" />
+  DownloadOptionsSelect: ({ model }: { model: CatalogModel }) => (
+    <section className="h-24 rounded-lg border border-border">
+      {model.strata?.variant_id}
+    </section>
   ),
 }))
 // Parameter counts come from Hugging Face for names that carry none; none here.
@@ -84,7 +92,7 @@ const ITEMS: LocalModelTableItem[] = [
   },
 ]
 
-function renderTable(width: number, selected: string | null = null) {
+function renderTable(width: number, selected: string | null = null, items = ITEMS) {
   return render(
     withTranslations(
       <div
@@ -93,7 +101,7 @@ function renderTable(width: number, selected: string | null = null) {
       >
         <div data-testid="list" style={{ width }}>
           <LocalModelTable
-            items={ITEMS}
+            items={items}
             selected={selected}
             onSelect={() => {}}
             budgetBytes={24 * GB}
@@ -144,6 +152,89 @@ describe('LocalModelTable layout', () => {
   })
   afterEach(() => {
     setFontSize(DEFAULT_FONT_SIZE)
+  })
+
+  it.each([
+    [1024, XL_FONT_SIZE, 'dark'],
+    [1280, DEFAULT_FONT_SIZE, 'light'],
+  ] as const)('fits the Strata quant and size and keeps the selection at %ipx', async (width, size, theme) => {
+    const [model] = strataCatalogRows(strataFixture)
+    const primary = {
+      ...model.strata!,
+      name: 'Qwen3.8-Flash-Next (Unsloth) UD-IQ4_XS',
+      variant_id: 'unsloth-ud-iq4-xs-dflash2',
+    }
+    const alternative = {
+      ...primary,
+      variant_id: 'unsloth-ud-iq4-xs-v31-dflash2',
+      name: 'Qwen3.8-Flash-Next (Unsloth) UD-IQ4_XS-v31',
+      requirements: { ...primary.requirements, download_bytes: 89 * GB },
+    }
+    const items = [{ model: { ...model, strata: primary, strataVariants: [primary, alternative] } }]
+    function Table() {
+      const [selected, setSelected] = useState<string | null>(null)
+      return (
+        <div data-testid="list" style={{ width: listWidth(width) }}>
+          <LocalModelTable
+            items={items}
+            selected={selected}
+            onSelect={setSelected}
+            budgetBytes={24 * GB}
+            availableEngines={new Set(['strata'])}
+          />
+        </div>
+      )
+    }
+
+    setFontSize(size)
+    setTheme(theme)
+    render(withTranslations(<Table />))
+    const user = userEvent.setup()
+    const quant = screen.getByRole('button', { name: /^Quantization/ })
+    await user.click(quant)
+    const menu = await screen.findByRole('menu')
+    await settle()
+    const option = within(menu).getByRole('menuitemradio', { name: /UD-IQ4_XS-v31.*89\.0 GB/ })
+    expectNoHorizontalOverflow(menu)
+    await user.click(option)
+    await settle()
+    const label = within(quant).getByText('UD-IQ4_XS-v31')
+    const downloadSize = within(quant).getByText('89.0 GB')
+    expectFits(label, quant)
+    expect(label.scrollWidth).toBeLessThanOrEqual(label.clientWidth + 1)
+    expectFits(downloadSize, quant)
+    expectOneLine(label)
+    expectOneLine(downloadSize)
+    expectNoHorizontalOverflow(screen.getByTestId('list'))
+
+    fireEvent.click(screen.getByRole('button', { name: /expand.*UD-IQ4_XS-v31/i }))
+    expect(screen.getByText(alternative.variant_id)).toBeVisible()
+  })
+
+  it.each([
+    [1024, XL_FONT_SIZE, 'dark'],
+    [1280, DEFAULT_FONT_SIZE, 'light'],
+  ] as const)('keeps the Strata disk warning inside its cell at %ipx', async (width, size, theme) => {
+    const [model] = strataCatalogRows(strataFixture)
+    const name = 'DeepSeekV4.1-Flash-1017 2.00 bpw'
+    await i18n.changeLanguage('ru')
+    try {
+      setFontSize(size)
+      setTheme(theme)
+      renderTable(listWidth(width), null, [{
+        model: { ...model, strata: { ...model.strata!, name } },
+        strataDiskBlocked: true,
+      }])
+      await settle()
+
+      const warning = screen.getByText('Не хватает места на диске')
+      expect(warning).toBeVisible()
+      expectFits(warning, warning.closest('td')!)
+      expectWholeWords(warning)
+      expectNoHorizontalOverflow(screen.getByTestId('list'))
+    } finally {
+      await i18n.changeLanguage('en')
+    }
   })
 
   for (const [label, size] of [

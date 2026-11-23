@@ -683,6 +683,7 @@ type CachedLocalProvider =
   | 'litert-lm'
   | 'geniex'
   | 'fastflowlm'
+  | 'strata'
   | ManagedProviderId
 
 /** How an error about a missing session names the engine, e.g. "No running MLX session". */
@@ -692,6 +693,7 @@ function sessionEngineLabel(providerName: CachedLocalProvider): string {
   if (providerName === 'litert-lm') return 'LiteRT-LM '
   if (providerName === 'geniex') return 'GenieX '
   if (providerName === 'fastflowlm') return 'FastFlowLM '
+  if (providerName === 'strata') return 'Strata '
   const managed = managedEngine(providerName)
   return managed ? `${managed.label} ` : ''
 }
@@ -1410,7 +1412,8 @@ export class ModelFactory {
         return this.createGeniexModel(modelId, provider, localInjected)
 
       case 'fastflowlm':
-        return this.createFastFlowLmModel(modelId, provider, localInjected)
+      case 'strata':
+        return this.createNativeGatewayModel(providerName, modelId, provider, localInjected)
 
       case 'foundation-models':
         return this.createFoundationModelsModel(
@@ -1816,30 +1819,31 @@ export class ModelFactory {
     })
   }
 
-  private static async createFastFlowLmModel(
+  private static async createNativeGatewayModel(
+    providerName: 'fastflowlm' | 'strata',
     modelId: string,
     provider?: ProviderObject,
     parameters: Record<string, unknown> = {}
   ): Promise<LanguageModel> {
     const sessionInfo = await ModelFactory.resolveLocalSession(
-      'fastflowlm',
+      providerName,
       modelId,
       provider
     )
     const liveFetch = createHoldingFetch(
-      'fastflowlm',
+      providerName,
       modelId,
       createLiveSessionFetch(
         createEngineErrorFetch(
           createLocalStreamingFetch(httpFetch, parameters, async (body) => body)
         ),
         () =>
-          ModelFactory.resolveFreshLocalSession('fastflowlm', modelId, provider)
+          ModelFactory.resolveFreshLocalSession(providerName, modelId, provider)
       )
     )
 
     return new OpenAICompatibleChatLanguageModel(modelId, {
-      provider: 'fastflowlm',
+      provider: providerName,
       headers: () => ({
         Authorization: `Bearer ${sessionInfo.api_key}`,
         Origin: 'tauri://localhost',

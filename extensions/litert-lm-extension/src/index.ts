@@ -263,6 +263,7 @@ export default class LiteRtLmExtension extends AIEngine {
       name: yml.name ?? id,
       providerId: this.provider,
       port: 0,
+      contextLength: block.context_length,
       sizeBytes: yml.size_bytes ?? 0,
       path: await joinPath([modelsDir, id]),
       capabilities: capabilities.length > 0 ? capabilities : undefined,

@@ -79,6 +79,8 @@ export interface CatalogModel {
    */
   fastflowlm?: import('@atomic-chat/core/contracts').FastFlowLmDefinition
   is_fastflowlm?: boolean
+  strata?: import('@atomic-chat/core/contracts').StrataModelDescriptor
+  strataVariants?: import('@atomic-chat/core/contracts').StrataModelDescriptor[]
   is_geniex?: boolean
   geniex?: GeniexHubModel
 }

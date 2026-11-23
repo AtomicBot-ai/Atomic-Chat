@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { toast } from 'sonner'
 import { EngineManager, type ThreadMessage } from '@janhq/core'
 
 import { ContextSizeControl } from '@/containers/ContextSizeControl'
@@ -23,6 +24,15 @@ class MockResizeObserver {
 beforeAll(() => {
   global.ResizeObserver = MockResizeObserver
 })
+
+vi.mock('sonner', () => ({
+  toast: {
+    loading: vi.fn(() => 'context-restart'),
+    success: vi.fn(),
+    error: vi.fn(),
+    dismiss: vi.fn(),
+  },
+}))
 
 vi.mock('@/hooks/useTokensCount', () => ({
   useTokensCount: () => ({
@@ -105,6 +115,129 @@ describe('ContextSizeControl', () => {
       ).toBeInTheDocument()
     }
   )
+
+  function selectEngine(id: string, key: string, value: number, max = 1048576, contextLength: number | null = 32768) {
+    const model = {
+      id: 'test-model',
+      ...(contextLength === null ? {} : { contextLength }),
+      ...(id === 'strata' ? { strata: { family: 'deepseek41', context_length: 8192 } } : {}),
+    } as Model
+    const provider = {
+      active: true, provider: id, models: [model], settings: [{
+        key, title: 'Context length', description: '', controller_type: 'input',
+        controller_props: { value, min: id === 'tensorrt-llm' ? 512 : 0, max },
+      }],
+    } as ModelProvider
+    useModelProvider.setState({ providers: [provider], selectedModel: model, selectedProvider: id })
+  }
+
+  it.each([
+    ['strata', 'context_length'], ['vllm', 'context_length'], ['sglang', 'context_length'],
+    ['tensorrt-llm', 'context_length'], ['fastflowlm', 'ctx_len'],
+    ['geniex', 'ctx_len'], ['litert-lm', 'ctx_len'],
+  ])('edits the %s engine without loading an idle model', async (id, key) => {
+    const updateSettings = vi.fn().mockResolvedValue(undefined)
+    seedServiceHub({
+      models: { getActiveModels, startModel, stopModel } as unknown as ModelsService,
+      providers: { updateSettings } as unknown as Parameters<typeof seedServiceHub>[0]['providers'],
+    })
+    selectEngine(id, key, 4096)
+    render(<ContextSizeControl />)
+    fireEvent.click(screen.getByRole('button', { name: 'Context usage: 4.0%' }))
+    fireEvent.keyDown(screen.getByRole('slider'), { key: 'Home' })
+    const value = id === 'tensorrt-llm' ? 1024 : 0
+    await waitFor(() => expect(getActiveModels).toHaveBeenCalledWith(id))
+    expect(updateSettings).toHaveBeenCalledWith(id, [
+      expect.objectContaining({ key, controller_props: expect.objectContaining({ value }) }),
+    ])
+    expect(useModelProvider.getState().getProviderByName(id)?.settings[0].controller_props.value).toBe(value)
+    if (id === 'strata') {
+      const slider = screen.getByRole('slider')
+      for (let step = 1; step <= 3; step++) {
+        await act(async () => { fireEvent.keyDown(slider, { key: 'ArrowRight' }) })
+        expect(useModelProvider.getState().getProviderByName(id)?.settings[0].controller_props.value).toBe(step * 1024)
+      }
+    }
+    expect(startModel).not.toHaveBeenCalled()
+    expect(stopModel).not.toHaveBeenCalled()
+    if (id === 'vllm') expect(screen.queryByRole('progressbar')).toBeNull()
+  })
+
+  it.each(['vllm', 'sglang', 'tensorrt-llm'])('caps the %s slider at the exact checkpoint limit', async (id) => {
+    const updateSettings = vi.fn().mockResolvedValue(undefined)
+    seedServiceHub({
+      models: { getActiveModels, startModel, stopModel } as unknown as ModelsService,
+      providers: { updateSettings } as unknown as Parameters<typeof seedServiceHub>[0]['providers'],
+    })
+    selectEngine(id, 'context_length', 4096, 1048576, 20000)
+    render(<ContextSizeControl />)
+    fireEvent.click(screen.getByRole('button', { name: /Context usage/ }))
+    await act(async () => { fireEvent.keyDown(screen.getByRole('slider'), { key: 'End' }) })
+    expect(updateSettings).toHaveBeenCalledWith(id, [
+      expect.objectContaining({ controller_props: expect.objectContaining({ value: 20000 }) }),
+    ])
+  })
+
+  it('withholds the managed slider when the checkpoint limit is missing', () => {
+    selectEngine('sglang', 'context_length', 4096, 1048576, null)
+    render(<ContextSizeControl />)
+    fireEvent.click(screen.getByRole('button', { name: /Context usage/ }))
+    expect(screen.queryByRole('slider')).toBeNull()
+    expect(screen.getByText('assistants:checkpointContextUnknown')).toBeInTheDocument()
+  })
+
+  it('caps Strata at the GGUF model limit and persists before restarting only its running copy', async () => {
+    let saved!: () => void
+    const updateSettings = vi.fn(() => new Promise<void>((resolve) => { saved = resolve }))
+    seedServiceHub({
+      models: { getActiveModels, startModel, stopModel } as unknown as ModelsService,
+      providers: { updateSettings } as unknown as Parameters<typeof seedServiceHub>[0]['providers'],
+    })
+    getActiveModels.mockResolvedValue(['test-model'])
+    let stopped!: (result: { success: boolean }) => void
+    let started!: () => void
+    stopModel.mockImplementationOnce(() => new Promise((resolve) => {
+      stopped = resolve
+    }))
+    startModel.mockImplementationOnce(() => new Promise<void>((resolve) => {
+      started = resolve
+    }))
+    const getMaxCtxTrain = vi.fn().mockResolvedValue(1048576)
+    const manager = vi.spyOn(EngineManager, 'instance').mockReturnValue({
+      get: () => ({ getMaxCtxTrain }),
+    } as unknown as EngineManager)
+    selectEngine('strata', 'context_length', 0, 2147483647)
+    render(<ContextSizeControl />)
+    fireEvent.click(screen.getByRole('button', { name: 'Context usage: 2.0%' }))
+    await waitFor(() => expect(screen.getByRole('slider')).toHaveAttribute('aria-valuemax', '1024'))
+    fireEvent.keyDown(screen.getByRole('slider'), { key: 'End' })
+    expect(updateSettings).toHaveBeenCalledWith('strata', [
+      expect.objectContaining({ controller_props: expect.objectContaining({ value: 1048576 }) }),
+    ])
+    expect(stopModel).not.toHaveBeenCalled()
+    expect(toast.loading).not.toHaveBeenCalled()
+    await act(async () => saved())
+    expect(stopModel).toHaveBeenCalledWith('test-model', 'strata')
+    expect(toast.loading).toHaveBeenLastCalledWith('assistants:contextRestarting', {
+      description: 'assistants:contextStoppingModel',
+    })
+    expect(startModel).not.toHaveBeenCalled()
+
+    await act(async () => stopped({ success: true }))
+    expect(startModel).toHaveBeenCalledWith(expect.objectContaining({ provider: 'strata' }), 'test-model', true)
+    expect(toast.loading).toHaveBeenLastCalledWith('assistants:contextRestarting', {
+      id: 'context-restart',
+      description: 'assistants:contextLoadingModel',
+    })
+    expect(toast.success).not.toHaveBeenCalled()
+
+    await act(async () => started())
+    expect(toast.success).toHaveBeenCalledWith('assistants:contextRestarted', {
+      id: 'context-restart',
+    })
+    expect(useModelProvider.getState().selectedModel?.settings).toBeUndefined()
+    manager.mockRestore()
+  })
 
   it('is hidden for non-local providers', () => {
     setSelectedModel('openai')

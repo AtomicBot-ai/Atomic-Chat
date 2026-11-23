@@ -1,5 +1,6 @@
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { isFastFlowLmDownloadId } from '@/lib/fastflowlm/download-id'
+import { isStrataTaskId, resumeStrata } from '@/services/strata/install'
 import { resumeFastFlowLmDownload } from '@/services/fastflowlm/install'
 import { IconCheck } from '@tabler/icons-react'
 import { toast } from 'sonner'
@@ -41,6 +42,11 @@ export function resumeDownload(
   const imageCatalog = useImageGenerationStore.getState().catalog
   const huggingfaceToken = useGeneralSetting.getState().huggingfaceToken
 
+  if (isStrataTaskId(download.id)) {
+    clearPausedDownload(download.id)
+    void resumeStrata(download.id, huggingfaceToken).catch((error) => toast.error(String(error)))
+    return
+  }
   if (isFastFlowLmDownloadId(download.id)) {
     clearPausedDownload(download.id)
     markResumableDownload(download.id)

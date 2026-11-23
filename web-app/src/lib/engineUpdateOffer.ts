@@ -37,6 +37,7 @@ export const ENGINE_UPDATE_ORDER: readonly EngineId[] = [
   'litert-lm',
   'geniex',
   'fastflowlm',
+  'strata',
   'tensorrt-llm',
   'vllm',
   'sglang',

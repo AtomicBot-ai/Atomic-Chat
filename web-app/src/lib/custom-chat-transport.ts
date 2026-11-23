@@ -154,6 +154,7 @@ const LOCAL_INFERENCE_PROVIDERS = new Set<string>([
   'foundry-local',
   'litert-lm',
   'geniex',
+  'strata',
 ])
 
 const isLocalInferenceProvider = (provider: string): boolean =>

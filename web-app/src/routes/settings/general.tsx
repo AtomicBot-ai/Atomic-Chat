@@ -6,7 +6,10 @@ import { Switch } from '@/components/ui/switch'
 import { Button } from '@/components/ui/button'
 import { Card, CardItem } from '@/containers/Card'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { useGeneralSetting } from '@/hooks/useGeneralSetting'
+import {
+  useGeneralSetting,
+  type ReasoningBudgetLevel,
+} from '@/hooks/useGeneralSetting'
 import { useToolApproval } from '@/hooks/useToolApproval'
 import { useThreadNotifications } from '@/hooks/useThreadNotifications'
 import { useAppUpdater, type UpdateCheckOutcome } from '@/hooks/useAppUpdater'
@@ -38,7 +41,24 @@ import posthog from 'posthog-js'
 import { setLaunchAtStartup } from '@/lib/launchAtStartup'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
+import { ChevronsUpDown } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 const TOKEN_VALIDATION_TIMEOUT_MS = 10_000
+
+const THINKING_EFFORT_LABELS = {
+  off: 'settings:general.thinkingOff',
+  low: 'settings:general.thinkingLow',
+  medium: 'settings:general.thinkingMedium',
+  high: 'settings:general.thinkingHigh',
+  xhigh: 'settings:general.thinkingXhigh',
+  max: 'settings:general.thinkingMax',
+} as const satisfies Record<ReasoningBudgetLevel, string>
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const Route = createFileRoute(route.settings.general as any)({
@@ -100,7 +120,15 @@ function General() {
     setLegacyChatEngine,
     reasoningBudget,
     setReasoningBudget,
+    disableReasoning,
+    setDisableReasoning,
   } = useGeneralSetting()
+  const thinkingEffort = disableReasoning ? 'off' : reasoningBudget
+  function changeThinkingEffort(value: string) {
+    if (!Object.hasOwn(THINKING_EFFORT_LABELS, value)) return
+    if (value !== 'off') setReasoningBudget(value as ReasoningBudgetLevel)
+    setDisableReasoning(value === 'off')
+  }
   const allowAllMCPPermissions = useToolApproval(
     (state) => state.allowAllMCPPermissions
   )
@@ -711,35 +739,37 @@ function General() {
               <CardItem
                 title={t('settings:general.thinkingEffort')}
                 description={t('settings:general.thinkingEffortDesc')}
+                classNameWrapperAction="w-48 max-w-[50%]"
                 actions={
-                  <select
-                    className="border-input bg-background rounded-md border px-2 py-1 text-sm"
-                    value={reasoningBudget}
-                    onChange={(e) =>
-                      setReasoningBudget(
-                        e.target.value as typeof reasoningBudget
-                      )
-                    }
-                  >
-                    <option value="off">
-                      {t('settings:general.thinkingOff')}
-                    </option>
-                    <option value="low">
-                      {t('settings:general.thinkingLow')}
-                    </option>
-                    <option value="medium">
-                      {t('settings:general.thinkingMedium')}
-                    </option>
-                    <option value="high">
-                      {t('settings:general.thinkingHigh')}
-                    </option>
-                    <option value="xhigh">
-                      {t('settings:general.thinkingXhigh')}
-                    </option>
-                    <option value="max">
-                      {t('settings:general.thinkingMax')}
-                    </option>
-                  </select>
+                  <DropdownMenu modal={false}>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full justify-between"
+                        aria-label={`${t('settings:general.thinkingEffort')} · ${t(THINKING_EFFORT_LABELS[thinkingEffort])}`}
+                      >
+                        <span className="truncate">
+                          {t(THINKING_EFFORT_LABELS[thinkingEffort])}
+                        </span>
+                        <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuRadioGroup
+                        value={thinkingEffort}
+                        onValueChange={changeThinkingEffort}
+                      >
+                        {Object.entries(THINKING_EFFORT_LABELS).map(
+                          ([value, label]) => (
+                            <DropdownMenuRadioItem key={value} value={value}>
+                              {t(label)}
+                            </DropdownMenuRadioItem>
+                          )
+                        )}
+                      </DropdownMenuRadioGroup>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 }
               />
               <CardItem

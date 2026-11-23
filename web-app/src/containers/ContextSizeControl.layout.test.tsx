@@ -5,6 +5,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ContextSizeControl } from './ContextSizeControl'
 import { setFontSize, setTheme, settle, withTranslations } from '@/test/layout'
 
+const state = vi.hoisted(() => ({ strata: false, managed: false }))
+vi.mock('@/hooks/useServiceHub', async (load) => ({
+  ...await load<typeof import('@/hooks/useServiceHub')>(), useServiceHub: () => ({}),
+}))
 vi.mock('@/hooks/useTokensCount', () => ({
   useTokensCount: () => ({
     tokenCount: 983,
@@ -18,7 +22,14 @@ vi.mock('@/hooks/useTokensCount', () => ({
 vi.mock('@/hooks/useModelContextLength', () => ({
   formatContextSize: () => '16.0K',
   useModelContextLength: () => ({
-    available: true,
+    available: !state.strata,
+    provider: state.managed ? {
+      provider: 'vllm', settings: [{ key: 'context_length', controller_props: { value: 65536, min: 0, max: 1048576 } }],
+    } : state.strata ? {
+      provider: 'strata', settings: [{ key: 'context_length', controller_props: { value: 1048576, min: 0, max: 2147483647 } }],
+    } : undefined,
+    selectedModel: state.managed ? { id: 'qwen', contextLength: 20000 } : state.strata ? { id: 'deepseek', strata: { family: 'deepseek41', context_length: 8192 } } : undefined,
+    strataMax: 1048576,
     contextSetting: {
       title: 'Context Size',
       description: 'Size of the prompt context (0 = loaded from model).',
@@ -49,8 +60,38 @@ function visibleLineCount(element: Element): number {
 
 describe('context-size popover geometry', () => {
   beforeEach(() => {
+    state.managed = false
+    state.strata = false
     document.body.innerHTML = ''
   })
+
+  it.each([[390, '20px'], [1024, '20px'], [1280, '13px']] as const)(
+    'fits the managed checkpoint limit action at %ipx with %s type', async (width, font) => {
+      state.managed = true
+      await page.viewport(width, 800)
+      setFontSize(font)
+      render(withTranslations(<ContextSizeControl />))
+      fireEvent.click(screen.getByRole('button', { name: /Context usage/ }))
+      const panel = await screen.findByTestId('context-size-popover')
+      await settle(panel)
+      expect(screen.getByRole('button', { name: /Apply maximum of/ })).toBeVisible()
+      expect(panel.scrollWidth).toBeLessThanOrEqual(panel.clientWidth + 1)
+    }
+  )
+
+  it.each([[390, '20px'], [1024, '20px'], [1280, '13px']] as const)(
+    'fits the Strata model maximum at %ipx with %s type', async (width, font) => {
+      state.strata = true
+      await page.viewport(width, 800)
+      setFontSize(font)
+      render(withTranslations(<ContextSizeControl />))
+      fireEvent.click(screen.getByRole('button', { name: /Context usage/ }))
+      const panel = await screen.findByTestId('context-size-popover')
+      await settle(panel)
+      expect(panel.scrollWidth).toBeLessThanOrEqual(panel.clientWidth + 1)
+      expect(screen.getByRole('slider')).toHaveAttribute('aria-valuetext', (1048576).toLocaleString())
+    }
+  )
 
   for (const width of [390, 1024]) {
     for (const font of ['16px', '20px']) {

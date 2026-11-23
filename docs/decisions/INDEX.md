@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-534 records, 2026-05-19 → 2026-11-10.
+544 records, 2026-05-19 → 2026-11-23.
 
 ---
 
@@ -536,6 +536,7 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-08-07** — [Keep sidebar and model-picker interactions off the I/O path](2026-08-07-keep-sidebar-and-model-picker-interactions-off-the-io-path.md)
 - **2026-07-31** — [Disable the transparent Windows window to stop the softbuffer fatal panic](2026-07-31-disable-transparent-windows-window-to-stop-softbuffer-panic.md)
 - **2026-07-30** — [Reveal the Windows window after native setup](2026-07-30-reveal-windows-after-first-frontend-frame.md)
+- **2026-11-19** — [Edit engine context length from chat](2026-11-19-edit-engine-context-in-chat.md)
 - **2026-07-27** — [Replace advanced model settings with a focused context control](2026-07-27-replace-advanced-model-settings-with-a-focused-context-control.md)
 - **2026-07-23** — [Present the Agent working directory as the Files root](2026-07-23-present-the-agent-working-directory-as-the-files-root.md)
 - **2026-07-21** — [Separate Chat and Agent navigation in the sidebar](2026-07-21-separate-chat-and-agent-navigation-in-the-sidebar.md)
@@ -573,6 +574,12 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-09-15** — [jan-cli keeps its file name and becomes a copy of the core](2026-09-15-jan-cli-keeps-its-name-and-becomes-the-core.md)
 - **2026-09-15** — [Sign the core with JIT entitlements and verify the universal artifact](2026-09-15-sign-the-core-with-jit-entitlements.md)
 - **2026-09-15** — [Pin the core version in the app and reject protocol mismatches](2026-09-15-pin-the-core-version-and-reject-mismatches.md)
+
+## Strata (3)
+
+- **2026-11-16** — [Group Strata quantizations in the Hub](2026-11-16-group-strata-quantizations-in-the-hub.md)
+- **2026-11-16** — [Curate Strata in the Mac Model Hub](2026-11-16-curate-strata-in-the-mac-model-hub.md)
+- **2026-11-16** — [Keep Strata source acquisition in desktop](2026-11-16-keep-strata-source-acquisition-in-desktop.md)
 
 ## Managed engines (2)
 
@@ -622,3 +629,4 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-11-01** — [Use one model catalog and persist immutable download plans](2026-11-01-unify-model-catalog-and-download-plans.md).
 
 - **2026-11-02** — [Preserve generated Hub discovery alongside managed model pins](2026-11-02-preserve-hub-discovery-and-model-pins.md)
+- **2026-11-19** — [Group configured Strata models by weights repository](2026-11-19-reuse-strata-profiles-from-the-model-catalog.md)

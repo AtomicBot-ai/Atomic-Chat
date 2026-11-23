@@ -9867,6 +9867,35 @@ mod factory_reset_tests {
     }
 
     #[test]
+    fn a_reset_removes_generated_videos_and_downloaded_engine_data() {
+        let data = tempfile::tempdir().unwrap();
+        let aside = tempfile::tempdir().unwrap();
+        let root = data.path();
+        for dir in [
+            "videos",
+            "foundry-local",
+            "litert-lm",
+            "fastflowlm",
+            "geniex",
+            "strata",
+        ] {
+            let folder = root.join(dir);
+            fs::create_dir_all(&folder).unwrap();
+            fs::write(folder.join("artifact"), "generated or downloaded").unwrap();
+        }
+
+        let preserved = set_backends_aside(root, aside.path());
+        remove_jan_data_contents(root);
+        put_backends_back(root, preserved);
+
+        let remaining: Vec<_> = fs::read_dir(root)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert!(remaining.is_empty(), "survived the reset: {remaining:?}");
+    }
+
+    #[test]
     fn a_reset_removes_the_cores_keys_and_keeps_both_providers_backends() {
         let data = tempfile::tempdir().unwrap();
         let aside = tempfile::tempdir().unwrap();

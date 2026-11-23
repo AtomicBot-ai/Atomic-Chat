@@ -12,7 +12,10 @@ import {
 } from '@janhq/core'
 import { useProxyConfig } from '@/hooks/useProxyConfig'
 
-const url = import.meta.env.VITE_ATOMIC_MODEL_CATALOG_URL as string | undefined
+const url = (
+  import.meta.env.VITE_ATOMIC_MODEL_CATALOG_URL ??
+  import.meta.env.ATOMIC_MODEL_CATALOG_URL
+) as string | undefined
 configureAtomicModelCatalogSource(url)
 
 /** Detach cancellation after consuming the native response; a later timeout must not close an already released resource. */

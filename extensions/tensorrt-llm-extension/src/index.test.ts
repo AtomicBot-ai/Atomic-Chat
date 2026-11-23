@@ -189,7 +189,7 @@ describe('models', () => {
   it('lists every folder with a model.yml, sized by its files, with tools only where the core says so', async () => {
     core(
       {
-        'GET /models/tensorrt-llm/qwen3-8b/capabilities': () => ({ tools: true, reasoning: true }),
+        'GET /models/tensorrt-llm/qwen3-8b/capabilities': () => ({ tools: true, reasoning: true, maxCtxTrain: 20000 }),
         'GET /models/tensorrt-llm/gemma/capabilities': () => ({ tools: false, reasoning: false }),
         // On Linux the core still names the data folder's own models folder.
         'GET /managed-models/location': () => ({ root: '/data/managed-models', free_bytes: 1 }),
@@ -229,6 +229,7 @@ describe('models', () => {
       name: 'Qwen/Qwen3-8B',
       providerId: 'tensorrt-llm',
       sizeBytes: 1024,
+      contextLength: 20000,
       capabilities: ['tools'],
     })
     expect(models.find((m) => m.id === 'gemma')?.capabilities).toBeUndefined()

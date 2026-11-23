@@ -35,6 +35,7 @@ export const LOCAL_PROVIDER_NAMES = [
   // Qualcomm GenieX (change add-geniex-runtime): the same, on a Snapdragon X laptop.
   'geniex',
   'fastflowlm',
+  'strata',
   // The managed engines (Linux, Windows): the core runs them in a container behind its session
   // gateway. `isLocalProvider` also asks the registry (`lib/managed-engines.ts`).
   'vllm',

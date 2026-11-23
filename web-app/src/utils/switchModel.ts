@@ -279,6 +279,7 @@ const LOCAL_PROVIDERS = [
   'litert-lm',
   'geniex',
   'fastflowlm',
+  'strata',
 ] as const
 
 /** Every local engine provider, the managed engines last. */

@@ -29,6 +29,7 @@ import { useTrayStatusSync } from '@/hooks/useTrayStatusSync'
 import { useRemoteAccessSync } from '@/hooks/useRemoteAccessSync'
 import { useAccountRemoteSync } from '@/hooks/useAccountRemoteSync'
 import { useManagedEnvironmentSync } from '@/hooks/useManagedEnvironmentSync'
+import { useStrataSync } from '@/hooks/useStrataSync'
 import { useFastFlowLmSync } from '@/hooks/useFastFlowLmSync'
 import { useEngineVersionsSync } from '@/hooks/useEngineVersionsSync'
 import { useSupportChatSync } from '@/hooks/useSupportChatSync'
@@ -100,6 +101,7 @@ const AppLayout = () => {
   // provider page finds a running setup as it is. No-op off Linux.
   useManagedEnvironmentSync()
   useFastFlowLmSync()
+  useStrataSync()
   // Asks the core about every engine's versions for the update banner and the
   // installed builds lists, again whenever an engine changes. Desktop only.
   useEngineVersionsSync()

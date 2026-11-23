@@ -56,6 +56,7 @@ import {
 } from '@/hooks/useEngineBuildSwitch'
 import { InstallOtherBuild } from '@/containers/engines/InstallOtherBuild'
 import type { EngineId } from '@/services/engines/types'
+import { StrataEnginePanel, StrataGpuSetting } from '@/containers/engines/StrataEnginePanel'
 import { InstalledEngineBuilds } from '@/containers/engines/InstalledEngineBuilds'
 import Capabilities from '@/containers/Capabilities'
 import {
@@ -1996,6 +1997,7 @@ export function EngineDetail({
             )}
             {/* GenieX: the SDK and the devices its library found come before its settings and models. */}
             {providerName === 'geniex' && <GeniexEnginePanel />}
+            {providerName === 'strata' && <StrataEnginePanel />}
             {providerName === 'fastflowlm' && (
               <>
                 <FastFlowLmEnginePanel />
@@ -2085,6 +2087,23 @@ export function EngineDetail({
                   </p>
                 )}
                 {provider?.settings.map((setting, settingIndex) => {
+                  if (providerName === 'strata' && setting.key === 'gpu_id') {
+                    return (
+                      <StrataGpuSetting
+                        key={setting.key}
+                        value={String(setting.controller_props.value ?? '')}
+                        onChange={(value) =>
+                          updateProvider(providerName, {
+                            settings: provider.settings.map((item) =>
+                              item.key === 'gpu_id'
+                                ? { ...item, controller_props: { ...item.controller_props, value } }
+                                : item
+                            ),
+                          })
+                        }
+                      />
+                    )
+                  }
                   // Concurrent Mode is not offered: its rows stay in the core's
                   // schema, and both llama.cpp extensions switch a stored
                   // `concurrent_mode: true` off on start
@@ -2546,7 +2565,9 @@ export function EngineDetail({
                         <>
                           <RenderMarkdown
                             className="![>p]:text-muted-foreground select-none"
-                            content={setting.description}
+                            content={providerName === 'strata' && setting.key === 'context_length'
+                              ? t('hub:strata.contextDescription')
+                              : setting.description}
                             components={{
                               // Make links open in a new tab, with the
                               // product brand colour #1F7CFF.
@@ -2843,7 +2864,8 @@ export function EngineDetail({
                             provider.provider !== 'foundry-local' &&
                             provider.provider !== 'litert-lm' &&
                             provider.provider !== 'geniex' &&
-                            provider.provider !== 'fastflowlm' && (
+                            provider.provider !== 'fastflowlm' &&
+                            provider.provider !== 'strata' && (
                               <>
                                 <Button
                                   variant="secondary"
@@ -2874,7 +2896,8 @@ export function EngineDetail({
                               provider.provider === 'foundry-local' ||
                               provider.provider === 'litert-lm' ||
                               provider.provider === 'geniex' ||
-                              provider.provider === 'fastflowlm') &&
+                              provider.provider === 'fastflowlm' ||
+                              provider.provider === 'strata') &&
                             !hasDownloadedModels && (
                               <Button
                                 variant="default"

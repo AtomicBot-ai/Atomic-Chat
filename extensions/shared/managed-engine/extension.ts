@@ -331,7 +331,7 @@ export function managedEngineExtension(spec: ManagedEngineSpec, deps: ManagedEng
       const yml = await deps.invoke<ManagedModelYml>('read_yaml', {
         path: await deps.joinPath([modelsDir, id, 'model.yml']),
       })
-      const capabilities = (await this.isToolSupported(id)) ? ['tools'] : []
+      const facts = await this.modelCapabilities(id)
       return {
         id,
         name: yml.repository ?? id,
@@ -339,7 +339,8 @@ export function managedEngineExtension(spec: ManagedEngineSpec, deps: ManagedEng
         port: 0,
         sizeBytes: (yml.files ?? []).reduce((total, file) => total + (file.size ?? 0), 0),
         path: await deps.joinPath([modelsDir, id]),
-        capabilities: capabilities.length > 0 ? capabilities : undefined,
+        capabilities: facts?.tools ? ['tools'] : undefined,
+        contextLength: facts?.maxCtxTrain,
       } as modelInfo
     }
 
@@ -349,12 +350,11 @@ export function managedEngineExtension(spec: ManagedEngineSpec, deps: ManagedEng
      * engine is not installed.
      */
     async isToolSupported(modelId: string): Promise<boolean> {
-      try {
-        const capabilities = (await this.core.capabilities(modelId)) as unknown as { tools?: boolean }
-        return capabilities.tools === true
-      } catch {
-        return false
-      }
+      return (await this.modelCapabilities(modelId))?.tools === true
+    }
+
+    private modelCapabilities(modelId: string) {
+      return this.core.capabilities(modelId).catch(() => undefined)
     }
 
     // ── Session management ───────────────────────────────────────────────────

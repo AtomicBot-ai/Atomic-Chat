@@ -26,6 +26,9 @@ import type { CatalogModel } from '@/services/models/types'
  */
 function SourceLink({ model }: { model: CatalogModel }) {
   const { t } = useTranslation()
+  if (model.strata) {
+    return <span className="text-xs text-muted-foreground">Strata</span>
+  }
   const foundry = foundryLocalOf(model)
   const liteRt = liteRtLmOf(model)
   const geniex = geniexOf(model)
@@ -91,6 +94,7 @@ function SourceLink({ model }: { model: CatalogModel }) {
 
 export type ModelDetailPanelProps = {
   model: CatalogModel
+  onStrataVariantChange?: (id: string) => void
   /** The row's display name: the pick's title, the Foundry name or the repo's. */
   name: string
   /** Curated metadata when the row came from staff picks. */
@@ -121,6 +125,7 @@ export type ModelDetailPanelProps = {
  */
 export function ModelDetailPanel({
   model,
+  onStrataVariantChange,
   name,
   pickIcon,
   facts,
@@ -171,6 +176,7 @@ export function ModelDetailPanel({
         foundry ||
         liteRt ||
         geniex ||
+        model.strata ||
         model.fastflowlm ||
         model.is_fastflowlm ? (
         t('hub:table.deviceInCard')
@@ -211,7 +217,9 @@ export function ModelDetailPanel({
                     ? liteRt.repo || liteRt.model_id
                     : geniex
                       ? geniex.gguf?.repo || geniex.model_id
-                      : hubRepoId(model)}
+                      : model.strata
+                        ? `strata/${model.strata.variant_id}`
+                        : hubRepoId(model)}
               </span>
               {!!model.downloads && model.downloads > 0 && (
                 <span className="inline-flex items-center gap-1 tabular-nums">
@@ -269,7 +277,11 @@ export function ModelDetailPanel({
             </div>
           </section>
         ) : (
-          <DownloadOptionsSelect model={model} budgetBytes={budgetBytes} />
+          <DownloadOptionsSelect
+            model={model}
+            budgetBytes={budgetBytes}
+            onStrataVariantChange={onStrataVariantChange}
+          />
         )}
       </div>
     </div>

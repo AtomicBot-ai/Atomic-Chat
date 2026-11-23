@@ -335,6 +335,10 @@ pub fn run() {
         core::atomic_core::fastflowlm_models::atomic_fastflowlm_install_jobs,
         core::atomic_core::fastflowlm_models::atomic_fastflowlm_recover_mutations,
         core::atomic_core::fastflowlm_models::atomic_fastflowlm_remove_model,
+        core::atomic_core::strata_models::atomic_strata_acquire,
+        core::atomic_core::strata_models::atomic_strata_jobs,
+        core::atomic_core::strata_models::atomic_strata_finish_install,
+        core::atomic_core::strata_models::atomic_strata_remove_model,
         // The progress bar's "restart now" (Windows) / "sign out now" (Linux) for a managed setup.
         core::atomic_core::commands::atomic_core_finish_session_step,
     ]);

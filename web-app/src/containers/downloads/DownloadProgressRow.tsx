@@ -1,4 +1,8 @@
-import { formatDownloadStatusLine, shortModelName } from '@/lib/downloadFormat'
+import {
+  formatDownloadStatusLine,
+  isStrataPreparation,
+  shortModelName,
+} from '@/lib/downloadFormat'
 import { quantFromModelId } from '@/lib/telemetry'
 import { cn } from '@/lib/utils'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -105,7 +109,8 @@ export function DownloadProgressRow({
     { current, total, bytesPerSecond, stage, paused },
     { runningWord: false }
   )
-  const percent = total > 0 ? Math.round(progress * 100) : null
+  const preparing = !paused && isStrataPreparation(stage)
+  const percent = total > 0 && !preparing ? Math.round(progress * 100) : null
   const barPercent = Math.min(100, Math.max(0, Math.round(progress * 100)))
   const reconnecting =
     !paused && (stage?.kind === 'stalled' || stage?.kind === 'retrying')
@@ -138,12 +143,14 @@ export function DownloadProgressRow({
               </span>
             )}
           </p>
-          {/* One line that never wraps: past the row's width it is cut at its
-              end — the estimate, the part that matters least — instead of
-              growing the bottom-anchored card. `aria-live` is deliberately
-              absent: this text changes every few seconds and would talk over
-              everything else. */}
-          <p className="mt-0.5 truncate text-[11px] tabular-nums text-[var(--dl-text)]">
+          {/* Keep byte progress on one line. Let the preparation explanation
+              wrap so it stays readable in the narrow panel. */}
+          <p
+            className={cn(
+              'mt-0.5 text-[11px] tabular-nums text-[var(--dl-text)]',
+              !preparing && 'truncate'
+            )}
+          >
             {line}
           </p>
         </div>
@@ -191,8 +198,8 @@ export function DownloadProgressRow({
         aria-label={label}
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-valuenow={barPercent}
-        aria-valuetext={`${barPercent}%`}
+        aria-valuenow={preparing ? undefined : barPercent}
+        aria-valuetext={preparing ? line : `${barPercent}%`}
         className="h-[3px] bg-[var(--dl-track)]"
       >
         <i
@@ -201,7 +208,7 @@ export function DownloadProgressRow({
             'block h-full transition-[width] duration-500 motion-reduce:transition-none',
             DOWNLOAD_PROGRESS_INDICATOR
           )}
-          style={{ width: `${barPercent}%` }}
+          style={{ width: `${preparing ? 0 : barPercent}%` }}
         />
       </div>
     </li>
