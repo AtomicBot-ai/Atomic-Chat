@@ -165,11 +165,18 @@ describe('Slider', () => {
     // Step property is handled by Radix internally
   })
 
-  it('handles aria attributes', () => {
-    render(<Slider aria-label="Volume" />)
-    
-    const slider = document.querySelector('[data-slot="slider"]')
-    expect(slider).toHaveAttribute('aria-label', 'Volume')
+  it('names each thumb, which is the element with the slider role', () => {
+    render(<Slider aria-label="Volume" aria-valuetext="40 percent" defaultValue={[40]} />)
+
+    // The label goes to the thumb (role="slider"), not the root, so screen
+    // readers announce it on the control they focus.
+    const thumbs = screen.getAllByRole('slider')
+    expect(thumbs).toHaveLength(1)
+    expect(thumbs[0]).toHaveAttribute('aria-label', 'Volume')
+    expect(thumbs[0]).toHaveAttribute('aria-valuetext', '40 percent')
+    expect(document.querySelector('[data-slot="slider"]')).not.toHaveAttribute(
+      'aria-label'
+    )
   })
 
   it('handles custom props', () => {
