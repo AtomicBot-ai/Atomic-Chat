@@ -104,6 +104,7 @@ import {
   DEFAULT_OUTPUT_RESERVE_TOKENS,
   PREFLIGHT_CTX_THRESHOLD,
   estimatePromptTokensHeuristic,
+  estimateTokens,
   estimateToolsTokens,
   toOpenAiMessages,
   toOpenAiTools,
@@ -114,8 +115,37 @@ import {
   isContextLimitError,
 } from '@/utils/error'
 import { withoutEmptyFailedTurns } from '@/lib/turn-error'
-import { withoutHistoryBefore } from '@/lib/turn-recovery'
+import {
+  calibratedMessageEstimate,
+  historyTrimBudget,
+  planHistoryTrim,
+  withoutHistoryBefore,
+} from '@/lib/turn-recovery'
 import { contextSupport } from '@/lib/context-support'
+import {
+  COMPACTION_METADATA_KEY,
+  appliedCompaction,
+  autoCompactionKey,
+  boundaryFromKeepFrom,
+  claimAutoCompaction,
+  compactsHistory,
+  hasCompactableHistory,
+  indexedOpenAiMessages,
+  laterHistoryStart,
+  readThreadCompaction,
+  threadCompactionFrom,
+  withCompactionSummary,
+  type IndexedChatMessages,
+  type ThreadCompaction,
+} from '@/lib/context-compaction'
+import { compactContext, measureContext } from '@/lib/core-context'
+import {
+  CONTEXT_FIT_RATIO,
+  decideOverflowAction,
+  type ContextMeasureResult,
+} from '@/lib/core-context-contract'
+import { toast } from 'sonner'
+import i18n from '@/i18n/setup'
 import { isManagedProvider } from '@/lib/managed-engines'
 import { summarizeToolCost } from '@/lib/tool-cost'
 import { extractModelErrorMessage } from '@/lib/modelErrorMessage'
@@ -507,6 +537,58 @@ function prependTextDeltaToUIStream(
   })
 }
 
+/** A chat request as `streamText` sends it. */
+export type AssembledRequest = {
+  system: string | undefined
+  messages: ModelMessage[]
+}
+
+/** What the core measured a request at, and the session it measured it on. */
+export type MeasuredContext = ContextMeasureResult & {
+  providerId: string
+  modelId: string
+}
+
+/**
+ * How a compaction of a thread's history went: `absent` — the provider is not
+ * a local engine or the core has no compaction; `failed` — the summary could
+ * not be made; `nothing` — there is no older history to summarize.
+ */
+export type CompactHistoryOutcome =
+  | { ok: true; compaction: ThreadCompaction }
+  | { ok: false; reason: 'absent' | 'failed' | 'nothing' }
+
+type PreflightArgs = {
+  providerId: string
+  modelId: string
+  provider: ProviderObject | undefined
+  request: AssembledRequest
+  tools: Record<string, Tool> | undefined
+  maxOutputTokens: number | undefined
+  recreateModel: () => Promise<void>
+  abortSignal: AbortSignal | undefined
+  /** What the request was built from, to build it again from a later message. */
+  history: {
+    /** The thread's conversation, as shown (failed empty turns left out). */
+    conversation: UIMessage[]
+    /** The messages the request sends, prepared for the model converter. */
+    prepared: UIMessage[]
+    /** The system prompt before any summary. */
+    baseSystem: string | undefined
+    /** The compaction the request applies. */
+    compaction: ThreadCompaction | undefined
+    assemble: (
+      from: UIMessage[],
+      compaction: ThreadCompaction | undefined
+    ) => AssembledRequest
+  }
+}
+
+type PreflightResult = {
+  window: number | undefined
+  request: AssembledRequest
+}
+
 export class CustomChatTransport implements ChatTransport<UIMessage> {
   public model: LanguageModel | null = null
   private tools: Record<string, Tool> = {}
@@ -856,15 +938,602 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     | undefined
 
   /**
-   * Estimate (or, for llama.cpp, measure) the prompt and grow the model's
-   * context window once when it would not fit. Returns silently on any
-   * failure — the reactive error path in the thread route remains the
-   * safety net. Throws a context-limit error when the ladder is already at
-   * the model's maximum so the request is not sent into a window it cannot
-   * fit. Resolves to the window the request goes out with, or `undefined`
-   * when the pre-flight did not run to a decision.
+   * What the core measured the last request at (`context/measure`), and the
+   * session it was measured on; `undefined` when it did not (an older core, a
+   * cloud model). The thread page reads it to decide what an overflow of that
+   * request does.
    */
-  private async ensureContextFits(args: {
+  lastContextMeasure: MeasuredContext | undefined
+
+  /**
+   * The compaction made for a thread the thread store does not hold (a
+   * temporary chat), so the rest of this session still sends its summary.
+   */
+  private sessionCompaction: ThreadCompaction | undefined
+
+  /** The compaction stored on this transport's thread. */
+  private storedCompaction(): ThreadCompaction | undefined {
+    const thread = this.threadId
+      ? useThreads.getState().threads[this.threadId]
+      : undefined
+    return thread
+      ? readThreadCompaction(thread.metadata)
+      : this.sessionCompaction
+  }
+
+  /** Store `compaction` on the thread; it replaces the older one. */
+  private persistCompaction(compaction: ThreadCompaction): void {
+    const threads = useThreads.getState()
+    if (this.threadId && threads.threads[this.threadId]) {
+      threads.updateThread(this.threadId, {
+        metadata: { [COMPACTION_METADATA_KEY]: compaction },
+      })
+      return
+    }
+    this.sessionCompaction = compaction
+  }
+
+  /**
+   * The messages of a request as they go to the model converter: Anthropic's
+   * serial tool use split, inline documents folded in, files other than
+   * images taken out (the converters accept `image/*` and nothing else), and
+   * for a local engine a tool result's image hoisted into a message of its
+   * own. Order matters: `mapUserInlineAttachments` folds document text into
+   * the message before the strip runs, and `extractAudioInputParts` reads the
+   * untouched messages, so neither loses anything.
+   */
+  private prepareForModel(
+    messages: UIMessage[],
+    providerId: string
+  ): UIMessage[] {
+    const messagesToConvert =
+      providerId === 'anthropic'
+        ? splitAnthropicSerialToolUse(messages)
+        : messages
+    let prepared = stripUnsupportedFileParts(
+      this.mapUserInlineAttachments(messagesToConvert)
+    )
+    // Local backends serialize tool results to a `role: "tool"` text message
+    // (JSON.stringify), so an image in a tool result (e.g. an MCP screenshot
+    // tool) would otherwise be sent as full base64 TEXT and flood the context
+    // window — the root cause of ATO-208's MLX 400s. Strip the base64 out of
+    // the model payload (placeholder) and, for vision models, re-attach the
+    // image as a proper multimodal user message. Cloud providers are left
+    // untouched (they have large contexts and handle this differently).
+    if (isLocalInferenceProvider(providerId)) {
+      const supportsVision =
+        useModelProvider
+          .getState()
+          .selectedModel?.capabilities?.includes('vision') ?? false
+      prepared = prepareToolResultImagesForModel(prepared, {
+        supportsVision,
+      })
+    }
+    return chatExecOutputsForModel(prepared)
+  }
+
+  /**
+   * The tools a request offers and the system prompt it carries: the
+   * assistant's instructions with the bodies of the skills invoked on the
+   * thread (the chat counterpart of the agent's `skill.view` loading, read off
+   * the messages so send, regenerate, edit and app-restart replay are
+   * uniform) and the attached-documents hint when `retrieve` is offered.
+   */
+  private async requestFrame(
+    messages: UIMessage[],
+    providerId: string,
+    providerSettings: readonly ProviderSetting[] | undefined
+  ): Promise<{
+    isLocalProvider: boolean
+    shouldEnableTools: boolean
+    activeTools: Record<string, Tool> | undefined
+    systemWithSkills: string | undefined
+  }> {
+    const isLocalProvider = isLocalInferenceProvider(providerId)
+
+    const hasTools = Object.keys(this.tools).length > 0
+    const selectedModel = useModelProvider.getState().selectedModel
+    const modelSupportsTools =
+      selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
+    const suppressToolsForDflash = shouldSuppressToolsForUpstreamDflash(
+      providerId,
+      providerSettings
+    )
+    const shouldEnableTools =
+      hasTools && modelSupportsTools && !suppressToolsForDflash
+    const activeTools = !shouldEnableTools
+      ? undefined
+      : GRAMMAR_CONSTRAINED_PROVIDERS.has(providerId)
+        ? withGrammarSafeToolSchemas(this.tools)
+        : this.tools
+
+    const invokedSkillNames = collectSkillNamesFromMessages(messages)
+    if (this.skillCacheRevision !== agentSkillRevision()) {
+      this.invalidateSkillCache()
+    }
+    const skillsBlock = renderChatSkillsBlock(
+      await loadChatSkillDetails(invokedSkillNames, this.skillDetailCache)
+    )
+    const documentsHint =
+      activeTools && 'retrieve' in activeTools
+        ? ATTACHED_DOCUMENTS_HINT
+        : undefined
+    const systemWithSkills = composeSystemMessage(
+      composeSystemMessage(this.systemMessage, skillsBlock),
+      documentsHint
+    )
+    return { isLocalProvider, shouldEnableTools, activeTools, systemWithSkills }
+  }
+
+  /** `request` as the core measures it for `providerId`'s session; `undefined` when it cannot. */
+  private measureRequest(
+    providerId: string,
+    modelId: string,
+    request: AssembledRequest,
+    tools: Record<string, Tool> | undefined
+  ) {
+    const openAiTools = toOpenAiTools(tools)
+    return measureContext(providerId, modelId, {
+      messages: toOpenAiMessages({
+        system: request.system,
+        messages: request.messages,
+      }),
+      ...(openAiTools.length > 0 ? { tools: openAiTools } : {}),
+      ...(this.lastChatTemplateKwargs
+        ? { chat_template_kwargs: this.lastChatTemplateKwargs }
+        : {}),
+    })
+  }
+
+  /** Keep what the core measured, for the thread page and telemetry. */
+  private recordMeasure(args: {
+    providerId: string
+    modelId: string
+    measure: ContextMeasureResult
+    windowTokens: number | undefined
+    toolTokens: number
+  }): void {
+    const { measure, windowTokens } = args
+    this.lastContextMeasure = {
+      ...measure,
+      ...(windowTokens !== undefined ? { windowTokens } : {}),
+      providerId: args.providerId,
+      modelId: args.modelId,
+    }
+    this.lastPromptSize = {
+      promptTokens: measure.promptTokens,
+      toolTokens: args.toolTokens,
+      ctxLen: windowTokens ?? 0,
+      measured: measure.exact,
+    }
+  }
+
+  /** The overflow a request that does not fit even without its older history fails with. */
+  private overflowError(needed: number, windowTokens: number): Error {
+    return new Error(
+      `${OUT_OF_CONTEXT_SIZE} The prompt needs about ${needed} tokens (${this.lastPromptSize?.toolTokens ?? 0} of them are tool definitions) but the model's context is ${windowTokens}, and leaving out the older messages is not enough. Disable some connectors for this chat, shorten your message or remove attachments.`
+    )
+  }
+
+  /**
+   * The pre-flight of every local engine. The core measures the request
+   * against the window its session serves (`context/measure`), and one that
+   * would not fit is handled by the one overflow rule
+   * (`decideOverflowAction`): an engine that reloads in seconds and is below
+   * its device maximum grows once, straight to that maximum; every other
+   * overflow compacts the history (`compactToFit`). An older core measures
+   * nothing: the engines that reload then grow the way they always did
+   * (`ensureContextFitsLegacy`), and the rest are sent as they are.
+   *
+   * Throws a context-limit error only when the request does not fit even
+   * without its older history. Resolves to the window the request goes out
+   * with and the request to send, or `undefined` when the pre-flight did not
+   * run to a decision — the request is then sent as it is, and the reactive
+   * error path in the thread route remains the safety net.
+   */
+  private async ensureContextFits(
+    args: PreflightArgs
+  ): Promise<PreflightResult | undefined> {
+    const selectedModel = useModelProvider.getState().selectedModel
+    if (!selectedModel || selectedModel.id !== args.modelId) return
+    if (!this.serviceHub) return
+    const support = contextSupport(args.providerId)
+
+    const measure = await this.measureRequest(
+      args.providerId,
+      args.modelId,
+      args.request,
+      args.tools
+    )
+    if (args.abortSignal?.aborted) return
+    if (!measure) {
+      this.lastContextMeasure = undefined
+      if (!support.canExpand) return
+      const window = await this.ensureContextFitsLegacy({
+        ...args,
+        system: args.request.system,
+        messages: args.request.messages,
+      })
+      return { window, request: args.request }
+    }
+
+    const ctxLen = readModelCtxLen(selectedModel)
+    // The window the session serves; only an engine the app sizes itself
+    // falls back to the model's own setting when the core does not know it.
+    const windowTokens =
+      measure.windowTokens ?? (support.resize === 'reload' ? ctxLen : undefined)
+    const reserve = args.maxOutputTokens ?? DEFAULT_OUTPUT_RESERVE_TOKENS
+    const toolTokens = estimateToolsTokens(args.tools)
+    this.recordMeasure({
+      providerId: args.providerId,
+      modelId: args.modelId,
+      measure,
+      windowTokens,
+      toolTokens,
+    })
+    const needed = measure.promptTokens + reserve
+    const action = decideOverflowAction({
+      resize: measure.resize,
+      neededTokens: needed,
+      windowTokens,
+      maxWindowTokens: measure.maxWindowTokens,
+    })
+    if (action === 'none' || windowTokens === undefined) {
+      return { window: windowTokens, request: args.request }
+    }
+    console.info(
+      `[chat] prompt ${measure.promptTokens} tokens (${measure.exact ? 'measured' : 'estimated'}) + ${reserve} reserved does not fit ${args.providerId} window ${windowTokens}; ${action}`
+    )
+
+    let window = windowTokens
+    if (
+      action === 'expand' &&
+      measure.maxWindowTokens !== undefined &&
+      readAutoIncreaseCtx(selectedModel)
+    ) {
+      const grown = await this.expandToMax({
+        providerId: args.providerId,
+        modelId: args.modelId,
+        from: windowTokens,
+        to: measure.maxWindowTokens,
+        recreateModel: args.recreateModel,
+      })
+      if (args.abortSignal?.aborted) {
+        useAppState.getState().clearContextActivity(this.threadId)
+        return
+      }
+      if (grown !== undefined) {
+        window = grown
+        this.recordMeasure({
+          providerId: args.providerId,
+          modelId: args.modelId,
+          measure,
+          windowTokens: grown,
+          toolTokens,
+        })
+        if (needed <= grown * CONTEXT_FIT_RATIO) {
+          return { window: grown, request: args.request }
+        }
+      }
+    }
+    return this.compactToFit({
+      ...args,
+      window,
+      promptTokens: measure.promptTokens,
+      reserve,
+    })
+  }
+
+  /**
+   * Grow the window once, straight to the device maximum, and re-create the
+   * model against the reloaded session. "Adding context" shows from here
+   * until the answer's first token; the size it grew to, or `undefined` when
+   * it could not grow (compaction takes over then).
+   */
+  private async expandToMax(args: {
+    providerId: string
+    modelId: string
+    from: number
+    to: number
+    recreateModel: () => Promise<void>
+  }): Promise<number | undefined> {
+    const appState = useAppState.getState()
+    appState.setContextExpanding({
+      threadId: this.threadId,
+      from: args.from,
+      to: args.to,
+    })
+    let grown = false
+    try {
+      const result = await growModelContext({
+        providerId: args.providerId,
+        modelId: args.modelId,
+        serviceHub: this.serviceHub!,
+        minCtxLen: args.to,
+        capCtxLen: args.to,
+      })
+      if (!result.ok) {
+        console.info(
+          `[chat] ${args.providerId}/${args.modelId} did not grow to ${args.to} (${result.reason}); compacting instead`
+        )
+        return undefined
+      }
+      appState.setContextExpanding({
+        threadId: this.threadId,
+        from: result.from,
+        to: result.to,
+      })
+      await args.recreateModel()
+      grown = true
+      return result.to
+    } finally {
+      if (!grown) useAppState.getState().clearContextActivity(this.threadId)
+    }
+  }
+
+  /**
+   * Make a request that does not fit its window fit: summarize the oldest
+   * turns with the loaded model (once per turn, `claimAutoCompaction`), store
+   * the compaction on the thread, rebuild the request from its boundary with
+   * the summary and measure it once more. When that is not enough, or the
+   * summary could not be made, leave out the oldest whole turns instead
+   * (`planHistoryTrim`, as "Shorten history and retry" does) and say so.
+   * Throws a context-limit error when not even that fits.
+   */
+  private async compactToFit(
+    args: PreflightArgs & {
+      window: number
+      promptTokens: number
+      reserve: number
+    }
+  ): Promise<PreflightResult | undefined> {
+    const { history } = args
+    const fits = (promptTokens: number) =>
+      promptTokens + args.reserve <= args.window * CONTEXT_FIT_RATIO
+    const threadIds = new Set(history.conversation.map((m) => m.id))
+    const threadMessages = (messages: UIMessage[]) =>
+      messages.filter((m) => threadIds.has(m.id))
+    let sending = false
+    try {
+      let compaction = history.compaction
+      let prepared = history.prepared
+      let promptTokens = args.promptTokens
+      let compactionFailed = false
+
+      const turnKey = autoCompactionKey(this.threadId, history.conversation)
+      if (
+        hasCompactableHistory(threadMessages(prepared), []) &&
+        claimAutoCompaction(turnKey)
+      ) {
+        useAppState.getState().setContextCompacting({ threadId: this.threadId })
+        const outcome = await this.runCompaction({
+          providerId: args.providerId,
+          modelId: args.modelId,
+          conversation: history.conversation,
+          prepared,
+          baseSystem: history.baseSystem,
+          compaction,
+          tools: args.tools,
+          reserve: args.reserve,
+        })
+        if (args.abortSignal?.aborted) return
+        if (outcome.ok) {
+          compaction = outcome.compaction
+          prepared = withoutHistoryBefore(prepared, compaction.upToMessageId)
+          const request = history.assemble(prepared, compaction)
+          const again = await this.measureRequest(
+            args.providerId,
+            args.modelId,
+            request,
+            args.tools
+          )
+          if (args.abortSignal?.aborted) return
+          // A measure that fails now is no reason to drop more: the summary
+          // aimed at half the window, and the engine's own overflow error is
+          // the safety net.
+          if (!again || fits(again.promptTokens)) {
+            if (again) {
+              this.recordMeasure({
+                providerId: args.providerId,
+                modelId: args.modelId,
+                measure: again,
+                windowTokens: args.window,
+                toolTokens: estimateToolsTokens(args.tools),
+              })
+            }
+            sending = true
+            return { window: args.window, request }
+          }
+          promptTokens = again.promptTokens
+        } else {
+          compactionFailed = outcome.reason !== 'nothing'
+        }
+      }
+
+      // Leave out the oldest whole turns: what "Shorten history and retry"
+      // does, for the rest of this chat session.
+      const system = withCompactionSummary(history.baseSystem, compaction)
+      const fixedTokens =
+        estimateToolsTokens(args.tools) + estimateTokens(system ?? '')
+      const turns = threadMessages(prepared)
+      const plan = planHistoryTrim({
+        messages: turns,
+        budgetTokens: historyTrimBudget({
+          windowTokens: args.window,
+          reserveTokens: args.reserve,
+          fixedTokens,
+        }),
+        estimate: calibratedMessageEstimate({
+          messages: turns,
+          measuredPromptTokens: promptTokens,
+          fixedTokens,
+        }),
+      })
+      if (!plan)
+        throw this.overflowError(promptTokens + args.reserve, args.window)
+      this.historyStartId = plan.keepFromId
+      prepared = withoutHistoryBefore(prepared, plan.keepFromId)
+      const request = history.assemble(prepared, compaction)
+      const again = await this.measureRequest(
+        args.providerId,
+        args.modelId,
+        request,
+        args.tools
+      )
+      if (args.abortSignal?.aborted) return
+      if (again && !fits(again.promptTokens)) {
+        throw this.overflowError(again.promptTokens + args.reserve, args.window)
+      }
+      if (compactionFailed) {
+        toast.warning(
+          i18n.t('chat:contextCompaction.failedTrimmed', {
+            count: plan.droppedMessages,
+          }),
+          { id: `compaction-failed-${this.threadId ?? ''}` }
+        )
+      } else {
+        toast.info(
+          i18n.t('chat:turnRecovery.historyShortened', {
+            count: plan.droppedMessages,
+          }),
+          { id: `history-shortened-${this.threadId ?? ''}` }
+        )
+      }
+      sending = true
+      return { window: args.window, request }
+    } finally {
+      if (!sending || args.abortSignal?.aborted) {
+        useAppState.getState().clearContextActivity(this.threadId)
+      }
+    }
+  }
+
+  /**
+   * Ask the core to summarize the oldest turns of `prepared` (the messages
+   * the request sends, in order) with the loaded model, and store the
+   * compaction on the thread. The request carries the system prompt with the
+   * summary already in it, so a newer summary covers the older one.
+   */
+  private async runCompaction(args: {
+    providerId: string
+    modelId: string
+    /** The thread's conversation, as shown. */
+    conversation: UIMessage[]
+    prepared: UIMessage[]
+    baseSystem: string | undefined
+    compaction: ThreadCompaction | undefined
+    tools: Record<string, Tool> | undefined
+    reserve: number
+  }): Promise<CompactHistoryOutcome> {
+    let indexed: IndexedChatMessages
+    try {
+      indexed = indexedOpenAiMessages({
+        system: withCompactionSummary(args.baseSystem, args.compaction),
+        groups: args.prepared.map((message) => ({
+          id: message.id,
+          messages: convertToModelMessages([message]),
+        })),
+      })
+    } catch (error) {
+      console.warn('[chat] could not build the compaction request:', error)
+      return { ok: false, reason: 'failed' }
+    }
+    const openAiTools = toOpenAiTools(args.tools)
+    const outcome = await compactContext(args.providerId, args.modelId, {
+      messages: indexed.messages,
+      ...(openAiTools.length > 0 ? { tools: openAiTools } : {}),
+      reserveTokens: args.reserve,
+    })
+    if (!outcome.ok) return { ok: false, reason: outcome.reason }
+    const threadIds = new Set(args.conversation.map((m) => m.id))
+    const boundaryId = boundaryFromKeepFrom({
+      sourceIds: indexed.sourceIds,
+      keepFrom: outcome.result.keepFrom,
+      messages: args.prepared.filter((m) => threadIds.has(m.id)),
+    })
+    if (!boundaryId) return { ok: false, reason: 'nothing' }
+    const compaction = threadCompactionFrom({
+      result: outcome.result,
+      boundaryId,
+      conversation: args.conversation,
+      modelId: args.modelId,
+      provider: args.providerId,
+    })
+    this.persistCompaction(compaction)
+    console.info(
+      `[chat] compacted ${compaction.summarizedCount} messages of thread ${this.threadId ?? '-'}: ${compaction.tokensBefore} -> ${compaction.tokensAfter} tokens${outcome.result.cached ? ' (cached)' : ''}`
+    )
+    return { ok: true, compaction }
+  }
+
+  /**
+   * Compact the history of this transport's thread now, with the selected
+   * local model: "Compact history" in the context popover, "Compact and
+   * retry" on the error card, and the thread page's recovery after an
+   * overflow. `messages` is the conversation the next request sends; it is
+   * not changed. The compaction is stored on the thread; resending is the
+   * caller's business.
+   */
+  async compactHistory(args: {
+    messages: UIMessage[]
+  }): Promise<CompactHistoryOutcome> {
+    const { selectedModel, selectedProvider, getProviderByName } =
+      useModelProvider.getState()
+    const modelId = selectedModel?.id
+    const provider = getProviderByName(selectedProvider)
+    if (!modelId || !provider || !compactsHistory(selectedProvider)) {
+      return { ok: false, reason: 'absent' }
+    }
+    // Copies: the conversion folds inline documents into the messages it is
+    // given, and the thread's own are not this call's to change.
+    const conversation = withoutEmptyFailedTurns(args.messages).map(
+      (message) => ({ ...message })
+    )
+    const compaction = appliedCompaction(conversation, this.storedCompaction())
+    const starts = [compaction?.upToMessageId, this.historyStartId]
+    if (!hasCompactableHistory(conversation, starts)) {
+      return { ok: false, reason: 'nothing' }
+    }
+    await this.refreshTools()
+    const prepared = this.prepareForModel(
+      stripAgentRunToolParts(
+        withoutHistoryBefore(
+          conversation,
+          laterHistoryStart(conversation, starts)
+        )
+      ),
+      selectedProvider
+    )
+    const { activeTools, systemWithSkills } = await this.requestFrame(
+      conversation,
+      selectedProvider,
+      provider.settings
+    )
+    const maxOutputTokens = getSamplingParamsForThread(this.threadId).params
+      ?.max_output_tokens as number | undefined
+    return this.runCompaction({
+      providerId: selectedProvider,
+      modelId,
+      conversation,
+      prepared,
+      baseSystem: systemWithSkills,
+      compaction,
+      tools: activeTools,
+      reserve: maxOutputTokens ?? DEFAULT_OUTPUT_RESERVE_TOKENS,
+    })
+  }
+
+  /**
+   * The pre-flight against an older core, which measures nothing: estimate
+   * (or, for llama.cpp, measure) the prompt and grow the model's context
+   * window once when it would not fit. Returns silently on any failure — the
+   * reactive error path in the thread route remains the safety net. Throws a
+   * context-limit error when the ladder is already at the model's maximum so
+   * the request is not sent into a window it cannot fit. Resolves to the
+   * window the request goes out with, or `undefined` when the pre-flight did
+   * not run to a decision.
+   */
+  private async ensureContextFitsLegacy(args: {
     providerId: string
     modelId: string
     provider: ProviderObject | undefined
@@ -1262,61 +1931,37 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // Fix for Anthropic serial tool-use (error 400): when an assistant message
     // contains tool parts interleaved with text parts (serial tool calls),
     // split it into separate messages so convertToModelMessages produces the
-    // tool_use / tool_result pairing that the Claude API requires.
+    // tool_use / tool_result pairing that the Claude API requires
+    // (`prepareForModel`).
     // See: https://platform.claude.com/docs/en/agents-and-tools/tool-use/implement-tool-use#parallel-tool-use
     // Mixed-engine hygiene: agent-run tool parts never reach a chat request.
     // A failed turn that produced nothing is kept in the thread only to show
-    // why it failed; it is no reply for the model to see. Turns before the
-    // history start ("Shorten history and retry") stay in the thread too.
+    // why it failed; it is no reply for the model to see. A local engine's
+    // chat starts at the thread's compaction (`metadata.compaction`), whose
+    // summary rides the system prompt, or later still at the history start
+    // of "Shorten history and retry". Turns before it stay in the thread and
+    // on the page.
+    const conversation = withoutEmptyFailedTurns(options.messages)
+    const compaction = compactsHistory(effectiveProviderName)
+      ? appliedCompaction(conversation, this.storedCompaction())
+      : undefined
+    const historyStart = laterHistoryStart(conversation, [
+      compaction?.upToMessageId,
+      this.historyStartId,
+    ])
     const sanitizedMessages = stripAgentRunToolParts(
-      withoutHistoryBefore(
-        withoutEmptyFailedTurns(options.messages),
-        this.historyStartId
-      )
+      withoutHistoryBefore(conversation, historyStart)
     )
-    const messagesToConvert =
-      effectiveProviderName === 'anthropic'
-        ? splitAnthropicSerialToolUse(sanitizedMessages)
-        : sanitizedMessages
-
-    // Convert UI messages to model messages. Non-image file parts are stripped
-    // first — the converters accept `image/*` and nothing else. Order matters:
-    // `mapUserInlineAttachments` folds document text into the message before
-    // the strip runs, and `extractAudioInputParts` ran earlier against the
-    // untouched `options.messages`, so neither loses anything.
-    let preparedMessages = stripUnsupportedFileParts(
-      this.mapUserInlineAttachments(messagesToConvert)
+    const preparedMessages = this.prepareForModel(
+      sanitizedMessages,
+      effectiveProviderName
     )
-    // Local backends serialize tool results to a `role: "tool"` text message
-    // (JSON.stringify), so an image in a tool result (e.g. an MCP screenshot
-    // tool) would otherwise be sent as full base64 TEXT and flood the context
-    // window — the root cause of ATO-208's MLX 400s. Strip the base64 out of
-    // the model payload (placeholder) and, for vision models, re-attach the
-    // image as a proper multimodal user message. Cloud providers are left
-    // untouched (they have large contexts and handle this differently).
-    if (isLocalInferenceProvider(effectiveProviderName)) {
-      const supportsVision =
-        useModelProvider
-          .getState()
-          .selectedModel?.capabilities?.includes('vision') ?? false
-      preparedMessages = prepareToolResultImagesForModel(preparedMessages, {
-        supportsVision,
-      })
-    }
-    const baseMessages = convertToModelMessages(
-      chatExecOutputsForModel(preparedMessages)
-    )
+    const baseMessages = convertToModelMessages(preparedMessages)
 
     // If continuing a truncated response, append the partial assistant content as a
     // prefill so the model resumes from where it left off rather than regenerating.
     const continueContent = this.continueFromContent
     this.continueFromContent = null
-    const modelMessages = continueContent
-      ? [
-          ...baseMessages,
-          { role: 'assistant' as const, content: continueContent },
-        ]
-      : baseMessages
 
     // Local-providers (mlx, llamacpp, llamacpp-upstream, foundation-models):
     // when tools are also active we don't pass a `system` message (gemma-4 and
@@ -1328,57 +1973,43 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // See LOCAL_INFERENCE_PROVIDERS for rationale. Tool inclusion is
     // independent of the reasoning toggle and governed solely by the tools
     // on/off setting (via refreshTools -> useToolAvailable).
-    const isLocalProvider = isLocalInferenceProvider(effectiveProviderName)
-
-    const hasTools = Object.keys(this.tools).length > 0
-    const selectedModel = useModelProvider.getState().selectedModel
-    const modelSupportsTools =
-      selectedModel?.capabilities?.includes('tools') ?? this.modelSupportsTools
-    const suppressToolsForDflash = shouldSuppressToolsForUpstreamDflash(
+    const {
+      isLocalProvider,
+      shouldEnableTools,
+      activeTools,
+      systemWithSkills,
+    } = await this.requestFrame(
+      options.messages,
       effectiveProviderName,
       provider.settings
     )
-    const shouldEnableTools =
-      hasTools && modelSupportsTools && !suppressToolsForDflash
-    const activeTools = !shouldEnableTools
-      ? undefined
-      : GRAMMAR_CONSTRAINED_PROVIDERS.has(effectiveProviderName)
-        ? withGrammarSafeToolSchemas(this.tools)
-        : this.tools
 
-    // Skills invoked on this thread (via the composer's "/" menu, stamped on
-    // user-message metadata) ride the system prompt — the chat counterpart of
-    // the agent's `skill.view` loading. Reading them off `options.messages`
-    // makes send, regenerate, edit and app-restart replay uniform.
-    const invokedSkillNames = collectSkillNamesFromMessages(options.messages)
-    if (this.skillCacheRevision !== agentSkillRevision()) {
-      this.invalidateSkillCache()
+    // The request for the history from `from` on: the compaction's summary
+    // appended to the system prompt, the continuation's prefill, and the
+    // system prompt folded into the first user message when the gemma+tools
+    // CoT workaround drops the `system` field, so the instructions still
+    // reach the model instead of being silently lost.
+    const assemble = (
+      from: UIMessage[],
+      applied: ThreadCompaction | undefined
+    ): AssembledRequest => {
+      const base =
+        from === preparedMessages ? baseMessages : convertToModelMessages(from)
+      const modelMessages = continueContent
+        ? [...base, { role: 'assistant' as const, content: continueContent }]
+        : base
+      const system = withCompactionSummary(systemWithSkills, applied)
+      const dropSystemForTools =
+        isLocalProvider && shouldEnableTools && !!system
+      return {
+        system: dropSystemForTools ? undefined : system,
+        messages:
+          dropSystemForTools && system
+            ? foldSystemIntoFirstUserMessage(modelMessages, system)
+            : modelMessages,
+      }
     }
-    const skillsBlock = renderChatSkillsBlock(
-      await loadChatSkillDetails(invokedSkillNames, this.skillDetailCache)
-    )
-    const documentsHint =
-      activeTools && 'retrieve' in activeTools
-        ? ATTACHED_DOCUMENTS_HINT
-        : undefined
-    const systemWithSkills = composeSystemMessage(
-      composeSystemMessage(this.systemMessage, skillsBlock),
-      documentsHint
-    )
-
-    const dropSystemForTools =
-      isLocalProvider && shouldEnableTools && !!systemWithSkills
-    const effectiveSystemMessage = dropSystemForTools
-      ? undefined
-      : systemWithSkills
-
-    // When we drop the `system` field for the gemma+tools CoT workaround, fold
-    // the instructions into the first user message so they still reach the
-    // model instead of being silently lost.
-    const finalModelMessages =
-      dropSystemForTools && systemWithSkills
-        ? foldSystemIntoFirstUserMessage(modelMessages, systemWithSkills)
-        : modelMessages
+    let request = assemble(preparedMessages, compaction)
 
     // Track stream timing and token count for token speed calculation.
     // We start the clock on the *first generated delta* (text or reasoning),
@@ -1391,32 +2022,34 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     const maxOutputTokens = getSamplingParamsForThread(this.threadId).params
       ?.max_output_tokens as number | undefined
 
-    // Pre-flight (local engines only): measure the rendered prompt — tool
-    // schemas included — and grow the context window BEFORE the request
-    // when it would not fit. Without this a long tool catalogue fails with
-    // "exceeds the available context size", the model is reloaded, and the
-    // whole prompt is regenerated; with it there is one reload and no error.
-    // TensorRT-LLM is left out: its context is fixed when the container starts (design D9) and its
-    // gateway has no `/tokenize` to measure with.
-    // Only an engine that reloads its window in seconds grows it (`contextSupport`): a cloud model's
-    // window is not the app's to change, and a restart takes minutes.
+    // Pre-flight (every local engine): measure the rendered prompt — tool
+    // schemas included — against the window its session serves, BEFORE the
+    // request. Without this a long history or tool catalogue fails with
+    // "exceeds the available context size" and the whole prompt is
+    // regenerated; with it an engine that reloads in seconds grows once, and
+    // any other overflow is compacted, then sent. A cloud model's window is
+    // not the app's to manage.
     let preflightWindow: number | undefined
-    if (
-      isLocalProvider &&
-      modelId &&
-      contextSupport(effectiveProviderName).canExpand
-    ) {
-      preflightWindow = await this.ensureContextFits({
+    if (modelId && compactsHistory(effectiveProviderName)) {
+      const fitted = await this.ensureContextFits({
         providerId: effectiveProviderName,
         modelId,
         provider,
-        system: effectiveSystemMessage,
-        messages: finalModelMessages,
+        request,
         tools: activeTools,
         maxOutputTokens,
         recreateModel,
         abortSignal: options.abortSignal,
+        history: {
+          conversation,
+          prepared: preparedMessages,
+          baseSystem: systemWithSkills,
+          compaction,
+          assemble,
+        },
       })
+      preflightWindow = fitted?.window
+      if (fitted) request = fitted.request
     }
 
     // An answer length the assistant sets always wins; MLX alone gets one
@@ -1428,8 +2061,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         ? await this.mlxAnswerCap({
             modelId,
             window: preflightWindow,
-            system: effectiveSystemMessage,
-            messages: finalModelMessages,
+            system: request.system,
+            messages: request.messages,
             tools: activeTools,
             sendsAudio,
           })
@@ -1437,11 +2070,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
 
     const result = streamText({
       model: this.model,
-      messages: finalModelMessages,
+      messages: request.messages,
       abortSignal: options.abortSignal,
       tools: activeTools,
       toolChoice: shouldEnableTools ? 'auto' : undefined,
-      system: effectiveSystemMessage,
+      system: request.system,
       maxOutputTokens: requestMaxOutputTokens,
       // Local engines answer a prompt that does not fit with a fast,
       // deterministic error; retrying it (the SDK default for 5xx) only

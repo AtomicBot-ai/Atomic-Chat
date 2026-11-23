@@ -48,7 +48,10 @@
   },
   "notice": {
     "modelLoaded": "Model loaded",
-    "modelUnloaded": "Model unloaded"
+    "modelUnloaded": "Model unloaded",
+    "historyCompacted": "History compacted",
+    "historyCompactedDetail_one": "{{count}} message · {{before}} → {{after}} tokens",
+    "historyCompactedDetail_other": "{{count}} messages · {{before}} → {{after}} tokens"
   },
   "log": {
     "searchPlaceholder": "Search requests",

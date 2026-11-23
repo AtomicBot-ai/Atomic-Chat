@@ -3,12 +3,26 @@ import { ThreadMessage, ContentType } from '@janhq/core'
 import { useServiceHub } from './useServiceHub'
 import { useModelProvider } from './useModelProvider'
 import { usePrompt } from './usePrompt'
+import { useThreads } from './useThreads'
 import { removeReasoningContent } from '@/utils/reasoning'
 import { isLlamacppProvider } from '@/lib/utils'
+import {
+  COMPACTION_METADATA_KEY,
+  appliedCompaction,
+  compactsHistory,
+  readThreadCompaction,
+} from '@/lib/context-compaction'
+import {
+  summaryBlock,
+  type ContextChatMessage,
+} from '@/lib/core-context-contract'
+import { measureContext } from '@/lib/core-context'
 
 export interface TokenCountData {
   tokenCount: number
   maxTokens?: number
+  /** The window the core measured the session at (`context/measure`), when it did. */
+  windowTokens?: number
   percentage?: number
   isNearLimit: boolean
   loading: boolean
@@ -41,6 +55,29 @@ const getInlineFileContents = (
   })
 }
 
+/**
+ * How the meter counts `providerId`'s prompt: `llamacpp` through the engine's
+ * own tokenizer (`getTokensCount`), `core` through the core's
+ * `context/measure` (every other local engine), `none` for a cloud model.
+ */
+function tokenCounter(providerId: string): 'llamacpp' | 'core' | 'none' {
+  if (isLlamacppProvider(providerId)) return 'llamacpp'
+  return compactsHistory(providerId) ? 'core' : 'none'
+}
+
+/** The thread's messages as the core measures them: text only, like the chat's own measure. */
+function toMeasureMessages(messages: ThreadMessage[]): ContextChatMessage[] {
+  return messages
+    .map((message) => ({
+      role: message.role,
+      content: message.content
+        .filter((content) => content.type === ContentType.Text)
+        .map((content) => content.text?.value ?? '')
+        .join('\n'),
+    }))
+    .filter((message) => message.content.trim() !== '')
+}
+
 export const useTokensCount = (
   messages: ThreadMessage[] = [],
   uploadedFiles?: Array<{
@@ -65,13 +102,45 @@ export const useTokensCount = (
   const serviceHub = useServiceHub()
   const { selectedModel, selectedProvider } = useModelProvider()
   const { prompt } = usePrompt()
+  // The thread's compaction: a local model is sent its summary in place of
+  // the messages before its boundary, so the meter counts that.
+  const rawCompaction = useThreads((state) =>
+    state.currentThreadId
+      ? state.threads[state.currentThreadId]?.metadata?.[
+          COMPACTION_METADATA_KEY
+        ]
+      : undefined
+  )
+  const sentMessages = useMemo(() => {
+    const compaction = compactsHistory(selectedProvider)
+      ? appliedCompaction(
+          messages,
+          readThreadCompaction({ [COMPACTION_METADATA_KEY]: rawCompaction })
+        )
+      : undefined
+    if (!compaction) return messages
+    const start = messages.findIndex((m) => m.id === compaction.upToMessageId)
+    const summary = {
+      id: 'compaction-summary',
+      thread_id: messages[start]?.thread_id ?? '',
+      role: 'system',
+      content: [
+        {
+          type: ContentType.Text,
+          text: { value: summaryBlock(compaction.summary), annotations: [] },
+        },
+      ],
+      created_at: 0,
+    } as unknown as ThreadMessage
+    return [summary, ...messages.slice(start)]
+  }, [messages, rawCompaction, selectedProvider])
 
   // Create messages with current prompt for live calculation.
   // This mirrors the payload sent to token counting by appending the draft
   // user message (text plus any uploaded images) to the existing thread
   // history so the model sees the full context that will be submitted.
   const messagesWithPrompt = useMemo(() => {
-    const result = [...messages]
+    const result = [...sentMessages]
     if (prompt.trim() || (uploadedFiles && uploadedFiles.length > 0)) {
       const content = []
 
@@ -131,7 +200,7 @@ export const useTokensCount = (
         })),
       }
     })
-  }, [messages, prompt, uploadedFiles])
+  }, [sentMessages, prompt, uploadedFiles])
 
   const getMaxTokens = useCallback(() => {
     const maxTokensValue =
@@ -150,12 +219,9 @@ export const useTokensCount = (
   const runTokenCalculation = useCallback(async () => {
     const modelId = selectedModel?.id
     const maxTokensNum = getMaxTokens()
+    const counter = tokenCounter(selectedProvider)
 
-    if (
-      !modelId ||
-      !isLlamacppProvider(selectedProvider) ||
-      messagesWithPrompt.length === 0
-    ) {
+    if (!modelId || counter === 'none' || messagesWithPrompt.length === 0) {
       setTokenData({
         tokenCount: 0,
         maxTokens: maxTokensNum,
@@ -185,20 +251,32 @@ export const useTokensCount = (
     setTokenData((prev) => ({ ...prev, loading: true, error: undefined, maxTokens: maxTokensNum }))
 
     try {
-      const tokenCount = await serviceHub
-        .models()
-        .getTokensCount(modelId, messagesWithPrompt)
+      let tokenCount: number
+      let windowTokens: number | undefined
+      if (counter === 'core') {
+        // Every local engine other than llama.cpp: the core counts with the
+        // engine's tokenizer where it has one, and knows the window.
+        const measured = await measureContext(selectedProvider, modelId, {
+          messages: toMeasureMessages(messagesWithPrompt),
+        })
+        tokenCount = measured?.promptTokens ?? 0
+        windowTokens = measured?.windowTokens
+      } else {
+        tokenCount = await serviceHub
+          .models()
+          .getTokensCount(modelId, messagesWithPrompt)
+      }
+      const maxTokens = windowTokens ?? maxTokensNum
 
-      console.debug('[TokenCounter] result', { tokenCount, maxTokensNum })
+      console.debug('[TokenCounter] result', { tokenCount, maxTokens })
 
-      const percentage = maxTokensNum
-        ? (tokenCount / maxTokensNum) * 100
-        : undefined
+      const percentage = maxTokens ? (tokenCount / maxTokens) * 100 : undefined
       const isNearLimit = percentage ? percentage > 85 : false
 
       setTokenData({
         tokenCount,
-        maxTokens: maxTokensNum,
+        maxTokens,
+        windowTokens,
         percentage,
         isNearLimit,
         loading: false,
@@ -248,7 +326,7 @@ export const useTokensCount = (
     // Only calculate if we have messages or a prompt
     if (
       messagesWithPrompt.length > 0 &&
-      isLlamacppProvider(selectedProvider) &&
+      tokenCounter(selectedProvider) !== 'none' &&
       selectedModel?.id
     ) {
       debounceTimeoutRef.current = setTimeout(() => {

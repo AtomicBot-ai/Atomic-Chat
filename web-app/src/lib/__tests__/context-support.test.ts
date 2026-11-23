@@ -176,6 +176,26 @@ describe('isLengthContextOverflow', () => {
     ).toBe(false)
   })
 
+  it('measures against the window the core reported for the session', () => {
+    // A managed engine whose model names no window: the core knows it.
+    expect(
+      isLengthContextOverflow({
+        providerId: 'vllm',
+        ctxLen: undefined,
+        windowTokens: 8192,
+        totalTokens: 8000,
+      })
+    ).toEqual({ overflow: true, window: 8192 })
+    expect(
+      isLengthContextOverflow({
+        providerId: 'openai',
+        ctxLen: undefined,
+        windowTokens: 8192,
+        totalTokens: 8000,
+      })
+    ).toEqual({ overflow: false, window: undefined })
+  })
+
   it('never reads a cloud model’s `length` as an overflow', () => {
     // Before: the cloud model was measured against DEFAULT_CTX_LEN and the
     // page wrote a made-up ctx_len onto it.

@@ -89,6 +89,22 @@
     "compacting": "Compacting chat history…",
     "reading": "Reading the conversation: {{done}} / {{total}} tokens"
   },
+  "contextCompaction": {
+    "dividerTitle": "Earlier messages are summarized",
+    "dividerMessages_one": "{{count}} message",
+    "dividerMessages_other": "{{count}} messages",
+    "dividerTokens": "{{before}} → {{after}} tokens",
+    "showSummary": "Show summary",
+    "hideSummary": "Hide summary",
+    "compact": "Compact history",
+    "compactHint": "Summarize the older messages so the chat keeps fitting the model's context.",
+    "done_one": "Summarized {{count}} earlier message.",
+    "done_other": "Summarized {{count}} earlier messages.",
+    "failed": "The earlier messages could not be summarized.",
+    "failedTrimmed_one": "The earlier messages could not be summarized, so {{count}} older message was left out instead.",
+    "failedTrimmed_other": "The earlier messages could not be summarized, so {{count}} older messages were left out instead.",
+    "nothing": "There are no older messages to summarize yet."
+  },
   "docCitation": {
     "document": "Document",
     "removedDocument": "Removed document",
@@ -350,7 +366,9 @@
     "contextOverflowMessage": "This message — including search results and tool output — is longer than the model can process at once. Increase the context size, or reduce the amount of attached / retrieved content (e.g. fewer web-search results) and try again.",
     "contextOverflowShortenMessage": "This message — including search results and tool output — is longer than the model can process at once. Shorten the history, or reduce the amount of attached / retrieved content (e.g. fewer web-search results) and try again.",
     "increaseContext": "Increase Context Size",
-    "contextAtMax": "Model reached its maximum context, auto-expand stopped"
+    "contextAtMax": "Model reached its maximum context, auto-expand stopped",
+    "compactAndRetry": "Compact and retry",
+    "contextOverflowCompactMessage": "This conversation no longer fits the model's context. Compact the history to summarize the older messages, then the model answers again."
   },
   "queuedSend": {
     "modelChanged": "Your message wasn't sent: a different model was selected. It's still in the message box.",

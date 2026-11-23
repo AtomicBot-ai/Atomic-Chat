@@ -18,6 +18,8 @@ type TurnErrorCardProps = Omit<TurnErrorContext, 't'> & {
   error: unknown
   onRetry: () => void
   onShortenHistory: () => void
+  /** "Compact and retry"; without it the card never offers compaction. */
+  onCompactHistory?: () => void
   onIncreaseContext: () => void
   onOpenEngineSettings: (engineId: string) => void
 }
@@ -33,13 +35,20 @@ export function TurnErrorCard({
   error,
   onRetry,
   onShortenHistory,
+  onCompactHistory,
   onIncreaseContext,
   onOpenEngineSettings,
   ...context
 }: TurnErrorCardProps) {
   const { t } = useTranslation()
   const titleId = useId()
-  const summary = summarizeTurnError(error, { ...context, t })
+  const summary = summarizeTurnError(error, {
+    ...context,
+    compactionAvailable: Boolean(
+      context.compactionAvailable && onCompactHistory
+    ),
+    t,
+  })
 
   const runAction = (action: TurnErrorAction) => {
     switch (action.type) {
@@ -47,6 +56,8 @@ export function TurnErrorCard({
         return onOpenEngineSettings(action.engineId)
       case 'shorten-history':
         return onShortenHistory()
+      case 'compact-history':
+        return onCompactHistory?.()
       case 'increase-context':
         return onIncreaseContext()
       case 'retry':
@@ -60,11 +71,15 @@ export function TurnErrorCard({
       ? `Open ${action.engineLabel} settings`
       : action.type === 'shorten-history'
         ? t('chat:turnRecovery.shortenHistory')
-        : action.type === 'increase-context'
-          ? t('chat:turnRecovery.increaseContext')
-          : t('chat:turnRecovery.retry')
+        : action.type === 'compact-history'
+          ? t('chat:turnRecovery.compactAndRetry')
+          : action.type === 'increase-context'
+            ? t('chat:turnRecovery.increaseContext')
+            : t('chat:turnRecovery.retry')
   const ActionIcon =
-    action.type === 'shorten-history' || action.type === 'retry'
+    action.type === 'shorten-history' ||
+    action.type === 'compact-history' ||
+    action.type === 'retry'
       ? IconRefresh
       : IconAlertCircle
 

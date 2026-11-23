@@ -41,6 +41,7 @@ export type TurnErrorKind =
 export type TurnErrorAction =
   | { type: 'open-engine-settings'; engineId: string; engineLabel: string }
   | { type: 'shorten-history' }
+  | { type: 'compact-history' }
   | { type: 'increase-context' }
   | { type: 'retry' }
 
@@ -64,6 +65,11 @@ export type TurnErrorContext = {
   t: TurnErrorTranslate
   /** The context cannot grow for the failed turn: offer to shorten history. */
   contextGrowthBlocked?: boolean
+  /**
+   * The history can be compacted (a local engine on a core with compaction,
+   * with older turns to summarize): an overflow offers "Compact and retry".
+   */
+  compactionAvailable?: boolean
   /** The automatic restart of a gone engine did not bring it back. */
   engineRecoveryFailed?: boolean
   /**
@@ -187,6 +193,19 @@ export function summarizeTurnError(
     case 'managed-context': {
       // The body quotes the engine's own message; there is nothing more to show.
       const guidance = contextOverflowGuidance(providerId, error)!
+      if (context.compactionAvailable) {
+        // Compacting goes on without restarting the engine; the engine's own
+        // words and where to raise its limit stay under Details.
+        const title = t('chat:turnRecovery.contextOverflowTitle')
+        const body = t('chat:turnRecovery.contextOverflowCompactMessage')
+        return {
+          kind,
+          title,
+          body,
+          details: contextOverflowMessage(guidance),
+          action: { type: 'compact-history' },
+        }
+      }
       return {
         kind,
         title: t('chat:turnRecovery.contextOverflowTitle'),
@@ -204,20 +223,27 @@ export function summarizeTurnError(
       // fixed window): send less history instead. The draft, the message and
       // its attachments stay as they are. The raw text — the pre-flight's
       // English numbers included — stays under Details.
+      // Where the history can be compacted, that comes first: the chat goes
+      // on with a summary of the oldest turns in their place. Shortening the
+      // history stays for an older core or a summary that could not be made.
       const canIncrease =
         !context.contextGrowthBlocked && contextSupport(providerId).canExpand
       const title = t('chat:turnRecovery.contextOverflowTitle')
-      const body = canIncrease
-        ? t('chat:turnRecovery.contextOverflowMessage')
-        : t('chat:turnRecovery.contextOverflowShortenMessage')
+      const body = context.compactionAvailable
+        ? t('chat:turnRecovery.contextOverflowCompactMessage')
+        : canIncrease
+          ? t('chat:turnRecovery.contextOverflowMessage')
+          : t('chat:turnRecovery.contextOverflowShortenMessage')
       return {
         kind,
         title,
         body,
         details: detailsBeside(raw, title, body),
-        action: canIncrease
-          ? { type: 'increase-context' }
-          : { type: 'shorten-history' },
+        action: context.compactionAvailable
+          ? { type: 'compact-history' }
+          : canIncrease
+            ? { type: 'increase-context' }
+            : { type: 'shorten-history' },
       }
     }
     case 'access':

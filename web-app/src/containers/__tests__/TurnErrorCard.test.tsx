@@ -19,6 +19,7 @@ function renderCard(
   const handlers = {
     onRetry: vi.fn(),
     onShortenHistory: vi.fn(),
+    onCompactHistory: vi.fn(),
     onIncreaseContext: vi.fn(),
     onOpenEngineSettings: vi.fn(),
   }
@@ -148,6 +149,74 @@ describe('TurnErrorCard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open vLLM settings' }))
     expect(onOpenEngineSettings).toHaveBeenCalledWith('vllm')
     expect(screen.queryByText('chat:turnRecovery.details')).toBeNull()
+  })
+
+  it('offers to compact the history first wherever it can be compacted', () => {
+    const overflow = new Error(
+      'the request exceeds the available context size.'
+    )
+    const { onCompactHistory, onIncreaseContext, onShortenHistory } =
+      renderCard(overflow, { compactionAvailable: true })
+
+    expect(
+      screen.getByRole('alert', { name: CONTEXT_OVERFLOW_TITLE })
+    ).toHaveTextContent('chat:turnRecovery.contextOverflowCompactMessage')
+    // One action: compacting comes before growing or shortening.
+    expect(screen.getAllByRole('button')).toHaveLength(1)
+    fireEvent.click(
+      screen.getByRole('button', { name: 'chat:turnRecovery.compactAndRetry' })
+    )
+    expect(onCompactHistory).toHaveBeenCalledTimes(1)
+    expect(onIncreaseContext).not.toHaveBeenCalled()
+    expect(onShortenHistory).not.toHaveBeenCalled()
+  })
+
+  it('compacts a managed engine overflow, its own words under Details', () => {
+    const { onCompactHistory, onOpenEngineSettings } = renderCard(
+      new Error(
+        "This model's maximum context length is 4096 tokens. [context_length_exceeded]"
+      ),
+      { providerId: 'vllm', compactionAvailable: true }
+    )
+    fireEvent.click(
+      screen.getByRole('button', { name: 'chat:turnRecovery.compactAndRetry' })
+    )
+    expect(onCompactHistory).toHaveBeenCalledTimes(1)
+    expect(onOpenEngineSettings).not.toHaveBeenCalled()
+    expect(screen.getByText('chat:turnRecovery.details')).toBeInTheDocument()
+  })
+
+  it('falls back to shortening the history when compaction is unavailable', () => {
+    const { onShortenHistory } = renderCard(
+      new Error('the request exceeds the available context size.'),
+      { providerId: 'foundry-local', compactionAvailable: false }
+    )
+    expect(
+      screen.queryByRole('button', {
+        name: 'chat:turnRecovery.compactAndRetry',
+      })
+    ).toBeNull()
+    fireEvent.click(
+      screen.getByRole('button', { name: 'chat:turnRecovery.shortenHistory' })
+    )
+    expect(onShortenHistory).toHaveBeenCalledTimes(1)
+  })
+
+  it('never offers compaction without a handler for it', () => {
+    render(
+      <TurnErrorCard
+        error={new Error('the request exceeds the available context size.')}
+        providerId="llamacpp-upstream"
+        compactionAvailable
+        onRetry={vi.fn()}
+        onShortenHistory={vi.fn()}
+        onIncreaseContext={vi.fn()}
+        onOpenEngineSettings={vi.fn()}
+      />
+    )
+    expect(
+      screen.getByRole('button', { name: INCREASE_CONTEXT })
+    ).toBeInTheDocument()
   })
 
   it('shows a readable provider message as the body with working links and no Details', () => {

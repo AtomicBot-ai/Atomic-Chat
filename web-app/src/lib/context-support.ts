@@ -111,9 +111,17 @@ export function isLengthContextOverflow(args: {
   providerId: string | undefined
   /** The model's `ctx_len`, when it has one. */
   ctxLen: number | undefined
+  /** The window the core measured the turn's session at (`context/measure`), when it did. */
+  windowTokens?: number
   totalTokens: number
 }): { overflow: boolean; window: number | undefined } {
-  const window = knownContextWindow(args.providerId, args.ctxLen)
+  const measured =
+    contextSupport(args.providerId).resize !== undefined &&
+    args.windowTokens !== undefined &&
+    args.windowTokens > 0
+      ? args.windowTokens
+      : undefined
+  const window = measured ?? knownContextWindow(args.providerId, args.ctxLen)
   return {
     overflow:
       window !== undefined &&
