@@ -10,8 +10,6 @@ import {
 import { formatTransportError } from '@/lib/transport-error'
 import {
   AUTHENTICATION_FAILED_TITLE,
-  CONTEXT_OVERFLOW_MESSAGE,
-  CONTEXT_OVERFLOW_TITLE,
   MODEL_ACCESS_DENIED_TITLE,
   OUT_OF_MEMORY_MESSAGE,
   OUT_OF_MEMORY_TITLE,
@@ -22,6 +20,10 @@ const t: TurnErrorContext['t'] = (key, options) =>
   options ? `${key} ${JSON.stringify(options)}` : key
 
 const LOCAL = 'llamacpp-upstream'
+const CONTEXT_OVERFLOW_TITLE = 'chat:turnRecovery.contextOverflowTitle'
+const CONTEXT_OVERFLOW_MESSAGE = 'chat:turnRecovery.contextOverflowMessage'
+const CONTEXT_OVERFLOW_SHORTEN_MESSAGE =
+  'chat:turnRecovery.contextOverflowShortenMessage'
 const ENGINE_GONE = formatTransportError(
   'body_eof',
   'error decoding response body'
@@ -85,9 +87,49 @@ describe('summarizeTurnError', () => {
     })
     expect(grow.details).toBe(overflow.message)
 
-    expect(summarize(overflow, { contextGrowthBlocked: true }).action).toEqual({
-      type: 'shorten-history',
+    expect(summarize(overflow, { contextGrowthBlocked: true })).toMatchObject({
+      body: CONTEXT_OVERFLOW_SHORTEN_MESSAGE,
+      action: { type: 'shorten-history' },
     })
+  })
+
+  it.each([
+    // A cloud model: its window is not the app's to grow.
+    ['openai'],
+    ['anthropic'],
+    // An engine that must restart, or keeps a fixed window.
+    ['strata'],
+    ['foundry-local'],
+    // A provider nobody knows.
+    [undefined],
+  ])(
+    'offers to shorten the history, never to grow the context, for %s',
+    (providerId) => {
+      const summary = summarize(
+        new Error(
+          "This model's maximum context length is 128000 tokens. However, your messages resulted in 130000 tokens."
+        ),
+        { providerId }
+      )
+      expect(summary).toMatchObject({
+        kind: 'context',
+        title: CONTEXT_OVERFLOW_TITLE,
+        body: CONTEXT_OVERFLOW_SHORTEN_MESSAGE,
+        action: { type: 'shorten-history' },
+      })
+    }
+  )
+
+  it('reads an overflow marked only by its OpenAI code as one', () => {
+    const error = Object.assign(new Error('Bad Request'), {
+      data: {
+        error: { message: 'Bad Request', code: 'context_length_exceeded' },
+      },
+    })
+    expect(turnErrorKind(error, 'openai')).toBe('context')
+    expect(summarize(error, { providerId: 'openai' }).details).toBe(
+      'Bad Request'
+    )
   })
 
   it('sends a managed engine overflow to its settings, quoting it once', () => {

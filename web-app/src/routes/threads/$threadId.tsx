@@ -99,14 +99,20 @@ import {
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useAttachments } from '@/hooks/useAttachments'
 import { PromptProgress } from '@/components/PromptProgress'
+import { ContextActivity } from '@/components/ContextActivity'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
-import { OUT_OF_CONTEXT_SIZE, isContextLimitError } from '@/utils/error'
+import { OUT_OF_CONTEXT_SIZE } from '@/utils/error'
 import { engineSettingsLink } from '@/lib/engine-settings-link'
-import { canGrowContext } from '@/lib/managed-engine/chat'
+import {
+  contextSupport,
+  growsAfterError,
+  isLengthContextOverflow,
+} from '@/lib/context-support'
 import {
   DEFAULT_CTX_LEN,
   contextGrowthMode,
   growModelContext,
+  readAutoIncreaseCtx,
   readModelCtxLen,
 } from '@/lib/context-size'
 import {
@@ -360,6 +366,15 @@ function ThreadDetail() {
   const [pendingContinueMessage, setPendingContinueMessage] =
     useState<UIMessage | null>(null)
   const [isAutoIncreasingContext, setIsAutoIncreasingContext] = useState(false)
+  // The context work this thread's turn waits on ("Adding context",
+  // "Compacting chat history"), from whichever side started it: this page's
+  // reactive growth or the chat transport's pre-flight.
+  const threadContextActivity = useAppState(
+    (state) =>
+      state.contextActivity.phase !== null &&
+      (state.contextActivity.threadId === undefined ||
+        state.contextActivity.threadId === threadId)
+  )
   const [contextLimitError, setContextLimitError] = useState<Error | null>(null)
   // The context could not grow for the failed turn (at the cap, no memory,
   // the reload failed, or under fit its one automatic growth is spent): the
@@ -541,8 +556,9 @@ function ThreadDetail() {
         setIsChatRequestActive(false)
         // Stop during an auto-continue never reaches the non-abort clear
         // below, and a stale placeholder would flip the indicator row to
-        // "Growing the Mind..." on every later send in this thread.
+        // "Adding context" on every later send in this thread.
         setPendingContinueMessage(null)
+        useAppState.getState().clearContextActivity(threadId)
         captureTurnOutcome('aborted', message)
       }
 
@@ -552,19 +568,29 @@ function ThreadDetail() {
       if (!isAbort && finishReason === 'length') {
         let willContinue = false
         const selectedModelState = useModelProvider.getState().selectedModel
+        // The provider the turn ran on, as the transport stamped it.
+        const turnProvider =
+          (msgMeta?.providerId as string | undefined) ??
+          useModelProvider.getState().selectedProvider
         const usage = msgMeta?.usage as
           { inputTokens?: number; outputTokens?: number } | undefined
         const totalTokens =
           (usage?.inputTokens ?? 0) + (usage?.outputTokens ?? 0)
-        const ctxLen =
-          (selectedModelState?.settings?.ctx_len?.controller_props
-            ?.value as number) ?? DEFAULT_CTX_LEN
-        const isContextLimit = totalTokens >= ctxLen * 0.9
+        // Only a window the app knows can overflow: a cloud model's `length`
+        // is its answer cap, never a reason to invent a `ctx_len` for it.
+        const { overflow: isContextLimit, window: ctxLen } =
+          isLengthContextOverflow({
+            providerId: turnProvider,
+            ctxLen: readModelCtxLen(selectedModelState),
+            totalTokens,
+          })
 
         if (isContextLimit) {
+          // Only an engine that reloads in seconds grows by itself; any other
+          // overflow is the error card's to explain.
           const autoIncrease =
-            selectedModelState?.settings?.auto_increase_ctx_len
-              ?.controller_props?.value ?? true
+            contextSupport(turnProvider).canExpand &&
+            readAutoIncreaseCtx(selectedModelState)
           if (autoIncrease) {
             const partialText = message.parts
               .filter((p) => p.type === 'text')
@@ -1908,6 +1934,15 @@ function ThreadDetail() {
       setIsAutoIncreasingContext(false)
       setIsChatRequestActive(false)
       setPendingContinueMessage(null)
+      useAppState.getState().clearContextActivity(threadId)
+    }
+
+    // Only an engine that reloads in seconds grows its window: never a cloud
+    // model (no window of the app's to write) nor an engine that restarts.
+    if (!contextSupport(selectedProvider).canExpand) {
+      releaseRequest()
+      setContextGrowthBlocked(true)
+      return
     }
 
     // Under fit on a GPU build every growth is a full reload with fewer
@@ -1929,6 +1964,13 @@ function ThreadDetail() {
 
     // The ladder itself lives in `growModelContext` (shared with the chat
     // transport's pre-flight); this reactive path only adds the regenerate.
+    // "Adding context" stays up through the reload and the re-read of the
+    // prompt, until the answer's first token (the chat transport ends it).
+    const { setContextExpanding } = useAppState.getState()
+    setContextExpanding({
+      threadId,
+      from: readModelCtxLen(selectedModel) ?? DEFAULT_CTX_LEN,
+    })
     const result = await growModelContext({
       providerId: selectedProvider,
       modelId: selectedModel.id,
@@ -1940,7 +1982,7 @@ function ThreadDetail() {
         setContextGrowthBlocked(true)
       }
       if (result.reason === 'at_max') {
-        toast.error('Model reached its maximum context, auto-expand stopped', {
+        toast.error(t('chat:turnRecovery.contextAtMax'), {
           id: `ctx-at-max-${selectedProvider}-${selectedModel.id}`,
         })
       } else if (result.reason === 'fit') {
@@ -1959,9 +2001,17 @@ function ThreadDetail() {
       return
     }
     if (fitTurn) fitGrowthTurns.add(fitTurn)
+    setContextExpanding({ threadId, from: result.from, to: result.to })
 
     setTimeout(() => {
-      handleRegenerate()
+      void Promise.resolve(handleRegenerate()).finally(() => {
+        // A regenerate that sent nothing leaves no answer to end it.
+        const chatStatus =
+          useChatSessions.getState().sessions[threadId]?.chat.status
+        if (chatStatus !== 'submitted' && chatStatus !== 'streaming') {
+          useAppState.getState().clearContextActivity(threadId)
+        }
+      })
     }, 1000)
   }, [
     selectedModel,
@@ -1971,6 +2021,7 @@ function ThreadDetail() {
     getProviderByName,
     setIsChatRequestActive,
     t,
+    threadId,
   ])
 
   /**
@@ -2076,13 +2127,16 @@ function ThreadDetail() {
     // The Rust engine has its own context-recovery ladder; the frontend one
     // only serves the chat transport.
     if (!error || isAgentRunning) return
-    const autoIncrease =
-      (selectedModel?.settings?.auto_increase_ctx_len?.controller_props?.value ??
-        true) &&
-      // A TensorRT-LLM context is fixed when its container starts (design D9).
-      canGrowContext(selectedProvider)
-    if (!autoIncrease) return
-    if (isContextLimitError(error)) {
+    // Only an engine that reloads in seconds grows by itself: a managed
+    // engine's context is fixed when its container starts (design D9), and a
+    // cloud model's window is not the app's to grow.
+    if (
+      growsAfterError({
+        providerId: selectedProvider,
+        error,
+        autoIncrease: readAutoIncreaseCtx(selectedModel),
+      })
+    ) {
       setIsAutoIncreasingContext(true)
       handleContextSizeIncrease()
     }
@@ -2103,19 +2157,25 @@ function ThreadDetail() {
     ) {
       setIsAutoIncreasingContext(false)
     }
+    // A request that failed before it streamed ends the context work it
+    // waited on. Read as rendered, not as stored: a growth the error effect
+    // starts in this same commit must outlive the "error" that triggered it.
+    // Streaming does not end it: the chat transport does at the answer's
+    // first token, after the reload and the re-read of the prompt (a
+    // continuation streams its kept text before either).
+    if (threadContextActivity && status === 'error') {
+      useAppState.getState().clearContextActivity(threadId)
+    }
     if (status === 'error' && pendingContinueMessage) {
       setPendingContinueMessage(null)
     }
     if (
       status === 'error' &&
-      !(
-        error &&
-        isContextLimitError(error) &&
-        canGrowContext(selectedProvider) &&
-        (selectedModel?.settings?.auto_increase_ctx_len?.controller_props
-          ?.value ??
-          true)
-      )
+      !growsAfterError({
+        providerId: selectedProvider,
+        error,
+        autoIncrease: readAutoIncreaseCtx(selectedModel),
+      })
     ) {
       setIsChatRequestActive(false)
     }
@@ -2387,7 +2447,7 @@ function ThreadDetail() {
                       status={status}
                       // The placeholder is a frozen snapshot: its activity must
                       // read "Worked for Xs", not add a second live "Working"
-                      // shimmer under "Growing the Mind...".
+                      // shimmer under "Adding context".
                       requestActive={false}
                       reasoningContainerRef={reasoningContainerRef}
                       onReasoningScroll={onReasoningScroll}
@@ -2399,12 +2459,15 @@ function ThreadDetail() {
                     />
                   )}
                   {(inputStatus === CHAT_STATUS.SUBMITTED ||
-                    isAutoIncreasingContext) && (
+                    isAutoIncreasingContext ||
+                    threadContextActivity) && (
                     <div className="flex flex-row items-center gap-2">
-                      {/* One indicator at a time: the context-growth shimmer
+                      {/* One indicator at a time: the context activity
                       replaces the generic "Working" progress, never joins it. */}
-                      {pendingContinueMessage || isAutoIncreasingContext ? (
-                        <Shimmer duration={1}>Growing the Mind...</Shimmer>
+                      {pendingContinueMessage ||
+                      isAutoIncreasingContext ||
+                      threadContextActivity ? (
+                        <ContextActivity threadId={threadId} />
                       ) : engineRecovery === 'restarting' ? (
                         <Shimmer duration={1}>
                           {t('chat:turnRecovery.engineRestarting')}
@@ -2418,6 +2481,7 @@ function ThreadDetail() {
                   )}
                   {shownError &&
                     !isAutoIncreasingContext &&
+                    !threadContextActivity &&
                     engineRecovery !== 'restarting' && (
                       <TurnErrorCard
                         error={shownError}

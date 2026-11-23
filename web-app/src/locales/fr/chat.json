@@ -83,6 +83,13 @@
     "thoughtFor": "A réfléchi pendant {{count}} s",
     "loadingModel": "Chargement du modèle…"
   },
+  "contextActivity": {
+    "expanding": "Ajout de contexte : {{from}} → {{to}}",
+    "expandingPending": "Ajout de contexte…",
+    "restarting": "Redémarrage du modèle…",
+    "compacting": "Compactage de l'historique de la conversation…",
+    "reading": "Lecture de la conversation : {{done}} / {{total}} tokens"
+  },
   "docCitation": {
     "document": "Document",
     "removedDocument": "Document supprimé",
@@ -339,7 +346,12 @@
     "genericTitle": "Erreur lors de la génération de la réponse",
     "genericMessage": "Le modèle a signalé une erreur avant la fin de la réponse. Réessayez pour renvoyer votre message ; le message d'erreur se trouve dans Détails.",
     "settingsRestartTitle": "Le modèle a redémarré après une modification des paramètres",
-    "settingsRestartMessage": "La modification de vos paramètres a redémarré {{model}} pendant qu'il répondait. Réessayez pour renvoyer votre message."
+    "settingsRestartMessage": "La modification de vos paramètres a redémarré {{model}} pendant qu'il répondait. Réessayez pour renvoyer votre message.",
+    "contextOverflowTitle": "Fenêtre de contexte pleine",
+    "contextOverflowMessage": "Ce message — résultats de recherche et sorties d'outils compris — est plus long que ce que le modèle peut traiter en une fois. Augmentez la taille du contexte, ou réduisez le contenu joint ou récupéré (par exemple moins de résultats de recherche web), puis réessayez.",
+    "contextOverflowShortenMessage": "Ce message — résultats de recherche et sorties d'outils compris — est plus long que ce que le modèle peut traiter en une fois. Raccourcissez l'historique, ou réduisez le contenu joint ou récupéré (par exemple moins de résultats de recherche web), puis réessayez.",
+    "increaseContext": "Augmenter la taille du contexte",
+    "contextAtMax": "Le modèle a atteint son contexte maximal ; l'agrandissement automatique s'arrête"
   },
   "queuedSend": {
     "modelChanged": "Votre message n'a pas été envoyé : un autre modèle a été sélectionné. Il est toujours dans la zone de saisie.",

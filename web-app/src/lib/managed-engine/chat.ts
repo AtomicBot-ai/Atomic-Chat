@@ -14,6 +14,7 @@
  */
 
 import type { CoreSessionLoadStage } from '@/lib/managed-engine/types'
+import { contextSupport } from '@/lib/context-support'
 import { isManagedProvider, managedEngine, type ManagedEngine } from '@/lib/managed-engines'
 
 export type AgentModelBlockReason = 'model-without-tools'
@@ -69,9 +70,13 @@ export function loadWatchdogMs(providerName: string | undefined, defaultMs: numb
   return isManagedProvider(providerName) ? Math.max(defaultMs, MANAGED_LOAD_WATCHDOG_MS) : defaultMs
 }
 
-/** Whether the app may reload this provider's model with a larger context. */
+/**
+ * Whether the app may reload this provider's model with a larger context: only an engine that
+ * reloads in seconds (`contextSupport`). A managed engine's or a gateway host's window is fixed at
+ * load (design D9), and a cloud provider's is not the app's to grow.
+ */
 export function canGrowContext(providerName: string | undefined): boolean {
-  return !isGatewayChatProvider(providerName)
+  return contextSupport(providerName).canExpand
 }
 
 export interface ContextOverflowGuidance {

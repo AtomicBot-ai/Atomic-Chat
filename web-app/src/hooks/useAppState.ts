@@ -11,6 +11,25 @@ export type PromptProgress = {
   total: number
 }
 
+/**
+ * What the app is doing to the context window of a thread's chat while its
+ * turn waits: `expanding` — the model reloads with a larger window (`from` →
+ * `to`, tokens, when known); `compacting` — the oldest turns are being
+ * summarized so the chat fits the window it has. `null` when neither.
+ */
+export type ContextActivityPhase = 'expanding' | 'compacting'
+
+export type ContextActivity = {
+  phase: ContextActivityPhase | null
+  from?: number
+  to?: number
+  /** The thread the activity belongs to; a thread page shows only its own. */
+  threadId?: string
+}
+
+/** No context activity. */
+export const IDLE_CONTEXT_ACTIVITY: ContextActivity = { phase: null }
+
 type AppErrorMessage = {
   message?: string
   title?: string
@@ -46,6 +65,7 @@ type AppState = {
   tokenSpeed?: TokenSpeed
   errorMessage?: AppErrorMessage
   promptProgress?: PromptProgress
+  contextActivity: ContextActivity
   activeModels: string[]
   /**
    * Local models the user stopped by hand, as {@link modelStopKey} keys. The
@@ -78,6 +98,19 @@ type AppState = {
   setCancelToolCall: (cancel: (() => void) | undefined) => void
   setErrorMessage: (error: AppErrorMessage | undefined) => void
   updatePromptProgress: (progress: PromptProgress | undefined) => void
+  /** The model reloads with a larger window for `threadId`'s turn. */
+  setContextExpanding: (args: {
+    threadId?: string
+    from?: number
+    to?: number
+  }) => void
+  /** `threadId`'s history is being compacted to fit the window. */
+  setContextCompacting: (args?: { threadId?: string }) => void
+  /**
+   * End the context activity. With `threadId`, only that thread's (or one
+   * that names no thread), so one thread's finish leaves another's alone.
+   */
+  clearContextActivity: (threadId?: string) => void
   setActiveModels: (models: string[]) => void
   setUserStoppedModels: (keys: string[]) => void
 }
@@ -107,6 +140,7 @@ export const useAppState = create<AppState>()((set) => ({
   tokenSpeed: undefined,
   currentToolCall: undefined,
   promptProgress: undefined,
+  contextActivity: IDLE_CONTEXT_ACTIVITY,
   cancelToolCall: undefined,
   activeModels: [],
   userStoppedModels: [],
@@ -220,6 +254,25 @@ export const useAppState = create<AppState>()((set) => ({
       promptProgress: progress,
     }))
   },
+  setContextExpanding: ({ threadId, from, to }) =>
+    set({ contextActivity: { phase: 'expanding', from, to, threadId } }),
+  setContextCompacting: (args) =>
+    set({
+      contextActivity: { phase: 'compacting', threadId: args?.threadId },
+    }),
+  clearContextActivity: (threadId) =>
+    set((state) => {
+      const current = state.contextActivity
+      if (current.phase === null) return {}
+      if (
+        threadId !== undefined &&
+        current.threadId !== undefined &&
+        current.threadId !== threadId
+      ) {
+        return {}
+      }
+      return { contextActivity: IDLE_CONTEXT_ACTIVITY }
+    }),
   setActiveModels: (models: string[]) => {
     set(() => ({
       activeModels: models,

@@ -61,7 +61,7 @@ export function TurnErrorCard({
       : action.type === 'shorten-history'
         ? t('chat:turnRecovery.shortenHistory')
         : action.type === 'increase-context'
-          ? 'Increase Context Size'
+          ? t('chat:turnRecovery.increaseContext')
           : t('chat:turnRecovery.retry')
   const ActionIcon =
     action.type === 'shorten-history' || action.type === 'retry'

@@ -1,11 +1,14 @@
 import { describe, it, expect } from 'vitest'
+import { APICallError } from 'ai'
 import {
+  CONTEXT_LENGTH_EXCEEDED,
   OUT_OF_CONTEXT_SIZE,
   MODEL_ACCESS_DENIED_TITLE,
   MODEL_ACCESS_DENIED_MESSAGE,
   AUTHENTICATION_FAILED_TITLE,
   AUTHENTICATION_FAILED_MESSAGE,
   isAuthenticationError,
+  isContextLimitError,
   isModelAccessError,
   isOutOfMemoryError,
 } from '../error'
@@ -176,6 +179,68 @@ describe('error utilities', () => {
       expect(isOutOfMemoryError(null)).toBe(false)
       expect(isOutOfMemoryError(undefined)).toBe(false)
       expect(isOutOfMemoryError({})).toBe(false)
+    })
+  })
+
+  describe('isContextLimitError', () => {
+    it('reads the engines’ overflow wording', () => {
+      expect(isContextLimitError(new Error(OUT_OF_CONTEXT_SIZE))).toBe(true)
+      expect(
+        isContextLimitError('prompt of 9000 tokens but MAX_KV_SIZE is 8192')
+      ).toBe(true)
+      expect(isContextLimitError(new Error('connection refused'))).toBe(false)
+    })
+
+    it('reads an error that carries the OpenAI code, whatever its message', () => {
+      const body = JSON.stringify({
+        error: { message: 'Bad Request', code: CONTEXT_LENGTH_EXCEEDED },
+      })
+      // The AI SDK's APICallError: the parsed body in `data`, the raw one in `responseBody`.
+      const apiCallError = new APICallError({
+        message: 'Bad Request',
+        url: 'http://127.0.0.1:4001/v1/chat/completions',
+        requestBodyValues: {},
+        statusCode: 400,
+        responseBody: body,
+        data: JSON.parse(body),
+      })
+      expect(isContextLimitError(apiCallError)).toBe(true)
+      expect(
+        isContextLimitError(
+          new APICallError({
+            message: 'Bad Request',
+            url: 'http://example.invalid',
+            requestBodyValues: {},
+            statusCode: 400,
+            responseBody: body,
+          })
+        )
+      ).toBe(true)
+      // On the error itself, in an OpenAI body, on its cause.
+      expect(
+        isContextLimitError(
+          Object.assign(new Error('Bad Request'), {
+            code: CONTEXT_LENGTH_EXCEEDED,
+          })
+        )
+      ).toBe(true)
+      expect(isContextLimitError(JSON.parse(body))).toBe(true)
+      expect(
+        isContextLimitError(
+          new Error('request failed', { cause: JSON.parse(body) })
+        )
+      ).toBe(true)
+    })
+
+    it('does not read another code as an overflow', () => {
+      expect(
+        isContextLimitError(
+          Object.assign(new Error('Bad Request'), { code: 'invalid_api_key' })
+        )
+      ).toBe(false)
+      expect(isContextLimitError('{"error":{"message":"Bad Request"}}')).toBe(
+        false
+      )
     })
   })
 })

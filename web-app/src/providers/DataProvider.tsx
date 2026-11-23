@@ -40,6 +40,7 @@ import {
 import { migrateGlobalSamplingToAssistants } from '@/lib/samplingParams'
 import { createSafeUnlisten } from '@/lib/tauriEvent'
 import { toast } from 'sonner'
+import i18n from '@/i18n/setup'
 import { SystemEvent } from '@/types/events'
 import {
   parseAtomicChatDeepLink,
@@ -781,10 +782,9 @@ export function DataProvider() {
             )
             return
           }
-          toast.error(
-            'Model reached its maximum context, auto-expand stopped',
-            { id: `ctx-at-max-${provider}-${modelId}` }
-          )
+          toast.error(i18n.t('chat:turnRecovery.contextAtMax'), {
+            id: `ctx-at-max-${provider}-${modelId}`,
+          })
         })
         const detachAtMax = createSafeUnlisten(unsubAtMax)
         if (cancelled) {

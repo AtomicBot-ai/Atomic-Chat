@@ -108,10 +108,14 @@ import {
   toOpenAiMessages,
   toOpenAiTools,
 } from '@/lib/prompt-size'
-import { OUT_OF_CONTEXT_SIZE } from '@/utils/error'
+import {
+  CONTEXT_LENGTH_EXCEEDED,
+  OUT_OF_CONTEXT_SIZE,
+  isContextLimitError,
+} from '@/utils/error'
 import { withoutEmptyFailedTurns } from '@/lib/turn-error'
 import { withoutHistoryBefore } from '@/lib/turn-recovery'
-import { canGrowContext } from '@/lib/managed-engine/chat'
+import { contextSupport } from '@/lib/context-support'
 import { isManagedProvider } from '@/lib/managed-engines'
 import { summarizeToolCost } from '@/lib/tool-cost'
 import { extractModelErrorMessage } from '@/lib/modelErrorMessage'
@@ -926,41 +930,60 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     console.info(
       `[chat] prompt ${promptTokens} tokens (${measured ? 'measured' : 'estimated'}) + ${needed - promptTokens} reserved does not fit ctx ${ctxLen}; growing to >= ${minCtxLen}`
     )
-    const result = await growModelContext({
-      providerId: args.providerId,
-      modelId: args.modelId,
-      serviceHub: this.serviceHub,
-      minCtxLen,
-    })
-    if (!result.ok) {
-      if (result.reason === 'at_max') {
-        throw new Error(
-          `${OUT_OF_CONTEXT_SIZE} The prompt needs about ${needed} tokens (${this.lastPromptSize.toolTokens} of them are tool definitions) but the model's maximum context is ${result.max ?? result.from}. Disable some connectors for this chat or shorten the conversation.`
-        )
+    // The thread shows "Adding context" from here until the first token of
+    // the answer (`clearContextActivity` in `sendMessages`), the reload and
+    // the re-read of the prompt included. Any way out without a grown window
+    // takes it down at once.
+    const appState = useAppState.getState()
+    appState.setContextExpanding({ threadId: this.threadId, from: ctxLen })
+    let grown = false
+    try {
+      const result = await growModelContext({
+        providerId: args.providerId,
+        modelId: args.modelId,
+        serviceHub: this.serviceHub,
+        minCtxLen,
+      })
+      if (!result.ok) {
+        if (result.reason === 'at_max') {
+          throw new Error(
+            `${OUT_OF_CONTEXT_SIZE} The prompt needs about ${needed} tokens (${this.lastPromptSize.toolTokens} of them are tool definitions) but the model's maximum context is ${result.max ?? result.from}. Disable some connectors for this chat or shorten the conversation.`
+          )
+        }
+        if (result.reason === 'fit') {
+          throw new Error(
+            `${OUT_OF_CONTEXT_SIZE} The prompt needs about ${needed} tokens (${this.lastPromptSize.toolTokens} of them are tool definitions) but the context this device has room for is ${result.from}. Disable some connectors for this chat, shorten the conversation, or turn off "Fit to device memory" in the model settings to set the context by hand.`
+          )
+        }
+        if (
+          result.reason === 'insufficient_memory' ||
+          result.reason === 'reload_failed'
+        ) {
+          const why =
+            result.reason === 'insufficient_memory'
+              ? `a ${result.to ?? minCtxLen}-token context would not fit the free memory`
+              : `the model did not load with a ${result.to ?? minCtxLen}-token context`
+          throw new Error(
+            `${OUT_OF_CONTEXT_SIZE} The prompt needs about ${needed} tokens (${this.lastPromptSize.toolTokens} of them are tool definitions) but the context is ${result.from} and ${why}. Disable some connectors for this chat or shorten the conversation.`
+          )
+        }
+        return ctxLen
       }
-      if (result.reason === 'fit') {
-        throw new Error(
-          `${OUT_OF_CONTEXT_SIZE} The prompt needs about ${needed} tokens (${this.lastPromptSize.toolTokens} of them are tool definitions) but the context this device has room for is ${result.from}. Disable some connectors for this chat, shorten the conversation, or turn off "Fit to device memory" in the model settings to set the context by hand.`
-        )
+      if (args.abortSignal?.aborted) return
+      appState.setContextExpanding({
+        threadId: this.threadId,
+        from: result.from,
+        to: result.to,
+      })
+      await args.recreateModel()
+      grown = true
+      this.lastPromptSize = { ...this.lastPromptSize, ctxLen: result.to }
+      return result.to
+    } finally {
+      if (!grown || args.abortSignal?.aborted) {
+        useAppState.getState().clearContextActivity(this.threadId)
       }
-      if (
-        result.reason === 'insufficient_memory' ||
-        result.reason === 'reload_failed'
-      ) {
-        const why =
-          result.reason === 'insufficient_memory'
-            ? `a ${result.to ?? minCtxLen}-token context would not fit the free memory`
-            : `the model did not load with a ${result.to ?? minCtxLen}-token context`
-        throw new Error(
-          `${OUT_OF_CONTEXT_SIZE} The prompt needs about ${needed} tokens (${this.lastPromptSize.toolTokens} of them are tool definitions) but the context is ${result.from} and ${why}. Disable some connectors for this chat or shorten the conversation.`
-        )
-      }
-      return ctxLen
     }
-    if (args.abortSignal?.aborted) return
-    await args.recreateModel()
-    this.lastPromptSize = { ...this.lastPromptSize, ctxLen: result.to }
-    return result.to
   }
 
   /**
@@ -1375,8 +1398,14 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // whole prompt is regenerated; with it there is one reload and no error.
     // TensorRT-LLM is left out: its context is fixed when the container starts (design D9) and its
     // gateway has no `/tokenize` to measure with.
+    // Only an engine that reloads its window in seconds grows it (`contextSupport`): a cloud model's
+    // window is not the app's to change, and a restart takes minutes.
     let preflightWindow: number | undefined
-    if (isLocalProvider && modelId && canGrowContext(effectiveProviderName)) {
+    if (
+      isLocalProvider &&
+      modelId &&
+      contextSupport(effectiveProviderName).canExpand
+    ) {
       preflightWindow = await this.ensureContextFits({
         providerId: effectiveProviderName,
         modelId,
@@ -1433,6 +1462,23 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
     // Whether this request failed, so its finish does not count as an answer.
     let requestFailed = false
 
+    // The context work this turn waited on ("Adding context", reading the
+    // prompt) ends with the first token of the answer, or with the turn when
+    // none comes: a failure or a stop ends the stream without the finish that
+    // takes the reading progress back.
+    const endContextWork = () =>
+      useAppState.getState().clearContextActivity(this.threadId)
+    const endReading = () =>
+      useAppState.getState().updatePromptProgress(undefined)
+    options.abortSignal?.addEventListener(
+      'abort',
+      () => {
+        endContextWork()
+        endReading()
+      },
+      { once: true }
+    )
+
     const uiStream = result.toUIMessageStream({
       messageMetadata: ({ part }) => {
         // Start the wall-clock timer on the first generated delta (text or
@@ -1443,6 +1489,7 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           (part.type === 'text-delta' || part.type === 'reasoning-delta')
         ) {
           streamStartTime = Date.now()
+          endContextWork()
         }
 
         if (part.type === 'finish-step') {
@@ -1526,6 +1573,8 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         // A provider that says its key is invalid stops reading as "Connected".
         requestFailed = true
         noteProviderRequestError(provider, error)
+        endContextWork()
+        endReading()
         const errorMessage =
           error == null
             ? 'Unknown error'
@@ -1535,9 +1584,17 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
                 ? error.message
                 : JSON.stringify(error)
 
+        // Only the text reaches the chat. An overflow the provider marked by
+        // its OpenAI `code` alone keeps the code in it, so the thread still
+        // reads it as one.
+        if (isContextLimitError(error) && !isContextLimitError(errorMessage)) {
+          return `${errorMessage} [${CONTEXT_LENGTH_EXCEEDED}]`
+        }
         return errorMessage
       },
       onFinish: ({ responseMessage, isAborted, finishReason }) => {
+        endContextWork()
+        if (isAborted) endReading()
         // The provider answered in full, so its key works: drop a stale
         // "Key rejected" or "not verified".
         if (!requestFailed && !isAborted && finishReason !== 'error') {

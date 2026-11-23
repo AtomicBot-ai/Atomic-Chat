@@ -3,7 +3,9 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { TurnErrorCard } from '@/containers/TurnErrorCard'
 import { formatTransportError } from '@/lib/transport-error'
-import { CONTEXT_OVERFLOW_TITLE } from '@/utils/error'
+
+const CONTEXT_OVERFLOW_TITLE = 'chat:turnRecovery.contextOverflowTitle'
+const INCREASE_CONTEXT = 'chat:turnRecovery.increaseContext'
 
 const ENGINE_GONE = formatTransportError(
   'connection_reset',
@@ -95,9 +97,7 @@ describe('TurnErrorCard', () => {
       'the request exceeds the available context size.'
     )
     const grow = renderCard(overflow)
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Increase Context Size' })
-    )
+    fireEvent.click(screen.getByRole('button', { name: INCREASE_CONTEXT }))
     expect(grow.onIncreaseContext).toHaveBeenCalledTimes(1)
     expect(
       screen.getByRole('alert', { name: CONTEXT_OVERFLOW_TITLE })
@@ -113,13 +113,29 @@ describe('TurnErrorCard', () => {
       screen.getByRole('alert', { name: CONTEXT_OVERFLOW_TITLE })
     ).toBeInTheDocument()
     // The one action offered: growing the context is no longer possible.
-    expect(
-      screen.queryByRole('button', { name: 'Increase Context Size' })
-    ).toBeNull()
+    expect(screen.queryByRole('button', { name: INCREASE_CONTEXT })).toBeNull()
     fireEvent.click(
       screen.getByRole('button', { name: 'chat:turnRecovery.shortenHistory' })
     )
     expect(onShortenHistory).toHaveBeenCalledTimes(1)
+  })
+
+  it('never offers to grow a cloud model’s context: it offers to shorten the history', () => {
+    const { onShortenHistory, onIncreaseContext } = renderCard(
+      new Error(
+        "This model's maximum context length is 128000 tokens. However, your messages resulted in 130000 tokens."
+      ),
+      { providerId: 'openai' }
+    )
+    expect(
+      screen.getByRole('alert', { name: CONTEXT_OVERFLOW_TITLE })
+    ).toHaveTextContent('chat:turnRecovery.contextOverflowShortenMessage')
+    expect(screen.queryByRole('button', { name: INCREASE_CONTEXT })).toBeNull()
+    fireEvent.click(
+      screen.getByRole('button', { name: 'chat:turnRecovery.shortenHistory' })
+    )
+    expect(onShortenHistory).toHaveBeenCalledTimes(1)
+    expect(onIncreaseContext).not.toHaveBeenCalled()
   })
 
   it("opens a managed engine's settings for its overflow", () => {

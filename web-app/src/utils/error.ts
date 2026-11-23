@@ -9,9 +9,11 @@ export const AUTHENTICATION_FAILED_TITLE = 'Authentication failed'
 export const AUTHENTICATION_FAILED_MESSAGE =
   "We couldn't authenticate with this provider. Check that the API key is correct and active, then try again."
 
-export const CONTEXT_OVERFLOW_TITLE = 'Context window full'
-export const CONTEXT_OVERFLOW_MESSAGE =
-  'This message — including search results and tool output — is longer than the model can process at once. Increase the context size, or reduce the amount of attached / retrieved content (e.g. fewer web-search results) and try again.'
+/**
+ * The OpenAI error `code` of a context overflow. The core maps every engine's overflow (managed
+ * engines and gateway hosts) to it, and OpenAI-compatible clouds answer with it too.
+ */
+export const CONTEXT_LENGTH_EXCEEDED = 'context_length_exceeded'
 
 export const OUT_OF_MEMORY_TITLE = 'Ran out of memory'
 export const OUT_OF_MEMORY_MESSAGE =
@@ -60,6 +62,37 @@ function getSearchableErrorText(
   return parts.filter(Boolean).join(' ')
 }
 
+/** Keys an error keeps its OpenAI `code` under, as the AI SDK and the app's own fetches shape it. */
+const ERROR_CODE_CARRIERS = ['error', 'data', 'responseBody', 'cause'] as const
+const ERROR_CODE_MAX_DEPTH = 4
+
+/**
+ * Whether `error` carries the OpenAI error `code`, wherever its shape keeps it: on the error itself,
+ * in an AI SDK `APICallError`'s parsed `data` (`{ error: { code } }`) or raw `responseBody`, in an
+ * OpenAI error body (`{ error: { code } }`, also as JSON text), or on its `cause`.
+ */
+function carriesErrorCode(error: unknown, code: string, depth = 0): boolean {
+  if (error == null || depth > ERROR_CODE_MAX_DEPTH) return false
+  if (typeof error === 'string') {
+    const text = error.trim()
+    if (!text.startsWith('{')) return false
+    try {
+      return carriesErrorCode(JSON.parse(text), code, depth + 1)
+    } catch {
+      return false
+    }
+  }
+  if (typeof error !== 'object') return false
+  const record = error as Record<string, unknown>
+  if (record.code === code) return true
+  return ERROR_CODE_CARRIERS.some(
+    (key) =>
+      record[key] !== undefined &&
+      record[key] !== error &&
+      carriesErrorCode(record[key], code, depth + 1)
+  )
+}
+
 /**
  * Detects errors raised when a request exceeds the model's context window.
  *
@@ -68,10 +101,13 @@ function getSearchableErrorText(
  * error bodies the proxy does. llama-server and mlx-server are both
  * OpenAI-compatible but phrase overflow differently: mlx-vlm rejects an
  * over-budget request with `... but MAX_KV_SIZE is N` (ATO-170), llama.cpp
- * references "context" + a size/length/limit keyword. Keep patterns lower-case.
+ * references "context" + a size/length/limit keyword. An error that carries the OpenAI code
+ * `context_length_exceeded` is one whatever its message. Keep patterns lower-case.
  */
 export function isContextLimitError(error: unknown): boolean {
   if (!error) return false
+  // The core and OpenAI-compatible providers mark an overflow by its code, whatever the message says.
+  if (carriesErrorCode(error, CONTEXT_LENGTH_EXCEEDED)) return true
   const raw =
     typeof error === 'string'
       ? error

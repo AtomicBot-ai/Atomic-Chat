@@ -1025,6 +1025,167 @@ describe('CustomChatTransport pre-flight context sizing', () => {
 })
 
 /**
+ * What the thread shows while the pre-flight grows the window: "Adding
+ * context" with both sizes through the reload, gone at the answer's first
+ * token; and no growth at all for a model whose window is not the app's.
+ */
+describe('CustomChatTransport context activity', () => {
+  const answer: ModelStreamPart[] = [
+    { type: 'stream-start', warnings: [] },
+    { type: 'text-start', id: 'text-1' },
+    { type: 'text-delta', id: 'text-1', delta: 'ok' },
+    { type: 'text-end', id: 'text-1' },
+    {
+      type: 'finish',
+      finishReason: 'stop',
+      usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+    },
+  ]
+
+  const send = async (transport: CustomChatTransport) =>
+    readChunks(
+      (await transport.sendMessages({
+        chatId: 'chat-1',
+        messages: [userMessage],
+        abortSignal: undefined,
+        trigger: 'submit-message',
+        messageId: undefined,
+      })) as ReadableStream<Record<string, unknown>>
+    )
+
+  const selectCtx = (ctxLen: number) =>
+    useModelProvider.setState((state) => ({
+      selectedModel: {
+        ...state.selectedModel!,
+        settings: {
+          ctx_len: { controller_props: { value: ctxLen } },
+          auto_increase_ctx_len: { controller_props: { value: true } },
+        },
+      },
+    }))
+
+  beforeEach(() => {
+    contextMocks.growModelContext.mockReset()
+    useAppState.setState({
+      contextActivity: { phase: null },
+      promptProgress: undefined,
+    })
+  })
+
+  it('shows the growth with both sizes through the reload and ends it at the first token', async () => {
+    selectCtx(512)
+    contextMocks.growModelContext.mockImplementation(async () => {
+      // Under way before the window is known.
+      expect(useAppState.getState().contextActivity).toMatchObject({
+        phase: 'expanding',
+        from: 512,
+        threadId: 'thread-ctx',
+      })
+      return { ok: true, from: 512, to: 8192 }
+    })
+    const duringReload: unknown[] = []
+    vi.spyOn(ModelFactory, 'createModel').mockImplementation(async () => {
+      duringReload.push(useAppState.getState().contextActivity)
+      return fakeStreamingModel(answer)
+    })
+
+    const chunks = await send(new CustomChatTransport(undefined, 'thread-ctx'))
+
+    // The second model is the reload with the grown window.
+    expect(duringReload[1]).toEqual({
+      phase: 'expanding',
+      from: 512,
+      to: 8192,
+      threadId: 'thread-ctx',
+    })
+    expect(chunks.some((chunk) => chunk.type === 'text-delta')).toBe(true)
+    expect(useAppState.getState().contextActivity.phase).toBeNull()
+  })
+
+  it('ends the growth at once when the window cannot grow', async () => {
+    selectCtx(512)
+    contextMocks.growModelContext.mockResolvedValue({
+      ok: false,
+      reason: 'at_max',
+      from: 512,
+      max: 512,
+    })
+    vi.spyOn(ModelFactory, 'createModel').mockResolvedValue(
+      fakeStreamingModel(answer)
+    )
+
+    await expect(
+      send(new CustomChatTransport(undefined, 'thread-ctx'))
+    ).rejects.toThrow(/exceeds the available context size/)
+    expect(useAppState.getState().contextActivity.phase).toBeNull()
+  })
+
+  it.each([['openai'], ['vllm'], ['foundry-local']])(
+    'never grows the window of a %s model',
+    async (providerName) => {
+      useModelProvider.setState((state) => ({
+        selectedProvider: providerName,
+        providers: [
+          {
+            provider: providerName,
+            active: true,
+            api_key: 'key',
+            base_url: 'http://localhost',
+            models: [],
+            settings: [],
+          },
+        ] as never,
+        selectedModel: {
+          ...state.selectedModel!,
+          settings: {
+            ctx_len: { controller_props: { value: 512 } },
+            auto_increase_ctx_len: { controller_props: { value: true } },
+          },
+        },
+      }))
+      vi.spyOn(ModelFactory, 'createModel').mockResolvedValue(
+        fakeStreamingModel(answer)
+      )
+
+      const chunks = await send(
+        new CustomChatTransport(undefined, 'thread-ctx')
+      )
+
+      expect(contextMocks.growModelContext).not.toHaveBeenCalled()
+      expect(useAppState.getState().contextActivity.phase).toBeNull()
+      expect(chunks.some((chunk) => chunk.type === 'text-delta')).toBe(true)
+    }
+  )
+
+  it('keeps an overflow marked only by its OpenAI code readable as one, and ends the reading', async () => {
+    useAppState.setState({
+      promptProgress: { total: 100, processed: 50, cache: 0, time_ms: 1 },
+    })
+    const overflow = Object.assign(new Error('Bad Request'), {
+      data: {
+        error: { message: 'Bad Request', code: 'context_length_exceeded' },
+      },
+    })
+    vi.spyOn(ModelFactory, 'createModel').mockResolvedValue({
+      specificationVersion: 'v2',
+      provider: 'fixture',
+      modelId: 'fixture-model',
+      supportedUrls: {},
+      doGenerate: vi.fn(),
+      doStream: vi.fn(async () => {
+        throw overflow
+      }),
+    } as unknown as LanguageModel)
+
+    const chunks = await send(new CustomChatTransport(undefined, 'thread-ctx'))
+
+    const errorChunk = chunks.find((chunk) => chunk.type === 'error')
+    expect(errorChunk?.errorText).toBe('Bad Request [context_length_exceeded]')
+    expect(useAppState.getState().promptProgress).toBeUndefined()
+  })
+})
+
+/**
  * mlx-server stops an answer at 2048 tokens unless the request names a
  * `max_tokens` (#384); llama.cpp loads run to 16384 or the end of the window.
  */

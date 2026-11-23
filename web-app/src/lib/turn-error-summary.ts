@@ -1,8 +1,6 @@
 import {
   AUTHENTICATION_FAILED_MESSAGE,
   AUTHENTICATION_FAILED_TITLE,
-  CONTEXT_OVERFLOW_MESSAGE,
-  CONTEXT_OVERFLOW_TITLE,
   MODEL_ACCESS_DENIED_MESSAGE,
   MODEL_ACCESS_DENIED_TITLE,
   OUT_OF_MEMORY_MESSAGE,
@@ -16,6 +14,7 @@ import {
   contextOverflowGuidance,
   contextOverflowMessage,
 } from '@/lib/managed-engine/chat'
+import { contextSupport } from '@/lib/context-support'
 import {
   RECOVERABLE_LOCAL_PROVIDERS,
   isEngineGoneError,
@@ -190,7 +189,7 @@ export function summarizeTurnError(
       const guidance = contextOverflowGuidance(providerId, error)!
       return {
         kind,
-        title: CONTEXT_OVERFLOW_TITLE,
+        title: t('chat:turnRecovery.contextOverflowTitle'),
         body: contextOverflowMessage(guidance),
         action: {
           type: 'open-engine-settings',
@@ -199,22 +198,28 @@ export function summarizeTurnError(
         },
       }
     }
-    case 'context':
+    case 'context': {
+      // The window cannot grow any more, or this provider's window is not the
+      // app's to grow (a cloud model, an engine that must restart or keeps a
+      // fixed window): send less history instead. The draft, the message and
+      // its attachments stay as they are. The raw text — the pre-flight's
+      // English numbers included — stays under Details.
+      const canIncrease =
+        !context.contextGrowthBlocked && contextSupport(providerId).canExpand
+      const title = t('chat:turnRecovery.contextOverflowTitle')
+      const body = canIncrease
+        ? t('chat:turnRecovery.contextOverflowMessage')
+        : t('chat:turnRecovery.contextOverflowShortenMessage')
       return {
         kind,
-        title: CONTEXT_OVERFLOW_TITLE,
-        body: CONTEXT_OVERFLOW_MESSAGE,
-        details: detailsBeside(
-          raw,
-          CONTEXT_OVERFLOW_TITLE,
-          CONTEXT_OVERFLOW_MESSAGE
-        ),
-        // The window cannot grow any more: send less history instead. The
-        // draft, the message and its attachments stay as they are.
-        action: context.contextGrowthBlocked
-          ? { type: 'shorten-history' }
-          : { type: 'increase-context' },
+        title,
+        body,
+        details: detailsBeside(raw, title, body),
+        action: canIncrease
+          ? { type: 'increase-context' }
+          : { type: 'shorten-history' },
       }
+    }
     case 'access':
       return {
         kind,
