@@ -61,26 +61,31 @@ describe('Strata preparation flow', () => {
   })
 
   it('uses the saved request and resumes interrupted preparation without a transfer', async () => {
+    const calls: string[] = []
+    let resumeBody: unknown
     vi.mocked(invoke).mockImplementation(async (command, args) => {
+      calls.push(command === 'atomic_core_call' ? String(args?.path) : command)
       if (command === 'atomic_strata_jobs')
         return [{ ...job, model_id: descriptor.variant_id }]
       if (args?.path === '/strata/preparations')
         return { ...operation, state: 'interrupted' }
-      if (args?.path === '/strata/preparations/operation/resume')
+      if (args?.path === '/strata/preparations/operation/resume') {
+        resumeBody = args?.body
         return operation
+      }
       return undefined
     })
     await resumeStrata(`strata-model-${descriptor.variant_id}`)
-    expect(emitTransferProgress).not.toHaveBeenCalled()
-    expect(invoke).not.toHaveBeenCalledWith(
-      'atomic_strata_acquire',
-      expect.anything()
-    )
-    expect(invoke).toHaveBeenCalledWith('atomic_core_call', {
-      method: 'POST',
-      path: '/strata/preparations/operation/resume',
-      body: {},
-    })
+    // The saved files are reused: no acquisition, and no transfer progress
+    // that would show a download bar for files already on disk.
+    expect(calls).toEqual([
+      'atomic_strata_jobs',
+      '/strata/preparations',
+      '/strata/preparations/operation/resume',
+      'atomic_strata_finish_install',
+    ])
+    expect(resumeBody).toEqual({})
+    expect(vi.mocked(emitTransferProgress).mock.calls).toEqual([])
   })
 
   it('retries cancellation if the native token is registered after the first request', async () => {

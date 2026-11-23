@@ -64,6 +64,13 @@ const EXPECTED_DESKTOP_ONLY = new Set([
   'atomic_fastflowlm_recover_mutations',
   'atomic_fastflowlm_remove_model',
   'atomic_fastflowlm_run_host_step',
+  // Strata, the core's model runtime: the desktop app acquires its immutable
+  // sources, tracks the transfers and publishes or removes the result for the
+  // core. Mobile ships neither the core nor Strata.
+  'atomic_strata_acquire',
+  'atomic_strata_finish_install',
+  'atomic_strata_jobs',
+  'atomic_strata_remove_model',
   // ChatGPT subscription sign-in. Desktop only on purpose: the OAuth callback
   // needs a loopback listener on a fixed port, and the refresh token needs a
   // mode-0600 file. `PlatformFeature.CHATGPT_SUBSCRIPTION` gates the UI to
