@@ -6,6 +6,7 @@ vi.mock('@tauri-apps/api/core', () => ({ invoke }))
 import {
   compactContext,
   contextRoutesAbsent,
+  isRouteAbsentError,
   measureContext,
   resetCoreContextRoutes,
 } from '../core-context'
@@ -151,5 +152,25 @@ describe('compactContext', () => {
       reason: 'absent',
     })
     expect(invoke).not.toHaveBeenCalled()
+  })
+})
+
+describe('isRouteAbsentError', () => {
+  it.each([
+    [{ code: 'HTTP_404', message: 'The core answered 404.' }, true],
+    [
+      {
+        code: 'INVALID_ARGUMENT',
+        message:
+          'No such control route: /atomic/v1/models/vllm/qwen/context/measure',
+      },
+      true,
+    ],
+    [{ code: 'INVALID_ARGUMENT', message: 'compact needs messages' }, false],
+    [{ code: 'MODEL_NOT_LOADED', message: 'qwen is not loaded' }, false],
+    [new Error('boom'), false],
+    [null, false],
+  ])('%o → %s', (error, absent) => {
+    expect(isRouteAbsentError(error)).toBe(absent)
   })
 })

@@ -13,8 +13,9 @@ import type {
  * (`atomic_core_call`): `context/measure` counts a chat request against the
  * window the session serves, `compact` summarizes the oldest turns of one.
  *
- * Both are new in the core. An older core answers them with a 404 (`HTTP_404`,
- * `NOT_FOUND`, `ROUTE_NOT_FOUND`): that is remembered for a while, so the chat
+ * Both are new in the core. An older core answers them with a 404 — its own
+ * control server says `INVALID_ARGUMENT` "No such control route", a body that
+ * is not the core's envelope becomes `HTTP_404`: that is remembered for a while, so the chat
  * goes back to its own measuring and growth without asking again on every
  * turn. Any other failure only fails the one call.
  */
@@ -41,10 +42,22 @@ export function resetCoreContextRoutes(): void {
   absentUntil.compact = 0
 }
 
+/** What the core's control server says for a path it has no route for. */
+const NO_SUCH_ROUTE = /^No such control route\b/
+
 /** Whether a relay rejection means the core has no such route. */
 export function isRouteAbsentError(error: unknown): boolean {
-  const code = (error as { code?: unknown } | null)?.code
-  return typeof code === 'string' && ABSENT_CODES.has(code)
+  const { code, message } = (error ?? {}) as {
+    code?: unknown
+    message?: unknown
+  }
+  if (typeof code !== 'string') return false
+  if (ABSENT_CODES.has(code)) return true
+  return (
+    code === 'INVALID_ARGUMENT' &&
+    typeof message === 'string' &&
+    NO_SUCH_ROUTE.test(message)
+  )
 }
 
 /**
