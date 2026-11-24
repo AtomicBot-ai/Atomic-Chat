@@ -64,6 +64,10 @@ import { createAnthropic } from '@ai-sdk/anthropic'
 import { createXai } from '@ai-sdk/xai'
 import { invoke, Channel } from '@tauri-apps/api/core'
 import { isContextLimitError } from '@/utils/error'
+import {
+  FORCE_CONTEXT_OVERFLOW,
+  withForcedContextOverflow,
+} from '@/lib/dev/force-context-overflow'
 import { SessionInfo } from '@janhq/core'
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
@@ -169,6 +173,8 @@ export function createHoldingFetch(
   modelId: string,
   inner: typeof httpFetch
 ): typeof httpFetch {
+  if (FORCE_CONTEXT_OVERFLOW)
+    inner = withForcedContextOverflow(providerName, modelId, inner)
   let releaseFirstRequestHold: (() => void) | null = holdModelUntilFirstRequest(
     providerName,
     modelId,
