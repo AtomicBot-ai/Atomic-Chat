@@ -151,6 +151,9 @@ describe('ContextSizeControl — Compact history', () => {
       )
     })
     expect(toast.error).toHaveBeenCalledWith('chat:contextCompaction.failed')
+    // A failed summary still releases the composer and clears the status.
+    expect(useChatSessions.getState().requestActive[THREAD]).toBe(false)
+    expect(useAppState.getState().contextActivity.phase).toBeNull()
   })
 
   it('is off while a request runs, or with no older history', () => {

@@ -124,26 +124,28 @@ describe('withPromptProgress', () => {
   })
 
   it('takes the progress back at the finish when no token came', () => {
-    const report = vi.fn()
-    const stream = withPromptProgress(
-      innerExtractor().extractor,
-      report
+    const reports: unknown[] = []
+    const stream = withPromptProgress(innerExtractor().extractor, (progress) =>
+      reports.push(progress)
     ).createStreamExtractor()
     stream.processChunk(progressChunk(100))
-    stream.buildMetadata()
-    expect(report).toHaveBeenLastCalledWith(undefined)
+    expect(stream.buildMetadata()).toEqual({ providerMetadata: { seen: 1 } })
+    expect(reports).toEqual([
+      { total: 4096, cache: 0, processed: 100, time_ms: 120 },
+      undefined,
+    ])
   })
 
   it('leaves the progress alone for a stream that reported none', () => {
-    const report = vi.fn()
-    const stream = withPromptProgress(
-      innerExtractor().extractor,
-      report
+    const reports: unknown[] = []
+    const stream = withPromptProgress(innerExtractor().extractor, (progress) =>
+      reports.push(progress)
     ).createStreamExtractor()
     stream.processChunk(contentChunk('Hi'))
     stream.processChunk(finishChunk)
-    stream.buildMetadata()
-    expect(report).not.toHaveBeenCalled()
+    expect(stream.buildMetadata()).toEqual({ providerMetadata: { seen: 2 } })
+    // Another stream's progress is not taken back by this one.
+    expect(reports).toEqual([])
   })
 })
 
