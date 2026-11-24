@@ -69,78 +69,80 @@ export function MediaStep({ next }: StepProps) {
       : null
 
   return (
-    <>
+    <div className="ob-media-step">
       <h1 tabIndex={-1}>{t('onboarding-media:title')}</h1>
       <p className="ob-lead">{t('onboarding-media:lead')}</p>
-      <div className="ob-media-grid">
-        {cards.map((card) => {
-          const job = jobs.find((candidate) => candidate.key === card.family)
-          const downloaded = card.downloaded || job?.phase === 'done'
-          const titleId = `ob-media-${card.family}`
-          return (
-            <article
-              key={card.family}
-              className={cn(job && 'is-queued')}
-              aria-labelledby={titleId}
-            >
-              <MediaPreview modality={card.modality} />
-              <div className="ob-media-title">
-                {card.logoSrc && (
-                  <span className="ob-media-logo" aria-hidden="true">
-                    <FamilyLogoMark src={card.logoSrc} />
-                  </span>
-                )}
-                <h2 id={titleId}>{card.title}</h2>
-              </div>
-              <p>{t(`onboarding-media:purpose.${card.modality}`)}</p>
-              <small>
-                {[
-                  t(
-                    downloaded
-                      ? 'onboarding-media:size.onDisk'
-                      : 'onboarding-media:size.download',
-                    { size: (card.downloadBytes / GB).toFixed(1) }
-                  ),
-                  t('onboarding-media:memory', {
-                    size: Math.ceil(card.memoryBytes / GB),
-                  }),
-                ].join(' · ')}
-              </small>
-              {card.fit === 'maybe' && (
-                <small className="ob-caution">
-                  {t('onboarding-media:caution')}
-                </small>
-              )}
-              {downloaded ? (
-                <span className="ob-media-done">
-                  <Check size={16} aria-hidden="true" />
-                  {t('onboarding-media:queue.downloaded')}
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  className="ob-secondary"
-                  aria-pressed={Boolean(job)}
-                  aria-describedby={titleId}
-                  onClick={() => toggle(card, job)}
-                >
-                  {job ? (
-                    <Check size={16} aria-hidden="true" />
-                  ) : (
-                    <Download size={16} aria-hidden="true" />
+      <div className="ob-media-scroll">
+        <div className="ob-media-grid">
+          {cards.map((card) => {
+            const job = jobs.find((candidate) => candidate.key === card.family)
+            const downloaded = card.downloaded || job?.phase === 'done'
+            const titleId = `ob-media-${card.family}`
+            return (
+              <article
+                key={card.family}
+                className={cn(job && 'is-queued')}
+                aria-labelledby={titleId}
+              >
+                <MediaPreview modality={card.modality} />
+                <div className="ob-media-title">
+                  {card.logoSrc && (
+                    <span className="ob-media-logo" aria-hidden="true">
+                      <FamilyLogoMark src={card.logoSrc} />
+                    </span>
                   )}
-                  {job && job.phase !== 'done'
-                    ? t(QUEUE_LABEL[job.phase])
-                    : t('onboarding-media:queue.add')}
-                </button>
-              )}
-            </article>
-          )
-        })}
+                  <h2 id={titleId}>{card.title}</h2>
+                </div>
+                <p>{t(`onboarding-media:purpose.${card.modality}`)}</p>
+                <small>
+                  {[
+                    t(
+                      downloaded
+                        ? 'onboarding-media:size.onDisk'
+                        : 'onboarding-media:size.download',
+                      { size: (card.downloadBytes / GB).toFixed(1) }
+                    ),
+                    t('onboarding-media:memory', {
+                      size: Math.ceil(card.memoryBytes / GB),
+                    }),
+                  ].join(' · ')}
+                </small>
+                {card.fit === 'maybe' && (
+                  <small className="ob-caution">
+                    {t('onboarding-media:caution')}
+                  </small>
+                )}
+                {downloaded ? (
+                  <span className="ob-media-done">
+                    <Check size={16} aria-hidden="true" />
+                    {t('onboarding-media:queue.downloaded')}
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    className="ob-secondary"
+                    aria-pressed={Boolean(job)}
+                    aria-describedby={titleId}
+                    onClick={() => toggle(card, job)}
+                  >
+                    {job ? (
+                      <Check size={16} aria-hidden="true" />
+                    ) : (
+                      <Download size={16} aria-hidden="true" />
+                    )}
+                    {job && job.phase !== 'done'
+                      ? t(QUEUE_LABEL[job.phase])
+                      : t('onboarding-media:queue.add')}
+                  </button>
+                )}
+              </article>
+            )
+          })}
+        </div>
+        {order && (
+          <p className="ob-note">{t('onboarding-media:order', { order })}</p>
+        )}
       </div>
-      {order && (
-        <p className="ob-note">{t('onboarding-media:order', { order })}</p>
-      )}
       <div className="ob-actions">
         <button
           type="button"
@@ -151,6 +153,6 @@ export function MediaStep({ next }: StepProps) {
           <ArrowRight size={17} aria-hidden="true" />
         </button>
       </div>
-    </>
+    </div>
   )
 }

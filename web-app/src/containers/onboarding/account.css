@@ -2,60 +2,66 @@
  * and a layer it used first would otherwise come before `base`. */
 @layer theme, base, components, utilities;
 
-/* The account step (`steps/AccountStep`): three benefit cards on the
- * permissions list's surface, then the sign-in row, built from the shell's
- * theme variables (`onboarding.css`) so it follows both themes. The sign-in
- * row's controls are at least the 42px of `.ob-primary` and stretch to the
- * tallest of them; Google's button gets its size through its class names,
- * since its Tailwind utilities outrank this layer, and keeps its brand
- * colours in either theme. This file
- * loads ahead of `onboarding.css`, so a rule that refines one of its classes
- * is scoped to win on specificity. */
 @layer components {
-  .ob-account-benefits {
+  .ob-account-layout {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 12px;
-    margin: 0;
-    padding: 0;
-    list-style: none;
+    grid-template-columns: minmax(0, 1fr) minmax(290px, 360px) minmax(0, 1fr);
+    grid-template-areas: 'remote panel everywhere';
+    gap: clamp(16px, 3vw, 40px);
+    align-items: center;
+    padding-block: clamp(16px, 5vh, 56px);
   }
-  .ob-account-benefit {
+  .ob-account-panel {
+    grid-area: panel;
     min-width: 0;
-    padding: 18px 18px 20px;
+    padding: clamp(20px, 3vw, 32px);
     border: 1px solid var(--ob-surface-line);
-    border-radius: 14px;
+    border-radius: 20px;
     background: var(--ob-surface);
+    text-align: center;
   }
-  /* The app sizes every lucide icon at 14px in the base layer. */
-  .ob-account-benefit > svg {
+  .ob-shell .ob-account-panel h1 {
+    font-size: calc(var(--font-size-base) * 1.875);
+    margin-bottom: 24px;
+  }
+  .ob-account-panel .ob-actions {
+    justify-content: center;
+    margin-top: 8px;
+  }
+  .ob-account-remote {
+    grid-area: remote;
+  }
+  .ob-account-everywhere {
+    grid-area: everywhere;
+  }
+  .ob-account-note {
+    min-width: 0;
+    max-width: 200px;
+    justify-self: center;
+  }
+  .ob-account-note svg {
     width: 22px;
     height: 22px;
-    margin-bottom: 14px;
     color: var(--ob-icon-text);
+    margin-bottom: 10px;
   }
-  .ob-account-benefit p {
-    margin-top: 5px;
-    color: var(--ob-subtle);
-    font-size: calc(var(--font-size-base) * 0.75);
+  .ob-shell .ob-account-note h2 {
+    font-size: calc(var(--font-size-base) * 0.875);
+    margin: 0 0 5px;
   }
-
-  .ob-account-sign-in {
-    margin-top: 26px;
+  .ob-account-note p {
+    font-size: calc(var(--font-size-base) * 0.8125);
+    color: var(--ob-muted);
   }
-  /* Stretched, so Google's button and the field match the step's buttons,
-   * which grow past 42px with the interface font. */
   .ob-account-methods {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: stretch;
-    gap: 12px 16px;
+    display: grid;
+    gap: 12px;
   }
   .ob-account-waiting {
     display: inline-flex;
     align-items: center;
     gap: 10px;
-    min-height: 42px;
+    min-height: max(44px, calc(var(--font-size-base) * 2.5));
     padding: 0 8px 0 14px;
     border: 1px solid var(--ob-surface-line);
     border-radius: 25px;
@@ -70,22 +76,17 @@
   .ob-account-waiting .ob-text {
     padding: 8px 10px;
   }
-  .ob-account-or {
-    align-self: center;
-    color: var(--ob-subtle);
-    font-size: calc(var(--font-size-base) * 0.75);
+  .ob-account-methods .ob-account-email-choice {
+    min-height: max(44px, calc(var(--font-size-base) * 2.5));
   }
   .ob-account-field {
-    display: flex;
-    flex: 1 1 300px;
+    display: grid;
     gap: 10px;
-    min-width: 0;
-    max-width: 440px;
   }
   .ob-account-field input {
     flex: 1;
     min-width: 0;
-    min-height: 42px;
+    min-height: max(44px, calc(var(--font-size-base) * 2.5));
     padding: 0 13px;
     border: 1px solid var(--ob-surface-line);
     border-radius: 9px;
@@ -97,23 +98,46 @@
     border-color: var(--ob-warn-line);
   }
   #ob-account-code {
-    flex: 0 1 180px;
+    text-align: center;
     font-family: var(--font-mono, ui-monospace, monospace);
     font-variant-numeric: tabular-nums;
     letter-spacing: 0.3em;
   }
-  .ob-account-field .ob-secondary {
-    flex-shrink: 0;
+  .ob-account-field .ob-primary {
+    min-height: max(44px, calc(var(--font-size-base) * 2.5));
   }
-  .ob-account-field .ob-secondary > svg {
+  .ob-account-field .ob-primary > svg {
     width: 15px;
     height: 15px;
   }
+  .ob-account-email-form {
+    width: min(100%, 270px);
+    margin-inline: auto;
+    text-align: start;
+  }
+  .ob-account-email-form label {
+    color: var(--ob-muted);
+    font-size: calc(var(--font-size-base) * 0.8125);
+  }
+  .ob-account-email-form input,
+  .ob-account-email-form .ob-primary {
+    width: 100%;
+    min-height: max(40px, calc(var(--font-size-base) * 2.25));
+    padding-block: 6px;
+    border-radius: 10px;
+  }
+  .ob-account-email-form input:focus-visible {
+    outline-offset: 0;
+  }
   .ob-account-code label {
+    overflow-wrap: anywhere;
     display: block;
     margin-bottom: 12px;
     color: var(--ob-text);
     font-size: calc(var(--font-size-base) * 0.875);
+  }
+  .ob-account-links > :last-child {
+    margin-inline-start: auto;
   }
   .ob-account-links {
     display: flex;
@@ -138,7 +162,8 @@
     align-items: center;
     gap: 14px;
     max-width: 540px;
-    margin-top: 26px;
+    flex-wrap: wrap;
+    text-align: start;
     padding: 16px 18px;
     border: 1px solid var(--ob-selected-line);
     border-radius: 12px;
@@ -176,20 +201,25 @@
   }
 }
 
-@media (max-width: 720px) {
-  .ob-account-benefits {
+@media (max-width: 740px) {
+  .ob-account-layout {
+    max-width: 440px;
+    margin-inline: auto;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas: 'panel panel' 'remote everywhere';
+  }
+  .ob-account-panel {
+    width: 100%;
+    max-width: 360px;
+    justify-self: center;
+  }
+}
+@media (max-width: 420px) {
+  .ob-account-layout {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: 'panel' 'remote' 'everywhere';
   }
-  .ob-account-benefit {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    column-gap: 14px;
-  }
-  .ob-account-benefit > svg {
-    grid-row: span 2;
-    margin-bottom: 0;
-  }
-  .ob-account-benefit p {
-    grid-column: 2;
+  .ob-account-note {
+    max-width: 100%;
   }
 }

@@ -70,13 +70,9 @@ describe('AccountStep', () => {
     const { next } = await renderStep()
 
     expect(
-      screen.getByRole('heading', { name: 'One account. Every device.' })
+      screen.getByRole('heading', { name: 'Sign in to Atomic Chat' })
     ).toBeInTheDocument()
-    for (const title of [
-      'Private chat sync',
-      'Remote access',
-      'One sign-in everywhere',
-    ]) {
+    for (const title of ['Remote access', 'One sign-in everywhere']) {
       expect(screen.getByRole('heading', { name: title })).toBeInTheDocument()
     }
     expect(
@@ -93,6 +89,10 @@ describe('AccountStep', () => {
     const user = userEvent.setup()
     const { next } = await renderStep()
 
+    expect(screen.queryByLabelText('Email')).toBeNull()
+    await user.click(
+      screen.getByRole('button', { name: 'Continue with email' })
+    )
     await user.type(screen.getByLabelText('Email'), 'ada@example.com')
     await user.click(screen.getByRole('button', { name: 'Send code' }))
     await user.type(

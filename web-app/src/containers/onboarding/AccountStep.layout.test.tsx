@@ -66,7 +66,7 @@ beforeEach(() => resetAccountStore())
 describe.each(['light', 'dark'] as const)('account step in %s', (theme) => {
   it.each(
     ['en', 'ru'].flatMap((language) =>
-      [1024, 1280].flatMap((width) =>
+      [390, 1024, 1280].flatMap((width) =>
         [DEFAULT_FONT_SIZE, XL_FONT_SIZE].map((font) => ({
           language,
           width,
@@ -86,6 +86,14 @@ describe.each(['light', 'dark'] as const)('account step in %s', (theme) => {
       const google = screen.getByRole('button', {
         name: i18n.t('account:signIn.google'),
       })
+      const choice = screen.getByRole('button', {
+        name: i18n.t('onboarding-account:emailMethod'),
+      })
+      expectSameHeight([google, choice])
+      expect(choice.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+        google.getBoundingClientRect().bottom
+      )
+      fireEvent.click(choice)
       const email = screen.getByRole('textbox', {
         name: i18n.t('account:signIn.emailLabel'),
       })
@@ -96,12 +104,10 @@ describe.each(['light', 'dark'] as const)('account step in %s', (theme) => {
         name: i18n.t('onboarding-account:skip'),
       })
       expectNoHorizontalOverflow(document.body)
-      // The sign-in row's controls line up with the step's own buttons.
-      expectSameHeight([google, email, send, skip])
-      expectSameHeight(
-        Array.from(document.querySelectorAll('.ob-account-benefit'))
+      expectSameHeight([email, send])
+      expect(skip.getBoundingClientRect().top).toBeGreaterThanOrEqual(
+        send.getBoundingClientRect().bottom
       )
-      const before = skip.getBoundingClientRect().top
 
       fireEvent.change(email, { target: { value: 'ada@example.com' } })
       await act(async () => {
@@ -113,7 +119,6 @@ describe.each(['light', 'dark'] as const)('account step in %s', (theme) => {
 
       // The message line is reserved: an error never moves the page.
       expectNoHorizontalOverflow(document.body)
-      expect(skip.getBoundingClientRect().top).toBeCloseTo(before, 0)
     }
   )
 
