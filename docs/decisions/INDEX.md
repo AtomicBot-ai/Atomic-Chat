@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-538 records, 2026-05-19 → 2026-11-19.
+544 records, 2026-05-19 → 2026-11-23.
 
 ---
 
@@ -596,8 +596,12 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-09-30** — [TensorRT-LLM is a Linux-only extension that decides its own visibility](2026-09-30-tensorrt-llm-is-a-linux-only-extension-that-decides-its-own-visibility.md)
 - **2026-09-30** — [Run Agent turns on TensorRT-LLM through its session gateway](2026-09-30-run-agent-turns-on-tensorrt-llm-through-its-session-gateway.md)
 
-## Other (22)
+## Other (25)
 
+- **2026-11-23** — [Announce an access request wherever the person is](2026-11-23-announce-an-access-request-wherever-the-person-is.md) — OS notification per request while the window is away (Settings switch), corner card with "Review" on other pages, nothing on Remote models; dedupe by grant id; no desktop click handler, so the card waits for the window's return; supersedes the request toast of 2026-11-12.
+- **2026-11-12** — [Share and use models through the Atomic Chat account](2026-11-12-share-and-use-models-through-the-account.md) — host + client of the backend's remote access API in Rust (`account/remote/`, HPKE keys per device, sealed addresses, `atomic-remote.json`); core `PUT /server/client-keys`; sharing needs the server key; "<computer> (remote)" managed providers; Account sidebar is back (Overview, Remote models).
+- **2026-11-11** — [Give the account its own section and an onboarding step](2026-11-11-give-the-account-its-own-section-and-an-onboarding-step.md) — avatar opens `/account/` (no sidebar yet); optional `account` step between media and purpose (full variant, accounts flag); shared `useAccountSignIn`; cached Devices list.
+- **2026-11-10** — [Sign in to an Atomic Chat account from the desktop app](2026-11-10-sign-in-to-an-atomic-chat-account.md) — Rust owns the session (0600 file, single-flight refresh, no tokens over IPC); Google via loopback; rail avatar → Settings → Account; dev-only flag.
 - **2026-11-04** — [Keep an isolated profile's webview storage in the profile](2026-11-04-keep-an-isolated-profiles-webview-storage-in-the-profile.md) — `ATOMIC_CHAT_PROFILE_DIR` windows get their own WebKit store (random id kept in the profile) and WebView2/WebKitGTK directory; single-instance lock unchanged.
 - **2026-10-28** — [Bound support writes and preserve retry identity](2026-10-28-bound-support-writes-and-preserve-retry-identity.md)
 
@@ -626,3 +630,5 @@ decision is reversed, add a new one that says which record it supersedes.
 
 - **2026-11-02** — [Preserve generated Hub discovery alongside managed model pins](2026-11-02-preserve-hub-discovery-and-model-pins.md)
 - **2026-11-19** — [Group configured Strata models by weights repository](2026-11-19-reuse-strata-profiles-from-the-model-catalog.md)
+- **2026-11-23** — [Compact chat history instead of growing the window](2026-11-23-compact-chat-history-instead-of-growing-the-window.md)
+- **2026-11-24** — [Let the core size the default window](2026-11-24-let-the-core-size-the-default-window.md) (supersedes 2026-06-15 MLX 16K default)

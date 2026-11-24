@@ -3,7 +3,17 @@ import { page } from '@vitest/browser/context'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ContextSizeControl } from './ContextSizeControl'
-import { setFontSize, setTheme, settle, withTranslations } from '@/test/layout'
+import {
+  expectNoHorizontalOverflow,
+  setFontSize,
+  setTheme,
+  settle,
+  withTranslations,
+} from '@/test/layout'
+import { useModelProvider } from '@/hooks/useModelProvider'
+import { useThreads } from '@/hooks/useThreads'
+import { useChatSessions } from '@/stores/chat-session-store'
+import i18n from '@/i18n/setup'
 
 const state = vi.hoisted(() => ({ strata: false, managed: false }))
 vi.mock('@/hooks/useServiceHub', async (load) => ({
@@ -127,6 +137,61 @@ describe('context-size popover geometry', () => {
           )
         })
       }
+    }
+  }
+
+  for (const width of [390, 1024]) {
+    for (const lng of ['en', 'ru']) {
+      it(`${width}px / 20px / ${lng}: Compact history keeps its button in the panel`, async () => {
+        await page.viewport(width, 800)
+        setFontSize('20px')
+        const language = i18n.language
+        i18n.language = lng
+        state.managed = true
+        useModelProvider.setState({ selectedProvider: 'vllm' })
+        useThreads.setState({ currentThreadId: 'thread-1' })
+        useChatSessions.setState({
+          sessions: {
+            'thread-1': {
+              transport: {
+                compactHistory: vi.fn(),
+                getHistoryStart: () => undefined,
+              },
+              chat: { messages: [] },
+            },
+          } as never,
+        })
+        const message = (id: string, role: string) =>
+          ({ id, role, content: [] }) as never
+        try {
+          render(
+            withTranslations(
+              <ContextSizeControl
+                messages={[
+                  message('u1', 'user'),
+                  message('a1', 'assistant'),
+                  message('u2', 'user'),
+                ]}
+              />
+            )
+          )
+          fireEvent.click(screen.getByRole('button', { name: /Context usage/ }))
+          const panel = await screen.findByTestId('context-size-popover')
+          await settle(panel)
+
+          const row = screen.getByTestId('context-compact-row')
+          const button = row.querySelector('button')!
+          expect(button).toBeVisible()
+          expect(button.getBoundingClientRect().right).toBeLessThanOrEqual(
+            panel.getBoundingClientRect().right
+          )
+          expectNoHorizontalOverflow(panel)
+        } finally {
+          i18n.language = language
+          useThreads.setState({ currentThreadId: undefined })
+          useChatSessions.setState({ sessions: {} })
+        }
+      })
     }
   }
 })

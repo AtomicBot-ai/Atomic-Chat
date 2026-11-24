@@ -1,0 +1,19 @@
+{
+  "title": "One account. Every device.",
+  "lead": "Sign in to keep your chats in sync and reach this computer from anywhere. Your models keep downloading.",
+  "sync": {
+    "title": "Private chat sync",
+    "reason": "Pick up any conversation on your other devices. Encrypted end to end, so only you can read it."
+  },
+  "remote": {
+    "title": "Remote access",
+    "reason": "Use the models on this computer from your phone or laptop, wherever you are."
+  },
+  "everywhere": {
+    "title": "One sign-in everywhere",
+    "reason": "The same account for the desktop app, Atomic Server and mobile."
+  },
+  "signedIn": "Signed in",
+  "ready": "Your account is ready on this device.",
+  "skip": "Skip"
+}

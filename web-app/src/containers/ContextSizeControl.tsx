@@ -1,5 +1,11 @@
+import { useState } from 'react'
 import { type ThreadMessage } from '@janhq/core'
-import { IconArrowDown, IconArrowUp } from '@tabler/icons-react'
+import {
+  IconArrowDown,
+  IconArrowUp,
+  IconArrowsMinimize,
+} from '@tabler/icons-react'
+import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -17,8 +23,20 @@ import {
   useModelContextLength,
 } from '@/hooks/useModelContextLength'
 import { useTokensCount } from '@/hooks/useTokensCount'
+import { useThreads } from '@/hooks/useThreads'
+import { useModelProvider } from '@/hooks/useModelProvider'
+import { useAppState } from '@/hooks/useAppState'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { cn } from '@/lib/utils'
+import {
+  COMPACTION_METADATA_KEY,
+  appliedCompaction,
+  compactsHistory,
+  hasCompactableHistory,
+  readThreadCompaction,
+} from '@/lib/context-compaction'
+import { contextRoutesAbsent } from '@/lib/core-context'
+import { useChatSessions } from '@/stores/chat-session-store'
 
 interface ContextSizeControlProps {
   messages?: ThreadMessage[]
@@ -85,6 +103,100 @@ function getLatestTokenUsage(messages: ThreadMessage[]): LatestTokenUsage {
   return { inputTokens: 0, outputTokens: 0, totalTokens: 0 }
 }
 
+/**
+ * "Compact history": summarize the current thread's older messages now, with
+ * the selected local model; they stay on the page above a divider. Offered
+ * while the thread has history older than its latest turn, and off while a
+ * request runs or the history is already being compacted.
+ */
+function CompactHistoryRow({ messages }: { messages: ThreadMessage[] }) {
+  const { t } = useTranslation()
+  const providerId = useModelProvider((state) => state.selectedProvider)
+  const threadId = useThreads((state) => state.currentThreadId)
+  const rawCompaction = useThreads((state) =>
+    threadId
+      ? state.threads[threadId]?.metadata?.[COMPACTION_METADATA_KEY]
+      : undefined
+  )
+  const requestActive = useChatSessions((state) =>
+    threadId ? state.requestActive[threadId] === true : false
+  )
+  const contextBusy = useAppState(
+    (state) =>
+      state.contextActivity.phase !== null &&
+      (state.contextActivity.threadId === undefined ||
+        state.contextActivity.threadId === threadId)
+  )
+  const [compacting, setCompacting] = useState(false)
+
+  if (!threadId || !compactsHistory(providerId)) return null
+  const transport = useChatSessions.getState().sessions[threadId]?.transport
+  const compaction = appliedCompaction(
+    messages,
+    readThreadCompaction({ [COMPACTION_METADATA_KEY]: rawCompaction })
+  )
+  const canCompact =
+    transport !== undefined &&
+    !contextRoutesAbsent('compact') &&
+    hasCompactableHistory(messages, [
+      compaction?.upToMessageId,
+      transport.getHistoryStart(),
+    ])
+
+  const compact = async () => {
+    const session = useChatSessions.getState().sessions[threadId]
+    if (!session) return
+    const sessions = useChatSessions.getState()
+    setCompacting(true)
+    // The composer waits while the summary is made: a message sent meanwhile
+    // would go out with the history being replaced.
+    sessions.setRequestActive(threadId, true)
+    useAppState.getState().setContextCompacting({ threadId })
+    try {
+      const outcome = await session.transport.compactHistory({
+        messages: session.chat.messages,
+      })
+      if (outcome.ok) {
+        toast.success(
+          t('chat:contextCompaction.done', {
+            count: outcome.compaction.summarizedCount,
+          })
+        )
+      } else if (outcome.reason === 'nothing') {
+        toast.info(t('chat:contextCompaction.nothing'))
+      } else {
+        toast.error(t('chat:contextCompaction.failed'))
+      }
+    } finally {
+      useAppState.getState().clearContextActivity(threadId)
+      useChatSessions.getState().setRequestActive(threadId, false)
+      setCompacting(false)
+    }
+  }
+
+  return (
+    <div
+      className="flex items-center justify-between gap-3 border-t border-border pt-4"
+      data-testid="context-compact-row"
+    >
+      <p className="min-w-0 text-sm leading-snug text-muted-foreground">
+        {t('chat:contextCompaction.compactHint')}
+      </p>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="shrink-0"
+        disabled={!canCompact || requestActive || contextBusy || compacting}
+        onClick={() => void compact()}
+      >
+        <IconArrowsMinimize aria-hidden="true" className="size-4" />
+        {t('chat:contextCompaction.compact')}
+      </Button>
+    </div>
+  )
+}
+
 export function ContextSizeControl({
   messages = [],
   additionalTokens = 0,
@@ -104,6 +216,7 @@ export function ContextSizeControl({
     provider,
     selectedModel,
     strataMax,
+    deviceLimit,
     contextSetting,
     draft: draftContext,
     setDraft: setDraftContext,
@@ -116,7 +229,10 @@ export function ContextSizeControl({
     setFit,
   } = useModelContextLength()
   const engine = engineContext(provider, selectedModel, strataMax)
-  const capacity = engine ? engine.capacity : tokenData.maxTokens
+  // The window the core measured the session at comes first: it is the one
+  // the engine serves, also where the setting says Auto.
+  const capacity =
+    tokenData.windowTokens ?? (engine ? engine.capacity : tokenData.maxTokens)
   const percentage = capacity ? (totalTokens / capacity) * 100 : 0
   const isOverLimit = percentage > 100
   const progressTone =
@@ -127,7 +243,10 @@ export function ContextSizeControl({
         : 'bg-emerald-500'
   const { t } = useTranslation()
 
-  if (!engine && (!available || !contextSetting)) return null
+  // An engine with no context setting of the app's (Foundry Local, Apple
+  // Foundation Models) still shows its usage once the core measured it.
+  const measuredOnly = tokenData.windowTokens !== undefined
+  if (!engine && (!available || !contextSetting) && !measuredOnly) return null
 
   const unknownCapacity = engine?.configured ? '—' : t('common:auto')
   const percentageLabel =
@@ -230,6 +349,7 @@ export function ContextSizeControl({
             </span>
           </div>
         </div>
+        <CompactHistoryRow messages={messages} />
         {engine && provider && selectedModel ? (
           <EngineContextEditor
             key={JSON.stringify([provider.provider, selectedModel.id])}
@@ -295,6 +415,21 @@ export function ContextSizeControl({
                 <span>{formatContextSize(sliderMin)}</span>
                 <span>{formatContextSize(sliderMax)}</span>
               </div>
+              {deviceLimit && (
+                <p
+                  className="text-sm leading-snug text-muted-foreground"
+                  data-testid="context-size-device-max"
+                >
+                  {deviceLimit.trainedCtx
+                    ? t('assistants:contextSizeDeviceMaxBelowTrained', {
+                        size: formatContextSize(deviceLimit.maxCtx),
+                        trained: formatContextSize(deviceLimit.trainedCtx),
+                      })
+                    : t('assistants:contextSizeDeviceMax', {
+                        size: formatContextSize(deviceLimit.maxCtx),
+                      })}
+                </p>
+              )}
             </div>
           )
         )}

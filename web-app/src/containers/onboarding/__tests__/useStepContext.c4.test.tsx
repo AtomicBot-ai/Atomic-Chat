@@ -21,6 +21,9 @@ vi.mock('../steps/permissionsAvailability', () => ({
 vi.mock('../steps/serverAvailability', () => ({
   useLocalApiServerOffered: () => false,
 }))
+vi.mock('../steps/accountAvailability', () => ({
+  useAccountStepOffered: () => false,
+}))
 
 import { useStepContext } from '../useStepContext'
 

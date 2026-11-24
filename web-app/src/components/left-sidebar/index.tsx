@@ -3,6 +3,7 @@ import {
   Activity,
   AudioLines,
   Blocks,
+  CircleUserRound,
   Clapperboard,
   Cloud,
   Cpu,
@@ -15,6 +16,7 @@ import {
   Settings2,
   Shield,
   Wifi,
+  Workflow,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -211,10 +213,34 @@ function ModelsNavigation() {
   )
 }
 
+function AccountNavigation() {
+  const { t } = useTranslation()
+  const { pathname } = useLocation()
+
+  return (
+    <SidebarMenu className="px-2">
+      <NavRow
+        to={route.account.index}
+        label={t('common:navigation.overview')}
+        icon={<CircleUserRound size={16} />}
+        active={isPathActive(pathname, route.account.index)}
+      />
+      <NavRow
+        to={route.account.remote}
+        label={t('common:navigation.remoteModels')}
+        icon={<Workflow size={16} />}
+        active={isPathActive(pathname, route.account.remote)}
+        testId="account-remote-link"
+      />
+    </SidebarMenu>
+  )
+}
+
 const SECTION_TITLES = {
   chat: 'common:navigation.workspace',
   server: 'common:navigation.server',
   models: 'common:navigation.modelsHub',
+  account: 'common:navigation.account',
   settings: 'common:settings',
 } as const
 
@@ -285,6 +311,7 @@ export function LeftSidebar() {
             )}
             {section === 'server' && <ServerNavigation />}
             {section === 'models' && <ModelsNavigation />}
+            {section === 'account' && <AccountNavigation />}
             {section === 'settings' && <SettingsNavigation />}
           </SidebarContent>
           <SidebarRail

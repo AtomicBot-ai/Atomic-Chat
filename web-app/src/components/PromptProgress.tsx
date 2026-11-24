@@ -1,10 +1,7 @@
 import { useAppState } from '@/hooks/useAppState'
 import { useInferenceStatus } from '@/hooks/useInferenceStatus'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import {
-  ActivityDetail,
-  AgentActivity,
-} from '@/components/ai-elements/agent-activity'
+import { AgentActivity } from '@/components/ai-elements/agent-activity'
 
 export function PromptProgress() {
   const { t } = useTranslation('chat')
@@ -27,9 +24,13 @@ export function PromptProgress() {
   return (
     <AgentActivity
       active
-      workingLabel={t(
-        loadingModel ? 'activity.loadingModel' : 'activity.working'
-      )}
+      // While the engine reads a long prompt the label says how far it got,
+      // so the wait before the first token is visibly moving.
+      workingLabel={
+        showReadingProgress
+          ? t('activity.reading', { count: percentage })
+          : t(loadingModel ? 'activity.loadingModel' : 'activity.working')
+      }
       durationLabel=""
       hasDetails={Boolean(showReadingProgress)}
       // Rendered inside the indicator row, not the message flow — the default
@@ -37,14 +38,19 @@ export function PromptProgress() {
       className="mb-0"
     >
       {showReadingProgress && (
-        <ActivityDetail label={t('activity.reading', { count: percentage })}>
-          <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-            <div
-              className="h-full bg-primary transition-[width]"
-              style={{ width: `${percentage}%` }}
-            />
-          </div>
-        </ActivityDetail>
+        <div
+          role="progressbar"
+          aria-label={t('activity.reading', { count: percentage })}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={percentage}
+          className="my-1 h-1.5 w-40 overflow-hidden rounded-full bg-muted"
+        >
+          <div
+            className="h-full bg-primary transition-[width]"
+            style={{ width: `${percentage}%` }}
+          />
+        </div>
       )}
     </AgentActivity>
   )

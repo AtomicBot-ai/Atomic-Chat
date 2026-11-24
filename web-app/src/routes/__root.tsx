@@ -19,6 +19,7 @@ import { ToasterProvider } from '@/providers/ToasterProvider'
 // import { PromptAnalytic } from '@/containers/analytics/PromptAnalytic'
 import { useOnboardingModelReminder } from '@/hooks/useOnboardingModelReminder'
 import { PromptOnboardingModel } from '@/containers/PromptOnboardingModel'
+import { RemoteRequestNotice } from '@/containers/account/remote/RemoteRequestNotice'
 import { DownloadManagement } from '@/containers/DownloadManegement'
 import { OnboardingRuntime } from '@/containers/onboarding/OnboardingRuntime'
 import { isOnboardingOnScreen } from '@/lib/onboarding'
@@ -26,6 +27,7 @@ import { AnalyticProvider } from '@/providers/AnalyticProvider'
 import { useLeftPanel } from '@/hooks/useLeftPanel'
 import { useTrayStatusSync } from '@/hooks/useTrayStatusSync'
 import { useRemoteAccessSync } from '@/hooks/useRemoteAccessSync'
+import { useAccountRemoteSync } from '@/hooks/useAccountRemoteSync'
 import { useManagedEnvironmentSync } from '@/hooks/useManagedEnvironmentSync'
 import { useStrataSync } from '@/hooks/useStrataSync'
 import { useFastFlowLmSync } from '@/hooks/useFastFlowLmSync'
@@ -91,6 +93,10 @@ const AppLayout = () => {
   // starts the tunnel with the Local API Server when asked to. No-op wherever
   // there is no Local API Server (mobile, web).
   useRemoteAccessSync()
+  // Remote access through the account: an OS notification for a device asking
+  // for access while the window is away, and the "<computer> (remote)"
+  // providers kept in step. No-op without the accounts flag.
+  useAccountRemoteSync()
   // Follows the core's TensorRT-LLM environment and its setup for the whole session, so the
   // provider page finds a running setup as it is. No-op off Linux.
   useManagedEnvironmentSync()
@@ -159,6 +165,9 @@ const AppLayout = () => {
         {showOnboardingModelReminder && !onOnboarding && (
           <PromptOnboardingModel />
         )}
+        {/* A device asking for access to this computer's models, on every
+            page but Remote models. Accounts flag only. */}
+        {!onOnboarding && <RemoteRequestNotice />}
         {/* ATO-462: mounted once at the root, not inside the sidebar or the
             header. It used to render in one of two places depending on whether
             the left panel was open, so a download's progress moved around the

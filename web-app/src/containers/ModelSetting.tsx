@@ -20,6 +20,10 @@ import {
   LEGACY_SAMPLING_KEYS,
   RESTART_REQUIRED_SETTINGS,
 } from '@/lib/model-settings-defaults'
+import {
+  CTX_LEN_USER_SET_KEY,
+  ctxLenUserSetSetting,
+} from '@/lib/planned-context-window'
 import { restartLocalModel } from '@/utils/restartLocalModel'
 
 type ModelSettingProps = {
@@ -92,6 +96,10 @@ export function ModelSettingsList({
             value: value,
           },
         },
+        // A context size typed here is the user's: every load sends it.
+        ...(key === 'ctx_len'
+          ? { [CTX_LEN_USER_SET_KEY]: ctxLenUserSetSetting() }
+          : {}),
       },
     }
 
@@ -142,6 +150,8 @@ export function ModelSettingsList({
         }, [])
         .filter(([key]) => {
           if (excluded.has(key)) return false
+          // Bookkeeping, not a control.
+          if (key === CTX_LEN_USER_SET_KEY) return false
           // Sampling lives solely in the Run settings panel. Hide the legacy
           // load-time sampling controls here so there is exactly one place
           // to tune sampling. The persisted `model.settings.*` values are

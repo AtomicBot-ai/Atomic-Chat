@@ -874,10 +874,13 @@
     "notSelected": "Not selected",
     "configuration": "Configuration",
     "remoteAccess": "Remote access",
+    "remoteModels": "Remote models",
     "activity": "Activity",
     "connections": "Connections",
     "connectionsCount": "{{count}} set up",
-    "configured": "Configured"
+    "configured": "Configured",
+    "account": "Account",
+    "signIn": "Sign in"
   },
   "support": {
     "title": "Atomic Chat support",

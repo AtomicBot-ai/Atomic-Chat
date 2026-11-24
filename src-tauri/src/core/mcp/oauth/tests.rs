@@ -150,7 +150,7 @@ fn auth_errors_are_recognised_loosely() {
 
 #[tokio::test]
 async fn the_callback_listener_binds_a_real_port_and_honours_cancel() {
-    let (port, waiter) = flow::start_callback_server().expect("bind");
+    let (port, waiter) = flow::start_callback_server(flow::CALLBACK_PATH).expect("bind");
     assert_ne!(port, 0, "an OS-assigned port was reported");
 
     let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
@@ -163,7 +163,7 @@ async fn the_callback_listener_binds_a_real_port_and_honours_cancel() {
 
 #[tokio::test]
 async fn the_callback_listener_returns_the_code_and_state_pair() {
-    let (port, waiter) = flow::start_callback_server().expect("bind");
+    let (port, waiter) = flow::start_callback_server(flow::CALLBACK_PATH).expect("bind");
 
     let (_cancel_tx, cancel_rx) = tokio::sync::oneshot::channel::<()>();
     let wait = tokio::spawn(waiter.wait(Duration::from_secs(30), cancel_rx));

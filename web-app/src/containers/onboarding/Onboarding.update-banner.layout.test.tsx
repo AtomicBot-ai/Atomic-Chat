@@ -30,6 +30,7 @@ vi.mock('@/containers/onboarding/useStepContext', () => ({
     cloudProviders: 0,
     mediaCards: 0,
     localApiServer: false,
+    accounts: false,
   }),
 }))
 

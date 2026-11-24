@@ -55,6 +55,8 @@
   "contextSizeFitHint": "Let the engine pick the largest context that fits this device. Off: set it by hand.",
   "contextSizeFitOn": "Chosen by the engine to fit this device's memory. Turn off to set it by hand.",
   "contextSizeFitAtMax": "The context is fitted to this device's memory. Turn off \"Fit to device memory\" in the model settings to set it by hand.",
+  "contextSizeDeviceMax": "Up to {{size}} on this device",
+  "contextSizeDeviceMaxBelowTrained": "Up to {{size}} on this device; the model supports {{trained}}",
   "paramCategory": {
     "sampling": "Sampling",
     "penalties": "Penalties",

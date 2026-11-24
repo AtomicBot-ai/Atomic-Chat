@@ -758,8 +758,8 @@ export default class mlx_extension extends AIEngine {
         draftPath,
         blockSize,
       },
-      // Clamps an explicit context to what the model was trained for, and
-      // sizes an unset one from it (ADR 2026-06-15).
+      // Clamps an explicit context to what the model was trained for; an
+      // unset one stays unset, and the core sizes it to this Mac.
       { maxCtxTrain: this.modelMaxCtxTrain.get(modelId) }
     )
 
@@ -791,7 +791,11 @@ export default class mlx_extension extends AIEngine {
         { ...cfg, draft_model_path: draftPath },
         isEmbedding
       )
-      this.modelCtxSize.set(modelId, mlxConfig.ctx_size)
+      // A window the core chose is not known here: a drafter reload then
+      // leaves it to the core again instead of pinning a guess.
+      if (mlxConfig.ctx_size !== undefined)
+        this.modelCtxSize.set(modelId, mlxConfig.ctx_size)
+      else this.modelCtxSize.delete(modelId)
       this.lastActiveModelId = modelId
       return sInfo
     } catch (error) {

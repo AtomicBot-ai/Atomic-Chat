@@ -67,6 +67,7 @@ import { isContextLimitError } from '@/utils/error'
 import { SessionInfo } from '@janhq/core'
 import { fetch as httpFetch } from '@tauri-apps/plugin-http'
 import { useLocalApiServer } from '@/hooks/useLocalApiServer'
+import { useAppState, type PromptProgress } from '@/hooks/useAppState'
 import { ttftPreBegin } from '@/lib/ttft-timing'
 import { extractModelErrorMessage } from '@/lib/modelErrorMessage'
 import {
@@ -341,6 +342,109 @@ const providerMetadataExtractor: MetadataExtractor = {
       },
     }
   },
+}
+
+/**
+ * llama-server's report of how far it has read the prompt, sent on the stream's chunks before the
+ * first token when the request asks for it (`return_progress: true`). Those chunks carry
+ * `choices[0].delta` with `content: null`, which the OpenAI-compatible client parses as an empty
+ * delta. `processed` counts the part reused from the KV cache too.
+ */
+type LlamaPromptProgress = {
+  total?: unknown
+  cache?: unknown
+  processed?: unknown
+  time_ms?: unknown
+}
+
+/** The `prompt_progress` of a parsed stream chunk, when it carries a usable one. */
+export function readPromptProgress(chunk: unknown): PromptProgress | undefined {
+  const raw = (chunk as { prompt_progress?: LlamaPromptProgress } | null)
+    ?.prompt_progress
+  if (!raw || typeof raw !== 'object') return undefined
+  const total = Number(raw.total)
+  const processed = Number(raw.processed)
+  if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(processed)) {
+    return undefined
+  }
+  return {
+    total,
+    processed,
+    cache: Number(raw.cache) || 0,
+    time_ms: Number(raw.time_ms) || 0,
+  }
+}
+
+/** Whether a parsed stream chunk starts the answer: text, reasoning, a tool call or the finish. */
+function chunkStartsAnswer(chunk: unknown): boolean {
+  const choice = (
+    chunk as {
+      choices?: Array<{
+        delta?: Record<string, unknown> | null
+        finish_reason?: unknown
+      }>
+    } | null
+  )?.choices?.[0]
+  if (!choice) return false
+  if (choice.finish_reason != null) return true
+  const delta = choice.delta
+  if (!delta) return false
+  return Boolean(
+    delta.content ||
+      delta.reasoning_content ||
+      delta.reasoning ||
+      (Array.isArray(delta.tool_calls) && delta.tool_calls.length > 0)
+  )
+}
+
+/**
+ * `inner`, plus each stream's `prompt_progress` handed to `report` — the reading progress the chat
+ * shows before the first token — and taken back (`undefined`) once the answer starts or the stream
+ * finishes. A stream that reported nothing takes nothing back, so it leaves another's progress
+ * alone. A failed or aborted stream ends without a finish; the chat transport clears it then.
+ */
+export function withPromptProgress(
+  inner: MetadataExtractor,
+  report: (progress: PromptProgress | undefined) => void = (progress) =>
+    useAppState.getState().updatePromptProgress(progress)
+): MetadataExtractor {
+  return {
+    extractMetadata: (args) => inner.extractMetadata(args),
+    createStreamExtractor: () => {
+      const stream = inner.createStreamExtractor()
+      let reading = false
+      const stopReading = () => {
+        if (!reading) return
+        reading = false
+        report(undefined)
+      }
+      return {
+        processChunk: (parsedChunk: unknown) => {
+          stream.processChunk(parsedChunk)
+          if (chunkStartsAnswer(parsedChunk)) {
+            stopReading()
+            return
+          }
+          const progress = readPromptProgress(parsedChunk)
+          if (progress) {
+            reading = true
+            report(progress)
+          }
+        },
+        buildMetadata: () => {
+          stopReading()
+          return stream.buildMetadata()
+        },
+      }
+    },
+  }
+}
+
+/** A streamed llama.cpp chat request asks the server to report its prompt reading. */
+export function withReturnProgress(
+  body: Record<string, unknown>
+): Record<string, unknown> {
+  return body.stream === true ? { ...body, return_progress: true } : body
 }
 
 /**
@@ -1489,7 +1593,13 @@ export class ModelFactory {
       provider
     )
 
-    const customFetch = createLocalStreamingFetch(httpFetch, parameters)
+    // `return_progress` makes llama-server stream `prompt_progress` while it
+    // reads the prompt, which the chat shows as reading progress.
+    const customFetch = createLocalStreamingFetch(
+      httpFetch,
+      parameters,
+      withReturnProgress
+    )
 
     // The session is resolved again immediately before every request, and the URL and bearer key
     // the model object was built with are replaced with what comes back.
@@ -1519,7 +1629,7 @@ export class ModelFactory {
       },
       includeUsage: true,
       fetch: liveFetch,
-      metadataExtractor: providerMetadataExtractor,
+      metadataExtractor: withPromptProgress(providerMetadataExtractor),
     })
 
     return wrapLanguageModel({

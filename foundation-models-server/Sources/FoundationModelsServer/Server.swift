@@ -91,7 +91,18 @@ struct FoundationModelsHTTPServer: Sendable {
         let session = buildSession(from: chatRequest.messages)
         let lastUserMessage = extractLastUserMessage(from: chatRequest.messages)
 
-        let response = try await session.respond(to: lastUserMessage)
+        let response: LanguageModelSession.Response<String>
+        do {
+            response = try await session.respond(to: lastUserMessage)
+        } catch {
+            guard let overflow = contextOverflowError(error) else { throw error }
+            log("[foundation-models] Context window exceeded: \(error.localizedDescription)")
+            return Response(
+                status: .badRequest,
+                headers: [.contentType: "application/json"],
+                body: .init(byteBuffer: encodeJSONBuffer(overflow))
+            )
+        }
         let content = response.content
 
         let completionResponse = ChatCompletionResponse(
@@ -198,9 +209,15 @@ struct FoundationModelsHTTPServer: Sendable {
                 continuation.yield(doneBuffer)
             } catch {
                 log("[foundation-models] Streaming error: \(error.localizedDescription)")
-                var errBuffer = ByteBufferAllocator().buffer(capacity: 256)
-                errBuffer.writeString("error: {\"message\":\"\(error.localizedDescription)\"}\n\n")
-                continuation.yield(errBuffer)
+                if let overflow = contextOverflowError(error), let buffer = encodeSSEBuffer(overflow) {
+                    // An OpenAI error frame the client's stream parser surfaces, with the code every
+                    // engine's context overflow carries, so the chat can compact its history.
+                    continuation.yield(buffer)
+                } else {
+                    var errBuffer = ByteBufferAllocator().buffer(capacity: 256)
+                    errBuffer.writeString("error: {\"message\":\"\(error.localizedDescription)\"}\n\n")
+                    continuation.yield(errBuffer)
+                }
             }
             continuation.finish()
         }
@@ -264,6 +281,23 @@ struct FoundationModelsHTTPServer: Sendable {
 }
 
 // MARK: - Helpers
+
+/// The OpenAI error for a prompt that does not fit the on-device model's context window, or `nil`
+/// when `error` is something else. `code` is `context_length_exceeded`, the code the core maps every
+/// engine's context overflow to.
+func contextOverflowError(_ error: Error) -> ErrorResponse? {
+    guard let generationError = error as? LanguageModelSession.GenerationError,
+          case .exceededContextWindowSize = generationError else {
+        return nil
+    }
+    return ErrorResponse(
+        error: ErrorDetail(
+            message: "The conversation exceeds the model's context window: \(generationError.localizedDescription)",
+            type: "invalid_request_error",
+            code: "context_length_exceeded"
+        )
+    )
+}
 
 private func currentTimestamp() -> Int {
     Int(Date().timeIntervalSince1970)

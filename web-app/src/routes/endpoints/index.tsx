@@ -25,6 +25,7 @@ import {
 } from '@/containers/endpoints/EndpointDialog'
 import { useConnectMediaServer } from '@/hooks/useConnectMediaServer'
 import { canDeleteProvider, useDeleteProvider } from '@/hooks/useDeleteProvider'
+import { isAccountManagedProvider } from '@/lib/account-remote-providers'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -384,7 +385,11 @@ export function EndpointsPage() {
                   )
                 }
                 onPing={() => void ping(provider)}
-                onConfigure={() => setDialog({ provider: provider.provider })}
+                onConfigure={
+                  isAccountManagedProvider(provider)
+                    ? undefined
+                    : () => setDialog({ provider: provider.provider })
+                }
                 onRemove={
                   canDeleteProvider(provider)
                     ? () => setRemoving(provider)
@@ -454,7 +459,7 @@ function EndpointListItem({
   expanded: boolean
   onToggleExpanded: () => void
   onPing: () => void
-  onConfigure: () => void
+  onConfigure?: () => void
   onRemove?: () => void
   updateProvider: (providerName: string, data: Partial<ModelProvider>) => void
   mediaAvailable: boolean

@@ -1,8 +1,7 @@
-import { DEFAULT_CTX_LEN } from '@janhq/core'
-
 /** The MLX launch settings the core turns into `mlx-server` arguments. */
 export type MlxConfig = {
-  ctx_size: number
+  /** Absent when nothing names a window: the core then sizes it to this Mac. */
+  ctx_size?: number
   draft_model_path: string
   block_size: number
   /** Drafter family — "dflash" (default) or "mtp" (Gemma 4 assistant); "" reads as "dflash". */
@@ -46,21 +45,6 @@ export interface MlxDraftSelection {
   draftPath: string
   blockSize: number
 }
-
-/**
- * The context a model loads at when nothing pins one: the training maximum,
- * capped — a 256K coder model must not allocate a 256K KV cache on a 16 GB
- * Mac just because it could. The auto-increase ladder still climbs from
- * here, capped at the training maximum. See ADR 2026-06-15.
- */
-export const MLX_DEFAULT_CTX_CAP = DEFAULT_CTX_LEN
-
-/**
- * When the training maximum could not be read from `config.json`. Smaller
- * than the cap on purpose: with nothing known about the model, the safe
- * assumption is the small one.
- */
-export const MLX_DEFAULT_CTX_FALLBACK = 4096
 
 /** A finite number from a number or a numeric string; otherwise `undefined`. */
 export function asNumber(value: unknown): number | undefined {
@@ -110,22 +94,21 @@ export function selectMlxDraftSettings(
  * An explicit, valid `ctx_size` (a user-pinned value, or the auto-increase
  * override) wins, clamped to the training maximum when that is known — MLX
  * never clamped, unlike llama.cpp, so it could ask for a window the model
- * was not trained to hold. Unset falls back to `min(trainMax, cap)`, or
- * {@link MLX_DEFAULT_CTX_FALLBACK} when the training maximum is unknown.
+ * was not trained to hold. Unset stays unset: the core then loads the
+ * largest window this Mac holds for the model, never above its training
+ * maximum (`atomic-chat-core` ADR 2026-11-23 "Default every engine to the
+ * largest window that fits", which replaces the `min(trainMax, 16384)`
+ * default of ADR 2026-06-15).
  */
 export function resolveMlxCtxSize(
   ctxSize: Numeric | undefined,
   maxCtxTrain: number | undefined
-): number {
+): number | undefined {
   const trainMax =
     typeof maxCtxTrain === 'number' && maxCtxTrain > 0 ? maxCtxTrain : undefined
   const explicit = asNumber(ctxSize)
-  if (explicit !== undefined && explicit > 0) {
-    return trainMax ? Math.min(explicit, trainMax) : explicit
-  }
-  return trainMax
-    ? Math.min(trainMax, MLX_DEFAULT_CTX_CAP)
-    : MLX_DEFAULT_CTX_FALLBACK
+  if (explicit === undefined || explicit <= 0) return undefined
+  return trainMax ? Math.min(explicit, trainMax) : explicit
 }
 
 export function buildMlxConfig(
@@ -143,8 +126,9 @@ export function buildMlxConfig(
   const kvBits =
     kvScheme && kvBitsRaw !== undefined && kvBitsRaw > 0 ? kvBitsRaw : 0
 
+  const ctxSize = resolveMlxCtxSize(config.ctx_size, options.maxCtxTrain)
   return {
-    ctx_size: resolveMlxCtxSize(config.ctx_size, options.maxCtxTrain),
+    ...(ctxSize !== undefined ? { ctx_size: ctxSize } : {}),
     draft_model_path: draftPath,
     block_size: draftPath ? draft.blockSize : 0,
     draft_kind: draftPath ? draft.draftKind : 'dflash',

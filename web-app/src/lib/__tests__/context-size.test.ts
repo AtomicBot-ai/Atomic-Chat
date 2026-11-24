@@ -30,6 +30,7 @@ import {
   readProviderFitCtx,
   resetFailedFitFloors,
 } from '../context-size'
+import { isCtxLenUserSet } from '../planned-context-window'
 
 function seedModel(ctxLen: number | undefined) {
   useModelProvider.setState({
@@ -100,6 +101,22 @@ describe('growModelContext', () => {
     expect(stopModel).toHaveBeenCalledWith('m', 'llamacpp-upstream')
   })
 
+  it('grows without marking the window as chosen by the user', async () => {
+    seedModel(16384)
+    await growModelContext({
+      providerId: 'llamacpp-upstream',
+      modelId: 'm',
+      serviceHub,
+    })
+
+    const model = useModelProvider
+      .getState()
+      .getProviderByName('llamacpp-upstream')
+      ?.models.find((m) => m.id === 'm')
+    expect(ctxLenInStore()).toBe(32768)
+    expect(isCtxLenUserSet(model?.settings)).toBe(false)
+  })
+
   it('keeps stepping until minCtxLen is reached', async () => {
     seedModel(16384)
     const result = await growModelContext({
@@ -112,6 +129,33 @@ describe('growModelContext', () => {
     // 16384 → 32768 → 49152 → 73728
     expect(result).toEqual({ ok: true, from: 16384, to: 73728 })
     expect(stopModel).toHaveBeenCalledTimes(1)
+  })
+
+  it('grows straight to the device maximum it is capped at, in one reload', async () => {
+    seedModel(8192)
+    // The ladder from 8192 to at least 40000 would overshoot to 49152.
+    expect(
+      await growModelContext({
+        providerId: 'llamacpp-upstream',
+        modelId: 'm',
+        serviceHub,
+        minCtxLen: 40_000,
+        capCtxLen: 40_000,
+      })
+    ).toEqual({ ok: true, from: 8192, to: 40_000 })
+    expect(ctxLenInStore()).toBe(40_000)
+    expect(stopModel).toHaveBeenCalledTimes(1)
+
+    seedModel(40_000)
+    expect(
+      await growModelContext({
+        providerId: 'llamacpp-upstream',
+        modelId: 'm',
+        serviceHub,
+        minCtxLen: 40_000,
+        capCtxLen: 40_000,
+      })
+    ).toEqual({ ok: false, reason: 'at_max', from: 40_000, max: 40_000 })
   })
 
   it('clamps at the training max and reports at_max once there', async () => {

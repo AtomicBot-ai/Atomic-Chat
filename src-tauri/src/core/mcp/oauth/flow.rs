@@ -24,6 +24,11 @@ pub const CALLBACK_PATH: &str = "/callback";
 /// How long the loopback listener waits for the browser before giving up.
 pub const CALLBACK_TIMEOUT: Duration = Duration::from_secs(300);
 
+/// What `CallbackWaiter::wait` reports when the sign-in is cancelled or times out.
+/// Public so other browser sign-ins sharing the listener can tell these apart.
+pub(crate) const CALLBACK_CANCELLED: &str = "sign-in cancelled";
+pub(crate) const CALLBACK_TIMED_OUT: &str = "timed out waiting for the browser sign-in";
+
 /// rmcp's `AuthorizationSession::new` swallows a Dynamic Client Registration
 /// failure and silently falls back to this stand-in client id, which then
 /// fails at the authorize step with a message nobody can act on. Detect it and
@@ -73,10 +78,8 @@ impl CallbackWaiter {
             received = self.result_rx.recv() => {
                 received.unwrap_or_else(|| Err("callback channel closed".to_string()))
             }
-            _ = cancel => Err("sign-in cancelled".to_string()),
-            _ = tokio::time::sleep(timeout) => {
-                Err("timed out waiting for the browser sign-in".to_string())
-            }
+            _ = cancel => Err(CALLBACK_CANCELLED.to_string()),
+            _ = tokio::time::sleep(timeout) => Err(CALLBACK_TIMED_OUT.to_string()),
         };
         let _ = self.shutdown_tx.send(());
         let _ = self.server_task.await;
@@ -84,10 +87,10 @@ impl CallbackWaiter {
     }
 }
 
-/// Bind the loopback listener on an OS-assigned port. Returns the port so the
-/// caller can register the matching redirect URI — binding happens before the
-/// browser opens, so a bind failure surfaces here.
-pub(crate) fn start_callback_server() -> Result<(u16, CallbackWaiter), String> {
+/// Bind the loopback listener on an OS-assigned port, answering only `path`.
+/// Returns the port so the caller can register the matching redirect URI —
+/// binding happens before the browser opens, so a bind failure surfaces here.
+pub(crate) fn start_callback_server(path: &'static str) -> Result<(u16, CallbackWaiter), String> {
     let addr = SocketAddr::from(([127, 0, 0, 1], 0));
     let (result_tx, result_rx) = tokio::sync::mpsc::channel::<Result<(String, String), String>>(1);
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
@@ -98,7 +101,7 @@ pub(crate) fn start_callback_server() -> Result<(u16, CallbackWaiter), String> {
             Ok::<_, Infallible>(service_fn(move |req: Request<Body>| {
                 let result_tx = result_tx.clone();
                 async move {
-                    if req.uri().path() != CALLBACK_PATH {
+                    if req.uri().path() != path {
                         return Ok::<_, Infallible>(
                             Response::builder()
                                 .status(StatusCode::NOT_FOUND)
@@ -163,7 +166,7 @@ pub(crate) async fn run_login(
     url: &str,
     cancel: tokio::sync::oneshot::Receiver<()>,
 ) -> Result<McpOAuthEntry, String> {
-    let (port, waiter) = start_callback_server()?;
+    let (port, waiter) = start_callback_server(CALLBACK_PATH)?;
     let redirect_uri = format!("http://127.0.0.1:{port}{CALLBACK_PATH}");
 
     let http = reqwest::Client::builder()

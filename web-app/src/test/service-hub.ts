@@ -8,6 +8,7 @@ import { DefaultEmbeddingService } from '@/services/embedding/default'
 import { DefaultMediaService } from '@/services/media/default'
 import { DefaultModelSetupService } from '@/services/model-setup/default'
 import { DefaultChatExecService } from '@/services/chat-exec/default'
+import { DefaultAccountService } from '@/services/account/default'
 
 type ServiceInstances = {
   [Name in keyof ServiceHub]: ReturnType<ServiceHub[Name]>
@@ -40,6 +41,8 @@ export function createMockServiceHub(
     dialog: overrides.dialog ?? (emptyService as ServiceInstances['dialog']),
     opener: overrides.opener ?? (emptyService as ServiceInstances['opener']),
     auth: overrides.auth ?? (emptyService as ServiceInstances['auth']),
+    // Signed out unless a test says otherwise, as on web and mobile.
+    account: overrides.account ?? new DefaultAccountService(),
     updater: overrides.updater ?? (emptyService as ServiceInstances['updater']),
     path: overrides.path ?? (emptyService as ServiceInstances['path']),
     core: overrides.core ?? (emptyService as ServiceInstances['core']),
@@ -80,6 +83,7 @@ export function createMockServiceHub(
     dialog: () => services.dialog,
     opener: () => services.opener,
     auth: () => services.auth,
+    account: () => services.account,
     updater: () => services.updater,
     path: () => services.path,
     core: () => services.core,

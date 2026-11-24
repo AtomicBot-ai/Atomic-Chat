@@ -4,6 +4,12 @@ import { EngineManager, type AIEngine } from '@janhq/core'
 
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useServiceHub } from '@/hooks/useServiceHub'
+import { deviceContextLimit, fetchContextPlan } from '@/lib/context-plan'
+import type { ContextPlan } from '@/lib/core-context-contract'
+import {
+  CTX_LEN_USER_SET_KEY,
+  ctxLenUserSetSetting,
+} from '@/lib/planned-context-window'
 import { readProviderFit } from '@/lib/provider-fit'
 import { trackSettingsRestart } from '@/lib/settings-restart'
 import { syncActiveModelsFromEngines } from '@/utils/activeModelsSync'
@@ -59,6 +65,14 @@ export function useModelContextLength() {
   )
   const [strataLimit, setStrataLimit] = useState<{ model: Model; max: number }>()
   const [maxContext, setMaxContext] = useState(fallbackMaxContext)
+  // What the engine and the core said about the selected model: its training
+  // maximum and the core's plan for this device (none from an older core).
+  // Keyed by provider and model id, so a commit (a new model object) keeps it.
+  const [deviceContext, setDeviceContext] = useState<{
+    key: string
+    plan?: ContextPlan
+    trainedMax?: number
+  }>()
   const [draft, setDraft] = useState(contextValue > 0 ? contextValue : 0)
 
   const restartModel = useMemo(
@@ -99,8 +113,12 @@ export function useModelContextLength() {
     if (!selectedProvider || (!LOCAL_CONTEXT_PROVIDERS.has(selectedProvider) && selectedProvider !== 'strata') || !selectedModel) return
 
     let cancelled = false
+    const planned = LOCAL_CONTEXT_PROVIDERS.has(selectedProvider)
+      ? fetchContextPlan(selectedProvider, selectedModel.id)
+      : Promise.resolve(undefined)
     const resolveMaxContext = async () => {
       let resolvedMax = fallbackMaxContext
+      let trainedMax: number | undefined
       try {
         const engine = EngineManager.instance().get(selectedProvider) as
           | (AIEngine & {
@@ -111,6 +129,7 @@ export function useModelContextLength() {
           const modelMax = await engine.getMaxCtxTrain(selectedModel.id)
           if (typeof modelMax === 'number' && modelMax > 0) {
             resolvedMax = modelMax
+            trainedMax = modelMax
             if (!cancelled && selectedProvider === 'strata') {
               setStrataLimit({ model: selectedModel, max: modelMax })
             }
@@ -123,6 +142,14 @@ export function useModelContextLength() {
         )
       }
       if (!cancelled) setMaxContext(resolvedMax)
+      const plan = await planned
+      if (!cancelled) {
+        setDeviceContext({
+          key: `${selectedProvider}::${selectedModel.id}`,
+          plan,
+          trainedMax,
+        })
+      }
     }
 
     void resolveMaxContext()
@@ -204,6 +231,8 @@ export function useModelContextLength() {
             value,
           },
         },
+        // Chosen by hand, so every load sends it, the old default included.
+        [CTX_LEN_USER_SET_KEY]: ctxLenUserSetSetting(),
       },
     } as Model
 
@@ -228,6 +257,17 @@ export function useModelContextLength() {
     selectedModel,
     contextSetting,
     strataMax: selectedModel && strataLimit?.model === selectedModel ? strataLimit.max : undefined,
+    /**
+     * The largest window this device holds for the model, from the core's
+     * context plan, and the training maximum when the device holds less;
+     * `undefined` without a plan (an older core).
+     */
+    deviceLimit:
+      available &&
+      selectedModel &&
+      deviceContext?.key === `${selectedProvider}::${selectedModel.id}`
+        ? deviceContextLimit(deviceContext.plan, deviceContext.trainedMax)
+        : undefined,
     draft,
     setDraft,
     commit,

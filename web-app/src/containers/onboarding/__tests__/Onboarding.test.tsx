@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
     cloudProviders: 0,
     mediaCards: 0,
     localApiServer: false,
+    accounts: false,
   } as StepContext,
 }))
 
@@ -261,6 +262,7 @@ describe('the model-only variant', () => {
     cloudProviders: 0,
     mediaCards: 0,
     localApiServer: false,
+    accounts: false,
   }
 
   beforeEach(() => {
@@ -278,6 +280,7 @@ describe('the model-only variant', () => {
       cloudProviders: 5,
       mediaCards: 2,
       localApiServer: true,
+      accounts: false,
     }
   })
 

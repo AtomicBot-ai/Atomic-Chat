@@ -159,6 +159,8 @@ const platform = vi.hoisted(() => ({
   audioGeneration: false,
   localApiServer: true,
   httpsProxy: true,
+  // The rail's account item has its own suite (NavigationRail.test.tsx).
+  accounts: false,
 }))
 vi.mock('@/lib/platform/const', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/platform/const')>()
@@ -233,7 +235,9 @@ describe('LeftSidebar', () => {
     it('lists new chat, media, pins, projects and recents', () => {
       render(<LeftSidebar />)
 
-      expect(screen.getByText('common:navigation.workspace')).toBeInTheDocument()
+      expect(
+        screen.getByText('common:navigation.workspace')
+      ).toBeInTheDocument()
       expect(screen.getByText('common:newChat')).toBeInTheDocument()
       expect(screen.getByTestId('images-link')).toHaveAttribute(
         'href',
@@ -449,6 +453,36 @@ describe('LeftSidebar', () => {
         'true'
       )
       expect(rowFor('common:navigation.customEndpoint')).toHaveAttribute(
+        'data-active',
+        'false'
+      )
+    })
+  })
+
+  describe('Account', () => {
+    it('lists Overview and Remote models, and lights the open one', () => {
+      at('/account/')
+      const { unmount } = render(<LeftSidebar />)
+      expect(rowFor('common:navigation.overview')).toHaveAttribute(
+        'data-active',
+        'true'
+      )
+      expect(rowFor('common:navigation.remoteModels')).toHaveAttribute(
+        'data-active',
+        'false'
+      )
+      expect(
+        screen.getByLabelText('common:navigation.toggleSidebar')
+      ).toBeInTheDocument()
+      unmount()
+
+      at('/account/remote')
+      render(<LeftSidebar />)
+      expect(rowFor('common:navigation.remoteModels')).toHaveAttribute(
+        'data-active',
+        'true'
+      )
+      expect(rowFor('common:navigation.overview')).toHaveAttribute(
         'data-active',
         'false'
       )

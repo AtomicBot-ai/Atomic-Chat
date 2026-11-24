@@ -1,0 +1,63 @@
+---
+date: 2026-11-12
+title: "Share and use models through the Atomic Chat account"
+---
+
+# 2026-11-12 — Share and use models through the Atomic Chat account
+
+- **Context:** Remote access existed, but it was manual.
+  - Remote & LAN brings up a Cloudflare quick tunnel or binds the server to the LAN.
+  - Another device needed the URL and the key typed in, and a new tunnel URL after every restart broke it.
+  - The account backend now has a "Remote access API" (atomic-chat-backend PR #2, README "Remote access API"). It pairs devices of one account and relays sealed values. It never holds a key or an address in the clear.
+  - No client spoke it yet. The desktop already had an account session in Rust ([2026-11-10](2026-11-10-sign-in-to-an-atomic-chat-account.md)).
+- **Decision:** The desktop app speaks the protocol in both roles. All of it lives in the app's Rust, like the account. The core gets one thin hook.
+  - **Host ("Share this computer's models").** `src-tauri/src/core/account/remote/host.rs` registers the device and the host, then long-polls `POST /v1/remote/host/sync`. That call is also the heartbeat, carrying the tunnel and LAN state read from the core.
+    - The host honours a code pairing only when the device's proof matches the code letters or the QR secret it showed. The code is forgotten once that device's key is uploaded, not before: a failed upload can retry.
+    - It honours a request only after the person clicked "Allow" with the check code (SAS) on both screens. "Allow" works only for a request shown now, and writes down the grant, the device and the public key the check code covered before it calls `approve`. Only an `approved` request matching that record gets a key. The host does not trust the service's `approved` on its own: a forged grant, or a key swapped after "Allow", is denied. So is any method other than `code` and `request`. A record goes once its key is out or its grant is no longer pending or approved.
+    - Each device gets its own `sk-atomic-…` key and `grant_secret`, sealed with HPKE to the device's X25519 key. A code pairing adds a MAC.
+    - Every active device gets a sealed address list (`ChaCha20-Poly1305`, HKDF of the grant secret). The list is the tunnel URL plus prefix, then LAN URLs. It is re-sealed with a higher sequence number whenever the tunnel URL or LAN changes.
+    - A grant that leaves the live list loses its key at once. `host_not_found` (removed from another device) stops sharing.
+  - **Client ("Use models from your other computers").** `client.rs` long-polls each of this device's grants.
+    - It opens the credential and refuses one whose code-pairing MAC does not match: it revokes it rather than trust the service. Then it acknowledges it.
+    - It ignores an address list whose sequence number is not newer.
+    - It picks the first LAN address that answers `GET /models` with the key within 1.5 s, else the tunnel. It re-checks every 3 minutes.
+    - A closed grant drops the connection, with a toast that names the host ("<host> ended your access", "<host> stopped sharing").
+    - A host the service shows offline (no heartbeat for 90 s) or that sent an empty address list (its server stopped) reads "Offline" instead of "Connected", with one toast when it goes. Its provider stays; when the host is back the provider lists its models again.
+  - **Crypto** is `protocol.rs`. It is checked against vectors from the backend's reference `tests/remote_protocol.py`. New crates, approved by the user: `hpke` 0.12 (shares `rand_core` 0.6 with `rand` 0.8, and brings the X25519 key, so no direct `x25519-dalek`), `chacha20poly1305`, `hkdf`.
+  - **Storage** is `atomic-remote.json` in the data folder: mode 0600, temp file then rename, like `atomic-account.json`.
+    - It holds the device's X25519 private key, the requests allowed here and not yet given their key, the keys this host issued, the keys this device received, the open pairing code's secrets and the host's endpoint sequence number.
+    - It is bound to the signed-in user: another account starts empty. A factory reset deletes it.
+    - Sign-out, a lost session, deletion or a new sign-in wipe what was shared and received, because the backend has already revoked it. The device key stays. Sign-out tells the backend through the refreshing call path, so an idle app's expired access token still ends the backend session.
+  - **Core hook** (atomic-chat-core PR #98, released in v0.23.0): `PUT /atomic/v1/server/client-keys {keys}` replaces an in-memory list of extra keys.
+    - The public listener accepts them next to its own `api_key`, and only when it has one. Extra keys never close an open server.
+    - The app pushes the list on every change and on every `atomic-core://snapshot`, because a restarted core starts empty.
+    - The core knows nothing about accounts.
+  - **Sharing needs the server's own key.** Turning sharing on generates one if there is none, after a dialog explaining that local tools will need it too. It then starts the server (restarting one that runs without its key) and the tunnel (with auto-start), then registers the host. Turning it off ends every device's access, after a confirmation when any device has it: the keys leave the core first, a waiting request is denied and every other live grant of this host is revoked (`revoked_by_user`), so each device sees its access end and pairs again next time. The host record stays, so sharing again sends no "new computer" email. Revoke ends one device. A device whose access ends from its side (Disconnect, sign-out, a revoke elsewhere) raises "<device> disconnected" on the host.
+  - **Managed providers.** A ready connection becomes a provider named "<computer> (remote)" (suffixed on a clash). It carries `ProviderObject.account_remote.host_id`.
+    - `lib/account-remote-providers.ts` follows `account-remote-connections`: it adds the provider, follows a new address or key, refreshes models from `/models`, registers it with the core, and removes it when access ends.
+    - It lists the models again when the host sends a newer address list (`endpointsSeq`), even at the same address, and for every connected computer when the person clicks refresh on the Remote models page.
+    - The Endpoints page shows it read-only: no Configure, no Remove.
+    - Its key sits in localStorage like every provider key, the one value that crosses IPC.
+  - **UI.** The Account section gets its sidebar back, with Overview and Remote models (`/account/remote`). The page has a "Share this computer's models" card and a "Use models from your other computers" card.
+    - Share card: switch, reach line, Add a device dialog with code, QR and countdown, requests with check code, Allow/Deny, devices with Revoke.
+    - Use card: hosts with Connect/Disconnect/Remove, and a code-or-link field.
+    - A request raises a toast with "Review". An ended connection says why.
+    - en/fr/ru strings. Behind `PlatformFeature.ACCOUNTS`.
+- **Consequences:**
+  - Remote access works between two desktops of one account today. atc and mobile need their own clients of the same protocol.
+  - The app pins core v0.23.0 or later. An older core has no `client-keys` route: the push fails, the Share card shows the error, and the host's devices get `401`.
+  - The page never receives a key or an address (`RemoteStatus`). The provider's base URL, which is the tunnel URL, is visible on the Endpoints page of the device that uses it.
+  - Quick tunnel limits from [2026-09-17](2026-09-17-expose-the-local-api-server-through-a-cloudflare-tunnel-and-on-the-lan.md) still apply. Named tunnels would only change what goes into the sealed list.
+  - Not done:
+    - an OS notification for a request while the window is hidden (a toast only);
+    - opening `atomic-chat://remote/pair` links from the system (paste works);
+    - QR scanning on desktop;
+    - sharing with another account.
+- **Owner:** `team`.
+- **Links:**
+  - `src-tauri/src/core/account/remote/`;
+  - `web-app/src/containers/account/remote/`;
+  - `web-app/src/lib/account-remote-providers.ts`;
+  - atomic-chat-backend `README.md` → "Remote access API" and `tests/remote_protocol.py`;
+  - [AtomicBot-ai/atomic-chat-core#98](https://github.com/AtomicBot-ai/atomic-chat-core/pull/98);
+  - [2026-11-11 account section](2026-11-11-give-the-account-its-own-section-and-an-onboarding-step.md).

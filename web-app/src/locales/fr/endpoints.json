@@ -49,5 +49,6 @@
     "description": "Le point de terminaison, ses modèles et sa configuration seront supprimés.",
     "cancel": "Annuler",
     "confirm": "Supprimer le point de terminaison"
-  }
+  },
+  "managedByAccount": "Géré par votre compte · déconnectez-le dans Compte → Modèles à distance"
 }

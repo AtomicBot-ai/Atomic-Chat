@@ -34,7 +34,7 @@ describe('PromptProgress', () => {
   })
 
   it.each(['starting', 'restarting'])(
-    'shows model loading during %s, then Working',
+    'shows model loading during %s, then the reading progress',
     (phase) => {
       mockUseAppState.mockReturnValue({ processed: 50, total: 100 })
       inference.phase = phase
@@ -44,11 +44,17 @@ describe('PromptProgress', () => {
       expect(screen.queryByText(/Reading:/)).toBeNull()
       inference.phase = 'ready'
       view.rerender(<PromptProgress />)
-      expect(screen.getByText('Working')).toBeVisible()
+      expect(screen.getByText('Reading: 50%')).toBeVisible()
     }
   )
 
-  it('should calculate percentage correctly', async () => {
+  it('shows Working before the engine reports how far it has read', () => {
+    mockUseAppState.mockReturnValue(undefined)
+    render(<PromptProgress />)
+    expect(screen.getByText('Working')).toBeVisible()
+  })
+
+  it('shows the reading percentage in its label, and the bar on demand', async () => {
     const user = userEvent.setup()
     const mockProgress = {
       cache: 0,
@@ -61,8 +67,12 @@ describe('PromptProgress', () => {
 
     render(<PromptProgress />)
 
-    await user.click(screen.getByRole('button', { name: /working/i }))
-    expect(screen.getByText('Reading: 50%')).toBeInTheDocument()
+    expect(screen.getByText('Reading: 50%')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Reading: 50%' }))
+    expect(screen.getByRole('progressbar')).toHaveAttribute(
+      'aria-valuenow',
+      '50'
+    )
   })
 
   it('should handle zero total gracefully', () => {

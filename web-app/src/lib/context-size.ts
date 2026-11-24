@@ -169,7 +169,9 @@ export async function getModelMaxCtxTrain(
  *
  * With `minCtxLen` the ladder is stepped until the window is at least that
  * large (or the cap is hit), so a pre-flight that already knows the prompt
- * size pays for a single reload instead of one per step.
+ * size pays for a single reload instead of one per step. `capCtxLen` bounds
+ * the window it may reach, the device maximum the core reports: a grow
+ * straight to that maximum passes it as both.
  *
  * Only the provider store and the engine session are touched; regenerating
  * or re-sending is the caller's business.
@@ -179,8 +181,9 @@ export async function growModelContext(args: {
   modelId: string
   serviceHub: ServiceHub
   minCtxLen?: number
+  capCtxLen?: number
 }): Promise<GrowContextResult> {
-  const { providerId, modelId, serviceHub, minCtxLen } = args
+  const { providerId, modelId, serviceHub, minCtxLen, capCtxLen } = args
   const { getProviderByName } = useModelProvider.getState()
   const provider = getProviderByName(providerId)
   if (!provider) return { ok: false, reason: 'no_provider', from: 0 }
@@ -200,6 +203,7 @@ export async function growModelContext(args: {
       modelId,
       serviceHub,
       minCtxLen,
+      capCtxLen,
       // Under fit `ctx_len` is the window the last load settled on (the
       // engine mirrors it back), and never less than the floor fit kept.
       from: Math.max(
@@ -210,9 +214,9 @@ export async function growModelContext(args: {
   }
   const maxCtxLen = await getModelMaxCtxTrain(providerId, modelId)
 
-  const to = nextLadderStep(from, maxCtxLen, minCtxLen)
+  const to = capped(nextLadderStep(from, maxCtxLen, minCtxLen), capCtxLen)
   if (to <= from) {
-    return { ok: false, reason: 'at_max', from, max: maxCtxLen }
+    return { ok: false, reason: 'at_max', from, max: capCtxLen ?? maxCtxLen }
   }
 
   setModelContextLength(providerId, modelId, to)
@@ -222,6 +226,11 @@ export async function growModelContext(args: {
   await serviceHub.models().stopModel(modelId, providerId)
 
   return { ok: true, from, to }
+}
+
+/** `to`, no larger than `cap` when there is one. */
+function capped(to: number, cap: number | undefined): number {
+  return cap !== undefined && cap > 0 ? Math.min(to, Math.floor(cap)) : to
 }
 
 /** The ladder from `from`, one step or, with `minCtxLen`, until it is reached or capped. */
@@ -305,13 +314,14 @@ async function growFitFloor(args: {
   modelId: string
   serviceHub: ServiceHub
   minCtxLen?: number
+  capCtxLen?: number
   from: number
 }): Promise<GrowContextResult> {
-  const { providerId, modelId, serviceHub, minCtxLen, from } = args
+  const { providerId, modelId, serviceHub, minCtxLen, capCtxLen, from } = args
   const maxCtxLen = await getModelMaxCtxTrain(providerId, modelId)
-  const to = nextLadderStep(from, maxCtxLen, minCtxLen)
+  const to = capped(nextLadderStep(from, maxCtxLen, minCtxLen), capCtxLen)
   if (to <= from) {
-    return { ok: false, reason: 'at_max', from, max: maxCtxLen }
+    return { ok: false, reason: 'at_max', from, max: capCtxLen ?? maxCtxLen }
   }
 
   const key = `${providerId}::${modelId}`

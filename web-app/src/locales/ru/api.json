@@ -48,7 +48,12 @@
   },
   "notice": {
     "modelLoaded": "Model loaded",
-    "modelUnloaded": "Model unloaded"
+    "modelUnloaded": "Model unloaded",
+    "historyCompacted": "История сжата",
+    "historyCompactedDetail_one": "{{count}} сообщение · {{before}} → {{after}} токенов",
+    "historyCompactedDetail_few": "{{count}} сообщения · {{before}} → {{after}} токенов",
+    "historyCompactedDetail_many": "{{count}} сообщений · {{before}} → {{after}} токенов",
+    "historyCompactedDetail_other": "{{count}} сообщения · {{before}} → {{after}} токенов"
   },
   "log": {
     "searchPlaceholder": "Поиск запросов",

@@ -5,6 +5,8 @@ title: "Raise the MLX default load context to `min(train-max, 16384)` + surface 
 
 # 2026-06-15 — Raise the MLX default load context to `min(train-max, 16384)` + surface a clear context-overflow message instead of raw "Error generating response" (ATO-170)
 
+> The 16K default load context is superseded by [2026-11-24 — Let the core size the default window](2026-11-24-let-the-core-size-the-default-window.md); the overflow message part still stands.
+
 - **Context:** With Exa (or any large tool-result) enabled, generation on MLX
   models failed with a raw "Error generating response". Root cause (proven in
   [ATO-170](https://linear.app/atomicchat/issue/ATO-170)) is **context

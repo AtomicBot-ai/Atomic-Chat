@@ -19,6 +19,7 @@ const mac: StepContext = {
   cloudProviders: 12,
   mediaCards: 2,
   localApiServer: true,
+  accounts: false,
 }
 const windows: StepContext = { ...mac, winOrLinux: true, permissionRows: 0 }
 
@@ -65,8 +66,37 @@ describe('onboarding steps', () => {
         cloudProviders: 0,
         mediaCards: 0,
         localApiServer: false,
+        accounts: false,
       })
     ).toEqual(['welcome', 'model'])
+  })
+
+  it('offers the account after the machine is set up, before the purpose', () => {
+    const withAccounts = { ...mac, accounts: true }
+    expect(ids(withAccounts)).toEqual([
+      'welcome',
+      'model',
+      'permissions',
+      'cloud',
+      'media',
+      'account',
+      'purpose',
+      'server',
+      'wait',
+    ])
+    const steps = resolveSteps('full', withAccounts)
+    expect(nextStep(steps, 'media')).toBe('account')
+    expect(nextStep(steps, 'account')).toBe('purpose')
+    expect(prevStep(steps, 'purpose')).toBe('account')
+    // Without the local API server it is the last step: Continue hands off.
+    expect(
+      nextStep(
+        resolveSteps('full', { ...withAccounts, localApiServer: false }),
+        'account'
+      )
+    ).toBeNull()
+    // The experiment's shorter variants stay as they are.
+    expect(ids(withAccounts, 'model_only')).not.toContain('account')
   })
 
   it('walks Continue in order and hands off after the last step', () => {
@@ -130,6 +160,7 @@ describe('onboarding steps', () => {
         ...mac,
         mediaCards: 0,
         localApiServer: false,
+        accounts: false,
       })
       expect(normalizeStep('full', trimmed, 'purpose')).toBe('cloud')
     })

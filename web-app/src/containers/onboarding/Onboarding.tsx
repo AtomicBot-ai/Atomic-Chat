@@ -24,6 +24,7 @@ import {
 } from '@/stores/onboarding-store'
 
 import { DownloadStrip } from './DownloadStrip'
+import { AccountStep } from './steps/AccountStep'
 import { BackendStep } from './steps/BackendStep'
 import { CloudStep } from './steps/CloudStep'
 import { MediaStep } from './steps/MediaStep'
@@ -58,6 +59,7 @@ const STEP_COMPONENTS: Record<
   permissions: PermissionsStep,
   cloud: CloudStep,
   media: MediaStep,
+  account: AccountStep,
   purpose: PurposeStep,
   server: ServerStep,
   wait: WaitStep,

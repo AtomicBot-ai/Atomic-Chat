@@ -2,8 +2,6 @@ import { describe, expect, it } from 'vitest'
 import {
   asNumber,
   buildMlxConfig,
-  MLX_DEFAULT_CTX_CAP,
-  MLX_DEFAULT_CTX_FALLBACK,
   resolveMlxCtxSize,
   selectMlxDraftSettings,
 } from './buildMlxConfig'
@@ -122,13 +120,12 @@ describe('numeric settings that arrive as strings', () => {
 })
 
 describe('resolveMlxCtxSize', () => {
-  it('defaults to the training maximum, capped', () => {
-    expect(resolveMlxCtxSize(undefined, 8192)).toBe(8192)
-    expect(resolveMlxCtxSize(undefined, 262_144)).toBe(MLX_DEFAULT_CTX_CAP)
-  })
-
-  it('falls back small when the training maximum is unknown', () => {
-    expect(resolveMlxCtxSize(undefined, undefined)).toBe(MLX_DEFAULT_CTX_FALLBACK)
+  it('invents no window when none is named, so the core sizes it to this Mac', () => {
+    expect(resolveMlxCtxSize(undefined, 8192)).toBeUndefined()
+    expect(resolveMlxCtxSize(undefined, 262_144)).toBeUndefined()
+    expect(resolveMlxCtxSize(undefined, undefined)).toBeUndefined()
+    expect(resolveMlxCtxSize('', 40_960)).toBeUndefined()
+    expect(resolveMlxCtxSize(0, 40_960)).toBeUndefined()
   })
 
   it('keeps an explicit value, clamped to what the model was trained for', () => {
@@ -140,12 +137,12 @@ describe('resolveMlxCtxSize', () => {
   })
 
   it('is what buildMlxConfig loads with', () => {
+    const draft = { draftKind: 'dflash' as const, draftPath: '', blockSize: 0 }
+    const unset = buildMlxConfig({}, draft, { maxCtxTrain: 40_960 })
+    expect(unset).not.toHaveProperty('ctx_size')
     expect(
-      buildMlxConfig(
-        {},
-        { draftKind: 'dflash', draftPath: '', blockSize: 0 },
-        { maxCtxTrain: 40_960 }
-      ).ctx_size
-    ).toBe(MLX_DEFAULT_CTX_CAP)
+      buildMlxConfig({ ctx_size: 65_536 }, draft, { maxCtxTrain: 40_960 })
+        .ctx_size
+    ).toBe(40_960)
   })
 })

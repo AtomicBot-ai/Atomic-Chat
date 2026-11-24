@@ -99,14 +99,35 @@ import {
 import { useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useAttachments } from '@/hooks/useAttachments'
 import { PromptProgress } from '@/components/PromptProgress'
+import { ContextActivity } from '@/components/ContextActivity'
 import { useToolAvailable } from '@/hooks/useToolAvailable'
 import { OUT_OF_CONTEXT_SIZE, isContextLimitError } from '@/utils/error'
 import { engineSettingsLink } from '@/lib/engine-settings-link'
-import { canGrowContext } from '@/lib/managed-engine/chat'
+import {
+  contextSupport,
+  isLengthContextOverflow,
+} from '@/lib/context-support'
+import {
+  appliedCompaction,
+  autoCompactionKey,
+  claimAutoCompaction,
+  compactsHistory,
+  hadAutoCompaction,
+  hasCompactableHistory,
+  historyToLatestUser,
+  laterHistoryStart,
+  planOverflowRecovery,
+  readThreadCompaction,
+  withCompactionSummary,
+  type OverflowRecovery,
+} from '@/lib/context-compaction'
+import { contextRoutesAbsent } from '@/lib/core-context'
+import { CompactionDivider } from '@/containers/CompactionDivider'
 import {
   DEFAULT_CTX_LEN,
   contextGrowthMode,
   growModelContext,
+  readAutoIncreaseCtx,
   readModelCtxLen,
 } from '@/lib/context-size'
 import {
@@ -360,11 +381,35 @@ function ThreadDetail() {
   const [pendingContinueMessage, setPendingContinueMessage] =
     useState<UIMessage | null>(null)
   const [isAutoIncreasingContext, setIsAutoIncreasingContext] = useState(false)
+  // The context work this thread's turn waits on ("Adding context",
+  // "Compacting chat history"), from whichever side started it: this page's
+  // reactive growth or the chat transport's pre-flight.
+  const threadContextActivity = useAppState(
+    (state) =>
+      state.contextActivity.phase !== null &&
+      (state.contextActivity.threadId === undefined ||
+        state.contextActivity.threadId === threadId)
+  )
   const [contextLimitError, setContextLimitError] = useState<Error | null>(null)
   // The context could not grow for the failed turn (at the cap, no memory,
   // the reload failed, or under fit its one automatic growth is spent): the
   // error card offers to shorten the history instead.
   const [contextGrowthBlocked, setContextGrowthBlocked] = useState(false)
+  // The turn (`autoCompactionKey`) whose history could not be compacted (the
+  // summary could not be made): its error card offers to shorten it instead.
+  const [compactionFailedTurn, setCompactionFailedTurn] = useState<
+    string | undefined
+  >(undefined)
+  // Set by the error effect when it starts an automatic recovery of an
+  // overflow, so the status effect of the same commit does not release the
+  // request it is about to make.
+  const overflowRecoveryRef = useRef(false)
+  // The thread's stored compaction (`metadata.compaction`): what the chat
+  // transport leaves out of every request and the divider shows.
+  const storedCompaction = useMemo(
+    () => readThreadCompaction(thread?.metadata),
+    [thread?.metadata]
+  )
   // Engine-gone recovery: `restarting` while the engine is brought back for
   // the one automatic retry, `failed` when it could not be.
   const [engineRecovery, setEngineRecovery] = useState<
@@ -394,7 +439,12 @@ function ThreadDetail() {
   )
 
   // Refs so onFinish (captured in closure) always calls the latest callbacks
-  const handleContextSizeIncreaseRef = useRef<(() => void) | null>(null)
+  const handleContextSizeIncreaseRef = useRef<
+    ((trigger?: 'auto' | 'manual', toCtxLen?: number) => void) | null
+  >(null)
+  const handleCompactAndRetryRef = useRef<
+    ((failedMessageId: string | undefined, trigger: 'auto') => void) | null
+  >(null)
   const setContinueFromContentRef = useRef<((content: string) => void) | null>(
     null
   )
@@ -541,8 +591,9 @@ function ThreadDetail() {
         setIsChatRequestActive(false)
         // Stop during an auto-continue never reaches the non-abort clear
         // below, and a stale placeholder would flip the indicator row to
-        // "Growing the Mind..." on every later send in this thread.
+        // "Adding context" on every later send in this thread.
         setPendingContinueMessage(null)
+        useAppState.getState().clearContextActivity(threadId)
         captureTurnOutcome('aborted', message)
       }
 
@@ -552,20 +603,50 @@ function ThreadDetail() {
       if (!isAbort && finishReason === 'length') {
         let willContinue = false
         const selectedModelState = useModelProvider.getState().selectedModel
+        // The provider the turn ran on, as the transport stamped it.
+        const turnProvider =
+          (msgMeta?.providerId as string | undefined) ??
+          useModelProvider.getState().selectedProvider
         const usage = msgMeta?.usage as
           { inputTokens?: number; outputTokens?: number } | undefined
         const totalTokens =
           (usage?.inputTokens ?? 0) + (usage?.outputTokens ?? 0)
-        const ctxLen =
-          (selectedModelState?.settings?.ctx_len?.controller_props
-            ?.value as number) ?? DEFAULT_CTX_LEN
-        const isContextLimit = totalTokens >= ctxLen * 0.9
+        // The window the turn's session served, as the core measured it
+        // before the request (`context/measure`), when it did.
+        const turnModelId =
+          (msgMeta?.modelId as string | undefined) ?? selectedModelState?.id
+        const measure =
+          useChatSessions.getState().sessions[threadId]?.transport
+            ?.lastContextMeasure
+        // Only a window the app knows can overflow: a cloud model's `length`
+        // is its answer cap, never a reason to invent a `ctx_len` for it.
+        const { overflow: isContextLimit, window: ctxLen } =
+          isLengthContextOverflow({
+            providerId: turnProvider,
+            ctxLen: readModelCtxLen(selectedModelState),
+            windowTokens:
+              measure?.providerId === turnProvider &&
+              measure.modelId === turnModelId
+                ? measure.windowTokens
+                : undefined,
+            totalTokens,
+          })
 
         if (isContextLimit) {
-          const autoIncrease =
-            selectedModelState?.settings?.auto_increase_ctx_len
-              ?.controller_props?.value ?? true
-          if (autoIncrease) {
+          // The one overflow rule: an engine that reloads in seconds and is
+          // below its device maximum grows once, any other local overflow is
+          // compacted (once per turn); both continue from the partial answer.
+          const recovery: OverflowRecovery = planOverflowRecovery({
+            providerId: turnProvider,
+            modelId: turnModelId,
+            measure,
+            autoIncrease: readAutoIncreaseCtx(selectedModelState),
+            compacted: hadAutoCompaction(
+              autoCompactionKey(threadId, chatMessagesRef.current)
+            ),
+            compactionAbsent: contextRoutesAbsent(),
+          })
+          if (recovery.kind !== 'none') {
             const partialText = message.parts
               .filter((p) => p.type === 'text')
               .map((p) => (p as { type: 'text'; text: string }).text)
@@ -576,7 +657,11 @@ function ThreadDetail() {
               setPendingContinueMessage(message)
               willContinue = true
             }
-            handleContextSizeIncreaseRef.current?.()
+            if (recovery.kind === 'expand') {
+              handleContextSizeIncreaseRef.current?.('auto', recovery.to)
+            } else {
+              handleCompactAndRetryRef.current?.(undefined, 'auto')
+            }
           } else {
             setContextLimitError(new Error(OUT_OF_CONTEXT_SIZE))
             // ATO-113: surface context-overflow (auto-increase disabled) to
@@ -588,7 +673,8 @@ function ThreadDetail() {
               total_tokens: totalTokens,
             })
           }
-          if (!willContinue) {
+          // A recovery holds the request until it answers again or gives up.
+          if (recovery.kind === 'none') {
             setIsChatRequestActive(false)
           }
           // A continuation is a second model call, so this event closes the
@@ -1896,9 +1982,12 @@ function ThreadDetail() {
   )
 
   // Handler for increasing context size. `auto` is the reactive path after an
-  // overflow; `manual` is the error card's button.
+  // overflow; `manual` is the error card's button. `toCtxLen` is the device
+  // maximum the core measured: the window grows straight to it, in one reload,
+  // and a growth that fails compacts the history instead.
   const handleContextSizeIncrease = useCallback(async (
-    trigger: 'auto' | 'manual' = 'auto'
+    trigger: 'auto' | 'manual' = 'auto',
+    toCtxLen?: number
   ) => {
     if (!selectedModel) return
 
@@ -1908,6 +1997,15 @@ function ThreadDetail() {
       setIsAutoIncreasingContext(false)
       setIsChatRequestActive(false)
       setPendingContinueMessage(null)
+      useAppState.getState().clearContextActivity(threadId)
+    }
+
+    // Only an engine that reloads in seconds grows its window: never a cloud
+    // model (no window of the app's to write) nor an engine that restarts.
+    if (!contextSupport(selectedProvider).canExpand) {
+      releaseRequest()
+      setContextGrowthBlocked(true)
+      return
     }
 
     // Under fit on a GPU build every growth is a full reload with fewer
@@ -1929,18 +2027,36 @@ function ThreadDetail() {
 
     // The ladder itself lives in `growModelContext` (shared with the chat
     // transport's pre-flight); this reactive path only adds the regenerate.
+    // "Adding context" stays up through the reload and the re-read of the
+    // prompt, until the answer's first token (the chat transport ends it).
+    const { setContextExpanding } = useAppState.getState()
+    setContextExpanding({
+      threadId,
+      from: readModelCtxLen(selectedModel) ?? DEFAULT_CTX_LEN,
+      ...(toCtxLen !== undefined ? { to: toCtxLen } : {}),
+    })
     const result = await growModelContext({
       providerId: selectedProvider,
       modelId: selectedModel.id,
       serviceHub,
+      ...(toCtxLen !== undefined
+        ? { minCtxLen: toCtxLen, capCtxLen: toCtxLen }
+        : {}),
     })
+    if (!result.ok && trigger === 'auto' && toCtxLen !== undefined) {
+      // The window could not grow to the maximum: compact instead, the way
+      // every other overflow goes on.
+      setIsAutoIncreasingContext(false)
+      handleCompactAndRetryRef.current?.(undefined, 'auto')
+      return
+    }
     if (!result.ok) {
       releaseRequest()
       if (result.reason !== 'no_model' && result.reason !== 'no_provider') {
         setContextGrowthBlocked(true)
       }
       if (result.reason === 'at_max') {
-        toast.error('Model reached its maximum context, auto-expand stopped', {
+        toast.error(t('chat:turnRecovery.contextAtMax'), {
           id: `ctx-at-max-${selectedProvider}-${selectedModel.id}`,
         })
       } else if (result.reason === 'fit') {
@@ -1959,9 +2075,17 @@ function ThreadDetail() {
       return
     }
     if (fitTurn) fitGrowthTurns.add(fitTurn)
+    setContextExpanding({ threadId, from: result.from, to: result.to })
 
     setTimeout(() => {
-      handleRegenerate()
+      void Promise.resolve(handleRegenerate()).finally(() => {
+        // A regenerate that sent nothing leaves no answer to end it.
+        const chatStatus =
+          useChatSessions.getState().sessions[threadId]?.chat.status
+        if (chatStatus !== 'submitted' && chatStatus !== 'streaming') {
+          useAppState.getState().clearContextActivity(threadId)
+        }
+      })
     }, 1000)
   }, [
     selectedModel,
@@ -1971,6 +2095,7 @@ function ThreadDetail() {
     getProviderByName,
     setIsChatRequestActive,
     t,
+    threadId,
   ])
 
   /**
@@ -1980,29 +2105,48 @@ function ThreadDetail() {
    * the current window are sent, then answer the failed turn again.
    */
   const handleShortenHistoryAndRetry = useCallback(
-    async (failedMessageId: string | undefined) => {
+    async (failedMessageId: string | undefined): Promise<boolean> => {
       const transport = useChatSessions.getState().sessions[threadId]?.transport
-      if (!transport) return
+      if (!transport) return false
+      const { selectedModel: model, selectedProvider: providerId } =
+        useModelProvider.getState()
+      // What the request already leaves out: the thread's compaction (whose
+      // summary it carries) and an earlier shortening.
+      const compaction = compactsHistory(providerId)
+        ? appliedCompaction(
+            chatMessagesRef.current,
+            readThreadCompaction(
+              useThreads.getState().threads[threadId]?.metadata
+            )
+          )
+        : undefined
       const shown = withoutHistoryBefore(
         chatMessagesRef.current,
-        transport.getHistoryStart()
+        laterHistoryStart(chatMessagesRef.current, [
+          compaction?.upToMessageId,
+          transport.getHistoryStart(),
+        ])
       )
       // The retry answers the failed turn again: it sends the history up to
       // and including the latest user message.
-      const history = shown.slice(
-        0,
-        shown.findLastIndex((message) => message.role === 'user') + 1
-      )
+      const history = historyToLatestUser(shown)
       const toolTokens = transport.lastPromptSize?.toolTokens ?? 0
-      const fixedTokens = toolTokens + estimateTokens(systemMessage ?? '')
+      const fixedTokens =
+        toolTokens +
+        estimateTokens(withCompactionSummary(systemMessage, compaction) ?? '')
       const maxOutputTokens = getSamplingParamsForThread(threadId).params
         ?.max_output_tokens as number | undefined
+      // The window the core measured the session at, when it did.
+      const measure = transport.lastContextMeasure
+      const measuredWindow =
+        measure?.providerId === providerId && measure.modelId === model?.id
+          ? measure.windowTokens
+          : undefined
       const plan = planHistoryTrim({
         messages: history,
         budgetTokens: historyTrimBudget({
           windowTokens:
-            readModelCtxLen(useModelProvider.getState().selectedModel) ??
-            DEFAULT_CTX_LEN,
+            measuredWindow ?? readModelCtxLen(model) ?? DEFAULT_CTX_LEN,
           reserveTokens: maxOutputTokens ?? DEFAULT_OUTPUT_RESERVE_TOKENS,
           fixedTokens,
         }),
@@ -2016,7 +2160,7 @@ function ThreadDetail() {
       })
       if (!plan) {
         toast.info(t('chat:turnRecovery.historyCannotShorten'))
-        return
+        return false
       }
       transport.setHistoryStart(plan.keepFromId)
       setContextGrowthBlocked(false)
@@ -2026,12 +2170,87 @@ function ThreadDetail() {
         })
       )
       await handleRegenerate(failedMessageId)
+      return true
     },
     [handleRegenerate, systemMessage, t, threadId]
   )
 
+  /**
+   * "Compact and retry", and the automatic recovery of an overflow that the
+   * window cannot grow out of: summarize the oldest turns with the loaded
+   * model (they stay in the thread and on the page, above a divider), then
+   * answer the failed turn again. The automatic one runs once per turn, and
+   * when the summary cannot be made it leaves out the oldest turns instead;
+   * after a failed manual one the card offers "Shorten history".
+   */
+  const handleCompactAndRetry = useCallback(
+    async (
+      failedMessageId: string | undefined,
+      trigger: 'auto' | 'manual' = 'manual'
+    ) => {
+      const appState = useAppState.getState()
+      const release = () => {
+        setIsAutoIncreasingContext(false)
+        setIsChatRequestActive(false)
+        setPendingContinueMessage(null)
+        useAppState.getState().clearContextActivity(threadId)
+      }
+      const transport = useChatSessions.getState().sessions[threadId]?.transport
+      if (!transport) {
+        release()
+        return
+      }
+      // The retry sends the history up to and including the failed turn's
+      // user message; that is what is compacted.
+      const messages = historyToLatestUser(chatMessagesRef.current)
+      if (trigger === 'auto') {
+        claimAutoCompaction(autoCompactionKey(threadId, messages))
+      }
+      setIsChatRequestActive(true)
+      appState.setContextCompacting({ threadId })
+      const outcome = await transport.compactHistory({ messages })
+      if (!outcome.ok) {
+        setCompactionFailedTurn(autoCompactionKey(threadId, messages))
+        if (outcome.reason !== 'nothing') {
+          toast.error(t('chat:contextCompaction.failed'), {
+            id: `compaction-failed-${threadId}`,
+          })
+        } else if (trigger === 'manual') {
+          toast.info(t('chat:contextCompaction.nothing'))
+        }
+        if (trigger === 'auto' && outcome.reason !== 'nothing') {
+          useAppState.getState().clearContextActivity(threadId)
+          // `handleRegenerate` marks the request active again when it starts one.
+          setIsChatRequestActive(false)
+          if (await handleShortenHistoryAndRetry(failedMessageId)) return
+        }
+        release()
+        return
+      }
+      setCompactionFailedTurn(undefined)
+      setContextGrowthBlocked(false)
+      // "Compacting chat history…" stays up until the answer's first token
+      // (the chat transport ends it).
+      setIsChatRequestActive(false)
+      await handleRegenerate(failedMessageId)
+      const chatStatus =
+        useChatSessions.getState().sessions[threadId]?.chat.status
+      if (chatStatus !== 'submitted' && chatStatus !== 'streaming') {
+        useAppState.getState().clearContextActivity(threadId)
+      }
+    },
+    [
+      handleRegenerate,
+      handleShortenHistoryAndRetry,
+      setIsChatRequestActive,
+      t,
+      threadId,
+    ]
+  )
+
   // Keep refs in sync so onFinish always calls the latest versions
   handleContextSizeIncreaseRef.current = handleContextSizeIncrease
+  handleCompactAndRetryRef.current = handleCompactAndRetry
   setContinueFromContentRef.current = setContinueFromContent
 
   const agentWorkspace = useAgentMode((s) => s.workspaces[threadId])
@@ -2073,18 +2292,34 @@ function ThreadDetail() {
     agentRun?.status === 'awaiting_approval' ||
     agentRun?.status === 'awaiting_folder_access'
   useEffect(() => {
+    overflowRecoveryRef.current = false
     // The Rust engine has its own context-recovery ladder; the frontend one
     // only serves the chat transport.
-    if (!error || isAgentRunning) return
-    const autoIncrease =
-      (selectedModel?.settings?.auto_increase_ctx_len?.controller_props?.value ??
-        true) &&
-      // A TensorRT-LLM context is fixed when its container starts (design D9).
-      canGrowContext(selectedProvider)
-    if (!autoIncrease) return
-    if (isContextLimitError(error)) {
+    if (!error || isAgentRunning || !isContextLimitError(error)) return
+    // The one overflow rule: only an engine that reloads in seconds grows by
+    // itself, straight to its device maximum (a managed engine's context is
+    // fixed when its container starts, design D9); every other local
+    // overflow is compacted, once per turn. A cloud model's window is not the
+    // app's to manage.
+    const recovery = planOverflowRecovery({
+      providerId: selectedProvider,
+      modelId: selectedModel?.id,
+      measure:
+        useChatSessions.getState().sessions[threadId]?.transport
+          ?.lastContextMeasure,
+      autoIncrease: readAutoIncreaseCtx(selectedModel),
+      compacted: hadAutoCompaction(
+        autoCompactionKey(threadId, chatMessagesRef.current)
+      ),
+      compactionAbsent: contextRoutesAbsent(),
+    })
+    if (recovery.kind === 'expand') {
+      overflowRecoveryRef.current = true
       setIsAutoIncreasingContext(true)
-      handleContextSizeIncrease()
+      handleContextSizeIncrease('auto', recovery.to)
+    } else if (recovery.kind === 'compact') {
+      overflowRecoveryRef.current = true
+      void handleCompactAndRetry(undefined, 'auto')
     }
   }, [error]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -2103,20 +2338,22 @@ function ThreadDetail() {
     ) {
       setIsAutoIncreasingContext(false)
     }
+    // A request that failed before it streamed ends the context work it
+    // waited on. Read as rendered, not as stored: a growth the error effect
+    // starts in this same commit must outlive the "error" that triggered it.
+    // Streaming does not end it: the chat transport does at the answer's
+    // first token, after the reload and the re-read of the prompt (a
+    // continuation streams its kept text before either).
+    // A recovery the error effect started in this same commit (a growth, a
+    // compaction) holds the request and its status until it answers again.
+    const recovering = overflowRecoveryRef.current
+    if (threadContextActivity && status === 'error' && !recovering) {
+      useAppState.getState().clearContextActivity(threadId)
+    }
     if (status === 'error' && pendingContinueMessage) {
       setPendingContinueMessage(null)
     }
-    if (
-      status === 'error' &&
-      !(
-        error &&
-        isContextLimitError(error) &&
-        canGrowContext(selectedProvider) &&
-        (selectedModel?.settings?.auto_increase_ctx_len?.controller_props
-          ?.value ??
-          true)
-      )
-    ) {
+    if (status === 'error' && !recovering) {
       setIsChatRequestActive(false)
     }
   }, [status]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -2207,6 +2444,7 @@ function ThreadDetail() {
       }
       setEngineRecovery(null)
       setContextGrowthBlocked(false)
+      setCompactionFailedTurn(undefined)
     },
     [threadId]
   )
@@ -2227,6 +2465,9 @@ function ThreadDetail() {
       engineRecoveryAbortRef.current = null
       setEngineRecovery(null)
       setIsChatRequestActive(false)
+      // A stop while the history is compacted or the window grows ends that
+      // status at once; the request it waited on is aborted with it.
+      useAppState.getState().clearContextActivity(threadId)
       stop()
       return
     }
@@ -2305,6 +2546,28 @@ function ThreadDetail() {
 
     return referencesByMessageId
   }, [chatMessages])
+  // The compaction a local model's requests apply: the divider stands before
+  // its first kept message, and the messages above it stay on the page.
+  const shownCompaction = useMemo(
+    () =>
+      compactsHistory(selectedProvider)
+        ? appliedCompaction(chatMessages, storedCompaction)
+        : undefined,
+    [chatMessages, selectedProvider, storedCompaction]
+  )
+  // Whether the error card can offer "Compact and retry": a local engine on a
+  // core with compaction, with older history to summarize, that has not
+  // failed to summarize it for this turn already.
+  const compactionAvailable =
+    compactsHistory(selectedProvider) &&
+    compactionFailedTurn !== autoCompactionKey(threadId, chatMessages) &&
+    !contextRoutesAbsent() &&
+    hasCompactableHistory(historyToLatestUser(chatMessages), [
+      shownCompaction?.upToMessageId,
+      useChatSessions
+        .getState()
+        .sessions[threadId]?.transport?.getHistoryStart(),
+    ])
 
   return (
     <AgentWorkspaceLayout
@@ -2336,7 +2599,7 @@ function ThreadDetail() {
                     if (isEmptyFailedTurn(message)) return null
                     const isLastMessage = index === chatMessages.length - 1
                     const isFirstMessage = index === 0
-                    return (
+                    const item = (
                       <MessageItem
                         key={message.id}
                         message={message}
@@ -2356,6 +2619,18 @@ function ThreadDetail() {
                         )}
                       />
                     )
+                    // The messages above the divider are summarized: the
+                    // model gets the summary in their place.
+                    if (shownCompaction?.upToMessageId !== message.id) {
+                      return item
+                    }
+                    return [
+                      <CompactionDivider
+                        key={`compaction-${message.id}`}
+                        compaction={shownCompaction}
+                      />,
+                      item,
+                    ]
                   })}
                   {pendingInitialUserMessage && (
                     <>
@@ -2387,7 +2662,7 @@ function ThreadDetail() {
                       status={status}
                       // The placeholder is a frozen snapshot: its activity must
                       // read "Worked for Xs", not add a second live "Working"
-                      // shimmer under "Growing the Mind...".
+                      // shimmer under "Adding context".
                       requestActive={false}
                       reasoningContainerRef={reasoningContainerRef}
                       onReasoningScroll={onReasoningScroll}
@@ -2399,12 +2674,15 @@ function ThreadDetail() {
                     />
                   )}
                   {(inputStatus === CHAT_STATUS.SUBMITTED ||
-                    isAutoIncreasingContext) && (
+                    isAutoIncreasingContext ||
+                    threadContextActivity) && (
                     <div className="flex flex-row items-center gap-2">
-                      {/* One indicator at a time: the context-growth shimmer
+                      {/* One indicator at a time: the context activity
                       replaces the generic "Working" progress, never joins it. */}
-                      {pendingContinueMessage || isAutoIncreasingContext ? (
-                        <Shimmer duration={1}>Growing the Mind...</Shimmer>
+                      {pendingContinueMessage ||
+                      isAutoIncreasingContext ||
+                      threadContextActivity ? (
+                        <ContextActivity threadId={threadId} />
                       ) : engineRecovery === 'restarting' ? (
                         <Shimmer duration={1}>
                           {t('chat:turnRecovery.engineRestarting')}
@@ -2418,11 +2696,13 @@ function ThreadDetail() {
                   )}
                   {shownError &&
                     !isAutoIncreasingContext &&
+                    !threadContextActivity &&
                     engineRecovery !== 'restarting' && (
                       <TurnErrorCard
                         error={shownError}
                         providerId={selectedProvider}
                         contextGrowthBlocked={contextGrowthBlocked}
+                        compactionAvailable={compactionAvailable}
                         engineRecoveryFailed={engineRecovery === 'failed'}
                         settingsRestartModel={settingsRestartModel}
                         onRetry={() => {
@@ -2438,6 +2718,12 @@ function ThreadDetail() {
                         }}
                         onShortenHistory={() =>
                           void handleShortenHistoryAndRetry(failedTurnMessageId)
+                        }
+                        onCompactHistory={() =>
+                          void handleCompactAndRetry(
+                            failedTurnMessageId,
+                            'manual'
+                          )
                         }
                         onIncreaseContext={() =>
                           void handleContextSizeIncrease('manual')

@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
     cloudProviders: 0,
     mediaCards: 0,
     localApiServer: false,
+    accounts: false,
   } as StepContext,
 }))
 

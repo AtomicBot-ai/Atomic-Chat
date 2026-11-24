@@ -74,6 +74,12 @@ flate2 = "1.0"
 futures-util = "0.3.31"
 hex = "0.4"
 hmac = "0.12"
+# Account remote access (`core/account/remote/protocol.rs`): RFC 9180 HPKE to a
+# device's X25519 key, and the ChaCha20-Poly1305 endpoints blob keyed by HKDF.
+# hpke 0.12 because it shares `rand_core` 0.6 with `rand` 0.8.
+hpke = { version = "0.12", default-features = false, features = ["alloc", "x25519"] }
+chacha20poly1305 = "0.10"
+hkdf = "0.12"
 hyper = { version = "0.14", features = ["server"] }
 atomic-code-index = { path = "./code-index" }
 jan-utils = { path = "./utils" }

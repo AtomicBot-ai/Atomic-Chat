@@ -1,0 +1,1020 @@
+//! Host and client rounds against a fake account API, with a fake core.
+
+use std::sync::{Arc, Mutex};
+
+use async_trait::async_trait;
+use serde_json::{json, Value};
+use tokio::sync::Notify;
+use tokio_util::sync::CancellationToken;
+
+use super::api::remote_codes;
+use super::client::{client_codes, ClientCtx, Round};
+use super::core_env::{HostEnv, Reachability};
+use super::host::{HostCtx, UploadMark};
+use super::protocol::{self, DeviceKey, Endpoint, EndpointKind};
+use super::state::{build_status, HostMemory, RemoteState};
+use super::store::{self, AllowedRequest, PairingRecord, RemoteFile, REMOTE_FILE_NAME};
+use crate::core::account::tests::{spawn_fake, token_response, Fake, Seen};
+use crate::core::account::AccountState;
+use crate::core::auth::state::now_unix;
+
+const DEVICE_ID: &str = "aaaaaaaa-0000-4000-8000-000000000001";
+const HOST_ID: &str = "bbbbbbbb-0000-4000-8000-000000000002";
+const PHONE_ID: &str = "cccccccc-0000-4000-8000-000000000003";
+const GRANT_ID: &str = "dddddddd-0000-4000-8000-000000000004";
+
+/// What the fake backend answers with; tests change it between rounds.
+#[derive(Default)]
+struct World {
+    grants: Vec<Value>,
+    state_version: u64,
+    /// For the client side: the grant a device reads.
+    client_grant: Option<Value>,
+    /// When set, a credential upload fails with this status.
+    credential_fails: Option<u16>,
+    /// `GET /v1/remote/grants`: every grant of the account.
+    account_grants: Vec<Value>,
+}
+
+fn host_grant(status: &str, method: &str, public_key: &str, proof: Option<&str>) -> Value {
+    json!({
+        "id": GRANT_ID,
+        "status": status,
+        "method": method,
+        "client": {"id": PHONE_ID, "client_type": "mobile", "device_name": "Ann's iPhone", "platform": "ios"},
+        "client_public_key": public_key,
+        "proof": proof,
+        "needs_credential": status == "approved",
+        "credential_collected": false,
+        "endpoints_updated_at": null,
+        "created_at": "2026-11-12T10:00:00Z",
+        "decided_at": null
+    })
+}
+
+fn spawn_world(world: Arc<Mutex<World>>) -> Fake {
+    spawn_fake(move |seen: &Seen| {
+        let mut w = world.lock().unwrap();
+        let path = seen.path.as_str();
+        match (seen.method.as_str(), path) {
+            ("POST", "/v1/auth/email/verify") => (200, token_response(0, 3600)),
+            ("PUT", "/v1/remote/device") => (
+                200,
+                json!({
+                    "id": DEVICE_ID, "client_type": "desktop", "device_name": "Studio Mac",
+                    "platform": "macos", "public_key": seen.body["public_key"],
+                    "created_at": "2026-11-12T10:00:00Z", "key_updated_at": "2026-11-12T10:00:00Z"
+                }),
+            ),
+            ("PUT", "/v1/remote/host") => (
+                201,
+                json!({"id": HOST_ID, "name": seen.body["name"], "created_at": "2026-11-12T10:00:00Z"}),
+            ),
+            ("POST", "/v1/remote/host/sync") => (
+                200,
+                json!({
+                    "host": {"id": HOST_ID, "name": "Studio Mac", "created_at": "2026-11-12T10:00:00Z"},
+                    "state_version": w.state_version,
+                    "grants": w.grants,
+                    "pairing_code": null
+                }),
+            ),
+            ("PUT", p) if p.ends_with("/credential") => {
+                if let Some(status) = w.credential_fails {
+                    return (
+                        status,
+                        json!({"error": "server_error", "detail": "try again"}),
+                    );
+                }
+                for g in w.grants.iter_mut() {
+                    g["status"] = json!("active");
+                    g["needs_credential"] = json!(false);
+                }
+                (204, Value::Null)
+            }
+            ("PUT", "/v1/remote/host/endpoints") => (204, Value::Null),
+            ("POST", p) if p.ends_with("/approve") => {
+                for g in w.grants.iter_mut() {
+                    g["status"] = json!("approved");
+                    g["needs_credential"] = json!(true);
+                }
+                (204, Value::Null)
+            }
+            ("POST", p) if p.ends_with("/deny") => {
+                w.grants.clear();
+                (204, Value::Null)
+            }
+            ("DELETE", p) if p.starts_with("/v1/remote/grants/") => {
+                w.grants.clear();
+                if let Some(g) = w.client_grant.as_mut() {
+                    g["status"] = json!("revoked");
+                }
+                (204, Value::Null)
+            }
+            ("GET", "/v1/remote/grants") => (200, json!({"grants": w.account_grants})),
+            ("POST", "/v1/remote/pair") => (201, w.client_grant.clone().unwrap()),
+            ("POST", p) if p.ends_with("/requests") => (201, w.client_grant.clone().unwrap()),
+            ("GET", p) if p.starts_with("/v1/remote/grants/") => match &w.client_grant {
+                Some(g) => (200, g.clone()),
+                None => (
+                    404,
+                    json!({"error": "grant_not_found", "detail": "No such grant"}),
+                ),
+            },
+            ("POST", p) if p.ends_with("/credential/ack") => {
+                if let Some(g) = w.client_grant.as_mut() {
+                    g["credential"] = Value::Null;
+                }
+                (204, Value::Null)
+            }
+            _ => (
+                404,
+                json!({"error": "not_found", "detail": format!("{} {path}", seen.method)}),
+            ),
+        }
+    })
+}
+
+#[derive(Default)]
+struct FakeCore {
+    reach: Mutex<Reachability>,
+    pushed: Mutex<Vec<Vec<String>>>,
+}
+
+#[async_trait]
+impl HostEnv for FakeCore {
+    async fn reachability(&self) -> Reachability {
+        self.reach.lock().unwrap().clone()
+    }
+
+    async fn push_client_keys(&self, keys: Vec<String>) -> Result<(), String> {
+        self.pushed.lock().unwrap().push(keys);
+        Ok(())
+    }
+}
+
+fn online(tunnel: &str) -> Reachability {
+    Reachability {
+        server_running: true,
+        server_has_key: true,
+        tunnel: "online".to_string(),
+        lan: false,
+        endpoints: vec![Endpoint {
+            kind: EndpointKind::Tunnel,
+            url: format!("https://{tunnel}.trycloudflare.com/v1"),
+        }],
+    }
+}
+
+struct Setup {
+    _dir: tempfile::TempDir,
+    dir: std::path::PathBuf,
+    fake: Fake,
+    world: Arc<Mutex<World>>,
+    account: AccountState,
+    remote: RemoteState,
+    core: FakeCore,
+}
+
+async fn setup() -> Setup {
+    let world = Arc::new(Mutex::new(World::default()));
+    let fake = spawn_world(world.clone());
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().to_path_buf();
+    let account = fake.state();
+    account
+        .email_verify(&dir, "challenge-1", "123456", "2.4.0")
+        .await
+        .expect("sign-in");
+    let core = FakeCore::default();
+    *core.reach.lock().unwrap() = online("first-words");
+    Setup {
+        _dir: tmp,
+        dir,
+        fake,
+        world,
+        account,
+        remote: RemoteState::default(),
+        core,
+    }
+}
+
+impl Setup {
+    fn host(&self) -> HostCtx<'_> {
+        HostCtx {
+            remote: &self.remote,
+            account: &self.account,
+            data_dir: &self.dir,
+            env: &self.core,
+            host_name: "Studio Mac".to_string(),
+        }
+    }
+
+    fn client(&self) -> ClientCtx<'_> {
+        ClientCtx {
+            remote: &self.remote,
+            account: &self.account,
+            data_dir: &self.dir,
+        }
+    }
+
+    async fn file(&self) -> RemoteFile {
+        self.remote.read(&self.dir, |f| f.clone()).await
+    }
+
+    async fn open_code(&self) -> Vec<u8> {
+        let qr = protocol::new_qr_secret();
+        self.remote
+            .update(&self.dir, |f| {
+                f.sharing = true;
+                f.pairing = Some(PairingRecord {
+                    code: "BCDFGHJK".to_string(),
+                    qr_secret: protocol::b64u(&qr),
+                    expires_at: now_unix() + 600,
+                });
+            })
+            .await;
+        qr.to_vec()
+    }
+
+    /// A device asks; the round shows it here and the person clicks "Allow".
+    async fn ask_and_allow(&self, phone: &DeviceKey) {
+        self.remote.update(&self.dir, |f| f.sharing = true).await;
+        self.world.lock().unwrap().grants =
+            vec![host_grant("pending", "request", &phone.public_b64(), None)];
+        self.host_round(&mut None).await;
+        self.host()
+            .decide(GRANT_ID, true)
+            .await
+            .expect("allow a shown request");
+    }
+
+    async fn client_round(&self) -> Round {
+        self.client()
+            .round(GRANT_ID, 0, &CancellationToken::new())
+            .await
+            .expect("client round")
+    }
+
+    async fn host_round(&self, uploaded: &mut Option<UploadMark>) -> Option<u64> {
+        self.host()
+            .round(None, 0, uploaded, &Notify::new(), &CancellationToken::new())
+            .await
+            .expect("host round")
+    }
+}
+
+#[tokio::test]
+async fn a_qr_pairing_gets_a_sealed_key_a_mac_and_the_addresses() {
+    let s = setup().await;
+    let phone = DeviceKey::generate();
+    let qr = s.open_code().await;
+    let proof = protocol::pair_proof(&qr, &phone.public_b64());
+    s.world.lock().unwrap().grants = vec![host_grant(
+        "approved",
+        "code",
+        &phone.public_b64(),
+        Some(&proof),
+    )];
+
+    let mut uploaded = None;
+    assert_eq!(s.host_round(&mut uploaded).await, Some(0));
+
+    // The envelope opens with the phone's key, and its MAC with the QR secret.
+    let put = &s
+        .fake
+        .requests(&format!("/v1/remote/grants/{GRANT_ID}/credential"))[0];
+    let envelope = put.body["envelope"].as_str().unwrap();
+    let mac = put.body["mac"].as_str().unwrap();
+    assert!(protocol::verify_credential_mac(
+        &qr, GRANT_ID, envelope, mac
+    ));
+    let credential = protocol::open_credential(&phone, GRANT_ID, envelope).unwrap();
+    assert_eq!(credential.host_name, "Studio Mac");
+
+    // The core now accepts exactly that key.
+    assert_eq!(
+        s.core.pushed.lock().unwrap().last().unwrap(),
+        &vec![credential.api_key.clone()]
+    );
+
+    // The phone's blob carries the tunnel address.
+    let endpoints = &s.fake.requests("/v1/remote/host/endpoints")[0];
+    let item = &endpoints.body["items"][0];
+    assert_eq!(item["grant_id"], GRANT_ID);
+    let secret = credential.grant_secret_bytes().unwrap();
+    let opened =
+        protocol::open_endpoints(&secret, GRANT_ID, item["blob"].as_str().unwrap()).unwrap();
+    assert_eq!(opened.seq, 1);
+    assert_eq!(opened.endpoints, online("first-words").endpoints);
+
+    let file = s.file().await;
+    assert_eq!(file.issued.len(), 1);
+    assert_eq!(file.issued[0].client_name.as_deref(), Some("Ann's iPhone"));
+    assert!(file.pairing.is_none(), "a redeemed code is forgotten");
+}
+
+#[tokio::test]
+async fn a_proof_that_does_not_check_out_is_denied_and_gets_nothing() {
+    let s = setup().await;
+    let phone = DeviceKey::generate();
+    s.open_code().await;
+    let forged = protocol::pair_proof(b"ZZZZZZZZ", &phone.public_b64());
+    s.world.lock().unwrap().grants = vec![host_grant(
+        "approved",
+        "code",
+        &phone.public_b64(),
+        Some(&forged),
+    )];
+
+    s.host_round(&mut None).await;
+    assert_eq!(
+        s.fake
+            .requests(&format!("/v1/remote/grants/{GRANT_ID}/deny"))
+            .len(),
+        1
+    );
+    assert!(s
+        .fake
+        .requests(&format!("/v1/remote/grants/{GRANT_ID}/credential"))
+        .is_empty());
+    assert!(s.file().await.issued.is_empty());
+}
+
+#[tokio::test]
+async fn new_addresses_are_resealed_with_a_higher_number_and_a_gone_grant_loses_its_key() {
+    let s = setup().await;
+    let phone = DeviceKey::generate();
+    s.ask_and_allow(&phone).await;
+
+    let mut uploaded = None;
+    s.host_round(&mut uploaded).await;
+    let put = &s
+        .fake
+        .requests(&format!("/v1/remote/grants/{GRANT_ID}/credential"))[0];
+    assert!(
+        put.body.get("mac").is_none(),
+        "an allowed request has no MAC"
+    );
+    let credential =
+        protocol::open_credential(&phone, GRANT_ID, put.body["envelope"].as_str().unwrap())
+            .unwrap();
+    let secret = credential.grant_secret_bytes().unwrap();
+
+    // Nothing changed: no new blob.
+    s.host_round(&mut uploaded).await;
+    assert_eq!(s.fake.requests("/v1/remote/host/endpoints").len(), 1);
+
+    // The tunnel restarted under a new name.
+    *s.core.reach.lock().unwrap() = online("second-words");
+    s.host_round(&mut uploaded).await;
+    let uploads = s.fake.requests("/v1/remote/host/endpoints");
+    assert_eq!(uploads.len(), 2);
+    let opened = protocol::open_endpoints(
+        &secret,
+        GRANT_ID,
+        uploads[1].body["items"][0]["blob"].as_str().unwrap(),
+    )
+    .unwrap();
+    assert_eq!(opened.seq, 2);
+    assert!(opened.endpoints[0].url.contains("second-words"));
+
+    // Revoked elsewhere: gone from sync, so its key leaves the core.
+    s.world.lock().unwrap().grants.clear();
+    s.host_round(&mut uploaded).await;
+    assert!(s.file().await.issued.is_empty());
+    assert_eq!(
+        s.core.pushed.lock().unwrap().last().unwrap(),
+        &Vec::<String>::new()
+    );
+}
+
+#[tokio::test]
+async fn allow_writes_the_device_and_key_down_before_approving_and_the_key_clears_it() {
+    let s = setup().await;
+    let phone = DeviceKey::generate();
+    s.ask_and_allow(&phone).await;
+
+    let approve = s
+        .fake
+        .requests(&format!("/v1/remote/grants/{GRANT_ID}/approve"));
+    assert_eq!(approve.len(), 1);
+    let file = s.file().await;
+    assert_eq!(file.allowed.len(), 1);
+    assert_eq!(file.allowed[0].grant_id, GRANT_ID);
+    assert_eq!(file.allowed[0].client_device_id, PHONE_ID);
+    assert_eq!(file.allowed[0].client_public_key, phone.public_b64());
+    assert!(
+        s.remote.memory().requests.is_empty(),
+        "a decided request leaves the list"
+    );
+
+    s.host_round(&mut None).await;
+    let file = s.file().await;
+    assert_eq!(file.issued.len(), 1, "the allowed device got its key");
+    assert!(
+        file.allowed.is_empty(),
+        "a request is done once its key is out"
+    );
+}
+
+#[tokio::test]
+async fn only_a_request_shown_here_can_be_allowed() {
+    let s = setup().await;
+    s.remote.update(&s.dir, |f| f.sharing = true).await;
+
+    let err = s.host().decide(GRANT_ID, true).await.unwrap_err();
+    assert!(err.is(remote_codes::GRANT_NOT_FOUND));
+    assert!(s
+        .fake
+        .requests(&format!("/v1/remote/grants/{GRANT_ID}/approve"))
+        .is_empty());
+    assert!(s.file().await.allowed.is_empty());
+}
+
+/// A compromised or buggy account service reports an `approved` request
+/// with its own key: nobody clicked "Allow" here, so it gets nothing.
+#[tokio::test]
+async fn an_approved_request_nobody_allowed_here_is_denied_and_gets_nothing() {
+    let s = setup().await;
+    let intruder = DeviceKey::generate();
+    s.remote.update(&s.dir, |f| f.sharing = true).await;
+    s.world.lock().unwrap().grants = vec![host_grant(
+        "approved",
+        "request",
+        &intruder.public_b64(),
+        None,
+    )];
+
+    s.host_round(&mut None).await;
+    assert_eq!(
+        s.fake
+            .requests(&format!("/v1/remote/grants/{GRANT_ID}/deny"))
+            .len(),
+        1
+    );
+    assert!(s
+        .fake
+        .requests(&format!("/v1/remote/grants/{GRANT_ID}/credential"))
+        .is_empty());
+    assert!(s.fake.requests("/v1/remote/host/endpoints").is_empty());
+    assert!(s.file().await.issued.is_empty());
+}
+
+#[tokio::test]
+async fn a_key_swapped_after_allow_is_denied_and_gets_nothing() {
+    let s = setup().await;
+    let phone = DeviceKey::generate();
+    s.ask_and_allow(&phone).await;
+    // The check code covered the phone's key; the grant now carries another.
+    let swapped = DeviceKey::generate();
+    s.world.lock().unwrap().grants[0]["client_public_key"] = json!(swapped.public_b64());
+
+    s.host_round(&mut None).await;
+    assert_eq!(
+        s.fake
+            .requests(&format!("/v1/remote/grants/{GRANT_ID}/deny"))
+            .len(),
+        1
+    );
+    assert!(s
+        .fake
+        .requests(&format!("/v1/remote/grants/{GRANT_ID}/credential"))
+        .is_empty());
+    assert!(s.file().await.issued.is_empty());
+}
+
+#[tokio::test]
+async fn a_used_code_stays_open_until_its_key_is_uploaded() {
+    let s = setup().await;
+    let phone = DeviceKey::generate();
+    let qr = s.open_code().await;
+    let proof = protocol::pair_proof(&qr, &phone.public_b64());
+    {
+        let mut w = s.world.lock().unwrap();
+        w.grants = vec![host_grant(
+            "approved",
+            "code",
+            &phone.public_b64(),
+            Some(&proof),
+        )];
+        w.credential_fails = Some(503);
+    }
+
+    let failed = s
+        .host()
+        .round(
+            None,
+            0,
+            &mut None,
+            &Notify::new(),
+            &CancellationToken::new(),
+        )
+        .await;
+    assert!(failed.is_err(), "the failed upload is reported");
+    let file = s.file().await;
+    assert!(file.pairing.is_some(), "the code still proves the device");
+    assert!(file.issued.is_empty());
+
+    s.world.lock().unwrap().credential_fails = None;
+    s.host_round(&mut None).await;
+    let file = s.file().await;
+    assert_eq!(file.issued.len(), 1);
+    assert!(file.pairing.is_none(), "a redeemed code is forgotten");
+}
+
+fn account_grant(id: &str, host_id: &str, status: &str) -> Value {
+    json!({
+        "id": id, "status": status, "status_reason": null, "method": "request",
+        "host_id": host_id, "host_name": "Studio Mac",
+        "client": {"id": PHONE_ID, "client_type": "mobile", "device_name": "Ann's iPhone", "platform": "ios"},
+        "created_at": "2026-11-12T10:00:00Z", "decided_at": null, "updated_at": "2026-11-12T10:00:00Z"
+    })
+}
+
+/// Off is not a pause: every device's key leaves the core at once, a waiting
+/// request is denied and every other live grant of this host is revoked, so
+/// each device sees its access end. Grants of other hosts stay; the host
+/// record stays too.
+#[tokio::test]
+async fn stopping_sharing_ends_every_devices_access() {
+    let s = setup().await;
+    let phone = DeviceKey::generate();
+    s.ask_and_allow(&phone).await;
+    s.host_round(&mut None).await;
+    assert_eq!(s.file().await.issued.len(), 1);
+    const PENDING_ID: &str = "eeeeeeee-0000-4000-8000-000000000005";
+    const OTHER_ID: &str = "ffffffff-0000-4000-8000-000000000006";
+    const ENDED_ID: &str = "abababab-0000-4000-8000-000000000007";
+    s.world.lock().unwrap().account_grants = vec![
+        account_grant(GRANT_ID, HOST_ID, "active"),
+        account_grant(PENDING_ID, HOST_ID, "pending"),
+        account_grant(ENDED_ID, HOST_ID, "revoked"),
+        account_grant(OTHER_ID, "99999999-0000-4000-8000-000000000009", "active"),
+    ];
+
+    s.host().stop_sharing().await.expect("stop sharing");
+
+    let file = s.file().await;
+    assert!(!file.sharing);
+    assert!(file.issued.is_empty() && file.allowed.is_empty());
+    assert!(file.host.is_some(), "the host record stays");
+    assert_eq!(
+        s.core.pushed.lock().unwrap().last().unwrap(),
+        &Vec::<String>::new(),
+        "the keys left the core"
+    );
+    let deleted = |id: &str| {
+        s.fake
+            .requests(&format!("/v1/remote/grants/{id}"))
+            .iter()
+            .filter(|r| r.method == "DELETE")
+            .count()
+    };
+    assert_eq!(deleted(GRANT_ID), 1);
+    assert_eq!(
+        s.fake
+            .requests(&format!("/v1/remote/grants/{PENDING_ID}/deny"))
+            .len(),
+        1
+    );
+    assert_eq!(deleted(PENDING_ID), 0);
+    assert_eq!(deleted(ENDED_ID), 0);
+    assert_eq!(deleted(OTHER_ID), 0, "another computer's grant stays");
+    assert!(
+        s.fake
+            .requests("/v1/remote/host")
+            .iter()
+            .all(|r| r.method != "DELETE"),
+        "the host stays in the account"
+    );
+}
+
+/// A device ends its access from its side (Disconnect, sign-out, a revoke
+/// elsewhere): its grant leaves the sync, its key goes, and the page gets
+/// one "<device> disconnected" toast. A key this computer removed itself
+/// (its own Revoke) makes no toast.
+#[tokio::test]
+async fn a_device_that_leaves_is_announced_once() {
+    let s = setup().await;
+    let phone = DeviceKey::generate();
+    s.ask_and_allow(&phone).await;
+    s.host_round(&mut None).await;
+    assert_eq!(s.file().await.issued.len(), 1);
+
+    s.world.lock().unwrap().grants.clear();
+    s.host_round(&mut None).await;
+
+    assert!(s.file().await.issued.is_empty());
+    let left = s.remote.take_left();
+    assert_eq!(left.len(), 1);
+    assert_eq!(left[0].grant_id, GRANT_ID);
+    assert_eq!(left[0].device_name.as_deref(), Some("Ann's iPhone"));
+    s.host_round(&mut None).await;
+    assert!(s.remote.take_left().is_empty(), "announced once");
+
+    // Revoked here: the key is gone before the round sees the grant end.
+    let other = DeviceKey::generate();
+    s.ask_and_allow(&other).await;
+    s.host_round(&mut None).await;
+    s.remote.update(&s.dir, |f| f.issued.clear()).await;
+    s.world.lock().unwrap().grants.clear();
+    s.host_round(&mut None).await;
+    assert!(s.remote.take_left().is_empty());
+}
+
+/// What a host puts in a device's mailbox.
+fn active_client_grant(
+    phone: &DeviceKey,
+    mac_secret: Option<&[u8]>,
+    method: &str,
+) -> (Value, String) {
+    let credential = protocol::Credential {
+        v: 1,
+        api_key: protocol::new_device_api_key(),
+        grant_secret: protocol::new_grant_secret(),
+        host_name: "Studio Mac".to_string(),
+    };
+    let envelope = protocol::seal_credential(&phone.public_b64(), GRANT_ID, &credential).unwrap();
+    let mac = mac_secret.map(|s| protocol::credential_mac(s, GRANT_ID, &envelope));
+    let blob = protocol::seal_endpoints(
+        &credential.grant_secret_bytes().unwrap(),
+        GRANT_ID,
+        1,
+        &online("host-words").endpoints,
+    )
+    .unwrap();
+    (
+        json!({
+            "id": GRANT_ID, "status": "active", "status_reason": null, "method": method,
+            "version": 3,
+            "host": {"id": HOST_ID, "name": "Studio Mac", "client_type": "desktop",
+                     "platform": "macos", "online": true, "tunnel_state": "online"},
+            "credential": {"envelope": envelope, "mac": mac},
+            "endpoints": {"blob": blob, "updated_at": "2026-11-12T10:00:00Z"},
+            "created_at": "2026-11-12T10:00:00Z", "decided_at": "2026-11-12T10:00:01Z"
+        }),
+        credential.api_key,
+    )
+}
+
+fn approved_client_grant(method: &str) -> Value {
+    json!({
+        "id": GRANT_ID, "status": "approved", "status_reason": null, "method": method,
+        "version": 1,
+        "host": {"id": HOST_ID, "name": "Studio Mac", "client_type": "desktop",
+                 "platform": "macos", "online": true, "tunnel_state": "online"},
+        "credential": null, "endpoints": null,
+        "created_at": "2026-11-12T10:00:00Z", "decided_at": "2026-11-12T10:00:01Z"
+    })
+}
+
+#[tokio::test]
+async fn pairing_by_code_collects_the_key_confirms_it_and_follows_the_address() {
+    let s = setup().await;
+    s.world.lock().unwrap().client_grant = Some(approved_client_grant("code"));
+    let input = protocol::parse_pair_input("bcdf-ghjk").unwrap();
+    let view = s.client().pair(&input).await.unwrap();
+    assert_eq!(view.host_name, "Studio Mac");
+
+    let pair = &s.fake.requests("/v1/remote/pair")[0];
+    assert_eq!(pair.body["code"], "BCDFGHJK");
+    let phone = DeviceKey::from_secret_b64(&s.file().await.device_secret.unwrap()).unwrap();
+    assert!(protocol::verify_pair_proof(
+        b"BCDFGHJK",
+        &phone.public_b64(),
+        pair.body["proof"].as_str().unwrap()
+    ));
+
+    let (grant, api_key) = active_client_grant(&phone, Some(b"BCDFGHJK"), "code");
+    s.world.lock().unwrap().client_grant = Some(grant);
+    let round = s
+        .client()
+        .round(GRANT_ID, 0, &CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(round, Round::ConnectionsChanged);
+    assert_eq!(
+        s.fake
+            .requests(&format!("/v1/remote/grants/{GRANT_ID}/credential/ack"))
+            .len(),
+        1
+    );
+
+    let connections = s.remote.provider_connections(&s.dir).await;
+    assert_eq!(connections.len(), 1);
+    assert_eq!(connections[0].api_key, api_key);
+    assert_eq!(
+        connections[0].base_url,
+        "https://host-words.trycloudflare.com/v1"
+    );
+    let file = s.file().await;
+    assert!(
+        file.connections[0].pair_secret.is_none(),
+        "the code is dropped once used"
+    );
+    assert!(file.connections[0].acked);
+}
+
+/// The host sent a newer address list with the same address (its server
+/// restarted, say): the connection is announced again with the newer
+/// number, so the provider lists the host's models again.
+#[tokio::test]
+async fn a_newer_address_list_is_announced_even_with_the_same_address() {
+    let s = setup().await;
+    s.world.lock().unwrap().client_grant = Some(approved_client_grant("code"));
+    s.client()
+        .pair(&protocol::parse_pair_input("BCDF-GHJK").unwrap())
+        .await
+        .unwrap();
+    let phone = DeviceKey::from_secret_b64(&s.file().await.device_secret.unwrap()).unwrap();
+    let (grant, _) = active_client_grant(&phone, Some(b"BCDFGHJK"), "code");
+    let envelope = grant["credential"]["envelope"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    s.world.lock().unwrap().client_grant = Some(grant);
+    assert_eq!(s.client_round().await, Round::ConnectionsChanged);
+    let first = s.remote.provider_connections(&s.dir).await;
+    assert_eq!(first[0].endpoints_seq, 1);
+
+    // The same list again: nothing to announce.
+    assert_eq!(s.client_round().await, Round::Quiet);
+
+    let secret = protocol::open_credential(&phone, GRANT_ID, &envelope)
+        .unwrap()
+        .grant_secret_bytes()
+        .unwrap();
+    let blob =
+        protocol::seal_endpoints(&secret, GRANT_ID, 2, &online("host-words").endpoints).unwrap();
+    s.world.lock().unwrap().client_grant.as_mut().unwrap()["endpoints"]["blob"] = json!(blob);
+
+    assert_eq!(s.client_round().await, Round::ConnectionsChanged);
+    let second = s.remote.provider_connections(&s.dir).await;
+    assert_eq!(second[0].base_url, first[0].base_url);
+    assert_eq!(second[0].api_key, first[0].api_key);
+    assert_eq!(second[0].endpoints_seq, 2);
+    assert_ne!(second, first, "the newer list is announced");
+}
+
+/// The host stops (its app quit, it sleeps): the account service shows it
+/// offline 90 s after its last heartbeat. The connection stays, but says
+/// offline instead of connected, and comes back by itself. An empty address
+/// list (the host's server stopped) means the same.
+#[tokio::test]
+async fn an_offline_host_is_not_shown_as_connected_and_comes_back() {
+    let s = setup().await;
+    s.world.lock().unwrap().client_grant = Some(approved_client_grant("code"));
+    s.client()
+        .pair(&protocol::parse_pair_input("BCDF-GHJK").unwrap())
+        .await
+        .unwrap();
+    let phone = DeviceKey::from_secret_b64(&s.file().await.device_secret.unwrap()).unwrap();
+    let (grant, _) = active_client_grant(&phone, Some(b"BCDFGHJK"), "code");
+    let envelope = grant["credential"]["envelope"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    s.world.lock().unwrap().client_grant = Some(grant);
+    s.client_round().await;
+    let view = || async {
+        build_status(&s.file().await, &HostMemory::default(), 0).connections[0].clone()
+    };
+    assert!(view().await.ready && !view().await.offline);
+
+    let set_online = |online: bool| {
+        s.world.lock().unwrap().client_grant.as_mut().unwrap()["host"]["online"] = json!(online)
+    };
+    set_online(false);
+    assert_eq!(s.client_round().await, Round::ConnectionsChanged);
+    assert!(view().await.offline);
+    let connections = s.remote.provider_connections(&s.dir).await;
+    assert_eq!(connections.len(), 1, "the provider stays");
+    assert!(!connections[0].online);
+    assert_eq!(s.client_round().await, Round::Quiet, "no change, no news");
+
+    set_online(true);
+    assert_eq!(s.client_round().await, Round::ConnectionsChanged);
+    assert!(!view().await.offline);
+    assert!(s.remote.provider_connections(&s.dir).await[0].online);
+
+    // Online, but its server stopped: it sends an empty address list.
+    let secret = protocol::open_credential(&phone, GRANT_ID, &envelope)
+        .unwrap()
+        .grant_secret_bytes()
+        .unwrap();
+    let blob = protocol::seal_endpoints(&secret, GRANT_ID, 2, &[]).unwrap();
+    s.world.lock().unwrap().client_grant.as_mut().unwrap()["endpoints"]["blob"] = json!(blob);
+    s.client_round().await;
+    assert!(view().await.offline);
+    assert!(
+        view().await.ready,
+        "the last address is kept for its return"
+    );
+}
+
+#[tokio::test]
+async fn a_credential_without_the_codes_mac_is_refused_and_revoked() {
+    let s = setup().await;
+    s.world.lock().unwrap().client_grant = Some(approved_client_grant("code"));
+    s.client()
+        .pair(&protocol::parse_pair_input("BCDF-GHJK").unwrap())
+        .await
+        .unwrap();
+    let phone = DeviceKey::from_secret_b64(&s.file().await.device_secret.unwrap()).unwrap();
+    // Encrypted to the right key, but MACed with something else.
+    let (grant, _) = active_client_grant(&phone, Some(b"ZZZZZZZZ"), "code");
+    s.world.lock().unwrap().client_grant = Some(grant);
+
+    let round = s
+        .client()
+        .round(GRANT_ID, 0, &CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(
+        round,
+        Round::Ended(client_codes::UNTRUSTED_CREDENTIAL.to_string())
+    );
+    assert!(s.file().await.connections.is_empty());
+    assert!(s.remote.provider_connections(&s.dir).await.is_empty());
+    assert_eq!(
+        s.fake
+            .requests(&format!("/v1/remote/grants/{GRANT_ID}"))
+            .iter()
+            .filter(|r| r.method == "DELETE")
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn a_request_shows_the_check_code_and_a_revoked_grant_ends_the_connection() {
+    let s = setup().await;
+    let mut pending = approved_client_grant("request");
+    pending["status"] = json!("pending");
+    s.world.lock().unwrap().client_grant = Some(pending);
+    let view = s.client().request(HOST_ID).await.unwrap();
+    let phone = DeviceKey::from_secret_b64(&s.file().await.device_secret.unwrap()).unwrap();
+    assert_eq!(
+        view.check_code.as_deref(),
+        Some(protocol::sas(HOST_ID, DEVICE_ID, &phone.public_b64()).as_str())
+    );
+
+    let mut revoked = approved_client_grant("request");
+    revoked["status"] = json!("revoked");
+    revoked["status_reason"] = json!("revoked_by_user");
+    s.world.lock().unwrap().client_grant = Some(revoked);
+    let round = s
+        .client()
+        .round(GRANT_ID, 0, &CancellationToken::new())
+        .await
+        .unwrap();
+    assert_eq!(round, Round::Ended("revoked_by_user".to_string()));
+    assert!(s.file().await.connections.is_empty());
+}
+
+#[tokio::test]
+async fn the_device_registers_once_per_key() {
+    let s = setup().await;
+    let (key, id) = s
+        .remote
+        .ensure_device(&s.account, &s.dir, false)
+        .await
+        .unwrap();
+    let (again, same) = s
+        .remote
+        .ensure_device(&s.account, &s.dir, false)
+        .await
+        .unwrap();
+    assert_eq!(id, DEVICE_ID);
+    assert_eq!(same, DEVICE_ID);
+    assert_eq!(key.public_b64(), again.public_b64());
+    let registered = s.fake.requests("/v1/remote/device");
+    assert_eq!(registered.len(), 1);
+    assert_eq!(registered[0].body["public_key"], key.public_b64());
+}
+
+#[test]
+fn the_file_is_owner_only_and_belongs_to_one_account() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut file = RemoteFile::default();
+    assert!(!file.bind_user("user-1"), "a fresh file is simply claimed");
+    file.sharing = true;
+    file.device_secret = Some(DeviceKey::generate().secret_b64());
+    assert!(
+        !file.bind_user("user-1"),
+        "the same account keeps everything"
+    );
+    store::save(tmp.path(), &file).unwrap();
+    assert_eq!(store::load(tmp.path()), file);
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(tmp.path().join(REMOTE_FILE_NAME))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600);
+    }
+
+    assert!(file.bind_user("user-2"));
+    assert!(!file.sharing && file.device_secret.is_none());
+    assert_eq!(file.user_id.as_deref(), Some("user-2"));
+
+    std::fs::write(tmp.path().join(REMOTE_FILE_NAME), "{not json").unwrap();
+    assert_eq!(store::load(tmp.path()), RemoteFile::default());
+}
+
+#[test]
+fn allowed_requests_round_trip_and_end_with_access() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut file = RemoteFile {
+        user_id: Some("user-1".to_string()),
+        sharing: true,
+        ..RemoteFile::default()
+    };
+    file.allow_request(AllowedRequest {
+        grant_id: GRANT_ID.to_string(),
+        client_device_id: PHONE_ID.to_string(),
+        client_public_key: "old-key".to_string(),
+        allowed_at: 1,
+    });
+    file.allow_request(AllowedRequest {
+        grant_id: GRANT_ID.to_string(),
+        client_device_id: PHONE_ID.to_string(),
+        client_public_key: "new-key".to_string(),
+        allowed_at: 2,
+    });
+    assert_eq!(file.allowed.len(), 1, "allowing again replaces the record");
+    assert_eq!(file.allowed[0].client_public_key, "new-key");
+
+    store::save(tmp.path(), &file).unwrap();
+    assert_eq!(store::load(tmp.path()), file);
+
+    // A file written before allowed records existed still reads.
+    let mut old: Value =
+        serde_json::from_str(&std::fs::read_to_string(tmp.path().join(REMOTE_FILE_NAME)).unwrap())
+            .unwrap();
+    old.as_object_mut().unwrap().remove("allowed");
+    std::fs::write(tmp.path().join(REMOTE_FILE_NAME), old.to_string()).unwrap();
+    let loaded = store::load(tmp.path());
+    assert!(loaded.allowed.is_empty());
+    assert!(loaded.sharing);
+
+    let mut ended = file.clone();
+    ended.end_access();
+    assert!(ended.allowed.is_empty());
+
+    let mut switched = file;
+    assert!(switched.bind_user("user-2"));
+    assert!(switched.allowed.is_empty());
+}
+
+#[test]
+fn the_page_never_sees_keys_or_addresses() {
+    let file = RemoteFile {
+        sharing: true,
+        issued: vec![super::store::IssuedKey {
+            grant_id: GRANT_ID.to_string(),
+            client_device_id: PHONE_ID.to_string(),
+            client_name: Some("Ann's iPhone".to_string()),
+            client_platform: Some("ios".to_string()),
+            api_key: "sk-atomic-issued-secret".to_string(),
+            grant_secret: "grant-secret-value".to_string(),
+            issued_at: 1,
+        }],
+        connections: vec![super::store::Connection {
+            grant_id: "g2".to_string(),
+            host_id: HOST_ID.to_string(),
+            host_name: "Studio Mac".to_string(),
+            method: "request".to_string(),
+            pair_secret: None,
+            api_key: Some("sk-atomic-received-secret".to_string()),
+            grant_secret: Some("another-grant-secret".to_string()),
+            acked: true,
+            version: Some(1),
+            last_seq: 1,
+            endpoints: online("hidden-words").endpoints,
+            base_url: Some("https://hidden-words.trycloudflare.com/v1".to_string()),
+            status: "active".to_string(),
+            host_offline: false,
+        }],
+        ..RemoteFile::default()
+    };
+    let memory = HostMemory {
+        reach: Some(online("own-words")),
+        ..HostMemory::default()
+    };
+    let shown = serde_json::to_string(&build_status(&file, &memory, 0)).unwrap();
+    for secret in [
+        "sk-atomic-issued-secret",
+        "grant-secret-value",
+        "sk-atomic-received-secret",
+        "hidden-words",
+        "own-words",
+    ] {
+        assert!(!shown.contains(secret), "{secret} leaked into the status");
+    }
+    assert!(shown.contains("\"via\":\"tunnel\""));
+}

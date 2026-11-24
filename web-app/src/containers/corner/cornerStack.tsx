@@ -5,8 +5,8 @@ import { EDGE, panelLayout } from '@/containers/downloads/panelLayout'
 
 /**
  * The bottom-right notification corner: the download panel, the update
- * banners, a managed engine's setup card, the model reminder and the
- * first-run handoff panel.
+ * banners, a managed engine's setup card, the model reminder, the first-run
+ * handoff panel and a device asking for access to this computer's models.
  *
  * Each of them used to pin itself to the corner and dodge the download panel
  * through a height it published (`--download-panel-offset`). Every card above
@@ -25,6 +25,7 @@ export const CORNER_ORDER = {
   reminder: 20,
   managedEngine: 30,
   update: 40,
+  accessRequest: 45,
   downloads: 50,
 } as const
 

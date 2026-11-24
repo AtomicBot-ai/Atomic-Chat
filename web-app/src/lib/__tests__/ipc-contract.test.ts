@@ -18,6 +18,33 @@ const EXPECTED_DESKTOP_ONLY = new Set([
   // admission check. Mobile keeps `get_download_free_space`, which the web
   // preflight falls back to when this command is missing.
   'get_disk_space_info',
+  // Atomic Chat account sign-in. Desktop only for now: Google needs a loopback
+  // listener and the system browser, and `PlatformFeature.ACCOUNTS` gates the
+  // UI to match (docs/decisions/2026-11-10-sign-in-to-an-atomic-chat-account.md).
+  'account_cancel_login',
+  'account_delete',
+  'account_email_start',
+  'account_email_verify',
+  'account_google_login',
+  'account_logout',
+  'account_profile',
+  'account_providers',
+  'account_remote_close_pairing_code',
+  'account_remote_connections',
+  'account_remote_decide',
+  'account_remote_disconnect',
+  'account_remote_hosts',
+  'account_remote_pair',
+  'account_remote_pairing_code',
+  'account_remote_remove_host',
+  'account_remote_request',
+  'account_remote_revoke',
+  'account_remote_set_sharing',
+  'account_remote_status',
+  'account_revoke_session',
+  'account_sessions',
+  'account_status',
+  'account_update_profile',
   // atomic-chat-core is a native sidecar. Mobile builds neither bundle it nor
   // expose its process lifecycle and control commands.
   'atomic_core_call',

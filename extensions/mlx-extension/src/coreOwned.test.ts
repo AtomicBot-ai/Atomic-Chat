@@ -213,6 +213,25 @@ describe('MLX runtime in the core', () => {
     })
   })
 
+  it('names no window the app did not send, so the core sizes it to this Mac', async () => {
+    const calls = core({
+      'GET /sessions': () => ({ sessions: [] }),
+      ...handover,
+      'POST /models/mlx/m/load': () => ({ session, created: true }),
+    })
+    const ext = extension({ auto_unload: false })
+    const recorded = (ext as unknown as { modelCtxSize: Map<string, number> })
+      .modelCtxSize
+    recorded.set('m', 16384)
+
+    expect(await ext.load('m')).toEqual(session)
+    const body = calls.at(-1)?.body as { overrides: Record<string, unknown> }
+    expect(calls.at(-1)?.path).toBe('/models/mlx/m/load')
+    expect(body.overrides).not.toHaveProperty('ctx_size')
+    // Nor is a guess recorded for a drafter reload to pin later.
+    expect(recorded.has('m')).toBe(false)
+  })
+
   it('reports a failed core load with its code and refuses a model already loaded', async () => {
     core({
       'GET /sessions': () => ({ sessions: [] }),

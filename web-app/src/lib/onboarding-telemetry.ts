@@ -94,6 +94,7 @@ const ONBOARDING_STEP_IDS: readonly OnboardingStep[] = [
   'permissions',
   'cloud',
   'media',
+  'account',
   'purpose',
   'server',
   'wait',

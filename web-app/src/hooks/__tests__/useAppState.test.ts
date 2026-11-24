@@ -149,4 +149,55 @@ describe('useAppState', () => {
 
     expect(result.current.tokenSpeed).toBeUndefined()
   })
+
+  describe('context activity', () => {
+    beforeEach(() => {
+      act(() => {
+        useAppState.setState({ contextActivity: { phase: null } })
+      })
+    })
+
+    it('is idle by default', () => {
+      expect(useAppState.getState().contextActivity).toEqual({ phase: null })
+    })
+
+    it('records an expansion with its window sizes, then its end', () => {
+      const { setContextExpanding, clearContextActivity } =
+        useAppState.getState()
+      setContextExpanding({ threadId: 't-1', from: 16384 })
+      expect(useAppState.getState().contextActivity).toEqual({
+        phase: 'expanding',
+        from: 16384,
+        to: undefined,
+        threadId: 't-1',
+      })
+      setContextExpanding({ threadId: 't-1', from: 16384, to: 65536 })
+      expect(useAppState.getState().contextActivity).toMatchObject({
+        phase: 'expanding',
+        from: 16384,
+        to: 65536,
+      })
+      clearContextActivity('t-1')
+      expect(useAppState.getState().contextActivity).toEqual({ phase: null })
+    })
+
+    it('records a compaction (for the compaction step)', () => {
+      useAppState.getState().setContextCompacting({ threadId: 't-1' })
+      expect(useAppState.getState().contextActivity).toEqual({
+        phase: 'compacting',
+        threadId: 't-1',
+      })
+    })
+
+    it('leaves another thread’s activity alone', () => {
+      const { setContextExpanding, clearContextActivity } =
+        useAppState.getState()
+      setContextExpanding({ threadId: 't-1', from: 8192, to: 32768 })
+      clearContextActivity('t-2')
+      expect(useAppState.getState().contextActivity.phase).toBe('expanding')
+      // Without a thread, any activity ends.
+      clearContextActivity()
+      expect(useAppState.getState().contextActivity.phase).toBeNull()
+    })
+  })
 })

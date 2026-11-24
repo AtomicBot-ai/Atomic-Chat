@@ -14,6 +14,7 @@ export type OnboardingStepId =
   | 'permissions'
   | 'cloud'
   | 'media'
+  | 'account'
   | 'purpose'
   | 'server'
   | 'wait'
@@ -54,6 +55,8 @@ export type StepContext = {
   mediaCards: number
   /** The build ships the local API server. */
   localApiServer: boolean
+  /** The build offers an Atomic Chat account (`PlatformFeature.ACCOUNTS`). */
+  accounts: boolean
 }
 
 export type StepDef = {
@@ -95,6 +98,13 @@ export const ONBOARDING_STEPS: Record<OnboardingVariant, readonly StepDef[]> = {
       id: 'media',
       counted: true,
       include: (context) => context.mediaCards > 0,
+    },
+    // After the machine is set up and before the run splits into everyday
+    // use and the server: what an account adds, for either path.
+    {
+      id: 'account',
+      counted: true,
+      include: (context) => context.accounts,
     },
     {
       id: 'purpose',
