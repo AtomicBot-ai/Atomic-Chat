@@ -39,6 +39,7 @@
   "basedOnDevice": "Basierend auf {{device}}: {{memory}}",
   "noFittingPicks": "Kein empfohlenes Modell passt auf dieses Gerät. Deaktiviere den Gerätefilter, um alle zu sehen.",
   "downloadOptions": "Download-Optionen",
+  "safetensorsEngineUnavailable": "Auf diesem Gerät ist keine kompatible Laufzeit für dieses Modell verfügbar.",
   "details": "Details",
   "selectModel": "Wähle ein Modell, um Details zu sehen",
   "openOnWeb": "Im Web öffnen",

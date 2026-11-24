@@ -51,6 +51,7 @@
   "basedOnDevice": "{{device}} に基づく: {{memory}}",
   "noFittingPicks": "このデバイスに収まるおすすめモデルはありません。デバイスフィルターをオフにするとすべて表示されます。",
   "downloadOptions": "ダウンロードオプション",
+  "safetensorsEngineUnavailable": "このデバイスでは、このモデルに対応するエンジンを利用できません。",
   "details": "詳細",
   "selectModel": "モデルを選択すると詳細が表示されます",
   "openOnWeb": "ウェブで開く",

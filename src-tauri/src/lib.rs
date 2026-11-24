@@ -764,10 +764,17 @@ pub fn run() {
                 }
             }
 
-            #[cfg(all(feature = "deep-link", any(windows, target_os = "linux")))]
+            // Test binaries must not take over the installed app's protocol handler.
+            #[cfg(all(
+                feature = "deep-link",
+                not(feature = "e2e"),
+                any(windows, target_os = "linux")
+            ))]
             {
                 use tauri_plugin_deep_link::DeepLinkExt;
-                app.deep_link().register_all()?;
+                if let Err(error) = app.deep_link().register_all() {
+                    log::warn!("Failed to register the atomic-chat URL handler: {error}");
+                }
             }
 
             // Initialize SQLite database for mobile platforms

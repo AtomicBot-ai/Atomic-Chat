@@ -163,11 +163,15 @@ vi.mock('@/containers/hub/ModelDetailPanel', () => ({
   ModelDetailPanel: ({
     model,
     facts,
+    formatLabel,
+    unserved,
     engines,
     onCollapse,
   }: {
     model: CatalogModel
     facts?: { format?: string }
+    formatLabel?: string
+    unserved?: object
     engines?: string[]
     onCollapse: () => void
   }) => (
@@ -176,6 +180,8 @@ vi.mock('@/containers/hub/ModelDetailPanel', () => ({
       data-quants={model.quants?.length ?? 0}
       data-managed={model.is_managed ? 'yes' : 'no'}
       data-format={facts?.format ?? ''}
+      data-format-label={formatLabel ?? ''}
+      data-unserved={unserved ? JSON.stringify(unserved) : ''}
       data-engines={engines?.join(',') ?? ''}
     >
       {model.model_name}
@@ -1625,6 +1631,24 @@ describe('/hub route', () => {
       expect(card).toHaveAttribute('data-engines', 'vllm')
     })
 
+    it('shows the linked card while the current filter checks its engine', async () => {
+      tensorrtHub.value = { ...installed, state: 'unknown' }
+      setHubFormat('tensorrt-llm')
+      open(checkpoint())
+
+      expect(await panel()).toHaveAttribute('data-managed', 'yes')
+    })
+
+    it('opens a cached NVFP4 repository with its managed engine', async () => {
+      tensorrtHub.value = installed
+      mocks.sources = [checkpoint()]
+      mocks.search = { model: repo, repo }
+      render(<HubPage />)
+
+      expect(await panel()).toHaveAttribute('data-managed', 'yes')
+      expect(mocks.fetchHuggingFaceRepo).not.toHaveBeenCalled()
+    })
+
     it('reads as the only engine offered', async () => {
       tensorrtHub.value = installed
       open(checkpoint())
@@ -1646,12 +1670,40 @@ describe('/hub route', () => {
       expect(card).toHaveAttribute('data-format', 'tensorrt-llm')
     })
 
-    it('stays as it is where no managed engine is offered', async () => {
+    it('reads as safetensors and says what it runs on where no managed engine is offered', async () => {
       open(checkpoint())
 
       const card = await panel()
       expect(card).toHaveAttribute('data-managed', 'no')
-      expect(card).toHaveAttribute('data-format', 'gguf')
+      expect(card).toHaveAttribute('data-format-label', 'Safetensors')
+      expect(card).toHaveAttribute('data-unserved', '{}')
+    })
+
+    it("names the engine whose plan finds this card too old", async () => {
+      sglangHub.value = {
+        visible: false,
+        state: 'blocked',
+        blockers: [
+          {
+            code: 'prerequisite-blocked',
+            reason: 'compute-capability-too-low',
+            message: 'too old',
+            params: { required: '8.0', actual: '7.5' },
+          },
+        ],
+        descriptorId: 'descriptor-a',
+      }
+      open(checkpoint())
+
+      const card = await panel()
+      expect(card).toHaveAttribute('data-managed', 'no')
+      expect(JSON.parse(card.dataset.unserved ?? '')).toEqual({
+        tooOld: {
+          engine: { id: 'sglang', label: 'SGLang', i18n: 'sglang' },
+          required: '8.0',
+          actual: '7.5',
+        },
+      })
     })
 
     it('leaves an MLX repository to the MLX provider', async () => {

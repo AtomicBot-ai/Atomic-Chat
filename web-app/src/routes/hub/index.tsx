@@ -51,7 +51,10 @@ import {
 } from '@/hooks/useFoundryLocalHub'
 import { useLiteRtLmHub, useLiteRtLmHubVisible } from '@/hooks/useLiteRtLmHub'
 import { useGeniexHub, useGeniexHubVisible } from '@/hooks/useGeniexHub'
-import { UNKNOWN_HUB_STATE } from '@/lib/managed-engine/hub-state'
+import {
+  UNKNOWN_HUB_STATE,
+  unservedCheckpoint,
+} from '@/lib/managed-engine/hub-state'
 import { hubKey, managedEngine } from '@/lib/managed-engines'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import {
@@ -82,7 +85,7 @@ import {
   isHubCategory,
   type HubCategory,
 } from '@/lib/hub-media'
-import { getMemoryBudgetBytes, type ModelFormat } from '@/lib/model-card'
+import { getMemoryBudgetBytes, modelFormat, type ModelFormat } from '@/lib/model-card'
 import {
   foundryLocalRows,
   liteRtLmRows,
@@ -187,8 +190,11 @@ function isUnsupportedBaseGemmaMlx(model: CatalogModel) {
 // A card with safetensors weights and nothing a llama.cpp or MLX provider
 // loads: what the managed engines (vLLM, TensorRT-LLM) serve.
 function isSafetensorsCheckpoint(model: CatalogModel) {
-  const is_mlx = model.is_mlx ?? model.library_name === 'mlx'
-  return !is_mlx && !model.quants?.length && (model.num_safetensors ?? 0) > 0
+  return (
+    modelFormat(model) === 'gguf' &&
+    !model.quants?.length &&
+    (model.num_safetensors ?? 0) > 0
+  )
 }
 
 export const Route = createFileRoute(route.hub.index as any)({
@@ -1397,42 +1403,52 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
 
   const selectedRepo = modelSearchParam ?? null
 
-  // A link names a repository and no format, and the Hub opens on GGUF. A
-  // safetensors checkpoint opened that way is a managed engine's wherever one
-  // is offered: its card then asks every visible engine for a verdict, whatever
-  // format the list shows. Outside a managed format the row reads as the first
-  // engine offered, in registry order. Where none is offered it stays as it is.
-  const deepLinkedItem = useMemo<HubListItem | null>(() => {
-    if (!deepLinkedModel) return null
-    if (visibleManaged === '' || !isSafetensorsCheckpoint(deepLinkedModel)) {
-      return { model: deepLinkedModel }
+  const selectedItem = useMemo<HubListItem | null>(() => {
+    if (!selectedRepo) return null
+    const listed = listItems.find(
+      (item) => item.model.model_name === selectedRepo
+    )
+    const cached =
+      listed?.model ??
+      (strata.recommended?.model_name === selectedRepo
+        ? strata.recommended
+        : undefined) ??
+      sources.find((model) => model.model_name === selectedRepo)
+    const model =
+      cached ??
+      (deepLinkedModel?.model_name === selectedRepo ? deepLinkedModel : null)
+    if (!model) return null
+
+    const item = listed ?? { model, pick: pickByRepo.get(selectedRepo) }
+    // A link carries no format. Resolve bare safetensors the same way for a
+    // cached card and a freshly fetched one. Keep an engine-specific card intact.
+    if (
+      (cached && repoSearchParam !== selectedRepo) ||
+      !isSafetensorsCheckpoint(model)
+    ) {
+      return item
     }
+    if (!visibleManaged)
+      return { ...item, unserved: unservedCheckpoint(managedHubs) }
     return {
-      model: { ...deepLinkedModel, is_mlx: false, is_managed: true },
+      ...item,
+      model: { ...model, is_managed: true },
       format: managedSelected
         ? undefined
         : (visibleManaged.split(',')[0] as ModelFormat),
     }
-  }, [deepLinkedModel, visibleManaged, managedSelected])
-
-  const selectedItem = useMemo<HubListItem | null>(() => {
-    if (!selectedRepo) return null
-    const fromList = listItems.find(
-      (item) => item.model.model_name === selectedRepo
-    )
-    if (fromList) return fromList
-    if (strata.recommended && selectedRepo === strata.recommended.model_name) {
-      return { model: strata.recommended }
-    }
-    const fromSources = sources.find((m) => m.model_name === selectedRepo)
-    if (fromSources) {
-      return { model: fromSources, pick: pickByRepo.get(selectedRepo) }
-    }
-    if (deepLinkedItem && deepLinkedItem.model.model_name === selectedRepo) {
-      return { ...deepLinkedItem, pick: pickByRepo.get(selectedRepo) }
-    }
-    return null
-  }, [selectedRepo, listItems, strata.recommended, sources, deepLinkedItem, pickByRepo])
+  }, [
+    selectedRepo,
+    listItems,
+    strata.recommended,
+    sources,
+    deepLinkedModel,
+    pickByRepo,
+    repoSearchParam,
+    visibleManaged,
+    managedSelected,
+    managedHubs,
+  ])
 
   // Deep link into a repo the catalog does not carry: resolve it from HF once.
   useEffect(() => {
@@ -1699,24 +1715,27 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
         modelEngineIds(item.model, tableFormat).includes(engine)
       )
     }
-    if (
-      selectedItem &&
-      !rows.some(
+    if (selectedItem) {
+      const index = rows.findIndex(
         (item) => item.model.model_name === selectedItem.model.model_name
       )
-    ) {
-      rows = [{ ...selectedItem, section: undefined }, ...rows]
+      if (index < 0) return [{ ...selectedItem, section: undefined }, ...rows]
+      if (rows[index] !== selectedItem) {
+        rows = [...rows]
+        rows[index] = selectedItem
+      }
     }
     return rows
   }, [listItems, onlyLiked, liked, filters.engine, tableFormat, selectedItem])
 
+  const showLinkedCard = !!selectedItem && repoSearchParam === selectedRepo
   const isEmpty = tableItems.length === 0
   const uncensoredLoading =
     filters.uncensored && (uncensoredFeed.loading || abliteratedFeed.loading)
   const managedLoading =
     managedFormat && !isSearchMode && (managedCurated.loading || feed.loading)
   const showSkeleton =
-    listItems.length === 0 &&
+    isEmpty &&
     (strataFormat
       ? strata.loading
       : fastFlowLmFormat
@@ -1801,14 +1820,14 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
                 {t('hub:geniex.huggingFaceUnavailable')}
               </p>
             )}
-          {managedPanel === 'blocked' ? (
+          {managedPanel === 'blocked' && !showLinkedCard ? (
             managedSelected && (
               <ManagedHubBlocked
                 engine={managedSelected}
                 blockers={managedHub.blockers}
               />
             )
-          ) : managedPanel === 'checking' ? (
+          ) : managedPanel === 'checking' && !showLinkedCard ? (
             managedSelected && <ManagedHubChecking engine={managedSelected} />
           ) : showSkeleton ? (
             <div className="flex animate-pulse flex-col gap-2">

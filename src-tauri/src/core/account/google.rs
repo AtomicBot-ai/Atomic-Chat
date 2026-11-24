@@ -2,8 +2,7 @@
 //!
 //! The app binds a loopback listener, opens the backend's `authorize` URL in
 //! the system browser with a PKCE challenge, and gets a one-time login code
-//! back on `http://127.0.0.1:<port>/auth/callback`. Loopback rather than the
-//! `atomic-chat://` scheme because that scheme is only registered on macOS.
+//! back on `http://127.0.0.1:<port>/auth/callback`.
 //! The listener is the MCP sign-in's (`core/mcp/oauth/flow.rs`); PKCE and the
 //! `state` check are the ChatGPT sign-in's (`core/auth/chatgpt.rs`).
 

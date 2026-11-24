@@ -17,18 +17,24 @@ vi.mock('@/containers/hub/ModelDetailPanel', () => ({
   ModelDetailPanel: ({
     model,
     facts,
+    formatLabel,
+    unserved,
     paramsLoading,
     cardLoading,
     onCollapse,
   }: {
     model: CatalogModel
     facts: { params?: string }
+    formatLabel: string
+    unserved?: object
     paramsLoading: boolean
     cardLoading: boolean
     onCollapse: () => void
   }) => (
     <div
       data-testid="open-row"
+      data-format={formatLabel}
+      data-unserved={unserved ? JSON.stringify(unserved) : ''}
       data-params={facts.params ?? ''}
       data-params-loading={String(paramsLoading)}
       data-card-loading={String(cardLoading)}
@@ -320,6 +326,30 @@ describe('LocalModelTable', () => {
     ).toBeInTheDocument()
     expect(cell(phi, 'format')).toHaveTextContent('Foundry Local')
     expect(cell(phi, 'engines')).toHaveTextContent('Foundry Local')
+  })
+
+  it('reads a linked checkpoint no engine here serves as safetensors, not GGUF', () => {
+    const checkpoint = {
+      model_name: 'nvidia/Gemma-4-31B-IT-NVFP4',
+      developer: 'nvidia',
+      downloads: 1,
+      num_quants: 0,
+      quants: [],
+      num_safetensors: 1,
+    } as unknown as CatalogModel
+    renderTable({
+      selected: checkpoint.model_name,
+      items: [
+        { model: gguf('Qwen/Qwen3.5-4B-GGUF', '2.50 GB') },
+        { model: checkpoint, unserved: {} },
+      ],
+    })
+
+    const [qwen] = summaryRows()
+    expect(cell(qwen, 'format')).toHaveTextContent('GGUF')
+    const open = screen.getByTestId('open-row')
+    expect(open).toHaveAttribute('data-format', 'Safetensors')
+    expect(open).toHaveAttribute('data-unserved', '{}')
   })
 
   it('sorts by a column, unknown values last either way, as one list', async () => {

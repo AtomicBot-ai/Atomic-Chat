@@ -38,6 +38,7 @@
   "basedOnDevice": "基于 {{device}}：{{memory}}",
   "noFittingPicks": "没有适合本设备的推荐模型。关闭设备筛选即可查看全部。",
   "downloadOptions": "下载选项",
+  "safetensorsEngineUnavailable": "此设备上没有可用于该模型的兼容推理引擎。",
   "details": "详情",
   "selectModel": "选择一个模型以查看详情",
   "openOnWeb": "在网页中打开",

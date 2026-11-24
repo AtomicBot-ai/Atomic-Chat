@@ -38,6 +38,7 @@
   "basedOnDevice": "Podle {{device}}: {{memory}}",
   "noFittingPicks": "Do tohoto zařízení se nevejde žádný doporučený model. Vypněte filtr a zobrazte všechny.",
   "downloadOptions": "Možnosti stažení",
+  "safetensorsEngineUnavailable": "Pro tento model není na tomto zařízení k dispozici kompatibilní engine.",
   "details": "Podrobnosti",
   "selectModel": "Vyberte model a zobrazte jeho podrobnosti",
   "openOnWeb": "Otevřít na webu",

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { managedHubState } from '../hub-state'
+import { managedHubState, unservedCheckpoint, UNKNOWN_HUB_STATE } from '../hub-state'
 import type {
   EnvironmentSnapshot,
   ManagedBlocker,
@@ -157,5 +157,50 @@ describe('managedHubState', () => {
     })
     expect(state.state).toBe('not-installed')
     expect(state.descriptorId).toBe('tensorrt-llm-1.3.0rc29-r2')
+  })
+})
+
+describe('unservedCheckpoint', () => {
+  const tooOld = (actual: string) => ({
+    ...UNKNOWN_HUB_STATE,
+    state: 'blocked' as const,
+    blockers: [blocker('compute-capability-too-low', { required: '8.0', actual })],
+  })
+
+  it('names nothing where no engine is shown: macOS, no NVIDIA card', () => {
+    expect(
+      unservedCheckpoint([
+        { engine: 'vllm', hub: UNKNOWN_HUB_STATE },
+        { engine: 'tensorrt-llm', hub: UNKNOWN_HUB_STATE },
+      ])
+    ).toEqual({})
+  })
+
+  it("names the first engine whose plan finds the card too old, with the core's numbers", () => {
+    expect(
+      unservedCheckpoint([
+        { engine: 'vllm', hub: UNKNOWN_HUB_STATE },
+        { engine: 'sglang', hub: tooOld('7.5') },
+        { engine: 'tensorrt-llm', hub: tooOld('7.0') },
+      ])
+    ).toEqual({ tooOld: { engine: 'sglang', required: '8.0', actual: '7.5' } })
+  })
+
+  it('names nothing for a blocker without its numbers, or for another reason', () => {
+    expect(
+      unservedCheckpoint([
+        {
+          engine: 'vllm',
+          hub: { ...tooOld('7.5'), blockers: [blocker('compute-capability-too-low')] },
+        },
+        {
+          engine: 'tensorrt-llm',
+          hub: {
+            ...tooOld('7.5'),
+            blockers: [blocker('driver-too-old', { required: '615.65.02', actual: '580.95.05' })],
+          },
+        },
+      ])
+    ).toEqual({})
   })
 })

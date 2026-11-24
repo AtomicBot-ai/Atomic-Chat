@@ -55,6 +55,7 @@
   "basedOnDevice": "Based on {{device}}: {{memory}}",
   "noFittingPicks": "No recommended models fit this device. Turn off the device filter to see them all.",
   "downloadOptions": "Download Options",
+  "safetensorsEngineUnavailable": "No compatible engine is available for this model on this device.",
   "details": "Details",
   "selectModel": "Select a model to see its details",
   "openOnWeb": "Open on Web",

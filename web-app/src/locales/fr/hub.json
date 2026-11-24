@@ -55,6 +55,7 @@
   "basedOnDevice": "D'après {{device}} : {{memory}}",
   "noFittingPicks": "Aucun modèle recommandé ne tient sur cet appareil. Désactivez le filtre pour tous les voir.",
   "downloadOptions": "Options de téléchargement",
+  "safetensorsEngineUnavailable": "Aucun moteur compatible avec ce modèle n’est disponible sur cet appareil.",
   "details": "Détails",
   "selectModel": "Sélectionnez un modèle pour voir ses détails",
   "openOnWeb": "Ouvrir sur le Web",

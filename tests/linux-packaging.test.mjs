@@ -89,7 +89,7 @@ test('the desktop entry starts the installed binary and is matched by the Waylan
   const appId = APP_ID.replaceAll('.', '\\.')
   assert.match(
     entry,
-    new RegExp(`^Exec=${INSTALL_DIR}/bin/${MAIN_BINARY}$`, 'm')
+    new RegExp(`^Exec=${INSTALL_DIR}/bin/${MAIN_BINARY} %u$`, 'm')
   )
   assert.match(entry, new RegExp(`^Icon=${appId}$`, 'm'))
   // The same class the bundled template declares (build-utils/atomic-chat.desktop).
@@ -98,6 +98,7 @@ test('the desktop entry starts the installed binary and is matched by the Waylan
     read('src-tauri/build-utils/atomic-chat.desktop'),
     new RegExp(`^StartupWMClass=${appId}$`, 'm')
   )
+  assert.match(entry, /^MimeType=x-scheme-handler\/atomic-chat;$/m)
   assert.match(entry, /^Type=Application$/m)
 })
 

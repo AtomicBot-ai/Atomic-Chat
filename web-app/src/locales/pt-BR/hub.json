@@ -38,6 +38,7 @@
   "basedOnDevice": "Com base em {{device}}: {{memory}}",
   "noFittingPicks": "Nenhum modelo recomendado cabe neste dispositivo. Desative o filtro para ver todos.",
   "downloadOptions": "Opções de download",
+  "safetensorsEngineUnavailable": "Este dispositivo não tem um mecanismo compatível com este modelo.",
   "details": "Detalhes",
   "selectModel": "Selecione um modelo para ver os detalhes",
   "openOnWeb": "Abrir na web",
