@@ -60,3 +60,37 @@ export function ctxLenUserSetSetting(): ProviderSetting {
     controller_props: { value: true },
   }
 }
+
+/** Engines that have no `/props` to mirror a planned window from, so the core's measure is asked. */
+const MEASURED_WINDOW_PROVIDERS: ReadonlySet<string> = new Set(['mlx'])
+
+/**
+ * After a load that left the window to the core, write the window the core chose into the model's
+ * `ctx_len`, so the context controls show the window the engine runs — what the llama.cpp
+ * extensions already do from `/props` (ADR 2026-10-26). MLX has no `/props`; the core's
+ * `context/measure` reports the session's window. Never sets {@link CTX_LEN_USER_SET_KEY}.
+ * Resolves to the window written, or `undefined` when nothing was. Never throws.
+ */
+export async function mirrorPlannedWindow(
+  providerId: string,
+  modelId: string,
+  deps: {
+    measure: (
+      providerId: string,
+      modelId: string
+    ) => Promise<{ windowTokens?: number } | undefined>
+    currentCtxLen: () => number | undefined
+    write: (window: number) => void
+  }
+): Promise<number | undefined> {
+  if (!MEASURED_WINDOW_PROVIDERS.has(providerId)) return undefined
+  try {
+    const window = (await deps.measure(providerId, modelId))?.windowTokens
+    if (window === undefined || !(window > 0)) return undefined
+    if (deps.currentCtxLen() === window) return undefined
+    deps.write(window)
+    return window
+  } catch {
+    return undefined
+  }
+}

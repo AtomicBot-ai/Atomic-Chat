@@ -13,8 +13,12 @@ import {
 import { managedEngines } from '@/lib/managed-engines'
 import {
   CTX_LEN_USER_SET_KEY,
+  mirrorPlannedWindow,
   sendsCtxSize,
 } from '@/lib/planned-context-window'
+import { measureContext } from '@/lib/core-context'
+import { readModelCtxLen, setModelContextLength } from '@/lib/context-size'
+import { useModelProvider } from '@/hooks/useModelProvider'
 import { LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
 import {
   AIEngine,
@@ -1030,7 +1034,7 @@ export class DefaultModelsService implements ModelsService {
     if (provider.provider !== 'fastflowlm')
       await makeRoomForChatModel(engine, model)
 
-    return engine
+    const session = await engine
       .load(model, settings, false, bypassAutoUnload, options)
       .catch((error) => {
         console.error(
@@ -1039,6 +1043,24 @@ export class DefaultModelsService implements ModelsService {
         )
         throw error
       })
+    // The core chose the window: show the one it chose (MLX has no `/props`
+    // for its extension to mirror it from, as the llama.cpp ones do).
+    if (!sendCtxSize) {
+      void mirrorPlannedWindow(provider.provider, model, {
+        measure: (providerId, modelId) =>
+          measureContext(providerId, modelId, { messages: [] }),
+        currentCtxLen: () =>
+          readModelCtxLen(
+            useModelProvider
+              .getState()
+              .getProviderByName(provider.provider)
+              ?.models.find((m) => m.id === model)
+          ),
+        write: (window) =>
+          setModelContextLength(provider.provider, model, window),
+      })
+    }
+    return session
   }
 
   async isToolSupported(modelId: string): Promise<boolean> {

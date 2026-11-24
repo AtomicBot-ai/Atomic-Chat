@@ -4,6 +4,7 @@ import {
   CTX_LEN_USER_SET_KEY,
   ctxLenUserSetSetting,
   isCtxLenUserSet,
+  mirrorPlannedWindow,
   sendsCtxSize,
 } from '@/lib/planned-context-window'
 
@@ -62,4 +63,50 @@ describe('the user-set marker', () => {
     expect(isCtxLenUserSet(settings(16384))).toBe(false)
     expect(isCtxLenUserSet(undefined)).toBe(false)
   })
+})
+
+describe('mirrorPlannedWindow', () => {
+  const run = async (
+    providerId: string,
+    measured: { windowTokens?: number } | undefined | Error,
+    current: number | undefined = 16384
+  ) => {
+    const written: number[] = []
+    const result = await mirrorPlannedWindow(providerId, 'm', {
+      measure: async () => {
+        if (measured instanceof Error) throw measured
+        return measured
+      },
+      currentCtxLen: () => current,
+      write: (window) => written.push(window),
+    })
+    return { result, written }
+  }
+
+  it('writes the window the core chose for an MLX load', async () => {
+    expect(await run('mlx', { windowTokens: 98304 })).toEqual({
+      result: 98304,
+      written: [98304],
+    })
+  })
+
+  it.each([
+    [
+      'a llama.cpp load, mirrored from /props by its extension',
+      'llamacpp-upstream',
+      { windowTokens: 98304 },
+      16384,
+    ],
+    ['a core that does not say', 'mlx', undefined, 16384],
+    ['a window the model already shows', 'mlx', { windowTokens: 16384 }, 16384],
+    ['a failed measure', 'mlx', new Error('boom'), 16384],
+  ] as const)(
+    'writes nothing for %s',
+    async (_name, provider, measured, current) => {
+      expect(await run(provider, measured, current)).toEqual({
+        result: undefined,
+        written: [],
+      })
+    }
+  )
 })
