@@ -97,6 +97,6 @@ export enum PlatformFeature {
   CHAT_EXEC = 'chatExec',
 
   // Signing in to an Atomic Chat account (email code or Google). The Rust
-  // side keeps the session; unfinished, so dev desktop builds only.
+  // side keeps the session; desktop builds only.
   ACCOUNTS = 'accounts',
 }

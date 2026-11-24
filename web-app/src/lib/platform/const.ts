@@ -60,8 +60,7 @@ export const PlatformFeatures: Record<PlatformFeature, boolean> = {
     isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid(),
 
   // Extensions settings page - disabled for web
-  [PlatformFeature.EXTENSIONS_SETTINGS]:
-    isPlatformTauri(),
+  [PlatformFeature.EXTENSIONS_SETTINGS]: isPlatformTauri(),
 
   // Assistant functionality - disabled for web
   [PlatformFeature.ASSISTANTS]: isPlatformTauri(),
@@ -113,11 +112,8 @@ export const PlatformFeatures: Record<PlatformFeature, boolean> = {
   [PlatformFeature.CHAT_EXEC]:
     isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid(),
 
-  // Atomic Chat account sign-in — desktop only, and dev builds only while it
-  // is unfinished.
+  // Atomic Chat account sign-in and remote access — desktop only, release
+  // builds included (ADR 2026-11-24-turn-the-account-on-in-release-builds).
   [PlatformFeature.ACCOUNTS]:
-    import.meta.env.DEV &&
-    isPlatformTauri() &&
-    !isPlatformIOS() &&
-    !isPlatformAndroid(),
+    isPlatformTauri() && !isPlatformIOS() && !isPlatformAndroid(),
 }
