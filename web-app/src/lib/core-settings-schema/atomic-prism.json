@@ -142,7 +142,7 @@
   {
     "key": "fit_ctx",
     "title": "Fit Minimum Context Size",
-    "description": "Minimum context size (tokens) that can be set by --fit option. (env: LLAMA_ARG_FIT_CTX)",
+    "description": "Minimum context size (tokens) that can be set by --fit option. At the default 4096, Atomic Chat raises it on a discrete GPU to the largest window the card holds with up to a quarter of the model in system RAM. (env: LLAMA_ARG_FIT_CTX)",
     "controllerType": "input",
     "controllerProps": {
       "value": 4096,
