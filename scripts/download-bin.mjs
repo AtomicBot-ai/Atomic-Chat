@@ -391,6 +391,23 @@ async function decompress(filePath, targetDir) {
   }
 }
 
+// Download and unpack `archive` unless the `binary` it holds is already
+// unpacked. The archive alone proves nothing: an extraction that was cut short
+// or failed used to leave the archive next to an empty folder, every later run
+// skipped extraction, and the bundle silently lacked the binary (Tauri then
+// fails with "resource path `resources/bin/bun-…` doesn't exist").
+async function ensureUnpacked(url, archive, targetDir, binary) {
+  if (fs.existsSync(binary)) return
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (!fs.existsSync(archive)) await download(url, archive)
+    await decompress(archive, targetDir)
+    if (fs.existsSync(binary)) return
+    // A damaged download unpacks to nothing: fetch it once more.
+    fs.rmSync(archive, { force: true })
+  }
+  throw new Error(`${archive} did not unpack ${binary}`)
+}
+
 async function getJson(url, headers = {}) {
   return new Promise((resolve, reject) => {
     const opts = new URL(url)
@@ -538,11 +555,8 @@ async function main() {
   }
 
   console.log(`Downloading Bun for ${bunPlatform}...`)
-  const bunSaveDir = path.join(tempBinDir, `bun-${bunPlatform}.zip`)
-  if (!fs.existsSync(bunSaveDir)) {
-    await download(bunUrl, bunSaveDir)
-    await decompress(bunPath, tempBinDir)
-  }
+  const bunBinary = platform === 'win32' ? 'bun.exe' : 'bun'
+  await ensureUnpacked(bunUrl, bunPath, tempBinDir, path.join(tempBinDir, `bun-${bunPlatform}`, bunBinary))
   try {
     copySync(
       path.join(tempBinDir, `bun-${bunPlatform}`, 'bun'),
@@ -619,12 +633,10 @@ async function main() {
   console.log('Bun downloaded.')
 
   console.log(`Downloading UV for ${uvPlatform}...`)
-  const uvExt = platform === 'win32' ? `zip` : `tar.gz`
-  const uvSaveDir = path.join(tempBinDir, `uv-${uvPlatform}.${uvExt}`)
-  if (!fs.existsSync(uvSaveDir)) {
-    await download(uvUrl, uvSaveDir)
-    await decompress(uvPath, tempBinDir)
-  }
+  // The Windows zip holds uv.exe at its root; the tarballs a uv-<platform>/ folder.
+  const uvBinary =
+    platform === 'win32' ? path.join(tempBinDir, 'uv.exe') : path.join(tempBinDir, `uv-${uvPlatform}`, 'uv')
+  await ensureUnpacked(uvUrl, uvPath, tempBinDir, uvBinary)
   try {
     copySync(path.join(tempBinDir, `uv-${uvPlatform}`, 'uv'), path.join(binDir))
     if (platform !== 'win32') {
