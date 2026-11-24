@@ -631,3 +631,4 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-11-02** — [Preserve generated Hub discovery alongside managed model pins](2026-11-02-preserve-hub-discovery-and-model-pins.md)
 - **2026-11-19** — [Group configured Strata models by weights repository](2026-11-19-reuse-strata-profiles-from-the-model-catalog.md)
 - **2026-11-23** — [Compact chat history instead of growing the window](2026-11-23-compact-chat-history-instead-of-growing-the-window.md)
+- **2026-11-24** — [Let the core size the default window](2026-11-24-let-the-core-size-the-default-window.md) (supersedes 2026-06-15 MLX 16K default)
