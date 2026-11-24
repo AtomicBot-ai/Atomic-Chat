@@ -103,7 +103,21 @@ describe('TensorRT-LLM defaults', () => {
       withDefaultEngineSettings('tensorrt-llm', settings).map(
         (s) => s.controller_props.value
       )
-    ).toEqual(['', 8192, 0.8])
+      // 0: the automatic window, the core's default since the context plan.
+    ).toEqual(['', 0, 0.8])
+  })
+
+  it('defaults every managed engine to the automatic window, which the core sizes', () => {
+    // A fixed default here is imported into the core on a first load and
+    // would override the core's own automatic one.
+    for (const id of ['tensorrt-llm', 'vllm', 'sglang']) {
+      expect(
+        customEngineSettingKeys(id, [setting('context_length', 0)])
+      ).toEqual([])
+      expect(
+        customEngineSettingKeys(id, [setting('context_length', 8192)])
+      ).toEqual(['context_length'])
+    }
   })
 
   it('resets vLLM to its core schema defaults', () => {

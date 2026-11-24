@@ -30,6 +30,7 @@ import {
   readProviderFitCtx,
   resetFailedFitFloors,
 } from '../context-size'
+import { isCtxLenUserSet } from '../planned-context-window'
 
 function seedModel(ctxLen: number | undefined) {
   useModelProvider.setState({
@@ -98,6 +99,22 @@ describe('growModelContext', () => {
     expect(result).toEqual({ ok: true, from: 16384, to: 32768 })
     expect(ctxLenInStore()).toBe(32768)
     expect(stopModel).toHaveBeenCalledWith('m', 'llamacpp-upstream')
+  })
+
+  it('grows without marking the window as chosen by the user', async () => {
+    seedModel(16384)
+    await growModelContext({
+      providerId: 'llamacpp-upstream',
+      modelId: 'm',
+      serviceHub,
+    })
+
+    const model = useModelProvider
+      .getState()
+      .getProviderByName('llamacpp-upstream')
+      ?.models.find((m) => m.id === 'm')
+    expect(ctxLenInStore()).toBe(32768)
+    expect(isCtxLenUserSet(model?.settings)).toBe(false)
   })
 
   it('keeps stepping until minCtxLen is reached', async () => {

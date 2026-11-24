@@ -351,6 +351,40 @@ describe('DataProvider', () => {
     unmount()
   })
 
+  it('mirrors the window a load got without marking it as chosen by the user', async () => {
+    const { events } = await import('@janhq/core')
+    const { useModelProvider } = await import('@/hooks/useModelProvider')
+    const { CTX_LEN_USER_SET_KEY } = await import(
+      '@/lib/planned-context-window'
+    )
+    mocks.providerList.push({
+      provider: 'llamacpp-upstream',
+      models: [
+        {
+          id: 'm',
+          settings: { ctx_len: { controller_props: { value: 16384 } } },
+        },
+      ],
+      settings: [],
+    } as unknown as ModelProvider)
+    const view = render(<DataProvider />)
+    const handler = vi
+      .mocked(events.on)
+      .mock.calls.find(([name]) => name === 'OnAutoIncreasedCtxLen')?.[1] as
+      | ((payload: Record<string, unknown>) => void)
+      | undefined
+    expect(handler).toBeDefined()
+
+    handler?.({ provider: 'llamacpp-upstream', modelId: 'm', newCtxLen: 65536 })
+
+    const updateProvider = vi.mocked(useModelProvider.getState().updateProvider)
+    const [, update] = updateProvider.mock.calls.at(-1) ?? []
+    const settings = (update as { models: Model[] }).models[0].settings
+    expect(settings?.ctx_len.controller_props.value).toBe(65536)
+    expect(settings).not.toHaveProperty(CTX_LEN_USER_SET_KEY)
+    view.unmount()
+  })
+
   it('uses the confirmed fallback port and listener state from the core', async () => {
     applyAtomicCoreServerState({ running: true, port: 6768 })
     expect(mocks.setServerPort).toHaveBeenCalledWith(6768)

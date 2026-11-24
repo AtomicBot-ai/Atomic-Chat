@@ -13,6 +13,30 @@ import type { ContextResizeMode } from '@/lib/context-support'
 
 export type { ContextResizeMode }
 
+/**
+ * Where a context plan's numbers come from: the device's memory (`unified` — Apple silicon,
+ * `gpu` — a discrete accelerator, `cpu` — system RAM only), the engine's own fit (`engine` — a
+ * managed engine's memory rule), or the model alone (`model` — the window the model declares, which
+ * the engine runs as is).
+ */
+export type ContextPlanBasis = 'unified' | 'gpu' | 'cpu' | 'engine' | 'model'
+
+/**
+ * The window a model gets on this device when nobody chose one: the largest that fits, never above
+ * the window it was trained for. Part of `GET /models/:provider/*modelId/capabilities`.
+ */
+export interface ContextPlan {
+  /** The window a load gets by default. */
+  recommendedCtx: number
+  /** The largest window the device can hold for this model; a grow never goes past it. */
+  maxCtx: number
+  /** `{arch}.context_length` or the checkpoint's own maximum, when known. */
+  trainedCtx?: number
+  /** KV-cache bytes per token of context, when estimated. */
+  kvBytesPerToken?: number
+  basis: ContextPlanBasis
+}
+
 /** Share of the window a compacted prompt aims at, so compaction stays rare. */
 export const COMPACTION_TARGET_RATIO = 0.5
 

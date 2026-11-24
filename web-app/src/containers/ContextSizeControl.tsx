@@ -216,6 +216,7 @@ export function ContextSizeControl({
     provider,
     selectedModel,
     strataMax,
+    deviceLimit,
     contextSetting,
     draft: draftContext,
     setDraft: setDraftContext,
@@ -414,6 +415,21 @@ export function ContextSizeControl({
                 <span>{formatContextSize(sliderMin)}</span>
                 <span>{formatContextSize(sliderMax)}</span>
               </div>
+              {deviceLimit && (
+                <p
+                  className="text-sm leading-snug text-muted-foreground"
+                  data-testid="context-size-device-max"
+                >
+                  {deviceLimit.trainedCtx
+                    ? t('assistants:contextSizeDeviceMaxBelowTrained', {
+                        size: formatContextSize(deviceLimit.maxCtx),
+                        trained: formatContextSize(deviceLimit.trainedCtx),
+                      })
+                    : t('assistants:contextSizeDeviceMax', {
+                        size: formatContextSize(deviceLimit.maxCtx),
+                      })}
+                </p>
+              )}
             </div>
           )
         )}

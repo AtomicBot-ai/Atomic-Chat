@@ -624,6 +624,45 @@ describe('DefaultModelsService', () => {
       )
     })
 
+    it.each([
+      // provider, ctx_len, chosen by the user, ctx_size sent
+      ['llamacpp-upstream', 16384, false, undefined],
+      ['mlx', 8192, false, undefined],
+      ['llamacpp-upstream', 16384, true, 16384],
+      ['atomic-prism', 65536, false, 65536],
+      ['openai', 16384, false, 16384],
+    ])(
+      'leaves a %s ctx_len of %s nobody chose to the core (user set: %s)',
+      async (providerName, ctxLen, userSet, sent) => {
+        const settings = {
+          ctx_len: { controller_props: { value: ctxLen } },
+          ngl: { controller_props: { value: 32 } },
+          ...(userSet
+            ? { ctx_len_user_set: { controller_props: { value: true } } }
+            : {}),
+        }
+        const provider = {
+          provider: providerName,
+          models: [{ id: 'model1', settings }],
+        } as any
+        mockEngine.getLoadedModels.mockResolvedValue({ includes: () => false })
+        mockEngine.load.mockResolvedValue({ id: 'session1' })
+
+        await modelsService.startModel(provider, 'model1')
+
+        // The marker is the app's own and never reaches an engine.
+        expect(mockEngine.load).toHaveBeenCalledWith(
+          'model1',
+          sent === undefined
+            ? { n_gpu_layers: 32 }
+            : { ctx_size: sent, n_gpu_layers: 32 },
+          false,
+          false,
+          undefined
+        )
+      }
+    )
+
     it('should handle start model error', async () => {
       const mockSettings = {
         ctx_len: { controller_props: { value: 4096 } },

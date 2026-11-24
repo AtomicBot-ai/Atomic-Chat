@@ -9,10 +9,20 @@ import { useThreads } from '@/hooks/useThreads'
 import type { ServiceHub } from '@/services'
 import type { ModelsService } from '@/services/models/types'
 import { seedServiceHub } from '@/test/service-hub'
+import { CTX_LEN_USER_SET_KEY } from '@/lib/planned-context-window'
 import { toast } from 'sonner'
 
 vi.mock('sonner', () => ({
   toast: { success: vi.fn() },
+}))
+
+const { fetchContextPlan } = vi.hoisted(() => ({
+  fetchContextPlan: vi.fn().mockResolvedValue(undefined),
+}))
+
+vi.mock('@/lib/context-plan', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/context-plan')>()),
+  fetchContextPlan,
 }))
 
 class MockResizeObserver {
@@ -252,6 +262,42 @@ describe('RunSettingsPanel', () => {
     expect(
       screen.queryByRole('button', { name: 'Context Size' })
     ).not.toBeInTheDocument()
+  })
+
+  it('says how much context this device holds, from the core plan', async () => {
+    fetchContextPlan.mockResolvedValueOnce({
+      recommendedCtx: 32768,
+      maxCtx: 32768,
+      basis: 'unified',
+    })
+    seedModel('mlx')
+    await act(async () => {
+      render(<RunSettingsPanel onClose={onClose} />)
+    })
+
+    expect(fetchContextPlan).toHaveBeenCalledWith('mlx', 'test-model')
+    expect(
+      await screen.findByTestId('run-settings-device-max')
+    ).toHaveTextContent('assistants:contextSizeDeviceMax')
+  })
+
+  it('shows no device hint without a plan, and marks a committed context as chosen', async () => {
+    seedModel('llamacpp')
+    await act(async () => {
+      render(<RunSettingsPanel onClose={onClose} />)
+    })
+    expect(screen.queryByTestId('run-settings-device-max')).toBeNull()
+
+    await act(async () => {
+      fireEvent.keyDown(
+        screen.getByRole('slider', { name: 'assistants:contextSize' }),
+        { key: 'ArrowRight' }
+      )
+    })
+    const settings = useModelProvider.getState().getProviderByName('llamacpp')
+      ?.models[0].settings
+    expect(settings?.ctx_len.controller_props.value).toBe(9216)
+    expect(settings?.[CTX_LEN_USER_SET_KEY]?.controller_props.value).toBe(true)
   })
 
   it.each(['openai', 'chatgpt'])(

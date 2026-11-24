@@ -11,6 +11,10 @@ import {
  */
 
 import { managedEngines } from '@/lib/managed-engines'
+import {
+  CTX_LEN_USER_SET_KEY,
+  sendsCtxSize,
+} from '@/lib/planned-context-window'
 import { LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
 import {
   AIEngine,
@@ -999,15 +1003,25 @@ export class DefaultModelsService implements ModelsService {
       return keyMappings[key] || key
     }
 
+    // A `ctx_len` nobody chose stays home, so the core sizes the window to
+    // this device (lib/planned-context-window.ts). The marker is the app's own.
+    const sendCtxSize = sendsCtxSize(provider.provider, modelConfig?.settings)
+
     // FastFlowLM and Strata use their provider schemas for launch settings. The
     // generic text-model settings can override defaults or add unsupported fields.
     const settings =
       provider.provider !== 'fastflowlm' && provider.provider !== 'strata' && modelConfig?.settings
         ? Object.fromEntries(
-            Object.entries(modelConfig.settings).map(([key, value]) => [
-              mapSettingKey(key),
-              value.controller_props?.value,
-            ])
+            Object.entries(modelConfig.settings)
+              .filter(
+                ([key]) =>
+                  key !== CTX_LEN_USER_SET_KEY &&
+                  (sendCtxSize || key !== 'ctx_len')
+              )
+              .map(([key, value]) => [
+                mapSettingKey(key),
+                value.controller_props?.value,
+              ])
           )
         : undefined
 

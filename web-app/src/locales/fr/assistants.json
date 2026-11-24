@@ -55,6 +55,8 @@
   "contextSizeFitHint": "Laissez le moteur choisir le plus grand contexte compatible avec cet appareil. Désactivé : réglez-le manuellement.",
   "contextSizeFitOn": "Choisie par le moteur pour tenir dans la mémoire de cet appareil. Désactivez l'option pour la régler manuellement.",
   "contextSizeFitAtMax": "Le contexte est ajusté à la mémoire de cet appareil. Désactivez \"Ajuster à la mémoire de l'appareil\" dans les paramètres du modèle pour le régler manuellement.",
+  "contextSizeDeviceMax": "Jusqu'à {{size}} sur cet appareil",
+  "contextSizeDeviceMaxBelowTrained": "Jusqu'à {{size}} sur cet appareil ; le modèle en prend en charge {{trained}}",
   "paramCategory": {
     "sampling": "Échantillonnage",
     "penalties": "Pénalités",

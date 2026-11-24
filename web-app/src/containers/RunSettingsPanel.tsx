@@ -320,6 +320,27 @@ export function RunSettingsPanel({ onClose }: RunSettingsPanelProps) {
                       onValueChange={([value]) => context.setDraft(value)}
                       onValueCommit={([value]) => context.commit(value)}
                     />
+                    {context.deviceLimit && (
+                      <p
+                        className="text-xs leading-normal text-muted-foreground"
+                        data-testid="run-settings-device-max"
+                      >
+                        {context.deviceLimit.trainedCtx
+                          ? t('assistants:contextSizeDeviceMaxBelowTrained', {
+                              size: formatContextSize(
+                                context.deviceLimit.maxCtx
+                              ),
+                              trained: formatContextSize(
+                                context.deviceLimit.trainedCtx
+                              ),
+                            })
+                          : t('assistants:contextSizeDeviceMax', {
+                              size: formatContextSize(
+                                context.deviceLimit.maxCtx
+                              ),
+                            })}
+                      </p>
+                    )}
                     <p className="text-xs leading-normal text-muted-foreground">
                       {context.fitEnabled
                         ? t('assistants:contextSizeFitOn')

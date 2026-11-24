@@ -13,13 +13,13 @@
   {
     "key": "context_length",
     "title": "Context Length",
-    "description": "Maximum prompt plus reply length in tokens, fixed when the model starts. A longer request is refused with context_length_exceeded instead of restarting the model. Applies from the next model load.",
+    "description": "Maximum prompt plus reply length in tokens, fixed when the model starts. 0 = automatic: the longest the model takes that the card has room for, down to 8K when it has not. Otherwise 512 or more. A longer request is refused with context_length_exceeded instead of restarting the model. Applies from the next model load.",
     "controllerType": "input",
     "controllerProps": {
-      "value": 8192,
-      "placeholder": "8192",
+      "value": 0,
+      "placeholder": "0",
       "type": "number",
-      "min": 512,
+      "min": 0,
       "max": 1048576
     }
   },
