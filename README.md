@@ -116,7 +116,7 @@ Bound to `127.0.0.1` by default; set `host: 0.0.0.0` to expose it on your LAN. W
 
 ### ⚙️ Inference Engines
 
-Twelve engines under the hood, all exposed through one OpenAI-compatible API at `http://localhost:1337/v1`. Each shows up as a provider only where it can run; the ones that need a download install from **Settings → Providers** in one click.
+Atomic Chat runs text, vision, image, video and audio models locally. Open **Settings → Providers** to install a provider for your hardware. Clients can access loaded models through the OpenAI-compatible API at `http://localhost:1337/v1`.
 
 **Text and vision models**
 
@@ -137,11 +137,14 @@ Twelve engines under the hood, all exposed through one OpenAI-compatible API at 
 
 TensorRT-LLM, vLLM and SGLang run in a container that Atomic Chat sets up and manages itself; on Windows it lives in Atomic Chat's own WSL distribution.
 
-**Images and video**
+**Images, video and audio**
 
 | Engine                                                                                                                                         | What it runs                                                                                        | Where                                                                   |
 | ---------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | **[stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp)** ([our build](https://github.com/AtomicBot-ai/stable-diffusion.cpp)) | Images (FLUX, Qwen-Image, Z-Image, Krea) and video (Wan 2.2, LTX-2), in the Images and Videos tabs. | macOS on Apple Silicon, Windows, Linux — CPU, Metal, CUDA, Vulkan, ROCm |
+| **[audio.cpp](https://github.com/0xShug0/audio.cpp)** ([our build](https://github.com/AtomicBot-ai/audio.cpp)) | Speech (MOSS-TTS-Nano 100M, Qwen3-TTS 1.7B), music (ACE-Step 1.5 Turbo) and sound effects (Stable Audio 3 Small SFX). | macOS on Apple Silicon, Windows and Linux on x64 or arm64 |
+
+Open **Audios** in the desktop app, install the audio engine, then choose a mode and download a model. Enter the text to read aloud or describe the music or sound effect you want, then select **Generate**. With a speech model loaded, API clients can also synthesize speech at `POST /v1/audio/speech`.
 
 Speculative-decoding features available across backends:
 
@@ -298,7 +301,7 @@ If something isn't working:
 Atomic Chat is built by a small core team and **140+ contributors** — including everyone who shaped the project from its earliest days. Pull requests are welcome in both repositories:
 
 - **[Atomic-Chat](https://github.com/AtomicBot-ai/Atomic-Chat)** (this repo) — the desktop and mobile app: UI, chats, assistants, projects, MCP, integrations, settings. See [CONTRIBUTING.md](CONTRIBUTING.md) to get started.
-- **[atomic-chat-core](https://github.com/AtomicBot-ai/atomic-chat-core)** — the core that manages the engines (llama.cpp, MLX, Foundation Models, Foundry Local, LiteRT-LM, GenieX, TensorRT-LLM, vLLM, SGLang, stable-diffusion.cpp): backend and model management, cloud providers, the router and the OpenAI-compatible server. See its [AGENTS.md](https://github.com/AtomicBot-ai/atomic-chat-core/blob/main/AGENTS.md) to get started.
+- **[atomic-chat-core](https://github.com/AtomicBot-ai/atomic-chat-core)** — the core that manages the engines (llama.cpp, MLX, Foundation Models, Foundry Local, LiteRT-LM, GenieX, TensorRT-LLM, vLLM, SGLang, stable-diffusion.cpp, audio.cpp): backend and model management, cloud providers, the router and the OpenAI-compatible server. See its [AGENTS.md](https://github.com/AtomicBot-ai/atomic-chat-core/blob/main/AGENTS.md) to get started.
 
 Not sure where a change belongs? Open an issue in either repo and we'll point you the right way.
 
@@ -465,6 +468,7 @@ Built on the shoulders of giants:
 - [llama.cpp](https://github.com/ggml-org/llama.cpp)
 - [MLX-VLM](https://github.com/Blaizzy/mlx-vlm)
 - [stable-diffusion.cpp](https://github.com/leejet/stable-diffusion.cpp)
+- [audio.cpp](https://github.com/0xShug0/audio.cpp)
 - [Foundry Local](https://github.com/microsoft/Foundry-Local), [LiteRT-LM](https://github.com/google-ai-edge/LiteRT-LM), [GenieX](https://github.com/qualcomm/GenieX)
 - [TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM), [vLLM](https://github.com/vllm-project/vllm), [SGLang](https://github.com/sgl-project/sglang)
 - [Tauri](https://tauri.app/)
