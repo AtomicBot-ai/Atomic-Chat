@@ -1553,6 +1553,7 @@ export class ModelFactory {
       case 'openrouter':
       case 'aimlapi':
       case 'edenai':
+      case 'cheaperinference':
       case 'huggingface':
       case 'nvidia':
       case 'ollama':
