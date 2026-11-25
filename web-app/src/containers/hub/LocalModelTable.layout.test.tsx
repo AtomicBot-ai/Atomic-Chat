@@ -161,6 +161,28 @@ describe('LocalModelTable layout', () => {
     setFontSize(DEFAULT_FONT_SIZE)
   })
 
+  it('brings a linked Gemma card into view when its row arrives below the fold', async () => {
+    const repo = 'AtomicChat/gemma-4-E4B-it-GGUF'
+    const other = Array.from({ length: 24 }, (_, i) => ({
+      model: gguf(`org/Model-${i}-4B`, '2 GB'),
+    }))
+    const list = (items: LocalModelTableItem[]) => withTranslations(
+      <div data-testid="viewport" style={{ height: 360, overflowY: 'auto' }}>
+        <LocalModelTable items={items} selected={repo} revealSelected
+          onSelect={() => {}} budgetBytes={24 * GB} availableEngines={ENGINES} />
+      </div>
+    )
+    const view = render(list(other))
+    view.rerender(list([...other, { model: gguf(repo, '3 GB') }]))
+    await settle()
+    const viewport = screen.getByTestId('viewport')
+    const card = viewport.querySelector<HTMLElement>('.local-model-expanded')!
+    expect(viewport.scrollTop).toBeGreaterThan(0)
+    expect(card.getBoundingClientRect().top).toBeGreaterThanOrEqual(viewport.getBoundingClientRect().top - 1)
+    expect(card.getBoundingClientRect().top).toBeLessThan(viewport.getBoundingClientRect().bottom)
+    view.unmount()
+  })
+
   it.each([
     [1024, XL_FONT_SIZE],
     [1280, DEFAULT_FONT_SIZE],

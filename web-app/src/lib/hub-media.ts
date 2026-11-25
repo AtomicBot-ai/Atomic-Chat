@@ -27,6 +27,7 @@ export type HubCategory =
   | 'audio'
   | 'decision'
   | 'embedding'
+  | 'drafters'
   | 'voice'
 
 export const HUB_CATEGORIES: readonly HubCategory[] = [
@@ -37,6 +38,7 @@ export const HUB_CATEGORIES: readonly HubCategory[] = [
   'decision',
   'embedding',
   'voice',
+  'drafters',
 ]
 
 export const isHubCategory = (value: unknown): value is HubCategory =>

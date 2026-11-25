@@ -167,6 +167,7 @@ vi.mock('@/containers/hub/ModelDetailPanel', () => ({
     unserved,
     engines,
     onCollapse,
+    onFindDspark,
   }: {
     model: CatalogModel
     facts?: { format?: string }
@@ -174,6 +175,7 @@ vi.mock('@/containers/hub/ModelDetailPanel', () => ({
     unserved?: object
     engines?: string[]
     onCollapse: () => void
+    onFindDspark?: (repo: string) => void
   }) => (
     <aside
       data-testid="detail-panel"
@@ -185,6 +187,7 @@ vi.mock('@/containers/hub/ModelDetailPanel', () => ({
       data-engines={engines?.join(',') ?? ''}
     >
       {model.model_name}
+      <button onClick={() => onFindDspark?.(model.model_name)}>Find drafters</button>
       <button type="button" onClick={onCollapse}>
         collapse-row
       </button>
@@ -896,6 +899,35 @@ describe('/hub route', () => {
       screen.queryByRole('button', { name: /hub:table.expand.*Gemma 4 12B/ })
     ).not.toBeInTheDocument()
     expect(mocks.navigate).not.toHaveBeenCalled()
+  })
+
+  it('reveals the resolved card for View model even with a saved search and different repository casing', async () => {
+    const repo = 'AtomicChat/gemma-4-E4B-it-GGUF'
+    setHubSearchQuery('some-other-model')
+    mocks.search = { model: repo, repo }
+    mocks.sources = [model('gemma-4-E4B-it-GGUF', { developer: 'atomicchat' })]
+    const scroll = vi.spyOn(Element.prototype, 'scrollIntoView')
+    try {
+      render(<HubPage />)
+      const card = await screen.findByTestId('detail-panel')
+      expect(card).toHaveTextContent('gemma-4-E4B-it-GGUF')
+      expect(scroll.mock.contexts).toContain(card.closest('tr'))
+      expect(mocks.fetchHuggingFaceRepo).not.toHaveBeenCalled()
+    } finally {
+      scroll.mockRestore()
+    }
+  })
+
+  it('opens Drafters in a new history entry and keeps the expanded card in the previous entry', async () => {
+    const source = 'google/gemma-4-12b-GGUF'
+    mocks.search = { model: source }
+    render(<HubPage />)
+    await userEvent.click(screen.getByRole('button', { name: 'Find drafters' }))
+    expect(mocks.navigate.mock.calls.at(-1)?.[0]).toEqual({
+      to: '/hub/',
+      search: { category: 'drafters', source },
+    })
+    expect(mocks.search).toEqual({ model: source })
   })
 
   it('opens no row on arrival', async () => {
@@ -1836,11 +1868,11 @@ describe('/hub route', () => {
       )
     }
 
-    it('stays the chat catalog without the media engine, whatever the URL says', () => {
+    it('stays the chat catalog without the media engine, when the URL asks for images', () => {
       mocks.search = { category: 'image' }
       render(<HubPage />)
 
-      expect(picker()).not.toBeInTheDocument()
+      expect(picker()).toHaveAttribute('data-mode', 'chat')
       expect(screen.queryByTestId('media-hub')).not.toBeInTheDocument()
       expect(screen.getByText('Qwen3.5 4B')).toBeInTheDocument()
     })
@@ -2002,6 +2034,7 @@ describe('/hub route', () => {
         'hub-category-workflow-option-image',
         'hub-category-workflow-option-video',
         'hub-category-workflow-option-audio',
+        'hub-category-workflow-option-drafters',
       ])
     })
 

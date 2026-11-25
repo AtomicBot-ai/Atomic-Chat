@@ -116,6 +116,7 @@ export type ModelDetailPanelProps = {
   budgetBytes: number
   liked: boolean
   onToggleLike: () => void
+  onFindDspark?: (source: string) => void
   onCollapse: () => void
   className?: string
 }
@@ -131,6 +132,7 @@ export type ModelDetailPanelProps = {
  * later and moving the rest.
  */
 export function ModelDetailPanel({
+  onFindDspark,
   model,
   onStrataVariantChange,
   name,
@@ -269,6 +271,18 @@ export function ModelDetailPanel({
             className={liked ? 'fill-rose-400 text-rose-400' : undefined}
           />
         </Button>
+        {onFindDspark &&
+          facts.format === 'gguf' &&
+          engines.includes('llamacpp-upstream') && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0 rounded-full"
+              onClick={() => onFindDspark(hubRepoId(model))}
+            >
+              {t('hub:drafters.find')}
+            </Button>
+          )}
         <SourceLink model={model} />
       </header>
       <dl className="model-expanded-facts grid gap-3 p-4 text-xs">

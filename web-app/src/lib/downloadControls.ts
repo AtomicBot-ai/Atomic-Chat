@@ -32,6 +32,7 @@ import { isEngineUpdateTaskId } from '@/services/engines/update'
  */
 export function isPausableDownload(id: string): boolean {
   return (
+    !id.startsWith('dspark:') &&
     !id.startsWith('llamacpp') &&
     !isDiffusionEngineTaskId(id) &&
     !isEngineBuildTaskId(id) &&

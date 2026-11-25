@@ -189,7 +189,10 @@ impl ControlClient {
             return Err(CoreError::new(
                 "CORE_PROTOCOL_MISMATCH",
                 "This core does not belong to the Atomic Chat application.",
-                Some(format!("scope {:?} at {}", health.owner_scope, self.base_url)),
+                Some(format!(
+                    "scope {:?} at {}",
+                    health.owner_scope, self.base_url
+                )),
             ));
         }
         if health.protocol != CONTROL_PROTOCOL_VERSION {
@@ -377,14 +380,21 @@ impl ControlClient {
 /// so any client deadline of the same length would fire first and hide the core's own error. An
 /// audio model's load answers likewise once `audiocpp_server` serves it, under the same budget.
 fn control_call_timeout(method: &reqwest::Method, path: &str) -> Option<Duration> {
-    if method == reqwest::Method::POST
-        && ((path.starts_with("/models/") && (path.ends_with("/load") || path.ends_with("/embed")))
-            || ((path.starts_with("/backends/") || path.starts_with("/engine-builds/"))
-                && path.ends_with("/install"))
-            || (path.starts_with("/engines/") && path.ends_with("/update"))
-            || path == "/diffusion/model/load"
-            || path == "/audio/model/load"
-            || path == "/runtimes/foundry-local/accelerators/prepare")
+    if (method == reqwest::Method::PUT
+        && path.starts_with("/models/llamacpp-upstream/")
+        && path.ends_with("/drafter"))
+        || (method == reqwest::Method::DELETE && path.starts_with("/drafters/"))
+        || (method == reqwest::Method::GET && path.starts_with("/drafters/search?"))
+        || method == reqwest::Method::POST
+            && ((path.starts_with("/drafters/") && path.ends_with("/install"))
+                || (path.starts_with("/models/")
+                    && (path.ends_with("/load") || path.ends_with("/embed")))
+                || ((path.starts_with("/backends/") || path.starts_with("/engine-builds/"))
+                    && path.ends_with("/install"))
+                || (path.starts_with("/engines/") && path.ends_with("/update"))
+                || path == "/diffusion/model/load"
+                || path == "/audio/model/load"
+                || path == "/runtimes/foundry-local/accelerators/prepare")
     {
         None
     } else {

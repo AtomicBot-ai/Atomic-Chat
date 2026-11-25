@@ -157,7 +157,7 @@ const NON_WEIGHT_GGUF_PREFIX =
 // DFlash drafts carry the target's name with `DFlash` inside it
 // (`Qwen3.6-27B-DFlash.Q8_0`, `qwen3.5-9b-dflash-Q4_K_M`); no full model is
 // named that way, so the token counts wherever it stands.
-const DFLASH_DRAFT_TOKEN = /(?:^|[-_.])dflash(?:[-_.]|$)/
+const DFLASH_DRAFT_TOKEN = /(?:^|[-_.])(?:dflash|dspark)(?:[-_.]|$)/
 
 // Gemma 4's MTP drafter ships as `<target>-assistant`
 // (`gemma-4-26B-A4B-it-assistant.Q8_0`) and loads as the `gemma4-assistant`

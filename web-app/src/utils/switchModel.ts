@@ -679,7 +679,11 @@ function clearModelLoadError() {
   useModelLoad.getState().setModelLoadError(undefined)
 }
 
-function syncModelSelection(providerName: string, modelId: string) {
+function syncModelSelection(
+  providerName: string,
+  modelId: string,
+  updateThread = true
+) {
   const serverState = useLocalApiServer.getState()
 
   useModelProvider.getState().selectModelProvider(providerName, modelId)
@@ -692,10 +696,9 @@ function syncModelSelection(providerName: string, modelId: string) {
 
   setLastUsedModel(providerName, modelId)
 
-  useThreads.getState().updateCurrentThreadModel({
-    id: modelId,
-    provider: providerName,
-  })
+  if (updateThread) {
+    useThreads.getState().updateCurrentThreadModel({ id: modelId, provider: providerName })
+  }
 }
 
 async function isTargetModelAlreadyServing(params: {
@@ -788,6 +791,7 @@ export async function switchToModel(params: {
   providerName: string
   serviceHub: ServiceHub
   isAutoStart?: boolean
+  updateCurrentThread?: boolean
 }): Promise<void> {
   // Claim a slot in the queue. `mySeq` lets us detect if a newer switch was
   // enqueued behind us while we waited for earlier ones to finish.
@@ -845,7 +849,11 @@ export async function switchToModel(params: {
       // is already "active" in the UI so re-selecting the same cloud target
       // does not wipe out the global active-model state.
       syncActiveModelsFromEngines(activeModels || [])
-      syncModelSelection(params.providerName, params.modelId)
+      syncModelSelection(
+        params.providerName,
+        params.modelId,
+        params.updateCurrentThread
+      )
       // WS2: the target is healthy — clear any prior auto-start failure record.
       clearAutoStartFailure(params.providerName, params.modelId)
       // ATO-63: the model is up — drop any stale "Failed to load" toast.
@@ -989,6 +997,7 @@ async function doSwitchToModel(
     providerName: string
     serviceHub: ServiceHub
     isAutoStart?: boolean
+    updateCurrentThread?: boolean
   },
   /** A switch requested after this one is waiting behind it. */
   isSuperseded: () => boolean = () => false,
@@ -1283,7 +1292,7 @@ async function doSwitchToModel(
     }
 
     // 7. Synchronise the rest of global state (dropdown, thread, localStorage).
-    syncModelSelection(providerName, modelId)
+    syncModelSelection(providerName, modelId, params.updateCurrentThread)
 
     // WS2: load succeeded — clear any prior auto-start failure record so the
     // model is eligible for automatic start again.

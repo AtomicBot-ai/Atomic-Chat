@@ -27,6 +27,7 @@ import {
   IconX,
 } from '@tabler/icons-react'
 import { Button } from '@/components/ui/button'
+import { drafters } from '@/services/drafters'
 import ReasoningEffortPanel from '@/containers/ReasoningEffortPanel'
 import { useReasoningEffort } from '@/hooks/useReasoningEffort'
 import { useNavigate } from '@tanstack/react-router'
@@ -104,7 +105,7 @@ const NON_CHAT_CAPABILITIES = new Set([
 ])
 
 const hasArtifactToken = (id: string): boolean =>
-  /(?:^|[/:._-])(?:backend|decision|diffusion|draft-(?:mtp|dflash|eagle3)|embed(?:ding|dings)?|engine|image|laya|mmproj|projector|rerank(?:er)?|sidecar|stt|tts|video|voice|whisper)(?=$|[/:._-])/i.test(
+  /(?:^|[/:._-])(?:backend|decision|diffusion|dspark|draft-(?:mtp|dflash|eagle3)|embed(?:ding|dings)?|engine|image|laya|mmproj|projector|rerank(?:er)?|sidecar|stt|tts|video|voice|whisper)(?=$|[/:._-])/i.test(
     id
   )
 
@@ -371,6 +372,10 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
   const selectedModel = useModelProvider((state) => state.selectedModel)
   const updateProvider = useModelProvider((state) => state.updateProvider)
+  useEffect(() => {
+    if (selectedProvider === 'llamacpp-upstream' && selectedModel?.id)
+      void drafters.selection(selectedModel.id).catch(() => {})
+  }, [selectedProvider, selectedModel?.id])
   const [displayModel, setDisplayModel] = useState<string>('')
   const navigate = useNavigate()
   const { t } = useTranslation()

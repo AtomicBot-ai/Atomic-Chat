@@ -75,9 +75,12 @@ const COLUMNS = [
 ] as const satisfies readonly { key: string; sort?: HubSortableColumn }[]
 
 export type LocalModelTableProps = {
+  onFindDspark?: (source: string) => void
   items: readonly LocalModelTableItem[]
   /** The open row's model id, or `null` when every row is closed. */
   selected: string | null
+  /** Bring a card opened via a repository link into the viewport once it mounts. */
+  revealSelected?: boolean
   /** Open a row, or close the open one (`null`). */
   onSelect: (modelId: string | null) => void
   /** Memory budget in bytes; 0 leaves the fit unknown. */
@@ -93,6 +96,10 @@ export type LocalModelTableProps = {
    * the rows change, before anything is measured, so a parent never pages on a stale reading.
    */
   onEndVisibleChange?: (visible: boolean) => void
+}
+
+function revealModelRow(row: HTMLTableRowElement | null) {
+  row?.scrollIntoView({ block: 'start', inline: 'nearest' })
 }
 
 type Row = LocalModelTableItem & {
@@ -149,8 +156,10 @@ const awaitsCard = (item: LocalModelTableItem) =>
  * rows the parent fetches sizes for, and the end of the list, where it asks for the next page.
  */
 export function LocalModelTable({
+  onFindDspark,
   items,
   selected,
+  revealSelected,
   onSelect,
   budgetBytes,
   format,
@@ -165,9 +174,12 @@ export function LocalModelTable({
     column: HubSortableColumn
     direction: 1 | -1
   } | null>(null)
-  const [selectedQuants, setSelectedQuants] = useState<Record<string, string>>({})
-  const installedStrata = useModelProvider((state) =>
-    state.providers.find((provider) => provider.provider === 'strata')?.models
+  const [selectedQuants, setSelectedQuants] = useState<Record<string, string>>(
+    {}
+  )
+  const installedStrata = useModelProvider(
+    (state) =>
+      state.providers.find((provider) => provider.provider === 'strata')?.models
   )
   const selectQuant = useCallback((modelId: string, variantId: string) => {
     setSelectedQuants((current) => ({ ...current, [modelId]: variantId }))
@@ -191,9 +203,16 @@ export function LocalModelTable({
     const built = items.map((item) => {
       const variants = item.model.strataVariants
       const selectedVariant =
-        variants?.find((variant) => variant.variant_id === selectedQuants[item.model.model_name]) ??
-        variants?.find((variant) => installedStrata?.some((model) => model.id === variant.variant_id))
-      const model = selectedVariant ? { ...item.model, strata: selectedVariant } : item.model
+        variants?.find(
+          (variant) =>
+            variant.variant_id === selectedQuants[item.model.model_name]
+        ) ??
+        variants?.find((variant) =>
+          installedStrata?.some((model) => model.id === variant.variant_id)
+        )
+      const model = selectedVariant
+        ? { ...item.model, strata: selectedVariant }
+        : item.model
       const listed = hubModelFacts(model, {
         format: item.format ?? format,
         budgetBytes,
@@ -239,7 +258,16 @@ export function LocalModelTable({
         return order * sort.direction
       })
       .map((row) => ({ ...row, section: undefined }))
-  }, [items, format, budgetBytes, availableEngines, sort, hubParams, selectedQuants, installedStrata])
+  }, [
+    items,
+    format,
+    budgetBytes,
+    availableEngines,
+    sort,
+    hubParams,
+    selectedQuants,
+    installedStrata,
+  ])
 
   // The rows on screen are measured again only when the rows themselves change
   // (a page arrives, a sort, a row opens), not when a size fills in.
@@ -378,14 +406,23 @@ export function LocalModelTable({
                     </tr>
                   )}
                   {selected === id ? (
-                    <tr data-model-row={id} className="local-model-expanded">
+                    <tr
+                      ref={revealSelected ? revealModelRow : undefined}
+                      data-model-row={id}
+                      className="local-model-expanded"
+                    >
                       <td
                         colSpan={COLUMNS.length}
                         className="border-t border-border bg-secondary/10"
                       >
                         <ModelDetailPanel
+                          onFindDspark={onFindDspark}
                           model={row.model}
-                          onStrataVariantChange={row.model.strataVariants ? (variant) => selectQuant(id, variant) : undefined}
+                          onStrataVariantChange={
+                            row.model.strataVariants
+                              ? (variant) => selectQuant(id, variant)
+                              : undefined
+                          }
                           name={row.name}
                           pickIcon={row.pick?.icon}
                           facts={row.facts}

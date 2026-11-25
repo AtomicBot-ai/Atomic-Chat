@@ -132,9 +132,10 @@ vi.mock('@/hooks/useModelLoad', () => ({
   },
 }))
 
+const updateCurrentThreadModel = vi.hoisted(() => vi.fn())
 vi.mock('@/hooks/useThreads', () => ({
   useThreads: {
-    getState: () => ({ updateCurrentThreadModel: vi.fn() }),
+    getState: () => ({ updateCurrentThreadModel }),
   },
 }))
 
@@ -253,6 +254,18 @@ describe('switchToModel', () => {
         stopServer,
       },
     } as typeof window.core
+  })
+
+  it('switches the model for a new chat without changing the previous conversation', async () => {
+    const providerName = 'llamacpp-upstream'
+    const modelId = 'org/installed'
+    const serviceHub = {
+      app: () => ({ getServerStatus: async () => true }),
+      models: () => createLoadedEngines({ [providerName]: [modelId] }),
+    } as unknown as ServiceHub
+    await switchToModel({ modelId, providerName, serviceHub, updateCurrentThread: false })
+    expect(modelProviderState.selectModelProvider).toHaveBeenCalledWith(providerName, modelId)
+    expect(updateCurrentThreadModel).not.toHaveBeenCalled()
   })
 
   it('restores a previously running API server after model load failure', async () => {

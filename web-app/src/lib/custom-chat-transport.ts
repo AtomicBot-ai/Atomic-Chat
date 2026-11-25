@@ -1,3 +1,4 @@
+import { useDsparkSelection } from '@/services/drafters'
 import { useMCPServers } from '@/hooks/useMCPServers'
 import { isWebSearchServer } from '@/lib/web-search'
 import { type UIMessage } from '@ai-sdk/react'
@@ -340,9 +341,11 @@ export function stripAgentRunToolParts<T extends UIMessage>(
 
 export function shouldSuppressToolsForUpstreamDflash(
   providerId: string,
-  settings: readonly ProviderSetting[] | undefined
+  settings: readonly ProviderSetting[] | undefined,
+  modelId = useModelProvider.getState().selectedModel?.id
 ): boolean {
   return (
+    !(modelId && useDsparkSelection.getState().ids[modelId]) &&
     providerId === 'llamacpp-upstream' &&
     settings?.some(
       (setting) =>
@@ -1733,7 +1736,12 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
         // top_k 64) is layered on at request time unless the user has tuned
         // that assistant's sampling — non-destructive, follows the active model.
         const sampling = getSamplingParamsForThread(this.threadId)
-        const providerSettings = updatedProvider?.settings ?? provider.settings
+        const rawSettings = updatedProvider?.settings ?? provider.settings
+        const providerSettings =
+          providerId === 'llamacpp-upstream' &&
+          useDsparkSelection.getState().ids[modelId]
+            ? rawSettings?.filter((setting) => setting.key !== 'dflash')
+            : rawSettings
         const inferenceParams = withUpstreamDflashSampling(
           providerId,
           providerSettings,

@@ -17,6 +17,11 @@ const CATEGORY: Record<
   HubCategory,
   { icon: ComponentType<IconProps>; title: string; hint: string }
 > = {
+  drafters: {
+    icon: IconArrowsSplit,
+    title: 'hub:drafters.title',
+    hint: 'hub:drafters.hint',
+  },
   chat: {
     icon: IconMessage,
     title: 'hub:categoryChat',

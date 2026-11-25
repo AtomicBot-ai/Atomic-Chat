@@ -7,6 +7,7 @@ import { useAssistant } from '@/hooks/useAssistant'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useThreads } from '@/hooks/useThreads'
 import type { ModelsService } from '@/services/models/types'
+import { drafters } from '@/services/drafters'
 import { seedServiceHub } from '@/test/service-hub'
 import {
   expectNoHorizontalOverflow,
@@ -16,7 +17,12 @@ import {
   XL_FONT_SIZE,
 } from '@/test/layout'
 
-function seedLocalModel() {
+vi.mock('@tanstack/react-router', async (original) => ({
+  ...(await original<typeof import('@tanstack/react-router')>()),
+  useNavigate: () => vi.fn(),
+}))
+
+function seedLocalModel(provider = 'llamacpp') {
   const model = {
     id: 'test-model',
     name: 'Test model',
@@ -37,8 +43,8 @@ function seedLocalModel() {
     },
   } as unknown as Model
   useModelProvider.setState({
-    providers: [{ provider: 'llamacpp', models: [model] } as ModelProvider],
-    selectedProvider: 'llamacpp',
+    providers: [{ provider, models: [model] } as ModelProvider],
+    selectedProvider: provider,
     selectedModel: model,
   })
 }
@@ -125,4 +131,34 @@ describe('Run settings panel header (Chromium)', () => {
       expectNoHorizontalOverflow(panel)
     }
   )
+})
+
+it('shows drafter discovery between context and advanced settings before any download', async () => {
+  seedLocalModel('llamacpp-upstream')
+  vi.spyOn(drafters, 'choices').mockResolvedValue({
+    files: [],
+    id: null,
+    target: 'org/base',
+  })
+  await page.viewport(1024, 680)
+  setFontSize(XL_FONT_SIZE)
+  render(
+    withTranslations(
+      <div style={{ width: 260, height: 540 }}>
+        <RunSettingsPanel onClose={vi.fn()} />
+      </div>
+    )
+  )
+  const find = await screen.findByRole('button', { name: 'Find drafters' })
+  const picker = screen.getByRole('button', { name: /^Drafter / })
+  expect((picker as HTMLButtonElement).disabled).toBe(true)
+  const context = screen.getByText('Context Size')
+  const advanced = screen.getByRole('switch', { name: 'Advanced settings' })
+  expect(context.getBoundingClientRect().bottom).toBeLessThan(
+    find.getBoundingClientRect().top
+  )
+  expect(picker.getBoundingClientRect().bottom).toBeLessThan(
+    advanced.getBoundingClientRect().top
+  )
+  expectNoHorizontalOverflow(document.querySelector('aside')!)
 })

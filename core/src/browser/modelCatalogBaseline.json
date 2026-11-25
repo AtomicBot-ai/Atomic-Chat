@@ -3,6 +3,160 @@
   "schema_version": 1,
   "updated_at": "2026-11-06T09:05:18Z",
   "models": {
+    "auxiliary:dspark:thinkingmachines/Inkling-2-Mini": {
+      "kind": "auxiliary",
+      "format": "gguf",
+      "definition": {
+        "method": "dspark",
+        "target": "thinkingmachines/Inkling-2-Mini",
+        "target_repo": "unsloth/Inkling-2-Mini-GGUF",
+        "target_size": 17629760736,
+        "repo": "unsloth/Inkling-2-Mini-GGUF",
+        "revision": "8078d149286eec7193795413b9e0643da6d11fa1",
+        "quant": "Q8_0",
+        "target_sha256": "e64276656f072e9b2197a61723667cbdb71da66a716ffd966e572c21088f3cd3"
+      },
+      "variants": {
+        "default": {
+          "selection": "dspark-Inkling-2-Mini-Q8_0.gguf"
+        }
+      },
+      "files": [
+        {
+          "path": "dspark-Inkling-2-Mini-Q8_0.gguf",
+          "size": 503889952,
+          "sha256": "3da00cf7c31bbe5662b3c0d373ecf782d74d32ef43990acc158ce60c2add72e0"
+        }
+      ]
+    },
+    "auxiliary:dspark:thinkingmachines/Inkling-2-Mini:BF16": {
+      "kind": "auxiliary",
+      "format": "gguf",
+      "definition": {
+        "method": "dspark",
+        "target": "thinkingmachines/Inkling-2-Mini",
+        "target_repo": "unsloth/Inkling-2-Mini-GGUF",
+        "target_size": 17629760736,
+        "repo": "unsloth/Inkling-2-Mini-GGUF",
+        "revision": "8078d149286eec7193795413b9e0643da6d11fa1",
+        "quant": "BF16",
+        "target_sha256": "e64276656f072e9b2197a61723667cbdb71da66a716ffd966e572c21088f3cd3"
+      },
+      "variants": {
+        "default": {
+          "selection": "dspark/dspark-Inkling-2-Mini-BF16-mainline.gguf_file"
+        }
+      },
+      "files": [
+        {
+          "path": "dspark/dspark-Inkling-2-Mini-BF16-mainline.gguf_file",
+          "size": 749371936,
+          "sha256": "dba3d73cd7cb342460e0c12f3d46f29eb4641ad13b87526b8f262a5fa2cd157b"
+        }
+      ]
+    },
+    "auxiliary:dspark:LiquidAI/LFM2.5-8B-A1B": {
+      "kind": "auxiliary",
+      "format": "gguf",
+      "definition": {
+        "method": "dspark",
+        "target": "LiquidAI/LFM2.5-8B-A1B",
+        "target_repo": "LiquidAI/LFM2.5-8B-A1B-GGUF",
+        "target_size": 5155564768,
+        "repo": "LiquidAI/LFM2.5-8B-A1B-DSpark-GGUF",
+        "revision": "7ba04ee5ff05a4baf2681fe5ddda6d736581ccdf",
+        "quant": "Q8_0",
+        "target_sha256": "4923ec14f06b968b74d663e5949867d2d9c3bf13a20b8be1a9f9af39989b2bb0"
+      },
+      "variants": {
+        "default": {
+          "selection": "LFM2.5-8B-A1B-DSpark-Q8_0.gguf"
+        }
+      },
+      "files": [
+        {
+          "path": "LFM2.5-8B-A1B-DSpark-Q8_0.gguf",
+          "size": 356491104,
+          "sha256": "78c6edb3ec97d54fa2e6ec1ba44c394db0a1ae62fcd854d2193389c1295e0a6d"
+        }
+      ]
+    },
+    "auxiliary:dspark:openbmb/MiniCPM-V-4.7-1B": {
+      "kind": "auxiliary",
+      "format": "gguf",
+      "definition": {
+        "method": "dspark",
+        "target": "openbmb/MiniCPM-V-4.7-1B",
+        "target_repo": "openbmb/MiniCPM-V-4.7-1B-gguf",
+        "target_size": 672003680,
+        "repo": "openbmb/MiniCPM-V-4.7-1B-DSpark-gguf",
+        "revision": "2158deac9b84332810676e8dee826135af92014d",
+        "quant": "Q8_0",
+        "target_sha256": "f18f594747e5317ab490cff9c06339c9cfb89acbe2f02ebc48a4e167bc23576d"
+      },
+      "variants": {
+        "default": {
+          "selection": "dspark-MiniCPM-V-4_7-1B-Q8_0.gguf"
+        }
+      },
+      "files": [
+        {
+          "path": "dspark-MiniCPM-V-4_7-1B-Q8_0.gguf",
+          "size": 237879552,
+          "sha256": "3ab2149d8820038907f2d2ea24d0a3299f4f6fcf5c1c5713970f3023cdfb27cf"
+        }
+      ]
+    },
+    "auxiliary:dspark:Qwen/Qwen3-4B": {
+      "kind": "auxiliary",
+      "format": "gguf",
+      "definition": {
+        "method": "dspark",
+        "target": "Qwen/Qwen3-4B",
+        "target_size": 2497280896,
+        "repo": "ggml-org/spec-for-testing-GGUF",
+        "revision": "a0736c8e98d3fe580352dacffa3fbd5e9c22a437",
+        "quant": "Q4_K_M",
+        "target_sha256": "a50bf3689d9e0590b754d777e5840a4c4512bf0f07c6d9f8ec150a5832205644"
+      },
+      "variants": {
+        "default": {
+          "selection": "dspark-Qwen3-4B-Q4_K_M.gguf"
+        }
+      },
+      "files": [
+        {
+          "path": "dspark-Qwen3-4B-Q4_K_M.gguf",
+          "size": 570900704,
+          "sha256": "edd1b021be9f3e2afe67e57792188e712cee20f01b82a6c923af27e37ffd2322"
+        }
+      ]
+    },
+    "auxiliary:dspark:Qwen/Qwen3-1.7B": {
+      "kind": "auxiliary",
+      "format": "gguf",
+      "definition": {
+        "method": "dspark",
+        "target": "Qwen/Qwen3-1.7B",
+        "target_size": 1282439264,
+        "repo": "rasyosef/Qwen3-1.7B-DSpark-GGUF",
+        "revision": "1642c6244a61c8ea7c3f9732070af0a8082efe21",
+        "quant": "Q8_0",
+        "target_sha256": "d2387ca2dbfee2ffabce7120d3770dadca0b293052bc2f0e138fdc940d9bc7b5"
+      },
+      "variants": {
+        "default": {
+          "selection": "Qwen3-1.7B-DSpark-Q8_0.gguf"
+        }
+      },
+      "files": [
+        {
+          "path": "Qwen3-1.7B-DSpark-Q8_0.gguf",
+          "size": 320415776,
+          "sha256": "edec591b6481ea2801eec1bd94f711a1abf6cbc1811de7f5521fdefc64a90441"
+        }
+      ]
+    },
     "chat:AtomicChat/Qwen3.8-27B-GGUF": {
       "kind": "chat",
       "definition": {

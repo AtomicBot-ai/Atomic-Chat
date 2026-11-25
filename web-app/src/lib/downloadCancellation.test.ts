@@ -45,6 +45,13 @@ describe('cancelDownload', () => {
     })
   })
 
+  it('stops the core transfer for a DSpark head from the global panel', () => {
+    const id = 'dspark:' + 'a'.repeat(64)
+    cancelDownload({ id, name: id }, serviceHub)
+    expect(cancelEngineBuildDownload).toHaveBeenCalledWith(id)
+    expect(extensionCancel).not.toHaveBeenCalled()
+  })
+
   it('aborts a model file through the model service and leaves it resumable', () => {
     const id = 'LiquidAI/LFM2.5-1.2B-Q4_K_M'
 
