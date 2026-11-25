@@ -15,6 +15,7 @@ import {
   XL_FONT_SIZE,
 } from '@/test/layout'
 import type { HubEngineId } from '@/lib/hub-model-engines'
+import type { ModelFormat } from '@/lib/model-card'
 import type { CatalogModel } from '@/services/models/types'
 import i18n from '@/i18n/setup'
 import { strataCatalogRows } from '@/services/strata/catalog'
@@ -92,7 +93,12 @@ const ITEMS: LocalModelTableItem[] = [
   },
 ]
 
-function renderTable(width: number, selected: string | null = null, items = ITEMS) {
+function renderTable(
+  width: number,
+  selected: string | null = null,
+  items = ITEMS,
+  format?: ModelFormat
+) {
   return render(
     withTranslations(
       <div
@@ -102,6 +108,7 @@ function renderTable(width: number, selected: string | null = null, items = ITEM
         <div data-testid="list" style={{ width }}>
           <LocalModelTable
             items={items}
+            format={format}
             selected={selected}
             onSelect={() => {}}
             budgetBytes={24 * GB}
@@ -155,6 +162,46 @@ describe('LocalModelTable layout', () => {
   })
 
   it.each([
+    [1024, XL_FONT_SIZE],
+    [1280, DEFAULT_FONT_SIZE],
+  ] as const)(
+    'keeps the recommended Strata model in one title block at %ipx',
+    async (width, font) => {
+      setFontSize(font)
+      const [model] = strataCatalogRows(strataFixture)
+      const primary = { ...model.strata!, name: 'Qwen3.8-Flash-Next IQ3_XXS' }
+      const alternative = {
+        ...primary,
+        name: 'Qwen3.8-Flash-Next IQ3_S',
+        variant_id: 'iq3-s',
+      }
+      renderTable(
+        listWidth(width),
+        null,
+        [
+          {
+            model: {
+              ...model,
+              strata: primary,
+              strataVariants: [primary, alternative],
+            },
+            section: 'Recommended',
+          },
+        ],
+        'gguf'
+      )
+      await settle()
+
+      const toggle = screen.getByRole('button', { name: /expand.*IQ3_XXS/i })
+      expect(toggle.parentElement!.getBoundingClientRect().height).toBeCloseTo(
+        toggle.getBoundingClientRect().height,
+        0
+      )
+      expectNoHorizontalOverflow(screen.getByTestId('list'))
+    }
+  )
+
+  it.each([
     [1024, XL_FONT_SIZE, 'dark'],
     [1280, DEFAULT_FONT_SIZE, 'light'],
   ] as const)('fits the Strata quant and size and keeps the selection at %ipx', async (width, size, theme) => {
@@ -179,6 +226,7 @@ describe('LocalModelTable layout', () => {
             items={items}
             selected={selected}
             onSelect={setSelected}
+            format="strata"
             budgetBytes={24 * GB}
             availableEngines={new Set(['strata'])}
           />

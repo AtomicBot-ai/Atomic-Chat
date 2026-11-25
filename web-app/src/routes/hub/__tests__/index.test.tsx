@@ -606,8 +606,11 @@ describe('/hub route', () => {
     const qwen = (await screen.findByText('Qwen3.8-Flash-Next IQ3_XXS')).closest('tr')!
     const recommendation = screen.getByRole('heading', { name: 'hub:staffPicks' })
     expect(qwen).toHaveTextContent('Strata')
-    expect(recommendation.closest('tr')!.nextElementSibling).toBe(qwen)
-    expect(screen.getByText('Qwen3.5 4B')).toBeVisible()
+    const firstPick = screen.getByText('Qwen3.5 4B').closest('tr')
+    expect(recommendation.closest('tr')!.nextElementSibling).toBe(firstPick)
+    expect(qwen.previousElementSibling).toBe(
+      screen.getByText('Gemma 4 12B').closest('tr')
+    )
     expect(screen.queryByText(/DeepSeekV4\.1|Qwen3\.6-35B/)).not.toBeInTheDocument()
   })
 

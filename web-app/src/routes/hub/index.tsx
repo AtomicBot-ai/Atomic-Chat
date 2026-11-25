@@ -1226,7 +1226,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
         section: t('hub:staffPicks'),
       }))
       if (showStrataRecommended && strata.recommended) {
-        picks.unshift({
+        picks.push({
           model: strata.recommended,
           section: t('hub:staffPicks'),
         })

@@ -407,7 +407,9 @@ export function LocalModelTable({
                       liked={isLiked}
                       onToggleLike={toggleLike}
                       onExpand={onSelect}
-                      onQuantChange={selectQuant}
+                      onQuantChange={
+                        format === 'strata' ? selectQuant : undefined
+                      }
                     />
                   )}
                 </Fragment>
@@ -452,7 +454,7 @@ type SummaryRowProps = {
   liked: boolean
   onToggleLike: (id: string) => void
   onExpand: (id: string) => void
-  onQuantChange: (modelId: string, variantId: string) => void
+  onQuantChange?: (modelId: string, variantId: string) => void
 }
 
 const SummaryRow = memo(function SummaryRow({
@@ -555,7 +557,7 @@ const SummaryRow = memo(function SummaryRow({
               </span>
             </span>
           </button>
-          {model.strata && model.strataVariants && (
+          {onQuantChange && model.strata && model.strataVariants && (
             <StrataQuantSelect
               variants={model.strataVariants}
               selectedId={model.strata.variant_id}
