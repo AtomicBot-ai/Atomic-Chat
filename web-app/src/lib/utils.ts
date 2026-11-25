@@ -164,6 +164,8 @@ export function getProviderLogo(provider: string) {
       return '/images/model-provider/aimlapi.svg'
     case 'edenai':
       return '/images/model-provider/edenai.svg'
+    case 'standardcompute':
+      return '/images/model-provider/standardcompute.svg'
     case 'ollama':
       return '/images/model-provider/ollama.svg'
     default:
@@ -285,6 +287,8 @@ export const getProviderTitle = (provider: string) => {
       return 'AI/ML API'
     case 'edenai':
       return 'Eden AI'
+    case 'standardcompute':
+      return 'Standard Compute'
     case 'ollama':
       return 'Ollama'
     default:
