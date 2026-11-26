@@ -1,6 +1,10 @@
 import { render, screen } from '@testing-library/react'
 import { page } from '@vitest/browser/context'
-import { beforeEach, describe, expect, it } from 'vitest'
+import {
+  atomicModelMetadataFetch,
+  configureAtomicModelMetadataFetch,
+} from '@janhq/core'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import {
   DEFAULT_FONT_SIZE,
@@ -52,7 +56,7 @@ const families: PrismFamiliesResponse = {
       files: [
         {
           file: file.file,
-          size: 14.7 * GB,
+          size: Math.round(14.7 * GB),
           sha256: 'a'.repeat(64),
           treatment: 'prism_required',
           default: true,
@@ -61,7 +65,7 @@ const families: PrismFamiliesResponse = {
       projectors: [
         {
           file: 'mmproj-Bonsai-8B-Instruct-F16.gguf',
-          size: 1.2 * GB,
+          size: Math.round(1.2 * GB),
           sha256: 'c'.repeat(64),
           default: true,
         },
@@ -104,8 +108,22 @@ class FakeService extends DefaultModelSetupService {
 }
 
 describe('model setup sheet geometry', () => {
+  const originalTransport = atomicModelMetadataFetch()
+  afterEach(() => configureAtomicModelMetadataFetch(originalTransport))
   let service: FakeService
   beforeEach(() => {
+    configureAtomicModelMetadataFetch(async () =>
+      Response.json({
+        sha: 'b'.repeat(40),
+        siblings: [
+          ...families.families[0].files,
+          ...families.families[0].projectors,
+        ].map(({ file: rfilename, size, sha256 }) => ({
+          rfilename,
+          lfs: { size, sha256 },
+        })),
+      })
+    )
     service = new FakeService()
     seedServiceHub({ modelSetup: service })
   })

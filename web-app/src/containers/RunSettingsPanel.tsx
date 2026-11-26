@@ -19,6 +19,8 @@ import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
+import { LoraPicker } from '@/containers/LoraPicker'
+import { useChatSessions } from '@/stores/chat-session-store'
 import { DrafterPicker } from '@/containers/DrafterPicker'
 import { ModelSettingsList } from '@/containers/ModelSetting'
 import { ParametersSection } from '@/containers/ParametersSection'
@@ -100,6 +102,11 @@ export function RunSettingsPanel({ onClose }: RunSettingsPanelProps) {
   const updateAssistant = useAssistant((state) => state.updateAssistant)
   const context = useModelContextLength()
   const showContext = context.available && !!context.contextSetting
+  const chatActive = useChatSessions(
+    (s) =>
+      Object.values(s.requestActive).some(Boolean) ||
+      Object.values(s.sessions).some((session) => session.isStreaming)
+  )
   const showDrafter =
     !IS_IOS && !IS_ANDROID && context.provider?.provider === 'llamacpp-upstream'
   const [advancedOpen, setAdvancedOpen] = useState(false)
@@ -353,10 +360,18 @@ export function RunSettingsPanel({ onClose }: RunSettingsPanelProps) {
                     </div>
                   )}
                   {showDrafter && (
-                    <DrafterPicker
-                      key={context.selectedModel.id}
-                      model={context.selectedModel.id}
-                    />
+                    <>
+                      <DrafterPicker
+                        key={context.selectedModel.id}
+                        model={context.selectedModel.id}
+                      />
+                      <LoraPicker
+                        key={'lora:' + context.selectedModel.id}
+                        mode="chat"
+                        model={context.selectedModel.id}
+                        disabled={chatActive}
+                      />
+                    </>
                   )}
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">

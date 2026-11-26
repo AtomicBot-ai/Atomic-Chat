@@ -17,6 +17,11 @@ const CATEGORY: Record<
   HubCategory,
   { icon: ComponentType<IconProps>; title: string; hint: string }
 > = {
+  loras: {
+    icon: IconChartScatter3d,
+    title: 'hub:loras.title',
+    hint: 'hub:loras.hint',
+  },
   drafters: {
     icon: IconArrowsSplit,
     title: 'hub:drafters.title',

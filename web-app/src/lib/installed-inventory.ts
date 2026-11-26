@@ -98,6 +98,7 @@ import { isEngineUpdateTaskId } from '@/services/engines/update'
 /** The page's category filter; "All" is the absence of one. */
 export type InventoryCategory =
   | 'local'
+  | 'lora'
   | 'image'
   | 'video'
   | 'audio'
@@ -107,6 +108,11 @@ export type InventoryCategory =
 /** Audio has a filter only where the studio exists: dev builds, for now. */
 export const INVENTORY_CATEGORIES: readonly InventoryCategory[] = [
   'local',
+  ...(PlatformFeatures[PlatformFeature.LOCAL_INFERENCE] &&
+  !(typeof IS_IOS !== 'undefined' && IS_IOS) &&
+  !(typeof IS_ANDROID !== 'undefined' && IS_ANDROID)
+    ? (['lora'] as const)
+    : []),
   'image',
   'video',
   ...(PlatformFeatures[PlatformFeature.AUDIO_GENERATION]
@@ -119,6 +125,7 @@ export const INVENTORY_CATEGORIES: readonly InventoryCategory[] = [
 /** What the item is, for the line under its name. */
 export type InventoryKind =
   | 'model'
+  | 'lora'
   | 'embedding'
   | 'decision'
   | 'image'
@@ -134,6 +141,7 @@ export type InventoryKind =
 /** What removing an item asks of its owner; one entry per owner. */
 export type InventoryRemoval =
   | { type: 'model'; modelId: string; provider: string }
+  | { type: 'lora'; adapterId: string }
   | { type: 'artifact'; artifactId: string }
   | { type: 'embedding'; model: EmbeddingCatalogModel }
   | { type: 'decision'; model: DecisionCatalogModel }
@@ -587,6 +595,8 @@ function describeDownload(
   id: string,
   sources: DownloadSources
 ): Pick<InventoryItem, 'category' | 'kind' | 'name' | 'details'> {
+  if (id.startsWith('lora:'))
+    return { category: 'lora', kind: 'lora', name: id, details: [] }
   const diffusion = sources.diffusionCatalog
     ? resolveDiffusionDownloadTaskId(sources.diffusionCatalog, id)
     : null

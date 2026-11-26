@@ -112,6 +112,7 @@ describe('Desktop drafter discovery and selection', () => {
         name: 'Find drafters',
       })
     )
+    expect(screen.getByRole('button', { name: /^Drafter / })).toBeDisabled()
     expect(navigate).toHaveBeenCalledWith({
       to: route.hub.index,
       search: { category: 'drafters', source: repo },
@@ -129,6 +130,7 @@ describe('Desktop drafter discovery and selection', () => {
     fireEvent.click(
       await screen.findByRole('button', { name: 'Find drafters' })
     )
+    expect(screen.getByRole('button', { name: /^Drafter / })).toBeEnabled()
     expect(navigate).toHaveBeenCalledWith({
       to: route.hub.index,
       search: { category: 'drafters', target: row.target },

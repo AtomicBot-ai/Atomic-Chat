@@ -2035,6 +2035,7 @@ describe('/hub route', () => {
         'hub-category-workflow-option-video',
         'hub-category-workflow-option-audio',
         'hub-category-workflow-option-drafters',
+        'hub-category-workflow-option-loras',
       ])
     })
 

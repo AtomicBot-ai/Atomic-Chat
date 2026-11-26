@@ -17,6 +17,7 @@ import { Loader } from 'lucide-react'
 import { AudioHub } from '@/containers/hub/AudioHub'
 import { DecisionHub } from '@/containers/hub/DecisionHub'
 import { EmbeddingHub } from '@/containers/hub/EmbeddingHub'
+import { LorasHub } from '@/containers/hub/LorasHub'
 import { DraftersHub } from '@/containers/hub/DraftersHub'
 import { HubCategorySelect } from '@/containers/hub/HubCategorySelect'
 import { HubFilters } from '@/containers/hub/HubFilters'
@@ -253,7 +254,7 @@ function HubContent() {
   const categories = useMemo(
     () =>
       HUB_CATEGORIES.filter((c) =>
-        c === 'drafters'
+        c === 'drafters' || c === 'loras'
           ? PlatformFeatures[PlatformFeature.LOCAL_INFERENCE] &&
             !(typeof IS_IOS !== 'undefined' && IS_IOS) &&
             !(typeof IS_ANDROID !== 'undefined' && IS_ANDROID)
@@ -290,7 +291,10 @@ function HubContent() {
           source: undefined,
           target: undefined,
           q:
-            next === 'drafters' || prev.category === 'drafters'
+            next === 'drafters' ||
+            prev.category === 'drafters' ||
+            next === 'loras' ||
+            prev.category === 'loras'
               ? undefined
               : prev.q,
           category: next === 'chat' ? undefined : next,
@@ -322,6 +326,31 @@ function HubContent() {
       />
     ) : undefined
 
+  if (category === 'loras')
+    return (
+      <LorasHub
+        tabs={categoryTabs}
+        target={target}
+        q={q}
+        onQuery={(value) =>
+          void navigate({
+            to: route.hub.index,
+            search: (prev: SearchParams) => ({
+              ...prev,
+              q: value || undefined,
+            }),
+            replace: true,
+          })
+        }
+        onClear={() =>
+          void navigate({
+            to: route.hub.index,
+            search: (prev: SearchParams) => ({ ...prev, target: undefined }),
+            replace: true,
+          })
+        }
+      />
+    )
   if (category === 'drafters')
     return (
       <DraftersHub

@@ -75,6 +75,11 @@ vi.mock('@/lib/downloadCancellation', async (importOriginal) => ({
 
 // What the disk holds without an owner comes from `downloads-disk`, tested on
 // its own; here it answers a scan and records what removal deletes.
+const listLoras = vi.hoisted(() => vi.fn())
+vi.mock('@/services/loras', async (original) => ({
+  ...(await original<typeof import('@/services/loras')>()),
+  loras: { list: listLoras },
+}))
 const disk = vi.hoisted(() => ({
   scanDownloadsDisk: vi.fn(),
   removeDiskPaths: vi.fn(),
@@ -115,6 +120,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   // Each test opens the page for the first time in the session.
   resetDownloadsDiskCache()
+  listLoras.mockResolvedValue({ files: [], downloads: [] })
   disk.scanDownloadsDisk.mockResolvedValue(EMPTY_DISK_SCAN)
   disk.removeDiskPaths.mockResolvedValue(undefined)
   copyToClipboard.mockResolvedValue(true)
@@ -234,6 +240,30 @@ describe('DownloadsPage', () => {
     expect(
       screen.getByLabelText('downloads:summary.freeSpace')
     ).toHaveTextContent('—')
+  })
+
+  it('includes installed LoRA in the total and filters them by type', async () => {
+    listLoras.mockResolvedValue({
+      files: [
+        {
+          file: 'sprites.safetensors',
+          repo: 'author/sprites',
+          target: 'author/base',
+          size: GB,
+          sha256: 'a'.repeat(64),
+        },
+      ],
+      downloads: [],
+    })
+    await renderRead()
+    fireEvent.change(screen.getByLabelText('downloads:categoryLabel'), {
+      target: { value: 'lora' },
+    })
+    expect(await screen.findByText('sprites.safetensors')).toBeInTheDocument()
+    expect(rows()).toHaveLength(1)
+    expect(screen.getByLabelText('downloads:summary.items')).toHaveTextContent(
+      '5'
+    )
   })
 
   it('filters by category and by search', async () => {

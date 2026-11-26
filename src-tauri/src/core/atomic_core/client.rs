@@ -383,10 +383,14 @@ fn control_call_timeout(method: &reqwest::Method, path: &str) -> Option<Duration
     if (method == reqwest::Method::PUT
         && path.starts_with("/models/llamacpp-upstream/")
         && path.ends_with("/drafter"))
-        || (method == reqwest::Method::DELETE && path.starts_with("/drafters/"))
-        || (method == reqwest::Method::GET && path.starts_with("/drafters/search?"))
+        || (method == reqwest::Method::PUT && path.starts_with("/loras/choices/"))
+        || (method == reqwest::Method::DELETE
+            && (path.starts_with("/drafters/") || path.starts_with("/loras/")))
+        || (method == reqwest::Method::GET
+            && (path.starts_with("/drafters/search?") || path.starts_with("/loras/search?")))
         || method == reqwest::Method::POST
-            && ((path.starts_with("/drafters/") && path.ends_with("/install"))
+            && (((path.starts_with("/drafters/") || path.starts_with("/loras/"))
+                && path.ends_with("/install"))
                 || (path.starts_with("/models/")
                     && (path.ends_with("/load") || path.ends_with("/embed")))
                 || ((path.starts_with("/backends/") || path.starts_with("/engine-builds/"))

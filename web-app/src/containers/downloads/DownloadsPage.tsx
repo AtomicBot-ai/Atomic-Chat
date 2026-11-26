@@ -63,6 +63,7 @@ const KIND_ICONS: Record<InventoryKind, typeof Box> = {
   engine: Cpu,
   partial: FileClock,
   draft: Zap,
+  lora: Box,
 }
 
 /** `—` where the source does not say; never a made-up size. */

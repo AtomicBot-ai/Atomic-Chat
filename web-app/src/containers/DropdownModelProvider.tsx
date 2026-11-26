@@ -105,7 +105,7 @@ const NON_CHAT_CAPABILITIES = new Set([
 ])
 
 const hasArtifactToken = (id: string): boolean =>
-  /(?:^|[/:._-])(?:backend|decision|diffusion|dspark|draft-(?:mtp|dflash|eagle3)|embed(?:ding|dings)?|engine|image|laya|mmproj|projector|rerank(?:er)?|sidecar|stt|tts|video|voice|whisper)(?=$|[/:._-])/i.test(
+  /(?:^|[/:._-])(?:backend|decision|diffusion|dspark|lora|draft-(?:mtp|dflash|eagle3)|embed(?:ding|dings)?|engine|image|laya|mmproj|projector|rerank(?:er)?|sidecar|stt|tts|video|voice|whisper)(?=$|[/:._-])/i.test(
     id
   )
 

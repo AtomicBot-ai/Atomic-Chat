@@ -21,8 +21,10 @@ import {
   deleteEmbeddingModel,
   embeddingDownloadTaskId,
 } from '@/lib/embedding/models'
+import { loras, useLoraInventoryVersion, type Lora } from '@/services/loras'
 import { MLX_PROVIDER } from '@/lib/hub-installed'
 import {
+  INVENTORY_CATEGORIES,
   activeDownloadIds,
   artifactItems,
   audioItems,
@@ -97,6 +99,9 @@ export async function removeInventoryItem(
     throw new InventoryNotRemovableError(item)
   }
   switch (removal.type) {
+    case 'lora':
+      await loras.remove(removal.adapterId)
+      return
     case 'model':
       await deleteLocalModel(deps.serviceHub, removal.modelId, removal.provider)
       return
@@ -222,6 +227,29 @@ export type InstalledInventory = {
  */
 export function useInstalledInventory(): InstalledInventory {
   const { t } = useTranslation()
+  const [loraFiles, setLoraFiles] = useState<Lora[]>([])
+  const [loraRead, setLoraRead] = useState(
+    !INVENTORY_CATEGORIES.includes('lora')
+  )
+  const loraVersion = useLoraInventoryVersion((s) => s.version)
+  useEffect(() => {
+    if (!INVENTORY_CATEGORIES.includes('lora')) return
+    let active = true
+    loras
+      .list()
+      .then(({ files }) => {
+        if (active) setLoraFiles(files)
+      })
+      .catch((error) =>
+        console.warn('[downloads] reading LoRA inventory failed:', error)
+      )
+      .finally(() => {
+        if (active) setLoraRead(true)
+      })
+    return () => {
+      active = false
+    }
+  }, [loraVersion])
   const serviceHub = useServiceHub()
   const providers = useModelProvider((state) => state.providers)
   const voice = useVoiceModel()
@@ -358,6 +386,17 @@ export function useInstalledInventory(): InstalledInventory {
       ...decisionItems(decisionModels, decisionInstalled),
       ...(voiceRow ? [voiceRow] : []),
       ...engineBuildItems(engines),
+      ...loraFiles.map(
+        (row): InventoryItem => ({
+          key: 'lora:' + row.sha256,
+          name: row.file,
+          kind: 'lora',
+          category: 'lora',
+          details: [row.repo, row.target],
+          bytes: row.size,
+          removal: { type: 'lora', adapterId: row.sha256 },
+        })
+      ),
     ])
   }, [
     providers,
@@ -379,6 +418,7 @@ export function useInstalledInventory(): InstalledInventory {
     decisionModels,
     decisionInstalled,
     engines,
+    loraFiles,
   ])
 
   const totalBytes = useMemo(() => inventoryTotalBytes(items), [items])
@@ -412,7 +452,7 @@ export function useInstalledInventory(): InstalledInventory {
     [serviceHub, t]
   )
 
-  const loading = !diskRead || !embeddingRead || !decisionRead
+  const loading = !loraRead || !diskRead || !embeddingRead || !decisionRead
 
   return { items, loading, totalBytes, remove, cancel, resume }
 }
