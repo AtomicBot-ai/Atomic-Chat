@@ -409,6 +409,11 @@ describe('Desktop drafter discovery and selection', () => {
       }))
       vi.mocked(drafters.select).mockResolvedValue(undefined)
       const view = render(withTranslations(<Example width={width - 300} />))
+      const link = await screen.findByRole('link', { name: 'Hugging Face' })
+      expect(link.getAttribute('href')).toBe(
+        `https://huggingface.co/${row.repo}`
+      )
+      expect(link.getAttribute('target')).toBe('_blank')
       await screen.findByTitle(row.file)
       fireEvent.click(
         screen.getByRole('button', { name: 'Remove model filter' })

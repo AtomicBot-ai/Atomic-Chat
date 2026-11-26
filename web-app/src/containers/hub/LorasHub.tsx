@@ -9,6 +9,7 @@ import {
   type Lora,
   type LoraInventory,
 } from '@/services/loras'
+import { HuggingFaceRepoLink } from './HuggingFaceRepoLink'
 import { HubSearchToolbar } from './HubSearchToolbar'
 export function LorasHub({
   tabs,
@@ -148,7 +149,7 @@ export function LorasHub({
                 key={row.sha256}
                 className="flex flex-wrap items-center gap-3 p-3"
               >
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 flex-[1_1_12rem]">
                   <div
                     className="truncate text-sm font-medium"
                     title={row.repo}
@@ -167,6 +168,7 @@ export function LorasHub({
                     {formatBytes(row.size)}
                   </div>
                 </div>
+                <HuggingFaceRepoLink repo={row.repo} />
                 {job && (
                   <span className="text-xs tabular-nums">
                     {Math.round(job.percent)}%

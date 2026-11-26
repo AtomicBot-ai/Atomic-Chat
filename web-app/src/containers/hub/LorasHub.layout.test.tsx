@@ -95,6 +95,9 @@ it.each([
       to: route.hub.index,
       search: { category: 'loras', target: row.target },
     })
+    const link = await screen.findByRole('link', { name: 'Hugging Face' })
+    expect(link.getAttribute('href')).toBe(`https://huggingface.co/${row.repo}`)
+    expect(link.getAttribute('target')).toBe('_blank')
     fireEvent.click(
       await screen.findByRole('button', {
         name: i18n.t('hub:drafters.download'),

@@ -10,6 +10,7 @@ import {
   drafterModelRepo,
   useInstalledDrafterModels,
 } from './installedDrafterModel'
+import { HuggingFaceRepoLink } from './HuggingFaceRepoLink'
 import { HubSearchToolbar } from './HubSearchToolbar'
 import { Button } from '@/components/ui/button'
 import {
@@ -182,7 +183,7 @@ function DrafterRows({
           )
           return (
             <li key={key} className="flex flex-wrap items-center gap-3 p-3">
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 flex-[1_1_12rem]">
                 <div className="truncate text-sm font-medium" title={row.file}>
                   {row.file}
                 </div>
@@ -191,6 +192,7 @@ function DrafterRows({
                   {row.repo.split('/')[0]} · {row.quant} · {size(row.size)}
                 </div>
               </div>
+              <HuggingFaceRepoLink repo={row.repo} />
               {(options.length > 1 || more) && (
                 <select
                   aria-label={t('hub:drafters.variant')}

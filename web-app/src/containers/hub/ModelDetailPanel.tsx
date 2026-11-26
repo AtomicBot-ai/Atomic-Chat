@@ -1,11 +1,12 @@
 import type { ReactNode } from 'react'
-import { ChevronDown, ExternalLink, Heart } from 'lucide-react'
+import { ChevronDown, Heart } from 'lucide-react'
 import { IconDownload, IconHeart } from '@tabler/icons-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ModelLogo } from '@/containers/ModelLogo'
 import { DownloadOptionsSelect } from '@/containers/hub/DownloadOptionsSelect'
 import { PendingValue } from '@/containers/hub/PendingValue'
+import { HuggingFaceRepoLink } from './HuggingFaceRepoLink'
 import { FitBadge } from '@/containers/hub/FitBadge'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { HUB_FORMAT_LABELS } from '@/lib/hub-filters'
@@ -73,24 +74,16 @@ function SourceLink({ model }: { model: CatalogModel }) {
       </span>
     )
   return (
-    <a
-      href={`https://huggingface.co/${liteRt ? liteRt.repo : geniex?.gguf ? geniex.gguf.repo : hubRepoId(model)}`}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-border px-3 text-xs hover:bg-secondary"
-    >
-      <img
-        src="/images/model-provider/huggingface.svg"
-        alt=""
-        className="size-4"
-      />
-      {liteRt
-        ? t(liteRt.origin === 'curated' ? 'hub:liteRtLm.curated' : 'hub:liteRtLm.huggingFace')
-        : geniex
-          ? t(geniex.origin === 'curated' ? 'hub:geniex.curated' : 'hub:geniex.huggingFace')
-          : t('hub:source.huggingFace')}
-      <ExternalLink size={12} />
-    </a>
+    <HuggingFaceRepoLink
+      repo={liteRt?.repo ?? geniex?.gguf?.repo ?? hubRepoId(model)}
+      label={
+        liteRt
+          ? t(liteRt.origin === 'curated' ? 'hub:liteRtLm.curated' : 'hub:liteRtLm.huggingFace')
+          : geniex
+            ? t(geniex.origin === 'curated' ? 'hub:geniex.curated' : 'hub:geniex.huggingFace')
+            : undefined
+      }
+    />
   )
 }
 
