@@ -21,10 +21,15 @@ import {
   deleteEmbeddingModel,
   embeddingDownloadTaskId,
 } from '@/lib/embedding/models'
+import {
+  resetDrafterInventoryCache,
+  useDrafterInventory,
+} from '@/hooks/useDrafterInventory'
+import { drafters } from '@/services/drafters'
 import { loras, useLoraInventoryVersion, type Lora } from '@/services/loras'
 import { MLX_PROVIDER } from '@/lib/hub-installed'
 import {
-  INVENTORY_CATEGORIES,
+  SUPPORTS_MODEL_ATTACHMENTS,
   activeDownloadIds,
   artifactItems,
   audioItems,
@@ -99,6 +104,9 @@ export async function removeInventoryItem(
     throw new InventoryNotRemovableError(item)
   }
   switch (removal.type) {
+    case 'dspark':
+      await drafters.remove(removal.id)
+      return
     case 'lora':
       await loras.remove(removal.adapterId)
       return
@@ -195,6 +203,7 @@ const diskCache: { scan: DownloadsDiskScan; read: boolean; seq: number } = {
 
 /** Test hook: forget the session's last read and drop any read still running. */
 export function resetDownloadsDiskCache(): void {
+  resetDrafterInventoryCache()
   cachedLoras = undefined
   diskCache.scan = EMPTY_DISK_SCAN
   diskCache.read = false
@@ -229,13 +238,18 @@ export type InstalledInventory = {
  */
 export function useInstalledInventory(): InstalledInventory {
   const { t } = useTranslation()
+  const {
+    value: drafterInventory,
+    read: draftersRead,
+    refresh: refreshDrafters,
+  } = useDrafterInventory(SUPPORTS_MODEL_ATTACHMENTS)
   const [loraFiles, setLoraFiles] = useState<Lora[]>(cachedLoras ?? [])
   const [loraRead, setLoraRead] = useState(
-    cachedLoras !== undefined || !INVENTORY_CATEGORIES.includes('lora')
+    cachedLoras !== undefined || !SUPPORTS_MODEL_ATTACHMENTS
   )
   const loraVersion = useLoraInventoryVersion((s) => s.version)
   useEffect(() => {
-    if (!INVENTORY_CATEGORIES.includes('lora')) return
+    if (!SUPPORTS_MODEL_ATTACHMENTS) return
     let active = true
     loras
       .list()
@@ -391,6 +405,19 @@ export function useInstalledInventory(): InstalledInventory {
       ...decisionItems(decisionModels, decisionInstalled),
       ...(voiceRow ? [voiceRow] : []),
       ...engineBuildItems(engines),
+      ...drafterInventory.files.map(
+        (row): InventoryItem => ({
+          key: 'dspark:' + row.sha256,
+          name: row.file,
+          kind: 'draft',
+          category: 'local',
+          details: ['DSpark', row.target],
+          quant: row.quant,
+          owner: row.repo,
+          bytes: row.size,
+          removal: { type: 'dspark', id: row.sha256 },
+        })
+      ),
       ...loraFiles.map(
         (row): InventoryItem => ({
           key: 'lora:' + row.sha256,
@@ -424,15 +451,18 @@ export function useInstalledInventory(): InstalledInventory {
     decisionInstalled,
     engines,
     loraFiles,
+    drafterInventory.files,
   ])
 
   const totalBytes = useMemo(() => inventoryTotalBytes(items), [items])
 
   const removeVoice = voice.remove
   const remove = useCallback(
-    (item: InventoryItem) =>
-      removeInventoryItem(item, { serviceHub, removeVoice, rescan }),
-    [serviceHub, removeVoice, rescan]
+    async (item: InventoryItem) => {
+      await removeInventoryItem(item, { serviceHub, removeVoice, rescan })
+      if (item.removal?.type === 'dspark') refreshDrafters()
+    },
+    [serviceHub, removeVoice, rescan, refreshDrafters]
   )
 
   const cancel = useCallback(
@@ -457,7 +487,8 @@ export function useInstalledInventory(): InstalledInventory {
     [serviceHub, t]
   )
 
-  const loading = !loraRead || !diskRead || !embeddingRead || !decisionRead
+  const loading =
+    !draftersRead || !loraRead || !diskRead || !embeddingRead || !decisionRead
 
   return { items, loading, totalBytes, remove, cancel, resume }
 }

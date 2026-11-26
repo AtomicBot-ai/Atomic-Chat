@@ -105,14 +105,15 @@ export type InventoryCategory =
   | 'voice'
   | 'engine'
 
+export const SUPPORTS_MODEL_ATTACHMENTS =
+  PlatformFeatures[PlatformFeature.LOCAL_INFERENCE] &&
+  !(typeof IS_IOS !== 'undefined' && IS_IOS) &&
+  !(typeof IS_ANDROID !== 'undefined' && IS_ANDROID)
+
 /** Audio has a filter only where the studio exists: dev builds, for now. */
 export const INVENTORY_CATEGORIES: readonly InventoryCategory[] = [
   'local',
-  ...(PlatformFeatures[PlatformFeature.LOCAL_INFERENCE] &&
-  !(typeof IS_IOS !== 'undefined' && IS_IOS) &&
-  !(typeof IS_ANDROID !== 'undefined' && IS_ANDROID)
-    ? (['lora'] as const)
-    : []),
+  ...(SUPPORTS_MODEL_ATTACHMENTS ? (['lora'] as const) : []),
   'image',
   'video',
   ...(PlatformFeatures[PlatformFeature.AUDIO_GENERATION]
@@ -135,13 +136,14 @@ export type InventoryKind =
   | 'engine'
   /** What a download that never finished left on disk. */
   | 'partial'
-  /** A speculative-decoding draft MLX keeps beside the models. */
+  /** A speculative-decoding drafter for a local model. */
   | 'draft'
 
 /** What removing an item asks of its owner; one entry per owner. */
 export type InventoryRemoval =
   | { type: 'model'; modelId: string; provider: string }
   | { type: 'lora'; adapterId: string }
+  | { type: 'dspark'; id: string }
   | { type: 'artifact'; artifactId: string }
   | { type: 'embedding'; model: EmbeddingCatalogModel }
   | { type: 'decision'; model: DecisionCatalogModel }
@@ -595,6 +597,8 @@ function describeDownload(
   id: string,
   sources: DownloadSources
 ): Pick<InventoryItem, 'category' | 'kind' | 'name' | 'details'> {
+  if (id.startsWith('dspark:'))
+    return { category: 'local', kind: 'draft', name: id, details: ['DSpark'] }
   if (id.startsWith('lora:'))
     return { category: 'lora', kind: 'lora', name: id, details: [] }
   const diffusion = sources.diffusionCatalog

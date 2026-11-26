@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
+import { useDrafterInventory } from '@/hooks/useDrafterInventory'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { useChatSessions } from '@/stores/chat-session-store'
@@ -21,38 +22,6 @@ import {
   type DrafterSearch,
 } from '@/services/drafters'
 
-function useInventory() {
-  const [value, setValue] = useState<DrafterInventory>({
-    files: [],
-    downloads: [],
-  })
-  const [error, setError] = useState('')
-  const [version, refresh] = useState(0)
-  useEffect(() => {
-    let active = true
-    let timer: ReturnType<typeof setTimeout>
-    let interval = 1500
-    const poll = async () => {
-      try {
-        const next = await drafters.list()
-        if (active) {
-          interval = next.downloads.length ? 800 : 5000
-          setValue(next)
-          setError('')
-        }
-      } catch (e) {
-        if (active) setError(drafterError(e))
-      }
-      if (active) timer = setTimeout(poll, interval)
-    }
-    void poll()
-    return () => {
-      active = false
-      clearTimeout(timer)
-    }
-  }, [version])
-  return { value, error, refresh: () => refresh((n) => n + 1) }
-}
 const size = (bytes: number) =>
   bytes >= 1e9
     ? (bytes / 1e9).toFixed(1) + ' GB'
@@ -228,22 +197,6 @@ function DrafterRows({
   )
 }
 
-export function InstalledDrafters() {
-  const { t } = useTranslation()
-  const inventory = useInventory()
-  if (!inventory.value.files.length) return null
-  return (
-    <section className="my-4 space-y-2">
-      <h2 className="font-medium">{t('hub:drafters.title')}</h2>
-      <DrafterRows
-        rows={inventory.value.files}
-        inventory={inventory.value}
-        refresh={inventory.refresh}
-      />
-    </section>
-  )
-}
-
 export function DraftersHub({
   tabs,
   source,
@@ -262,7 +215,7 @@ export function DraftersHub({
   onTarget?: (checkpoint: string) => void
 }) {
   const { t } = useTranslation()
-  const inv = useInventory()
+  const inv = useDrafterInventory()
   const [result, setResult] = useState<DrafterSearch>({
     results: [],
     partial: false,

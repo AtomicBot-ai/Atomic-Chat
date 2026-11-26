@@ -75,6 +75,11 @@ vi.mock('@/lib/downloadCancellation', async (importOriginal) => ({
 
 // What the disk holds without an owner comes from `downloads-disk`, tested on
 // its own; here it answers a scan and records what removal deletes.
+const drafts = vi.hoisted(() => ({ list: vi.fn(), remove: vi.fn() }))
+vi.mock('@/services/drafters', async (original) => ({
+  ...(await original<typeof import('@/services/drafters')>()),
+  drafters: drafts,
+}))
 const listLoras = vi.hoisted(() => vi.fn())
 vi.mock('@/services/loras', async (original) => ({
   ...(await original<typeof import('@/services/loras')>()),
@@ -120,6 +125,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   // Each test opens the page for the first time in the session.
   resetDownloadsDiskCache()
+  drafts.list.mockResolvedValue({ files: [], downloads: [] })
   listLoras.mockResolvedValue({ files: [], downloads: [] })
   disk.scanDownloadsDisk.mockResolvedValue(EMPTY_DISK_SCAN)
   disk.removeDiskPaths.mockResolvedValue(undefined)
@@ -242,6 +248,52 @@ describe('DownloadsPage', () => {
     ).toHaveTextContent('—')
   })
 
+  it('lists each DSpark file once in the searchable local inventory and removes it through Core', async () => {
+    const file = {
+      file: 'dspark-Q8_0.gguf',
+      repo: 'author/draft',
+      target: 'author/checkpoint',
+      quant: 'Q8_0',
+      size: GB,
+      sha256: 'b'.repeat(64),
+    }
+    drafts.list.mockResolvedValue({ files: [file], downloads: [] })
+    drafts.remove.mockImplementation(async () => {
+      drafts.list.mockResolvedValue({ files: [], downloads: [] })
+    })
+    await renderRead()
+    expect(screen.getByLabelText('downloads:summary.items')).toHaveTextContent(
+      '5'
+    )
+    expect(screen.getAllByText(file.file)).toHaveLength(1)
+    fireEvent.change(screen.getByLabelText('downloads:categoryLabel'), {
+      target: { value: 'local' },
+    })
+    fireEvent.change(screen.getByLabelText('downloads:searchLabel'), {
+      target: { value: file.target },
+    })
+    expect(rows()).toHaveLength(1)
+    const row = rowNamed(file.file)
+    expect(row).toHaveTextContent('DSpark')
+    expect(row).toHaveTextContent('1.0 GB')
+    expect(
+      screen.getByLabelText('downloads:summary.totalStorage')
+    ).toHaveTextContent('8.0 GB')
+    fireEvent.click(
+      within(row).getByRole('button', { name: /^downloads:remove/ })
+    )
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: 'downloads:confirm.remove' })
+    )
+    await waitFor(() =>
+      expect(screen.queryByText(file.file)).not.toBeInTheDocument()
+    )
+    expect(drafts.remove).toHaveBeenCalledWith(file.sha256)
+    expect(screen.getByLabelText('downloads:summary.items')).toHaveTextContent(
+      '4'
+    )
+  })
   it('includes installed LoRA in the total and filters them by type', async () => {
     listLoras.mockResolvedValue({
       files: [
