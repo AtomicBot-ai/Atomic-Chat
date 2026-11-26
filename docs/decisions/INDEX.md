@@ -312,7 +312,9 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-04** — [Recover from unsupported multimodal projector (`gemma4a`) by falling back to text-only instead of crashing the load (issue #44)](2026-06-04-recover-from-unsupported-multimodal-projector-gemma4a-by.md)
 - **2026-05-27** — [Replace `janhq/model-catalog` + Fuse.js with curated `AtomicBot-ai/atomic-chat-model-catalog` and a pre-built MiniSearch index](2026-05-27-replace-janhq-model-catalog-fuse-js-with-curated-atomicbot-ai.md)
 
-## Local API server & OpenAI compatibility (22)
+## Local API server & OpenAI compatibility (23)
+
+- **2026-11-26** — [Use the OpenAI-compatible tool default for custom endpoints](2026-11-26-default-tool-calls-for-custom-endpoints.md)
 
 - **2026-11-09** — [Write a connected agent's model change without a toast](2026-11-09-write-a-connected-agents-model-change-without-a-toast.md) — configs still follow the served model, but "Connected tools now use …" is gone; the switch dialog and the restart toasts say it. Supersedes the toast of 2026-11-03.
 - **2026-11-09** — [Ask before a model switch restarts running agents](2026-11-09-ask-before-a-model-switch-restarts-running-agents.md) — a switch to another model (local or cloud) while agents Atomic Chat opened still run asks first; No cancels it, Yes stops those agents, switches and opens them again through Connect with a fresh conversation. Supersedes in part 2026-11-03 (keep connected agents on the served model).

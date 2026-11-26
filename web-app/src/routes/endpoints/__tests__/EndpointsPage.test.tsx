@@ -374,6 +374,7 @@ describe('EndpointsPage', () => {
     const added = addProvider.mock.calls[0][0]
     expect(added).toMatchObject({
       provider: 'lan-vllm',
+      custom_endpoint: true,
       base_url: 'http://192.168.1.30:8000/v1',
       api_key: '',
     })
@@ -399,6 +400,38 @@ describe('EndpointsPage', () => {
     )
     expect(refreshProviderModels.mock.calls[0][0].provider.provider).toBe(
       'lan-vllm'
+    )
+  })
+
+  it('connects a keyless endpoint named vLLM under a separate proxy route', async () => {
+    checkProviderEndpoint.mockResolvedValueOnce({
+      ok: true,
+      latencyMs: 2,
+      modelCount: 1,
+    })
+    render(<EndpointsPage />)
+    fireEvent.click(screen.getByText('endpoints:add'))
+    fireEvent.change(
+      screen.getByPlaceholderText('endpoints:dialog.namePlaceholder'),
+      { target: { value: 'vLLM' } }
+    )
+    fireEvent.change(screen.getByLabelText('endpoints:dialog.baseUrl'), {
+      target: { value: 'http://inference.lan:8000/v1' },
+    })
+    fireEvent.click(screen.getByText('endpoints:dialog.save'))
+    await waitFor(() =>
+      expect(refreshProviderModels).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: expect.objectContaining({
+            provider: 'vLLM (endpoint)',
+            custom_endpoint: true,
+            api_key: '',
+          }),
+        })
+      )
+    )
+    expect(storeProviders.current.find((p) => p.custom_endpoint)?.provider).toBe(
+      'vLLM (endpoint)'
     )
   })
 

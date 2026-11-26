@@ -5,6 +5,7 @@ import type {
   ModelQuant,
 } from '@/services/models/types'
 import { ModelCapabilities } from '@/types/models'
+import { isLocalProvider } from '@/utils/registerRemoteProvider'
 
 export const defaultModel = (provider?: string) => {
   if (!provider || !Object.keys(models).includes(provider)) {
@@ -16,8 +17,21 @@ export const defaultModel = (provider?: string) => {
   )[0]
 }
 
+// Remote endpoints can list a model by ID alone. Apply the OpenAI-compatible
+// default when there is no provider rule. Local engines discover tools per model.
+export function toolCallSupport(
+  providerName: string
+): boolean | readonly string[] {
+  const config = models[providerName as keyof typeof models]
+  if (config?.supportsToolCalls !== undefined) return config.supportsToolCalls
+  return (
+    !isLocalProvider(providerName) &&
+    models['openai-compatible'].supportsToolCalls
+  )
+}
+
 /**
- * Determines model capabilities based on provider configuration from token.js
+ * Determines default capabilities for a model added by ID.
  * @param providerName - The provider name (e.g., 'openai', 'anthropic', 'openrouter')
  * @param modelId - The model ID to check capabilities for
  * @returns Array of model capabilities
@@ -28,11 +42,9 @@ export const getModelCapabilities = (
 ): string[] => {
   const providerConfig = models[providerName as unknown as keyof typeof models]
 
-  const supportsToolCalls = Array.isArray(
-    providerConfig?.supportsToolCalls as unknown
-  )
-    ? (providerConfig.supportsToolCalls as unknown as string[])
-    : []
+  const rule = toolCallSupport(providerName)
+  const supportsToolCalls =
+    typeof rule === 'boolean' ? rule : rule.includes(modelId)
 
   const supportsImages = Array.isArray(
     providerConfig?.supportsImages as unknown
@@ -42,7 +54,7 @@ export const getModelCapabilities = (
 
   return [
     ModelCapabilities.COMPLETION,
-    supportsToolCalls.includes(modelId) ? ModelCapabilities.TOOLS : undefined,
+    supportsToolCalls ? ModelCapabilities.TOOLS : undefined,
     supportsImages.includes(modelId) ? ModelCapabilities.VISION : undefined,
   ].filter(Boolean) as string[]
 }

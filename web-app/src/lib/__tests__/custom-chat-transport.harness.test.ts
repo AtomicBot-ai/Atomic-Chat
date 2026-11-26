@@ -19,6 +19,7 @@ import {
 import { loadChatSkillDetails } from '../chat-skill-injection'
 import { bumpAgentSkillRevision } from '../agent-skill-revision'
 import { ModelFactory } from '../model-factory'
+import { getModelCapabilities } from '../models'
 import { trackMcpActivation } from '../mcp-activation'
 import { useChatExecStatus } from '@/hooks/useChatExecStatus'
 import { useSecureEnvironments } from '@/hooks/useSecureEnvironments'
@@ -1451,6 +1452,28 @@ describe('CustomChatTransport muted connectors and tool cost', () => {
     // 5 verbose tools on a 2k window: Linear is heavy, the total is too.
     expect(report.heavyServers).toEqual(['linear'])
     expect(report.tooHeavy).toBe(true)
+  })
+
+  it('offers web search and other MCP tools together on a custom endpoint', async () => {
+    const provider = 'My endpoint'
+    const id = 'served-model'
+    const model = { id, capabilities: getModelCapabilities(provider, id) }
+    useModelProvider.setState({
+      selectedProvider: provider,
+      selectedModel: model,
+      providers: [
+        {
+          provider,
+          base_url: 'http://localhost:9999/v1',
+          active: true,
+          settings: [],
+          models: [model],
+        },
+      ],
+    })
+    expect(await sendAndCaptureTools()).toEqual(
+      [...linearTools.map((tool) => tool.name), exaTool.name].sort()
+    )
   })
 
   it('sends no search tool after startup failed despite an active config', async () => {

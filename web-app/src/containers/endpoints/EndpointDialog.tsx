@@ -13,7 +13,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { LocalModelCollisionNotice } from '@/containers/endpoints/LocalModelCollisionNotice'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { takesApiKey } from '@/lib/cloud-providers'
+import { customEndpointName, takesApiKey } from '@/lib/cloud-providers'
 import { ownLocalApiServerUrl } from '@/lib/local-api-self-reference'
 import { getProviderTitle } from '@/lib/utils'
 
@@ -108,7 +108,9 @@ export function EndpointDialog({
   const submit = async (event: FormEvent | undefined, saveAnyway = false) => {
     event?.preventDefault()
     if (saving) return
-    const name = draft.name.trim()
+    const name = provider
+      ? provider.provider
+      : customEndpointName(draft.name.trim())
     const baseUrl = draft.baseUrl.trim()
     if (!provider) {
       if (!name) return

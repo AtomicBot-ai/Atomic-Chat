@@ -263,6 +263,7 @@ export function EndpointsPage() {
       )
       addProvider({
         provider: name,
+        custom_endpoint: true,
         active: true,
         models: [],
         settings,

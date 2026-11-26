@@ -60,13 +60,19 @@ async function refreshModels(name: string, hub: Deps): Promise<void> {
   if (!current) return
   try {
     const ids = await hub.providers().fetchModelsFromProvider(current)
-    const models = Array.from(new Set(ids)).map((id) => ({
-      id,
-      model: id,
-      name: id,
-      capabilities: getModelCapabilities(name, id),
-      version: '1.0',
-    }))
+    const latest = useModelProvider.getState().getProviderByName(name)
+    if (!latest) return
+    const existing = new Map(latest.models.map((model) => [model.id, model]))
+    const models = Array.from(new Set(ids)).map(
+      (id) =>
+        existing.get(id) ?? {
+          id,
+          model: id,
+          name: id,
+          capabilities: getModelCapabilities(name, id),
+          version: '1.0',
+        }
+    )
     useModelProvider.getState().updateProvider(name, { models })
   } catch (error) {
     // The host may be asleep; its models come with its next address list.

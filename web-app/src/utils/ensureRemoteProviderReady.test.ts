@@ -10,14 +10,8 @@ const { registerRemoteProvider, setServerStatus, setServerPort } = vi.hoisted(
   })
 )
 
-vi.mock('@/utils/registerRemoteProvider', () => ({
-  isLocalProvider: (provider: string) =>
-    ['llamacpp', 'llamacpp-upstream', 'mlx', 'foundation-models'].includes(
-      provider
-    ),
-  isKeylessRemoteProvider: (provider: ModelProvider) =>
-    provider.base_url?.startsWith('http://localhost') ?? false,
-  isSubscriptionProvider: (provider: string) => provider === 'chatgpt',
+vi.mock('@/utils/registerRemoteProvider', async (original) => ({
+  ...(await original<typeof import('@/utils/registerRemoteProvider')>()),
   registerRemoteProvider,
 }))
 
@@ -68,6 +62,18 @@ describe('ensureRemoteProviderReady', () => {
         startServer: vi.fn().mockResolvedValue(1337),
       },
     } as typeof window.core
+  })
+
+  it('prepares the first chat request for a keyless custom HTTPS endpoint', async () => {
+    const endpoint = {
+      ...provider,
+      provider: 'My server',
+      base_url: 'https://inference.example.test/v1',
+      api_key: '',
+      custom_endpoint: true,
+    }
+    await ensureRemoteProviderReady(endpoint, serviceHubWithStatus(true))
+    expect(registerRemoteProvider).toHaveBeenCalledWith(endpoint)
   })
 
   it('registers a remote provider without restarting a running proxy', async () => {

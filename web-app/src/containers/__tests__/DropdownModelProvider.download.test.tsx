@@ -25,6 +25,11 @@ import type { ModelsService } from '@/services/models/types'
 import { seedServiceHub } from '@/test/service-hub'
 
 const navigate = vi.hoisted(() => vi.fn())
+const switchToModel = vi.hoisted(() => vi.fn(async () => {}))
+vi.mock('@/utils/switchModel', async (original) => ({
+  ...(await original<typeof import('@/utils/switchModel')>()),
+  switchToModel,
+}))
 
 vi.mock('@/hooks/useModelProvider', () => ({ useModelProvider: vi.fn() }))
 vi.mock('@/i18n/react-i18next-compat', () => ({
@@ -97,6 +102,7 @@ const mockProviders = (providers: ModelProvider[]) => {
   }
   vi.mocked(useModelProvider).mockImplementation(((selector?: any) =>
     selector ? selector(state) : state) as never)
+  return state
 }
 
 const runningDownload = (id: string) => ({
@@ -176,6 +182,39 @@ describe('DropdownModelProvider runnable model picker', () => {
       screen.queryByTestId('model-picker-local-import')
     ).not.toBeInTheDocument()
   })
+
+  it.each([
+    ['LAN vLLM', 'http://192.168.1.30:8000/v1', 'Qwen3-Chat', ''],
+    ['Video lab', 'https://models.example.test/v1', 'team/engine/chat', ''],
+    [
+      'Private inference',
+      'https://models.example.test/v1',
+      'team/engine/chat',
+      'configured',
+    ],
+  ])(
+    'offers the chat model from custom endpoint %s',
+    (provider, base_url, id, api_key) => {
+      const picker = mockProviders([
+        {
+          provider,
+          base_url,
+          api_key,
+          custom_endpoint: true,
+          active: true,
+          settings: [],
+          models: [{ id, capabilities: ['completion'] }],
+        },
+      ])
+      render(<DropdownModelProvider />)
+      expect(screen.queryByTestId('model-picker-empty')).not.toBeInTheDocument()
+      fireEvent.click(screen.getByRole('radio'))
+      expect(picker.selectModelProvider).toHaveBeenCalledWith(provider, id)
+      expect(switchToModel).toHaveBeenCalledWith(
+        expect.objectContaining({ providerName: provider, modelId: id })
+      )
+    }
+  )
 
   it('lists and searches runnable local, cloud, and Codex chat models only', () => {
     mockProviders([

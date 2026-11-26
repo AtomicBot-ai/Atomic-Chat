@@ -9,6 +9,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useLayoutEffect, type ReactNode } from 'react'
 import ChatInput from '../ChatInput'
+import { getModelCapabilities } from '@/lib/models'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 import { useChatAttachments } from '@/hooks/useChatAttachments'
 import { useAttachments } from '@/hooks/useAttachments'
@@ -1660,26 +1661,28 @@ describe('ChatInput', () => {
   // A model that actually advertises tools: the connectors button and the
   // attach-menu pin toggle both hang off that capability.
   const selectToolCapableModel = () => {
+    const provider = 'Custom endpoint'
     const model = {
       id: 'tool-model',
-      capabilities: ['tools'],
+      capabilities: getModelCapabilities(provider, 'tool-model'),
       settings: {},
     } as unknown as Model
     useModelProvider.setState({
       providers: [
         {
-          provider: 'openai',
+          provider,
+          base_url: 'http://localhost:9999/v1',
           active: true,
           models: [model],
           settings: [],
         } as ModelProvider,
       ],
-      selectedProvider: 'openai',
+      selectedProvider: provider,
       selectedModel: model,
     })
   }
 
-  it('keeps the Plugins button in the toolbar next to web search, with no setting behind it', () => {
+  it('shows the Plugins button beside web search when a custom endpoint is selected', () => {
     // Same standing as the globe: always on the toolbar, and each
     // connector's on/off switch lives inside its dropdown. No store flag is
     // left that could hide it.

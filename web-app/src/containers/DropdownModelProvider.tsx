@@ -80,7 +80,9 @@ import {
 /** Active local engines and connected remote providers can answer from here. */
 const isPickerSection = (provider: ModelProvider): boolean =>
   provider.active &&
-  !/(?:diffusion|image|video)/i.test(provider.provider) &&
+  !provider.media_only &&
+  (provider.custom_endpoint ||
+    !/(?:diffusion|image|video)/i.test(provider.provider)) &&
   (PlatformFeatures[PlatformFeature.TURBOQUANT_ENGINE] ||
     provider.provider !== 'llamacpp') &&
   (isLocalEngineProvider(provider) || isProviderConnected(provider))
@@ -110,7 +112,7 @@ const hasArtifactToken = (id: string): boolean =>
   )
 
 /** Models used for media, embeddings, transcription, or support cannot chat. */
-const isPickerModel = (model: Model): boolean => {
+const isPickerModel = (model: Model, provider: ModelProvider): boolean => {
   const capabilities = new Set(
     (model.capabilities ?? []).map((capability) => capability.toLowerCase())
   )
@@ -118,7 +120,7 @@ const isPickerModel = (model: Model): boolean => {
     isAnswerableModel(model) &&
     model.id !== VOICE_MODEL_ID &&
     !model.embedding &&
-    !hasArtifactToken(model.id) &&
+    (provider.custom_endpoint || !hasArtifactToken(model.id)) &&
     ![...capabilities].some((capability) =>
       NON_CHAT_CAPABILITIES.has(capability)
     )
@@ -759,7 +761,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
       if (!isPickerSection(provider)) return
 
       provider.models.forEach((modelItem) => {
-        if (!isPickerModel(modelItem)) return
+        if (!isPickerModel(modelItem, provider)) return
 
         const capabilities = modelItem.capabilities || []
         const capabilitiesString = capabilities.join(' ')

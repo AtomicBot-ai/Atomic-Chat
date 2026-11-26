@@ -41,6 +41,11 @@ import { getProviderTitle } from '@/lib/utils'
 export const isLocalEngineProvider = (provider: ProviderObject): boolean =>
   isLocalProvider(provider.provider) || provider.persist === true
 
+// A provider name doubles as its proxy route. A remote server called vLLM
+// must have a different route from the vllm engine, even on another OS.
+export const customEndpointName = (name: string): string =>
+  isLocalProvider(name.toLowerCase()) ? `${name} (endpoint)` : name
+
 /** The exact complement of {@link isLocalEngineProvider}. */
 export const isCloudProvider = (provider: ProviderObject): boolean =>
   !isLocalEngineProvider(provider)
@@ -99,6 +104,7 @@ export const takesApiKey = (provider: ProviderObject): boolean =>
  * would sweep OpenAI and friends into the self-hosted group for a frame.
  */
 const isUserAddedProvider = (provider: ProviderObject): boolean => {
+  if (provider.custom_endpoint) return true
   const registry = useProviderRegistryStore.getState()
   if (!registry.hasInitialized) return false
   return !registry.providers.some((p) => p.provider === provider.provider)

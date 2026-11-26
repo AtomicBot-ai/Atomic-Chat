@@ -18,8 +18,6 @@ vi.mock('@/hooks/useModelProvider', () => ({
     }),
   },
 }))
-vi.mock('@/lib/models', () => ({ getModelCapabilities: () => [] }))
-vi.mock('@/utils/registerRemoteProvider', () => ({ isLocalProvider: () => false }))
 
 import { refreshProviderModels } from '../refresh-provider-models'
 
@@ -54,8 +52,11 @@ describe('refreshProviderModels with the registry unreachable', () => {
     const { updateProvider, fetchModelsFromProvider } = await run(['served-model'])
 
     expect(fetchModelsFromProvider).toHaveBeenCalledTimes(1)
-    expect(updateProvider.mock.calls[0]?.[1].models.map((m: Model) => m.id)).toEqual([
-      'served-model',
+    expect(updateProvider.mock.calls[0]?.[1].models).toEqual([
+      expect.objectContaining({
+        id: 'served-model',
+        capabilities: ['completion', 'tools'],
+      }),
     ])
     expect(mocks.toast.success).toHaveBeenCalledTimes(1)
     expect(mocks.toast.error).not.toHaveBeenCalled()
