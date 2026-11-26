@@ -74,11 +74,18 @@ export function LorasHub({
     setResults([])
     const timer = setTimeout(async () => {
       try {
-        const local = await loras.search(q, target, false, source)
+        const cached = await loras.search(q, target, false, source)
         if (!active) return
-        if (source && local.target)
-          setResolved({ source, target: local.target })
-        setResults(local.results)
+        if (source && cached.target)
+          setResolved({ source, target: cached.target })
+        setResults(cached.results)
+        if (source || target) {
+          const bundled = await loras.search(q, target, true, source, true)
+          if (!active) return
+          if (source && bundled.target)
+            setResolved({ source, target: bundled.target })
+          setResults(bundled.results)
+        }
         const live = await loras.search(q, target, true, source)
         if (active) {
           if (source && live.target)

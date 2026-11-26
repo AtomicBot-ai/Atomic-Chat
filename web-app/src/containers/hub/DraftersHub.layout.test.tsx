@@ -66,6 +66,7 @@ function Example({ width }: { width: number }) {
 describe('Desktop drafter discovery and selection', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.mocked(getCatalogSync).mockReturnValue([])
     seedServiceHub({})
     useModelProvider.setState({ providers: [], selectedModel: null })
   })
@@ -276,21 +277,18 @@ describe('Desktop drafter discovery and selection', () => {
     view.unmount()
   })
 
-  it('loads additional GGUF variants for the chosen repository and checkpoint', async () => {
-    await i18n.changeLanguage('en')
-    const bf16 = {
-      ...row,
-      quant: 'BF16',
-      sha256: 'b'.repeat(64),
-      file: 'head-BF16.gguf',
-    }
+  it('shows returned variants as individual files without a quantization picker', async () => {
     vi.mocked(drafters.list).mockResolvedValue({ files: [], downloads: [] })
     vi.mocked(drafters.search).mockResolvedValue({
-      results: [{ ...row, moreVariants: true }],
-      partial: false,
-    })
-    vi.mocked(drafters.variants).mockResolvedValue({
-      results: [row, bf16],
+      results: [
+        row,
+        {
+          ...row,
+          sha256: 'b'.repeat(64),
+          file: 'head-BF16.gguf',
+          quant: 'BF16',
+        },
+      ],
       partial: false,
     })
     const view = render(
@@ -298,12 +296,9 @@ describe('Desktop drafter discovery and selection', () => {
         <DraftersHub tabs={null} q="" onClear={() => {}} onQuery={() => {}} />
       )
     )
-    const select = await screen.findByRole('combobox', { name: 'GGUF variant' })
-    fireEvent.change(select, { target: { value: 'more' } })
-    await screen.findByRole('option', { name: /BF16/ })
-    expect(drafters.variants).toHaveBeenCalledWith(row.repo, row.target)
-    fireEvent.change(select, { target: { value: bf16.sha256 } })
-    expect(screen.getByTitle(bf16.file)).toBeTruthy()
+    await screen.findByTitle('head-BF16.gguf')
+    expect(screen.getAllByRole('button', { name: 'Download' })).toHaveLength(2)
+    expect(screen.queryByRole('combobox', { name: 'GGUF variant' })).toBeNull()
     view.unmount()
   })
   it('automatically exhausts sparse model search pages and shows every verified file with a Download button', async () => {

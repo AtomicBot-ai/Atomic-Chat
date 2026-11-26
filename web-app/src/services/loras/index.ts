@@ -11,6 +11,7 @@ export interface Lora {
   mode: LoraMode
 }
 export interface LoraChoices {
+  source?: string
   target?: string
   adapterId: string | null
   files: Lora[]
@@ -43,9 +44,11 @@ export const loras = {
     q: string,
     target: string | undefined,
     live: boolean,
-    source?: string
+    source?: string,
+    repoOnly = false
   ) => {
     const params = new URLSearchParams({ q, live: live ? '1' : '0' })
+    if (repoOnly) params.set('scope', 'repo')
     if (source) params.set('source', source)
     if (target) params.set('target', target)
     return call<{ results: Lora[]; partial: boolean; target?: string }>(

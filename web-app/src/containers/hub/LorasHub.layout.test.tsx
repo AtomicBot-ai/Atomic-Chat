@@ -62,6 +62,7 @@ it.each([
     })
     vi.spyOn(loras, 'choices').mockImplementation(async () => ({
       target: row.target,
+      source: row.repo,
       adapterId,
       files: installed ? [row] : [],
     }))
@@ -93,7 +94,7 @@ it.each([
     )
     expect(navigate).toHaveBeenCalledWith({
       to: route.hub.index,
-      search: { category: 'loras', target: row.target },
+      search: { category: 'loras', target: row.target, source: row.repo },
     })
     const link = await screen.findByRole('link', { name: 'Hugging Face' })
     expect(link.getAttribute('href')).toBe(`https://huggingface.co/${row.repo}`)

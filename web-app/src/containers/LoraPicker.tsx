@@ -1,7 +1,8 @@
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { Button } from '@/components/ui/button'
+import { installedGgufSource } from '@/lib/installed-model-source'
 import { route } from '@/constants/routes'
 import {
   loras,
@@ -23,7 +24,17 @@ export function LoraPicker({
   const navigate = useNavigate()
   const id = useId()
   const version = useLoraInventoryVersion((s) => s.version)
-  const [choices, setChoices] = useState<LoraChoices>()
+  const [result, setChoices] = useState<
+    LoraChoices & { model: string; mode: LoraMode }
+  >()
+  const choices =
+    result?.model === model && result.mode === mode ? result : undefined
+  const source = useMemo(
+    () =>
+      choices?.source ??
+      (choices && mode === 'chat' ? installedGgufSource(model) : undefined),
+    [choices, mode, model]
+  )
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [attempt, retry] = useState(0)
@@ -33,7 +44,7 @@ export function LoraPicker({
       .choices(mode, model)
       .then((v) => {
         if (active) {
-          setChoices(v)
+          setChoices({ ...v, model, mode })
           setError('')
         }
       })
@@ -70,7 +81,11 @@ export function LoraPicker({
           onClick={() =>
             void navigate({
               to: route.hub.index,
-              search: { category: 'loras', target: choices?.target },
+              search: {
+                category: 'loras',
+                target: choices?.target,
+                source,
+              },
             })
           }
         >

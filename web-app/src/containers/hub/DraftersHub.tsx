@@ -62,15 +62,11 @@ function DrafterRows({
   rows,
   inventory,
   refresh,
-  installedOnly = false,
-  modelScoped = false,
   source,
 }: {
   rows: Drafter[]
   inventory: DrafterInventory
   refresh: () => void
-  installedOnly?: boolean
-  modelScoped?: boolean
   source?: string
 }) {
   const { t } = useTranslation()
@@ -95,19 +91,7 @@ function DrafterRows({
       Object.values(s.sessions).some((v) => v.isStreaming)
   )
   const [starting, setStarting] = useState<string>()
-  const [chosen, choose] = useState<Record<string, string>>({})
-  const [expanded, setExpanded] = useState<
-    Record<string, { results: Drafter[]; partial: boolean }>
-  >({})
   const installedIds = new Set(inventory.files.map((file) => file.sha256))
-  const variants = new Map<string, Drafter[]>()
-  for (const row of rows) {
-    const key =
-      installedOnly || modelScoped ? row.sha256 : row.target + '@' + row.repo
-    const options = variants.get(key) ?? []
-    options.push(row)
-    variants.set(key, options)
-  }
   const [pending, setPending] = useState<Set<string>>(new Set())
   const action = async (id: string, operation: () => Promise<unknown>) => {
     setError('')
@@ -154,24 +138,7 @@ function DrafterRows({
   return (
     <>
       <ul className="divide-y divide-border rounded-lg border border-border">
-        {[...variants].map(([key, initial]) => {
-          const options = [
-            ...new Map(
-              [...initial, ...(expanded[key]?.results ?? [])].map((d) => [
-                d.sha256,
-                d,
-              ])
-            ).values(),
-          ]
-          const more =
-            !installedOnly &&
-            !modelScoped &&
-            initial.some((d) => d.moreVariants) &&
-            (!expanded[key] || expanded[key].partial)
-          const row =
-            options.find((d) => d.sha256 === chosen[key]) ??
-            options.find((d) => installedIds.has(d.sha256)) ??
-            options[0]
+        {rows.map((row) => {
           const id = row.sha256
           const installed = installedIds.has(id)
           const matches =
@@ -182,7 +149,7 @@ function DrafterRows({
             (d) => d.taskId === 'dspark:' + id
           )
           return (
-            <li key={key} className="flex flex-wrap items-center gap-3 p-3">
+            <li key={id} className="flex flex-wrap items-center gap-3 p-3">
               <div className="min-w-0 flex-[1_1_12rem]">
                 <div className="truncate text-sm font-medium" title={row.file}>
                   {row.file}
@@ -193,37 +160,6 @@ function DrafterRows({
                 </div>
               </div>
               <HuggingFaceRepoLink repo={row.repo} />
-              {(options.length > 1 || more) && (
-                <select
-                  aria-label={t('hub:drafters.variant')}
-                  className="max-w-full rounded-md border border-border bg-background px-2 py-1 text-sm"
-                  value={id}
-                  disabled={pending.has(key)}
-                  onChange={(e) => {
-                    const value = e.target.value
-                    if (value !== 'more') {
-                      choose((old) => ({ ...old, [key]: value }))
-                      return
-                    }
-                    void action(key, async () => {
-                      const next = await drafters.variants(row.repo, row.target)
-                      setExpanded((old) => ({ ...old, [key]: next }))
-                      if (next.partial) setError(t('hub:drafters.offline'))
-                    })
-                  }}
-                >
-                  {options.map((d) => (
-                    <option value={d.sha256} key={d.sha256}>
-                      {d.quant} · {size(d.size)}
-                    </option>
-                  ))}
-                  {more && (
-                    <option value="more">
-                      {t('hub:drafters.moreVariants')}
-                    </option>
-                  )}
-                </select>
-              )}
               {progress ? (
                 <Button
                   variant="outline"
@@ -303,7 +239,6 @@ export function InstalledDrafters() {
         rows={inventory.value.files}
         inventory={inventory.value}
         refresh={inventory.refresh}
-        installedOnly
       />
     </section>
   )
@@ -472,7 +407,6 @@ export function DraftersHub({
           <DrafterRows
             rows={result.results}
             source={source}
-            modelScoped={modelScoped}
             inventory={inv.value}
             refresh={inv.refresh}
           />
