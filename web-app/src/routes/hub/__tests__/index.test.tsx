@@ -168,6 +168,7 @@ vi.mock('@/containers/hub/ModelDetailPanel', () => ({
     engines,
     onCollapse,
     onFindDspark,
+    onFindLoras,
   }: {
     model: CatalogModel
     facts?: { format?: string }
@@ -176,6 +177,7 @@ vi.mock('@/containers/hub/ModelDetailPanel', () => ({
     engines?: string[]
     onCollapse: () => void
     onFindDspark?: (repo: string) => void
+    onFindLoras?: (repo: string) => void
   }) => (
     <aside
       data-testid="detail-panel"
@@ -187,7 +189,12 @@ vi.mock('@/containers/hub/ModelDetailPanel', () => ({
       data-engines={engines?.join(',') ?? ''}
     >
       {model.model_name}
-      <button onClick={() => onFindDspark?.(model.model_name)}>Find drafters</button>
+      {onFindLoras && (
+        <button onClick={() => onFindLoras(model.model_name)}>Find LoRA</button>
+      )}
+      <button onClick={() => onFindDspark?.(model.model_name)}>
+        Find drafters
+      </button>
       <button type="button" onClick={onCollapse}>
         collapse-row
       </button>
@@ -912,23 +919,29 @@ describe('/hub route', () => {
       const card = await screen.findByTestId('detail-panel')
       expect(card).toHaveTextContent('gemma-4-E4B-it-GGUF')
       expect(scroll.mock.contexts).toContain(card.closest('tr'))
-      expect(mocks.fetchHuggingFaceRepo).not.toHaveBeenCalled()
+      expect(mocks.fetchHuggingFaceRepo.mock.calls.map(([id]) => String(id).toLowerCase())).not.toContain(repo.toLowerCase())
     } finally {
       scroll.mockRestore()
     }
   })
 
-  it('opens Drafters in a new history entry and keeps the expanded card in the previous entry', async () => {
-    const source = 'google/gemma-4-12b-GGUF'
-    mocks.search = { model: source }
-    render(<HubPage />)
-    await userEvent.click(screen.getByRole('button', { name: 'Find drafters' }))
-    expect(mocks.navigate.mock.calls.at(-1)?.[0]).toEqual({
-      to: '/hub/',
-      search: { category: 'drafters', source },
-    })
-    expect(mocks.search).toEqual({ model: source })
-  })
+  it.each([
+    ['Find drafters', 'drafters'],
+    ['Find LoRA', 'loras'],
+  ])(
+    '%s keeps the expanded card in the previous history entry',
+    async (name, category) => {
+      const source = 'google/gemma-4-12b-GGUF'
+      mocks.search = { model: source }
+      render(<HubPage />)
+      await userEvent.click(screen.getByRole('button', { name }))
+      expect(mocks.navigate.mock.calls.at(-1)?.[0]).toEqual({
+        to: '/hub/',
+        search: { category, source },
+      })
+      expect(mocks.search).toEqual({ model: source })
+    }
+  )
 
   it('opens no row on arrival', async () => {
     render(<HubPage />)
@@ -2035,6 +2048,7 @@ describe('/hub route', () => {
         'hub-category-workflow-option-video',
         'hub-category-workflow-option-audio',
         'hub-category-workflow-option-drafters',
+        'hub-category-workflow-option-loras',
       ])
     })
 

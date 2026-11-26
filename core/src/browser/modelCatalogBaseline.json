@@ -3,6 +3,100 @@
   "schema_version": 1,
   "updated_at": "2026-11-06T09:05:18Z",
   "models": {
+    "auxiliary:lora:phh/Qwen3-0.6B-TLDR-Lora": {
+      "kind": "auxiliary",
+      "format": "gguf",
+      "definition": {
+        "method": "lora",
+        "modality": "chat",
+        "target": "Qwen/Qwen3-0.6B",
+        "repo": "phh/Qwen3-0.6B-TLDR-Lora",
+        "revision": "0f39534202828516c2645f1aeb8c5e9e9a0f6801"
+      },
+      "variants": {
+        "default": {
+          "selection": "Qwen3-0.6B-tldr-lora-f16.gguf"
+        }
+      },
+      "files": [
+        {
+          "path": "Qwen3-0.6B-tldr-lora-f16.gguf",
+          "size": 4595584,
+          "sha256": "bf991b0f9fc59e992ad0fe5db8b8edcbdb9f55c324cb0749904d5180cc363493"
+        }
+      ]
+    },
+    "auxiliary:lora:selorahomes/Selora-AI-LLM-1.7B": {
+      "kind": "auxiliary",
+      "format": "gguf",
+      "definition": {
+        "method": "lora",
+        "modality": "chat",
+        "target": "Qwen/Qwen3-1.7B",
+        "repo": "selorahomes/Selora-AI-LLM-1.7B",
+        "revision": "aecda81109ab98ffb4e3fc65c40aa4a669117792"
+      },
+      "variants": {
+        "default": {
+          "selection": "selora-answer.f16.gguf"
+        }
+      },
+      "files": [
+        {
+          "path": "selora-answer.f16.gguf",
+          "size": 14958144,
+          "sha256": "cc3c9268bca5a9e330ba79c3757bcf7d698693eedcaa6b26894820c550421839"
+        }
+      ]
+    },
+    "auxiliary:lora:fal/flux-2-klein-4b-spritesheet-lora": {
+      "kind": "auxiliary",
+      "format": "safetensors",
+      "definition": {
+        "method": "lora",
+        "modality": "image",
+        "target": "black-forest-labs/FLUX.2-klein-4B",
+        "repo": "fal/flux-2-klein-4b-spritesheet-lora",
+        "revision": "6d3128f9223f585251ad3a02dd0d8082c9b5ca3f",
+        "target_family": "flux.2-klein"
+      },
+      "variants": {
+        "default": {
+          "selection": "mFtSubaAlDqtHyKk6eIPi_pytorch_lora_weights_comfy_converted.safetensors"
+        }
+      },
+      "files": [
+        {
+          "path": "mFtSubaAlDqtHyKk6eIPi_pytorch_lora_weights_comfy_converted.safetensors",
+          "size": 76038936,
+          "sha256": "9daf5d163f390afa8a0c6d091e3f028b1689d43ef15afe483b8eb4de1a40adaf"
+        }
+      ]
+    },
+    "auxiliary:lora:ostris/wan22_5b_i2v_crush_it_lora": {
+      "kind": "auxiliary",
+      "format": "safetensors",
+      "definition": {
+        "method": "lora",
+        "modality": "video",
+        "target": "Wan-AI/Wan2.2-TI2V-5B",
+        "repo": "ostris/wan22_5b_i2v_crush_it_lora",
+        "revision": "e4b85be20d75c2ca2ee1b901ba2cf49d9416e233",
+        "target_family": "wan2.2-ti2v-5b"
+      },
+      "variants": {
+        "default": {
+          "selection": "wan22_5b_i2v_crush_it_lora.safetensors"
+        }
+      },
+      "files": [
+        {
+          "path": "wan22_5b_i2v_crush_it_lora.safetensors",
+          "size": 161293208,
+          "sha256": "00a3ed72d8e257b416e1232cce07acf76cfb3ad7538f8ba995b6818f0b560f23"
+        }
+      ]
+    },
     "auxiliary:dspark:thinkingmachines/Inkling-2-Mini": {
       "kind": "auxiliary",
       "format": "gguf",

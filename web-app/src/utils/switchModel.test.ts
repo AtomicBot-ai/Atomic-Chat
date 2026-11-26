@@ -259,12 +259,14 @@ describe('switchToModel', () => {
   it('switches the model for a new chat without changing the previous conversation', async () => {
     const providerName = 'llamacpp-upstream'
     const modelId = 'org/installed'
+    const engines = createLoadedEngines({ [providerName]: [modelId] })
     const serviceHub = {
       app: () => ({ getServerStatus: async () => true }),
-      models: () => createLoadedEngines({ [providerName]: [modelId] }),
+      models: () => engines,
     } as unknown as ServiceHub
     await switchToModel({ modelId, providerName, serviceHub, updateCurrentThread: false })
     expect(modelProviderState.selectModelProvider).toHaveBeenCalledWith(providerName, modelId)
+    expect(engines.snapshot()).toEqual({ [providerName]: [modelId] })
     expect(updateCurrentThreadModel).not.toHaveBeenCalled()
   })
 

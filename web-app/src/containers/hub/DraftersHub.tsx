@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useNavigate } from '@tanstack/react-router'
 import { route } from '@/constants/routes'
+import { useDrafterInventory } from '@/hooks/useDrafterInventory'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { getServiceHub } from '@/hooks/useServiceHub'
 import { useChatSessions } from '@/stores/chat-session-store'
@@ -10,6 +11,7 @@ import {
   drafterModelRepo,
   useInstalledDrafterModels,
 } from './installedDrafterModel'
+import { HuggingFaceRepoLink } from './HuggingFaceRepoLink'
 import { HubSearchToolbar } from './HubSearchToolbar'
 import { Button } from '@/components/ui/button'
 import {
@@ -20,38 +22,6 @@ import {
   type DrafterSearch,
 } from '@/services/drafters'
 
-function useInventory() {
-  const [value, setValue] = useState<DrafterInventory>({
-    files: [],
-    downloads: [],
-  })
-  const [error, setError] = useState('')
-  const [version, refresh] = useState(0)
-  useEffect(() => {
-    let active = true
-    let timer: ReturnType<typeof setTimeout>
-    let interval = 1500
-    const poll = async () => {
-      try {
-        const next = await drafters.list()
-        if (active) {
-          interval = next.downloads.length ? 800 : 5000
-          setValue(next)
-          setError('')
-        }
-      } catch (e) {
-        if (active) setError(drafterError(e))
-      }
-      if (active) timer = setTimeout(poll, interval)
-    }
-    void poll()
-    return () => {
-      active = false
-      clearTimeout(timer)
-    }
-  }, [version])
-  return { value, error, refresh: () => refresh((n) => n + 1) }
-}
 const size = (bytes: number) =>
   bytes >= 1e9
     ? (bytes / 1e9).toFixed(1) + ' GB'
@@ -61,15 +31,11 @@ function DrafterRows({
   rows,
   inventory,
   refresh,
-  installedOnly = false,
-  modelScoped = false,
   source,
 }: {
   rows: Drafter[]
   inventory: DrafterInventory
   refresh: () => void
-  installedOnly?: boolean
-  modelScoped?: boolean
   source?: string
 }) {
   const { t } = useTranslation()
@@ -94,19 +60,7 @@ function DrafterRows({
       Object.values(s.sessions).some((v) => v.isStreaming)
   )
   const [starting, setStarting] = useState<string>()
-  const [chosen, choose] = useState<Record<string, string>>({})
-  const [expanded, setExpanded] = useState<
-    Record<string, { results: Drafter[]; partial: boolean }>
-  >({})
   const installedIds = new Set(inventory.files.map((file) => file.sha256))
-  const variants = new Map<string, Drafter[]>()
-  for (const row of rows) {
-    const key =
-      installedOnly || modelScoped ? row.sha256 : row.target + '@' + row.repo
-    const options = variants.get(key) ?? []
-    options.push(row)
-    variants.set(key, options)
-  }
   const [pending, setPending] = useState<Set<string>>(new Set())
   const action = async (id: string, operation: () => Promise<unknown>) => {
     setError('')
@@ -153,24 +107,7 @@ function DrafterRows({
   return (
     <>
       <ul className="divide-y divide-border rounded-lg border border-border">
-        {[...variants].map(([key, initial]) => {
-          const options = [
-            ...new Map(
-              [...initial, ...(expanded[key]?.results ?? [])].map((d) => [
-                d.sha256,
-                d,
-              ])
-            ).values(),
-          ]
-          const more =
-            !installedOnly &&
-            !modelScoped &&
-            initial.some((d) => d.moreVariants) &&
-            (!expanded[key] || expanded[key].partial)
-          const row =
-            options.find((d) => d.sha256 === chosen[key]) ??
-            options.find((d) => installedIds.has(d.sha256)) ??
-            options[0]
+        {rows.map((row) => {
           const id = row.sha256
           const installed = installedIds.has(id)
           const matches =
@@ -181,8 +118,8 @@ function DrafterRows({
             (d) => d.taskId === 'dspark:' + id
           )
           return (
-            <li key={key} className="flex flex-wrap items-center gap-3 p-3">
-              <div className="min-w-0 flex-1">
+            <li key={id} className="flex flex-wrap items-center gap-3 p-3">
+              <div className="min-w-0 flex-[1_1_12rem]">
                 <div className="truncate text-sm font-medium" title={row.file}>
                   {row.file}
                 </div>
@@ -191,37 +128,7 @@ function DrafterRows({
                   {row.repo.split('/')[0]} · {row.quant} · {size(row.size)}
                 </div>
               </div>
-              {(options.length > 1 || more) && (
-                <select
-                  aria-label={t('hub:drafters.variant')}
-                  className="max-w-full rounded-md border border-border bg-background px-2 py-1 text-sm"
-                  value={id}
-                  disabled={pending.has(key)}
-                  onChange={(e) => {
-                    const value = e.target.value
-                    if (value !== 'more') {
-                      choose((old) => ({ ...old, [key]: value }))
-                      return
-                    }
-                    void action(key, async () => {
-                      const next = await drafters.variants(row.repo, row.target)
-                      setExpanded((old) => ({ ...old, [key]: next }))
-                      if (next.partial) setError(t('hub:drafters.offline'))
-                    })
-                  }}
-                >
-                  {options.map((d) => (
-                    <option value={d.sha256} key={d.sha256}>
-                      {d.quant} · {size(d.size)}
-                    </option>
-                  ))}
-                  {more && (
-                    <option value="more">
-                      {t('hub:drafters.moreVariants')}
-                    </option>
-                  )}
-                </select>
-              )}
+              <HuggingFaceRepoLink repo={row.repo} />
               {progress ? (
                 <Button
                   variant="outline"
@@ -290,23 +197,6 @@ function DrafterRows({
   )
 }
 
-export function InstalledDrafters() {
-  const { t } = useTranslation()
-  const inventory = useInventory()
-  if (!inventory.value.files.length) return null
-  return (
-    <section className="my-4 space-y-2">
-      <h2 className="font-medium">{t('hub:drafters.title')}</h2>
-      <DrafterRows
-        rows={inventory.value.files}
-        inventory={inventory.value}
-        refresh={inventory.refresh}
-        installedOnly
-      />
-    </section>
-  )
-}
-
 export function DraftersHub({
   tabs,
   source,
@@ -325,7 +215,7 @@ export function DraftersHub({
   onTarget?: (checkpoint: string) => void
 }) {
   const { t } = useTranslation()
-  const inv = useInventory()
+  const inv = useDrafterInventory()
   const [result, setResult] = useState<DrafterSearch>({
     results: [],
     partial: false,
@@ -470,7 +360,6 @@ export function DraftersHub({
           <DrafterRows
             rows={result.results}
             source={source}
-            modelScoped={modelScoped}
             inventory={inv.value}
             refresh={inv.refresh}
           />

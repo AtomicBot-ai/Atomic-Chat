@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from 'react'
 
 import { useAssistant } from '@/hooks/useAssistant'
+import { resolveAssistantSelection } from '@/lib/samplingParams'
 import { useThreads } from '@/hooks/useThreads'
 
 /**
@@ -22,10 +23,8 @@ export function useEffectiveAssistant() {
   )
 
   const currentThreadId = useThreads((state) => state.currentThreadId)
-  const threadAssistantId = useThreads((state) =>
-    currentThreadId
-      ? state.threads[currentThreadId]?.assistants?.[0]?.id
-      : undefined
+  const boundAssistants = useThreads((state) =>
+    currentThreadId ? state.threads[currentThreadId]?.assistants : undefined
   )
   const updateCurrentThreadAssistant = useThreads(
     (state) => state.updateCurrentThreadAssistant
@@ -33,18 +32,21 @@ export function useEffectiveAssistant() {
 
   const activeAssistant = useMemo<Assistant | undefined>(
     () =>
-      assistants.find((a) => a.id === threadAssistantId) ??
-      assistants.find((a) => a.id === pendingAssistant?.id) ??
-      assistants.find((a) => a.id === defaultAssistantId) ??
-      assistants[0],
-    [assistants, threadAssistantId, pendingAssistant, defaultAssistantId]
+      resolveAssistantSelection(
+        assistants,
+        pendingAssistant,
+        defaultAssistantId,
+        boundAssistants
+      ),
+    [assistants, boundAssistants, pendingAssistant, defaultAssistantId]
   )
 
   const selectAssistant = useCallback(
     (assistant: Assistant | undefined) => {
-      setPendingAssistant(assistant)
       if (currentThreadId) {
-        updateCurrentThreadAssistant(assistant as unknown as Assistant)
+        updateCurrentThreadAssistant(assistant)
+      } else {
+        setPendingAssistant(assistant ?? null)
       }
     },
     [currentThreadId, setPendingAssistant, updateCurrentThreadAssistant]

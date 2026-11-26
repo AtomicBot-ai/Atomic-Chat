@@ -77,6 +77,7 @@ import { useOptimisticUserMessage } from '@/hooks/useOptimisticUserMessage'
 import { buildOptimisticUserMessage } from '@/lib/optimisticUserMessage'
 import { localStorageKey } from '@/constants/localStorage'
 import { defaultModel } from '@/lib/models'
+import { resolveAssistantSelection } from '@/lib/samplingParams'
 import { useAssistant } from '@/hooks/useAssistant'
 import DropdownPlugins from '@/containers/DropdownPlugins'
 import ToolCostHint from '@/containers/ToolCostHint'
@@ -207,6 +208,19 @@ type AttachRouteOptions = {
   onImagesNeedVision?: () => void
 }
 
+function assistantForNewChat(projectAssistantId?: string) {
+  const { assistants, pendingAssistant, defaultAssistantId } =
+    useAssistant.getState()
+  if (projectAssistantId && pendingAssistant !== null) {
+    return assistants.find((assistant) => assistant.id === projectAssistantId)
+  }
+  return resolveAssistantSelection(
+    assistants,
+    pendingAssistant,
+    defaultAssistantId
+  )
+}
+
 type ChatInputProps = {
   className?: string
   containerClassName?: string
@@ -283,8 +297,6 @@ const ChatInput = memo(function ChatInput({
   useTools()
   const router = useRouter()
   const createThread = useThreads((state) => state.createThread)
-  const assistants = useAssistant((state) => state.assistants)
-  const defaultAssistantId = useAssistant((state) => state.defaultAssistantId)
   const selectedModel = useModelProvider((state) => state.selectedModel)
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
   const selectModelProvider = useModelProvider(
@@ -749,7 +761,6 @@ const ChatInput = memo(function ChatInput({
   /** A model that can answer right now — a loaded local one, or a cloud one. */
   const canSendToSelectedModel = !!selectedModel && !isLocalModelNotReady
 
-  const selectedAssistant = useAssistant((state) => state.pendingAssistant)
   const setSelectedAssistant = useAssistant(
     (state) => state.setPendingAssistant
   )
@@ -1280,13 +1291,7 @@ const ChatInput = memo(function ChatInput({
           }
         }
 
-        // Only use assistant when chatting via project with an assigned assistant
-        // When no projectId, use the selected assistant from dropdown (if any)
-        const assistant = projectAssistantId
-          ? assistants.find((a) => a.id === projectAssistantId)
-          : (selectedAssistant ??
-            assistants.find((a) => a.id === defaultAssistantId) ??
-            assistants[0])
+        const assistant = assistantForNewChat(projectAssistantId)
 
         // #region agent log
         ttftPreBegin('before-createThread')
@@ -1411,11 +1416,7 @@ const ChatInput = memo(function ChatInput({
         const project = projectId
           ? useThreadManagementStore.getState().getFolderById(projectId)
           : undefined
-        const assistant = project?.assistantId
-          ? assistants.find((entry) => entry.id === project.assistantId)
-          : (selectedAssistant ??
-            assistants.find((entry) => entry.id === defaultAssistantId) ??
-            assistants[0])
+        const assistant = assistantForNewChat(project?.assistantId)
         useDeferredFirstSend.getState().enqueue({
           id: queueId,
           prompt: usePrompt.getState().getDraft(composerThreadKey),
@@ -1423,7 +1424,7 @@ const ChatInput = memo(function ChatInput({
           createdAt: Date.now(),
           composerKey: composerThreadKey,
           project,
-          assistant,
+          assistant: assistant ?? null,
           agentState: {
             approvalMode: agent.approvalModes[composerThreadKey],
             workspace: agent.workspaces[composerThreadKey],
@@ -1442,16 +1443,7 @@ const ChatInput = memo(function ChatInput({
       useDeferredFirstSend.getState().clear()
       setQueuedSend(resolution)
     },
-    [
-      attachments.length,
-      composerThreadKey,
-      initialMessage,
-      onSubmit,
-      projectId,
-      assistants,
-      defaultAssistantId,
-      selectedAssistant,
-    ]
+    [attachments.length, composerThreadKey, initialMessage, onSubmit, projectId]
   )
 
   const handleReplyGateDismissed = useCallback(() => {

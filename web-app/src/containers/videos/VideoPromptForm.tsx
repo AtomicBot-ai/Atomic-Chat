@@ -1,3 +1,4 @@
+import { LoraPicker } from '@/containers/LoraPicker'
 import {
   memo,
   useCallback,
@@ -320,6 +321,14 @@ export const VideoPromptForm = memo(function VideoPromptForm({
             onOpenChange={setModelsOpen}
             modality="video"
           />
+          {!remote && generation.targetArtifactId && (
+            <LoraPicker
+              key={generation.targetArtifactId}
+              model={generation.targetArtifactId}
+              mode="video"
+              disabled={generation.generating}
+            />
+          )}
           <ImageField htmlFor="video-prompt" label={t('videos:form.prompt')}>
             <Textarea
               id="video-prompt"

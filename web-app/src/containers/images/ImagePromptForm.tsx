@@ -1,3 +1,4 @@
+import { LoraPicker } from '@/containers/LoraPicker'
 import {
   memo,
   useCallback,
@@ -297,6 +298,14 @@ export const ImagePromptForm = memo(function ImagePromptForm({
 
         <MediaPromptCard testId="image-prompt-card">
           <ImageModelPicker open={modelsOpen} onOpenChange={setModelsOpen} />
+          {!remote && generation.targetArtifactId && (
+            <LoraPicker
+              key={generation.targetArtifactId}
+              model={generation.targetArtifactId}
+              mode="image"
+              disabled={generation.generating}
+            />
+          )}
           <ImageField
             htmlFor="image-prompt"
             label={t(isEdit ? 'images:form.instruction' : 'images:form.prompt')}

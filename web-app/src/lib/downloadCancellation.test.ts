@@ -45,9 +45,10 @@ describe('cancelDownload', () => {
     })
   })
 
-  it('stops the core transfer for a DSpark head from the global panel', () => {
-    const id = 'dspark:' + 'a'.repeat(64)
+  it.each(['dspark:', 'lora:'])('stops the core transfer for %s from the global panel', (prefix) => {
+    const id = prefix + 'a'.repeat(64)
     cancelDownload({ id, name: id }, serviceHub)
+    expect(wasDownloadCancellationRequested(id)).toBe(true)
     expect(cancelEngineBuildDownload).toHaveBeenCalledWith(id)
     expect(extensionCancel).not.toHaveBeenCalled()
   })

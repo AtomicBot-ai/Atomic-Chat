@@ -9,7 +9,7 @@ export type DeferredFirstSend = {
   createdAt: number
   composerKey?: string
   project?: ThreadFolder
-  assistant?: Assistant
+  assistant?: Assistant | null
   /**
    * New Chat's approval mode and workspace when Send was pressed. The thread
    * created later starts with exactly these, as a direct send would.

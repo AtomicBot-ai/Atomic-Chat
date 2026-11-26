@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RunSettingsPanel } from '@/containers/RunSettingsPanel'
 import { useAssistant } from '@/hooks/useAssistant'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { getServiceHub } from '@/hooks/useServiceHub'
 import { useThreads } from '@/hooks/useThreads'
 import type { ModelsService } from '@/services/models/types'
 import { drafters } from '@/services/drafters'
@@ -85,6 +86,34 @@ const inside = (child: Element, parent: Element) => {
 }
 
 describe('Run settings panel header (Chromium)', () => {
+  it('clears the assistant on an existing thread from the dropdown', async () => {
+    const [writer] = useAssistant.getState().assistants
+    useThreads.setState({
+      currentThreadId: 'current',
+      threads: {
+        current: {
+          id: 'current',
+          title: 'Chat',
+          updated: 1,
+          assistants: [writer],
+        },
+      },
+    })
+    const updateThread = vi.fn().mockResolvedValue(undefined)
+    const hub = getServiceHub()
+    vi.spyOn(hub, 'threads').mockReturnValue({ ...hub.threads(), updateThread })
+    render(withTranslations(<RunSettingsPanel onClose={vi.fn()} />))
+    await page.getByRole('button', { name: 'Writer' }).click()
+    await page.getByRole('menuitem', { name: /None/ }).click()
+    await expect
+      .element(page.getByRole('button', { name: /None/ }))
+      .toBeVisible()
+    expect(updateThread).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'current', assistants: [] })
+    )
+    expect(useAssistant.getState().pendingAssistant).toBeUndefined()
+  })
+
   // QA on 2.2.21: the title, the close button and Reset to defaults scrolled
   // away with the settings, so closing the panel took a scroll back up.
   it.each(['16px', XL_FONT_SIZE])(

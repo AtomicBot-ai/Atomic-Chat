@@ -1,4 +1,15 @@
 {
+  "loras": {
+    "title": "LoRA",
+    "hint": "Адаптеры локальных моделей",
+    "find": "Найти LoRA",
+    "none": "Без LoRA",
+    "search": "Искать LoRA-адаптеры…",
+    "empty": "Совместимые LoRA-адаптеры не найдены",
+    "chat": "Чат",
+    "image": "Изображение",
+    "video": "Видео"
+  },
   "drafters": {
     "moreVariants": "Ещё варианты GGUF…",
     "variant": "Вариант GGUF",

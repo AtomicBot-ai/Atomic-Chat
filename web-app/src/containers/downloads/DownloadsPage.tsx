@@ -1,4 +1,3 @@
-import { InstalledDrafters } from '@/containers/hub/DraftersHub'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   AudioLines,
@@ -12,6 +11,7 @@ import {
   Mic,
   PieChart,
   Play,
+  Puzzle,
   Search,
   Trash2,
   X,
@@ -63,6 +63,7 @@ const KIND_ICONS: Record<InventoryKind, typeof Box> = {
   engine: Cpu,
   partial: FileClock,
   draft: Zap,
+  lora: Puzzle,
 }
 
 /** `—` where the source does not say; never a made-up size. */
@@ -269,7 +270,6 @@ export function DownloadsPage() {
         </div>
       </HeaderPage>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6">
-        <InstalledDrafters />
         <div
           className="grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-3"
           data-testid="downloads-summary"

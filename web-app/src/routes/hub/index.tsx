@@ -17,6 +17,7 @@ import { Loader } from 'lucide-react'
 import { AudioHub } from '@/containers/hub/AudioHub'
 import { DecisionHub } from '@/containers/hub/DecisionHub'
 import { EmbeddingHub } from '@/containers/hub/EmbeddingHub'
+import { LorasHub } from '@/containers/hub/LorasHub'
 import { DraftersHub } from '@/containers/hub/DraftersHub'
 import { HubCategorySelect } from '@/containers/hub/HubCategorySelect'
 import { HubFilters } from '@/containers/hub/HubFilters'
@@ -253,7 +254,7 @@ function HubContent() {
   const categories = useMemo(
     () =>
       HUB_CATEGORIES.filter((c) =>
-        c === 'drafters'
+        c === 'drafters' || c === 'loras'
           ? PlatformFeatures[PlatformFeature.LOCAL_INFERENCE] &&
             !(typeof IS_IOS !== 'undefined' && IS_IOS) &&
             !(typeof IS_ANDROID !== 'undefined' && IS_ANDROID)
@@ -290,7 +291,10 @@ function HubContent() {
           source: undefined,
           target: undefined,
           q:
-            next === 'drafters' || prev.category === 'drafters'
+            next === 'drafters' ||
+            prev.category === 'drafters' ||
+            next === 'loras' ||
+            prev.category === 'loras'
               ? undefined
               : prev.q,
           category: next === 'chat' ? undefined : next,
@@ -303,6 +307,13 @@ function HubContent() {
     [navigate]
   )
 
+  const onFindLoras = categories.includes('loras')
+    ? (source: string) =>
+        void navigate({
+          to: route.hub.index,
+          search: { category: 'loras', source },
+        })
+    : undefined
   const setDrafterTarget = useCallback(
     (checkpoint: string) => {
       void navigate({
@@ -322,6 +333,36 @@ function HubContent() {
       />
     ) : undefined
 
+  if (category === 'loras')
+    return (
+      <LorasHub
+        source={source}
+        tabs={categoryTabs}
+        target={target}
+        q={q}
+        onQuery={(value) =>
+          void navigate({
+            to: route.hub.index,
+            search: (prev: SearchParams) => ({
+              ...prev,
+              q: value || undefined,
+            }),
+            replace: true,
+          })
+        }
+        onClear={() =>
+          void navigate({
+            to: route.hub.index,
+            search: (prev: SearchParams) => ({
+              ...prev,
+              source: undefined,
+              target: undefined,
+            }),
+            replace: true,
+          })
+        }
+      />
+    )
   if (category === 'drafters')
     return (
       <DraftersHub
@@ -350,7 +391,8 @@ function HubContent() {
         }
       />
     )
-  if (category === 'chat') return <ChatHub categoryTabs={categoryTabs} />
+  if (category === 'chat')
+    return <ChatHub categoryTabs={categoryTabs} onFindLoras={onFindLoras} />
   if (category === 'decision') {
     return <DecisionHubContent categoryTabs={categoryTabs} />
   }
@@ -365,6 +407,7 @@ function HubContent() {
   }
   return (
     <MediaHubContent
+      onFindLoras={onFindLoras}
       key={category}
       modality={category}
       categoryTabs={categoryTabs}
@@ -557,10 +600,12 @@ function AudioHubContent({ categoryTabs }: { categoryTabs?: ReactNode }) {
 }
 
 function MediaHubContent({
+  onFindLoras,
   modality,
   categoryTabs,
 }: {
   modality: DiffusionModality
+  onFindLoras?: (source: string) => void
   categoryTabs?: ReactNode
 }) {
   const navigate = useNavigate()
@@ -600,6 +645,7 @@ function MediaHubContent({
 
   return (
     <MediaHub
+      onFindLoras={onFindLoras}
       modality={modality}
       categoryTabs={categoryTabs}
       query={query}
@@ -610,7 +656,13 @@ function MediaHubContent({
   )
 }
 
-function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
+function ChatHub({
+  categoryTabs,
+  onFindLoras,
+}: {
+  categoryTabs?: ReactNode
+  onFindLoras?: (source: string) => void
+}) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const serviceHub = useServiceHub()
@@ -1938,6 +1990,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
             />
           ) : (
             <LocalModelTable
+              onFindLoras={onFindLoras}
               onFindDspark={(source) =>
                 void navigate({
                   to: route.hub.index,

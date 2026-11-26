@@ -6,6 +6,7 @@ import {
   IconMicrophone,
   IconMovie,
   IconPhoto,
+  IconPuzzle,
   IconWaveSine,
   type IconProps,
 } from '@tabler/icons-react'
@@ -17,6 +18,11 @@ const CATEGORY: Record<
   HubCategory,
   { icon: ComponentType<IconProps>; title: string; hint: string }
 > = {
+  loras: {
+    icon: IconPuzzle,
+    title: 'hub:loras.title',
+    hint: 'hub:loras.hint',
+  },
   drafters: {
     icon: IconArrowsSplit,
     title: 'hub:drafters.title',

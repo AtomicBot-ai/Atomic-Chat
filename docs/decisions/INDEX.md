@@ -548,6 +548,8 @@ decision is reversed, add a new one that says which record it supersedes.
 
 ## Inference core extraction — atomic-chat-core (27)
 
+- **2026-11-26** — [Bind LoRA adapters to local model installations](2026-11-26-model-lora-selection.md)
+
 - **2026-10-26** — [Keep a slow core that is still alive attached](2026-10-26-keep-a-slow-core-that-is-still-alive-attached.md)
 - **2026-09-28** — [The Logs window merges the app's and the core's logs from disk](2026-09-28-the-logs-window-merges-app-and-core-logs-from-disk.md)
 - **2026-09-27** — [The core is the only source of hardware facts and backend decisions](2026-09-27-the-core-is-the-only-source-of-hardware-facts-and-backend-decisions.md)

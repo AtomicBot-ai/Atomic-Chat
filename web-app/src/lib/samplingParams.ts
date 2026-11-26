@@ -18,31 +18,35 @@ export interface ResolvedSamplingParams {
   assistantId?: string
 }
 
-/**
- * Assistant driving the given chat. Mirrors the Sampling popover's own
- * resolution order: thread-bound -> selection for an unsaved chat -> default
- * -> first available.
- */
+/** An empty thread binding or an explicit null draft selection means "None". */
+export function resolveAssistantSelection(
+  assistants: Assistant[],
+  pending: Assistant | null | undefined,
+  defaultId: string,
+  bound?: Thread['assistants']
+): Assistant | undefined {
+  if (bound ? bound.length === 0 : pending === null) return undefined
+  const selectedId = bound ? bound[0]?.id : pending?.id
+  return (
+    assistants.find((assistant) => assistant.id === selectedId) ??
+    assistants.find((assistant) => assistant.id === defaultId) ??
+    assistants[0]
+  )
+}
+
 export function resolveAssistantForThread(
   threadId?: string
 ): Assistant | undefined {
   const { assistants, pendingAssistant, defaultAssistantId } =
     useAssistant.getState()
-
-  const threadAssistantId = threadId
-    ? useThreads.getState().threads[threadId]?.assistants?.[0]?.id
+  const bound = threadId
+    ? useThreads.getState().threads[threadId]?.assistants
     : undefined
-  const threadAssistant = threadAssistantId
-    ? assistants.find((a) => a.id === threadAssistantId)
-    : undefined
-
-  return (
-    threadAssistant ??
-    (pendingAssistant
-      ? assistants.find((a) => a.id === pendingAssistant.id)
-      : undefined) ??
-    assistants.find((a) => a.id === defaultAssistantId) ??
-    assistants[0]
+  return resolveAssistantSelection(
+    assistants,
+    pendingAssistant,
+    defaultAssistantId,
+    bound
   )
 }
 
