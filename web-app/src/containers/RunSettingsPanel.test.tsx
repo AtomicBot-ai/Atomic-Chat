@@ -170,6 +170,23 @@ describe('RunSettingsPanel', () => {
     ).toHaveTextContent(/^R$/)
   })
 
+  it('keeps None selected and lets the user switch back to an assistant', async () => {
+    seedModel('llamacpp')
+    render(<RunSettingsPanel onClose={onClose} />)
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: /Writer/ }))
+    await user.click(
+      await screen.findByRole('menuitem', { name: /assistants:none/ })
+    )
+    expect(screen.getByLabelText('assistants:instructions')).toBeDisabled()
+    expect(useAssistant.getState().pendingAssistant).toBeNull()
+    await user.click(screen.getByRole('button', { name: /assistants:none/ }))
+    await user.click(await screen.findByRole('menuitem', { name: /Writer/ }))
+    expect(screen.getByLabelText('assistants:instructions')).toHaveValue(
+      'Be terse.'
+    )
+  })
+
   it('creates an assistant from the dropdown and makes it the active one', async () => {
     const createAssistant = vi.fn().mockResolvedValue(undefined)
     seedServiceHub({

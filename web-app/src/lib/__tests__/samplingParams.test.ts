@@ -68,6 +68,17 @@ describe('resolveAssistantForThread', () => {
     expect(resolveAssistantForThread(undefined)?.id).toBe('pending')
   })
 
+  it('honors None in new and existing chats independently', () => {
+    useAssistant.setState({ pendingAssistant: null })
+    expect(resolveAssistantForThread()).toBeUndefined()
+    bindThread('existing', 'bound')
+    expect(resolveAssistantForThread('existing')).toBe(bound)
+    bindThread('existing')
+    useAssistant.setState({ pendingAssistant: pending })
+    expect(getSamplingParamsForThread('existing').assistantId).toBeUndefined()
+    expect(resolveAssistantForThread()).toBe(pending)
+  })
+
   it('reads the live record, not the stale selection copy', () => {
     useAssistant.setState({
       pendingAssistant: makeAssistant('pending', { temperature: 0.9 }),
