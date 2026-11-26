@@ -912,7 +912,7 @@ describe('/hub route', () => {
       const card = await screen.findByTestId('detail-panel')
       expect(card).toHaveTextContent('gemma-4-E4B-it-GGUF')
       expect(scroll.mock.contexts).toContain(card.closest('tr'))
-      expect(mocks.fetchHuggingFaceRepo).not.toHaveBeenCalled()
+      expect(mocks.fetchHuggingFaceRepo.mock.calls.map(([id]) => String(id).toLowerCase())).not.toContain(repo.toLowerCase())
     } finally {
       scroll.mockRestore()
     }

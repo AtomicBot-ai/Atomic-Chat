@@ -73,27 +73,27 @@
         }
       ]
     },
-    "auxiliary:lora:FalconNet/Wan2.2-TI2V-5B-ZackDFilms-LoRA": {
+    "auxiliary:lora:ostris/wan22_5b_i2v_crush_it_lora": {
       "kind": "auxiliary",
       "format": "safetensors",
       "definition": {
         "method": "lora",
         "modality": "video",
         "target": "Wan-AI/Wan2.2-TI2V-5B",
-        "repo": "FalconNet/Wan2.2-TI2V-5B-ZackDFilms-LoRA",
-        "revision": "a35625f0961f904d56737d35a9894f0de6e90bee",
+        "repo": "ostris/wan22_5b_i2v_crush_it_lora",
+        "revision": "e4b85be20d75c2ca2ee1b901ba2cf49d9416e233",
         "target_family": "wan2.2-ti2v-5b"
       },
       "variants": {
         "default": {
-          "selection": "step-800.safetensors"
+          "selection": "wan22_5b_i2v_crush_it_lora.safetensors"
         }
       },
       "files": [
         {
-          "path": "step-800.safetensors",
-          "size": 161287952,
-          "sha256": "8c1cb15d0b1c89e78b8ed830fc9c202626e707269fb7a662e43bd6940fac227d"
+          "path": "wan22_5b_i2v_crush_it_lora.safetensors",
+          "size": 161293208,
+          "sha256": "00a3ed72d8e257b416e1232cce07acf76cfb3ad7538f8ba995b6818f0b560f23"
         }
       ]
     },

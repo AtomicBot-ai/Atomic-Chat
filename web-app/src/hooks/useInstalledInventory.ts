@@ -186,6 +186,7 @@ export async function removeInventoryItem(
  * one started owns the result, also when the page that started an earlier one
  * has closed since.
  */
+let cachedLoras: Lora[] | undefined
 const diskCache: { scan: DownloadsDiskScan; read: boolean; seq: number } = {
   scan: EMPTY_DISK_SCAN,
   read: false,
@@ -194,6 +195,7 @@ const diskCache: { scan: DownloadsDiskScan; read: boolean; seq: number } = {
 
 /** Test hook: forget the session's last read and drop any read still running. */
 export function resetDownloadsDiskCache(): void {
+  cachedLoras = undefined
   diskCache.scan = EMPTY_DISK_SCAN
   diskCache.read = false
   diskCache.seq += 1
@@ -227,9 +229,9 @@ export type InstalledInventory = {
  */
 export function useInstalledInventory(): InstalledInventory {
   const { t } = useTranslation()
-  const [loraFiles, setLoraFiles] = useState<Lora[]>([])
+  const [loraFiles, setLoraFiles] = useState<Lora[]>(cachedLoras ?? [])
   const [loraRead, setLoraRead] = useState(
-    !INVENTORY_CATEGORIES.includes('lora')
+    cachedLoras !== undefined || !INVENTORY_CATEGORIES.includes('lora')
   )
   const loraVersion = useLoraInventoryVersion((s) => s.version)
   useEffect(() => {
@@ -238,7 +240,10 @@ export function useInstalledInventory(): InstalledInventory {
     loras
       .list()
       .then(({ files }) => {
-        if (active) setLoraFiles(files)
+        if (active) {
+          cachedLoras = files
+          setLoraFiles(files)
+        }
       })
       .catch((error) =>
         console.warn('[downloads] reading LoRA inventory failed:', error)
