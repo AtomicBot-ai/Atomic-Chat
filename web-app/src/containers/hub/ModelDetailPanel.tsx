@@ -116,6 +116,7 @@ export type ModelDetailPanelProps = {
   budgetBytes: number
   liked: boolean
   onToggleLike: () => void
+  onFindLoras?: (source: string) => void
   onFindDspark?: (source: string) => void
   onCollapse: () => void
   className?: string
@@ -132,6 +133,7 @@ export type ModelDetailPanelProps = {
  * later and moving the rest.
  */
 export function ModelDetailPanel({
+  onFindLoras,
   onFindDspark,
   model,
   onStrataVariantChange,
@@ -281,6 +283,18 @@ export function ModelDetailPanel({
               onClick={() => onFindDspark(hubRepoId(model))}
             >
               {t('hub:drafters.find')}
+            </Button>
+          )}
+        {onFindLoras &&
+          facts.format === 'gguf' &&
+          engines.includes('llamacpp-upstream') && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0 rounded-full"
+              onClick={() => onFindLoras(hubRepoId(model))}
+            >
+              {t('hub:loras.find')}
             </Button>
           )}
         <SourceLink model={model} />

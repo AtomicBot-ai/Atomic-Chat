@@ -13,11 +13,13 @@ import { HubSearchToolbar } from './HubSearchToolbar'
 export function LorasHub({
   tabs,
   target,
+  source,
   q = '',
   onQuery,
   onClear,
 }: {
   tabs?: ReactNode
+  source?: string
   target?: string
   q?: string
   onQuery?: (q: string) => void
@@ -28,6 +30,11 @@ export function LorasHub({
     files: [],
     downloads: [],
   })
+  const [resolved, setResolved] = useState<{ source: string; target: string }>()
+  const modelFilter =
+    target ??
+    (resolved?.source === source ? resolved?.target : undefined) ??
+    source
   const [results, setResults] = useState<Lora[]>([])
   const [searching, setSearching] = useState(false)
   const [partial, setPartial] = useState(false)
@@ -66,11 +73,15 @@ export function LorasHub({
     setResults([])
     const timer = setTimeout(async () => {
       try {
-        const local = await loras.search(q, target, false)
+        const local = await loras.search(q, target, false, source)
         if (!active) return
+        if (source && local.target)
+          setResolved({ source, target: local.target })
         setResults(local.results)
-        const live = await loras.search(q, target, true)
+        const live = await loras.search(q, target, true, source)
         if (active) {
+          if (source && live.target)
+            setResolved({ source, target: live.target })
           setResults(live.results)
           setPartial(live.partial)
         }
@@ -84,7 +95,7 @@ export function LorasHub({
       active = false
       clearTimeout(timer)
     }
-  }, [q, target, attempt])
+  }, [q, source, target, attempt])
   async function act(id: string, operation: 'install' | 'cancel' | 'remove') {
     setActionError('')
     setPending((p) => ({ ...p, [id]: true }))
@@ -100,7 +111,7 @@ export function LorasHub({
   const error = actionError || inventoryError || searchError
   const content = (
     <>
-      {target && (
+      {modelFilter && (
         <Button
           size="sm"
           variant="outline"
@@ -108,8 +119,8 @@ export function LorasHub({
           aria-label={t('hub:drafters.clear')}
           onClick={onClear}
         >
-          <span className="truncate" title={target}>
-            {t('hub:drafters.for', { model: target })}
+          <span className="truncate" title={modelFilter}>
+            {t('hub:drafters.for', { model: modelFilter })}
           </span>{' '}
           ×
         </Button>

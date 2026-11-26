@@ -82,6 +82,20 @@ describe('ModelDetailPanel', () => {
     vi.useRealTimers()
   })
 
+  it('opens LoRA search from the model card before downloading a quant', async () => {
+    const onFindLoras = vi.fn()
+    renderPanel(model({ model_name: 'AtomicChat/Qwen3.8-27B-GGUF' }), {
+      onFindLoras,
+    })
+    await userEvent.click(
+      screen.getByRole('button', { name: 'hub:loras.find' })
+    )
+    expect(screen.getByTestId('download-options')).toHaveTextContent(
+      'AtomicChat/Qwen3.8-27B-GGUF'
+    )
+    expect(onFindLoras).toHaveBeenCalledWith('AtomicChat/Qwen3.8-27B-GGUF')
+  })
+
   it('heads the open row with the name, the repo and its numbers', () => {
     renderPanel(model({ last_modified: '2026-08-01T00:00:00Z' }))
 

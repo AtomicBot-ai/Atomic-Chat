@@ -17,6 +17,7 @@ import type { DiffusionCatalogFamily } from '@/services/diffusion-catalog-regist
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 import {
   DEFAULT_FONT_SIZE,
+  expectFits,
   expectNoHorizontalOverflow,
   setFontSize,
   setTheme,
@@ -122,7 +123,7 @@ for (const font of [DEFAULT_FONT_SIZE, XL_FONT_SIZE]) {
               data-testid="panel-frame"
               style={{ width: panelWidth(windowWidth) }}
             >
-              <MediaFamilyDetailPanel family={FAMILY} />
+              <MediaFamilyDetailPanel family={FAMILY} onFindLoras={vi.fn()} />
             </div>
           )
         )
@@ -131,6 +132,7 @@ for (const font of [DEFAULT_FONT_SIZE, XL_FONT_SIZE]) {
         })
         const frame = screen.getByTestId('panel-frame')
         expectNoHorizontalOverflow(frame)
+        expectFits(screen.getByRole('button', { name: 'Find LoRA' }), frame)
 
         /** The action slot of the quant row, whichever quant it shows. */
         const actions = () =>

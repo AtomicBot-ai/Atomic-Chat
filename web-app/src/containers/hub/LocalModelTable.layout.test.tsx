@@ -107,6 +107,8 @@ function renderTable(
       >
         <div data-testid="list" style={{ width }}>
           <LocalModelTable
+            onFindLoras={vi.fn()}
+            onFindDspark={vi.fn()}
             items={items}
             format={format}
             selected={selected}
@@ -384,6 +386,7 @@ describe('LocalModelTable layout', () => {
         table.width,
         0
       )
+      expectFits(within(open).getByRole('button', { name: 'Find LoRA' }), open)
       const facts = open.querySelector('dl')!
       const tops = [...facts.children].map((fact) =>
         Math.round(fact.getBoundingClientRect().top)

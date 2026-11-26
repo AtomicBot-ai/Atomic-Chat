@@ -75,6 +75,7 @@ const COLUMNS = [
 ] as const satisfies readonly { key: string; sort?: HubSortableColumn }[]
 
 export type LocalModelTableProps = {
+  onFindLoras?: (source: string) => void
   onFindDspark?: (source: string) => void
   items: readonly LocalModelTableItem[]
   /** The open row's model id, or `null` when every row is closed. */
@@ -156,6 +157,7 @@ const awaitsCard = (item: LocalModelTableItem) =>
  * rows the parent fetches sizes for, and the end of the list, where it asks for the next page.
  */
 export function LocalModelTable({
+  onFindLoras,
   onFindDspark,
   items,
   selected,
@@ -416,6 +418,7 @@ export function LocalModelTable({
                         className="border-t border-border bg-secondary/10"
                       >
                         <ModelDetailPanel
+                          onFindLoras={onFindLoras}
                           onFindDspark={onFindDspark}
                           model={row.model}
                           onStrataVariantChange={

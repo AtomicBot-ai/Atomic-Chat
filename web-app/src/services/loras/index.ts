@@ -39,10 +39,16 @@ export const loras = {
   select: (mode: LoraMode, model: string, adapterId: string | null) =>
     call('PUT', choicePath(mode, model), { adapterId }),
   list: () => call<LoraInventory>('GET', '/loras'),
-  search: (q: string, target: string | undefined, live: boolean) => {
+  search: (
+    q: string,
+    target: string | undefined,
+    live: boolean,
+    source?: string
+  ) => {
     const params = new URLSearchParams({ q, live: live ? '1' : '0' })
+    if (source) params.set('source', source)
     if (target) params.set('target', target)
-    return call<{ results: Lora[]; partial: boolean }>(
+    return call<{ results: Lora[]; partial: boolean; target?: string }>(
       'GET',
       '/loras/search?' + params
     )

@@ -115,6 +115,20 @@ async function pickQuant(id: string) {
 }
 
 describe('MediaFamilyDetailPanel', () => {
+  it.each([imageFamily, videoFamily])(
+    'opens LoRA search for $name',
+    async (family) => {
+      const onFindLoras = vi.fn()
+      render(
+        <MediaFamilyDetailPanel family={family} onFindLoras={onFindLoras} />
+      )
+      await userEvent.click(
+        screen.getByRole('button', { name: 'hub:loras.find' })
+      )
+      expect(onFindLoras).toHaveBeenCalledWith(family.transformer.repo)
+    }
+  )
+
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.selected = []
