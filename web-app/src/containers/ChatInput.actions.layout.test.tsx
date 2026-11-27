@@ -317,10 +317,7 @@ describe('Composer actions (Chromium)', () => {
     expect(
       screen.queryByRole('group', { name: i18n.t('chat:pi.mode') })
     ).toBeNull()
-    const heading = screen.getByRole('heading', { name: 'Review' })
-    expect(heading.querySelector('button, input')).toBeNull()
-    await userEvent.click(heading)
-    expect(screen.getAllByRole('textbox')).toHaveLength(1)
+    expect(screen.queryByText(thread.title)).toBeNull()
     const history = screen.getByRole('log')
     const idleHeight = history.getBoundingClientRect().height
     const editor = screen.getByRole('textbox') as HTMLTextAreaElement

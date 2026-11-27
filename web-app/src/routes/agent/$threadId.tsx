@@ -198,10 +198,7 @@ function AgentThread({ id, thread }: { id: string; thread?: Thread }) {
     >
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <ConversationHeader mode="agent">
-          <div className="flex w-full min-w-0 items-center justify-between">
-            <h1 className="min-w-0 flex-1 truncate text-sm font-medium">
-              {thread.title}
-            </h1>
+          <div className="flex w-full min-w-0 items-center justify-end">
             {view.context &&
               view.context.tokens != null &&
               view.context.contextWindow > 0 && (

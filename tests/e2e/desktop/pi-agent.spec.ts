@@ -111,7 +111,7 @@ describe.skipIf(!CAN_RUN_FAKE_BACKEND)('bundled pi Agent thread', () => {
       const chatSwitch =
         '//button[@aria-pressed="false" and normalize-space(.)="Chat"]'
       expect(await browser.$(chatSwitch).isExisting()).toBe(false)
-      expect(await browser.$('h1 button').isExisting()).toBe(false)
+      expect(await browser.$('main h1').isExisting()).toBe(false)
       await browser.$('//button[normalize-space(.)="New task"]').click()
       await browser.$(chatSwitch).click()
       expect(await browser.$('div[role=log]').isExisting()).toBe(false)
