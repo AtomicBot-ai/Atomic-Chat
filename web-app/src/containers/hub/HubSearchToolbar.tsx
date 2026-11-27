@@ -8,6 +8,7 @@ export type HubSearchToolbarProps = {
   value: string
   onChange: (value: string) => void
   placeholder: string
+  showImport?: boolean
   busy?: boolean
   /** The model type picker, first in the row. */
   modelType?: ReactNode
@@ -23,6 +24,7 @@ export function HubSearchToolbar({
   value,
   onChange,
   placeholder,
+  showImport = true,
   busy = false,
   modelType,
   controls,
@@ -40,9 +42,11 @@ export function HubSearchToolbar({
           />
         </div>
         {controls}
-        <span className="ml-1 shrink-0 border-l border-border pl-3 empty:hidden">
-          <ImportLocalFile />
-        </span>
+        {showImport && (
+          <span className="ml-1 shrink-0 border-l border-border pl-3 empty:hidden">
+            <ImportLocalFile />
+          </span>
+        )}
       </div>
     </HeaderPage>
   )

@@ -6,9 +6,13 @@ import { modelSettings } from '@/lib/predefined'
 import { DEFAULT_CTX_LEN } from '@janhq/core'
 import { LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
 import { turboquantDefaultActive } from '@/lib/turboquantDefaultMigration'
-import { isCloudProvider, isProviderConnected } from '@/lib/cloud-providers'
+import {
+  customEndpointName,
+  isCloudProvider,
+  isProviderConnected,
+} from '@/lib/cloud-providers'
 import { isEmbeddingOnlyModel } from '@/lib/answerable-model'
-import { getModelCapabilities } from '@/lib/models'
+import { getModelCapabilities, toolCallSupport } from '@/lib/models'
 
 /**
  * Historical provider id retained for one-time migration logic. The
@@ -811,9 +815,82 @@ export const useModelProvider = create<ModelProviderState>()(
           }
         }
 
+        // Older user-added endpoints copied the OpenAI form, including its
+        // URL placeholder. Recognize that persisted form even on an offline LAN.
+        if (version <= 17 && state?.providers) {
+          for (const provider of state.providers) {
+            if (
+              provider.provider !== 'openai' &&
+              !provider.persist &&
+              !provider.account_remote &&
+              provider.base_url &&
+              provider.settings?.some(
+                (setting) =>
+                  setting.key === 'base-url' &&
+                  setting.controller_props?.placeholder ===
+                    'https://api.openai.com/v1'
+              )
+            ) {
+              provider.custom_endpoint = true
+              const previous = provider.provider
+              const base = customEndpointName(previous)
+              if (base !== previous && previous === previous.toLowerCase()) {
+                let name = base
+                for (
+                  let index = 2;
+                  state.providers.some(
+                    (p) => p.provider.toLowerCase() === name.toLowerCase()
+                  );
+                  index++
+                ) {
+                  name = `${base} ${index}`
+                }
+                provider.provider = name
+                if (
+                  state.selectedProvider === previous &&
+                  provider.models?.some(
+                    (model) => model.id === state.selectedModel?.id
+                  )
+                ) {
+                  state.selectedProvider = name
+                }
+              }
+            }
+          }
+        }
+
+        // v17 — /models, Add Model and account sync all copied the ID to
+        // `model` and saved just completion when the provider rule was missed.
+        // Catalog entries and capabilities explicitly edited by the user win.
+        if (version <= 17 && state?.providers) {
+          for (const provider of state.providers) {
+            if (
+              !isCloudProvider(provider) ||
+              toolCallSupport(provider.provider) !== true
+            )
+              continue
+            for (const model of provider.models ?? []) {
+              if (
+                model.model === model.id &&
+                !model._userConfiguredCapabilities &&
+                model.capabilities?.length === 1 &&
+                model.capabilities[0] === 'completion'
+              ) {
+                model.capabilities = ['completion', 'tools']
+                if (
+                  state.selectedProvider === provider.provider &&
+                  state.selectedModel?.id === model.id
+                ) {
+                  state.selectedModel.capabilities = model.capabilities
+                }
+              }
+            }
+          }
+        }
+
         return state
       },
-      version: 16,
+      version: 18,
     }
   )
 )

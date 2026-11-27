@@ -9,6 +9,9 @@ import { TEMPORARY_CHAT_ID } from '@/constants/chat'
 import { LOCAL_LLAMACPP_PROVIDER } from '@/lib/utils'
 import { killAgentSessionProcs } from '@/services/agent/tauri'
 
+// Threads store the model on the first assistant entry, even without a persona.
+const modelOnly = { id: 'model-only', name: 'Model', instructions: undefined }
+
 export class DefaultThreadsService implements ThreadsService {
   async fetchThreads(): Promise<Thread[]> {
     return (
@@ -33,7 +36,9 @@ export class DefaultThreadsService implements ThreadsService {
               : undefined
 
             // Check if this is a "real" assistant (has instructions) or just model storage
-            const assistants = e.assistants
+            const assistants = e.assistants?.filter(
+              (assistant) => assistant.id !== modelOnly.id
+            )
 
             return {
               ...e,
@@ -84,8 +89,7 @@ export class DefaultThreadsService implements ThreadsService {
       : [
           {
             // Minimal entry just to store model info
-            id: 'model-only',
-            name: 'Model',
+            ...modelOnly,
             model: {
               id: thread.model?.id ?? '*',
               engine: thread.model?.provider ?? LOCAL_LLAMACPP_PROVIDER,
@@ -113,7 +117,9 @@ export class DefaultThreadsService implements ThreadsService {
               }
             : thread.model
 
-          const assistants = e.assistants
+          const assistants = e.assistants?.filter(
+            (assistant) => assistant.id !== modelOnly.id
+          )
 
           return {
             ...e,
@@ -133,30 +139,24 @@ export class DefaultThreadsService implements ThreadsService {
       return
     }
 
+    const assistants = thread.assistants ?? [
+      { id: 'jan', name: 'Atomic Chat', instructions: undefined },
+    ]
     await ExtensionManager.getInstance()
       .get<ConversationalExtension>(ExtensionTypeEnum.Conversational)
       ?.modifyThread({
         ...thread,
-        assistants: thread.assistants?.map((e) => {
-          return {
+        assistants: (assistants.length ? assistants : [modelOnly]).map(
+          (assistant) => ({
+            id: assistant.id,
+            name: assistant.name,
+            instructions: assistant.instructions,
             model: {
               id: thread.model?.id ?? '*',
               engine: thread.model?.provider ?? LOCAL_LLAMACPP_PROVIDER,
             },
-            id: e.id,
-            name: e.name,
-            instructions: e.instructions,
-          }
-        }) ?? [
-          {
-            model: {
-              id: thread.model?.id ?? '*',
-              engine: thread.model?.provider ?? LOCAL_LLAMACPP_PROVIDER,
-            },
-            id: 'jan',
-            name: 'Atomic Chat',
-          },
-        ],
+          })
+        ),
         metadata: {
           ...thread.metadata,
           is_favorite: thread.isFavorite,

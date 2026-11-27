@@ -565,11 +565,23 @@ describe('getModelCapabilities', () => {
     expect(capabilities).not.toContain(ModelCapabilities.VISION)
   })
 
-  it('handles unknown provider gracefully', () => {
-    const capabilities = getModelCapabilities('openrouter', 'some-model')
-    expect(capabilities).toEqual([ModelCapabilities.COMPLETION])
-    expect(capabilities).not.toContain(ModelCapabilities.TOOLS)
-    expect(capabilities).not.toContain(ModelCapabilities.VISION)
+  it.each([
+    'My inference server',
+    'ollama',
+    'openai-compatible',
+    'openrouter',
+    'nvidia',
+  ])('offers tools for a model listed by %s', (provider) => {
+    expect(getModelCapabilities(provider, 'my-model')).toEqual([
+      ModelCapabilities.COMPLETION,
+      ModelCapabilities.TOOLS,
+    ])
+  })
+
+  it('leaves local engine tool support to model discovery', () => {
+    expect(getModelCapabilities('vllm', 'my-model')).toEqual([
+      ModelCapabilities.COMPLETION,
+    ])
   })
 
   it('handles model not in capability list', () => {

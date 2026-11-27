@@ -173,6 +173,22 @@ describe('account remote providers', () => {
     expect(modelIds()).toEqual(['llama-4'])
   })
 
+  it('keeps an explicit tool opt-out when the host lists its models again', async () => {
+    await sync([studio])
+    const provider = byName('Studio Mac (remote)')!
+    const [model] = provider.models
+    expect(model.capabilities).toContain('tools')
+    useModelProvider.getState().updateProvider(provider.provider, {
+      models: [
+        { ...model, capabilities: [], _userConfiguredCapabilities: true },
+      ],
+    })
+    await sync([studio], { refreshModels: true })
+    expect(
+      byName(provider.provider)?.models.map((m) => m.capabilities)
+    ).toEqual([[], ['completion', 'tools']])
+  })
+
   it('lists the models again for a newer address list at the same address', async () => {
     await sync([studio])
     fetchModels.mockClear()

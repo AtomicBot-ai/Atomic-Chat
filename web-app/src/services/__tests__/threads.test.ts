@@ -431,6 +431,7 @@ describe('DefaultThreadsService', () => {
 
       const result = await threadsService.createThread(inputThread as Thread)
 
+      expect(result.assistants).toEqual([])
       // Should create with model-only entry when no assistants provided
       expect(mockConversationalExtension.createThread).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -443,6 +444,23 @@ describe('DefaultThreadsService', () => {
           ],
         })
       )
+    })
+
+    it('preserves the model when a thread is saved and reopened without an assistant', async () => {
+      const model = { id: 'gpt-4', provider: 'openai' }
+      await threadsService.updateThread({
+        id: '1',
+        title: 'Chat',
+        updated: 1,
+        model,
+        assistants: [],
+      })
+      const [saved] = mockConversationalExtension.modifyThread.mock.calls[0]
+      expect(saved.assistants[0].id).toBe('model-only')
+      mockConversationalExtension.listThreads.mockResolvedValue([saved])
+      expect(await threadsService.fetchThreads()).toEqual([
+        expect.objectContaining({ model, assistants: [] }),
+      ])
     })
 
     it('should handle updateThread with missing assistants', () => {

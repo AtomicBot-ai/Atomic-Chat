@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { act, renderHook } from '@testing-library/react'
 import { useModelProvider } from '../useModelProvider'
+import { openAIProviderSettings } from '@/constants/providers'
 import type { PathService } from '@/services/path/types'
 import { seedServiceHub } from '@/test/service-hub'
 
@@ -737,7 +738,7 @@ describe('useModelProvider migrations', () => {
           ],
         },
         {
-          provider: 'openrouter',
+          provider: 'openai',
           settings: [],
           models: [model('MiniMax-M3', ['completion'])],
         },
@@ -766,6 +767,87 @@ describe('useModelProvider migrations', () => {
     expect(
       migrate!(persistedState(), 16).providers[0].models[0].capabilities
     ).toEqual(['completion'])
+  })
+
+  it('repairs saved endpoint models and the active selection while preserving explicit capabilities', async () => {
+    const discovered = {
+      id: 'chat',
+      model: 'chat',
+      capabilities: ['completion'],
+    }
+    const models = [
+      discovered,
+      { id: 'catalog-entry', capabilities: ['completion'] },
+      {
+        id: 'edited',
+        model: 'edited',
+        capabilities: ['completion'],
+        _userConfiguredCapabilities: true,
+      },
+    ]
+    const state = {
+      ...useModelProvider.getState(),
+      selectedProvider: 'My endpoint',
+      selectedModel: { ...discovered },
+      providers: [
+        { provider: 'My endpoint', models, settings: [], active: true },
+        {
+          provider: 'mlx',
+          models: [{ ...discovered }],
+          settings: [],
+          active: true,
+        },
+      ],
+    }
+    const migrated = await useModelProvider.persist.getOptions().migrate!(
+      state,
+      16
+    )
+    expect(migrated.providers[0].models.map((m) => m.capabilities)).toEqual([
+      ['completion', 'tools'],
+      ['completion'],
+      ['completion'],
+    ])
+    expect(migrated.providers[1].models[0].capabilities).toEqual(['completion'])
+    expect(migrated.selectedModel?.capabilities).toEqual([
+      'completion',
+      'tools',
+    ])
+  })
+
+  it('recovers a saved keyless vLLM endpoint without claiming the local engine or OpenAI', async () => {
+    const id = 'served-chat'
+    const model = { id, model: id, capabilities: ['completion'] }
+    const saved = {
+      provider: 'vllm',
+      base_url: 'http://inference.lan:8000/v1',
+      settings: structuredClone(openAIProviderSettings),
+      models: [model],
+      active: true,
+    }
+    const state = {
+      ...useModelProvider.getState(),
+      selectedProvider: 'vllm',
+      selectedModel: { ...model },
+      providers: [
+        saved,
+        { ...saved, provider: 'openai' },
+        { ...saved, persist: true },
+      ],
+    }
+    const migrated = await useModelProvider.persist.getOptions().migrate!(
+      state,
+      17
+    )
+    expect(migrated.providers[0]).toMatchObject({
+      provider: 'vllm (endpoint)',
+      custom_endpoint: true,
+    })
+    expect(migrated.providers[1].custom_endpoint).toBeUndefined()
+    expect(migrated.providers[2].provider).toBe('vllm')
+    expect(migrated.providers[2].custom_endpoint).toBeUndefined()
+    expect(migrated.selectedProvider).toBe('vllm (endpoint)')
+    expect(migrated.selectedModel?.capabilities).toContain('tools')
   })
 
   it('migrates Mistral provider base URL to add /v1 suffix', () => {

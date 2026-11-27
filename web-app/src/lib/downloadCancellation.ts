@@ -96,6 +96,8 @@ export function cancelDownload(
   // abort still runs for a chat-model file: its stop event reports the cancel.
   if (paused && isDiffusionModelDownloadTaskId(download.id)) return
   if (
+    download.id.startsWith('lora:') ||
+    download.id.startsWith('dspark:') ||
     isDiffusionEngineTaskId(download.id) ||
     isEngineBuildTaskId(download.id) ||
     isEngineUpdateTaskId(download.id)

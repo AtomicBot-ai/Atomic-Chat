@@ -39,6 +39,7 @@ import { useImageGenerationStore } from '@/stores/image-generation-store'
 const gb = (bytes: number) => formatBytes(bytes, 1024 ** 3)
 
 export type MediaFamilyDetailPanelProps = {
+  onFindLoras?: (source: string) => void
   family: DiffusionCatalogFamily | null
   className?: string
 }
@@ -52,6 +53,7 @@ export type MediaFamilyDetailPanelProps = {
  * and removals agree with those pages.
  */
 export function MediaFamilyDetailPanel({
+  onFindLoras,
   family,
   className,
 }: MediaFamilyDetailPanelProps) {
@@ -77,13 +79,13 @@ export function MediaFamilyDetailPanel({
 
   return (
     <div className={cn('flex flex-col gap-4 p-6', className)}>
-      <header className="flex items-start gap-3">
+      <header className="flex flex-wrap items-start gap-3">
         <ModelLogo
           icon={DIFFUSION_FAMILY_ICON_KEYS[family.id]}
           name={family.name}
           author={family.developer}
         />
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-[1_1_10rem]">
           <h1
             className="min-w-0 truncate text-xl font-semibold"
             title={family.name}
@@ -92,6 +94,11 @@ export function MediaFamilyDetailPanel({
           </h1>
           <p className="truncate text-xs text-muted-foreground">{repo}</p>
         </div>
+        {onFindLoras && (
+          <Button variant="outline" size="sm" onClick={() => onFindLoras(repo)}>
+            {t('hub:loras.find')}
+          </Button>
+        )}
         <a
           href={`https://huggingface.co/${repo}`}
           target="_blank"

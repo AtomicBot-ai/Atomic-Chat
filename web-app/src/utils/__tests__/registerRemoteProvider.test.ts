@@ -77,6 +77,22 @@ describe('registerRemoteProvider media', () => {
     expect(request).not.toHaveProperty('media')
   })
 
+  it('registers a custom endpoint on the LAN without a key and routes its listed model', async () => {
+    const request = await registered({
+      provider: 'LAN vLLM',
+      custom_endpoint: true,
+      base_url: 'http://192.168.1.30:8000/v1',
+      api_key: '',
+      models: [{ id: 'served-model' }],
+    })
+    expect(request).toMatchObject({
+      provider: 'LAN vLLM',
+      base_url: 'http://192.168.1.30:8000/v1',
+      models: ['served-model'],
+    })
+    expect(request.api_key).toBeUndefined()
+  })
+
   it('registers a keyless media-only server', async () => {
     const request = await registered({
       provider: 'automatic1111',

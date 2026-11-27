@@ -10,10 +10,10 @@ interface AssistantState {
   /**
    * Assistant chosen for an unsaved (new) chat, shared across the chat input
    * and the model-bar Sampling popover. Bound to the thread on creation, then
-   * reset to undefined. `undefined` means "fall back to default/thread".
+   * reset to undefined. Null explicitly opts out; undefined inherits the default.
    */
-  pendingAssistant: Assistant | undefined
-  setPendingAssistant: (assistant: Assistant | undefined) => void
+  pendingAssistant: Assistant | null | undefined
+  setPendingAssistant: (assistant: Assistant | null | undefined) => void
   addAssistant: (assistant: Assistant) => void
   updateAssistant: (assistant: Assistant) => void
   /**

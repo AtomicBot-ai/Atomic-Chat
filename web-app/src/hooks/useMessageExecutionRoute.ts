@@ -1,3 +1,4 @@
+import { useDsparkSelection } from '@/services/drafters'
 import { useAgentProvider } from '@/hooks/useAgentProvider'
 import { isAgentModeOn, useGeneralSetting } from '@/hooks/useGeneralSetting'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -21,15 +22,21 @@ export function useMessageExecutionRoute(): ResolvedMessageExecutionRoute {
   const provider = useAgentProvider()
   const selectedModel = useModelProvider((s) => s.selectedModel)
 
+  const dspark = useDsparkSelection((s) => !!s.ids[selectedModel?.id ?? ''])
   return resolveMessageExecutionRoute({
     legacyChatEngine,
     agentModeSelected,
     providerBlockReason: agentProviderBlockReason(provider),
-    modelBlockReason: agentModelBlockReason(provider?.provider, selectedModel ?? undefined),
-    hasAudioAttachment: false,
-    dflashEnabled: shouldSuppressToolsForUpstreamDflash(
-      provider?.provider ?? '',
-      provider?.settings
+    modelBlockReason: agentModelBlockReason(
+      provider?.provider,
+      selectedModel ?? undefined
     ),
+    hasAudioAttachment: false,
+    dflashEnabled:
+      !dspark &&
+      shouldSuppressToolsForUpstreamDflash(
+        provider?.provider ?? '',
+        provider?.settings
+      ),
   })
 }

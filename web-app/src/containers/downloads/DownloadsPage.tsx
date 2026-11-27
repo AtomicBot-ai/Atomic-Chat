@@ -11,6 +11,7 @@ import {
   Mic,
   PieChart,
   Play,
+  Puzzle,
   Search,
   Trash2,
   X,
@@ -62,6 +63,7 @@ const KIND_ICONS: Record<InventoryKind, typeof Box> = {
   engine: Cpu,
   partial: FileClock,
   draft: Zap,
+  lora: Puzzle,
 }
 
 /** `—` where the source does not say; never a made-up size. */

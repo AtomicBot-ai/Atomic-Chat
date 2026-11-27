@@ -5,8 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RunSettingsPanel } from '@/containers/RunSettingsPanel'
 import { useAssistant } from '@/hooks/useAssistant'
 import { useModelProvider } from '@/hooks/useModelProvider'
+import { getServiceHub } from '@/hooks/useServiceHub'
 import { useThreads } from '@/hooks/useThreads'
 import type { ModelsService } from '@/services/models/types'
+import { drafters } from '@/services/drafters'
 import { seedServiceHub } from '@/test/service-hub'
 import {
   expectNoHorizontalOverflow,
@@ -16,7 +18,12 @@ import {
   XL_FONT_SIZE,
 } from '@/test/layout'
 
-function seedLocalModel() {
+vi.mock('@tanstack/react-router', async (original) => ({
+  ...(await original<typeof import('@tanstack/react-router')>()),
+  useNavigate: () => vi.fn(),
+}))
+
+function seedLocalModel(provider = 'llamacpp') {
   const model = {
     id: 'test-model',
     name: 'Test model',
@@ -37,8 +44,8 @@ function seedLocalModel() {
     },
   } as unknown as Model
   useModelProvider.setState({
-    providers: [{ provider: 'llamacpp', models: [model] } as ModelProvider],
-    selectedProvider: 'llamacpp',
+    providers: [{ provider, models: [model] } as ModelProvider],
+    selectedProvider: provider,
     selectedModel: model,
   })
 }
@@ -79,6 +86,34 @@ const inside = (child: Element, parent: Element) => {
 }
 
 describe('Run settings panel header (Chromium)', () => {
+  it('clears the assistant on an existing thread from the dropdown', async () => {
+    const [writer] = useAssistant.getState().assistants
+    useThreads.setState({
+      currentThreadId: 'current',
+      threads: {
+        current: {
+          id: 'current',
+          title: 'Chat',
+          updated: 1,
+          assistants: [writer],
+        },
+      },
+    })
+    const updateThread = vi.fn().mockResolvedValue(undefined)
+    const hub = getServiceHub()
+    vi.spyOn(hub, 'threads').mockReturnValue({ ...hub.threads(), updateThread })
+    render(withTranslations(<RunSettingsPanel onClose={vi.fn()} />))
+    await page.getByRole('button', { name: 'Writer' }).click()
+    await page.getByRole('menuitem', { name: /None/ }).click()
+    await expect
+      .element(page.getByRole('button', { name: /None/ }))
+      .toBeVisible()
+    expect(updateThread).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'current', assistants: [] })
+    )
+    expect(useAssistant.getState().pendingAssistant).toBeUndefined()
+  })
+
   // QA on 2.2.21: the title, the close button and Reset to defaults scrolled
   // away with the settings, so closing the panel took a scroll back up.
   it.each(['16px', XL_FONT_SIZE])(
@@ -125,4 +160,34 @@ describe('Run settings panel header (Chromium)', () => {
       expectNoHorizontalOverflow(panel)
     }
   )
+})
+
+it('shows drafter discovery between context and advanced settings before any download', async () => {
+  seedLocalModel('llamacpp-upstream')
+  vi.spyOn(drafters, 'choices').mockResolvedValue({
+    files: [],
+    id: null,
+    target: 'org/base',
+  })
+  await page.viewport(1024, 680)
+  setFontSize(XL_FONT_SIZE)
+  render(
+    withTranslations(
+      <div style={{ width: 260, height: 540 }}>
+        <RunSettingsPanel onClose={vi.fn()} />
+      </div>
+    )
+  )
+  const find = await screen.findByRole('button', { name: 'Find drafters' })
+  const picker = screen.getByRole('button', { name: /^Drafter / })
+  expect((picker as HTMLButtonElement).disabled).toBe(true)
+  const context = screen.getByText('Context Size')
+  const advanced = screen.getByRole('switch', { name: 'Advanced settings' })
+  expect(context.getBoundingClientRect().bottom).toBeLessThan(
+    find.getBoundingClientRect().top
+  )
+  expect(picker.getBoundingClientRect().bottom).toBeLessThan(
+    advanced.getBoundingClientRect().top
+  )
+  expectNoHorizontalOverflow(document.querySelector('aside')!)
 })

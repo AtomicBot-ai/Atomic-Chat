@@ -759,6 +759,7 @@ const NON_TEXT_GGUF_ARCHITECTURES = new Set([
   // requires ctx_other to be set"). The file name rule catches the published
   // names — this catches a head whatever it was renamed to (ATO-523).
   'gemma4-assistant',
+  'dspark',
   'dflash',
   'eagle3',
 ])

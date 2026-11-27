@@ -84,7 +84,7 @@ export function isLoopbackUrl(baseUrl: string | undefined | null): boolean {
       host === 'localhost' ||
       host === '127.0.0.1' ||
       host === '0.0.0.0' ||
-      host === '::1'
+      host === '[::1]'
     )
   } catch {
     return false
@@ -102,9 +102,13 @@ export function isLoopbackUrl(baseUrl: string | undefined | null): boolean {
  * the moment the address changed.
  */
 export function isKeylessRemoteProvider(
-  provider: { provider?: string; base_url?: string } | null | undefined
+  provider:
+    | { provider?: string; base_url?: string; custom_endpoint?: boolean }
+    | null
+    | undefined
 ): boolean {
   if (!provider || isLocalProvider(provider.provider)) return false
+  if (provider.custom_endpoint && provider.base_url?.trim()) return true
   if (isSelfHostedProviderName(provider.provider)) return true
   return isLoopbackUrl(provider.base_url)
 }
@@ -128,7 +132,7 @@ export function isSubscriptionProvider(
  * so the Local API Server proxy can route requests for its models.
  *
  * Returns true when registration actually happened (provider is remote and has
- * an API key), false when it was skipped (local provider or no key), and
+ * usable credentials or a keyless endpoint), false when skipped, and
  * throws on backend errors.
  */
 export async function registerRemoteProvider(

@@ -10,6 +10,7 @@
   "searchLabel": "Search downloads",
   "categoryLabel": "Download category",
   "category": {
+    "lora": "LoRA",
     "all": "All downloads",
     "local": "Local models",
     "image": "Images",
@@ -24,6 +25,7 @@
     "actions": "Actions"
   },
   "kind": {
+    "lora": "LoRA adapter",
     "embedding": "document embeddings",
     "decision": "decision model",
     "image": "image generation",

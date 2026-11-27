@@ -10,6 +10,7 @@
   "searchLabel": "Rechercher des téléchargements",
   "categoryLabel": "Catégorie de téléchargement",
   "category": {
+    "lora": "LoRA",
     "all": "Tous les téléchargements",
     "local": "Modèles locaux",
     "image": "Images",
@@ -24,6 +25,7 @@
     "actions": "Actions"
   },
   "kind": {
+    "lora": "adaptateur LoRA",
     "embedding": "embeddings de documents",
     "decision": "modèle de décision",
     "image": "génération d'images",

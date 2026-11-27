@@ -27,6 +27,7 @@ import {
   IconX,
 } from '@tabler/icons-react'
 import { Button } from '@/components/ui/button'
+import { drafters } from '@/services/drafters'
 import ReasoningEffortPanel from '@/containers/ReasoningEffortPanel'
 import { useReasoningEffort } from '@/hooks/useReasoningEffort'
 import { useNavigate } from '@tanstack/react-router'
@@ -79,7 +80,9 @@ import {
 /** Active local engines and connected remote providers can answer from here. */
 const isPickerSection = (provider: ModelProvider): boolean =>
   provider.active &&
-  !/(?:diffusion|image|video)/i.test(provider.provider) &&
+  !provider.media_only &&
+  (provider.custom_endpoint ||
+    !/(?:diffusion|image|video)/i.test(provider.provider)) &&
   (PlatformFeatures[PlatformFeature.TURBOQUANT_ENGINE] ||
     provider.provider !== 'llamacpp') &&
   (isLocalEngineProvider(provider) || isProviderConnected(provider))
@@ -104,12 +107,12 @@ const NON_CHAT_CAPABILITIES = new Set([
 ])
 
 const hasArtifactToken = (id: string): boolean =>
-  /(?:^|[/:._-])(?:backend|decision|diffusion|draft-(?:mtp|dflash|eagle3)|embed(?:ding|dings)?|engine|image|laya|mmproj|projector|rerank(?:er)?|sidecar|stt|tts|video|voice|whisper)(?=$|[/:._-])/i.test(
+  /(?:^|[/:._-])(?:backend|decision|diffusion|dspark|lora|draft-(?:mtp|dflash|eagle3)|embed(?:ding|dings)?|engine|image|laya|mmproj|projector|rerank(?:er)?|sidecar|stt|tts|video|voice|whisper)(?=$|[/:._-])/i.test(
     id
   )
 
 /** Models used for media, embeddings, transcription, or support cannot chat. */
-const isPickerModel = (model: Model): boolean => {
+const isPickerModel = (model: Model, provider: ModelProvider): boolean => {
   const capabilities = new Set(
     (model.capabilities ?? []).map((capability) => capability.toLowerCase())
   )
@@ -117,7 +120,7 @@ const isPickerModel = (model: Model): boolean => {
     isAnswerableModel(model) &&
     model.id !== VOICE_MODEL_ID &&
     !model.embedding &&
-    !hasArtifactToken(model.id) &&
+    (provider.custom_endpoint || !hasArtifactToken(model.id)) &&
     ![...capabilities].some((capability) =>
       NON_CHAT_CAPABILITIES.has(capability)
     )
@@ -371,6 +374,10 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
   const selectedProvider = useModelProvider((state) => state.selectedProvider)
   const selectedModel = useModelProvider((state) => state.selectedModel)
   const updateProvider = useModelProvider((state) => state.updateProvider)
+  useEffect(() => {
+    if (selectedProvider === 'llamacpp-upstream' && selectedModel?.id)
+      void drafters.selection(selectedModel.id).catch(() => {})
+  }, [selectedProvider, selectedModel?.id])
   const [displayModel, setDisplayModel] = useState<string>('')
   const navigate = useNavigate()
   const { t } = useTranslation()
@@ -754,7 +761,7 @@ const DropdownModelProvider = memo(function DropdownModelProvider({
       if (!isPickerSection(provider)) return
 
       provider.models.forEach((modelItem) => {
-        if (!isPickerModel(modelItem)) return
+        if (!isPickerModel(modelItem, provider)) return
 
         const capabilities = modelItem.capabilities || []
         const capabilitiesString = capabilities.join(' ')

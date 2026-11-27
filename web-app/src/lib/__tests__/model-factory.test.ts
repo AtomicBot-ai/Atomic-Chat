@@ -226,6 +226,14 @@ describe('ModelFactory', () => {
       }
     )
 
+    it('uses the compatible API for an existing custom server named vLLM', async () => {
+      const model = await ModelFactory.createModel('served-model', {
+        provider: 'vLLM', custom_endpoint: true, active: true,
+        base_url: 'http://inference.lan:8000/v1', settings: [], models: [],
+      })
+      expect(model.type).toBe('openai-compatible')
+    })
+
     it('should handle custom headers for OpenAI-compatible providers', async () => {
       const provider: ProviderObject = {
         provider: 'custom',

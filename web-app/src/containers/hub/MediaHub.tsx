@@ -14,6 +14,7 @@ import type { DiffusionCatalogFamily } from '@/services/diffusion-catalog-regist
 import { useImageGenerationStore } from '@/stores/image-generation-store'
 
 export type MediaHubProps = {
+  onFindLoras?: (source: string) => void
   modality: DiffusionModality
   /** The model type picker, first in the toolbar. */
   categoryTabs?: ReactNode
@@ -32,6 +33,7 @@ export type MediaHubProps = {
  * or repo. Nothing is open until the user opens it.
  */
 export function MediaHub({
+  onFindLoras,
   modality,
   categoryTabs,
   query,
@@ -87,7 +89,12 @@ export function MediaHub({
                   selected={open}
                   onSelect={() => onSelectFamily(open ? null : family.id)}
                 />
-                {open && <MediaFamilyDetailPanel family={family} />}
+                {open && (
+                  <MediaFamilyDetailPanel
+                    family={family}
+                    onFindLoras={onFindLoras}
+                  />
+                )}
               </div>
             )
           })}

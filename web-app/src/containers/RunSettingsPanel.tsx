@@ -19,6 +19,9 @@ import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
+import { LoraPicker } from '@/containers/LoraPicker'
+import { useChatSessions } from '@/stores/chat-session-store'
+import { DrafterPicker } from '@/containers/DrafterPicker'
 import { ModelSettingsList } from '@/containers/ModelSetting'
 import { ParametersSection } from '@/containers/ParametersSection'
 import AddEditAssistant from '@/containers/dialogs/AddEditAssistant'
@@ -98,6 +101,14 @@ export function RunSettingsPanel({ onClose }: RunSettingsPanelProps) {
   const addAssistant = useAssistant((state) => state.addAssistant)
   const updateAssistant = useAssistant((state) => state.updateAssistant)
   const context = useModelContextLength()
+  const showContext = context.available && !!context.contextSetting
+  const chatActive = useChatSessions(
+    (s) =>
+      Object.values(s.requestActive).some(Boolean) ||
+      Object.values(s.sessions).some((session) => session.isStreaming)
+  )
+  const showDrafter =
+    !IS_IOS && !IS_ANDROID && context.provider?.provider === 'llamacpp-upstream'
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [createAssistantOpen, setCreateAssistantOpen] = useState(false)
   const exposesLocalSampling = Boolean(
@@ -277,76 +288,91 @@ export function RunSettingsPanel({ onClose }: RunSettingsPanelProps) {
           </div>
 
           {/* Model: only local engines expose a context knob and load options. */}
-          {context.available &&
-            context.contextSetting &&
+          {(showContext || showDrafter) &&
             context.provider &&
             context.selectedModel && (
               <Section title={t('chat:runSettings.model')}>
                 <div className="space-y-4">
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-sm text-muted-foreground">
-                        {t('assistants:contextSize')}
-                      </span>
-                      <span className="font-mono text-xs tabular-nums">
-                        {formatContextSize(context.draft)}
-                      </span>
-                    </div>
-                    {context.fitAvailable && (
+                  {showContext && (
+                    <div className="space-y-2">
                       <div className="flex items-center justify-between gap-3">
-                        <span className="text-xs text-muted-foreground">
-                          {t('assistants:contextSizeFit')}
+                        <span className="text-sm text-muted-foreground">
+                          {t('assistants:contextSize')}
                         </span>
-                        <Switch
-                          aria-label={t('assistants:contextSizeFit')}
-                          checked={context.fitEnabled}
-                          onCheckedChange={context.setFit}
-                        />
+                        <span className="font-mono text-xs tabular-nums">
+                          {formatContextSize(context.draft)}
+                        </span>
                       </div>
-                    )}
-                    <Slider
-                      aria-label={t('assistants:contextSize')}
-                      className="w-full"
-                      disabled={context.fitEnabled}
-                      value={[
-                        Math.min(
-                          Math.max(context.draft, context.sliderMin),
-                          context.sliderMax
-                        ),
-                      ]}
-                      min={context.sliderMin}
-                      max={context.sliderMax}
-                      step={context.sliderStep}
-                      onValueChange={([value]) => context.setDraft(value)}
-                      onValueCommit={([value]) => context.commit(value)}
-                    />
-                    {context.deviceLimit && (
-                      <p
-                        className="text-xs leading-normal text-muted-foreground"
-                        data-testid="run-settings-device-max"
-                      >
-                        {context.deviceLimit.trainedCtx
-                          ? t('assistants:contextSizeDeviceMaxBelowTrained', {
-                              size: formatContextSize(
-                                context.deviceLimit.maxCtx
-                              ),
-                              trained: formatContextSize(
-                                context.deviceLimit.trainedCtx
-                              ),
-                            })
-                          : t('assistants:contextSizeDeviceMax', {
-                              size: formatContextSize(
-                                context.deviceLimit.maxCtx
-                              ),
-                            })}
+                      {context.fitAvailable && (
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-xs text-muted-foreground">
+                            {t('assistants:contextSizeFit')}
+                          </span>
+                          <Switch
+                            aria-label={t('assistants:contextSizeFit')}
+                            checked={context.fitEnabled}
+                            onCheckedChange={context.setFit}
+                          />
+                        </div>
+                      )}
+                      <Slider
+                        aria-label={t('assistants:contextSize')}
+                        className="w-full"
+                        disabled={context.fitEnabled}
+                        value={[
+                          Math.min(
+                            Math.max(context.draft, context.sliderMin),
+                            context.sliderMax
+                          ),
+                        ]}
+                        min={context.sliderMin}
+                        max={context.sliderMax}
+                        step={context.sliderStep}
+                        onValueChange={([value]) => context.setDraft(value)}
+                        onValueCommit={([value]) => context.commit(value)}
+                      />
+                      {context.deviceLimit && (
+                        <p
+                          className="text-xs leading-normal text-muted-foreground"
+                          data-testid="run-settings-device-max"
+                        >
+                          {context.deviceLimit.trainedCtx
+                            ? t('assistants:contextSizeDeviceMaxBelowTrained', {
+                                size: formatContextSize(
+                                  context.deviceLimit.maxCtx
+                                ),
+                                trained: formatContextSize(
+                                  context.deviceLimit.trainedCtx
+                                ),
+                              })
+                            : t('assistants:contextSizeDeviceMax', {
+                                size: formatContextSize(
+                                  context.deviceLimit.maxCtx
+                                ),
+                              })}
+                        </p>
+                      )}
+                      <p className="text-xs leading-normal text-muted-foreground">
+                        {context.fitEnabled
+                          ? t('assistants:contextSizeFitOn')
+                          : t('assistants:contextSizeHint')}
                       </p>
-                    )}
-                    <p className="text-xs leading-normal text-muted-foreground">
-                      {context.fitEnabled
-                        ? t('assistants:contextSizeFitOn')
-                        : t('assistants:contextSizeHint')}
-                    </p>
-                  </div>
+                    </div>
+                  )}
+                  {showDrafter && (
+                    <>
+                      <DrafterPicker
+                        key={context.selectedModel.id}
+                        model={context.selectedModel.id}
+                      />
+                      <LoraPicker
+                        key={'lora:' + context.selectedModel.id}
+                        mode="chat"
+                        model={context.selectedModel.id}
+                        disabled={chatActive}
+                      />
+                    </>
+                  )}
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
                       <div className="text-sm text-muted-foreground">

@@ -1369,6 +1369,7 @@ export class ModelFactory {
     modelId: string,
     provider: ProviderObject
   ): Promise<void> {
+    if (provider.custom_endpoint) return
     const lower = providerName.toLowerCase()
     if (
       lower !== 'llamacpp' &&
@@ -1475,6 +1476,14 @@ export class ModelFactory {
     reasoningOverride?: Record<string, unknown>,
     audioParts?: AudioInputPart[]
   ): Promise<LanguageModel> {
+    // A custom endpoint's name is a label. Older servers named "vLLM"
+    // already have a remote route under that spelling.
+    if (provider.custom_endpoint) {
+      return this.createOpenAICompatibleModel(modelId, provider, {
+        ...parameters,
+        ...reasoningOverride,
+      })
+    }
     const providerName = provider.provider.toLowerCase()
     // Providers that gate reasoning per model get their fields put on what
     // this model takes; a no-op for every other provider.

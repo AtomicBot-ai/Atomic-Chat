@@ -11,6 +11,7 @@ import { toast } from 'sonner'
 import { route } from '@/constants/routes'
 import { useAppState } from '@/hooks/useAppState'
 import { useAgentMode } from '@/hooks/useAgentMode'
+import { resolveAssistantForThread } from '@/lib/samplingParams'
 import { useAssistant } from '@/hooks/useAssistant'
 import { useChat } from '@/hooks/use-chat'
 import { useMessages } from '@/hooks/useMessages'
@@ -334,14 +335,10 @@ export function DeferredFirstSendProvider() {
 
     let cancelled = false
     const createBackgroundThread = async () => {
-      const assistantState = useAssistant.getState()
       const assistant =
-        queued.assistant ??
-        assistantState.pendingAssistant ??
-        assistantState.assistants.find(
-          (item) => item.id === assistantState.defaultAssistantId
-        ) ??
-        assistantState.assistants[0]
+        queued.assistant === undefined
+          ? resolveAssistantForThread()
+          : (queued.assistant ?? undefined)
       const previousThreadId = useThreads.getState().currentThreadId
       const navigateWhenStarted = queued.project
         ? window.location.pathname === `/project/${queued.project.id}`

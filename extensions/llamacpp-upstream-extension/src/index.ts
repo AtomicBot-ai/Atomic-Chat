@@ -3074,8 +3074,12 @@ export default class llamacpp_upstream_extension extends AIEngine {
 
     // TODO: add name as import() argument
     // TODO: add updateModelConfig() method
+    const sourceRepo = opts.modelPath.match(
+      /^https:\/\/huggingface\.co\/([\w.-]+\/[\w.-]+)\/resolve\//
+    )?.[1]
     const modelConfig = {
       model_path: modelPath,
+      ...(sourceRepo ? { source_repo: sourceRepo } : {}),
       mmproj_path: mmprojPath,
       name: modelId,
       size_bytes,

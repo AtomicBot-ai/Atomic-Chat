@@ -35,6 +35,7 @@ type Model = {
   contextLength?: number
   strata?: import('@atomic-chat/core/contracts').StrataModelDescriptor
   capabilities?: string[]
+  _userConfiguredCapabilities?: boolean
   /**
    * Reasoning knobs the model's chat template understands, detected from that
    * template by the local backend extensions. Absent for remote providers.
@@ -73,6 +74,8 @@ type Model = {
 type ProviderObject = {
   active: boolean
   provider: string
+  /** Added through Custom Endpoint. Its server decides whether it needs a key. */
+  custom_endpoint?: boolean
   explore_models_url?: string
   api_key?: string
   base_url?: string

@@ -17,6 +17,8 @@ import { Loader } from 'lucide-react'
 import { AudioHub } from '@/containers/hub/AudioHub'
 import { DecisionHub } from '@/containers/hub/DecisionHub'
 import { EmbeddingHub } from '@/containers/hub/EmbeddingHub'
+import { LorasHub } from '@/containers/hub/LorasHub'
+import { DraftersHub } from '@/containers/hub/DraftersHub'
 import { HubCategorySelect } from '@/containers/hub/HubCategorySelect'
 import { HubFilters } from '@/containers/hub/HubFilters'
 import { HubNoResults } from '@/containers/hub/HubSearch'
@@ -95,6 +97,7 @@ import {
   managedSearchRows,
   type ManagedPrefilterContext,
 } from '@/lib/managed-engine/hub-feed'
+import { hubRepoId } from '@/lib/hub-model-facts'
 import { modelEngineIds } from '@/lib/hub-model-engines'
 import { extractModelName } from '@/lib/models'
 import { PlatformFeatures } from '@/lib/platform/const'
@@ -124,6 +127,8 @@ import {
 } from './hub-session'
 
 type SearchParams = {
+  source?: string
+  target?: string
   repo?: string
   /** The format to open on (a provider page's "find a model"), applied once on entry. */
   engine?: ModelFormat
@@ -200,6 +205,8 @@ function isSafetensorsCheckpoint(model: CatalogModel) {
 export const Route = createFileRoute(route.hub.index as any)({
   component: HubContent,
   validateSearch: (search: Record<string, unknown>): SearchParams => ({
+    source: typeof search.source === 'string' ? search.source : undefined,
+    target: typeof search.target === 'string' ? search.target : undefined,
     repo: typeof search.repo === 'string' ? search.repo : undefined,
     engine: parseHubEngine(search.engine),
     q: typeof search.q === 'string' ? search.q : undefined,
@@ -218,7 +225,7 @@ const hubScrollCache: { q: string; offset: number } = { q: '', offset: 0 }
 
 function HubContent() {
   const navigate = useNavigate()
-  const { category: categorySearchParam } = Route.useSearch()
+  const { category: categorySearchParam, source, target, q } = Route.useSearch()
   const serviceHub = useServiceHub()
   const decisionApiSupported = serviceHub.decision().isSupported()
   const embeddingApiSupported = serviceHub.embedding().isSupported()
@@ -247,15 +254,19 @@ function HubContent() {
   const categories = useMemo(
     () =>
       HUB_CATEGORIES.filter((c) =>
-        c === 'decision'
-          ? decisionSupported
-          : c === 'embedding'
-            ? embeddingSupported
-            : c === 'voice'
-              ? voiceSupported
-              : c === 'audio'
-                ? audioSupported
-                : c === 'chat' || mediaSupported
+        c === 'drafters' || c === 'loras'
+          ? PlatformFeatures[PlatformFeature.LOCAL_INFERENCE] &&
+            !(typeof IS_IOS !== 'undefined' && IS_IOS) &&
+            !(typeof IS_ANDROID !== 'undefined' && IS_ANDROID)
+          : c === 'decision'
+            ? decisionSupported
+            : c === 'embedding'
+              ? embeddingSupported
+              : c === 'voice'
+                ? voiceSupported
+                : c === 'audio'
+                  ? audioSupported
+                  : c === 'chat' || mediaSupported
       ),
     [
       mediaSupported,
@@ -277,6 +288,15 @@ function HubContent() {
         // The selection belongs to the category it was made in.
         search: (prev: SearchParams) => ({
           ...prev,
+          source: undefined,
+          target: undefined,
+          q:
+            next === 'drafters' ||
+            prev.category === 'drafters' ||
+            next === 'loras' ||
+            prev.category === 'loras'
+              ? undefined
+              : prev.q,
           category: next === 'chat' ? undefined : next,
           model: undefined,
           repo: undefined,
@@ -287,6 +307,23 @@ function HubContent() {
     [navigate]
   )
 
+  const onFindLoras = categories.includes('loras')
+    ? (source: string) =>
+        void navigate({
+          to: route.hub.index,
+          search: { category: 'loras', source },
+        })
+    : undefined
+  const setDrafterTarget = useCallback(
+    (checkpoint: string) => {
+      void navigate({
+        to: route.hub.index,
+        search: (prev: SearchParams) => ({ ...prev, target: checkpoint }),
+        replace: true,
+      })
+    },
+    [navigate]
+  )
   const categoryTabs =
     categories.length > 1 ? (
       <HubCategorySelect
@@ -296,7 +333,66 @@ function HubContent() {
       />
     ) : undefined
 
-  if (category === 'chat') return <ChatHub categoryTabs={categoryTabs} />
+  if (category === 'loras')
+    return (
+      <LorasHub
+        source={source}
+        tabs={categoryTabs}
+        target={target}
+        q={q}
+        onQuery={(value) =>
+          void navigate({
+            to: route.hub.index,
+            search: (prev: SearchParams) => ({
+              ...prev,
+              q: value || undefined,
+            }),
+            replace: true,
+          })
+        }
+        onClear={() =>
+          void navigate({
+            to: route.hub.index,
+            search: (prev: SearchParams) => ({
+              ...prev,
+              source: undefined,
+              target: undefined,
+            }),
+            replace: true,
+          })
+        }
+      />
+    )
+  if (category === 'drafters')
+    return (
+      <DraftersHub
+        tabs={categoryTabs}
+        source={source}
+        target={target}
+        onTarget={setDrafterTarget}
+        q={q ?? ''}
+        onQuery={(next) =>
+          void navigate({
+            to: route.hub.index,
+            search: (prev: SearchParams) => ({ ...prev, q: next || undefined }),
+            replace: true,
+          })
+        }
+        onClear={() =>
+          void navigate({
+            to: route.hub.index,
+            search: (prev: SearchParams) => ({
+              ...prev,
+              source: undefined,
+              target: undefined,
+            }),
+            replace: true,
+          })
+        }
+      />
+    )
+  if (category === 'chat')
+    return <ChatHub categoryTabs={categoryTabs} onFindLoras={onFindLoras} />
   if (category === 'decision') {
     return <DecisionHubContent categoryTabs={categoryTabs} />
   }
@@ -311,6 +407,7 @@ function HubContent() {
   }
   return (
     <MediaHubContent
+      onFindLoras={onFindLoras}
       key={category}
       modality={category}
       categoryTabs={categoryTabs}
@@ -503,10 +600,12 @@ function AudioHubContent({ categoryTabs }: { categoryTabs?: ReactNode }) {
 }
 
 function MediaHubContent({
+  onFindLoras,
   modality,
   categoryTabs,
 }: {
   modality: DiffusionModality
+  onFindLoras?: (source: string) => void
   categoryTabs?: ReactNode
 }) {
   const navigate = useNavigate()
@@ -546,6 +645,7 @@ function MediaHubContent({
 
   return (
     <MediaHub
+      onFindLoras={onFindLoras}
       modality={modality}
       categoryTabs={categoryTabs}
       query={query}
@@ -556,7 +656,13 @@ function MediaHubContent({
   )
 }
 
-function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
+function ChatHub({
+  categoryTabs,
+  onFindLoras,
+}: {
+  categoryTabs?: ReactNode
+  onFindLoras?: (source: string) => void
+}) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const serviceHub = useServiceHub()
@@ -570,6 +676,11 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     engine: engineSearchParam,
     installed: installedSearchParam,
   } = Route.useSearch()
+
+  const linkedRepo =
+    modelSearchParam && repoSearchParam === modelSearchParam
+      ? modelSearchParam
+      : null
 
   const catalogSnapshot = useModelCatalogStore((s) => s.catalog)
   const catalogIndexPayload = useModelCatalogStore((s) => s.index)
@@ -607,7 +718,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   )
 
   const [searchValue, setSearchValue] = useState(
-    querySearchParam ?? getHubSearchQuery()
+    querySearchParam ?? (linkedRepo ? '' : getHubSearchQuery())
   )
   const [debouncedSearchValue, setDebouncedSearchValue] = useState(searchValue)
   // Every managed engine's state in the Hub (vLLM, TensorRT-LLM), each by its own plan.
@@ -1405,18 +1516,20 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
 
   const selectedItem = useMemo<HubListItem | null>(() => {
     if (!selectedRepo) return null
-    const listed = listItems.find(
-      (item) => item.model.model_name === selectedRepo
-    )
+    const matches = (model: CatalogModel) =>
+      model.model_name === selectedRepo ||
+      (linkedRepo !== null &&
+        hubRepoId(model).toLowerCase() === linkedRepo.toLowerCase())
+    const listed = listItems.find((item) => matches(item.model))
     const cached =
       listed?.model ??
-      (strata.recommended?.model_name === selectedRepo
+      (strata.recommended && matches(strata.recommended)
         ? strata.recommended
         : undefined) ??
-      sources.find((model) => model.model_name === selectedRepo)
+      sources.find(matches)
     const model =
       cached ??
-      (deepLinkedModel?.model_name === selectedRepo ? deepLinkedModel : null)
+      (deepLinkedModel && matches(deepLinkedModel) ? deepLinkedModel : null)
     if (!model) return null
 
     const item = listed ?? { model, pick: pickByRepo.get(selectedRepo) }
@@ -1439,6 +1552,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     }
   }, [
     selectedRepo,
+    linkedRepo,
     listItems,
     strata.recommended,
     sources,
@@ -1553,9 +1667,15 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
   // back-navigation; the container can still be growing (clamping an early
   // `scrollTop`), so re-apply across a few frames until it sticks.
   const didRestoreScroll = useRef(false)
+  const hasListItems = listItems.length > 0
   useEffect(() => {
+    // A repository link reveals its own card, even if the previous visit saved an offset.
+    if (linkedRepo) {
+      didRestoreScroll.current = true
+      return
+    }
     if (didRestoreScroll.current) return
-    if (listItems.length === 0) return
+    if (!hasListItems) return
 
     const target = hubScrollCache.offset
     const matchesQuery = hubScrollCache.q === (querySearchParam ?? '')
@@ -1564,20 +1684,22 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
       return
     }
 
-    didRestoreScroll.current = true
-    hubScrollCache.offset = 0
     let attempts = 0
+    let frame: number
     const apply = () => {
       const el = listScrollRef.current
       if (!el) return
+      didRestoreScroll.current = true
+      hubScrollCache.offset = 0
       el.scrollTop = target
       attempts += 1
       if (Math.abs(el.scrollTop - target) > 2 && attempts < 12) {
-        requestAnimationFrame(apply)
+        frame = requestAnimationFrame(apply)
       }
     }
-    requestAnimationFrame(apply)
-  }, [listItems.length, querySearchParam])
+    frame = requestAnimationFrame(apply)
+    return () => cancelAnimationFrame(frame)
+  }, [hasListItems, querySearchParam, linkedRepo])
 
   // Whether the end of the list is on screen, as the table last measured it.
   // A ref, so a page that has just arrived is counted before the next is asked
@@ -1728,7 +1850,7 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
     return rows
   }, [listItems, onlyLiked, liked, filters.engine, tableFormat, selectedItem])
 
-  const showLinkedCard = !!selectedItem && repoSearchParam === selectedRepo
+  const showLinkedCard = !!selectedItem && !!linkedRepo
   const isEmpty = tableItems.length === 0
   const uncensoredLoading =
     filters.uncensored && (uncensoredFeed.loading || abliteratedFeed.loading)
@@ -1803,13 +1925,23 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
               </p>
             )}
           {strataFormat && !showOnlyDownloaded && strata.failed && (
-            <p className="px-2 pb-2 text-xs text-muted-foreground" role="status">
+            <p
+              className="px-2 pb-2 text-xs text-muted-foreground"
+              role="status"
+            >
               {t('hub:strata.catalogUnavailable')}
             </p>
           )}
-          {geniexFormat && !showOnlyDownloaded && geniex.qualcommUnavailable && (
-            <p className="px-2 pb-2 text-xs text-muted-foreground" role="status">{t('hub:geniex.qualcommUnavailable')}</p>
-          )}
+          {geniexFormat &&
+            !showOnlyDownloaded &&
+            geniex.qualcommUnavailable && (
+              <p
+                className="px-2 pb-2 text-xs text-muted-foreground"
+                role="status"
+              >
+                {t('hub:geniex.qualcommUnavailable')}
+              </p>
+            )}
           {geniexFormat &&
             !showOnlyDownloaded &&
             geniex.huggingFaceUnavailable && (
@@ -1858,8 +1990,16 @@ function ChatHub({ categoryTabs }: { categoryTabs?: ReactNode }) {
             />
           ) : (
             <LocalModelTable
+              onFindLoras={onFindLoras}
+              onFindDspark={(source) =>
+                void navigate({
+                  to: route.hub.index,
+                  search: { category: 'drafters', source },
+                })
+              }
               items={tableItems}
-              selected={selectedRepo}
+              selected={selectedItem?.model.model_name ?? selectedRepo}
+              revealSelected={showLinkedCard}
               onSelect={selectModel}
               budgetBytes={budgetBytes}
               format={tableFormat}
