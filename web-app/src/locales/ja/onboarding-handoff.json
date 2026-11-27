@@ -1,0 +1,21 @@
+{
+  "retry": "再試行",
+  "retryLabel": "ダウンロードを再試行",
+  "panel": {
+    "label": "セットアップのダウンロード",
+    "backToSetup": "セットアップに戻る",
+    "dismiss": "閉じる"
+  },
+  "picker": {
+    "downloading": "ダウンロード中 {{percent}}%",
+    "paused": "一時停止中 {{percent}}%",
+    "interrupted": "ダウンロードが中断されました",
+    "queued": "待機中",
+    "trigger": "{{name}} · {{status}}",
+    "section": "モデルのダウンロード",
+    "progress": "{{name}} のダウンロード",
+    "pause": "一時停止",
+    "resume": "再開",
+    "retry": "再試行"
+  }
+}

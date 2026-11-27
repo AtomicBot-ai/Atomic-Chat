@@ -42,12 +42,16 @@
     },
     "choose": "Mode",
     "unavailable": "The loaded model cannot do this",
-    "unavailableSelected": "The selected model cannot do this"
+    "unavailableSelected": "The selected model cannot do this",
+    "compatibleModelTitle": "{{workflow}} には対応モデルが必要です",
+    "compatibleModelDescription": "下からこのワークフローに対応したモデルを選択し、ダウンロードまたは実行してください。",
+    "chooseCompatibleModel": "モデルを選択"
   },
   "setup": {
     "done": "Done",
     "doneBlocked": "Install the engine and at least one model first.",
     "engine": {
+      "checking": "確認中…",
       "unsupported": "There is no media engine build for this computer yet.",
       "offline": "Couldn't load the list of engine builds.",
       "checkFailed": "Couldn't check which engine build fits this computer.",
@@ -80,7 +84,8 @@
     "card": {
       "title": "Create images with Local AI",
       "description": "Turn text into images right on your computer. To start, install the media engine, then download a model.",
-      "engine": "Install the media engine"
+      "engine": "Install the media engine",
+      "downloadModel": "モデルをダウンロード"
     }
   },
   "model": {
@@ -95,9 +100,16 @@
     "pick": "Select {{name}} {{quant}}",
     "sizeGb": "{{size}} GB",
     "recommended": "Recommended",
+    "downloaded": "ダウンロード済み",
     "incomplete": "Incomplete",
     "load": "Run",
     "loading": "Starting…",
+    "startingToast": "画像モデルを起動中…",
+    "startedToast": "{{name}} の準備ができました",
+    "startFailed": "{{name}} を起動できませんでした",
+    "stoppingToast": "画像モデルを停止中…",
+    "stoppedToast": "{{name}} を停止しました",
+    "stopFailed": "{{name}} を停止できませんでした",
     "unload": "Stop",
     "loaded": "Running",
     "readyToLoad": "Starts on first Generate",
@@ -127,6 +139,14 @@
     "gatedHint": "This model is gated on Hugging Face. Add a token with access in",
     "gatedLink": "General settings.",
     "download": "Download"
+  },
+  "download": {
+    "finishingModel": "画像モデルを確認中",
+    "finishingEngine": "メディアエンジンを仕上げ中",
+    "checkingFiles": "ダウンロードしたファイルを検証中…",
+    "readyAfterCheck": "確認が完了すると利用可能になります。",
+    "modelReady": "画像モデルの準備ができました",
+    "engineReady": "メディアエンジンの準備ができました"
   },
   "form": {
     "prompt": "Prompt",
@@ -244,6 +264,7 @@
     "flip": "Flip width and height",
     "toPortrait": "Switch to portrait",
     "toLandscape": "Switch to landscape",
+    "squareNoFlip": "正方形の画像は幅と高さが同じです。",
     "presets": "{{label}} presets"
   },
   "progress": {
@@ -251,6 +272,8 @@
     "stopping": "Stopping the renderer…",
     "step": "Step {{step}}/{{total}}",
     "eta": "~{{seconds}} s",
+    "generatingImage": "画像を生成中",
+    "elapsed": "{{seconds}} 秒",
     "finalizingImage": "Finalizing image…",
     "image": "image {{index}} of {{total}}",
     "run": "run {{run}} of {{total}}",
@@ -320,16 +343,29 @@
     "confirm": "Delete",
     "failed": "The images could not be deleted"
   },
+  "confirmExceeds": {
+    "title": "この画像はメモリに収まらない可能性があります",
+    "needs": "約 {{required}} GB のメモリが必要ですが、空きは約 {{available}} GB です。",
+    "body": "コンピュータがスワップを発生させるため動作が重くなり、生成に非常に長い時間がかかったり、完了前にメディアエンジンが停止したりする可能性があります。いつでも停止できます。",
+    "advice": "より小さいサイズまたはより小さい量子化の方が収まりやすくなります。",
+    "confirm": "それでも生成"
+  },
   "errors": {
     "actions": {
       "install": "Install the engine",
+      "updateEngine": "エンジンを更新して再試行",
       "download": "Download the model",
       "openSettings": "Open Media settings",
       "openOutputFolder": "Open the output folder",
       "reduceSize": "Try 768×768",
       "reduceUpscale": "Try a smaller scale",
       "pickSmallerQuant": "Pick a smaller quant",
-      "retry": "Try again"
+      "retry": "Try again",
+      "openCloud": "クラウドを開く"
+    },
+    "ENGINE_UPDATE_REQUIRED": {
+      "title": "メディアエンジンの更新が必要です",
+      "body": "Qwen-Image-2.1 にはより新しいメディアエンジンが必要です。このモデルを読み込むにはエンジンを更新してください。ダウンロード済みのモデルファイルは再利用されます。"
     },
     "ENGINE_MISSING": {
       "title": "The media engine is not installed",
@@ -383,6 +419,10 @@
       "title": "The request was rejected",
       "body": "One of the settings is outside what the model accepts."
     },
+    "INVALID_OUTPUT": {
+      "title": "レンダラーが空白の画像を出力しました",
+      "body": "メディアエンジンは完了しましたが、出力に有効なピクセルが含まれていませんでした。ギャラリーに白い画像を追加しないよう、Atomic Chat はこれを破棄しました。もう一度試すか、別のモデルを選択してください。"
+    },
     "JOB_BUSY": {
       "title": "The renderer is busy",
       "body": "Another job is running. Wait for it to finish, or stop it."
@@ -390,6 +430,10 @@
     "JOB_NOT_FOUND": {
       "title": "The job disappeared",
       "body": "The renderer no longer knows this job. It may have restarted."
+    },
+    "ENGINE_STOPPED": {
+      "title": "メディアエンジンが停止しました",
+      "body": "完了前に停止しました。コンピュータのメモリ不足が原因である可能性が高いです。もう一度試すか、より小さいモデルまたは小さいサイズをお試しください。"
     },
     "QUEUE_FULL": {
       "title": "Too many jobs queued",
@@ -414,10 +458,64 @@
     "INTERNAL": {
       "title": "Something went wrong",
       "body": "An unexpected error happened in the renderer. The details below may help."
+    },
+    "REMOTE_NOT_CONFIGURED": {
+      "title": "プロバイダーが接続されていません",
+      "body": "クラウドページで接続するか、別のモデルを選択してください。"
+    },
+    "REMOTE_AUTH_FAILED": {
+      "title": "プロバイダーがキーを拒否しました",
+      "body": "クラウドページで API キーを確認してください。"
+    },
+    "REMOTE_REJECTED": {
+      "title": "プロバイダーがリクエストを拒否しました",
+      "body": "別の設定、または別のモデルをお試しください。"
+    },
+    "REMOTE_CONTENT_BLOCKED": {
+      "title": "プロバイダーがこのプロンプトをブロックしました",
+      "body": "セーフティフィルターによりリクエストが停止されました。プロンプトを言い換えてもう一度お試しください。"
+    },
+    "REMOTE_RATE_LIMITED": {
+      "title": "リクエストが多すぎます",
+      "body": "プロバイダーからリクエスト速度を下げるよう求められています。しばらく待ってからもう一度お試しください。"
+    },
+    "REMOTE_QUOTA": {
+      "title": "クレジット不足",
+      "body": "アカウントのクォータが残っていないとプロバイダーが返答しました。残高を追加するか、別のプロバイダーをご利用ください。"
+    },
+    "REMOTE_UNAVAILABLE": {
+      "title": "プロバイダーが利用できません",
+      "body": "応答がないか、エラーが返されました。後でもう一度お試しください。"
+    },
+    "REMOTE_TIMEOUT": {
+      "title": "プロバイダーの応答に時間がかかりすぎています",
+      "body": "時間内に応答がありませんでした。プロバイダー側で課金が発生している可能性があります。"
+    },
+    "REMOTE_UNSUPPORTED": {
+      "title": "このモデルはこの操作を実行できません",
+      "body": "別のモード、または別のモデルを選択してください。"
     }
   },
   "notifications": {
     "readyTitle": "Images ready",
     "readyBody": "{{count}} new images are in the gallery."
+  },
+  "remote": {
+    "search": "モデルを検索",
+    "noMatch": "一致するモデルがありません",
+    "connect": "クラウドまたはセルフホストモデルを追加",
+    "connectProvider": "またはクラウド／セルフホストプロバイダーを使用",
+    "cloud": "クラウド",
+    "selfHosted": "セルフホスト",
+    "otherModel": "その他のモデル",
+    "auto": "自動",
+    "size": "サイズ",
+    "aspectRatio": "アスペクト比",
+    "resolution": "解像度",
+    "quality": "品質",
+    "background": "背景",
+    "outputFormat": "ファイル形式",
+    "localNeedsEngine": "このデバイス上のモデルにはメディアエンジンが必要です。",
+    "restoreUnavailable": "設定を復元しましたが、このモデルは現在接続されていません"
   }
 }

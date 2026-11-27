@@ -1,0 +1,239 @@
+{
+  "page": {
+    "title": "オーディオ",
+    "subtitle": "音声、音楽、効果音を作成します。"
+  },
+  "mode": {
+    "choose": "モード",
+    "speech": {
+      "title": "テキスト読み上げ",
+      "hint": "テキストを音声で読み上げます。"
+    },
+    "music": {
+      "title": "音楽生成",
+      "hint": "インストゥルメンタル楽曲を作成します。"
+    },
+    "effects": {
+      "title": "効果音",
+      "hint": "説明からサウンドを作成します。"
+    }
+  },
+  "model": {
+    "select": "オーディオモデルを選択",
+    "listTitle_speech": "音声モデル",
+    "listTitle_music": "音楽モデル",
+    "listTitle_effects": "効果音モデル",
+    "download": "{{name}} をダウンロード",
+    "downloadShort": "ダウンロード",
+    "downloaded": "ダウンロード済み",
+    "remove": "{{name}} を削除",
+    "removeTitle": "{{name}} を削除しますか？",
+    "removeDescription": "モデルファイルがこのコンピュータから削除され、{{size}} の空き容量が確保されます。作成したクリップは残ります。",
+    "removeConfirm": "削除",
+    "downloadFailed": "{{name}} をダウンロードできませんでした",
+    "unavailable": "このコンピュータでオーディオエンジンが動作可能になるとダウンロードできます。"
+  },
+  "engine": {
+    "groupTitle": "オーディオ",
+    "rowDescription": "音声、音楽、効果音モデルを実行します。",
+    "coreTooOld": {
+      "title": "オーディオ機能にはより新しい Atomic Chat が必要です",
+      "body": "このバージョンのアプリのエンジンではまだオーディオを生成できません。このページを使うにはアプリを更新してください。"
+    },
+    "coreUnreachable": {
+      "title": "エンジンを待機中",
+      "body": "アプリのエンジンがまだ応答していません。応答し次第、このページが利用可能になります。"
+    },
+    "noBuild": {
+      "title": "このコンピュータ向けのオーディオエンジンがありません",
+      "body": "このコンピュータ向けの audio.cpp ビルドはまだ公開されていません。"
+    },
+    "install": {
+      "title": "オーディオエンジンをインストール",
+      "body": "audio.cpp がこのコンピュータ上でモデルを実行します。",
+      "action": "インストール",
+      "actionSize": "インストール ({{size}})"
+    },
+    "installing": "オーディオエンジンをインストール中…",
+    "retry": "再確認"
+  },
+  "form": {
+    "text": "テキスト",
+    "textPlaceholder": "読み上げるテキストを入力…",
+    "prompt": "プロンプト",
+    "promptPlaceholder": "生成したいオーディオの説明を入力…",
+    "settings": "設定",
+    "reset": "リセット",
+    "resetHint": "オーディオ設定を元に戻します。テキストは保持されます。",
+    "voice": "声質",
+    "voiceDefault": "モデルのデフォルト",
+    "voiceDefaultNamed": "{{voice}}（デフォルト）",
+    "voiceHint": "モデルの起動後、他の声質がここに表示されます。",
+    "speed": "速度",
+    "speedHint": "話す速さ。1 が通常の速度です。",
+    "language": "言語",
+    "languagePlaceholder": "テキストから自動検出",
+    "instruct": "スタイル",
+    "instructHint": "声の雰囲気や話し方。",
+    "instructPlaceholder": "穏やかで温かみのある声",
+    "lyrics": "歌詞",
+    "lyricsPlaceholder": "歌わせる歌詞。空欄にするとインストゥルメンタルになります。",
+    "duration": "長さ",
+    "durationHint": "クリップの長さ（秒）。",
+    "tempo": "テンポ",
+    "tempoHint": "1分あたりの拍数（BPM）。空欄にするとモデルが自動選択します。",
+    "auto": "自動",
+    "loop": "ループ再生",
+    "advanced": "詳細設定",
+    "steps": "ステップ数",
+    "stepsHint": "ステップ数が多いほど時間がかかります。空欄にするとモデル既定の回数を使用します。",
+    "negativePrompt": "除外する要素",
+    "negativePromptPlaceholder": "含めたくない要素…",
+    "outputFormat": "出力形式",
+    "outputFormatValue": "WAV",
+    "disabled": {
+      "coreTooOld": "オーディオ機能にはより新しいバージョンの Atomic Chat が必要です。",
+      "coreUnavailable": "エンジンがまだ応答していません。",
+      "noEngine": "先にオーディオエンジンをインストールしてください。",
+      "noModel": "先にオーディオモデルをダウンロードしてください。",
+      "modelLoading": "モデルを起動中です。",
+      "needsVoiceRef": "このモデルはクローン音声のみで発話しますが、このページではまだ録音できません。別のモデルを選択してください。",
+      "emptyPrompt": "先にプロンプトを入力してください。"
+    }
+  },
+  "progress": {
+    "label": "オーディオ生成ステータス",
+    "modelLoading": "モデルを読み込み中…",
+    "stopping": "停止中…",
+    "elapsed": "{{seconds}} 秒",
+    "phase": {
+      "queued": "開始待機中…",
+      "loading": "エンジンを起動中…",
+      "generating": "生成中…",
+      "saving": "保存中…"
+    }
+  },
+  "gallery": {
+    "title": "ギャラリー",
+    "open": "開く: {{prompt}}",
+    "loadMore": "さらに表示",
+    "empty": {
+      "title": "生成したオーディオがここに表示されます",
+      "description": "プロンプトを入力してオーディオを生成してください。"
+    },
+    "emptyNoModel": "始めるにはオーディオモデルをダウンロードしてください。"
+  },
+  "viewer": {
+    "details": "詳細",
+    "showInFolder": "フォルダーで表示",
+    "showFailed": "フォルダーを開けませんでした",
+    "delete": "削除",
+    "deleteClip": "削除: {{prompt}}",
+    "seconds": "{{seconds}} 秒",
+    "sampleRate": "{{rate}} kHz",
+    "mono": "モノラル",
+    "stereo": "ステレオ",
+    "channels": "{{count}} チャンネル",
+    "voice": "声質: {{voice}}",
+    "seed": "シード値: {{seed}}"
+  },
+  "delete": {
+    "title": "このクリップを削除しますか？",
+    "description": "オーディオファイルとその設定がこのコンピュータから削除されます。",
+    "confirm": "削除",
+    "failed": "クリップを削除できませんでした"
+  },
+  "notifications": {
+    "readyTitle": "オーディオの準備完了",
+    "readyBody": "オーディオの生成が完了しました。",
+    "engineReadyBody": "オーディオエンジンの準備が整いました。"
+  },
+  "errors": {
+    "actions": {
+      "install": "エンジンをインストール",
+      "chooseModel": "モデルを選択",
+      "retry": "もう一度試す"
+    },
+    "ENGINE_MISSING": {
+      "title": "オーディオエンジンがインストールされていません",
+      "body": "このコンピュータでオーディオを生成するにはインストールしてください。"
+    },
+    "ENGINE_INSTALL_FAILED": {
+      "title": "オーディオエンジンをインストールできませんでした",
+      "body": "ダウンロードまたは検証に失敗しました。もう一度インストールをお試しください。"
+    },
+    "ENGINE_CRASHED": {
+      "title": "オーディオエンジンが停止しました",
+      "body": "ジョブの実行中に停止しました。もう一度お試しください。エンジンは自動的に再起動します。"
+    },
+    "MODEL_MISSING": {
+      "title": "モデルファイルが見つかりません",
+      "body": "一覧からモデルをもう一度ダウンロードしてください。"
+    },
+    "MODEL_LOAD_FAILED": {
+      "title": "モデルを起動できませんでした",
+      "body": "エンジンがモデルを読み込めませんでした。もう一度試すか、より小さいモデルを選択してください。"
+    },
+    "MODEL_INCOMPATIBLE": {
+      "title": "このエンジンではモデルを実行できません",
+      "body": "別のモデルを選択するか、オーディオエンジンを更新してください。"
+    },
+    "MODEL_NOT_LOADED": {
+      "title": "モデルが起動していません",
+      "body": "ジョブの開始前に停止しました。生成を実行すると再起動します。"
+    },
+    "OUT_OF_MEMORY": {
+      "title": "このモデルを実行するためのメモリが不足しています",
+      "body": "他のモデルやアプリを閉じるか、より小さいモデルを選択してください。"
+    },
+    "UNSUPPORTED_BACKEND": {
+      "title": "このコンピュータではオーディオエンジンを実行できません",
+      "body": "このハードウェアに対応するエンジンのビルドがありません。"
+    },
+    "UNSUPPORTED_MODE": {
+      "title": "別のモデルが実行中です",
+      "body": "実行中のモデルはこの種類のオーディオを生成できません。もう一度試して適切なモデルを起動してください。"
+    },
+    "INVALID_REQUEST": {
+      "title": "この設定は使用できません",
+      "body": "テキストと設定を確認して、もう一度お試しください。"
+    },
+    "REQUEST_REJECTED": {
+      "title": "モデルがこの設定を拒否しました",
+      "body": "設定またはテキストを変更して、もう一度お試しください。"
+    },
+    "INVALID_OUTPUT": {
+      "title": "エンジンからオーディオが返されませんでした",
+      "body": "もう一度試すか、別のシード値を試してください。"
+    },
+    "JOB_BUSY": {
+      "title": "エンジンがビジー状態です",
+      "body": "別のジョブが実行中です。完了後にもう一度お試しください。"
+    },
+    "JOB_NOT_FOUND": {
+      "title": "ジョブが見つかりません",
+      "body": "エンジンはこのジョブを認識していません。"
+    },
+    "CANCELLED": {
+      "title": "停止しました",
+      "body": "ジョブは停止されました。"
+    },
+    "DISK_FULL": {
+      "title": "ディスクの空き容量が不足しています",
+      "body": "空き容量を確保してから、もう一度お試しください。"
+    },
+    "BACKEND_IN_USE": {
+      "title": "モデルが使用中です",
+      "body": "現在のジョブが完了してから、もう一度お試しください。"
+    },
+    "INTERNAL": {
+      "title": "問題が発生しました",
+      "body": "エンジンが予期しないエラーを報告しました。もう一度お試しください。"
+    }
+  },
+  "setup": {
+    "card": {
+      "downloadModel": "モデルをダウンロード"
+    }
+  }
+}

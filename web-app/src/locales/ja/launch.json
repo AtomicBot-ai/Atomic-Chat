@@ -11,9 +11,34 @@
   "editorsDesc": "ローカルモデルを使ってチャットやコーディングができるコードエディタです。",
   "copySettings": "設定をコピー",
   "manualSetup": "手動セットアップ",
+  "editorSteps": {
+    "vscode": {
+      "open": "VS Code でチャットビューを開き、コマンドパレットから「Chat: Manage Language Models」を実行します（またはチャットのモデルピッカーで「Manage Models」を選択します）。",
+      "add": "「Add Models」→「Custom Endpoint」をクリックします。グループ名を「Atomic Chat」にし、サーバーの API キー（未設定の場合は任意の文字列）を入力して、API タイプに「Chat Completions」を選択します。",
+      "paste": "開いた chatLanguageModels.json で、「apiKey」行を残したまま、新しいエントリを「設定をコピー」でクリップボードにコピーされた内容に置き換えて保存します。",
+      "pick": "チャットのモデルピッカーで Atomic Chat モデルを選択します。表示されない場合は VS Code を再起動してください。"
+    },
+    "jetbrains": {
+      "open": "Settings | Tools | AI Assistant | Providers & API keys を開きます。",
+      "provider": "Third-party AI providers で OpenAI 互換プロバイダーを選択し、コピーした URL と API キーを貼り付け、Tool calling をオンにして Test Connection をクリックします。",
+      "assign": "ローカルモデルは自動割り当てされません。Models Assignment で Core features と Instant helpers に Atomic Chat モデルを選択し、Context window にコピーした値を設定して Apply をクリックします。",
+      "agents": "JetBrains エージェントはローカルモデルを使用できません。代わりに AI Chat とエディタ内機能を使用してください。"
+    },
+    "xcode": {
+      "open": "Xcode → Settings → Intelligence（Xcode 26 以降）を開きます。",
+      "add": "Chat の下で「Add a Chat Provider」をクリックし、「Locally Hosted」を選択します。",
+      "port": "コピーしたポート番号を入力して Add をクリックします。Xcode はそのポートの /v1/models と /v1/chat/completions を呼び出します。",
+      "pick": "チャットで Atomic Chat モデルを選択します。表示されない場合は Xcode を再起動してください。"
+    }
+  },
+  "editorWarnings": {
+    "xcodeApiKey": "Xcode の Locally Hosted プロバイダーには API キー入力欄がないため、API キーが必須の状態ではこのサーバーに接続できません。Xcode を使うにはサーバーの API キーをオフにしてください。",
+    "xcodePrefix": "サーバーの API プレフィックスは {{prefix}} ですが、Xcode は常に /v1 を呼び出します。Xcode を使うにはプレフィックスを /v1 に戻してください。"
+  },
   "serverNotRunningHint": "{{name}} がモデルに接続できるように、まず上のローカルサーバーを起動してください。",
   "installed": "インストール済み",
   "installedViaWsl": "インストール済み (WSL)",
+  "wslOnlyHint": "{{name}} は WSL 内にのみインストールされています。Atomic Chat は設定を Windows 側に書き込み、Windows ターミナルで起動するため、WSL 内のインストールには到達できません（また WSL 2 の localhost はこの PC ではありません）。接続するには Windows 側に {{name}} をインストールしてください。",
   "notInstalled": "未インストール",
   "setCustomPath": "バイナリパスを設定",
   "customPathSet": "バイナリパス設定済み",
@@ -48,8 +73,21 @@
     "configured": "{{name}} を設定しました",
     "configuredDesc": "{{name}} がローカルサーバーに接続されました — ターミナルを開きます。",
     "configuredDescEditor": "{{name}} がローカルサーバーに接続されました — エディタを開きます。",
+    "configuredDescOpenclaw": "{{name}} はローカルサーバーを参照するようになりました。Gateway は自動的に設定を再読み込みします。チャットが別のモデルに固定されている場合は、その中で /model default を実行してください。",
+    "configuredDescCodex": "{{name}} は専用プロファイル経由でローカルサーバーを使用するようになりました（ターミナルを開きます）。通常の `codex` と ChatGPT アプリの設定は維持されます。自分でローカルモデルを使うには `codex --profile atomic-chat` を実行してください。",
+    "configuredDescCodexKeyed": "{{name}} は専用プロファイル経由でローカルサーバーを使用するようになりました（ターミナルを開きます）。通常の `codex` と ChatGPT アプリの設定は維持されます。自分でローカルモデルを使うには、ATOMIC_CHAT_API_KEY にこのサーバーの API キーを設定してから `codex --profile atomic-chat` を実行してください。",
+    "configuredDescZcode": "{{name}} はローカルサーバーを参照するようになり、変更を自動的に取り込みます。チャットが別のモデルのままの場合は、モデルメニューで Atomic Chat を選択してください。",
+    "zcodeNotInstalled": "ZCode がインストールされていません",
+    "zcodeNotInstalledDesc": "Atomic Chat プロバイダーを保存しました。zcode.z.ai から ZCode をダウンロードすると、初回起動時にローカルモデルが使用されます。",
     "configureFailed": "{{name}} の設定に失敗しました",
     "terminalFailed": "{{name}} 用のターミナルを開けませんでした",
+    "terminalNotAllowedDesc": "macOS により Atomic Chat からのターミナル制御が許可されませんでした。システム設定 → プライバシーとセキュリティ → オートメーションで許可してから、もう一度接続してください。",
+    "contextTooSmall": "{{name}} には少なくとも {{minimum}} トークンのコンテキストウィンドウが必要です",
+    "contextTooSmallFit": "モデルは「デバイスメモリに合わせる」により {{current}} で実行されています。より大きなコンテキストを設定するにはモデル設定でこれをオフにするか、より小さいモデルを選択してください。",
+    "contextTooSmallModel": "このモデルがサポートする最大コンテキストは {{current}} です。より長いコンテキストに対応したモデルを選択してください。",
+    "contextTooSmallMemory": "モデルは {{current}} で実行されており、このコンピュータではこれ以上のサイズで読み込めませんでした。メモリを解放するか、より小さいモデルを選択してください。",
+    "wslOnly": "{{name}} は WSL 内にのみインストールされています",
+    "wslOnlyDesc": "Atomic Chat は WSL 内にインストールされたエージェントに接続できません。設定とターミナルは Windows 側にあり、WSL 2 の localhost はこの PC ではないためです。接続するには Windows 側に {{name}} をインストールしてください。",
     "settingsCopied": "接続設定をコピーしました",
     "settingsCopiedDesc": "{{name}} のプロバイダー設定に貼り付けてください。",
     "copyFailed": "設定をクリップボードにコピーできませんでした",

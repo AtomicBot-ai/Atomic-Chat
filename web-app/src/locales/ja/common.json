@@ -5,28 +5,96 @@
   "connectors": "コネクタ",
   "plugins": "プラグイン",
   "local_api_server": "ローカルAPIサーバー",
+  "remote_access": "リモートアクセス",
+  "integrations": "外部連携",
+  "experimental": "実験的",
+  "claude_code": "Claude Code",
+  "hermes_agent": "Hermes Agent",
   "https_proxy": "HTTPSプロキシ",
+  "remote_lan": "リモートと LAN",
   "extensions": "拡張機能",
   "attachments": "添付ファイル",
-  "experimental": "実験的",
+  "voice": "音声",
   "general": "全般",
   "settings": "設定",
   "modelProviders": "モデルプロバイダー",
   "manageProviders": "Manage providers",
   "hiddenProviders": "{{count}} disabled",
+  "hideProvider": "プロバイダーを非表示",
+  "showProvider": "プロバイダーを表示",
   "interface": "外観",
   "privacy": "プライバシー",
   "keyboardShortcuts": "ショートカット",
   "newChat": "新しいチャット",
+  "newTask": "新しいタスク",
+  "newBadge": "新機能",
   "newAgentChat": "新しいエージェントチャット",
   "chats": "チャット",
+  "agentChats": "エージェントチャット",
+  "searchChats": "チャットを検索",
+  "searchAgentChats": "エージェントチャットを検索",
   "favorites": "お気に入り",
   "recents": "最近の項目",
   "hub": "ハブ",
   "models": "モデル",
+  "modelHub": "モデルハブ",
   "images": "Images",
   "video": "Video",
+  "audios": "オーディオ",
   "media": "Media",
+  "launch": "外部連携",
+  "api": "API",
+  "skills": "スキル",
+  "backToSkills": "スキル一覧に戻る",
+  "cloud": "Cloud",
+  "agentSkill": {
+    "selected": "スキル: {{name}}",
+    "remove": "選択したスキルを解除",
+    "loading": "スキルを読み込み中…",
+    "noMatches": "一致する有効なスキルがありません"
+  },
+  "skillsEmpty": "インストールされているスキルはありません。",
+  "selectSkill": "スキルを選択して指示内容を表示します。",
+  "enableSkill": "スキルを有効化",
+  "skillEnabled": "有効",
+  "skillDisabled": "無効",
+  "bundled": "同梱",
+  "incompatible": "非互換",
+  "dangerous": "注意が必要",
+  "scriptsCount": "{{count}} 個のスクリプト",
+  "scriptsCount_other": "{{count}} 個のスクリプト",
+  "refresh": "更新",
+  "createNewSkill": "新規作成",
+  "writeSkillInstructions": "スキルの指示を記述",
+  "uploadASkill": "スキルをアップロード",
+  "uploadSkill": "スキルをアップロード",
+  "uploadSkillDescription": "スキルの定義ファイルをアップロードします。",
+  "dropSkillToUpload": "ドラッグ＆ドロップまたはクリックしてアップロード",
+  "uploadingSkill": "スキルをアップロード中…",
+  "uploadOneSkill": "一度に1つのスキルをアップロードしてください",
+  "skillFiles": "スキルファイル",
+  "skillFileRequirements": "ファイルの要件",
+  "skillMarkdownRequirement": ".md ファイルには YAML 形式でスキルの名前と説明が含まれている必要があります",
+  "skillArchiveRequirement": ".zip または .skill ファイルには SKILL.md ファイルが含まれている必要があります",
+  "createSkillDescription": "エージェントモード用の再利用可能なワークフローを作成します。",
+  "skillName": "スキル名",
+  "skillNamePlaceholder": "weekly-status-report",
+  "description": "説明",
+  "skillDescriptionPlaceholder": "最近の作業から週報を作成します。進捗要約を求められたときに使用します。",
+  "instructions": "指示",
+  "skillInstructionsPlaceholder": "最近の成果、課題、次のステップの3つのセクションで最近の作業を要約してください。丁寧かつ簡潔なトーンで記述してください…",
+  "skillActions": "スキル操作",
+  "downloadSkill": "ダウンロード",
+  "skillExported": "スキルをエクスポートしました",
+  "tryInChat": "チャットで試す",
+  "editSkill": "スキルを編集",
+  "editSkillDescription": "説明と指示を更新します。スキル名は変更できません。",
+  "uninstallSkill": "アンインストール",
+  "skillUnavailable": "利用不可",
+  "skillError": "スキルエラー",
+  "skillInstructions": "指示",
+  "deleteSkill": "スキルを削除",
+  "deleteSkillDescription": "カスタムスキル「{{name}}」を削除しますか？この操作は元に戻せません。",
   "helpSupport": "ヘルプとサポート",
   "helpUsImproveJan": "Atomic Botの改善にご協力ください",
   "unstarAll": "すべてのスターを解除",
@@ -51,6 +119,11 @@
   "profile": "プロフィール",
   "reset": "リセット",
   "search": "検索",
+  "searchThreads": "チャットを検索...",
+  "toNavigate": "で移動",
+  "toSelect": "で選択",
+  "toClose": "で閉じる",
+  "clearRecent": "消去",
   "name": "名前",
   "cancel": "キャンセル",
   "create": "作成",
@@ -83,6 +156,8 @@
   "downloads": "ダウンロード",
   "downloading": "ダウンロード中",
   "cancelDownload": "ダウンロードをキャンセル",
+  "pauseDownload": "ダウンロードを一時停止",
+  "resumeDownload": "ダウンロードを再開",
   "downloadCancelled": "ダウンロードがキャンセルされました",
   "downloadComplete": "ダウンロード完了",
   "thinking": "考え中...",
@@ -96,10 +171,117 @@
   "tools": "ツール",
   "webSearch": "ウェブ検索",
   "reasoning": "推論",
+  "webSearchToggleTooltip": "Web 検索",
+  "webSearchToggleEnabled": "Web 検索が有効です",
+  "webSearchToggleDisabled": "Web 検索が無効です",
+  "webSearchToggleConnecting": "Web 検索に接続中…",
+  "webSearchToggleUnavailable": "Web 検索を利用できません。クリックして再試行してください。それでも失敗する場合は、検索プロバイダーの接続と MCP 設定を確認してください。",
+  "webSearchTemporarilyUnavailable": "Web 検索は一時的に利用できません。もう一度お試しください。",
+  "webSearchStillConnecting": "Web 検索がまだ接続中のため、このメッセージは Web 検索なしで送信されました。",
+  "reasoningToggleEnabled": "推論有効",
+  "reasoningToggleDisabled": "推論無効",
+  "reasoningEffort": {
+    "title": "推論の深さ",
+    "unavailable": "このモデルでは利用できません",
+    "ariaLabel": "思考の深さ: {{level}}",
+    "faster": "高速",
+    "smarter": "高精度",
+    "off": "オフ",
+    "low": "低",
+    "medium": "中",
+    "high": "高",
+    "xhigh": "最高",
+    "max": "最大"
+  },
+  "voiceInput": {
+    "start": "音声入力を開始",
+    "stop": "停止して挿入",
+    "stopStarting": "音声入力を停止",
+    "cancel": "録音を破棄",
+    "listening": "聴き取り中…",
+    "preparing": "音声入力を準備中…",
+    "starting": "音声モデルを起動中…",
+    "transcribing": "文字起こし中…",
+    "placeholder": "聴き取り中 — 話し始めてください",
+    "startingPlaceholder": "音声モデルを起動中 — 聴き取り開始後に話してください",
+    "stoppedBeforeReady": "音声モデルの準備ができる前に音声入力が停止されました。録音は行われませんでした。",
+    "level": "マイク音量",
+    "elapsed": "録音時間",
+    "unavailableWhileStreaming": "応答のストリーミング中は音声入力を利用できません",
+    "keptOnCancel": "録音を停止しました。すでに入力されたテキストは保持されました。",
+    "deviceFallback": "指定のマイクが利用できなかったため、システムのデフォルトを使用しています。",
+    "errors": {
+      "permission": "Atomic Chat はマイクを使用できません",
+      "noDevice": "マイクが見つかりませんでした",
+      "deviceBusy": "マイクは他のアプリで使用中です",
+      "deviceDisconnected": "マイクが切断されました",
+      "modelMissing": "音声モデルがまだインストールされていません",
+      "engineFailed": "音声モデルを起動できませんでした",
+      "transcriptionFailed": "そのフレーズを文字起こしできませんでした",
+      "transcriptionUnsupported": "この llama.cpp ビルドでは音声モデルを実行できません",
+      "transcriptionTimeout": "音声モデルの応答に時間がかかりすぎました",
+      "internal": "音声入力で問題が発生しました"
+    },
+    "setup": {
+      "step": "ステップ {{current}} / {{total}}",
+      "back": "戻る",
+      "next": "次へ",
+      "done": "完了",
+      "intro": {
+        "title": "タイピングの代わりに話す",
+        "description": "メッセージ欄に向かって話すと、話すそばから文字に変換されます。",
+        "bulletLive": "話し終えたフレーズからすぐに入力されます。",
+        "bulletLocal": "このコンピュータ上で動作し、音声が外部に送信されることはありません。",
+        "bulletAnywhere": "チャットでもエージェントモードでも動作します。"
+      },
+      "permission": {
+        "title": "マイクへのアクセスを許可",
+        "description": "マイクボタンを押すまで録音されることはありません。",
+        "allow": "マイクを許可",
+        "requesting": "応答を待機中…",
+        "allowed": "許可済み",
+        "denied": "マイクへのアクセスが拒否されました",
+        "deniedHelp": "プライバシー設定で Atomic Chat のマイクを再度有効にしてください。",
+        "openSystemSettings": "システム設定を開く",
+        "checkAgain": "再確認",
+        "restartNote": "macOS では、変更後に Atomic Chat の再起動が必要になる場合があります。",
+        "unsupported": "このシステムではアプリ外でマイクへのアクセスを管理しています。",
+        "rowTitle": "マイク",
+        "rowDescription": "文字起こしのために音声を録音するのに必要です。",
+        "deniedShort": "拒否",
+        "unsupportedShort": "システム管理",
+        "privacyNote": "システムのプライバシー設定からいつでもアクセスを取り消せます。",
+        "allowShort": "許可"
+      },
+      "model": {
+        "title": "音声モデルをインストール",
+        "description": "Voxtral Mini がローカルで文字起こしを行います。ダウンロードは1回のみです。",
+        "meta": "{{size}} · llama.cpp · 初回のみダウンロード",
+        "installed": "インストール済み",
+        "progress": "{{percent}}% · {{current}} / {{total}} GB",
+        "failed": "音声モデルのダウンロードに失敗しました",
+        "diskNote": "約 {{gb}} GB の空きディスク容量が必要です。",
+        "tagline": "リアルタイム多言語文字起こし",
+        "sizeGb": "{{size}} GB"
+      },
+      "doneBlocked": "完了するにはマイクを許可し、音声モデルをインストールしてください。"
+    }
+  },
+  "proactive": "プロアクティブ",
   "selectAModel": "モデルを選択",
+  "changeModel": "モデルを変更",
+  "downloadModel": "モデルをダウンロード",
   "noToolsAvailable": "利用可能なツールはありません",
   "noModelsFoundFor": "\"{{searchValue}}\"に一致するモデルが見つかりません",
+  "modelPicker": {
+    "downloadFromHuggingFace": "Hugging Face からダウンロード",
+    "noRunnableModels": "実行可能なモデルがまだありません。",
+    "providerSettings": "{{provider}} の設定",
+    "downloadSize": "{{size}} をダウンロード"
+  },
   "failedToLoadModels": "モデルの読み込みに失敗しました",
+  "failedToLoadModelsTimeout": "モデルを読み込めませんでした（タイムアウト）",
+  "retry": "再試行",
   "noModels": "モデルが見つかりません",
   "customAvatar": "カスタムアバター",
   "editAssistant": "アシスタントを編集",
@@ -135,6 +317,7 @@
     "chatInput": "何でも聞いてください..."
   },
   "confirm": "確認",
+  "ok": "OK",
   "continue": "続ける",
   "loading": "読み込み中...",
   "error": "エラー",
@@ -151,6 +334,7 @@
   "enterApiKey": "APIキーを入力",
   "scrollToBottom": "一番下までスクロール",
   "generateAiResponse": "AIの応答を生成",
+  "continueAiResponse": "AI の応答を続行",
   "addModel": {
     "title": "モデルを追加",
     "modelId": "モデルID",
@@ -212,7 +396,9 @@
   "deleteModel": {
     "title": "モデルを削除: {{modelId}}",
     "description": "本当にこのモデルを削除しますか？この操作は元に戻せません。",
+    "managedShared": "このモデルは GPU エンジン（{{engines}}）の共有ストアにあるため、削除するとすべてのエンジンからエンジンキャッシュとともに削除されます。",
     "success": "モデル {{modelId}} は完全に削除されました。",
+    "successFreed": "モデル {{modelId}} を完全に削除しました（{{size}} を解放）。",
     "cancel": "キャンセル",
     "delete": "削除"
   },
@@ -242,12 +428,6 @@
       "title": "すべてのチャットを削除",
       "description": "すべてのチャットが削除されます。この操作は元に戻せません。"
     },
-    "deleteThread": {
-      "description": "本当にこのチャットを削除しますか？この操作は元に戻せません。"
-    },
-    "messageMetadata": {
-      "title": "メッセージメタデータ"
-    },
     "deleteAllAgentThreads": {
       "title": "すべてのエージェントチャットを削除",
       "description": "すべてのエージェントチャットが削除されます。この操作は元に戻せません。"
@@ -255,6 +435,12 @@
     "deleteAllThreadsInProject": {
       "title": "すべての会話を削除",
       "description": "「{{projectName}}」内の {{count}} 件の会話が削除されます。この操作は元に戻せません。"
+    },
+    "deleteThread": {
+      "description": "本当にこのチャットを削除しますか？この操作は元に戻せません。"
+    },
+    "messageMetadata": {
+      "title": "メッセージメタデータ"
     }
   },
   "projects": {
@@ -264,6 +450,7 @@
     "addToProject": "プロジェクトに追加",
     "removeFromProject": "プロジェクトから削除",
     "createNewProject": "新しいプロジェクトを作成",
+    "viewProject": "プロジェクトを表示",
     "editProject": "プロジェクトを編集",
     "deleteProject": "プロジェクトを削除",
     "projectName": "プロジェクト名",
@@ -273,61 +460,94 @@
     "noProjectsYetDesc": "「プロジェクトを追加」ボタンをクリックして、新しいプロジェクトを開始してください。",
     "projectNotFound": "プロジェクトが見つかりません",
     "projectNotFoundDesc": "お探しのプロジェクトは存在しないか、削除されています。",
+    "selectAssistant": "アシスタントを選択",
+    "noAssistantAssigned": "このプロジェクトに割り当てられたアシスタントはありません",
+    "files": "ファイル",
+    "filesDescription": "このプロジェクトで参照する PDF、ドキュメント、テキストを追加します。",
+    "uploading": "インデックス作成中…",
+    "uploadingHint": "初回アップロード時には埋め込みモデルもダウンロードされます。進捗はダウンロードパネルで確認できます。",
+    "preparingIndexModel": "ドキュメントインデックスモデルをダウンロード中",
+    "filesLoadFailed": "プロジェクトのファイルを読み込めませんでした",
     "deleteProjectDialog": {
       "title": "プロジェクトを削除",
-      "description": "本当にこのプロジェクトを削除しますか？この操作は元に戻せません。",
+      "permanentDelete": "これによりすべてのチャットが完全に削除されます。",
+      "permanentDeleteWarning": "この操作により、プロジェクト内のすべてのチャットが完全に削除されます！",
+      "deleteEmptyProject": "プロジェクト「{{projectName}}」を削除します。",
+      "saveThreadsAdvice": "チャットを保存するには、削除する前にチャットリストまたは別のプロジェクトに移動してください。",
+      "starredWarning": "プロジェクト内にスター付きのチャットが残っています。",
       "deleteButton": "削除",
       "successWithName": "プロジェクト「{{projectName}}」を正常に削除しました",
       "successWithoutName": "プロジェクトを正常に削除しました",
       "error": "プロジェクトの削除に失敗しました。もう一度お試しください。",
       "ariaLabel": "{{projectName}}を削除",
-      "permanentDelete": "これによりすべてのチャットが完全に削除されます。",
-      "permanentDeleteWarning": "この操作により、プロジェクト内のすべてのチャットが完全に削除されます！",
-      "deleteEmptyProject": "プロジェクト「{{projectName}}」を削除します。",
-      "saveThreadsAdvice": "チャットを保存するには、削除する前にチャットリストまたは別のプロジェクトに移動してください。",
-      "starredWarning": "プロジェクト内にスター付きのチャットが残っています。"
+      "description": "本当にこのプロジェクトを削除しますか？この操作は元に戻せません。"
     },
     "addProjectDialog": {
       "createTitle": "新しいプロジェクトを作成",
       "editTitle": "プロジェクトを編集",
       "nameLabel": "プロジェクト名",
       "namePlaceholder": "プロジェクト名を入力...",
-      "createButton": "作成",
-      "updateButton": "更新",
-      "alreadyExists": "プロジェクト「{{projectName}}」はすでに存在します",
-      "createSuccess": "プロジェクト「{{projectName}}」を正常に作成しました",
-      "renameSuccess": "プロジェクト名を「{{oldName}}」から「{{newName}}」に正常に変更しました",
       "assistant": "アシスタント",
       "selectAssistant": "アシスタントを選択（任意）",
       "noAssistant": "アシスタントなし",
       "addAssistant": "アシスタントを追加",
-      "updateSuccess": "プロジェクト「{{projectName}}」を正常に更新しました"
+      "createButton": "作成",
+      "updateButton": "更新",
+      "alreadyExists": "プロジェクト「{{projectName}}」はすでに存在します",
+      "createSuccess": "プロジェクト「{{projectName}}」を正常に作成しました",
+      "updateSuccess": "プロジェクト「{{projectName}}」を正常に更新しました",
+      "renameSuccess": "プロジェクト名を「{{oldName}}」から「{{newName}}」に正常に変更しました"
     },
     "noConversationsIn": "{{projectName}}には会話がありません",
     "startNewConversation": "上にメッセージを入力して、{{projectName}}で会話を始めましょう。",
     "conversationsIn": "{{projectName}}での会話",
     "conversationsDescription": "会話をクリックしてチャットを続けるか、以下で新しい会話を開始してください。",
-    "thread": "チャット",
-    "threads": "チャット",
-    "updated": "更新日時:",
-    "collapseThreads": "チャットを折りたたむ",
-    "expandThreads": "チャットを展開する",
-    "update": "更新",
-    "selectAssistant": "アシスタントを選択",
-    "noAssistantAssigned": "このプロジェクトに割り当てられたアシスタントはありません",
-    "files": "ファイル",
-    "filesDescription": "このプロジェクトで参照する PDF、ドキュメント、テキストを追加します。",
     "conversation": "会話",
     "instructions": "指示",
     "setup": "セットアップ",
     "instructionsDescription": "応答のトーンやスタイルをカスタマイズ",
     "manageInstructions": "指示を管理",
+    "thread": "チャット",
+    "threads": "チャット",
+    "updated": "更新日時:",
     "collapseProject": "プロジェクトを折りたたむ",
     "expandProject": "プロジェクトを展開",
+    "dragToReorder": "ドラッグしてプロジェクトを並び替え",
+    "update": "更新",
     "searchProjects": "プロジェクトを検索...",
     "noProjectsFound": "プロジェクトが見つかりません",
-    "tryDifferentSearch": "別の検索キーワードをお試しください"
+    "tryDifferentSearch": "別の検索キーワードをお試しください",
+    "secureEnvironment": {
+      "title": "セキュア環境",
+      "description": "このプロジェクトのチャット内のコマンドやスクリプトは、以下のフォルダーと自身のチャットフォルダーにのみアクセスできます。このコンピュータ上のその他の場所はすべて Windows サンドボックスによってブロックされます。",
+      "unavailable": "このコンピュータでは利用できません: {{reason}}",
+      "unknownReason": "Windows サンドボックスが起動しませんでした",
+      "noFolders": "フォルダーはまだありません。コマンドは自身のチャットフォルダーのみ使用できます。",
+      "addFolder": "フォルダーを追加",
+      "removeFolder": "フォルダーを削除",
+      "canEdit": "変更可能",
+      "network": "インターネットアクセス",
+      "networkDescription": "コマンドによるパッケージのダウンロードや Web サイトへのアクセスを許可します。オフの場合、コマンドはインターネットに接続できず、このプロジェクトのチャットでは Web 検索もオフになります。",
+      "saveError": "セキュア環境を保存できませんでした: {{error}}",
+      "createdWithoutIt": "プロジェクト「{{projectName}}」は作成されましたが、セキュア環境を保存できなかったため、現時点では通常のプロジェクトとして作成されています: {{error}}",
+      "connectors": "コネクタ",
+      "connectorsDescription": "チェックを入れない限り、このプロジェクトのチャットではオフになります。コネクタはサンドボックス外で、あなた自身のファイルおよびインターネットへのアクセス権限で実行されるため、このプロジェクトで信頼できるもののみ許可してください。",
+      "needsNetwork": "インターネットアクセスが必要",
+      "serverRemoved": "削除済み"
+    },
+    "collapseThreads": "チャットを折りたたむ",
+    "expandThreads": "チャットを展開する"
   },
+  "attachmentsIngestion": {
+    "title": "添付ファイルの取り込み方法を選択",
+    "description": "これらのファイルをチャットに直接含めるか、埋め込みベクトルとしてインデックスするかを選択してください。",
+    "inline": "チャットに直接挿入",
+    "embeddings": "埋め込み（RAG）を使用"
+  },
+  "attachmentInjectedIndicator": "チャットに直接挿入済み",
+  "attachmentEmbeddedIndicator": "RAG用に埋め込み済み",
+  "viewInjectedContent": "挿入された内容を表示",
+  "injectedContentTitle": "挿入されたファイルの内容",
   "toast": {
     "allThreadsUnfavorited": {
       "title": "すべてのチャットのお気に入りを解除しました",
@@ -336,6 +556,10 @@
     "deleteAllThreads": {
       "title": "すべてのチャットを削除",
       "description": "すべてのチャットが完全に削除されました。"
+    },
+    "deleteAllAgentThreads": {
+      "title": "すべてのエージェントチャットを削除",
+      "description": "すべてのエージェントチャットが完全に削除されました。"
     },
     "renameThread": {
       "title": "チャット名を変更",
@@ -365,9 +589,20 @@
       "title": "ダウンロードがキャンセルされました",
       "description": "ダウンロード処理はキャンセルされました"
     },
+    "downloadResumed": {
+      "title": "ダウンロードを再開しました"
+    },
+    "downloadArtifactChanged": {
+      "title": "モデルファイルが変更されました",
+      "description": "サーバー上のファイルがこのモデルと一致しなくなりました。ダウンロードを停止し、途中までのファイルは保持されました。再試行する前に Atomic Chat を更新するか、モデルカタログを再読み込みしてください。"
+    },
     "downloadFailed": {
       "title": "ダウンロードに失敗しました",
       "description": "{{item}}のダウンロードに失敗しました"
+    },
+    "downloadNotResumable": {
+      "title": "このダウンロードは再開できません",
+      "description": "{{item}} はここから再開できません。もう一度ダウンロードしてください。ディスク上の既存データは保持されます。"
     },
     "modelValidationStarted": {
       "title": "モデルを検証中",
@@ -409,10 +644,6 @@
       "title": "チャットが外されました",
       "description": "チャットは「{{projectName}}」から正常に外されました"
     },
-    "deleteAllAgentThreads": {
-      "title": "すべてのエージェントチャットを削除",
-      "description": "すべてのエージェントチャットが完全に削除されました。"
-    },
     "fileUploaded": {
       "title": "ファイルをアップロードしました",
       "description": "ファイルがアップロードされ、正常にインデックスされました"
@@ -420,6 +651,9 @@
     "uploadFailed": {
       "title": "アップロード失敗",
       "description": "ファイルのアップロードに失敗しました"
+    },
+    "unsupportedFileType": {
+      "title": "非対応のファイル形式"
     },
     "fileDeleted": {
       "title": "ファイルを削除しました",
@@ -436,96 +670,53 @@
     "attachmentsDisabledInfo": {
       "title": "添付ファイル機能が無効です",
       "description": "設定で添付ファイル機能が無効になっています"
+    },
+    "downloadDiskFull": {
+      "title": "ディスクの空き容量が不足しています",
+      "description": "Atomic Chat のデータフォルダーがあるドライブの空き容量を確保してから、もう一度ダウンロードを開始してください。"
+    },
+    "downloadDiskPermission": {
+      "title": "モデルを書き込む権限がありません",
+      "description": "Atomic Chat のデータフォルダーに書き込めません。フォルダーのアクセス権を確認するか、書き込み可能な場所へデータフォルダーを移動してください。"
+    },
+    "downloadDiskLocked": {
+      "title": "別のプログラムがファイルを使用しています",
+      "description": "書き込み中にウイルス対策ソフトやバックアップソフトがファイルをロックしています。Atomic Chat のデータフォルダーを除外リストに追加して再試行してください。"
+    },
+    "downloadDiskPathTooLong": {
+      "title": "ファイルパスが長すぎます",
+      "description": "Windows ではパスが 260 文字までに制限されています。Atomic Chat のデータフォルダーをドライブのルートに近い場所へ移動して再試行してください。"
+    },
+    "downloadDiskDeviceLost": {
+      "title": "ドライブが利用できなくなりました",
+      "description": "Atomic Chat のデータフォルダーがある外付けドライブまたはネットワークドライブが切断されました。再接続してからダウンロードを再開してください。"
+    },
+    "downloadWontFit": {
+      "title": "このモデルはディスクに収まりません",
+      "description": "{{model}} には {{needed}} の空き容量が必要ですが、このドライブの空き容量は {{available}} です。より小さいモデルを選択するか、空き容量を確保してください。",
+      "descriptionOnVolume": "{{model}} には {{needed}} の空き容量が必要ですが、{{volume}} の空き容量は {{available}} です。より小さいモデルを選択するか、空き容量を確保するか、データフォルダーを別のドライブに移動してください。",
+      "changeFolder": "データフォルダーを変更"
+    },
+    "downloadProxyUnreachable": {
+      "title": "プロキシ経由でサーバーに接続できませんでした",
+      "description": "{{proxyUrl}} 経由でのダウンロード接続が確立できませんでした。プロキシアドレスが正しくプロキシが起動していることを確認するか、設定でプロキシをオフにしてください。",
+      "action": "プロキシ設定"
+    },
+    "downloadNetworkUnreachable": {
+      "title": "ダウンロードサーバーに接続できませんでした",
+      "description": "接続を確立できませんでした。インターネット接続、VPN、ファイアウォールを確認してから、もう一度ダウンロードを開始してください。"
+    },
+    "fileDialogFailed": {
+      "title": "ファイルダイアログを開けませんでした",
+      "description": "システムがファイルまたはフォルダーの選択画面を表示できませんでした。もう一度お試しください。繰り返し失敗する場合は Atomic Chat を再起動してください。"
+    },
+    "downloadFsLimit": {
+      "title": "このドライブには 4 GB を超えるファイルを保存できません",
+      "description": "{{model}} には {{size}} のファイルがありますが、{{volume}} は {{fsName}} でフォーマットされているため 4 GB 以上のファイルを保存できません。Atomic Chat のデータフォルダーを NTFS または exFAT のドライブに移動してください。",
+      "descriptionFailed": "Atomic Chat のデータフォルダーがあるドライブは FAT32 でフォーマットされているため、4 GB 以上のファイルを保存できません。データフォルダーを NTFS または exFAT のドライブに移動して再試行してください。",
+      "thisDrive": "このドライブ"
     }
   },
-  "remote_access": "リモートアクセス",
-  "integrations": "外部連携",
-  "claude_code": "Claude Code",
-  "hermes_agent": "Hermes Agent",
-  "hideProvider": "プロバイダーを非表示",
-  "showProvider": "プロバイダーを表示",
-  "newTask": "新しいタスク",
-  "newBadge": "新機能",
-  "agentChats": "エージェントチャット",
-  "searchChats": "チャットを検索",
-  "searchAgentChats": "エージェントチャットを検索",
-  "launch": "外部連携",
-  "api": "API",
-  "skills": "スキル",
-  "cloud": "Cloud",
-  "agentSkill": {
-    "selected": "スキル: {{name}}",
-    "remove": "選択したスキルを解除",
-    "loading": "スキルを読み込み中…",
-    "noMatches": "一致する有効なスキルがありません"
-  },
-  "skillsEmpty": "インストールされているスキルはありません。",
-  "selectSkill": "スキルを選択して指示内容を表示します。",
-  "enableSkill": "スキルを有効化",
-  "skillEnabled": "有効",
-  "skillDisabled": "無効",
-  "bundled": "同梱",
-  "incompatible": "非互換",
-  "dangerous": "注意が必要",
-  "scriptsCount": "{{count}} 個のスクリプト",
-  "scriptsCount_other": "{{count}} 個のスクリプト",
-  "refresh": "更新",
-  "createNewSkill": "新規作成",
-  "writeSkillInstructions": "スキルの指示を記述",
-  "uploadASkill": "スキルをアップロード",
-  "uploadSkill": "スキルをアップロード",
-  "uploadSkillDescription": "スキルの定義ファイルをアップロードします。",
-  "dropSkillToUpload": "ドラッグ＆ドロップまたはクリックしてアップロード",
-  "uploadingSkill": "スキルをアップロード中…",
-  "uploadOneSkill": "一度に1つのスキルをアップロードしてください",
-  "skillFiles": "スキルファイル",
-  "skillFileRequirements": "ファイルの要件",
-  "skillMarkdownRequirement": ".md ファイルには YAML 形式でスキルの名前と説明が含まれている必要があります",
-  "skillArchiveRequirement": ".zip または .skill ファイルには SKILL.md ファイルが含まれている必要があります",
-  "createSkillDescription": "エージェントモード用の再利用可能なワークフローを作成します。",
-  "skillName": "スキル名",
-  "skillNamePlaceholder": "weekly-status-report",
-  "description": "説明",
-  "skillDescriptionPlaceholder": "最近の作業から週報を作成します。進捗要約を求められたときに使用します。",
-  "instructions": "指示",
-  "skillInstructionsPlaceholder": "最近の成果、課題、次のステップの3つのセクションで最近の作業を要約してください。丁寧かつ簡潔なトーンで記述してください…",
-  "skillActions": "スキル操作",
-  "downloadSkill": "ダウンロード",
-  "skillExported": "スキルをエクスポートしました",
-  "tryInChat": "チャットで試す",
-  "editSkill": "スキルを編集",
-  "editSkillDescription": "説明と指示を更新します。スキル名は変更できません。",
-  "uninstallSkill": "アンインストール",
-  "skillUnavailable": "利用不可",
-  "skillError": "スキルエラー",
-  "skillInstructions": "指示",
-  "deleteSkill": "スキルを削除",
-  "deleteSkillDescription": "カスタムスキル「{{name}}」を削除しますか？この操作は元に戻せません。",
-  "searchThreads": "チャットを検索...",
-  "toNavigate": "で移動",
-  "toSelect": "で選択",
-  "toClose": "で閉じる",
-  "clearRecent": "消去",
-  "pauseDownload": "ダウンロードを一時停止",
-  "resumeDownload": "ダウンロードを再開",
-  "reasoningToggleEnabled": "推論有効",
-  "reasoningToggleDisabled": "推論無効",
-  "proactive": "プロアクティブ",
-  "downloadModel": "モデルをダウンロード",
-  "failedToLoadModelsTimeout": "モデルを読み込めませんでした（タイムアウト）",
-  "retry": "再試行",
-  "ok": "OK",
-  "continueAiResponse": "AI の応答を続行",
-  "attachmentsIngestion": {
-    "title": "添付ファイルの取り込み方法を選択",
-    "description": "これらのファイルをチャットに直接含めるか、埋め込みベクトルとしてインデックスするかを選択してください。",
-    "inline": "チャットに直接挿入",
-    "embeddings": "埋め込み（RAG）を使用"
-  },
-  "attachmentInjectedIndicator": "チャットに直接挿入済み",
-  "attachmentEmbeddedIndicator": "RAG用に埋め込み済み",
-  "viewInjectedContent": "挿入された内容を表示",
-  "injectedContentTitle": "挿入されたファイルの内容",
   "errors": {
     "fileTooLarge": "ファイルサイズが大きすぎます",
     "fileTooLargeDescription": "{{fileName}} は制限の {{maxFileSizeMB}}MB を超えています",
@@ -533,12 +724,11 @@
     "fileReadFailedDescription": "{{fileName}} をディスクから読み込めませんでした"
   },
   "files": {
-    "chunksCount": "{{count}} チャンク"
-  },
-  "pluginsMenu": {
-    "title": "プラグイン",
-    "emptySkills": "スキルはまだありません",
-    "manageSkills": "スキルを管理"
+    "chunksCount": "{{count}} チャンク",
+    "removeFromProject": "プロジェクトから {{fileName}} を削除",
+    "removeTitle": "このファイルをプロジェクトから削除しますか？",
+    "removeDescription": "このプロジェクトのチャットでは {{fileName}} を使用しなくなります。コンピュータ上のファイルは削除されず、いつでも再アップロードできます。",
+    "remove": "削除"
   },
   "connectorsMenu": {
     "title": "コネクター",
@@ -561,7 +751,9 @@
     "toolCountPartial": "{{count}} 個中 {{enabled}} 個のツール",
     "costPartial": "ツール {{count}} 個中 {{enabled}} 個 · 約{{tokens}}トークン",
     "costSharePartial": "ツール {{count}} 個中 {{enabled}} 個 · 約{{tokens}}トークン（コンテキストの{{share}}%）",
-    "configureTools": "ツール"
+    "configureTools": "ツール",
+    "systemServersAgentOnly": "Filesystem、Fetch、Sequential thinking はエージェントモードでのみ動作します",
+    "systemServersAgentOnlyHint": "モデルに使用させるには、コンポーザーの「+」メニューでエージェントモードをオンにしてください。"
   },
   "connectorTools": {
     "title": "{{name}} のツール",
@@ -577,11 +769,63 @@
     "noTools": "ツールがありません。サーバーに接続するとツールが読み込まれます。",
     "noMatches": "一致するツールがありません"
   },
+  "pluginsMenu": {
+    "title": "プラグイン",
+    "emptySkills": "スキルはまだありません",
+    "manageSkills": "スキルを管理"
+  },
   "toolCostHint": {
     "title": "ツール定義がコンテキスト {{ctx}} トークン中 約{{tokens}} を占めています",
     "body": "接続中のコネクター（{{servers}}）は毎回のリクエストにツール定義を追加するため、ローカルモデルの応答が遅くなります。このチャットで不要なものはオフにしてください。",
     "mute": "このチャットで {{server}} をオフにする",
     "dismiss": "このままにする"
+  },
+  "cornerCard": {
+    "collapse": "折りたたむ"
+  },
+  "downloadPanel": {
+    "collapse": "ダウンロードを折りたたむ",
+    "expand": "ダウンロードを表示",
+    "preparing": "開始中…",
+    "connecting": "接続中…",
+    "retrying": "接続に失敗しました。再試行中 ({{attempt}}/{{maxAttempts}})…",
+    "stalled": "停止中、再接続しています…",
+    "paused": "一時停止中",
+    "left": "残り {{eta}}"
+  },
+  "inferenceStatus": {
+    "starting": "{{model}} を起動中…",
+    "startingDetail": "モデルをメモリに読み込んでいます。準備ができ次第、チャットが応答します。",
+    "restarting": "{{model}} 用に再起動中…",
+    "restartingDetail": "前のエンジンを停止してこのエンジンを起動しています。切り替えが完了するまでチャットは一時停止されます。",
+    "ready": "{{model}} を読み込みました",
+    "notLoaded": "モデル未読み込み — 最初のメッセージで起動します",
+    "retry": "もう一度試す",
+    "logs": "ログ"
+  },
+  "modelLoad": {
+    "starting": "モデルを起動中",
+    "ready": "モデルの準備完了",
+    "loadedIntoMemory": "メモリに読み込み済み",
+    "loadingIntoMemory": "メモリに読み込み中",
+    "cancel": "キャンセル",
+    "cancelling": "キャンセル中…",
+    "dismiss": "閉じる",
+    "indicator": {
+      "loaded": "{{model}} を読み込みました",
+      "unload": "メモリからアンロード",
+      "unloading": "{{model}} をアンロード中…",
+      "loading": "{{model}} を読み込み中…",
+      "stopLoading": "読み込みを停止",
+      "notLoaded": "未読み込み — 最初のメッセージで起動します",
+      "failed": "読み込みに失敗しました"
+    },
+    "engine": {
+      "stopping-previous": "前のモデルをアンロード中",
+      "starting-container": "エンジンコンテナを起動中",
+      "initializing-engine": "エンジンを準備中",
+      "ready": "エンジンの準備完了"
+    }
   },
   "desktopNotification": {
     "modelReadyTitle": "モデルをダウンロードしました",
@@ -589,5 +833,70 @@
     "engineReadyTitle": "エンジンをインストールしました",
     "chatEngineReadyBody": "llama.cpp でモデルを実行できます。",
     "mediaEngineReadyBody": "画像・動画エンジンの準備ができました。"
+  },
+  "secureEnvironmentBlock": {
+    "notAllowed": "このセキュアプロジェクトでは許可されていません。プロジェクト設定の「コネクタ」で許可してください。",
+    "webSearchOffline": "このセキュアプロジェクトではインターネットアクセスがオフになっています。"
+  },
+  "navigation": {
+    "primary": "メインナビゲーション",
+    "workspace": "ワークスペース",
+    "server": "サーバー",
+    "modelsHub": "モデルハブ",
+    "help": "ヘルプ",
+    "helpTitle": "何かお手伝いできますか？",
+    "chatWithUs": "チャットでお問い合わせ",
+    "emailSupport": "メールサポート",
+    "discord": "Discord",
+    "newGithubIssue": "新しい GitHub Issue",
+    "toggleSidebar": "サイドバーを切り替え",
+    "resizeSidebar": "サイドバーのサイズを変更",
+    "resizeSidebarHint": "ドラッグしてサイズ変更、ダブルクリックでリセット",
+    "lastActivity": "最終アクティビティ: {{date}}",
+    "searchChats": "チャットを検索",
+    "pinned": "ピン留め済み",
+    "pinChat": "チャットをピン留め",
+    "unpinChat": "ピン留めを解除",
+    "dragToReorder": "ドラッグして並び替え",
+    "more": "その他",
+    "moveChat": "{{title}} を移動",
+    "overview": "概要",
+    "agentsAndTools": "エージェントとツール",
+    "installed": "インストール済み",
+    "notInstalled": "未インストール",
+    "discover": "見つける",
+    "localModels": "ローカルモデル",
+    "cloudProviders": "クラウドプロバイダー",
+    "customEndpoint": "カスタムエンドポイント",
+    "inferenceEngines": "推論エンジン",
+    "mcpConnectors": "MCP コネクタ",
+    "serverStart": "起動",
+    "serverStop": "停止",
+    "serverStarting": "起動中…",
+    "engine": "エンジン",
+    "model": "モデル",
+    "notSelected": "未選択",
+    "configuration": "設定",
+    "remoteAccess": "リモートアクセス",
+    "activity": "アクティビティ",
+    "connections": "接続",
+    "connectionsCount": "{{count}} 件設定済み",
+    "configured": "設定済み"
+  },
+  "support": {
+    "title": "Atomic Chat サポート",
+    "subtitle": "チームとチャット",
+    "close": "サポートチャットを閉じる",
+    "greeting": "こんにちは。どのようなことでお困りですか？",
+    "messages": "メッセージ",
+    "teamName": "Atomic Chat チーム",
+    "inputLabel": "Atomic Chat チームへのメッセージ",
+    "placeholder": "メッセージを入力…",
+    "send": "メッセージを送信",
+    "sending": "送信中…",
+    "notSent": "送信されませんでした。",
+    "rateLimited": "メッセージが多すぎます。少し待ってから再試行してください。",
+    "retry": "再試行",
+    "disclosure": "メッセージは Atomic Chat チームに送信されます。回答に役立てるため、アプリのバージョン、OS、ハードウェア情報が添付されます。"
   }
 }

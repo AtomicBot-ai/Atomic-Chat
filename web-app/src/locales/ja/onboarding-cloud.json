@@ -1,0 +1,11 @@
+{
+  "title": "クラウドモデルも、そのまま。",
+  "lead": "プロバイダーを接続して選択肢を広げましょう。ローカルモデルのダウンロードはバックグラウンドで続きます。",
+  "providers": "クラウドプロバイダー",
+  "keyFor": "{{provider}} APIキー",
+  "connected": "接続済み",
+  "notVerified": "未確認",
+  "skip": "スキップ",
+  "keyPlaceholder": "APIキーを入力",
+  "connecting": "接続中…"
+}

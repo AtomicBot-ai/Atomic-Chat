@@ -2,6 +2,7 @@
   "sortNewest": "新着順",
   "sortMostDownloaded": "ダウンロード数順",
   "newChat": "新しいチャット",
+  "managedEngineChoice": "新しいチャット用のエンジン",
   "download": "ダウンロード",
   "downloaded": "ダウンロード済み",
   "installedOnDevice": "このデバイスにインストール済み",
@@ -31,6 +32,9 @@
   "recForMlx": "MLX 向け",
   "backToModels": "モデル一覧に戻る",
   "fromHuggingFace": "Hugging Face から",
+  "feedTitle": "Hugging Face からさらに表示",
+  "feedLoading": "Hugging Face からさらに読み込み中…",
+  "feedFailed": "Hugging Face に接続してモデルを追加読み込みできませんでした。",
   "fromHuggingFaceHint": "厳選カタログ外のモデル",
   "fromHuggingFaceExpand": "Hugging Face でさらに検索",
   "fromHuggingFaceCollapse": "Hugging Face の検索結果を非表示",
@@ -81,9 +85,139 @@
   "decisionReadsImages": "reads images",
   "licenseNonCommercial": "non-commercial",
   "frameRate": "フレームレート",
+  "categoryVoice": "音声",
+  "categoryVoiceHint": "音声認識と音声モデル",
+  "searchVoicePlaceholder": "音声モデルを検索…",
+  "voiceModels": "音声モデル · 音声認識",
+  "voiceTagline": "音声テキスト変換 · 多言語",
+  "noVoiceModels": "検索に一致する音声モデルはありません。",
+  "sort": "並び替え",
+  "sortModels": "モデルを並び替え",
+  "filters": {
+    "button": "フィルター",
+    "label": "モデルを絞り込み",
+    "engine": "エンジン",
+    "allEngines": "すべてのエンジン",
+    "format": "フォーマット",
+    "showOnly": "表示対象",
+    "liked": "お気に入りモデル",
+    "clear": "フィルターをクリア"
+  },
+  "import": {
+    "button": "ファイルをインポート",
+    "ggufFile": "GGUF モデルファイル…",
+    "mlxFolder": "MLX モデルフォルダー…",
+    "unsupportedTitle": "このファイルはインポートできません",
+    "unsupportedGguf": "Atomic Chat は GGUF モデルファイルをインポートできます。",
+    "unsupportedGgufOrMlx": "Atomic Chat は GGUF モデルファイルと MLX モデルフォルダーをインポートできます。"
+  },
+  "table": {
+    "label": "ローカルモデル",
+    "count": "モデル数: {{count}}",
+    "resetSort": "並び替えをリセット",
+    "sortBy": "{{column}} で並び替え",
+    "expand": "{{name}} を展開",
+    "collapse": "{{name}} を折りたたむ",
+    "like": "{{name}} をお気に入りに追加",
+    "unlike": "{{name}} のお気に入りを解除",
+    "unknown": "不明",
+    "notSpecified": "未指定",
+    "sizeHint": "代表ダウンロード: ダウンロードオプションで最初に選ばれる量子化（リポジトリにある場合は IQ4_XS または Q4_K_M、それ以外は中央値）と関連ファイル、または MLX の完全な重みデータ。",
+    "deviceInCard": "ダウンロードオプションで確認",
+    "deviceInCardHint": "このエンジンは開いたときにこのコンピュータとの互換性を確認します。",
+    "footnote": "このデバイスでは、一覧のダウンロードサイズとこのコンピュータのメモリを比較しています。コンテキスト長やエンジン設定によってモデルが使用するメモリは増加します。",
+    "column": {
+      "model": "モデル",
+      "parameters": "パラメータ",
+      "format": "フォーマット",
+      "capabilities": "機能",
+      "downloadSize": "ダウンロードサイズ",
+      "thisDevice": "このデバイス",
+      "engines": "エンジン"
+    },
+    "loading": "読み込み中"
+  },
+  "source": {
+    "huggingFace": "Hugging Face"
+  },
+  "vllm": {
+    "checking": "このコンピュータで vLLM を実行できるか確認中…",
+    "blocked": {
+      "title": "このコンピュータではまだ vLLM をセットアップできません",
+      "body": "以下の項目を修正してから再度確認してください。vLLM 設定ページで各手順を確認できます。",
+      "openProvider": "vLLM 設定を開く",
+      "checkAgain": "再確認"
+    },
+    "blocker": {
+      "driver-too-old": "vLLM には NVIDIA ドライバー {{required}} 以降が必要ですが、このコンピュータには {{actual}} が入っています。",
+      "driver-too-old-fix": "NVIDIA またはシステムアップデートから新しいドライバーをインストールしてコンピュータを再起動し、再度確認してください。",
+      "compute-capability-too-low": "Atomic Chat の vLLM には Ampere 世代（RTX 30xx）以降の NVIDIA カード（Compute Capability {{required}} 以上）が必要です。このカードは {{actual}} です。"
+    },
+    "curated": "vLLM で動作確認済み",
+    "models": {
+      "fits": "このモデルはここで vLLM を使って実行できます（重みサイズ {{size}}）。",
+      "checking": "このコンピュータで vLLM を使ってこのモデルを実行できるか確認中…",
+      "otherCard": "次のカードで実行できます: {{cards}}。vLLM 設定でそのカードを選択してください。",
+      "gated": "Hugging Face へのアクセスが拒否されました。モデルページを開いて利用規約に同意し（必要に応じて設定で Hugging Face トークンを設定して）、もう一度お試しください: {{url}}",
+      "noSpace": "{{path}} にこのモデル用の空き容量が不足しています（必要: {{needed}}、空き: {{free}}）。空き容量を確保してからもう一度お試しください。"
+    },
+    "installEngine": "vLLM をインストール"
+  },
+  "sglang": {
+    "checking": "このコンピュータで SGLang を実行できるか確認中…",
+    "blocked": {
+      "title": "このコンピュータではまだ SGLang をセットアップできません",
+      "body": "以下の項目を修正してから再度確認してください。SGLang 設定ページで各手順を確認できます。",
+      "openProvider": "SGLang 設定を開く",
+      "checkAgain": "再確認"
+    },
+    "blocker": {
+      "driver-too-old": "SGLang には NVIDIA ドライバー {{required}} 以降が必要ですが、このコンピュータには {{actual}} が入っています。",
+      "driver-too-old-fix": "NVIDIA またはシステムアップデートから新しいドライバーをインストールしてコンピュータを再起動し、再度確認してください。",
+      "compute-capability-too-low": "Atomic Chat の SGLang には Ampere 世代（RTX 30xx）以降の NVIDIA カード（Compute Capability {{required}} 以上）が必要です。このカードは {{actual}} です。"
+    },
+    "curated": "SGLang で動作確認済み",
+    "models": {
+      "fits": "このモデルはここで SGLang を使って実行できます（重みサイズ {{size}}）。",
+      "checking": "このコンピュータで SGLang を使ってこのモデルを実行できるか確認中…",
+      "otherCard": "次のカードで実行できます: {{cards}}。SGLang 設定でそのカードを選択してください。",
+      "gated": "Hugging Face へのアクセスが拒否されました。モデルページを開いて利用規約に同意し（必要に応じて設定で Hugging Face トークンを設定して）、もう一度お試しください: {{url}}",
+      "noSpace": "{{path}} にこのモデル用の空き容量が不足しています（必要: {{needed}}、空き: {{free}}）。空き容量を確保してからもう一度お試しください。"
+    },
+    "installEngine": "SGLang をインストール"
+  },
+  "tensorrt": {
+    "checking": "このコンピュータで TensorRT-LLM を実行できるか確認中…",
+    "blocked": {
+      "title": "このコンピュータではまだ TensorRT-LLM をセットアップできません",
+      "body": "以下の項目を修正してから再度確認してください。TensorRT-LLM 設定ページで各手順を確認できます。",
+      "openProvider": "TensorRT-LLM 設定を開く",
+      "checkAgain": "再確認"
+    },
+    "blocker": {
+      "driver-too-old": "TensorRT-LLM には NVIDIA ドライバー {{required}} 以降が必要ですが、このコンピュータには {{actual}} が入っています。",
+      "driver-too-old-fix": "NVIDIA またはシステムアップデートから新しいドライバーをインストールしてコンピュータを再起動し、再度確認してください。",
+      "compute-capability-too-low": "TensorRT-LLM には Ampere 世代（RTX 30xx）以降の NVIDIA カード（Compute Capability {{required}} 以上）が必要です。このカードは {{actual}} です。"
+    },
+    "curated": "TensorRT-LLM で動作確認済み",
+    "models": {
+      "fits": "このモデルはここで実行できます（重みサイズ {{size}}）。",
+      "checking": "このコンピュータでこのモデルを実行できるか確認中…",
+      "otherCard": "次のカードで実行できます: {{cards}}。TensorRT-LLM 設定でそのカードを選択してください。",
+      "gated": "Hugging Face へのアクセスが拒否されました。モデルページを開いて利用規約に同意し（必要に応じて設定で Hugging Face トークンを設定して）、もう一度お試しください: {{url}}",
+      "noSpace": "{{path}} にこのモデル用の空き容量が不足しています（必要: {{needed}}、空き: {{free}}）。空き容量を確保してからもう一度お試しください。"
+    },
+    "installEngine": "エンジンをインストール"
+  },
   "categoryChatHint": "Language models for chat",
   "categoryImagesHint": "Generate images from a prompt",
   "categoryVideoHint": "Generate short videos",
+  "categoryAudio": "オーディオ",
+  "categoryAudioHint": "音声、音楽、効果音を生成",
+  "searchAudioPlaceholder": "オーディオモデルを検索…",
+  "openInAudios": "オーディオで開く",
+  "audioLength": "クリップの長さ",
+  "audioLengthRange": "{{min}}–{{max}} 秒",
   "categoryDecision": "Decision",
   "categoryDecisionHint": "Converts data to probabilities.",
   "searchDecisionPlaceholder": "Search decision models…",
@@ -154,6 +288,107 @@
   "prismSetupStart": "セットアップ",
   "prismStage_installing_engine": "PrismML エンジンをインストール中",
   "prismCurated": "PrismML 用の Bonsai モデル",
+  "foundryLocal": {
+    "curated": "Atomic Chat 厳選",
+    "microsoftCatalog": "Microsoft カタログ",
+    "catalogUnavailable": "Microsoft カタログは現在利用できません。Atomic Chat が厳選したモデルのみ表示しています。",
+    "notVerified": "Microsoft カタログから取得（Atomic Chat 未検証: ファイルはサイズのみで確認）",
+    "noVariantHere": "このコンピュータに対応するバリアントがありません。",
+    "downloaded": "ダウンロード済み",
+    "checking": "確認中…",
+    "runsHere": "このコンピュータで動作",
+    "installEngine": "Foundry をインストール",
+    "updateEngine": "Foundry を更新",
+    "runtimeRequired": "Foundry Local {{active}} が有効です。このモデルには {{minimum}} 以降が必要です。",
+    "noCompatibleUpdate": "このコンピュータ向けの互換性のある Foundry Local アップデートはありません。",
+    "prepareAccelerator": "アクセラレータを準備",
+    "sourceUnavailable": "Foundry Local のモデルソースが利用できません。"
+  },
+  "liteRtLm": {
+    "curated": "Atomic Chat 厳選",
+    "huggingFace": "Hugging Face（Atomic Chat 未検証）",
+    "huggingFaceUnavailable": "Hugging Face は現在利用できません。Atomic Chat が厳選したモデルのみ表示しています。",
+    "notVerified": "Hugging Face（Atomic Chat 未検証）",
+    "noVariantHere": "このコンピュータに対応するバリアントがありません。",
+    "downloaded": "ダウンロード済み",
+    "checking": "確認中…",
+    "runsHere": "このコンピュータで動作",
+    "installEngine": "LiteRT-LM をインストール",
+    "prepareAccelerator": "OpenVINO を準備",
+    "gatedNoToken": "このモデルはアクセス制限があります。Hugging Face で利用規約に同意してから、設定で Hugging Face トークンを設定してください。",
+    "setToken": "トークンを設定",
+    "gated": "Hugging Face へのアクセスが拒否されました。モデルページを開いて利用規約に同意し（必要に応じて設定で Hugging Face トークンを設定して）、もう一度お試しください: {{url}}"
+  },
+  "noLikedModels": "これらのフィルターに一致するお気に入りモデルはありません。モデルをお気に入りに追加するか、お気に入りフィルターをオフにしてください。",
+  "geniex": {
+    "shelfGguf": "GGUF",
+    "shelfAiHub": "Qualcomm AI Hub",
+    "curated": "Atomic Chat 厳選",
+    "huggingFace": "Hugging Face（Atomic Chat 未検証）",
+    "huggingFaceUnavailable": "Hugging Face は現在利用できません。Atomic Chat が厳選したモデルのみ表示しています。",
+    "notVerified": "Hugging Face（Atomic Chat 未検証）",
+    "qualcommUnavailable": "Qualcomm AI Hub の一部の結果を読み込めませんでした。",
+    "aiHub": "Qualcomm AI Hub バンドル",
+    "downloaded": "ダウンロード済み",
+    "checking": "確認中…",
+    "runsHere": "このコンピュータで動作",
+    "installEngine": "GenieX をインストール",
+    "noDeviceHere": "このモデルを実行できるデバイスがここにありません。",
+    "noBundleHere": "このコンピュータのチップに対応するバンドルがありません。",
+    "gatedNoToken": "このモデルはアクセス制限があります。Hugging Face で利用規約に同意してから、設定で Hugging Face トークンを設定してください。",
+    "setToken": "トークンを設定",
+    "gated": "Hugging Face へのアクセスが拒否されました。モデルページを開いて利用規約に同意し（必要に応じて設定で Hugging Face トークンを設定して）、もう一度お試しください: {{url}}",
+    "device": {
+      "npu": "NPU",
+      "gpu": "GPU",
+      "cpu": "CPU",
+      "hybrid": "NPU + GPU"
+    },
+    "chipLabel": {
+      "x-elite": "X Elite",
+      "x2-elite": "X2 Elite"
+    },
+    "bundle": {
+      "chip": "Snapdragon {{chip}}",
+      "precision": "精度 {{precision}}",
+      "context": "コンテキスト {{context}} トークン"
+    }
+  },
+  "strata": {
+    "catalogUnavailable": "Strata カタログが利用できません。",
+    "insufficientDisk": "ディスク容量が不足しています",
+    "quantization": "量子化",
+    "gpuAuto": "自動",
+    "gpuDescription": "「自動」にすると Strata が互換性のある GPU を選択します。次回のモデル読み込み時に適用されます。",
+    "gpuMissing": "保存された GPU が現在のリストにありません。「自動」を選ぶか別の GPU を選択してください。",
+    "contextDescription": "0 を指定するとモデルのデフォルトのコンテキスト長を使用します。次回のモデル読み込み時に適用されます。",
+    "updateApp": "Strata を使用するには Atomic Chat を更新してください。",
+    "unsupportedBundle": "このモデルは、このコンピュータ向けに提供されている Strata ビルドでは利用できません。",
+    "downloadSize": "モデルダウンロード",
+    "license": "ライセンス",
+    "disk": "必要なディスク容量",
+    "unifiedMemory": "ユニファイドメモリ",
+    "engineSize": "エンジンダウンロード",
+    "tools": "ツール",
+    "reasoning": "推論",
+    "images": "画像入力",
+    "structuredOutput": "構造化出力",
+    "upstreamSupported": "このバリアントは Strata アップストリームでサポートされています。",
+    "checking": "互換性を確認中…",
+    "setToken": "Hugging Face トークンを設定",
+    "chat": "新しいチャット",
+    "cancel": "キャンセル",
+    "resume": "再開",
+    "import": "フォルダーをインポート",
+    "install": "ダウンロードして準備",
+    "installEngine": "Strata エンジンをインストール",
+    "preparing": "Strata モデルを準備中…",
+    "preparingWithHint": "Strata モデルを準備しています。数分かかる場合があります。",
+    "acquiring": "Strata モデルファイルを取得中…",
+    "updateModel": "モデルを更新",
+    "engineTitle": "Strata エンジン",
+    "updateEngine": "Strata エンジンを更新"
+  },
   "fastflowlm": {
     "catalog": "All FastFlowLM models",
     "install": "Download",

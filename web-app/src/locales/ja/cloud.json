@@ -1,6 +1,46 @@
 {
   "title": "Cloud",
   "subtitle": "Connect the model providers that run on someone else's hardware.",
+  "configurationLabel": "プロバイダー設定",
+  "browser": {
+    "label": "クラウドカタログ",
+    "searchLabel": "クラウドモデルまたはプロバイダーを検索",
+    "searchPlaceholder": "モデルまたはプロバイダーを検索…",
+    "models": "モデル · {{count}}",
+    "providers": "プロバイダー · {{count}}",
+    "availableThrough": "{{count}} 個のプロバイダーで利用可能",
+    "availableThroughOne": "1 個のプロバイダーで利用可能",
+    "configure": "{{provider}} を設定",
+    "configureFor": "{{model}} 用に {{provider}} を設定",
+    "back": "すべてのプロバイダー",
+    "noResults": "モデルまたはプロバイダーが見つかりません。",
+    "moreModels": "{{count}} 件中 {{shown}} 件を表示中。検索を絞り込むと残りが表示されます。",
+    "modelConnect": "このモデルを使用するには、下で選択したプロバイダーを接続してください。",
+    "modelReady": "このプロバイダーは接続済みです。モデルピッカーでモデルを選択してチャットを開始できます。"
+  },
+  "guide": {
+    "open": "ガイドを見る",
+    "label": "クラウドプロバイダー設定",
+    "stepChoose": "1 · プロバイダーを選択",
+    "stepConnect": "2 · アカウントを接続",
+    "chooseTitle": "クラウドモデルをワークスペースに追加",
+    "chooseDescription": "モデルをダウンロードしたりデバイスのメモリを使ったりせずに、ホストされたモデルを利用できます。まず1つのプロバイダーを接続し、必要に応じていくつでも追加できます。",
+    "connectTitle": "{{provider}} を接続",
+    "connectDescription": "下でプロバイダーの API キーを入力するかサインインしてください。モデルへのアクセスと課金はプロバイダーアカウント側で管理されます。",
+    "choose": "{{provider}} を選択",
+    "modelsAvailable": "{{count}} 個のモデルが利用可能",
+    "modelsAvailableOne": "1 個のモデルが利用可能",
+    "modelsAfterConnecting": "接続後にモデルが表示されます",
+    "browseHint": "接続前にモデルを参照することもできます。",
+    "connectedOne": "1 個のプロバイダーが接続済み",
+    "connectedCount": "{{count}} 個のプロバイダーが接続済み",
+    "done": "完了",
+    "browse": "プロバイダーを参照",
+    "back": "別のプロバイダーを選択",
+    "successTitle": "{{provider}} が接続されました",
+    "successHint": "ワークスペースのコンポーザーでモデルを選択してチャットを開始してください。",
+    "connectAnother": "別のプロバイダーを接続"
+  },
   "connection": {
     "title": "Connection",
     "description": "OpenAI, Anthropic, or a compatible endpoint.",
@@ -24,7 +64,20 @@
     "saved": "{{provider}} connected.",
     "removed": "{{provider}} disconnected.",
     "empty": "No cloud providers available. Refresh the catalog and try again.",
-    "placeholder": "Pick a connection above to set it up."
+    "placeholder": "Pick a connection above to set it up.",
+    "mediaConnected": "{{provider}} を接続しました。見つかったモデル: {{count}} 件。",
+    "mediaFailed": "{{provider}} に接続できませんでした",
+    "mediaNoModels": "{{provider}} から応答がありましたが、モデルが一覧にありません。モデルを指定して起動してからもう一度お試しください。",
+    "checking": "確認中…",
+    "checkAgain": "再確認",
+    "saveAnyway": "そのまま保存",
+    "keyRejected": "{{provider}} はこの API キーを受け付けませんでした。",
+    "ownServer": "このアドレスは Atomic Chat 自身のローカル API サーバー（{{url}}）です。接続したいプロバイダーのアドレスを入力してください。",
+    "savedUnverified": "{{provider}} のキーを保存しました（未確認）。",
+    "unverified": "設定済み（未確認）",
+    "unverifiedHint": "キーは保存されましたが、{{provider}} で有効かどうかを確認できませんでした。",
+    "rejected": "キーが拒否されました",
+    "rejectedHint": "{{provider}} がこのキーを拒否しました。有効なキーを入力するか、再確認してください。"
   },
   "subscription": {
     "title": "ChatGPT subscription (Codex)",
@@ -42,5 +95,36 @@
     "searchPlaceholder": "Search models",
     "noResults": "No model matches this search.",
     "reload": "Reload models"
+  },
+  "media": {
+    "title": "メディアモデル",
+    "description": "このプロバイダーが「画像」および「動画」ページで提供する画像・動画モデルです。上のチャットモデルとは別管理です。",
+    "connectFirst": "先にプロバイダーを接続してください",
+    "images": "画像 ({{count}})",
+    "videos": "動画 ({{count}})",
+    "pickApi": "モデル一覧を取得するために、このサーバーが使用するメディア API を選択してください。",
+    "emptyImages": "画像モデルはまだありません。「+」で追加するか、再読み込みを押してプロバイダーに問い合わせてください。",
+    "emptyVideos": "動画モデルはまだありません。「+」で追加するか、再読み込みを押してプロバイダーに問い合わせてください。",
+    "remove": "{{name}} を削除",
+    "add": "メディアモデルを追加",
+    "searchPlaceholder": "検索またはモデル ID を入力",
+    "noneToAdd": "追加できるものが他にありません",
+    "addById": "「{{id}}」を追加",
+    "api": {
+      "none": "なし",
+      "imageLabel": "画像 API",
+      "videoLabel": "動画 API",
+      "openai-images": "OpenAI 互換",
+      "a1111": "Automatic1111 / Forge",
+      "openai-videos": "OpenAI 互換"
+    },
+    "workflow": {
+      "create": "作成",
+      "edit": "編集",
+      "reference": "参照",
+      "transform": "変換",
+      "inpaint": "インペイント",
+      "imageToVideo": "画像から動画"
+    }
   }
 }
