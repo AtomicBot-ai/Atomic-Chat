@@ -1,3 +1,4 @@
+import { currentModeHome, projectDestination, useChatMode } from '@/lib/pi/navigation'
 import { useLocation, useNavigate } from '@tanstack/react-router'
 import {
   Activity,
@@ -57,8 +58,9 @@ function WorkspaceNavigation({
   const { t } = useTranslation()
   const navigate = useNavigate()
   const { pathname } = useLocation()
-  const media = PlatformFeatures[PlatformFeature.MEDIA_GENERATION]
-  const audio = PlatformFeatures[PlatformFeature.AUDIO_GENERATION]
+  const mode = useChatMode(s => s.mode)
+  const media = mode === 'chat' && PlatformFeatures[PlatformFeature.MEDIA_GENERATION]
+  const audio = mode === 'chat' && PlatformFeatures[PlatformFeature.AUDIO_GENERATION]
 
   return (
     <>
@@ -66,10 +68,10 @@ function WorkspaceNavigation({
         <SidebarMenuItem>
           <SidebarMenuButton
             className="font-medium"
-            onClick={() => navigate({ to: route.home })}
+            onClick={() => navigate({ to: currentModeHome() })}
           >
             <MessageCircle size={16} />
-            <span>{t('common:newChat')}</span>
+            <span>{mode === 'agent' ? t('chat:pi.new') : t('common:newChat')}</span>
           </SidebarMenuButton>
         </SidebarMenuItem>
         {/* Local image and video generation need the native plugin that
@@ -265,10 +267,7 @@ export function LeftSidebar() {
   const handleCreateProject = async (name: string, assistantId?: string) => {
     const project = await addFolder(name, assistantId)
     setProjectDialogOpen(false)
-    navigate({
-      to: '/project/$projectId',
-      params: { projectId: project.id },
-    })
+    navigate(projectDestination(project.id, useChatMode.getState().mode))
     return project.id
   }
 

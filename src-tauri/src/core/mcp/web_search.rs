@@ -9,7 +9,7 @@ use tauri::{AppHandle, Manager, Runtime};
 
 use super::models::ToolWithServer;
 use crate::core::{
-    agent::tools::web::{fetch_keyless, search_keyless},
+    mcp::keyless_web::{fetch_keyless, search_keyless},
     state::AppState,
 };
 

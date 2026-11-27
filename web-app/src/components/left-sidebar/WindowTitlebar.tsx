@@ -1,7 +1,7 @@
 import { useNavigate } from '@tanstack/react-router'
 import { Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { route } from '@/constants/routes'
+import { currentModeHome, useChatMode } from '@/lib/pi/navigation'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { SidebarTrigger, useSidebar } from '@/components/ui/sidebar'
 import {
@@ -22,6 +22,7 @@ import type { NavigationSection } from '@/lib/navigation'
  */
 export function WindowTitlebar({ section }: { section: NavigationSection }) {
   const { t } = useTranslation()
+  const mode = useChatMode((s) => s.mode)
   const navigate = useNavigate()
   const { open, openMobile, isMobile } = useSidebar()
   const collapsed = isMobile ? !openMobile : !open
@@ -54,14 +55,14 @@ export function WindowTitlebar({ section }: { section: NavigationSection }) {
           <TooltipTrigger asChild>
             <button
               type="button"
-              aria-label={t('common:newChat')}
-              onClick={() => navigate({ to: route.home })}
+              aria-label={t(mode === 'agent' ? 'chat:pi.new' : 'common:newChat')}
+              onClick={() => navigate({ to: currentModeHome() })}
               className="flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-foreground/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <Plus size={16} strokeWidth={1.7} />
             </button>
           </TooltipTrigger>
-          <TooltipContent side="bottom">{t('common:newChat')}</TooltipContent>
+          <TooltipContent side="bottom">{t(mode === 'agent' ? 'chat:pi.new' : 'common:newChat')}</TooltipContent>
         </Tooltip>
       )}
       {IS_WINDOWS && (

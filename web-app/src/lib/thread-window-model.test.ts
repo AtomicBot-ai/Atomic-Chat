@@ -35,6 +35,15 @@ beforeEach(() => {
 })
 
 describe('threadWindowUrl', () => {
+  it('opens a project task in its own agent window with the selected engine', () => {
+    useModelProvider.getState().selectModelProvider('llamacpp-upstream', QWEN)
+    const location = locationOf(threadWindowUrl('task-1', 'agent'))
+    expect(location.pathname).toBe('/agent/task-1')
+    useModelProvider.setState({ selectedModel: null, selectedProvider: '' })
+    restoreThreadWindowModel(location)
+    expect(selection()).toEqual({ model: QWEN, provider: 'llamacpp-upstream' })
+  })
+
   it('opens a bare thread URL while nothing is selected', () => {
     expect(threadWindowUrl('thread-1')).toBe('/threads/thread-1')
   })

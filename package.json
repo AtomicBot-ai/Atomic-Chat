@@ -31,6 +31,8 @@
     "copy:assets:tauri": "cpx \"pre-install/*.tgz\" \"src-tauri/resources/pre-install/\" && cpx \"LICENSE\" \"src-tauri/resources/\"",
     "copy:assets:mobile": "cpx \"pre-install/*.tgz\" \"src-tauri/resources/pre-install/\" && cpx \"LICENSE\" \"src-tauri/resources/\"",
     "download:lib": "node ./scripts/download-lib.mjs",
+    "bump:pi": "node scripts/bump-pi.mjs",
+    "download:pi": "node scripts/download-bin.mjs --only=pi",
     "download:bin": "node ./scripts/download-bin.mjs",
     "download:core": "node ./scripts/download-core.mjs",
     "download:cloudflared": "node ./scripts/download-bin.mjs --only=cloudflared",
@@ -76,6 +78,36 @@
   "atomicCore": {
     "version": "0.24.10",
     "repo": "AtomicBot-ai/atomic-chat-core"
+  },
+  "piAgent": {
+    "version": "1.6.0",
+    "repo": "earendil-works/pi",
+    "assets": {
+      "pi-darwin-arm64.tar.gz": {
+        "size": 48128107,
+        "sha256": "6429287b7ae98d726ec577815d14fd680e7c587e89ecc5153b4a145dc4adba33"
+      },
+      "pi-darwin-x64.tar.gz": {
+        "size": 50640053,
+        "sha256": "5b69cd87c3b00e74cce2d1499df3b7a1ec73632f11abf64696d110f0f4dc4192"
+      },
+      "pi-linux-arm64.tar.gz": {
+        "size": 58847610,
+        "sha256": "5404547b9739be596d50ae7142c52535899e8e7dd37a7bace9be593e0355b468"
+      },
+      "pi-linux-x64.tar.gz": {
+        "size": 58977130,
+        "sha256": "ef77dbe4379b3bdeb425a1e1b862fa3c915c255000dfe4965c98eee96a5765d1"
+      },
+      "pi-windows-arm64.zip": {
+        "size": 56672454,
+        "sha256": "56433d392e1baecf9f1692785a3bf171c125b415a29dd36097d02baca98bc9eb"
+      },
+      "pi-windows-x64.zip": {
+        "size": 61995847,
+        "sha256": "f5defb6c403ee698f5b3f8886db473e55b78aac670a8ce03620a47f5f0aec57c"
+      }
+    }
   },
   "installConfig": {
     "hoistingLimits": "workspaces"

@@ -20,7 +20,7 @@ pub fn ensure_default_agent_workspace(data_folder: &Path) -> Result<PathBuf, Str
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::agent::test_support::TestWorkspace;
+    use crate::core::test_support::TestWorkspace;
 
     #[test]
     fn creates_default_workspace_inside_data_folder() {

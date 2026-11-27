@@ -2624,7 +2624,7 @@ pub(crate) fn forget_login_shell_path() {
 /// builds can find user-installed tools (`npm`/`node`, agent binaries). No-op
 /// on Windows, where processes inherit the registry (user/system) PATH.
 #[cfg(not(windows))]
-fn apply_login_path(cmd: &mut std::process::Command) {
+pub(crate) fn apply_login_path(cmd: &mut std::process::Command) {
     sanitize_std_command(cmd);
     if let Some(path) = login_shell_path() {
         cmd.env("PATH", path);
@@ -2632,7 +2632,7 @@ fn apply_login_path(cmd: &mut std::process::Command) {
 }
 
 #[cfg(windows)]
-fn apply_login_path(_cmd: &mut std::process::Command) {}
+pub(crate) fn apply_login_path(_cmd: &mut std::process::Command) {}
 
 /// The PATH a spawned tool lookup should see: the login shell's on
 /// macOS/Linux, the freshly read registry PATH on Windows.
@@ -2685,14 +2685,14 @@ fn refresh_windows_path() -> Option<String> {
 /// Apply the freshly-read registry PATH to a spawned command (Windows only).
 /// No-op off Windows or when the registry read fails (the inherited PATH stands).
 #[cfg(windows)]
-fn apply_runtime_path(cmd: &mut std::process::Command) {
+pub(crate) fn apply_runtime_path(cmd: &mut std::process::Command) {
     if let Some(path) = refresh_windows_path() {
         cmd.env("PATH", path);
     }
 }
 
 #[cfg(not(windows))]
-fn apply_runtime_path(_cmd: &mut std::process::Command) {}
+pub(crate) fn apply_runtime_path(_cmd: &mut std::process::Command) {}
 
 /// Decode bytes captured from a spawned process into a String. On Windows,
 /// `cmd.exe` emits its own diagnostics (e.g. "... is not recognized as an

@@ -41,6 +41,7 @@ import { isLocalEngineProvider } from '@/lib/cloud-providers'
 import { toast } from 'sonner'
 
 type RunSettingsPanelProps = {
+  isGenerating?: boolean
   onClose: () => void
 }
 
@@ -89,7 +90,10 @@ function Section({
  * assistant store; model settings through the provider store, restarting a
  * loaded model when needed.
  */
-export function RunSettingsPanel({ onClose }: RunSettingsPanelProps) {
+export function RunSettingsPanel({
+  onClose,
+  isGenerating = false,
+}: RunSettingsPanelProps) {
   const { t } = useTranslation()
   const {
     assistants,
@@ -369,7 +373,7 @@ export function RunSettingsPanel({ onClose }: RunSettingsPanelProps) {
                         key={'lora:' + context.selectedModel.id}
                         mode="chat"
                         model={context.selectedModel.id}
-                        disabled={chatActive}
+                        disabled={chatActive || isGenerating}
                       />
                     </>
                   )}

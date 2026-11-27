@@ -55,6 +55,40 @@ describe('resolveAssistantForThread', () => {
     })
   })
 
+  it('lets an existing unbound task use the default sampler independently of the new-chat draft', () => {
+    bindThread('old-task')
+    const task = useThreads.getState().threads['old-task']
+    useThreads.setState({
+      threads: { 'old-task': { ...task, metadata: { kind: 'agent' } } },
+    })
+    useAssistant.setState({ pendingAssistant: pending })
+    expect(getSamplingParamsForThread('old-task').assistantId).toBe('fallback')
+  })
+
+  it('follows the project assistant until a task sets its own assistant or selects None', () => {
+    bindThread('task', 'bound')
+    const task = useThreads.getState().threads.task
+    const metadata = {
+      kind: 'agent',
+      project: { id: 'p', name: 'Project', updated_at: 1 },
+    }
+    useThreads.setState({ threads: { task: { ...task, metadata } } })
+    expect(
+      getSamplingParamsForThread('task', 'pending').params.temperature
+    ).toBe(0.2)
+    const overridden = { ...metadata, agentAssistantOverride: true }
+    useThreads.setState({
+      threads: { task: { ...task, metadata: overridden } },
+    })
+    expect(
+      getSamplingParamsForThread('task', 'pending').params.temperature
+    ).toBe(0.1)
+    useThreads.setState({
+      threads: { task: { ...task, metadata: overridden, assistants: [] } },
+    })
+    expect(resolveAssistantForThread('task', 'pending')).toBeUndefined()
+  })
+
   it('prefers the assistant bound to the thread', () => {
     bindThread('thread-1', 'bound')
     useAssistant.setState({ pendingAssistant: pending })

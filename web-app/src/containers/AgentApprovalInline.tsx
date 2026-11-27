@@ -22,6 +22,15 @@ function boundedJson(value: unknown): string {
 
 type AgentApprovalInlineProps = {
   threadId: string
+  actions?: Pick<
+    ReturnType<typeof useAgentApprovalActions>,
+    | 'approval'
+    | 'folderAccess'
+    | 'approvalResolving'
+    | 'folderAccessResolving'
+    | 'resolveApproval'
+    | 'resolveFolderAccess'
+  >
 }
 
 /**
@@ -32,9 +41,11 @@ type AgentApprovalInlineProps = {
  */
 export default function AgentApprovalInline({
   threadId,
+  actions,
 }: AgentApprovalInlineProps) {
   const { t } = useTranslation('chat')
   const [detailsOpen, setDetailsOpen] = useState(false)
+  const legacy = useAgentApprovalActions(actions ? undefined : threadId)
   const {
     approval,
     folderAccess,
@@ -42,7 +53,7 @@ export default function AgentApprovalInline({
     folderAccessResolving,
     resolveApproval,
     resolveFolderAccess,
-  } = useAgentApprovalActions(threadId)
+  } = actions ?? legacy
   const preview = useMemo(
     () => (approval ? boundedJson(approval.preview) : ''),
     [approval]
@@ -98,9 +109,7 @@ export default function AgentApprovalInline({
             />
             <div className="min-w-0 flex-1 text-sm [overflow-wrap:anywhere]">
               <span className="font-medium">{t('agentApproval.title')}</span>
-              <span className="text-muted-foreground">
-                {' '}— {approvalCopy}
-              </span>
+              <span className="text-muted-foreground"> — {approvalCopy}</span>
             </div>
           </div>
           <div>

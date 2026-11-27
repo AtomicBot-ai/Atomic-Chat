@@ -1,3 +1,4 @@
+import { currentModeHome } from '@/lib/pi/navigation'
 import { useState, useRef } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useTranslation } from '@/i18n/react-i18next-compat'
@@ -15,7 +16,6 @@ import { Button } from '@/components/ui/button'
 import { IconTrash } from '@tabler/icons-react'
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
 import { toast } from 'sonner'
-import { route } from '@/constants/routes'
 
 interface DeleteThreadDialogProps {
   thread: Thread
@@ -68,7 +68,7 @@ export function DeleteThreadDialog({
     })
     if (variant !== 'project') {
       setTimeout(() => {
-        navigate({ to: route.home })
+        navigate({ to: currentModeHome() })
       }, 0)
     }
   }

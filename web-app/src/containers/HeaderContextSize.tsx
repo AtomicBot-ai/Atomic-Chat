@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo } from 'react'
+import { memo, useCallback, useMemo, type ReactNode } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 
 import { ContextSizeControl } from '@/containers/ContextSizeControl'
@@ -61,8 +61,17 @@ const HeaderContextSize = memo(function HeaderContextSize() {
     [attachments]
   )
 
-  // Clears the floating corner buttons (32px each, 12px off the window edge)
-  // whenever the agent workspace paints them over this corner.
+  return (
+    <HeaderContextSlot>
+      <ContextSizeControl
+        messages={messages || []}
+        uploadedFiles={uploadedFiles}
+      />
+    </HeaderContextSlot>
+  )
+})
+
+export function HeaderContextSlot({ children }: { children: ReactNode }) {
   const overlayButtons = useHeaderOverlay((state) => state.rightOverlayButtons)
 
   return (
@@ -73,12 +82,9 @@ const HeaderContextSize = memo(function HeaderContextSize() {
         overlayButtons >= 2 && 'mr-20'
       )}
     >
-      <ContextSizeControl
-        messages={messages || []}
-        uploadedFiles={uploadedFiles}
-      />
+      {children}
     </div>
   )
-})
+}
 
 export default HeaderContextSize

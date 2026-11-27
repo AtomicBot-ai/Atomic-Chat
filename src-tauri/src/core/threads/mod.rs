@@ -12,6 +12,8 @@
 
 pub mod commands;
 pub mod constants;
+mod session_id;
+pub use session_id::validate_session_id;
 #[cfg(any(target_os = "android", target_os = "ios"))]
 pub mod db;
 pub mod file_store;

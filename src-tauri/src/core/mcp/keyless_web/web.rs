@@ -15,8 +15,8 @@ use super::http::request_guarded;
 use super::web_exa::{self, ExaFailure, ExaFetchContent};
 use super::web_extract::{extract_web_content, ExtractMode};
 use super::web_search::{parse_duckduckgo_page, DuckDuckGoPage, WebSearchResult};
-use super::{optional_usize, required_string, truncate, ToolContext, MAX_TOOL_OUTPUT_CHARS};
-use crate::core::agent::types::{ToolOutcome, ToolStatus};
+use crate::core::tool_output::{optional_usize, required_string, truncate, ToolOutcome, ToolStatus};
+use crate::core::chat_exec::MAX_TOOL_OUTPUT_CHARS;
 
 const MAX_RESPONSE_BYTES: usize = 2_000_000;
 /// Journal and archive PDFs regularly exceed the HTML cap, so direct fetches
@@ -33,16 +33,16 @@ const EMPTY_SEARCH_RESULTS_SUMMARY: &str = "No results. Rewrite the query — fe
 pub async fn execute(
     tool: &str,
     args: &Value,
-    context: &ToolContext<'_>,
+    working_dir: &Path,
 ) -> Result<ToolOutcome, ToolOutcome> {
     match tool {
-        "os.web.search" => search(args, context).await,
-        "os.web.fetch" => fetch(args, context).await,
+        "os.web.search" => search(args).await,
+        "os.web.fetch" => fetch(args, working_dir).await,
         _ => Err(ToolOutcome::error(format!("Unsupported web tool: {tool}"))),
     }
 }
 
-async fn search(args: &Value, _context: &ToolContext<'_>) -> Result<ToolOutcome, ToolOutcome> {
+async fn search(args: &Value) -> Result<ToolOutcome, ToolOutcome> {
     let query = required_string(args, "query").map_err(ToolOutcome::error)?;
     let max_results = optional_usize(args, "maxResults", 8, 20);
     if let Some(api_key) = serper_api_key() {
@@ -238,7 +238,7 @@ fn empty_search_outcome(
     }
 }
 
-async fn fetch(args: &Value, context: &ToolContext<'_>) -> Result<ToolOutcome, ToolOutcome> {
+async fn fetch(args: &Value, working_dir: &Path) -> Result<ToolOutcome, ToolOutcome> {
     let url = required_string(args, "url").map_err(ToolOutcome::error)?;
     let max_chars = optional_usize(args, "maxChars", 50_000, 50_000);
     let extract_mode = match args
@@ -254,7 +254,7 @@ async fn fetch(args: &Value, context: &ToolContext<'_>) -> Result<ToolOutcome, T
             )))
         }
     };
-    fetch_url(&url, max_chars, extract_mode, context.working_dir).await
+    fetch_url(&url, max_chars, extract_mode, working_dir).await
 }
 
 async fn fetch_url(

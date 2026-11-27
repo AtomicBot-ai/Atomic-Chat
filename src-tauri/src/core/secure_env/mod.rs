@@ -23,10 +23,10 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Runtime};
 
-use crate::core::agent::approval_allowlist::atomic_replace;
-use crate::core::agent::session::validate_session_id;
 use crate::core::app::commands::get_jan_data_folder_path;
+use crate::core::filesystem::atomic_write::atomic_replace;
 use crate::core::threads::utils::get_thread_metadata_path;
+use crate::core::threads::validate_session_id;
 
 const FILE_NAME: &str = "secure-environments.json";
 const FILE_VERSION: u32 = 1;
@@ -120,6 +120,16 @@ pub fn for_thread(
     data_folder: &Path,
     thread_id: &str,
 ) -> Result<Option<SecureEnvironment>, String> {
+    let Some(project_id) = thread_project(data_folder, thread_id)? else {
+        return Ok(None);
+    };
+    Ok(load_all(data_folder)?.remove(&project_id))
+}
+
+pub(crate) fn thread_project(
+    data_folder: &Path,
+    thread_id: &str,
+) -> Result<Option<String>, String> {
     validate_session_id(thread_id)
         .map_err(|_| "threadId must be a safe single path component".to_owned())?;
     let metadata = get_thread_metadata_path(data_folder, thread_id);
@@ -136,7 +146,7 @@ pub fn for_thread(
     else {
         return Ok(None);
     };
-    Ok(load_all(data_folder)?.remove(project_id))
+    Ok(Some(project_id.to_owned()))
 }
 
 /// Set (or, with `None`, clear) one project's policy.
@@ -261,7 +271,18 @@ pub async fn secure_env_set<R: Runtime>(
     project_id: String,
     environment: Option<SecureEnvironment>,
 ) -> Result<(), String> {
-    let data_folder = get_jan_data_folder_path(app_handle);
+    let data_folder = get_jan_data_folder_path(app_handle.clone());
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    if let Some(state) =
+        tauri::Manager::try_state::<crate::core::pi_agent::PiAgentState>(&app_handle)
+    {
+        return crate::core::pi_agent::change_scope(
+            &state,
+            |_, project| project == Some(project_id.as_str()),
+            || save(&data_folder, &project_id, environment),
+        )
+        .await;
+    }
     tokio::task::spawn_blocking(move || save(&data_folder, &project_id, environment))
         .await
         .map_err(|error| error.to_string())?

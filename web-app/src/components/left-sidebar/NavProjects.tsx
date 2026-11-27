@@ -59,6 +59,7 @@ import type { ThreadFolder } from '@/services/projects/types'
 import AddProjectDialog from '@/containers/dialogs/AddProjectDialog'
 import { DeleteProjectDialog } from '@/containers/dialogs/DeleteProjectDialog'
 import ThreadList from '@/containers/ThreadList'
+import { projectDestination, useChatMode } from '@/lib/pi/navigation'
 import { cn } from '@/lib/utils'
 import {
   FoldersIcon,
@@ -96,6 +97,7 @@ const ProjectItem = memo(function ProjectItem({
 }) {
   const { t } = useTranslation()
   const navigate = useNavigate()
+  const mode = useChatMode((s) => s.mode)
   const folderIconRef = useRef<FoldersIconHandle>(null)
   const {
     attributes,
@@ -172,7 +174,7 @@ const ProjectItem = memo(function ProjectItem({
                 onMouseEnter={() => folderIconRef.current?.startAnimation()}
                 onMouseLeave={() => folderIconRef.current?.stopAnimation()}
               >
-                <Link to="/project/$projectId" params={{ projectId: item.id }}>
+                <Link {...projectDestination(item.id, mode)}>
                   <FoldersIcon
                     ref={folderIconRef}
                     className="text-foreground/70"
@@ -201,10 +203,7 @@ const ProjectItem = memo(function ProjectItem({
               >
                 <DropdownMenuItem
                   onSelect={() => {
-                    navigate({
-                      to: '/project/$projectId',
-                      params: { projectId: item.id },
-                    })
+                    navigate(projectDestination(item.id, mode))
                   }}
                 >
                   <FolderOpenIcon className="text-muted-foreground" />

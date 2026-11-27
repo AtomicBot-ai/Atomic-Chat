@@ -1,13 +1,15 @@
-import { render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { page } from '@vitest/browser/context'
 import { describe, expect, it } from 'vitest'
 import { ToolRenderer } from './tool-renderer'
+import AgentApprovalInline from '@/containers/AgentApprovalInline'
 import {
   expectNoHorizontalOverflow,
   expectOneLine,
   expectSameHeight,
   setFontSize,
   setTheme,
+  settle,
   withTranslations,
 } from '@/test/layout'
 
@@ -18,6 +20,63 @@ const cases = [1024, 1280].flatMap((width) =>
 )
 
 describe('Tool activity geometry (Chromium)', () => {
+  it('wraps a pi edit and its expanded approval preview in a narrow Agent column', async () => {
+    await page.viewport(1000, 800)
+    setFontSize('20px')
+    setTheme('dark')
+    const path = 'workspace/' + 'long-path'.repeat(80)
+    const text = 'long-unbroken-line'.repeat(100)
+    render(
+      withTranslations(
+        <div className="relative w-96" data-testid="agent-column">
+          <ToolRenderer
+            toolName="edit"
+            state="output-available"
+            presentation={{
+              kind: 'pi_file',
+              title: path,
+              lines: [
+                { kind: 'remove', text },
+                { kind: 'add', text },
+              ],
+            }}
+          />
+          <div className="relative mt-96">
+            <AgentApprovalInline
+              threadId="layout"
+              actions={{
+                approval: {
+                  type: 'approval_requested',
+                  run_id: 'layout',
+                  approval_id: 'edit',
+                  tool: 'edit',
+                  reason: 'Allow this edit?',
+                  preview: { path, text },
+                  affected_resources: [],
+                  can_remember: true,
+                },
+                folderAccess: undefined,
+                approvalResolving: false,
+                folderAccessResolving: false,
+                resolveApproval: async () => {},
+                resolveFolderAccess: async () => {},
+              }}
+            />
+          </div>
+        </div>
+      )
+    )
+    const approval = screen.getByTestId('agent-approval-inline')
+    fireEvent.click(
+      within(approval).getByRole('button', { name: 'Show details' })
+    )
+    fireEvent.click(screen.getByRole('button', { expanded: false }))
+    await act(settle)
+    expect(approval.querySelector('pre')).toBeVisible()
+    expect(screen.getByText('+ ' + text)).toBeVisible()
+    expectNoHorizontalOverflow(screen.getByTestId('agent-column'))
+  })
+
   it.each(cases)(
     '$width / $fontSize / $theme truncates long activity labels',
     async ({ width, fontSize, theme }) => {

@@ -209,6 +209,12 @@ function stage() {
       run('cp', [src, join(dir, name)])
       chmodSync(join(dir, name), 0o755)
     }
+    const piDir = join(lib, PRODUCT_NAME, 'resources/pi')
+    run('cp', ['-a', join(binDir, '../pi'), piDir])
+    run(join(piDir, 'pi'), ['--version'])
+    const licenses = join(lib, PRODUCT_NAME, 'licenses')
+    mkdirSync(licenses, { recursive: true })
+    run('cp', [join(ROOT, 'src-tauri/licenses/pi-LICENSE.txt'), licenses])
     // An intact Bun payload still runs; a truncated one does not (the reason for the copy above).
     run(join(resBin, 'atomic-chat-core'), ['--version'])
     writeFileSync(join(bin, PACKAGE_MANAGED_MARKER), '')

@@ -6,8 +6,10 @@ import { useThreads } from '@/hooks/useThreads'
 import { useAssistant } from '@/hooks/useAssistant'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 
+import { TaskComposer } from '@/containers/TaskComposer'
+import { currentDesktopPlatform } from '@/constants/integrations'
 import ChatInput from '@/containers/ChatInput'
-import HeaderPage from '@/containers/HeaderPage'
+import ConversationHeader from '@/components/ConversationHeader'
 import ThreadList from '@/containers/ThreadList'
 import { AvatarEmoji } from '@/containers/AvatarEmoji'
 
@@ -33,11 +35,17 @@ import { DeleteAllThreadsInProjectDialog } from '@/containers/dialogs/DeleteAllT
 import { SidebarMenu } from '@/components/ui/sidebar'
 
 export const Route = createFileRoute('/project/$projectId')({
+  validateSearch: (search): { mode?: 'agent' } =>
+    search.mode === 'agent' ? { mode: 'agent' } : {},
   component: ProjectPageContent,
 })
 
 function ProjectPageContent() {
   const { t, i18n } = useTranslation()
+  const mode =
+    Route.useSearch().mode === 'agent' && currentDesktopPlatform()
+      ? 'agent'
+      : 'chat'
   const { projectId } = useParams({ from: '/project/$projectId' })
   const { getFolderById, updateFolder } = useThreadManagement()
   const threads = useThreads((state) => state.threads)
@@ -96,7 +104,7 @@ function ProjectPageContent() {
     <div className="flex flex-col h-svh w-full min-w-0 overflow-hidden">
       {/* The model is picked from the composer; the header only frames the
           page. */}
-      <HeaderPage />
+      <ConversationHeader mode={mode} />
 
       <div className="h-full relative flex flex-col px-4 md:px-8 py-4 overflow-y-auto">
         <div className="mx-auto w-full md:w-4/5 xl:w-4/6">
@@ -129,13 +137,17 @@ function ProjectPageContent() {
 
           {/* Chat Input */}
           <div className="mb-6">
-            <ChatInput
-              showSpeedToken={false}
-              initialMessage={true}
-              projectId={projectId}
-              containerClassName="max-w-none"
-              minRows={3}
-            />
+            {mode === 'agent' ? (
+              <TaskComposer key={projectId} project={project} />
+            ) : (
+              <ChatInput
+                showSpeedToken={false}
+                initialMessage={true}
+                projectId={projectId}
+                containerClassName="max-w-none"
+                minRows={3}
+              />
+            )}
           </div>
 
           {/* Conversation Section */}
@@ -143,7 +155,7 @@ function ProjectPageContent() {
             <div className="flex flex-col mb-6">
               <div className="flex items-center justify-between gap-2 mb-4">
                 <h2 className="text-base font-medium">
-                  {t('projects.conversation')}
+                  {t('chat:pi.projectHistory')}
                 </h2>
                 <DropdownMenu
                   open={dropdownOpen}
@@ -179,13 +191,8 @@ function ProjectPageContent() {
             <div className="flex flex-col items-center justify-center pt-6 pb-12 text-center bg-card rounded-xl border mb-6">
               <MessageCircle className="size-8 text-muted-foreground/50 mb-3" />
               <h3 className="text-base font-medium text-foreground mb-1">
-                {t('projects.noConversationsIn', { projectName: project.name })}
+                {t('chat:pi.projectEmpty')}
               </h3>
-              <p className="text-sm text-muted-foreground">
-                {t('projects.startNewConversation', {
-                  projectName: project.name,
-                })}
-              </p>
             </div>
           )}
 

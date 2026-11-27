@@ -2,7 +2,8 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use serde_json::{Map, Value};
-use sha2::{Digest, Sha256};
+pub use crate::core::workspace_files::root_id_for_path;
+pub(super) use crate::core::workspace_files::{expand_home, lexical_normalize};
 use tokio::sync::RwLock;
 
 use super::types::{ApprovalResource, FolderAccessRequest, ToolCallPayload};
@@ -326,12 +327,6 @@ fn is_path_aware_filesystem_tool(tool: &str) -> bool {
         || tool.starts_with("os.git.")
         || tool == "vision.describe"
         || tool == "os.media.transcribe"
-}
-
-pub fn root_id_for_path(path: &Path) -> String {
-    let mut digest = Sha256::new();
-    digest.update(path.to_string_lossy().as_bytes());
-    format!("root-{:x}", digest.finalize())
 }
 
 fn validate_destructive_args(tool: &str, args: &Map<String, Value>) -> Result<(), String> {
@@ -684,50 +679,6 @@ async fn resolve_candidate(root: &Path, raw: &str) -> Result<PathBuf, String> {
         resolved.push(part);
     }
     Ok(resolved)
-}
-
-#[cfg(windows)]
-fn path_buf_from_input(raw: &str) -> PathBuf {
-    if let Some(rest) = raw.strip_prefix(r"\?\") {
-        return PathBuf::from(format!(r"\\?\{rest}"));
-    }
-    // Models sometimes write a drive path in URL form, `/C:\Users\...`. Windows
-    // reads that as rooted but drive-less and joins it onto the workspace's
-    // drive, so the tool hit a folder that does not exist (#271).
-    PathBuf::from(jan_utils::path::strip_windows_drive_slash(raw))
-}
-
-#[cfg(not(windows))]
-fn path_buf_from_input(raw: &str) -> PathBuf {
-    PathBuf::from(raw)
-}
-
-pub(super) fn expand_home(raw: &str) -> Result<PathBuf, String> {
-    if raw == "~" {
-        return dirs::home_dir().ok_or_else(|| "Could not resolve home directory".to_string());
-    }
-    if let Some(rest) = raw.strip_prefix("~/").or_else(|| raw.strip_prefix("~\\")) {
-        return dirs::home_dir()
-            .map(|home| home.join(rest))
-            .ok_or_else(|| "Could not resolve home directory".to_string());
-    }
-    Ok(path_buf_from_input(raw))
-}
-
-pub(super) fn lexical_normalize(path: &Path) -> PathBuf {
-    let mut normalized = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                normalized.pop();
-            }
-            Component::Prefix(_) | Component::RootDir | Component::Normal(_) => {
-                normalized.push(component.as_os_str());
-            }
-        }
-    }
-    normalized
 }
 
 fn glob_static_base(pattern: &str) -> String {

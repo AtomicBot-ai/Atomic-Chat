@@ -1,3 +1,4 @@
+import { currentModeHome } from '@/lib/pi/navigation'
 import { useKeyboardShortcut } from '@/hooks/useHotkeys'
 import { useSidebar } from '@/components/ui/sidebar'
 import { useSearchDialog } from '@/hooks/useSearchDialog'
@@ -31,7 +32,7 @@ export function KeyboardShortcutsProvider() {
   useKeyboardShortcut({
     ...newChatShortcut,
     callback: () => {
-      router.navigate({ to: route.home })
+      router.navigate({ to: currentModeHome() })
     },
   })
 

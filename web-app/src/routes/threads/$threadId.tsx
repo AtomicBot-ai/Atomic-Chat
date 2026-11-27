@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createFileRoute, useParams, useSearch, useNavigate } from '@tanstack/react-router'
+import { Navigate, createFileRoute, useParams, useSearch, useNavigate } from '@tanstack/react-router'
 import { cn, getModelDisplayName } from '@/lib/utils'
 import {
   agentContextWindow,
@@ -13,7 +13,7 @@ import {
 import { ensureRemoteProviderReady } from '@/utils/ensureRemoteProviderReady'
 import { selectThreadModelIfNone } from '@/utils/switchModel'
 
-import HeaderPage from '@/containers/HeaderPage'
+import ConversationHeader from '@/components/ConversationHeader'
 import HeaderContextSize from '@/containers/HeaderContextSize'
 import { useThreads } from '@/hooks/useThreads'
 import ChatInput from '@/containers/ChatInput'
@@ -302,13 +302,19 @@ type SearchParams = {
 
 // as route.threadsDetail
 export const Route = createFileRoute('/threads/$threadId')({
-  component: ThreadDetail,
+  component: ThreadRoute,
   validateSearch: (search: Record<string, unknown>): SearchParams => {
     return {
       threadModel: search.threadModel as ThreadModel | undefined,
     }
   },
 })
+
+function ThreadRoute() {
+  const { threadId } = Route.useParams()
+  const kind = useThreads(state => state.threads[threadId]?.metadata?.kind)
+  return kind === 'agent' ? <Navigate to="/agent/$threadId" params={{threadId}} replace /> : <ThreadDetail />
+}
 
 function ThreadDetail() {
   const { t } = useTranslation()
@@ -2578,13 +2584,13 @@ function ThreadDetail() {
       isGenerating={requestActive}
     >
       <div className="flex flex-1 flex-col overflow-hidden min-w-0">
-        <HeaderPage>
+        <ConversationHeader mode="chat">
           <div className="flex items-center justify-end w-full pr-2">
             {/* The model is picked from the composer; the header keeps the
                 context gauge, which appears once the conversation has begun. */}
             {chatMessages.length > 0 && <HeaderContextSize />}
           </div>
-        </HeaderPage>
+        </ConversationHeader>
         <div className="flex flex-1 overflow-hidden">
           <div className="flex flex-1 flex-col h-full overflow-hidden min-w-0">
             {/* Messages Area */}

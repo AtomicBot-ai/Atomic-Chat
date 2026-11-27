@@ -355,6 +355,10 @@ jobs:
         run: |
           cargo test --manifest-path src-tauri/Cargo.toml --lib --features test-tauri -- \
             core::atomic_core::lock::tests:: \
+            core::pi_agent:: \
+            core::workspace_files:: \
+            core::mcp::keyless_web:: \
+            core::skills:: \
             core::agent:: \
             core::atomic_core::host_step \
             core::filesystem::model_roots \
@@ -425,6 +429,10 @@ jobs:
         run: |
           cargo test --manifest-path src-tauri/Cargo.toml --lib --features test-tauri -- \
             core::atomic_core::lock::tests:: \
+            core::pi_agent:: \
+            core::workspace_files:: \
+            core::mcp::keyless_web:: \
+            core::skills:: \
             core::agent::
 
       - name: Build summary
@@ -564,6 +572,7 @@ jobs:
           grep -A2 '"background"' src-tauri/tauri.macos.conf.json
 
           yarn download:bin
+          node scripts/pi-smoke.mjs
           yarn download:core
           # The release targets universal-apple-darwin, so the Remote access
           # sidecar has to be a real fat binary (download-bin.mjs lipo's the
@@ -869,6 +878,20 @@ jobs:
       # finds it signed and leaves it alone), so that --verify-only can prove
       # the signed binaries still run: Bun keeps the payload in a `.bun` PE
       # section, which the appended Authenticode signature leaves intact.
+      - name: Sign and verify the embedded pi agent
+        shell: pwsh
+        run: |
+          $files = @(Get-Item src-tauri/resources/pi/pi.exe) + @(Get-ChildItem src-tauri/resources/pi/native -Recurse -Filter win32-platform.node)
+          if ($files.Count -lt 2) { throw "Missing pi native module" }
+          foreach ($file in $files) {
+            & ./src-tauri/sign.ps1 -Target $file.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Signing failed for $file" }
+          }
+          node scripts/download-bin.mjs --only=pi --verify-only
+          if ($LASTEXITCODE -ne 0) { throw "Signed pi failed verification" }
+          node scripts/pi-smoke.mjs
+          if ($LASTEXITCODE -ne 0) { throw "Signed pi failed its RPC smoke test" }
+
       - name: Sign the atomic-chat-core binaries
         shell: pwsh
         run: |
@@ -1178,7 +1201,7 @@ jobs:
             7z x $installer.FullName "-o$dir" -y -bso0 -bsp0
             if ($LASTEXITCODE -ne 0) { throw "7z could not unpack $($installer.Name)" }
 
-            $pe = @(Get-ChildItem -LiteralPath $dir -Recurse -File | Where-Object { $_.Extension -in '.exe', '.dll' })
+            $pe = @(Get-ChildItem -LiteralPath $dir -Recurse -File | Where-Object { $_.Extension -in '.exe', '.dll', '.node' })
             if (-not ($pe | Where-Object Name -eq 'Atomic-Chat.exe')) {
               $failures += "$($installer.Name) holds no Atomic-Chat.exe"
             }
@@ -1431,6 +1454,20 @@ jobs:
       # As in build-windows: signed before bundling with the script the
       # bundler signs with (the bundler then leaves them alone), so that
       # --verify-only can prove the signed arm64 binaries still run here.
+      - name: Sign and verify the embedded pi agent
+        shell: pwsh
+        run: |
+          $files = @(Get-Item src-tauri/resources/pi/pi.exe) + @(Get-ChildItem src-tauri/resources/pi/native -Recurse -Filter win32-platform.node)
+          if ($files.Count -lt 2) { throw "Missing pi native module" }
+          foreach ($file in $files) {
+            & ./src-tauri/sign.ps1 -Target $file.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Signing failed for $file" }
+          }
+          node scripts/download-bin.mjs --only=pi --verify-only
+          if ($LASTEXITCODE -ne 0) { throw "Signed pi failed verification" }
+          node scripts/pi-smoke.mjs
+          if ($LASTEXITCODE -ne 0) { throw "Signed pi failed its RPC smoke test" }
+
       - name: Sign the atomic-chat-core binaries
         shell: pwsh
         run: |
@@ -1582,7 +1619,7 @@ jobs:
             $dir = Join-Path $env:RUNNER_TEMP "unpacked-$($installer.BaseName)"
             & $sevenZip x $installer.FullName "-o$dir" -y -bso0 -bsp0
             if ($LASTEXITCODE -ne 0) { throw "7z could not unpack $($installer.Name)" }
-            $pe = @(Get-ChildItem -LiteralPath $dir -Recurse -File | Where-Object { $_.Extension -in '.exe', '.dll' })
+            $pe = @(Get-ChildItem -LiteralPath $dir -Recurse -File | Where-Object { $_.Extension -in '.exe', '.dll', '.node' })
             if (-not ($pe | Where-Object Name -eq 'Atomic-Chat.exe')) { $failures += "$($installer.Name) holds no Atomic-Chat.exe" }
             foreach ($file in $pe) {
               $fileSig = Get-AuthenticodeSignature -LiteralPath $file.FullName
@@ -1764,6 +1801,9 @@ jobs:
 
       - name: Download the pinned atomic-chat-core release
         run: yarn download:core
+
+      - name: Exercise the bundled pi and its approval extension
+        run: node scripts/pi-smoke.mjs
 
       - name: Assert the cloudflared sidecar was bundled
         # download-bin.mjs fails the step on a sha256 mismatch, so reaching
@@ -2092,6 +2132,9 @@ jobs:
 
       - name: Download the pinned atomic-chat-core release
         run: yarn download:core
+
+      - name: Exercise the bundled pi and its approval extension
+        run: node scripts/pi-smoke.mjs
 
       - name: Assert the cloudflared sidecar was bundled
         # See build-linux-x64.

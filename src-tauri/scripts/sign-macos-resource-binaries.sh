@@ -21,14 +21,14 @@ BIN="$HERE/resources/bin"
 #? Sign only executable Mach-O files (not .bundle, not arbitrary files).
 sign_if_macho() {
   local f="$1"
-  [[ -f "$f" && -x "$f" ]] || return 0
+  [[ -f "$f" && ( -x "$f" || "$f" == *.node ) ]] || return 0
   if file "$f" | grep -q 'Mach-O'; then
     echo "codesign (resources): $f"
     local entitlements="$ENT"
     #? The core binaries: Bun's JIT, and dylibs signed by other teams (llama.cpp builds,
     #? Microsoft's Foundry Local libraries the app core's foundry-host mode loads).
     case "$(basename "$f")" in
-      atomic-chat-core|atomic-chat-app-core) entitlements="$SIDE_ENT" ;;
+      atomic-chat-core|atomic-chat-app-core|pi) entitlements="$SIDE_ENT" ;;
     esac
     codesign --force --sign "$IDENTITY" --options runtime --timestamp --entitlements "$entitlements" "$f"
   fi
@@ -37,6 +37,13 @@ sign_if_macho() {
 for name in atomic-chat-core atomic-chat-app-core foundation-models-server; do
   sign_if_macho "$BIN/$name"
 done
+
+PI_DIR="$HERE/resources/pi"
+if [[ -d "$PI_DIR" ]]; then
+  while IFS= read -r -d '' f; do
+    sign_if_macho "$f"
+  done < <(find "$PI_DIR" -type f \( -perm -111 -o -name '*.node' \) -print0)
+fi
 
 #? The bundled upstream ggml-org llama.cpp Mach-O binaries (the only llama.cpp the installer ships).
 LLAMA_BIN="$HERE/resources/llamacpp-backend-upstream/build/bin"

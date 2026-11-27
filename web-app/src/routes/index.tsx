@@ -1,11 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { createFileRoute, Navigate, useSearch } from '@tanstack/react-router'
 import ChatInput from '@/containers/ChatInput'
-import { LazyAtomicLogo } from '@/components/LazyAtomicLogo'
-import HeaderPage from '@/containers/HeaderPage'
-import { useTranslation } from '@/i18n/react-i18next-compat'
+import { ConversationHome } from '@/components/ConversationHome'
 import { useTools } from '@/hooks/useTools'
-import { cn } from '@/lib/utils'
 
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { route } from '@/constants/routes'
@@ -16,13 +13,9 @@ import {
 } from '@/lib/onboarding'
 import { localStorageKey } from '@/constants/localStorage'
 import { useSetupCompleted } from '@/hooks/useSetupCompleted'
-import { useCallback, useEffect } from 'react'
+import { useEffect } from 'react'
 import { useThreads } from '@/hooks/useThreads'
-import { useAgentMode } from '@/hooks/useAgentMode'
 import { TEMPORARY_CHAT_ID } from '@/constants/chat'
-import { AgentWorkspaceLayout } from '@/containers/AgentWorkspaceLayout'
-import { useServiceHub } from '@/hooks/useServiceHub'
-import { resolveAgentWorkspaceRoot } from '@/services/agent/tauri'
 
 type ThreadModel = {
   id: string
@@ -48,31 +41,12 @@ export const Route = createFileRoute(route.home as any)({
 })
 
 function Index() {
-  const { t } = useTranslation()
-  const serviceHub = useServiceHub()
   const { providers } = useModelProvider()
   const search = useSearch({ from: route.home as any })
   const threadModel = search.threadModel
   const agentSkill = search.agentSkill
   const { setCurrentThreadId, threads } = useThreads()
-  const agentWorkspace = useAgentMode(
-    (state) => state.workspaces[TEMPORARY_CHAT_ID]
-  )
   useTools()
-
-  const addExternalAgentRoot = useCallback(async () => {
-    const selected = await serviceHub.dialog().open({
-      multiple: false,
-      directory: true,
-    })
-    if (typeof selected !== 'string') return
-
-    const root = await resolveAgentWorkspaceRoot(selected)
-    useAgentMode.getState().addExternalRoot(TEMPORARY_CHAT_ID, {
-      ...root,
-      canEdit: true,
-    })
-  }, [serviceHub])
 
   const forceOnboarding =
     typeof FORCE_ONBOARDING !== 'undefined' && FORCE_ONBOARDING
@@ -125,44 +99,13 @@ function Index() {
   }
 
   return (
-    <AgentWorkspaceLayout
-      threadId={TEMPORARY_CHAT_ID}
-      workspace={agentWorkspace ?? { externalRoots: [] }}
-      onAddExternal={() => void addExternalAgentRoot()}
-      refreshKey={0}
-      // The home composer has no thread yet, so normally there is nothing to
-      // browse and only the run settings live in its right column. Attaching a
-      // folder before the first message is the exception: that folder already
-      // belongs to the chat about to start, so let the sidebar show it.
-      filesEnabled={(agentWorkspace?.externalRoots.length ?? 0) > 0}
-    >
-      <div className="flex h-full w-full min-w-0 flex-col justify-center">
-        {/* The model is picked from the composer; the header only frames
-            the page. */}
-        <HeaderPage />
-        <div
-          className={cn(
-            'h-full overflow-y-auto inline-flex flex-col gap-2 justify-center px-3'
-          )}
-        >
-          <div className={cn('mx-auto w-full md:w-4/5 xl:w-4/6 -mt-20')}>
-            <div className={cn('text-center mb-4')}>
-              <LazyAtomicLogo />
-              <h1 className={cn('text-2xl mt-2 font-studio font-medium')}>
-                {t('chat:description')}
-              </h1>
-            </div>
-            <div className="flex-1 shrink-0">
-              <ChatInput
-                showSpeedToken={false}
-                model={threadModel}
-                initialMessage={true}
-                preselectedAgentSkillName={agentSkill}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-    </AgentWorkspaceLayout>
+    <ConversationHome workspaceKey={TEMPORARY_CHAT_ID}>
+      <ChatInput
+        showSpeedToken={false}
+        model={threadModel}
+        initialMessage
+        preselectedAgentSkillName={agentSkill}
+      />
+    </ConversationHome>
   )
 }

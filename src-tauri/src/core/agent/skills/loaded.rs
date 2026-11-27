@@ -3,7 +3,7 @@ use std::{collections::VecDeque, time::SystemTime};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
-use super::registry::{SkillRecord, SkillRegistry};
+use crate::core::skills::{SkillRecord, SkillRegistry};
 use crate::core::agent::types::ToolOutcome;
 
 pub const LOADED_SKILLS_CAP: usize = 6;

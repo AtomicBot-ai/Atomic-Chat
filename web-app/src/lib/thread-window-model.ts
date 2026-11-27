@@ -12,14 +12,18 @@
  * to the new window in its URL, and the new window selects exactly that
  * before anything renders.
  */
+import type { ChatMode } from '@/lib/pi/navigation'
 import { useModelProvider } from '@/hooks/useModelProvider'
 
 /** The thread route's own search key, in the router's JSON format. */
 const THREAD_MODEL_PARAM = 'threadModel'
 
 /** The URL that opens a thread in its own window, on this window's model. */
-export function threadWindowUrl(threadId: string): string {
-  const path = `/threads/${threadId}`
+export function threadWindowUrl(
+  threadId: string,
+  mode: ChatMode = 'chat'
+): string {
+  const path = `/${mode === 'agent' ? 'agent' : 'threads'}/${threadId}`
   const { selectedProvider, selectedModel } = useModelProvider.getState()
   if (!selectedProvider || !selectedModel?.id) return path
   const model: ThreadModel = {
@@ -50,7 +54,7 @@ function readThreadModel(search: string): ThreadModel | undefined {
 export function restoreThreadWindowModel(
   location: Pick<Location, 'pathname' | 'search'> = window.location
 ): void {
-  if (!location.pathname.startsWith('/threads/')) return
+  if (!/^\/(?:threads|agent)\/[^/]+\/?$/.test(location.pathname)) return
   const model = readThreadModel(location.search)
   if (!model) return
   const state = useModelProvider.getState()

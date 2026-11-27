@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::core::agent::{session::validate_session_id, workspace::default_agent_workspace};
+use crate::core::{threads::validate_session_id, workspace::default_agent_workspace};
 
 /// Chat folders live beside the agent's default workspace rather than in a
 /// data path of their own: `<data>/agent-workspace/chat/<thread id>`.
@@ -67,7 +67,7 @@ pub(crate) fn ensure_chat_workdir(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::agent::test_support::TestWorkspace;
+    use crate::core::test_support::TestWorkspace;
 
     #[test]
     fn puts_each_chat_in_its_own_folder_under_the_agent_workspace() {

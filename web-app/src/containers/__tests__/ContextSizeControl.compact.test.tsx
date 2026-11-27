@@ -2,7 +2,10 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ThreadMessage } from '@janhq/core'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { ContextSizeControl } from '@/containers/ContextSizeControl'
+import {
+  AgentContextSizeControl,
+  ContextSizeControl,
+} from '@/containers/ContextSizeControl'
 import { useAppState } from '@/hooks/useAppState'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { useThreads } from '@/hooks/useThreads'
@@ -139,6 +142,21 @@ describe('ContextSizeControl — Compact history', () => {
     // The composer and the status are released again.
     expect(useChatSessions.getState().requestActive[THREAD]).toBe(false)
     expect(useAppState.getState().contextActivity.phase).toBeNull()
+  })
+
+  it('offers task compaction inside the gauge when pi has enough history', () => {
+    const onCompact = vi.fn()
+    const props = { capacity: 100_000, tokens: 5_000, busy: false, onCompact }
+    const { rerender } = render(<AgentContextSizeControl {...props} />)
+    const button = { name: 'chat:contextCompaction.compact' }
+    expect(screen.queryByRole('button', button)).toBeNull()
+    openPopover()
+    expect(screen.getByRole('button', button)).toBeDisabled()
+    rerender(<AgentContextSizeControl {...props} tokens={25_000} busy />)
+    expect(screen.getByRole('button', button)).toBeDisabled()
+    rerender(<AgentContextSizeControl {...props} tokens={25_000} />)
+    fireEvent.click(screen.getByRole('button', button))
+    expect(onCompact).toHaveBeenCalledOnce()
   })
 
   it('says so when the summary could not be made', async () => {

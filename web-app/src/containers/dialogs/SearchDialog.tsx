@@ -1,6 +1,6 @@
+import { threadRoute } from '@/lib/pi/navigation'
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { route } from '@/constants/routes'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import {
   IconSearch,
@@ -102,7 +102,7 @@ export function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
     )
 
     handleClose()
-    navigate({ to: route.threadsDetail, params: { threadId } })
+    navigate({ to: threadRoute(threads[threadId]), params: { threadId } })
   }
 
   // Filter and group threads based on search query

@@ -1,3 +1,4 @@
+import { threadRoute } from '@/lib/pi/navigation'
 import {
   Folder,
   MoreHorizontal,
@@ -205,7 +206,7 @@ export const ThreadItem = memo(
       serviceHub
         .window()
         .openWindow({
-          url: threadWindowUrl(thread.id),
+          url: threadWindowUrl(thread.id, thread.metadata?.kind === 'agent' ? 'agent' : 'chat'),
           label: `thread-${thread.id.replace(/[^a-zA-Z0-9_-]/g, '-')}`,
           title: thread.title || 'Atomic Chat',
           width: 1000,
@@ -226,7 +227,8 @@ export const ThreadItem = memo(
       (state) => thread.id in state.unreadThreads
     )
     const showStatusDot = isBusy || isUnread
-    const threadTitle = thread.title || t('common:newThread')
+    const isTask = thread.metadata?.kind === 'agent'
+    const threadTitle = thread.title || t(isTask ? 'chat:pi.new' : 'common:newThread')
     // A title that starts like another chat's shows the same truncated text;
     // the row then also says when it was last active.
     const titleCollides = useThreads((state) =>
@@ -254,7 +256,7 @@ export const ThreadItem = memo(
         {dragHandle}
         {currentProjectId ? (
           <Link
-            to="/threads/$threadId"
+            to={threadRoute(thread)}
             params={{ threadId: thread.id }}
             className={cn(
               'bg-card dark:bg-secondary/20 mb-2 px-4 py-4 border hover:dark:bg-secondary/30 rounded-lg block',
@@ -264,6 +266,7 @@ export const ThreadItem = memo(
             <span className="flex items-center gap-2 pr-14 min-w-0">
               {showStatusDot && <ThreadStatusDot pulsing={isBusy} />}
               <span className="truncate flex-1 min-w-0">{threadTitle}</span>
+              <span className="text-xs text-muted-foreground">{t(isTask ? 'chat:pi.task' : 'chat:pi.chat')}</span>
             </span>
             {currentProjectId && lastUserMessageText && (
               <div className="text-muted-foreground text-xs mt-1 line-clamp-1 pr-10">
@@ -286,7 +289,7 @@ export const ThreadItem = memo(
                 dragHandle && 'pl-7'
               )}
             >
-              <Link to="/threads/$threadId" params={{ threadId: thread.id }}>
+              <Link to={threadRoute(thread)} params={{ threadId: thread.id }}>
                 <span className="flex w-full items-center gap-2 min-w-0">
                   {showStatusDot && <ThreadStatusDot pulsing={isBusy} />}
                   <span data-row-name className="truncate flex-1 min-w-0">

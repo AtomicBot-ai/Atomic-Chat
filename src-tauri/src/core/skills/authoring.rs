@@ -537,7 +537,7 @@ fn copy_directory_contents(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::agent::skills::SkillPlatform;
+    use crate::core::skills::SkillPlatform;
     use tempfile::TempDir;
     use zip::write::FileOptions;
 

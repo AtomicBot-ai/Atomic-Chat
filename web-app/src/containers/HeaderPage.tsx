@@ -2,6 +2,7 @@ import { cn } from '@/lib/utils'
 import { ReactNode, memo } from 'react'
 
 type HeaderPageProps = {
+  center?: ReactNode
   children?: ReactNode
   className?: string
 }
@@ -12,6 +13,7 @@ type HeaderPageProps = {
 const HeaderPage = memo(function HeaderPage({
   children,
   className,
+  center,
 }: HeaderPageProps) {
   return (
     <div
@@ -29,6 +31,11 @@ const HeaderPage = memo(function HeaderPage({
       // to stop mousedown propagation itself.
       {...(IS_MACOS ? { 'data-tauri-drag-region': true } : {})}
     >
+      {center && (
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
+          {center}
+        </div>
+      )}
       <div className="flex w-full min-w-0 items-center gap-2">
         <div className="min-w-0 flex-1">{children}</div>
       </div>

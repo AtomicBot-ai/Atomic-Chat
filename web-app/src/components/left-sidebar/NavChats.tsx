@@ -17,7 +17,7 @@ import { useThreads } from '@/hooks/useThreads'
 import { useSidebarLists } from '@/hooks/useSidebarLists'
 import ThreadList from '@/containers/ThreadList'
 import { DeleteAllThreadsDialog } from '@/containers/dialogs/DeleteAllThreadsDialog'
-import { route } from '@/constants/routes'
+import { homeFor, useChatMode } from '@/lib/pi/navigation'
 import { cn } from '@/lib/utils'
 import {
   filterDeletableSidebarHistoryThreads,
@@ -27,6 +27,7 @@ import {
 /** "Recents": chats outside any project, minus the pinned ones shown above. */
 export function NavChats() {
   const { t } = useTranslation()
+  const mode = useChatMode(s => s.mode)
   const navigate = useNavigate()
   const getFilteredThreads = useThreads((state) => state.getFilteredThreads)
   const threads = useThreads((state) => state.threads)
@@ -36,14 +37,14 @@ export function NavChats() {
   const [dropdownOpen, setDropdownOpen] = useState(false)
 
   const recentThreads = useMemo(() => {
-    return filterSidebarHistoryThreads(getFilteredThreads('')).filter(
+    return filterSidebarHistoryThreads(getFilteredThreads(''), mode).filter(
       (thread) => !thread.isFavorite
     )
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [getFilteredThreads, threads])
+  }, [getFilteredThreads, threads, mode])
 
   const deleteModeThreads = () => {
-    filterDeletableSidebarHistoryThreads(recentThreads).forEach((thread) =>
+    filterDeletableSidebarHistoryThreads(recentThreads, mode).forEach((thread) =>
       deleteThread(thread.id)
     )
   }
@@ -76,9 +77,9 @@ export function NavChats() {
           'hover:bg-sidebar-foreground/8',
           recentThreads.length > 0 && 'right-10'
         )}
-        aria-label={t('common:newChat')}
-        title={t('common:newChat')}
-        onClick={() => navigate({ to: route.home })}
+        aria-label={t(mode === 'agent' ? 'chat:pi.new' : 'common:newChat')}
+        title={t(mode === 'agent' ? 'chat:pi.new' : 'common:newChat')}
+        onClick={() => navigate({ to: homeFor(mode) })}
       >
         <Plus className="text-muted-foreground" />
       </SidebarGroupAction>

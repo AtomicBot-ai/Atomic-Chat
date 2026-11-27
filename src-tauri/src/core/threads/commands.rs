@@ -50,7 +50,21 @@ pub async fn modify_thread<R: Runtime>(
         return db::db_modify_thread(app_handle, thread).await;
     }
 
-    let data_folder = get_jan_data_folder_path(app_handle);
+    let data_folder = get_jan_data_folder_path(app_handle.clone());
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    if let Some(state) = app_handle.try_state::<crate::core::pi_agent::PiAgentState>() {
+        let id = thread["id"].as_str().unwrap_or_default().to_owned();
+        let project = thread
+            .pointer("/metadata/project/id")
+            .and_then(|v| v.as_str())
+            .map(str::to_owned);
+        return crate::core::pi_agent::change_scope(
+            &state,
+            |session, previous| session == id && previous != project.as_deref(),
+            || file_store::modify_thread(&data_folder, thread),
+        )
+        .await;
+    }
     file_store::modify_thread(&data_folder, thread)
 }
 
@@ -67,6 +81,10 @@ pub async fn delete_thread<R: Runtime>(
 
     let data_folder = get_jan_data_folder_path(app_handle.clone());
     file_store::delete_thread(&data_folder, &thread_id)?;
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    if let Some(state) = app_handle.try_state::<crate::core::pi_agent::PiAgentState>() {
+        crate::core::pi_agent::forget_thread(&state, &data_folder, &thread_id).await;
+    }
     // Commands the chat ran keep their files in a folder of the thread's own.
     crate::core::chat_exec::forget_thread(
         app_handle

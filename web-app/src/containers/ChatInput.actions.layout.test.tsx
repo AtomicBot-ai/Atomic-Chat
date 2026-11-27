@@ -15,6 +15,9 @@ import { page, userEvent } from '@vitest/browser/context'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ChatInput from './ChatInput'
+import { Route as AgentTaskRoute } from '@/routes/agent/$threadId'
+import { emptyView, usePiStore } from '@/stores/pi-agent-store'
+import { attachPi, callPi } from '@/services/pi-agent/tauri'
 import { useAppState } from '@/hooks/useAppState'
 import { useMCPServers } from '@/hooks/useMCPServers'
 import { useModelProvider } from '@/hooks/useModelProvider'
@@ -51,6 +54,11 @@ vi.mock('@tanstack/react-router', async (importOriginal) => ({
   useNavigate: () => vi.fn(),
 }))
 vi.mock('@/hooks/useTools', () => ({ useTools: vi.fn() }))
+vi.mock('@/services/pi-agent/tauri', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/pi-agent/tauri')>()),
+  attachPi: vi.fn().mockResolvedValue(false),
+  callPi: vi.fn().mockResolvedValue({}),
+}))
 vi.mock('@/hooks/useAgentSkills', () => ({
   useAgentSkills: () => ({ skills: [], loading: false, setEnabled: vi.fn() }),
 }))
@@ -130,13 +138,20 @@ afterEach(async () => {
 })
 
 /** The chat column beside a 304 px sidebar (open) or on its own (closed). */
-async function renderComposer(sidebarOpen: boolean) {
+async function renderComposer(sidebarOpen: boolean, workspacePath?: string) {
   render(
     withTranslations(
       <div className="app-shell flex h-screen w-screen">
         {sidebarOpen && <aside className="w-76 shrink-0" />}
         <main className="flex min-w-0 flex-1 flex-col justify-end px-4 pb-4">
-          <ChatInput />
+          <ChatInput
+            mode={workspacePath ? 'agent' : 'chat'}
+            workspaceFolder={
+              workspacePath
+                ? { path: workspacePath, onClick: () => {} }
+                : undefined
+            }
+          />
         </main>
       </div>
     )
@@ -278,6 +293,68 @@ const sizes = [1024, 1280].flatMap((width) =>
 )
 
 describe('Composer actions (Chromium)', () => {
+  it('keeps the task composer in place and sends Enter as a clarification while running', async () => {
+    const id = 'streaming-task'
+    const thread = {
+      id,
+      title: 'Review',
+      updated: 0,
+      metadata: { kind: 'agent', agent: { cwd: '/workspace' } },
+    }
+    useThreads.setState({ threads: { [id]: thread } })
+    usePiStore.setState({ threads: { [id]: emptyView } })
+    vi.spyOn(AgentTaskRoute, 'useParams').mockReturnValue({ threadId: id })
+    const Task = AgentTaskRoute.options.component!
+    render(
+      withTranslations(
+        <div className="flex h-screen">
+          <Task />
+        </div>
+      )
+    )
+    await vi.waitFor(() => expect(attachPi).toHaveBeenCalled())
+    await act(settle)
+    expect(
+      screen.queryByRole('group', { name: i18n.t('chat:pi.mode') })
+    ).toBeNull()
+    const heading = screen.getByRole('heading', { name: 'Review' })
+    expect(heading.querySelector('button, input')).toBeNull()
+    await userEvent.click(heading)
+    expect(screen.getAllByRole('textbox')).toHaveLength(1)
+    const history = screen.getByRole('log')
+    const idleHeight = history.getBoundingClientRect().height
+    const editor = screen.getByRole('textbox') as HTMLTextAreaElement
+    await act(async () => {
+      usePiStore.setState({
+        threads: { [id]: { ...emptyView, starting: true } },
+      })
+    })
+    await userEvent.fill(editor, 'Please focus')
+    await userEvent.keyboard('{Enter}')
+    expect(editor.value).toBe('Please focus')
+    expect(callPi).not.toHaveBeenCalled()
+    await act(async () => {
+      usePiStore.setState({
+        threads: { [id]: { ...emptyView, streaming: true } },
+      })
+      await settle()
+    })
+    expect(history.getBoundingClientRect().height).toBeCloseTo(idleHeight, 0)
+    expect(
+      screen.queryByRole('combobox', { name: 'Message delivery' })
+    ).toBeNull()
+    await userEvent.keyboard('{Shift>}{Enter}{/Shift}')
+    expect(editor.value).toBe('Please focus\n')
+    expect(callPi).not.toHaveBeenCalled()
+    await userEvent.keyboard('on tests{Enter}')
+    await vi.waitFor(() =>
+      expect(callPi).toHaveBeenCalledWith(id, 'steer', {
+        message: 'Please focus\non tests',
+        images: [],
+      })
+    )
+    expect(editor.value).toBe('')
+  })
   it.each(sizes)(
     'D4: $width px / $fontSize / sidebar open $sidebarOpen: Send and the pill on screen, nothing overlaps',
     async ({ width, fontSize, sidebarOpen }) => {
@@ -440,6 +517,24 @@ describe('Composer actions (Chromium)', () => {
       }
     }
   )
+
+  it('keeps the Agent workspace and Tools inside the composer and opens the tools menu', async () => {
+    const path = '/projects/' + 'long-workspace-name-'.repeat(6)
+    await renderComposer(true, path)
+    const input = screen.getByTestId('chat-input')
+    const folder = screen.getByTitle(path)
+    const composer = input.closest('[data-composer-anchor]')!
+    const tools = screen.getByRole('button', { name: 'Tools' })
+    expect(composer.contains(folder)).toBe(true)
+    expect(composer.contains(tools)).toBe(true)
+    expect(folder.getBoundingClientRect().right).toBeLessThanOrEqual(
+      input.getBoundingClientRect().left
+    )
+    expect(input.getBoundingClientRect().width).toBeGreaterThan(150)
+    await userEvent.click(tools)
+    expect(await screen.findByRole('menu')).toBeVisible()
+    await userEvent.keyboard('{Escape}')
+  })
 
   it('D3: the tools button opens its menu from the keyboard and takes focus back', async () => {
     await renderComposer(false)

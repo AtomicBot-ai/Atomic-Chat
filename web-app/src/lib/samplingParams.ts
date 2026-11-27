@@ -23,7 +23,7 @@ export function resolveAssistantSelection(
   assistants: Assistant[],
   pending: Assistant | null | undefined,
   defaultId: string,
-  bound?: Thread['assistants']
+  bound?: readonly Pick<Assistant, 'id'>[]
 ): Assistant | undefined {
   if (bound ? bound.length === 0 : pending === null) return undefined
   const selectedId = bound ? bound[0]?.id : pending?.id
@@ -34,14 +34,48 @@ export function resolveAssistantSelection(
   )
 }
 
+/** The project assistant is the initial selection unless the user selected None. */
+export function assistantForNewChat(projectAssistantId?: string) {
+  const { assistants, pendingAssistant, defaultAssistantId } =
+    useAssistant.getState()
+  if (projectAssistantId && pendingAssistant !== null) {
+    return assistants.find((assistant) => assistant.id === projectAssistantId)
+  }
+  return resolveAssistantSelection(
+    assistants,
+    pendingAssistant,
+    defaultAssistantId
+  )
+}
+
+export function assistantBinding(
+  thread: Thread | undefined,
+  projectAssistantId: string | undefined,
+  defaultAssistantId: string
+) {
+  if (
+    thread?.metadata?.kind === 'agent' &&
+    !thread.metadata.agentAssistantOverride
+  ) {
+    if (thread.metadata.project && projectAssistantId)
+      return [{ id: projectAssistantId }]
+    // Tasks saved before the settings panel had no way to bind an assistant.
+    if (!thread.assistants?.length) return [{ id: defaultAssistantId }]
+  }
+  return thread?.assistants
+}
+
 export function resolveAssistantForThread(
-  threadId?: string
+  threadId?: string,
+  projectAssistantId?: string
 ): Assistant | undefined {
   const { assistants, pendingAssistant, defaultAssistantId } =
     useAssistant.getState()
-  const bound = threadId
-    ? useThreads.getState().threads[threadId]?.assistants
-    : undefined
+  const bound = assistantBinding(
+    threadId ? useThreads.getState().threads[threadId] : undefined,
+    projectAssistantId,
+    defaultAssistantId
+  )
   return resolveAssistantSelection(
     assistants,
     pendingAssistant,
@@ -51,9 +85,10 @@ export function resolveAssistantForThread(
 }
 
 export function getSamplingParamsForThread(
-  threadId?: string
+  threadId?: string,
+  projectAssistantId?: string
 ): ResolvedSamplingParams {
-  const assistant = resolveAssistantForThread(threadId)
+  const assistant = resolveAssistantForThread(threadId, projectAssistantId)
   if (!assistant) {
     return {
       params: { ...(defaultAssistant.parameters ?? {}) },
@@ -113,10 +148,7 @@ export function migrateGlobalSamplingToAssistants(assistants: Assistant[]): {
 
   const markDone = () => {
     try {
-      localStorage.setItem(
-        localStorageKey.samplingMigratedPerAssistant,
-        'true'
-      )
+      localStorage.setItem(localStorageKey.samplingMigratedPerAssistant, 'true')
     } catch (error) {
       console.debug('Failed to set sampling migration flag:', error)
     }

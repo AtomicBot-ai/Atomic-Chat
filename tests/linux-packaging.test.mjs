@@ -515,3 +515,13 @@ test('the upgrade notice speaks on an upgrade only, as dpkg and rpm call it', ()
   assert.match(say('2'), /quit it/)
   assert.equal(say('abort-upgrade'), '')
 })
+
+test('Linux packages stage the complete standalone pi after binary patching', () => {
+  assert.ok(!tauriLinux.bundle.resources.some(r => r.includes('resources/pi')))
+  const appImage = read('src-tauri/build-utils/buildAppImage.sh')
+  assert.match(appImage, /cp -a [.][/].*resources\/pi\/[.] /)
+  assert.match(appImage, /resources\/pi\/pi" --version/)
+  const packages = read('scripts/linux-packages.mjs')
+  assert.match(packages, /'resources\/pi'/)
+  assert.match(packages, /run\(join\(piDir, 'pi'\), \['--version'\]\)/)
+})

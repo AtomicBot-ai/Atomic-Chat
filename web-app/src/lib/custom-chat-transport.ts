@@ -1,4 +1,12 @@
 import { useDsparkSelection } from '@/services/drafters'
+import {
+  modelSamplingParams,
+  shouldSuppressToolsForUpstreamDflash,
+} from '@/lib/model-sampling'
+export {
+  withUpstreamDflashSampling,
+  shouldSuppressToolsForUpstreamDflash,
+} from '@/lib/model-sampling'
 import { useMCPServers } from '@/hooks/useMCPServers'
 import { isWebSearchServer } from '@/lib/web-search'
 import { type UIMessage } from '@ai-sdk/react'
@@ -65,11 +73,11 @@ import type { SecureEnvironment } from '@/services/chat-exec/types'
 import { ModelFactory } from './model-factory'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { getSamplingParamsForThread } from '@/lib/samplingParams'
-import { withRecommendedSampling } from '@/lib/predefinedParams'
 import {
   buildReasoningRequestFields,
   canDisableReasoning,
   buildCloudReasoningRequestFields,
+  disabledReasoningRequestFields,
   isCloudReasoningProvider,
   reasoningLevelsForModel,
   buildRemoteReasoningRequestFields,
@@ -337,37 +345,6 @@ export function stripAgentRunToolParts<T extends UIMessage>(
     if (!parts || parts.length === (message.parts?.length ?? 0)) return message
     return { ...message, parts }
   })
-}
-
-export function shouldSuppressToolsForUpstreamDflash(
-  providerId: string,
-  settings: readonly ProviderSetting[] | undefined,
-  modelId = useModelProvider.getState().selectedModel?.id
-): boolean {
-  return (
-    !(modelId && useDsparkSelection.getState().ids[modelId]) &&
-    providerId === 'llamacpp-upstream' &&
-    settings?.some(
-      (setting) =>
-        setting.key === 'dflash' && setting.controller_props.value === true
-    ) === true
-  )
-}
-
-export function withUpstreamDflashSampling(
-  providerId: string,
-  settings: readonly ProviderSetting[] | undefined,
-  params: Record<string, unknown>
-): Record<string, unknown> {
-  if (!shouldSuppressToolsForUpstreamDflash(providerId, settings)) return params
-  return {
-    ...params,
-    temperature: 0,
-    top_k: 1,
-    repeat_penalty: 1,
-    presence_penalty: 0,
-    frequency_penalty: 0,
-  }
 }
 
 export function withUpstreamDflashReasoningOverride(
@@ -1742,10 +1719,11 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           useDsparkSelection.getState().ids[modelId]
             ? rawSettings?.filter((setting) => setting.key !== 'dflash')
             : rawSettings
-        const inferenceParams = withUpstreamDflashSampling(
+        const inferenceParams = modelSamplingParams(
           providerId,
+          modelId,
           providerSettings,
-          withRecommendedSampling(modelId, sampling.params, sampling.overridden)
+          sampling
         )
 
         // Global "Disable reasoning" setting — best-effort: dispatch the
@@ -1781,66 +1759,10 @@ export class CustomChatTransport implements ChatTransport<UIMessage> {
           allowReasoningDisable &&
           (disableReasoning || reasoningBudget === 'off')
         ) {
-          switch (effectiveProviderName) {
-            case 'llamacpp':
-            case 'llamacpp-upstream':
-            case 'atomic-prism':
-            case 'mlx': {
-              // Some templates (e.g. Hunyuan 3) have no `enable_thinking` and
-              // skip thinking only through their own effort value.
-              const offValue = reasoningControls?.offValue
-              reasoningOverride.chat_template_kwargs = {
-                enable_thinking: false,
-                ...(offValue ? { reasoning_effort: offValue } : {}),
-              }
-              if (offValue && effectiveProviderName === 'mlx') {
-                // mlx-vlm forwards only a top-level `reasoning_effort` to the
-                // template; its `chat_template_kwargs` reader ignores the key.
-                reasoningOverride.reasoning_effort = offValue
-              }
-              break
-            }
-            case 'anthropic':
-              reasoningOverride.thinking = { type: 'disabled' }
-              break
-            case 'openai':
-              reasoningOverride.reasoning_effort = 'minimal'
-              break
-            case 'chatgpt': {
-              const offValue = reasoningControls?.offValue
-              if (offValue) reasoningOverride.reasoning_effort = offValue
-              break
-            }
-            case 'xai':
-              reasoningOverride.reasoning_effort = 'low'
-              break
-            case 'google':
-            case 'gemini':
-              // One field only: Gemini 400s on `reasoning_effort` plus a
-              // `thinking_config`. `none` is accepted by 2.5 Flash / Flash-Lite
-              // alone; 2.5 Pro and Gemini 3 cannot stop thinking, and
-              // `minimal` is their lowest level.
-              reasoningOverride.reasoning_effort = /^gemini-2\.5-flash/.test(
-                modelId
-              )
-                ? 'none'
-                : 'minimal'
-              break
-            case 'moonshot':
-              // Moonshot (Kimi) accepts only high|low|medium|max|xhigh; rejects
-              // `minimal`. `low` is the closest analogue to "skip thinking".
-              reasoningOverride.reasoning_effort = 'low'
-              break
-            default:
-              // Unknown / user-added custom providers: do NOT inject
-              // `reasoning_effort` — strict OpenAI-compatible schemas
-              // (e.g. Moonshot, some self-hosted gateways) reject unknown
-              // variants like `minimal`. The chat_template_kwargs hint is
-              // safe: most servers ignore unknown keys.
-              reasoningOverride.chat_template_kwargs = {
-                enable_thinking: false,
-              }
-          }
+          Object.assign(
+            reasoningOverride,
+            disabledReasoningRequestFields(effectiveProviderName, modelId, reasoningControls)
+          )
         } else if (
           effectiveProviderName === 'llamacpp' ||
           effectiveProviderName === 'llamacpp-upstream' ||

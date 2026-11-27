@@ -17,7 +17,7 @@ use tokio::process::Command;
 use tokio_util::sync::CancellationToken;
 
 use super::types::ScriptLanguage;
-use crate::core::agent::tools::interpreter_invocation;
+use crate::core::process_tree::interpreter_invocation;
 use crate::core::process_env::sanitize_tokio_command;
 
 /// The CPython `run_script` uses everywhere. Pinned so a chat's installed
@@ -222,7 +222,7 @@ pub(crate) fn invocation(
             ))
         }
         Runtime::Shared { bun } => interpreter_invocation(script, Vec::new(), bun.as_deref())
-            .map_err(|outcome| outcome.summary),
+            ,
         Runtime::System { program, args } => Ok((
             program.display().to_string(),
             args.iter()
@@ -420,7 +420,7 @@ fn hide_console(_command: &mut Command) {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::agent::test_support::TestWorkspace;
+    use crate::core::test_support::TestWorkspace;
 
     fn write_executable(dir: &Path, name: &str) -> PathBuf {
         let path = dir.join(executable_name(name));

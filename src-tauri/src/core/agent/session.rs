@@ -1,4 +1,5 @@
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
+pub use crate::core::threads::validate_session_id;
 
 use serde::{Deserialize, Serialize};
 
@@ -322,18 +323,6 @@ fn render_dropped_summary(turns: &[AgentSessionTurn]) -> String {
         tool_calls,
         replies
     )
-}
-
-pub fn validate_session_id(session_id: &str) -> Result<(), String> {
-    if session_id.is_empty() || session_id.len() > 128 {
-        return Err("session_id must be a non-empty path component".into());
-    }
-    let path = Path::new(session_id);
-    let mut components = path.components();
-    if !matches!(components.next(), Some(Component::Normal(_))) || components.next().is_some() {
-        return Err("session_id must be a safe single path component".into());
-    }
-    Ok(())
 }
 
 pub async fn load_session(data_dir: &Path, session_id: &str) -> Result<AgentSessionState, String> {

@@ -138,11 +138,13 @@ make build    # production build (see Makefile / package.json for per-platform t
 make typecheck # web-app `tsc -b` — the release build's type check; lint/Vitest don't check types
 make verify-fast # local agent gate: lint, typecheck, quality guards, Vitest + critical coverage floors
 make verify   # verify-fast plus every platform-supported Rust suite
-make test-all # exhaustive artefact build + verify + configured live contracts
+make test-all # pre-release only: exhaustive artefact build + verify + configured live contracts
 make test-local # root + extension Vitest and platform Rust suites; creates inert Tauri resource stubs
 make test     # full suite: lint, downloads, generated icons, sidecars, CLI, tests
 yarn lint     # eslint in @janhq/web-app
 ```
+
+Run automated live tests only during pre-release verification. This includes tests that drive the installed desktop app, real inference engines, or physical devices. Use unit tests, fixture-based contracts, and isolated component layout tests during feature development. Local launches for user feedback are part of the manual development workflow.
 
 Mobile builds use `--features mobile`. Per-OS runtime data paths — including
 the three legacy Windows APPDATA folders — are documented in `DEVELOP.md`.
