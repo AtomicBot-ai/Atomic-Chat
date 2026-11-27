@@ -15,9 +15,8 @@ use tokio::{
 };
 use tokio_util::sync::CancellationToken;
 
-use crate::core::agent::tools::{
-    configure_process_tree, terminate_process_tree, MAX_TOOL_OUTPUT_CHARS,
-};
+use crate::core::process_tree::{configure_process_tree, terminate_process_tree};
+use super::MAX_TOOL_OUTPUT_CHARS;
 use crate::core::process_env::sanitize_tokio_command;
 use crate::core::system::commands::decode_console_bytes;
 

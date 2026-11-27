@@ -11,6 +11,7 @@
  * there whenever it can be.
  */
 
+import { invoke } from '@tauri-apps/api/core'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { findLocalSession } from '@/lib/model-factory'
 
@@ -78,13 +79,24 @@ export async function readLoadedContextLength(
   try {
     const session = await findLocalSession(provider, modelId)
     if (!session?.port) return undefined
-    const response = await fetch(`http://127.0.0.1:${session.port}/props`, {
-      headers: session.api_key
-        ? { Authorization: `Bearer ${session.api_key}` }
-        : {},
-    })
-    if (!response.ok) return undefined
-    return contextFromProps(await response.json())
+    const url = `http://127.0.0.1:${session.port}/props`
+    const headers: Record<string, string> = session.api_key
+      ? { Authorization: `Bearer ${session.api_key}` }
+      : {}
+    try {
+      const response = await fetch(url, { headers })
+      if (!response.ok) return undefined
+      return contextFromProps(await response.json())
+    } catch {
+      // A desktop webview can reject a loopback fetch on CORS even when
+      // the authenticated engine is healthy. Use its native loopback transport.
+      const body = await invoke<string>('get_local_http', {
+        url,
+        headers,
+        timeoutSecs: 5,
+      })
+      return contextFromProps(JSON.parse(body))
+    }
   } catch {
     return undefined
   }

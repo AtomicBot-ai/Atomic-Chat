@@ -28,6 +28,7 @@ export function toolIcon(
   kind: ToolPresentation['kind']
 ): LucideIcon {
   if (kind === 'chat_exec') return SquareTerminal
+  if (kind === 'pi_file' || toolName === 'read') return FileText
   if (kind !== 'generic') return Globe
   if (/^os\.(web|http)\./.test(toolName)) return Globe
   if (/^os\.(shell|proc)\./.test(toolName)) return SquareTerminal
@@ -105,6 +106,28 @@ export function ToolRenderer({
           <GenericToolRenderer presentation={presentation} />
         )}
 
+        {presentation.kind === 'pi_file' && (
+          <div className="min-w-0 max-h-72 overflow-auto rounded border text-xs">
+            {presentation.lines.map((line, i) => (
+              <pre
+                key={i}
+                className={
+                  line.kind === 'add'
+                    ? 'whitespace-pre-wrap break-all bg-green-500/10 px-2'
+                    : 'whitespace-pre-wrap break-all bg-red-500/10 px-2'
+                }
+              >
+                {line.kind === 'add' ? '+ ' : '− '}
+                {line.text}
+              </pre>
+            ))}
+            {presentation.errorText && (
+              <p className="break-words p-2 text-destructive">
+                {presentation.errorText}
+              </p>
+            )}
+          </div>
+        )}
         {presentation.kind === 'chat_exec' && (
           <ChatExecToolRenderer presentation={presentation} />
         )}

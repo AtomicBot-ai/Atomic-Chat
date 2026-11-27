@@ -152,6 +152,12 @@ Dev (`make dev-windows-cpu` / `yarn dev`) and the installed `Atomic Chat.exe` **
 
 If a user has relocated the data folder via `Settings → Advanced → Change data folder location` (`change_app_data_folder`), the uninstaller and `make clean-windows-all` **do not** delete that custom path — only the default `%APPDATA%\Atomic Chat\` is cleaned. Removing a custom data folder is the user's responsibility.
 
+### Embedded pi profile
+
+Desktop Agent development uses `<data>/pi-agent/` under the configured application data folder. Each thread has a subdirectory containing its model configuration and sessions. The sidecar receives that thread directory through `PI_CODING_AGENT_DIR`. Its sessions belong to Atomic Chat. Launch integrations manage the external pi installation separately.
+
+Use a fresh profile and working directory for RPC smoke tests. The managed provider resolves its loopback API key from the child environment. Resume a thread with its recorded session file after changing the served model or endpoint.
+
 ## FastFlowLM desktop development
 
 FastFlowLM is offered by core on Windows 11/Linux x64 with AMD XDNA2. macOS can run contract and frontend checks, but cannot establish desktop NPU acceptance. Production core binaries follow `package.json` → `atomicCore.version`; the public SDK is pinned to `0.22.0`.

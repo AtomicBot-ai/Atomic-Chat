@@ -43,6 +43,7 @@ type AgentWorkspaceLayoutProps = {
    * sidebar only appears while agent mode is on — a plain chat has no agent
    * workspace to look at.
    */
+  piAgent?: boolean
   filesEnabled?: boolean
 }
 
@@ -104,6 +105,7 @@ export function AgentWorkspaceLayout({
   refreshKey,
   isGenerating = false,
   filesEnabled = true,
+  piAgent = false,
 }: AgentWorkspaceLayoutProps) {
   const { t } = useTranslation()
   const isDesktop = useDesktopScreen()
@@ -112,7 +114,7 @@ export function AgentWorkspaceLayout({
   const artifactTitle = useArtifactStore((state) => state.title)
   const [filesOpen, setFilesOpen] = useState(false)
   const agentModeEnabled = useGeneralSetting(isAgentModeOn)
-  const filesAvailable = filesEnabled && agentModeEnabled
+  const filesAvailable = filesEnabled && (piAgent || agentModeEnabled)
   const settingsOpen = useRunSettingsPanel((state) => state.isOpen)
   const openSettings = useRunSettingsPanel((state) => state.open)
   const closeSettings = useRunSettingsPanel((state) => state.close)
@@ -288,7 +290,10 @@ export function AgentWorkspaceLayout({
           // No room for a third column here: the panel lies over the chat, on
           // the page background a column would give it.
           <div className="absolute inset-y-0 right-0 z-40 w-full max-w-sm bg-neutral-50 pl-2 dark:bg-background">
-            <RunSettingsPanel onClose={closeSettings} />
+            <RunSettingsPanel
+              onClose={closeSettings}
+              isGenerating={isGenerating}
+            />
           </div>
         )}
       </main>
@@ -411,7 +416,10 @@ export function AgentWorkspaceLayout({
                 exit={{ x: '100%' }}
                 transition={RIGHT_PANEL_TRANSITION}
               >
-                <RunSettingsPanel onClose={closeSettings} />
+                <RunSettingsPanel
+                  onClose={closeSettings}
+                  isGenerating={isGenerating}
+                />
               </motion.div>
             )}
           </AnimatePresence>

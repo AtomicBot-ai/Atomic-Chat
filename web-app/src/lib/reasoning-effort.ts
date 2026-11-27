@@ -605,10 +605,7 @@ export const buildAgentReasoningRequest = (
       : level === 'off'
         ? 'low'
         : level
-  const resolved = resolveReasoningLevel(
-    requestedLevel,
-    available
-  )
+  const resolved = resolveReasoningLevel(requestedLevel, available)
   if (!resolved) return off
 
   const request: AgentReasoningRequest = {
@@ -630,4 +627,97 @@ export const buildAgentReasoningRequest = (
       ? REASONING_LEVEL_TOKENS.xhigh
       : REASONING_LEVEL_TOKENS[resolved]
   return request
+}
+
+/** Provider fields used by the model menu's Off position. */
+export function disabledReasoningRequestFields(
+  provider: string,
+  modelId: string,
+  reasoningControls?: ReasoningControls
+): Record<string, unknown> {
+  const reasoningOverride: Record<string, unknown> = {}
+  switch (provider) {
+    case 'llamacpp':
+    case 'llamacpp-upstream':
+    case 'atomic-prism':
+    case 'mlx': {
+      // Some templates (e.g. Hunyuan 3) have no `enable_thinking` and
+      // skip thinking only through their own effort value.
+      const offValue = reasoningControls?.offValue
+      reasoningOverride.chat_template_kwargs = {
+        enable_thinking: false,
+        ...(offValue ? { reasoning_effort: offValue } : {}),
+      }
+      if (offValue && provider === 'mlx') {
+        // mlx-vlm forwards only a top-level `reasoning_effort` to the
+        // template; its `chat_template_kwargs` reader ignores the key.
+        reasoningOverride.reasoning_effort = offValue
+      }
+      break
+    }
+    case 'anthropic':
+      reasoningOverride.thinking = { type: 'disabled' }
+      break
+    case 'openai':
+      reasoningOverride.reasoning_effort = 'minimal'
+      break
+    case 'chatgpt': {
+      const offValue = reasoningControls?.offValue
+      if (offValue) reasoningOverride.reasoning_effort = offValue
+      break
+    }
+    case 'xai':
+      reasoningOverride.reasoning_effort = 'low'
+      break
+    case 'google':
+    case 'gemini':
+      // One field only: Gemini 400s on `reasoning_effort` plus a
+      // `thinking_config`. `none` is accepted by 2.5 Flash / Flash-Lite
+      // alone; 2.5 Pro and Gemini 3 cannot stop thinking, and
+      // `minimal` is their lowest level.
+      reasoningOverride.reasoning_effort = /^gemini-2\.5-flash/.test(modelId)
+        ? 'none'
+        : 'minimal'
+      break
+    case 'moonshot':
+      // Moonshot (Kimi) accepts only high|low|medium|max|xhigh; rejects
+      // `minimal`. `low` is the closest analogue to "skip thinking".
+      reasoningOverride.reasoning_effort = 'low'
+      break
+    default:
+      // Unknown / user-added custom providers: do NOT inject
+      // `reasoning_effort` — strict OpenAI-compatible schemas
+      // (e.g. Moonshot, some self-hosted gateways) reject unknown
+      // variants like `minimal`. The chat_template_kwargs hint is
+      // safe: most servers ignore unknown keys.
+      reasoningOverride.chat_template_kwargs = {
+        enable_thinking: false,
+      }
+  }
+  return reasoningOverride
+}
+
+/** Resolve the composer's one effort control for the active model. */
+export function modelReasoningEffort(
+  provider: string | undefined,
+  model: Pick<Model, 'reasoning'> | null | undefined,
+  disabled: boolean,
+  budget: ReasoningBudgetLevel
+) {
+  const canDisable = canDisableReasoning(provider, model?.reasoning)
+  const levels = model ? reasoningLevelsForModel(provider, model.reasoning) : []
+  const enabled = !disabled || !canDisable
+  const requested =
+    !canDisable && (disabled || budget === 'off') ? levels[0] : budget
+  const level =
+    requested && requested !== 'off'
+      ? resolveReasoningLevel(requested, levels)
+      : undefined
+  return {
+    canDisable,
+    levels,
+    enabled,
+    level,
+    shownLevel: enabled ? level : undefined,
+  }
 }

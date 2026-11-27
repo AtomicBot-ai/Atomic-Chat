@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+use crate::core::filesystem::atomic_write::atomic_replace;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -158,42 +159,6 @@ fn write_allowlist(data_folder: &Path, fingerprints: &BTreeSet<String>) -> Resul
         let _ = fs::remove_file(&temporary);
     }
     result
-}
-
-#[cfg(windows)]
-pub(crate) fn atomic_replace(source: &Path, destination: &Path) -> std::io::Result<()> {
-    use std::os::windows::ffi::OsStrExt;
-    use windows_sys::Win32::Storage::FileSystem::{
-        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
-    };
-
-    let destination_wide = destination
-        .as_os_str()
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect::<Vec<_>>();
-    let source_wide = source
-        .as_os_str()
-        .encode_wide()
-        .chain(std::iter::once(0))
-        .collect::<Vec<_>>();
-    let result = unsafe {
-        MoveFileExW(
-            source_wide.as_ptr(),
-            destination_wide.as_ptr(),
-            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
-        )
-    };
-    if result == 0 {
-        Err(std::io::Error::last_os_error())
-    } else {
-        Ok(())
-    }
-}
-
-#[cfg(not(windows))]
-pub(crate) fn atomic_replace(source: &Path, destination: &Path) -> std::io::Result<()> {
-    fs::rename(source, destination)
 }
 
 #[cfg(test)]

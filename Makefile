@@ -378,7 +378,8 @@ stub-resources:
 ifeq ($(OS),Windows_NT)
 	powershell -NoProfile -ExecutionPolicy Bypass -File scripts/stub-tauri-resources.ps1
 else ifeq ($(shell uname -s),Darwin)
-	@mkdir -p src-tauri/resources/bin src-tauri/resources/pre-install src-tauri/resources/llamacpp-backend-upstream
+	@mkdir -p src-tauri/resources/pi src-tauri/resources/bin src-tauri/resources/pre-install src-tauri/resources/llamacpp-backend-upstream
+	@[ -e src-tauri/resources/pi/pi ] || touch src-tauri/resources/pi/pi
 	@[ -e src-tauri/resources/LICENSE ] || touch src-tauri/resources/LICENSE
 	@[ -e src-tauri/resources/pre-install/test-placeholder ] || touch src-tauri/resources/pre-install/test-placeholder
 	@[ -e src-tauri/resources/bin/atomic-chat-core ] || touch src-tauri/resources/bin/atomic-chat-core
@@ -391,7 +392,8 @@ else ifeq ($(shell uname -s),Darwin)
 	@[ -e src-tauri/resources/bin/cloudflared-aarch64-apple-darwin ] || touch src-tauri/resources/bin/cloudflared-aarch64-apple-darwin
 	@[ -e src-tauri/resources/bin/cloudflared-x86_64-apple-darwin ] || touch src-tauri/resources/bin/cloudflared-x86_64-apple-darwin
 else
-	@mkdir -p src-tauri/resources/bin src-tauri/resources/pre-install src-tauri/resources/llamacpp-backend-upstream
+	@mkdir -p src-tauri/resources/pi src-tauri/resources/bin src-tauri/resources/pre-install src-tauri/resources/llamacpp-backend-upstream
+	@[ -e src-tauri/resources/pi/pi ] || touch src-tauri/resources/pi/pi
 	@[ -e src-tauri/resources/LICENSE ] || touch src-tauri/resources/LICENSE
 	@[ -e src-tauri/resources/pre-install/test-placeholder ] || touch src-tauri/resources/pre-install/test-placeholder
 	@[ -e src-tauri/resources/bin/atomic-chat-app-core ] || touch src-tauri/resources/bin/atomic-chat-app-core
@@ -651,6 +653,8 @@ endif
 # makes those live prerequisites mandatory.
 test-all: install-and-build install-rust-targets
 	yarn download:bin
+	node scripts/pi-smoke.mjs
+	TAURI_CONFIG='{"bundle":{"icon":["icons/icon.png"]}}' cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --lib --features test-tauri shipped_pi_replays_approval -- --ignored
 	yarn copy:assets:tauri
 	yarn build:icon
 	$(MAKE) build-foundation-models-server-if-exists

@@ -45,6 +45,10 @@ type Thread = {
   updated: number
   order?: number
   metadata?: {
+    piAllowed?: string[]
+    agentAssistantOverride?: boolean
+    kind?: string
+    agent?: { cwd: string; sessionFile?: string }
     project?: {
       id: string
       name: string

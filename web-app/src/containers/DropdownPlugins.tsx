@@ -60,6 +60,7 @@ interface DropdownPluginsProps {
     sentConnectors: number,
     activeConnectors: number
   ) => React.ReactNode
+  agent?: boolean
   initialMessage?: boolean
   // A project page's composer: that project's secure policy applies.
   projectId?: string
@@ -140,6 +141,7 @@ function SectionHeader({
  */
 export default memo(function DropdownPlugins({
   children,
+  agent = false,
   initialMessage = false,
   projectId,
   onOpenChange,
@@ -172,12 +174,14 @@ export default memo(function DropdownPlugins({
   // servers, which are agent-mode tooling and never ride a chat request.
   const tools = useMemo(
     () =>
-      allTools.filter(
-        (tool) =>
-          !BROWSER_SERVER_KEYS.includes(tool.server) &&
-          !SYSTEM_SERVER_KEYS.includes(tool.server)
-      ),
-    [allTools]
+      agent
+        ? allTools
+        : allTools.filter(
+            (tool) =>
+              !BROWSER_SERVER_KEYS.includes(tool.server) &&
+              !SYSTEM_SERVER_KEYS.includes(tool.server)
+          ),
+    [allTools, agent]
   )
 
   const { getCurrentThread } = useThreads()
@@ -245,8 +249,9 @@ export default memo(function DropdownPlugins({
     const configured = Object.entries(mcpServers)
       .filter(
         ([key]) =>
-          !BROWSER_SERVER_KEYS.includes(key) &&
-          !SYSTEM_SERVER_KEYS.includes(key)
+          agent ||
+          (!BROWSER_SERVER_KEYS.includes(key) &&
+            !SYSTEM_SERVER_KEYS.includes(key))
       )
       .map(([key, config]) => ({
         key,
@@ -266,7 +271,7 @@ export default memo(function DropdownPlugins({
         tools: toolsByServer[server],
       }))
     return [...configured, ...extra]
-  }, [connectorByServerKey, mcpServers, toolsByServer])
+  }, [agent, connectorByServerKey, mcpServers, toolsByServer])
 
   // The system servers (filesystem, fetch, sequential-thinking) are filtered
   // out of this menu and out of every chat request: they are agent-mode
@@ -284,6 +289,7 @@ export default memo(function DropdownPlugins({
   )
   // While Agent mode is hidden there is nothing to point the user at.
   const showSystemServerNote =
+    !agent &&
     PlatformFeatures[PlatformFeature.AGENT_MODE] &&
     hasActiveSystemServer &&
     !agentModeEnabled

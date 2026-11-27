@@ -18,8 +18,8 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use tauri::{AppHandle, Runtime};
 
-use crate::core::agent::approval_allowlist::atomic_replace;
-use crate::core::agent::session::validate_session_id;
+use crate::core::filesystem::atomic_write::atomic_replace;
+use crate::core::threads::validate_session_id;
 use crate::core::app::commands::get_jan_data_folder_path;
 
 const TEMPLATE_FILE: &str = "chat_template.jinja";

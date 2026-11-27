@@ -56,7 +56,7 @@ pub mod token_budget;
 pub mod tool_schema;
 pub mod tools;
 pub mod types;
-pub mod workspace;
+pub use crate::core::workspace;
 
 #[cfg(test)]
 mod model_e2e;

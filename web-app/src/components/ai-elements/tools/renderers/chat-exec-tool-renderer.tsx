@@ -24,12 +24,12 @@ export function ChatExecToolRenderer({
           {source}
         </pre>
       )}
-      {output && (
+      {(output || presentation.liveOutput !== undefined) && (
         <pre
           data-testid="chat-exec-output"
           className="max-h-80 overflow-auto whitespace-pre-wrap break-all rounded-md border p-2 font-mono text-xs"
         >
-          {output.text}
+          {presentation.liveOutput ?? output?.text}
         </pre>
       )}
       {errorText && (

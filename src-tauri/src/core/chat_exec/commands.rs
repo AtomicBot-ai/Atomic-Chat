@@ -44,7 +44,7 @@ pub async fn chat_exec_run<R: Runtime>(
     state: State<'_, ChatExecState>,
     request: ChatExecRequest,
 ) -> Result<ChatExecResult, String> {
-    run_request(&app_handle, &state, request).await
+    run_request(&app_handle, &state, request, false).await
 }
 
 /// Stop a running call (the user pressed Stop). `false` when it is not running.
@@ -334,10 +334,11 @@ async fn managed_python(
     Ok(python)
 }
 
-async fn run_request<R: Runtime>(
+pub(crate) async fn run_request<R: Runtime>(
     app: &AppHandle<R>,
     state: &ChatExecState,
     request: ChatExecRequest,
+    require_secure_project: bool,
 ) -> Result<ChatExecResult, String> {
     let prepared = prepare(app, state).await;
     if !prepared.status.supported {
@@ -370,6 +371,9 @@ async fn run_request<R: Runtime>(
                 .filter(|_| prepared.status.sandbox.kind == SandboxKind::Mxc)
                 .ok_or_else(|| secure_without_sandbox(&prepared.status.sandbox))?;
             Some((environment, wxc_exec))
+        }
+        None if require_secure_project => {
+            return Err("The task no longer has a secure environment".into())
         }
         None => None,
     };
@@ -647,7 +651,7 @@ fn host_path_dirs(search_path: Option<&OsStr>) -> Vec<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::agent::test_support::TestWorkspace;
+    use crate::core::test_support::TestWorkspace;
 
     #[test]
     fn host_runs_see_the_chat_folders_and_the_python_first_on_path() {

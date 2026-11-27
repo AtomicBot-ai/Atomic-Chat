@@ -119,7 +119,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::*;
-    use crate::core::agent::skills::SkillPlatform;
+    use crate::core::skills::SkillPlatform;
     use tempfile::TempDir;
 
     fn write_skill(root: &Path, name: &str, body: &str) {

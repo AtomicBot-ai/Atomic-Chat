@@ -71,3 +71,11 @@ test('the signing passes leave out the binaries the installer no longer ships', 
     assert.ok(!signed.includes(name), `${name} is still signed before bundling`)
   }
 })
+
+test('the standalone pi and native modules are included and signed', () => {
+  const resources=JSON.parse(read('src-tauri/tauri.macos.conf.json')).bundle.resources
+  assert.ok(resources.includes('resources/pi/**/*'))
+  assert.ok(resources.includes('licenses/pi-LICENSE.txt'))
+  assert.ok(preBundleSigning().sidecars.includes('pi'))
+  assert.match(read('src-tauri/scripts/sign-macos-resource-binaries.sh'), /\*\.node/)
+})

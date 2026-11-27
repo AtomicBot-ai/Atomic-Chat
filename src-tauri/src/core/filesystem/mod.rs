@@ -1,3 +1,4 @@
+pub(crate) mod atomic_write;
 pub mod commands;
 pub mod helpers;
 pub mod model_roots;

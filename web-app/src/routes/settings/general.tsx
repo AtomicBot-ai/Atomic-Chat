@@ -1,3 +1,5 @@
+import { piStatus } from '@/services/pi-agent/tauri'
+import { currentDesktopPlatform } from '@/constants/integrations'
 import { createFileRoute } from '@tanstack/react-router'
 import { isEnabled as isAutostartEnabled } from '@tauri-apps/plugin-autostart'
 import { route } from '@/constants/routes'
@@ -170,6 +172,12 @@ function General() {
     updateCheck.phase === 'done' && updateCheck.outcome.status === 'failed'
   const [isValidatingToken, setIsValidatingToken] = useState(false)
   const [autostartEnabled, setAutostartEnabled] = useState<boolean | null>(null)
+  const [piVersion, setPiVersion] = useState<string>()
+  useEffect(() => {
+    let active = true
+    if (currentDesktopPlatform()) void piStatus().then(s => { if(active && s.available) setPiVersion(s.version) }).catch(() => {})
+    return () => { active = false }
+  }, [])
   const [coreVersion, setCoreVersion] = useState<string | undefined>()
   const canManageAutostart = IS_TAURI && !isDev()
 
@@ -346,6 +354,7 @@ function General() {
                   </span>
                 }
               />
+              {piVersion && <CardItem title={t('chat:pi.version')} actions={<span className="text-muted-foreground">v{piVersion}</span>} />}
               {coreVersion && (
                 <CardItem
                   title={t('settings:general.coreVersion')}

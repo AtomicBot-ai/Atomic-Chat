@@ -1,3 +1,4 @@
+import { useChatMode } from '@/lib/pi/navigation'
 import { useMemo } from 'react'
 import { useParams } from '@tanstack/react-router'
 import { ChevronRight, GripVertical } from 'lucide-react'
@@ -83,6 +84,7 @@ function PinnedRow({
 /** Pinned chats, above Projects and Recents, in an order the user can drag. */
 export function NavPinned() {
   const { t } = useTranslation()
+  const mode = useChatMode(s => s.mode)
   const threads = useThreads((state) => state.threads)
   const pinOrder = useSidebarLists((state) => state.pinOrder)
   const collapsed = useSidebarLists((state) => state.collapsed.pinned)
@@ -91,8 +93,8 @@ export function NavPinned() {
   const { threadId: activeThreadId } = useParams({ strict: false })
 
   const pinned = useMemo(
-    () => orderPinnedThreads(Object.values(threads), pinOrder),
-    [threads, pinOrder]
+    () => orderPinnedThreads(Object.values(threads).filter(thread => (thread.metadata?.kind === 'agent') === (mode === 'agent')), pinOrder),
+    [threads, pinOrder, mode]
   )
   const pinnedIds = useMemo(() => pinned.map((thread) => thread.id), [pinned])
 

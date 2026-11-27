@@ -14,6 +14,13 @@ const TAURI_ROOT = join(REPO_ROOT, 'src-tauri')
 const PLUGINS_ROOT = join(TAURI_ROOT, 'plugins')
 
 const EXPECTED_DESKTOP_ONLY = new Set([
+  // Agent threads own a desktop-only standalone pi process.
+  'pi_agent_attach',
+  'pi_agent_call',
+  'pi_agent_start',
+  'pi_agent_status',
+  'pi_agent_stop',
+  'pi_agent_ui_respond',
   // Free space and file system of a download destination for the queue's
   // admission check. Mobile keeps `get_download_free_space`, which the web
   // preflight falls back to when this command is missing.

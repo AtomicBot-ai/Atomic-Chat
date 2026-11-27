@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { type ThreadMessage } from '@janhq/core'
 import {
   IconArrowDown,
@@ -175,6 +175,22 @@ function CompactHistoryRow({ messages }: { messages: ThreadMessage[] }) {
   }
 
   return (
+    <CompactContextRow
+      disabled={!canCompact || requestActive || contextBusy || compacting}
+      onCompact={() => void compact()}
+    />
+  )
+}
+
+function CompactContextRow({
+  disabled,
+  onCompact,
+}: {
+  disabled: boolean
+  onCompact: () => void
+}) {
+  const { t } = useTranslation()
+  return (
     <div
       className="flex items-center justify-between gap-3 border-t border-border pt-4"
       data-testid="context-compact-row"
@@ -187,8 +203,8 @@ function CompactHistoryRow({ messages }: { messages: ThreadMessage[] }) {
         variant="outline"
         size="sm"
         className="shrink-0"
-        disabled={!canCompact || requestActive || contextBusy || compacting}
-        onClick={() => void compact()}
+        disabled={disabled}
+        onClick={onCompact}
       >
         <IconArrowsMinimize aria-hidden="true" className="size-4" />
         {t('chat:contextCompaction.compact')}
@@ -234,13 +250,6 @@ export function ContextSizeControl({
   const capacity =
     tokenData.windowTokens ?? (engine ? engine.capacity : tokenData.maxTokens)
   const percentage = capacity ? (totalTokens / capacity) * 100 : 0
-  const isOverLimit = percentage > 100
-  const progressTone =
-    percentage >= 90
-      ? 'bg-destructive'
-      : percentage >= 70
-        ? 'bg-orange-500'
-        : 'bg-emerald-500'
   const { t } = useTranslation()
 
   // An engine with no context setting of the app's (Foundry Local, Apple
@@ -252,6 +261,146 @@ export function ContextSizeControl({
   const percentageLabel =
     engine && !capacity ? unknownCapacity : `${percentage.toFixed(1)}%`
 
+  return (
+    <ContextUsagePopover
+      percentage={percentage}
+      percentageLabel={percentageLabel}
+      totalTokens={totalTokens}
+      capacityLabel={
+        engine && !capacity ? unknownCapacity : formatTokenCount(capacity || 0)
+      }
+      showGauge={Boolean(!engine || capacity)}
+    >
+      <div className="space-y-2">
+        <div className="flex items-center justify-between text-sm">
+          <span className="flex items-center gap-1.5 text-muted-foreground">
+            <IconArrowUp className="size-3.5" stroke={1.75} />
+            <span>Input</span>
+          </span>
+          <span className="font-mono text-foreground">
+            {formatTokenCount(promptTokens)}
+          </span>
+        </div>
+        <div className="flex items-center justify-between text-sm">
+          <span className="flex items-center gap-1.5 text-muted-foreground">
+            <IconArrowDown className="size-3.5" stroke={1.75} />
+            <span>Output</span>
+          </span>
+          <span className="font-mono text-foreground">
+            {formatTokenCount(completionTokens)}
+          </span>
+        </div>
+      </div>
+      <CompactHistoryRow messages={messages} />
+      {engine && provider && selectedModel ? (
+        <EngineContextEditor
+          key={JSON.stringify([provider.provider, selectedModel.id])}
+          providerId={provider.provider}
+          modelId={selectedModel.id}
+          context={engine}
+        />
+      ) : (
+        contextSetting && (
+          <div className="space-y-4 border-t border-border pt-4">
+            <div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-sm font-medium">
+                  {contextSetting.title}
+                </div>
+                <div className="font-mono text-sm tabular-nums">
+                  {formatContextSize(draftContext)}
+                </div>
+              </div>
+              {contextSetting.description && !fitEnabled && (
+                <div className="mt-0.5 text-sm leading-snug text-muted-foreground">
+                  {contextSetting.description}
+                </div>
+              )}
+            </div>
+            {fitAvailable && (
+              <label className="flex items-start justify-between gap-4 text-sm">
+                <span className="min-w-0">
+                  <span className="block font-medium">
+                    {t('assistants:contextSizeFit')}
+                  </span>
+                  <span
+                    className="mt-0.5 block leading-snug text-muted-foreground"
+                    data-testid="context-size-fit-description"
+                  >
+                    {fitEnabled
+                      ? t('assistants:contextSizeFitOn')
+                      : t('assistants:contextSizeFitHint')}
+                  </span>
+                </span>
+                <Switch
+                  className="mt-0.5 shrink-0"
+                  aria-label={t('assistants:contextSizeFit')}
+                  checked={fitEnabled}
+                  onCheckedChange={setFit}
+                />
+              </label>
+            )}
+            {/* Under fit the slider is not ignored silently, as it was: it is
+              disabled, and the number above it is the one the engine chose. */}
+            <Slider
+              aria-label={contextSetting.title}
+              className="w-full"
+              disabled={fitEnabled}
+              value={[Math.min(Math.max(draftContext, sliderMin), sliderMax)]}
+              min={sliderMin}
+              max={sliderMax}
+              step={sliderStep}
+              onValueChange={([value]) => setDraftContext(value)}
+              onValueCommit={([value]) => handleContextChange(value)}
+            />
+            <div className="flex justify-between font-mono text-[10px] text-muted-foreground">
+              <span>{formatContextSize(sliderMin)}</span>
+              <span>{formatContextSize(sliderMax)}</span>
+            </div>
+            {deviceLimit && (
+              <p
+                className="text-sm leading-snug text-muted-foreground"
+                data-testid="context-size-device-max"
+              >
+                {deviceLimit.trainedCtx
+                  ? t('assistants:contextSizeDeviceMaxBelowTrained', {
+                      size: formatContextSize(deviceLimit.maxCtx),
+                      trained: formatContextSize(deviceLimit.trainedCtx),
+                    })
+                  : t('assistants:contextSizeDeviceMax', {
+                      size: formatContextSize(deviceLimit.maxCtx),
+                    })}
+              </p>
+            )}
+          </div>
+        )
+      )}
+    </ContextUsagePopover>
+  )
+}
+
+function ContextUsagePopover({
+  percentage,
+  percentageLabel,
+  totalTokens,
+  capacityLabel,
+  showGauge,
+  children,
+}: {
+  percentage: number
+  percentageLabel: string
+  totalTokens: number
+  capacityLabel: string
+  showGauge: boolean
+  children: ReactNode
+}) {
+  const isOverLimit = percentage > 100
+  const progressTone =
+    percentage >= 90
+      ? 'bg-destructive'
+      : percentage >= 70
+        ? 'bg-orange-500'
+        : 'bg-emerald-500'
   return (
     <Popover>
       <PopoverTrigger asChild>
@@ -265,7 +414,7 @@ export function ContextSizeControl({
           <span className={cn(isOverLimit && 'text-destructive')}>
             {percentageLabel}
           </span>
-          {(!engine || capacity) && (
+          {showGauge && (
             <span className="relative size-4 shrink-0">
               <svg className="size-4 -rotate-90" viewBox="0 0 16 16">
                 <circle
@@ -314,13 +463,10 @@ export function ContextSizeControl({
               {percentageLabel}
             </span>
             <span className="font-mono text-sm text-muted-foreground">
-              {formatTokenCount(totalTokens)} /{' '}
-              {engine && !capacity
-                ? unknownCapacity
-                : formatTokenCount(capacity || 0)}
+              {formatTokenCount(totalTokens)} / {capacityLabel}
             </span>
           </div>
-          {(!engine || capacity) && (
+          {showGauge && (
             <Progress
               aria-label="Context usage"
               value={Math.min(percentage, 100)}
@@ -329,111 +475,37 @@ export function ContextSizeControl({
             />
           )}
         </div>
-        <div className="space-y-2">
-          <div className="flex items-center justify-between text-sm">
-            <span className="flex items-center gap-1.5 text-muted-foreground">
-              <IconArrowUp className="size-3.5" stroke={1.75} />
-              <span>Input</span>
-            </span>
-            <span className="font-mono text-foreground">
-              {formatTokenCount(promptTokens)}
-            </span>
-          </div>
-          <div className="flex items-center justify-between text-sm">
-            <span className="flex items-center gap-1.5 text-muted-foreground">
-              <IconArrowDown className="size-3.5" stroke={1.75} />
-              <span>Output</span>
-            </span>
-            <span className="font-mono text-foreground">
-              {formatTokenCount(completionTokens)}
-            </span>
-          </div>
-        </div>
-        <CompactHistoryRow messages={messages} />
-        {engine && provider && selectedModel ? (
-          <EngineContextEditor
-            key={JSON.stringify([provider.provider, selectedModel.id])}
-            providerId={provider.provider}
-            modelId={selectedModel.id}
-            context={engine}
-          />
-        ) : (
-          contextSetting && (
-            <div className="space-y-4 border-t border-border pt-4">
-              <div>
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-sm font-medium">
-                    {contextSetting.title}
-                  </div>
-                  <div className="font-mono text-sm tabular-nums">
-                    {formatContextSize(draftContext)}
-                  </div>
-                </div>
-                {contextSetting.description && !fitEnabled && (
-                  <div className="mt-0.5 text-sm leading-snug text-muted-foreground">
-                    {contextSetting.description}
-                  </div>
-                )}
-              </div>
-              {fitAvailable && (
-                <label className="flex items-start justify-between gap-4 text-sm">
-                  <span className="min-w-0">
-                    <span className="block font-medium">
-                      {t('assistants:contextSizeFit')}
-                    </span>
-                    <span
-                      className="mt-0.5 block leading-snug text-muted-foreground"
-                      data-testid="context-size-fit-description"
-                    >
-                      {fitEnabled
-                        ? t('assistants:contextSizeFitOn')
-                        : t('assistants:contextSizeFitHint')}
-                    </span>
-                  </span>
-                  <Switch
-                    className="mt-0.5 shrink-0"
-                    aria-label={t('assistants:contextSizeFit')}
-                    checked={fitEnabled}
-                    onCheckedChange={setFit}
-                  />
-                </label>
-              )}
-              {/* Under fit the slider is not ignored silently, as it was: it is
-              disabled, and the number above it is the one the engine chose. */}
-              <Slider
-                aria-label={contextSetting.title}
-                className="w-full"
-                disabled={fitEnabled}
-                value={[Math.min(Math.max(draftContext, sliderMin), sliderMax)]}
-                min={sliderMin}
-                max={sliderMax}
-                step={sliderStep}
-                onValueChange={([value]) => setDraftContext(value)}
-                onValueCommit={([value]) => handleContextChange(value)}
-              />
-              <div className="flex justify-between font-mono text-[10px] text-muted-foreground">
-                <span>{formatContextSize(sliderMin)}</span>
-                <span>{formatContextSize(sliderMax)}</span>
-              </div>
-              {deviceLimit && (
-                <p
-                  className="text-sm leading-snug text-muted-foreground"
-                  data-testid="context-size-device-max"
-                >
-                  {deviceLimit.trainedCtx
-                    ? t('assistants:contextSizeDeviceMaxBelowTrained', {
-                        size: formatContextSize(deviceLimit.maxCtx),
-                        trained: formatContextSize(deviceLimit.trainedCtx),
-                      })
-                    : t('assistants:contextSizeDeviceMax', {
-                        size: formatContextSize(deviceLimit.maxCtx),
-                      })}
-                </p>
-              )}
-            </div>
-          )
-        )}
+        {children}
       </PopoverContent>
     </Popover>
+  )
+}
+
+export function AgentContextSizeControl({
+  tokens,
+  capacity,
+  busy,
+  onCompact,
+}: {
+  tokens: number
+  capacity: number
+  busy: boolean
+  onCompact: () => void
+}) {
+  const percentage = (100 * tokens) / capacity
+  // The pinned pi profile retains the latest 20,000 tokens when compacting (pi 1.6).
+  return (
+    <ContextUsagePopover
+      percentage={percentage}
+      percentageLabel={percentage.toFixed(1) + '%'}
+      totalTokens={tokens}
+      capacityLabel={formatTokenCount(capacity)}
+      showGauge
+    >
+      <CompactContextRow
+        disabled={busy || tokens <= 20_000}
+        onCompact={onCompact}
+      />
+    </ContextUsagePopover>
   )
 }

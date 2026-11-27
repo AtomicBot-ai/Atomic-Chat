@@ -34,7 +34,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { ArrowRight } from 'lucide-react'
+import { agentPathBasename } from '@/lib/agent-path'
+import { ArrowRight, FolderOpen } from 'lucide-react'
 import {
   IconCodeCircle2,
   IconPlayerStopFilled,
@@ -77,7 +78,7 @@ import { useOptimisticUserMessage } from '@/hooks/useOptimisticUserMessage'
 import { buildOptimisticUserMessage } from '@/lib/optimisticUserMessage'
 import { localStorageKey } from '@/constants/localStorage'
 import { defaultModel } from '@/lib/models'
-import { resolveAssistantSelection } from '@/lib/samplingParams'
+import { assistantForNewChat } from '@/lib/samplingParams'
 import { useAssistant } from '@/hooks/useAssistant'
 import DropdownPlugins from '@/containers/DropdownPlugins'
 import ToolCostHint from '@/containers/ToolCostHint'
@@ -174,6 +175,7 @@ import {
   replaceAgentSkillSlashQuery,
   type AgentSkillSlashQuery,
 } from '@/containers/agentSkillSlash'
+import { piSkillPrompt } from '@/lib/pi/integrations'
 import { useAgentSkills } from '@/hooks/useAgentSkills'
 import type { AgentSkill } from '@/services/agent/skills'
 
@@ -208,20 +210,11 @@ type AttachRouteOptions = {
   onImagesNeedVision?: () => void
 }
 
-function assistantForNewChat(projectAssistantId?: string) {
-  const { assistants, pendingAssistant, defaultAssistantId } =
-    useAssistant.getState()
-  if (projectAssistantId && pendingAssistant !== null) {
-    return assistants.find((assistant) => assistant.id === projectAssistantId)
-  }
-  return resolveAssistantSelection(
-    assistants,
-    pendingAssistant,
-    defaultAssistantId
-  )
-}
-
 type ChatInputProps = {
+  mode?: 'agent' | 'chat'
+  composerKey?: string
+  workspaceFolder?: { path?: string; onClick: () => void }
+  approvalSlot?: React.ReactNode
   className?: string
   containerClassName?: string
   minRows?: number
@@ -246,6 +239,7 @@ type ChatInputProps = {
 }
 
 const ChatInput = memo(function ChatInput({
+  mode = 'chat', composerKey, approvalSlot, workspaceFolder,
   className,
   containerClassName,
   minRows = 2,
@@ -322,7 +316,7 @@ const ChatInput = memo(function ChatInput({
   // home composer over one.
   // Built from props where the page has them (the route's thread, the
   // project), so the first render already belongs to the right composer.
-  const composerThreadKey = buildComposerThreadKey({
+  const composerThreadKey = composerKey ?? buildComposerThreadKey({
     isComposer: Boolean(initialMessage),
     currentThreadId: threadId ?? currentThreadId,
     projectId,
@@ -736,7 +730,7 @@ const ChatInput = memo(function ChatInput({
     isLocalModelNotReady && selectedModelStoppedByUser && !loadingModel
 
   const blockSendUntilModelReady =
-    (isLocalModelNotReady && !!onSubmit && !resumesStoppedModel) ||
+    (mode !== 'agent' && isLocalModelNotReady && !!onSubmit && !resumesStoppedModel) ||
     selectedModelLoadFailed
 
   /**
@@ -1160,7 +1154,7 @@ const ChatInput = memo(function ChatInput({
         }))
 
       onSubmit(
-        prompt,
+        mode === 'agent' ? piSkillPrompt(prompt, selectedAgentSkill?.name) : prompt,
         files.length > 0 ? files : undefined,
         selectedAgentSkill?.name
       )
@@ -2709,6 +2703,11 @@ const ChatInput = memo(function ChatInput({
       }
     }
 
+    if (mode === 'agent') {
+      if (audio.length || videos.length || docs.length) toast.info(t('chat:pi.imageOnly'))
+      return
+    }
+
     if (audio.length > 0) {
       if (!hasAudio) {
         toast.error('Audio model required', {
@@ -2755,7 +2754,7 @@ const ChatInput = memo(function ChatInput({
         filters: [
           {
             name: t('chat:composer.supportedFiles'),
-            extensions: ATTACHABLE_EXTENSIONS,
+            extensions: mode === 'agent' ? ['png', 'jpg', 'jpeg', 'gif', 'webp'] : ATTACHABLE_EXTENSIONS,
           },
         ],
       })
@@ -2818,6 +2817,12 @@ const ChatInput = memo(function ChatInput({
     const otherFiles = fileArr.filter(
       (f) => !imageFiles.includes(f) && !audioFiles.includes(f)
     )
+
+    if (mode === 'agent' && (audioFiles.length || otherFiles.length)) {
+      toast.info(t('chat:pi.imageOnly'))
+      if (imageFiles.length) routeBrowserFiles(imageFiles, options)
+      return
+    }
 
     if (otherFiles.length > 0) {
       const names = otherFiles.map((f) => f.name)
@@ -2990,6 +2995,7 @@ const ChatInput = memo(function ChatInput({
   }
 
   const isStreaming = chatStatus === 'submitted' || chatStatus === 'streaming'
+  const canSteer = mode === 'agent' && chatStatus === 'streaming'
   const showSendControl = Boolean(prompt.trim()) || isStreaming
 
   // What the model may do at all rides the access menu, beside how its calls
@@ -3028,9 +3034,7 @@ const ChatInput = memo(function ChatInput({
           <div className="group/approval relative z-20">
             {/* Share the input's inset width, outside its streaming opacity
                 and disabled toolbar. Absolute docking preserves scroll position. */}
-            {!initialMessage && (
-              <AgentApprovalInline threadId={composerThreadKey} />
-            )}
+            {mode === 'agent' ? approvalSlot : !initialMessage && <AgentApprovalInline threadId={composerThreadKey} />}
             <div
               className={cn(
                 'relative z-20 px-0 pb-10 border rounded-3xl border-input bg-white dark:bg-input/30 group-has-[[data-slot=composer-approval]]/approval:rounded-t-none',
@@ -3200,19 +3204,32 @@ const ChatInput = memo(function ChatInput({
                   )}
                 </div>
               )}
-              <ToolCostHint
+              {mode !== 'agent' && <ToolCostHint
                 threadId={currentThreadId}
                 initialMessage={initialMessage}
-              />
+              />}
               <AgentSkillSlashMenu
                 skills={eligibleAgentSkills}
                 activeIndex={agentSkillActiveIndex}
                 loading={agentSkillsLoading}
-                open={agentSkillMenuOpen}
+                open={agentSkillMenuOpen && (mode !== 'agent' || eligibleAgentSkills.length > 0)}
                 onSelect={handleAgentSkillSelect}
                 onActiveIndexChange={setAgentSkillActiveIndex}
               />
-              <div className="relative min-w-0 w-full px-4 pt-3">
+              <div className={cn('relative min-w-0 w-full px-4 pt-3', workspaceFolder && 'flex items-start gap-2')}>
+                {workspaceFolder && (
+                  <button
+                    type="button"
+                    title={workspaceFolder.path ?? t('chat:pi.folder')}
+                    onClick={workspaceFolder.onClick}
+                    className="inline-flex max-w-[38%] min-w-0 shrink-0 items-center gap-1.5 rounded-md bg-muted/60 px-2 text-sm leading-6 text-foreground hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <FolderOpen className="size-4 shrink-0" aria-hidden="true" />
+                    <span className="truncate">
+                      {workspaceFolder.path ? agentPathBasename(workspaceFolder.path) : t('chat:pi.folder')}
+                    </span>
+                  </button>
+                )}
                 <TextareaAutosize
                   dir="auto"
                   ref={textareaRef}
@@ -3301,12 +3318,8 @@ const ChatInput = memo(function ChatInput({
                     }
                     if (e.key === 'Enter' && !e.shiftKey && !isComposing) {
                       e.preventDefault()
-                      // Submit prompt when the following conditions are met:
-                      // - Enter is pressed without Shift
-                      // - The streaming content has finished
-                      // - Prompt is not empty
                       if (
-                        !isStreaming &&
+                        (!isStreaming || canSteer) &&
                         prompt.trim() &&
                         !isAttachmentPipelineBusy &&
                         !blockSendUntilModelReady
@@ -3422,7 +3435,7 @@ const ChatInput = memo(function ChatInput({
                     ref={fileInputRef}
                     className="hidden"
                     multiple
-                    accept={ATTACHABLE_EXTENSIONS.map((ext) => `.${ext}`).join(
+                    accept={mode === 'agent' ? 'image/*' : ATTACHABLE_EXTENSIONS.map((ext) => `.${ext}`).join(
                       ','
                     )}
                     tabIndex={-1}
@@ -3487,7 +3500,7 @@ const ChatInput = memo(function ChatInput({
                     skipConfirmAccept={t(
                       'chat:agentApprovals.skipConfirmAccept'
                     )}
-                    toggles={accessToggles}
+                    toggles={mode === 'agent' ? [] : accessToggles}
                   />
                   {/* //! Browse (Chrome) button — temporarily hidden
                 {!agentRouteActive && hasJanBrowserMCPConfig && modelSupportsBrowser && (
@@ -3561,8 +3574,8 @@ const ChatInput = memo(function ChatInput({
                       with every MCP server switched off — the dropdown says
                       so itself, and an icon that vanishes when web search
                       goes off reads as a bug. */}
-                  {(supportsTools || agentRouteActive) &&
-                    (MCPToolComponent && hasActiveMCPServers ? (
+                  {(mode === 'agent' || supportsTools || agentRouteActive) &&
+                    (mode !== 'agent' && MCPToolComponent && hasActiveMCPServers ? (
                       // Use custom MCP component
                       <McpExtensionToolLoader
                         tools={tools}
@@ -3582,7 +3595,8 @@ const ChatInput = memo(function ChatInput({
                         onOpenChange={setTooltipToolsAvailable}
                       >
                         <DropdownPlugins
-                          initialMessage={initialMessage}
+                          agent={mode === 'agent'}
+                          initialMessage={initialMessage || (mode === 'agent' && !threadId)}
                           projectId={projectId}
                           skills={IS_TAURI ? agentSkills : undefined}
                           skillsLoading={agentSkillsLoading}
@@ -3603,12 +3617,12 @@ const ChatInput = memo(function ChatInput({
                               <TooltipTrigger asChild>
                                 <Button
                                   variant="ghost"
-                                  size={showCount ? 'sm' : 'icon-sm'}
+                                  size={(mode === 'agent' && !compactComposer) || showCount ? 'sm' : 'icon-sm'}
                                   className={cn(
                                     COMPOSER_ICON_ACTION,
                                     showCount && 'gap-1 has-[>svg]:px-1.5'
                                   )}
-                                  aria-label={t('plugins')}
+                                  aria-label={t(mode === 'agent' ? 'common:tools' : 'plugins')}
                                   onClick={(e) => e.stopPropagation()}
                                 >
                                   <PuzzleIcon
@@ -3618,6 +3632,7 @@ const ChatInput = memo(function ChatInput({
                                       sentConnectors > 0 && 'text-primary'
                                     )}
                                   />
+                                  {mode === 'agent' && !compactComposer && <span>{t('common:tools')}</span>}
                                   {showCount && (
                                     <span
                                       className="text-[10px] text-muted-foreground"
@@ -3632,7 +3647,7 @@ const ChatInput = memo(function ChatInput({
                           }}
                         </DropdownPlugins>
                         <TooltipContent>
-                          <p>{t('plugins')}</p>
+                          <p>{t(mode === 'agent' ? 'common:tools' : 'plugins')}</p>
                         </TooltipContent>
                       </Tooltip>
                     ))}
@@ -3640,9 +3655,9 @@ const ChatInput = memo(function ChatInput({
                   {/* Web search lives on the globe. On the chat transport it
                       switches the Exa (or equivalent) MCP server; agent turns
                       read the same state as their per-turn web_search flag. */}
-                  {(supportsTools || agentRouteActive) && (
+                  {(mode === 'agent' || supportsTools || agentRouteActive) && (
                     <WebSearchToggle
-                      initialMessage={initialMessage}
+                      initialMessage={initialMessage || (mode === 'agent' && !threadId)}
                       projectId={projectId}
                       className={COMPOSER_ICON_ACTION}
                     />
@@ -3764,14 +3779,15 @@ const ChatInput = memo(function ChatInput({
                       onAnimationStart={() => setSendControlMoving(true)}
                       onAnimationComplete={() => setSendControlMoving(false)}
                     >
-                      {isStreaming ? (
+                      {isStreaming && (!canSteer || !prompt.trim()) ? (
                         <Button
                           variant="destructive"
                           size="icon-sm"
                           className={COMPOSER_SEND_ACTION}
                           aria-label={t('common:stop')}
                           onClick={() => {
-                            if (currentThreadId) stopStreaming(currentThreadId)
+                            if (mode === 'agent') onStop?.()
+                            else if (currentThreadId) stopStreaming(currentThreadId)
                           }}
                         >
                           <IconPlayerStopFilled />

@@ -1,4 +1,5 @@
 // scripts/download.js
+import { installPi, verifyPi } from './pi-distribution.mjs'
 import https from 'https'
 import fs, { copyFile, mkdirSync } from 'fs'
 import os from 'os'
@@ -522,8 +523,13 @@ async function main() {
     .find((arg) => arg.startsWith('--only='))
     ?.slice('--only='.length)
   if (only !== undefined) {
+    if (only === 'pi') {
+      if (process.argv.includes('--verify-only')) verifyPi()
+      else await installPi()
+      return
+    }
     if (only !== 'cloudflared') {
-      throw new Error(`Unknown --only target '${only}' (supported: cloudflared)`)
+      throw new Error(`Unknown --only target '${only}' (supported: cloudflared, pi)`)
     }
     await installCloudflared('src-tauri/resources/bin', 'scripts/dist')
     return
@@ -712,6 +718,7 @@ async function main() {
 
   // Fatal for the same reason: an unverified sandbox executor must not ship.
   await installMxc(binDir, tempBinDir)
+  await installPi()
 
   // ----- sqlite-vec (optional, ANN acceleration) -----
   try {

@@ -224,26 +224,32 @@ pub fn run() {
         core::secure_env::secure_env_list,
         core::secure_env::secure_env_set,
         core::foundry_template::foundry_local_repair_chat_template,
+        core::pi_agent::pi_agent_status,
+        core::pi_agent::pi_agent_start,
+        core::pi_agent::pi_agent_attach,
+        core::pi_agent::pi_agent_call,
+        core::pi_agent::pi_agent_ui_respond,
+        core::pi_agent::pi_agent_stop,
         core::agent::commands::agent_run_turn,
         core::agent::commands::agent_cancel_turn,
         core::agent::commands::agent_kill_session_procs,
         core::agent::commands::agent_session_reseed,
         core::agent::commands::agent_resolve_approval,
         core::agent::commands::agent_resolve_folder_access,
-        core::agent::commands::agent_workspace_list,
-        core::agent::commands::agent_workspace_root,
-        core::agent::commands::agent_workspace_stat,
-        core::agent::commands::agent_workspace_resolve_path,
-        core::agent::commands::agent_workspace_read_text,
-        core::agent::skills::commands::agent_list_skills,
-        core::agent::skills::commands::agent_get_skill,
-        core::agent::skills::commands::agent_set_skill_enabled,
-        core::agent::skills::commands::agent_create_skill,
-        core::agent::skills::commands::agent_import_skill,
-        core::agent::skills::commands::agent_update_skill,
-        core::agent::skills::commands::agent_export_skill,
-        core::agent::skills::commands::agent_delete_skill,
-        core::agent::skills::commands::agent_refresh_skills,
+        core::workspace_files::agent_workspace_list,
+        core::workspace_files::agent_workspace_root,
+        core::workspace_files::agent_workspace_stat,
+        core::workspace_files::agent_workspace_resolve_path,
+        core::workspace_files::agent_workspace_read_text,
+        core::skills::commands::agent_list_skills,
+        core::skills::commands::agent_get_skill,
+        core::skills::commands::agent_set_skill_enabled,
+        core::skills::commands::agent_create_skill,
+        core::skills::commands::agent_import_skill,
+        core::skills::commands::agent_update_skill,
+        core::skills::commands::agent_export_skill,
+        core::skills::commands::agent_delete_skill,
+        core::skills::commands::agent_refresh_skills,
         core::mcp::commands::restart_mcp_servers,
         core::mcp::commands::get_connected_servers,
         core::mcp::commands::save_mcp_configs,
@@ -456,20 +462,20 @@ pub fn run() {
         core::agent::commands::agent_session_reseed,
         core::agent::commands::agent_resolve_approval,
         core::agent::commands::agent_resolve_folder_access,
-        core::agent::commands::agent_workspace_list,
-        core::agent::commands::agent_workspace_root,
-        core::agent::commands::agent_workspace_stat,
-        core::agent::commands::agent_workspace_resolve_path,
-        core::agent::commands::agent_workspace_read_text,
-        core::agent::skills::commands::agent_list_skills,
-        core::agent::skills::commands::agent_get_skill,
-        core::agent::skills::commands::agent_set_skill_enabled,
-        core::agent::skills::commands::agent_create_skill,
-        core::agent::skills::commands::agent_import_skill,
-        core::agent::skills::commands::agent_update_skill,
-        core::agent::skills::commands::agent_export_skill,
-        core::agent::skills::commands::agent_delete_skill,
-        core::agent::skills::commands::agent_refresh_skills,
+        core::workspace_files::agent_workspace_list,
+        core::workspace_files::agent_workspace_root,
+        core::workspace_files::agent_workspace_stat,
+        core::workspace_files::agent_workspace_resolve_path,
+        core::workspace_files::agent_workspace_read_text,
+        core::skills::commands::agent_list_skills,
+        core::skills::commands::agent_get_skill,
+        core::skills::commands::agent_set_skill_enabled,
+        core::skills::commands::agent_create_skill,
+        core::skills::commands::agent_import_skill,
+        core::skills::commands::agent_update_skill,
+        core::skills::commands::agent_export_skill,
+        core::skills::commands::agent_delete_skill,
+        core::skills::commands::agent_refresh_skills,
         core::mcp::commands::restart_mcp_servers,
         core::mcp::commands::get_connected_servers,
         core::mcp::commands::save_mcp_configs,
@@ -539,6 +545,8 @@ pub fn run() {
         context
     };
 
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    let app_builder = app_builder.manage(core::pi_agent::PiAgentState::default());
     let app = app_builder
         // The last TensorRT-LLM models root the core named (outside the data folder on Windows).
         .manage(core::filesystem::model_roots::CoreModelRoot::default())
@@ -680,6 +688,8 @@ pub fn run() {
             // they are identified by a journal of pids instead of by name.
             {
                 let data_folder = get_jan_data_folder_path(app.handle().clone());
+                #[cfg(not(any(target_os = "ios", target_os = "android")))]
+                core::pi_agent::setup(app.handle(), &data_folder);
                 crate::core::agent::pty::reap_orphans(&data_folder);
                 app.state::<AppState>()
                     .agent_pty_sessions
@@ -725,16 +735,16 @@ pub fn run() {
             }
 
             let data_folder = get_jan_data_folder_path(app.handle().clone());
-            if let Err(e) = core::agent::workspace::ensure_default_agent_workspace(&data_folder) {
+            if let Err(e) = core::workspace::ensure_default_agent_workspace(&data_folder) {
                 log::error!("{e}");
             }
             match app.path().resolve(
-                core::agent::skills::BUNDLED_AGENT_SKILLS_RESOURCE_DIR,
+                core::skills::BUNDLED_AGENT_SKILLS_RESOURCE_DIR,
                 BaseDirectory::Resource,
             ) {
                 Ok(bundled_skills) => {
                     if let Err(error) =
-                        core::agent::skills::initialize_skills(&data_folder, &bundled_skills)
+                        core::skills::initialize_skills(&data_folder, &bundled_skills)
                     {
                         log::error!("{error}");
                     }
@@ -877,6 +887,7 @@ pub fn run() {
                     let handle = app_handle.clone();
                     tokio::task::block_in_place(|| {
                         tauri::async_runtime::block_on(async move {
+                            core::pi_agent::kill_all(&handle.state::<core::pi_agent::PiAgentState>()).await;
                             crate::core::atomic_core::commands::shutdown(&handle).await;
                         })
                     });

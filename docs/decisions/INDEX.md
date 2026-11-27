@@ -9,7 +9,7 @@ decision is reversed, add a new one that says which record it supersedes.
 2. Add one line to the right section of this index.
 3. Do **not** paste the record body into `AGENTS.md`.
 
-548 records, 2026-05-19 → 2026-11-24.
+549 records, 2026-05-19 → 2026-11-27.
 
 ---
 
@@ -96,8 +96,11 @@ decision is reversed, add a new one that says which record it supersedes.
 - **2026-06-02** — [Add a `/v1/responses` translation shim to the local proxy so Codex CLI works on llama.cpp models](2026-06-02-add-a-v1-responses-translation-shim-to-the-local-proxy-so-codex.md)
 - **2026-06-01** — [Add a "Launch" page to install + configure external coding agents / assistants against the local OpenAI-compatible API](2026-06-01-add-a-launch-page-to-install-configure-external-coding-agents.md)
 
-## Agent mode — autonomous loop, tools, skills, workspace (53)
+## Agent mode — autonomous loop, tools, skills, workspace (56)
 
+- **2026-11-27** — [Use the chat run settings for pi tasks](2026-11-27-use-chat-run-settings-for-pi-tasks.md)
+- **2026-11-27** — [Share projects between Chat and Agent](2026-11-27-share-projects-between-chat-and-agent.md)
+- **2026-11-27** — [Run desktop Agent threads with a bundled pi process](2026-11-27-bundle-pi-for-agent-threads.md)
 - **2026-10-20** — [Always offer chat commands, with no Run commands switch](2026-10-20-always-offer-chat-commands-without-a-switch.md)
 - **2026-10-17** — [Confine a secure project's commands to its folders with MXC](2026-10-17-confine-secure-projects-commands-to-their-folders-with-mxc.md)
 - **2026-10-15** — [Grant directory enumeration and decode Windows chat output](2026-10-15-fix-windows-chat-directory-enumeration-and-output.md)

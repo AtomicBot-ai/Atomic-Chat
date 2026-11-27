@@ -6,25 +6,17 @@ mod code;
 pub mod docs;
 mod fs;
 mod git;
-mod http;
+use crate::core::mcp::keyless_web::{http, web};
+use crate::core::tool_output::{optional_usize, required_string, truncate};
 mod mcp_call;
 mod media;
 mod notify;
 mod proc;
 mod shell;
 mod skill_run_script;
-// Shared with chat commands (`core::chat_exec`): one interpreter table and
-// one process-tree kill for every script the app runs.
-pub(crate) use skill_run_script::{
-    configure_process_tree, interpreter_invocation, terminate_process_tree,
-};
 mod skill_view;
 pub(super) mod tool_view;
 mod vision;
-pub(crate) mod web;
-mod web_exa;
-mod web_extract;
-mod web_search;
 
 #[cfg(test)]
 mod contract_tests;
@@ -51,7 +43,7 @@ use super::types::{
     ToolOutcome,
 };
 
-pub const MAX_TOOL_OUTPUT_CHARS: usize = 16_000;
+pub use crate::core::chat_exec::MAX_TOOL_OUTPUT_CHARS;
 
 #[async_trait]
 pub trait ApprovalHook: Send + Sync {
@@ -153,8 +145,8 @@ pub async fn execute(call: &ToolCallPayload, context: &ToolContext<'_>) -> ToolO
         }
         "os.proc.list" | "os.proc.kill" | "os.proc.spawn" | "os.proc.read" | "os.proc.write"
         | "os.proc.stop" => proc::execute(&call.tool, &call.args, context).await,
-        "os.http.request" => http::execute(&call.args, context).await,
-        "os.web.search" | "os.web.fetch" => web::execute(&call.tool, &call.args, context).await,
+        "os.http.request" => http::execute(&call.args).await,
+        "os.web.search" | "os.web.fetch" => web::execute(&call.tool, &call.args, context.working_dir).await,
         "docs.list" | "docs.retrieve" | "docs.chunks" => {
             Ok(docs::execute(&call.tool, &call.args, context).await)
         }
@@ -542,32 +534,6 @@ pub(super) fn resolve_path(working_dir: &Path, value: &str) -> PathBuf {
     } else {
         working_dir.join(path)
     }
-}
-
-pub(super) fn required_string(args: &Value, key: &str) -> Result<String, String> {
-    args.get(key)
-        .and_then(Value::as_str)
-        .map(str::to_owned)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| format!("Missing non-empty string argument `{key}`"))
-}
-
-pub(super) fn optional_usize(args: &Value, key: &str, default: usize, max: usize) -> usize {
-    args.get(key)
-        .and_then(Value::as_u64)
-        .and_then(|value| usize::try_from(value).ok())
-        .filter(|value| *value > 0)
-        .unwrap_or(default)
-        .min(max)
-}
-
-pub(super) fn truncate(mut value: String, max_chars: usize) -> String {
-    if value.chars().count() <= max_chars {
-        return value;
-    }
-    value = value.chars().take(max_chars).collect();
-    value.push_str("\n[truncated]");
-    value
 }
 
 pub(super) fn command_outcome(output: std::process::Output) -> Result<ToolOutcome, ToolOutcome> {

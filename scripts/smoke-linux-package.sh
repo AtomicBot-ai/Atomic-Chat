@@ -81,6 +81,8 @@ for f in uv cloudflared bun; do test -x "$opt/bin/$f" || fail "$opt/bin/$f is mi
 test -d "$opt/lib/Atomic Chat/resources" || fail "the resources are not where Tauri looks for them"
 test -s /usr/share/applications/chat.atomic.app.desktop || fail "the desktop entry is missing"
 test -s /usr/share/icons/hicolor/128x128/apps/chat.atomic.app.png || fail "the icon is missing"
+pi_version=$(PI_OFFLINE=1 "$opt/lib/Atomic Chat/resources/pi/pi" --version) || fail "the packaged pi does not run"
+case "$pi_version" in ''|0.0.0) fail "pi package metadata is missing" ;; esac
 "$opt/lib/Atomic Chat/resources/bin/atomic-chat-core" --version >/dev/null || fail "the core does not run: its Bun payload is damaged"
 
 missing=$(find "$opt" -type f | while IFS= read -r f; do

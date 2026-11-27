@@ -31,7 +31,8 @@ type ThreadState = {
     title?: string,
     assistant?: Assistant,
     projectMetadata?: { id: string; name: string; updated_at: number },
-    isTemporary?: boolean
+    isTemporary?: boolean,
+    metadata?: Thread['metadata']
   ) => Promise<Thread>
   awaitThreadPersistence: (threadId: string) => Promise<void>
   updateCurrentThreadModel: (model: ThreadModel) => void
@@ -348,7 +349,8 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     title,
     assistant,
     projectMetadata,
-    isTemporary
+    isTemporary,
+    metadata
   ) => {
     const newThread: Thread = {
       id: isTemporary ? TEMPORARY_CHAT_ID : ulid(),
@@ -356,14 +358,17 @@ export const useThreads = create<ThreadState>()((set, get) => ({
       model,
       updated: Date.now() / 1000,
       assistants: assistant ? [assistant] : [],
+      ...(metadata && { metadata }),
       ...(projectMetadata &&
         !isTemporary && {
           metadata: {
+            ...metadata,
             project: projectMetadata,
           },
         }),
       ...(isTemporary && {
         metadata: {
+          ...metadata,
           isTemporary: true,
           ...(projectMetadata && { project: projectMetadata }),
         },
@@ -448,20 +453,26 @@ export const useThreads = create<ThreadState>()((set, get) => ({
     set((state) => {
       if (!state.currentThreadId) return { ...state }
       const currentThread = state.getCurrentThread()
-      if (currentThread)
-        getServiceHub()
-          .threads()
-          .updateThread({
-            ...currentThread,
-            assistants: assistant
-              ? [{ ...assistant, model: currentThread.model }]
-              : [],
-          })
+      if (!currentThread) return state
+      const metadata =
+        currentThread.metadata?.kind === 'agent'
+          ? { ...currentThread.metadata, agentAssistantOverride: true }
+          : currentThread.metadata
+      getServiceHub()
+        .threads()
+        .updateThread({
+          ...currentThread,
+          metadata,
+          assistants: assistant
+            ? [{ ...assistant, model: currentThread.model }]
+            : [],
+        })
       return {
         threads: {
           ...state.threads,
           [state.currentThreadId as string]: {
             ...state.threads[state.currentThreadId as string],
+            metadata,
             assistants: assistant ? [assistant] : [],
             updated: Date.now() / 1000,
           },

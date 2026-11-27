@@ -65,6 +65,11 @@ for core_binary in atomic-chat-core atomic-chat-app-core; do
   cp "${src}" "${RES_BIN_DIR}/${core_binary}"
   chmod +x "${RES_BIN_DIR}/${core_binary}"
 done
+mkdir -p "${PKG_DIR}/resources/pi"
+cp -a ./src-tauri/resources/pi/. "${PKG_DIR}/resources/pi/"
+mkdir -p "${PKG_DIR}/licenses"
+cp ./src-tauri/licenses/pi-LICENSE.txt "${PKG_DIR}/licenses/pi-LICENSE.txt"
+"${PKG_DIR}/resources/pi/pi" --version
 # An intact payload still runs; a patchelf'd or truncated one does not.
 "${RES_BIN_DIR}/atomic-chat-core" --version >/dev/null \
   || { echo "The bundled atomic-chat-core does not run — its bun payload is damaged."; exit 1; }

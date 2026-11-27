@@ -24,6 +24,7 @@ import { Route as ConnectorsIndexRouteImport } from './routes/connectors/index'
 import { Route as CloudIndexRouteImport } from './routes/cloud/index'
 import { Route as AudiosIndexRouteImport } from './routes/audios/index'
 import { Route as ApiIndexRouteImport } from './routes/api/index'
+import { Route as AgentIndexRouteImport } from './routes/agent/index'
 import { Route as AccountIndexRouteImport } from './routes/account/index'
 import { Route as ThreadsThreadIdRouteImport } from './routes/threads/$threadId'
 import { Route as SettingsVoiceRouteImport } from './routes/settings/voice'
@@ -47,6 +48,7 @@ import { Route as HubModelIdRouteImport } from './routes/hub/$modelId'
 import { Route as ApiModelRouteImport } from './routes/api/model'
 import { Route as ApiConnectionsRouteImport } from './routes/api/connections'
 import { Route as ApiActivityRouteImport } from './routes/api/activity'
+import { Route as AgentThreadIdRouteImport } from './routes/agent/$threadId'
 import { Route as AccountRemoteRouteImport } from './routes/account/remote'
 import { Route as SettingsProvidersIndexRouteImport } from './routes/settings/providers/index'
 import { Route as SettingsProvidersProviderNameRouteImport } from './routes/settings/providers/$providerName'
@@ -124,6 +126,11 @@ const AudiosIndexRoute = AudiosIndexRouteImport.update({
 const ApiIndexRoute = ApiIndexRouteImport.update({
   id: '/api/',
   path: '/api/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AgentIndexRoute = AgentIndexRouteImport.update({
+  id: '/agent/',
+  path: '/agent/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AccountIndexRoute = AccountIndexRouteImport.update({
@@ -241,6 +248,11 @@ const ApiActivityRoute = ApiActivityRouteImport.update({
   path: '/api/activity',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AgentThreadIdRoute = AgentThreadIdRouteImport.update({
+  id: '/agent/$threadId',
+  path: '/agent/$threadId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AccountRemoteRoute = AccountRemoteRouteImport.update({
   id: '/account/remote',
   path: '/account/remote',
@@ -265,6 +277,7 @@ export interface FileRoutesByFullPath {
   '/onboarding': typeof OnboardingRoute
   '/system-monitor': typeof SystemMonitorRoute
   '/account/remote': typeof AccountRemoteRoute
+  '/agent/$threadId': typeof AgentThreadIdRoute
   '/api/activity': typeof ApiActivityRoute
   '/api/connections': typeof ApiConnectionsRoute
   '/api/model': typeof ApiModelRoute
@@ -288,6 +301,7 @@ export interface FileRoutesByFullPath {
   '/settings/voice': typeof SettingsVoiceRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/account/': typeof AccountIndexRoute
+  '/agent/': typeof AgentIndexRoute
   '/api/': typeof ApiIndexRoute
   '/audios/': typeof AudiosIndexRoute
   '/cloud/': typeof CloudIndexRoute
@@ -308,6 +322,7 @@ export interface FileRoutesByTo {
   '/onboarding': typeof OnboardingRoute
   '/system-monitor': typeof SystemMonitorRoute
   '/account/remote': typeof AccountRemoteRoute
+  '/agent/$threadId': typeof AgentThreadIdRoute
   '/api/activity': typeof ApiActivityRoute
   '/api/connections': typeof ApiConnectionsRoute
   '/api/model': typeof ApiModelRoute
@@ -331,6 +346,7 @@ export interface FileRoutesByTo {
   '/settings/voice': typeof SettingsVoiceRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/account': typeof AccountIndexRoute
+  '/agent': typeof AgentIndexRoute
   '/api': typeof ApiIndexRoute
   '/audios': typeof AudiosIndexRoute
   '/cloud': typeof CloudIndexRoute
@@ -352,6 +368,7 @@ export interface FileRoutesById {
   '/onboarding': typeof OnboardingRoute
   '/system-monitor': typeof SystemMonitorRoute
   '/account/remote': typeof AccountRemoteRoute
+  '/agent/$threadId': typeof AgentThreadIdRoute
   '/api/activity': typeof ApiActivityRoute
   '/api/connections': typeof ApiConnectionsRoute
   '/api/model': typeof ApiModelRoute
@@ -375,6 +392,7 @@ export interface FileRoutesById {
   '/settings/voice': typeof SettingsVoiceRoute
   '/threads/$threadId': typeof ThreadsThreadIdRoute
   '/account/': typeof AccountIndexRoute
+  '/agent/': typeof AgentIndexRoute
   '/api/': typeof ApiIndexRoute
   '/audios/': typeof AudiosIndexRoute
   '/cloud/': typeof CloudIndexRoute
@@ -397,6 +415,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/system-monitor'
     | '/account/remote'
+    | '/agent/$threadId'
     | '/api/activity'
     | '/api/connections'
     | '/api/model'
@@ -420,6 +439,7 @@ export interface FileRouteTypes {
     | '/settings/voice'
     | '/threads/$threadId'
     | '/account/'
+    | '/agent/'
     | '/api/'
     | '/audios/'
     | '/cloud/'
@@ -440,6 +460,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/system-monitor'
     | '/account/remote'
+    | '/agent/$threadId'
     | '/api/activity'
     | '/api/connections'
     | '/api/model'
@@ -463,6 +484,7 @@ export interface FileRouteTypes {
     | '/settings/voice'
     | '/threads/$threadId'
     | '/account'
+    | '/agent'
     | '/api'
     | '/audios'
     | '/cloud'
@@ -483,6 +505,7 @@ export interface FileRouteTypes {
     | '/onboarding'
     | '/system-monitor'
     | '/account/remote'
+    | '/agent/$threadId'
     | '/api/activity'
     | '/api/connections'
     | '/api/model'
@@ -506,6 +529,7 @@ export interface FileRouteTypes {
     | '/settings/voice'
     | '/threads/$threadId'
     | '/account/'
+    | '/agent/'
     | '/api/'
     | '/audios/'
     | '/cloud/'
@@ -527,6 +551,7 @@ export interface RootRouteChildren {
   OnboardingRoute: typeof OnboardingRoute
   SystemMonitorRoute: typeof SystemMonitorRoute
   AccountRemoteRoute: typeof AccountRemoteRoute
+  AgentThreadIdRoute: typeof AgentThreadIdRoute
   ApiActivityRoute: typeof ApiActivityRoute
   ApiConnectionsRoute: typeof ApiConnectionsRoute
   ApiModelRoute: typeof ApiModelRoute
@@ -550,6 +575,7 @@ export interface RootRouteChildren {
   SettingsVoiceRoute: typeof SettingsVoiceRoute
   ThreadsThreadIdRoute: typeof ThreadsThreadIdRoute
   AccountIndexRoute: typeof AccountIndexRoute
+  AgentIndexRoute: typeof AgentIndexRoute
   ApiIndexRoute: typeof ApiIndexRoute
   AudiosIndexRoute: typeof AudiosIndexRoute
   CloudIndexRoute: typeof CloudIndexRoute
@@ -669,6 +695,13 @@ declare module '@tanstack/react-router' {
       path: '/api'
       fullPath: '/api/'
       preLoaderRoute: typeof ApiIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/agent/': {
+      id: '/agent/'
+      path: '/agent'
+      fullPath: '/agent/'
+      preLoaderRoute: typeof AgentIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/account/': {
@@ -832,6 +865,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiActivityRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/agent/$threadId': {
+      id: '/agent/$threadId'
+      path: '/agent/$threadId'
+      fullPath: '/agent/$threadId'
+      preLoaderRoute: typeof AgentThreadIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/account/remote': {
       id: '/account/remote'
       path: '/account/remote'
@@ -863,6 +903,7 @@ const rootRouteChildren: RootRouteChildren = {
   OnboardingRoute: OnboardingRoute,
   SystemMonitorRoute: SystemMonitorRoute,
   AccountRemoteRoute: AccountRemoteRoute,
+  AgentThreadIdRoute: AgentThreadIdRoute,
   ApiActivityRoute: ApiActivityRoute,
   ApiConnectionsRoute: ApiConnectionsRoute,
   ApiModelRoute: ApiModelRoute,
@@ -886,6 +927,7 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsVoiceRoute: SettingsVoiceRoute,
   ThreadsThreadIdRoute: ThreadsThreadIdRoute,
   AccountIndexRoute: AccountIndexRoute,
+  AgentIndexRoute: AgentIndexRoute,
   ApiIndexRoute: ApiIndexRoute,
   AudiosIndexRoute: AudiosIndexRoute,
   CloudIndexRoute: CloudIndexRoute,

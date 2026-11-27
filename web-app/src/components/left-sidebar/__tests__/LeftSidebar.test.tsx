@@ -1,3 +1,4 @@
+import { useChatMode } from '@/lib/pi/navigation'
 import { cleanup, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useLocation } from '@tanstack/react-router'
@@ -187,6 +188,7 @@ const rowFor = (label: string) =>
 describe('LeftSidebar', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    useChatMode.getState().select('chat')
     platform.mediaGeneration = true
     platform.audioGeneration = false
     platform.localApiServer = true
@@ -284,16 +286,27 @@ describe('LeftSidebar', () => {
       expect(rowFor('common:images')).toHaveAttribute('data-active', 'true')
     })
 
-    it('opens the new project and reports its id to the dialog', async () => {
-      addFolder.mockResolvedValue({ id: 'p-42' })
-      render(<LeftSidebar />)
+    it.each(['chat', 'agent'] as const)(
+      'creates and opens a shared project in %s',
+      async (mode) => {
+        useChatMode.getState().select(mode)
+        addFolder.mockResolvedValue({ id: 'p-42' })
+        render(<LeftSidebar />)
 
-      await expect(projectDialog.onSave?.('Research')).resolves.toBe('p-42')
-      expect(navigate).toHaveBeenCalledWith({
-        to: '/project/$projectId',
-        params: { projectId: 'p-42' },
-      })
-    })
+        expect(
+          screen.getByText(mode === 'agent' ? 'chat:pi.new' : 'common:newChat')
+        ).toBeInTheDocument()
+        expect(
+          screen.getByRole('button', { name: 'common:projects.new' })
+        ).toBeInTheDocument()
+        await expect(projectDialog.onSave?.('Research')).resolves.toBe('p-42')
+        expect(navigate).toHaveBeenCalledWith({
+          to: '/project/$projectId',
+          params: { projectId: 'p-42' },
+          search: mode === 'agent' ? { mode } : {},
+        })
+      }
+    )
   })
 
   describe('Server', () => {

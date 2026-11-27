@@ -7,6 +7,7 @@
 $ErrorActionPreference = 'Stop'
 
 $files = @(
+  'src-tauri/resources/pi/pi.exe',
   'src-tauri/resources/LICENSE',
   'src-tauri/resources/pre-install/test-placeholder',
   'src-tauri/resources/bin/atomic-chat-core.exe',

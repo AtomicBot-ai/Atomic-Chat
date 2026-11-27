@@ -13,8 +13,7 @@ import { useRunSettingsPanel } from '@/stores/run-settings-panel-store'
 // flip it back off. Mutable on purpose: PlatformFeatures is read at render.
 const platformFeatures = vi.hoisted(() => ({}) as Record<string, boolean>)
 vi.mock('@/lib/platform/const', async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import('@/lib/platform/const')>()
+  const actual = await importOriginal<typeof import('@/lib/platform/const')>()
   Object.assign(platformFeatures, actual.PlatformFeatures, { agentMode: true })
   return { ...actual, PlatformFeatures: platformFeatures }
 })
@@ -125,6 +124,34 @@ describe('AgentWorkspaceLayout', () => {
     useRunSettingsPanel.getState().close()
     useGeneralSetting.setState({ agentModeEnabled: true })
   })
+
+  it.each([true, false])(
+    'opens and closes run settings for pi on a desktop window (docked: %s)',
+    async (desktop) => {
+      media.desktop = desktop
+      render(
+        <AgentWorkspaceLayout
+          threadId="task"
+          piAgent
+          workspace={agentWorkspace}
+          onAddExternal={onAddExternal}
+          refreshKey={0}
+        >
+          <div>Task</div>
+        </AgentWorkspaceLayout>
+      )
+      fireEvent.click(
+        screen.getByRole('button', { name: 'chat:runSettings.open' })
+      )
+      expect(await screen.findByText('Run settings')).toBeInTheDocument()
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Close run settings' })
+      )
+      await waitFor(() =>
+        expect(screen.queryByText('Run settings')).not.toBeInTheDocument()
+      )
+    }
+  )
 
   it('offers the files sidebar only while agent mode is on', async () => {
     useGeneralSetting.setState({ agentModeEnabled: false })
@@ -620,9 +647,7 @@ describe('AgentWorkspaceLayout', () => {
     )
     expect(await screen.findByText('Run settings')).toBeInTheDocument()
     panelLayouts.values.push([80, 0, 20])
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Finish right resize' })
-    )
+    fireEvent.click(screen.getByRole('button', { name: 'Finish right resize' }))
 
     await waitFor(() =>
       expect(screen.queryByText('Run settings')).not.toBeInTheDocument()

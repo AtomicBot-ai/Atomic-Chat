@@ -1,5 +1,7 @@
 pub mod account;
 pub mod agent;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+pub mod pi_agent;
 pub mod app;
 pub mod artifact;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -29,6 +31,13 @@ pub mod system;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod telemetry;
 pub mod threads;
+pub(crate) mod tool_output;
+pub mod workspace;
+pub mod workspace_files;
+pub(crate) mod process_tree;
+pub mod skills;
+#[cfg(test)]
+pub(crate) mod test_support;
 pub mod tray_status;
 pub mod webview_store;
 

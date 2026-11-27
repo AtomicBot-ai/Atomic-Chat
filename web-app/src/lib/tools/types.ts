@@ -4,6 +4,13 @@ import type { ChatExecToolOutput } from '@/lib/chat-exec-tools'
 
 export type ToolPresentation =
   | {
+      kind: 'pi_file'
+      title: string
+      subtitle?: string
+      lines: Array<{ kind: 'add' | 'remove'; text: string }>
+      errorText?: string
+    }
+  | {
       kind: 'generic'
       title: string
       subtitle?: string
@@ -56,6 +63,7 @@ export type ToolPresentation =
       /** The command line or the script. */
       source?: string
       output?: ChatExecToolOutput
+      liveOutput?: string
       errorText?: string
       /** Ran, but did not succeed: non-zero exit, timeout or Stop. */
       failed: boolean

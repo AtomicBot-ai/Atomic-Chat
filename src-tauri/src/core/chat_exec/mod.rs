@@ -8,12 +8,14 @@
 //! ADRs: 2026-10-15-run-commands-and-scripts-from-chat,
 //! 2026-10-17-confine-secure-projects-commands-to-their-folders-with-mxc.
 
+pub const MAX_TOOL_OUTPUT_CHARS: usize = 16_000;
+
 pub mod commands;
 mod mxc;
 mod runner;
 mod runtimes;
 mod types;
-mod workdir;
+pub(crate) mod workdir;
 
 #[cfg(test)]
 mod ipc_tests;
@@ -154,7 +156,7 @@ impl Drop for RunGuard<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::agent::test_support::TestWorkspace;
+    use crate::core::test_support::TestWorkspace;
 
     #[tokio::test]
     async fn deleting_a_thread_stops_its_calls_and_removes_its_folder() {

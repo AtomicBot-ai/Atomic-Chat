@@ -10,13 +10,13 @@ use reqwest::{Method, Response, StatusCode, Url};
 use serde_json::Value;
 use tokio::time::Instant;
 
-use super::{required_string, truncate, ToolContext, MAX_TOOL_OUTPUT_CHARS};
-use crate::core::agent::types::ToolOutcome;
+use crate::core::tool_output::{required_string, truncate, ToolOutcome, ToolStatus};
+use crate::core::chat_exec::MAX_TOOL_OUTPUT_CHARS;
 
 const MAX_REDIRECTS: usize = 5;
 const MAX_HTTP_RESPONSE_BYTES: usize = 2_000_000;
 
-pub async fn execute(args: &Value, _context: &ToolContext<'_>) -> Result<ToolOutcome, ToolOutcome> {
+pub async fn execute(args: &Value) -> Result<ToolOutcome, ToolOutcome> {
     let url = required_string(args, "url").map_err(ToolOutcome::error)?;
     let method = args
         .get("method")
@@ -66,9 +66,9 @@ pub async fn execute(args: &Value, _context: &ToolContext<'_>) -> Result<ToolOut
     let summary = truncate(body, MAX_TOOL_OUTPUT_CHARS);
     let outcome = ToolOutcome {
         status: if status.is_success() {
-            crate::core::agent::types::ToolStatus::Ok
+            ToolStatus::Ok
         } else {
-            crate::core::agent::types::ToolStatus::Error
+            ToolStatus::Error
         },
         summary,
         details: Some(serde_json::json!({

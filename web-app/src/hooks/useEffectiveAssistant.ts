@@ -1,7 +1,11 @@
 import { useCallback, useMemo } from 'react'
 
 import { useAssistant } from '@/hooks/useAssistant'
-import { resolveAssistantSelection } from '@/lib/samplingParams'
+import { useThreadManagementStore } from '@/hooks/useThreadManagement'
+import {
+  assistantBinding,
+  resolveAssistantSelection,
+} from '@/lib/samplingParams'
 import { useThreads } from '@/hooks/useThreads'
 
 /**
@@ -23,8 +27,13 @@ export function useEffectiveAssistant() {
   )
 
   const currentThreadId = useThreads((state) => state.currentThreadId)
-  const boundAssistants = useThreads((state) =>
-    currentThreadId ? state.threads[currentThreadId]?.assistants : undefined
+  const thread = useThreads((state) =>
+    currentThreadId ? state.threads[currentThreadId] : undefined
+  )
+  const projectId =
+    thread?.metadata?.kind === 'agent' ? thread.metadata.project?.id : undefined
+  const projectAssistantId = useThreadManagementStore((state) =>
+    projectId ? state.getFolderById(projectId)?.assistantId : undefined
   )
   const updateCurrentThreadAssistant = useThreads(
     (state) => state.updateCurrentThreadAssistant
@@ -36,9 +45,15 @@ export function useEffectiveAssistant() {
         assistants,
         pendingAssistant,
         defaultAssistantId,
-        boundAssistants
+        assistantBinding(thread, projectAssistantId, defaultAssistantId)
       ),
-    [assistants, boundAssistants, pendingAssistant, defaultAssistantId]
+    [
+      assistants,
+      thread,
+      projectAssistantId,
+      pendingAssistant,
+      defaultAssistantId,
+    ]
   )
 
   const selectAssistant = useCallback(
